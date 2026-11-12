@@ -23,7 +23,7 @@ export interface ExportManifest {
   /** The database migration level of the instance that wrote the export. */
   migrationLevel: number;
   exportedAt: string;
-  tenant: { id: string; slug: string; name: string };
+  tenant: { id: string; slug: string; name: string; managedWorkers: boolean };
   workspaces: { id: string; slug: string; name: string; type: string }[];
   /** Whether run, flow and event history is included. */
   history: boolean;
@@ -120,7 +120,7 @@ export async function* exportTenant(
   try {
     const tenant = await trx
       .selectFrom("tenant")
-      .select(["id", "slug", "name"])
+      .select(["id", "slug", "name", "managed_workers"])
       .where("id", "=", tenantId)
       .executeTakeFirst();
     if (!tenant) throw notFound("The tenant");
@@ -226,7 +226,12 @@ export async function* exportTenant(
       coreVersion: kernel.version,
       migrationLevel: await kernel.migrationLevel(),
       exportedAt: new Date().toISOString(),
-      tenant,
+      tenant: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        managedWorkers: tenant.managed_workers,
+      },
       workspaces,
       history: options.history,
       counts,

@@ -132,6 +132,13 @@ const Run = Type.Object({
 });
 const RunDetail = Type.Object({
   ...Run.properties,
+  pool: Type.Union([Type.String(), Type.Null()], {
+    description: "The worker pool the run is for. Null for the default pool.",
+  }),
+  waitingFor: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "For a run that is queued with no worker connected that could take it: what it is waiting for.",
+  }),
   input: Type.Unknown(),
   output: Type.Unknown(),
   alert: Type.Union([AnyObject, Type.Null()]),
@@ -175,6 +182,9 @@ const WorkerCredential = Type.Object({
   prefix: Type.String(),
   workspaceId: NullableId,
   managed: Type.Boolean(),
+  pool: Type.Union([Type.String(), Type.Null()], {
+    description: "The pool its workers serve. Null for the default pool.",
+  }),
   expiresAt: NullableTime,
   revokedAt: NullableTime,
   createdAt: Time,
@@ -185,6 +195,7 @@ interface CredentialRow {
   prefix: string;
   workspace_id: string | null;
   managed: boolean;
+  pool: string | null;
   expires_at: Date | null;
   revoked_at: Date | null;
   created_at: Date;
@@ -195,6 +206,7 @@ const toCredential = (row: CredentialRow) => ({
   prefix: row.prefix,
   workspaceId: row.workspace_id,
   managed: row.managed,
+  pool: row.pool,
   expiresAt: isoOrNull(row.expires_at),
   revokedAt: isoOrNull(row.revoked_at),
   createdAt: iso(row.created_at),
@@ -617,6 +629,31 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    /** Why a queued run has nobody to take it, or null when a worker that could is connected. */
+    const waitingFor = async (tenantId: string, workspaceId: string, pool: string | null) => {
+      const serving = await sql`
+        select 1 from worker w join worker_credential c on c.id = w.credential_id
+        where w.tenant_id = ${tenantId}
+          and w.last_seen_at > now() - make_interval(secs => ${WORKER_STALE_SECONDS})
+          and c.revoked_at is null
+          and (c.workspace_id is null or c.workspace_id = ${workspaceId})
+          and c.pool is not distinct from ${pool}
+        limit 1
+      `.execute(db);
+      if (serving.rows.length > 0) return null;
+      if (pool !== null) {
+        return `No worker of the pool "${pool}" is connected. Start one with a credential made for that pool.`;
+      }
+      const tenant = await db
+        .selectFrom("tenant")
+        .select("managed_workers")
+        .where("id", "=", tenantId)
+        .executeTakeFirstOrThrow();
+      return tenant.managed_workers
+        ? null
+        : "This tenant runs on its own workers, and none is connected. Start one with a worker credential.";
+    };
+
     const findRun = async (workspaceId: string, id: string) => {
       const row = await db
         .selectFrom("run")
@@ -645,6 +682,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const row = await findRun(params.w, params.id);
         return {
           ...toRun(row, row.bundle_version),
+          pool: row.pool,
+          waitingFor:
+            row.status === "queued" ? await waitingFor(params.t, params.w, row.pool) : null,
           input: await readPayload(kernel, row.input, row.input_ref),
           output: await readPayload(kernel, row.output, row.output_ref),
           alert: row.alert,
@@ -1115,7 +1155,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The worker can run this tenant's code, or only one workspace's when `workspaceId` is given.",
           tags: ["workers"],
           params: TenantParams,
-          body: Type.Object({ name: Name, workspaceId: Type.Optional(Id) }),
+          body: Type.Object({
+            name: Name,
+            workspaceId: Type.Optional(Id),
+            pool: Type.Optional(
+              Type.String({
+                pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
+                maxLength: 40,
+                description:
+                  "The pool this worker serves. It then runs only scripts that name this pool, " +
+                  "and no others. Without it, the worker runs scripts that name no pool.",
+              }),
+            ),
+          }),
           response: {
             201: Type.Object({
               ...WorkerCredential.properties,
@@ -1141,6 +1193,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tenantId: params.t,
             workspaceId: body.workspaceId ?? null,
             name: body.name,
+            pool: body.pool ?? null,
           });
           await audit({
             action: "worker_credential.created",

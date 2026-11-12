@@ -188,7 +188,10 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (run.status !== "running" || run.attempt !== body.attempt || !run.queue_job_id) {
           return { cancelled: true };
         }
-        const alive = await kernel.queue.heartbeat(queueName(run.workspace_id), run.queue_job_id);
+        const alive = await kernel.queue.heartbeat(
+          queueName(run.workspace_id, run.pool),
+          run.queue_job_id,
+        );
         if (!alive) return { cancelled: true };
         await db
           .updateTable("run")

@@ -107,6 +107,12 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   retries?: { limit: number; delaySeconds?: number; backoff?: boolean };
   /** How many runs of this script may be in progress at once. */
   concurrency?: number;
+  /**
+   * The worker pool this script runs on. Use it for a script that must run in
+   * a particular place, such as inside a client's network, and give that
+   * place's worker a credential made for the same pool.
+   */
+  worker?: string;
   /** What happens when a run fails for the last time. */
   onFailure?: { script?: string | { path: string }; notify?: string | { path: string } };
   run(input: z.output<Input>, ctx: ScriptContext): Promise<z.input<Output>> | z.input<Output>;
@@ -142,6 +148,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
         backoff: options.retries?.backoff ?? true,
       },
       concurrency: options.concurrency,
+      worker: options.worker,
       uses: {
         connections: (options.connections ?? []).map(pathOf),
         secrets: options.secrets ?? [],

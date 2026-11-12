@@ -26,6 +26,10 @@ const Tenant = Type.Object({
     description:
       "The dedicated database that holds this tenant's custom tables, or null for the platform database.",
   }),
+  managedWorkers: Type.Boolean({
+    description:
+      "Whether the instance starts workers for this tenant. False when the tenant runs everything on workers of its own.",
+  }),
   createdAt: Time,
 });
 const toTenant = (row: {
@@ -33,12 +37,14 @@ const toTenant = (row: {
   slug: string;
   name: string;
   data_location: DataLocation;
+  managed_workers: boolean;
   created_at: Date;
 }) => ({
   id: row.id,
   slug: row.slug,
   name: row.name,
   dataLocation: row.data_location.kind === "dedicated" ? row.data_location.ref : null,
+  managedWorkers: row.managed_workers,
   createdAt: iso(row.created_at),
 });
 
@@ -79,7 +85,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { principal } = ctx;
         let select = db
           .selectFrom("tenant")
-          .select(["id", "slug", "name", "data_location", "created_at"]);
+          .select(["id", "slug", "name", "data_location", "managed_workers", "created_at"]);
         if (!(await ctx.allowed("tenant:read", {}))) {
           select =
             principal.type === "member"
@@ -148,7 +154,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? { data_location: JSON.stringify({ kind: "dedicated", ref: body.dataLocation }) }
                 : {}),
             })
-            .returning(["id", "slug", "name", "data_location", "created_at"])
+            .returning(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
             .executeTakeFirstOrThrow();
           // The tenant's own log starts with its creation.
           await audit({
@@ -178,7 +184,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params }) => {
         const row = await db
           .selectFrom("tenant")
-          .select(["id", "slug", "name", "data_location", "created_at"])
+          .select(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
         return toTenant(row);
@@ -190,27 +196,38 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenantOrInstance("tenant:write") },
         schema: {
-          summary: "Rename a tenant",
+          summary: "Rename a tenant, or say whether the instance runs workers for it",
           tags: ["tenancy"],
           params: TenantParams,
-          body: Type.Object({ name: Name }),
+          body: Type.Object({
+            name: Type.Optional(Name),
+            managedWorkers: Type.Optional(Type.Boolean()),
+          }),
           response: { 200: Tenant },
         },
       },
       async ({ ctx, params, body }) => {
+        if (body.name === undefined && body.managedWorkers === undefined) {
+          throw badRequest("Send a name, or managedWorkers.");
+        }
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
             .updateTable("tenant")
-            .set({ name: body.name })
+            .set({
+              ...(body.name !== undefined ? { name: body.name } : {}),
+              ...(body.managedWorkers !== undefined
+                ? { managed_workers: body.managedWorkers }
+                : {}),
+            })
             .where("id", "=", params.t)
-            .returning(["id", "slug", "name", "data_location", "created_at"])
+            .returning(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
             .executeTakeFirstOrThrow();
           await audit({
             action: "tenant.updated",
             targetType: "tenant",
             targetId: params.t,
             tenantId: params.t,
-            details: { name: body.name },
+            details: { name: updated.name, managedWorkers: updated.managed_workers },
           });
           return updated;
         });

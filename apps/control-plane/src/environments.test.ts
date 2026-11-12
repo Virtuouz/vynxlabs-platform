@@ -5,6 +5,7 @@ import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manife
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import { readConnection } from "./kernel/execution/bindings.js";
+import { tenantsNeedingWorkers } from "./kernel/execution/supervisor.js";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { revealSecret } from "./kernel/secrets.js";
 import { INSTANCE_TABLES, OWNED_TABLES } from "./kernel/tenancy/tables.js";
@@ -718,6 +719,110 @@ describe("deleting a tenant", () => {
     expect((await t.admin.post("/tenants", { slug: "globex", name: "Globex again" })).status).toBe(
       201,
     );
+  });
+});
+
+describe("worker pools", () => {
+  let plant: string;
+  const worker = (token: string, workerId: string) =>
+    t.app
+      .inject({
+        method: "POST",
+        url: "/api/v1/worker/claim",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { workerId, waitSeconds: 0 },
+      })
+      .then((response) => response.json().job as Any);
+  const credential = async (body: Record<string, unknown>) =>
+    alice.post(`/tenants/${tenant}/worker-credentials`, body);
+  const needing = async () =>
+    (await tenantsNeedingWorkers(t.kernel)).map((row) => row.tenant_id).includes(tenant);
+
+  test("a script that names a pool runs only on a worker of that pool", async () => {
+    plant = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "plant",
+        name: "Plant",
+        type: "production",
+      })
+    ).body.id;
+    const local = script("read-the-line");
+    (local.body as Any).worker = "plant-floor";
+    const deployed = await deploy(alice, plant, bundle([local, script("report")]));
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const onSite = (await alice.post(`${ws(plant)}/runs`, { script: "read-the-line", input: {} }))
+      .body;
+    const anywhere = (await alice.post(`${ws(plant)}/runs`, { script: "report", input: {} })).body;
+
+    // Nobody of that pool is connected, and the run says so.
+    const waiting = (await alice.get(`${ws(plant)}/runs/${onSite.id}`)).body;
+    expect(waiting).toMatchObject({ status: "queued", pool: "plant-floor" });
+    expect(waiting.waitingFor).toBe(
+      'No worker of the pool "plant-floor" is connected. Start one with a credential made for that pool.',
+    );
+
+    const general = (await credential({ name: "general" })).body;
+    const floor = (await credential({ name: "on the plant floor", pool: "plant-floor" })).body;
+    const elsewhere = (await credential({ name: "another site", pool: "warehouse" })).body;
+    expect(floor.pool).toBe("plant-floor");
+    expect(general.pool).toBe(null);
+    expect((await credential({ name: "bad", pool: "Not A Pool" })).status).toBe(400);
+
+    // A worker of the default pool takes the script that names none, and never the other.
+    const first = await worker(general.token, "018f0000-0000-7000-8000-00000000000a");
+    expect(first.runId).toBe(anywhere.id);
+    expect(await worker(general.token, "018f0000-0000-7000-8000-00000000000a")).toBe(null);
+    expect(await worker(elsewhere.token, "018f0000-0000-7000-8000-00000000000b")).toBe(null);
+    // Still waiting: the workers that are connected serve other pools.
+    expect((await alice.get(`${ws(plant)}/runs/${onSite.id}`)).body.waitingFor).toContain(
+      "plant-floor",
+    );
+
+    const second = await worker(floor.token, "018f0000-0000-7000-8000-00000000000c");
+    expect(second.runId).toBe(onSite.id);
+    expect((await alice.get(`${ws(plant)}/runs/${onSite.id}`)).body).toMatchObject({
+      status: "running",
+      waitingFor: null,
+    });
+    const listed = (await alice.get(`/tenants/${tenant}/worker-credentials`)).body.items;
+    expect(listed.find((item: Any) => item.name === "on the plant floor").pool).toBe("plant-floor");
+  });
+
+  test("a pool's name is checked when the bundle is uploaded", async () => {
+    const bad = script("bad");
+    (bad.body as Any).worker = "Plant Floor";
+    expect((await alice.post(`${ws(plant)}/bundles`, bundle([bad]))).status).toBe(400);
+  });
+
+  test("the instance starts workers only for runs of the default pool, and for no tenant that runs its own", async () => {
+    for (const run of (await alice.get(`${ws(plant)}/runs`)).body.items) {
+      await alice.post(`${ws(plant)}/runs/${run.id}/cancel`);
+    }
+    for (const workspace of [shop, dev, qa, prod]) {
+      for (const run of (await alice.get(`${ws(workspace)}/runs`)).body.items) {
+        if (run.status === "queued") await alice.post(`${ws(workspace)}/runs/${run.id}/cancel`);
+      }
+    }
+    expect(await needing()).toBe(false);
+    // A run for a named pool is not the instance's to run.
+    await alice.post(`${ws(plant)}/runs`, { script: "read-the-line", input: {} });
+    expect(await needing()).toBe(false);
+    const queued = (await alice.post(`${ws(plant)}/runs`, { script: "report", input: {} })).body;
+    expect(await needing()).toBe(true);
+
+    const own = await alice.patch(`/tenants/${tenant}`, { managedWorkers: false });
+    expect(own.body.managedWorkers).toBe(false);
+    expect(await needing()).toBe(false);
+    expect((await alice.patch(`/tenants/${tenant}`, {})).status).toBe(400);
+    // The general worker was seen a moment ago, so the run is not left without anyone.
+    expect((await alice.get(`${ws(plant)}/runs/${queued.id}`)).body.waitingFor).toBe(null);
+    await t.db.deleteFrom("worker").where("tenant_id", "=", tenant).execute();
+    expect((await alice.get(`${ws(plant)}/runs/${queued.id}`)).body.waitingFor).toBe(
+      "This tenant runs on its own workers, and none is connected. Start one with a worker credential.",
+    );
+    await alice.patch(`/tenants/${tenant}`, { managedWorkers: true });
+    expect(await needing()).toBe(true);
+    expect((await alice.get(`${ws(plant)}/runs/${queued.id}`)).body.waitingFor).toBe(null);
   });
 });
 

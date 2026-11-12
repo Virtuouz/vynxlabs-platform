@@ -9,7 +9,9 @@ import { bundleManifest } from "./bundles.js";
 /** Input and output above this size go to file storage, and the run keeps a reference. */
 export const INLINE_PAYLOAD_BYTES = 256 * 1024;
 
-export const queueName = (workspaceId: string) => `ws_${workspaceId.replaceAll("-", "")}`;
+/** Each workspace has a queue for the default pool, and one more for each named pool its scripts ask for. */
+export const queueName = (workspaceId: string, pool?: string | null) =>
+  `ws_${workspaceId.replaceAll("-", "")}${pool ? `_p_${pool.replaceAll("-", "_")}` : ""}`;
 
 export interface ScriptBody {
   entry: string;
@@ -18,6 +20,8 @@ export interface ScriptBody {
   timeoutSeconds: number;
   retries: { limit: number; delaySeconds: number; backoff: boolean };
   concurrency?: number;
+  /** The worker pool the script runs on. */
+  worker?: string;
   uses: {
     connections: string[];
     secrets: string[];
@@ -128,7 +132,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
   const id = newId();
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(
-    queueName(request.workspaceId),
+    queueName(request.workspaceId, body.worker),
     { runId: id },
     {
       priority: request.priority ?? 0,
@@ -148,6 +152,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       tenant_id: request.tenantId,
       workspace_id: request.workspaceId,
       resource_id: resourceId,
+      pool: body.worker ?? null,
       script_path: request.script,
       bundle_id: bundleId,
       flow_run_id: request.step?.flowRunId ?? null,
@@ -175,6 +180,8 @@ export interface WorkerScope {
   credentialId: string;
   tenantId: string;
   workspaceId: string | null;
+  /** The pool this worker serves. Null for the default pool. */
+  pool: string | null;
 }
 
 class ClaimAbandoned extends Error {}
@@ -221,7 +228,8 @@ export async function claimRun(
             .executeTakeFirstOrThrow();
           if (Number(running.n) >= workspace.concurrency_limit) return "full" as const;
 
-          const job = await kernel.queue.claim<{ runId: string }>(queueName(workspace.id), trx);
+          const queue = queueName(workspace.id, scope.pool);
+          const job = await kernel.queue.claim<{ runId: string }>(queue, trx);
           if (!job) return "empty" as const;
           const run = await trx
             .selectFrom("run")
@@ -236,7 +244,7 @@ export async function claimRun(
             run.status === "cancelled"
           ) {
             // The run ended some other way. Drop the job and look again.
-            await kernel.queue.complete(queueName(workspace.id), job.id);
+            await kernel.queue.complete(queue, job.id);
             return "stale" as const;
           }
           const now = new Date();
@@ -295,7 +303,7 @@ export async function completeRun(
 ) {
   const run = await activeRun(kernel.db, scope, runId, attempt);
   const taken = await kernel.queue.complete(
-    queueName(run.workspace_id),
+    queueName(run.workspace_id, run.pool),
     run.queue_job_id as string,
   );
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
@@ -362,7 +370,7 @@ export async function failRun(
   error: RunFailure,
 ) {
   const run = await activeRun(kernel.db, scope, runId, attempt);
-  const queue = queueName(run.workspace_id);
+  const queue = queueName(run.workspace_id, run.pool);
   const taken = await kernel.queue.fail(queue, run.queue_job_id as string, {
     message: error.message,
   });
@@ -412,7 +420,9 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
   if (run.status !== "queued" && run.status !== "running") {
     throw conflict(`The run already ${run.status === "succeeded" ? "succeeded" : run.status}.`);
   }
-  if (run.queue_job_id) await kernel.queue.cancel(queueName(workspaceId), run.queue_job_id);
+  if (run.queue_job_id) {
+    await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id);
+  }
   return trx
     .updateTable("run")
     .set({ status: "cancelled", finished_at: new Date() })
@@ -449,7 +459,7 @@ export async function requeueLostRuns(kernel: Kernel): Promise<number> {
   const silentSince = new Date(Date.now() - kernel.queue.heartbeatSeconds * 1000);
   const silent = await kernel.db
     .selectFrom("run")
-    .select(["id", "workspace_id", "queue_job_id"])
+    .select(["id", "workspace_id", "queue_job_id", "pool"])
     .where("status", "=", "running")
     .where("last_heartbeat_at", "<", silentSince)
     .limit(100)
@@ -457,7 +467,7 @@ export async function requeueLostRuns(kernel: Kernel): Promise<number> {
   let requeued = 0;
   for (const run of silent) {
     if (!run.queue_job_id) continue;
-    const state = await kernel.queue.state(queueName(run.workspace_id), run.queue_job_id);
+    const state = await kernel.queue.state(queueName(run.workspace_id, run.pool), run.queue_job_id);
     // Still "active" means the queue has not given up on the worker yet.
     if (state !== "retry" && state !== "created") continue;
     const updated = await kernel.db

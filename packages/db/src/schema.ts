@@ -24,6 +24,7 @@ export interface TenantTable {
   slug: string;
   name: string;
   data_location: ColumnType<DataLocation, string | undefined, string>;
+  managed_workers: Generated<boolean>;
   created_at: Generated<Date>;
 }
 
@@ -267,6 +268,8 @@ export interface RunTable {
   workspace_id: string;
   resource_id: string;
   script_path: string;
+  /** The worker pool the run waits for. Null for the default pool. */
+  pool: Generated<string | null>;
   bundle_id: string;
   status: RunStatus;
   attempt: Generated<number>;
@@ -405,6 +408,7 @@ export interface WorkerCredentialTable {
   prefix: string;
   token_hash: string;
   managed: Generated<boolean>;
+  pool: Generated<string | null>;
   expires_at: Date | null;
   revoked_at: Date | null;
   created_at: Generated<Date>;

@@ -14,6 +14,8 @@ export interface NewCredential {
   workspaceId?: string | null;
   name: string;
   managed?: boolean;
+  /** The pool the credential's workers serve. */
+  pool?: string | null;
   expiresAt?: Date | null;
 }
 
@@ -30,6 +32,7 @@ export async function createWorkerCredential(db: Db | Trx, input: NewCredential)
       prefix: token.slice(0, 12),
       token_hash: hashApiKey(token),
       managed: input.managed ?? false,
+      pool: input.pool ?? null,
       expires_at: input.expiresAt ?? null,
       revoked_at: null,
     })
@@ -46,7 +49,7 @@ export async function resolveWorker(kernel: Kernel, request: FastifyRequest): Pr
   }
   const credential = await kernel.db
     .selectFrom("worker_credential")
-    .select(["id", "tenant_id", "workspace_id", "revoked_at", "expires_at"])
+    .select(["id", "tenant_id", "workspace_id", "pool", "revoked_at", "expires_at"])
     .where("token_hash", "=", hashApiKey(token))
     .executeTakeFirst();
   if (
@@ -60,6 +63,7 @@ export async function resolveWorker(kernel: Kernel, request: FastifyRequest): Pr
     credentialId: credential.id,
     tenantId: credential.tenant_id,
     workspaceId: credential.workspace_id,
+    pool: credential.pool,
   };
 }
 

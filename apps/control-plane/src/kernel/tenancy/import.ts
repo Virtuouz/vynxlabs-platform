@@ -240,6 +240,7 @@ export async function importTenant(
           id: tenantId,
           slug,
           name: manifest.tenant.name,
+          managed_workers: manifest.tenant.managedWorkers ?? true,
           data_location: JSON.stringify(
             location === null ? { kind: "shared" } : { kind: "dedicated", ref: location },
           ),

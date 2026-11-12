@@ -99,6 +99,13 @@ export const scriptKind: KindDefinition = {
         maximum: 64,
         description: "How many runs of this script may be in progress at once.",
       },
+      worker: {
+        type: "string",
+        pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
+        maxLength: 40,
+        description:
+          "The worker pool this script runs on, for a script that must run in a particular place, such as inside a client's network. Without it, any worker of the default pool runs it.",
+      },
       uses: {
         type: "object",
         description:

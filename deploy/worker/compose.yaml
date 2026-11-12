@@ -1,0 +1,23 @@
+# A worker by itself, for running a tenant's scripts somewhere other than the
+# instance: inside a client's network, next to the systems it has to reach.
+#
+#   cp .env.example .env    # then fill it in
+#   docker compose up -d
+#
+# The worker makes outbound connections only, to the instance's address over
+# HTTPS. Nothing needs to reach it, so it publishes no port.
+name: vynxlabs-worker
+
+services:
+  worker:
+    image: ${PLATFORM_IMAGE:?set PLATFORM_IMAGE in .env}
+    restart: unless-stopped
+    # The worker ships inside the platform image.
+    command: ["node", "node_modules/@vynxlabs/worker/dist/bin.js"]
+    environment:
+      PLATFORM_URL: ${PLATFORM_URL:?set PLATFORM_URL in .env}
+      PLATFORM_WORKER_TOKEN: ${PLATFORM_WORKER_TOKEN:?set PLATFORM_WORKER_TOKEN in .env}
+    # The worker keeps nothing: bundles are fetched again after a restart.
+    read_only: true
+    tmpfs:
+      - /tmp

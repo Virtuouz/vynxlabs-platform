@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SourceView, TableView, toFilter } from "./screens/Data.tsx";
+
+// The whole suite runs in parallel with tests that use a database, so waits are generous.
+configure({ asyncUtilTimeout: 5000 });
 
 const root = "/tenants/t1/workspaces/w1";
 let calls: { method: string; url: string; body: unknown }[];

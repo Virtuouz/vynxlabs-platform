@@ -1,6 +1,7 @@
 import { newId } from "@vynxlabs/db";
 import { type KindRegistry, registerPlatformKinds } from "@vynxlabs/manifest";
 import type { Trx } from "./audit.js";
+import { applyTable, retireTable } from "./data/apply.js";
 import { badRequest } from "./errors.js";
 
 export interface AppliedResource {
@@ -18,6 +19,8 @@ export interface AppliedResource {
  */
 export interface KindHook {
   apply(trx: Trx, resource: AppliedResource): Promise<void>;
+  /** Runs before the resource is deleted, for what a foreign key cannot clean up. */
+  remove?(trx: Trx, resource: AppliedResource): Promise<void>;
 }
 
 export const INSTANCE_ONLY_ROLE = "operator_admin";
@@ -140,4 +143,11 @@ export function registerKernelKinds(kinds: KindRegistry, hooks: Map<string, Kind
   registerPlatformKinds(kinds);
   hooks.set("role", roleHook);
   hooks.set("binding", bindingHook);
+  hooks.set("table", {
+    async apply(trx, resource) {
+      await applyTable(trx, resource);
+    },
+    // The table's data outlives its definition. It is retired, not dropped.
+    remove: (trx, resource) => retireTable(trx, resource),
+  });
 }

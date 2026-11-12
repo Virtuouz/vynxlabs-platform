@@ -117,6 +117,18 @@ export const scriptKind: KindDefinition = {
             uniqueItems: true,
             description: "Events the script may publish.",
           },
+          tables: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description: "Custom tables the script reads or writes.",
+          },
+          sources: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description: "External data sources the script reads or writes.",
+          },
         },
         required: ["connections", "secrets", "variables"],
         additionalProperties: false,
@@ -357,11 +369,119 @@ export const variableKind: KindDefinition = {
   },
 };
 
+export const COLUMN_TYPES = [
+  "text",
+  "integer",
+  "number",
+  "boolean",
+  "timestamp",
+  "date",
+  "json",
+  "uuid",
+  "reference",
+  "file",
+] as const;
+export type ColumnType = (typeof COLUMN_TYPES)[number];
+
+/** Columns every table has. A definition cannot declare them. */
+export const SYSTEM_COLUMNS = ["id", "created_at", "updated_at"] as const;
+
+const columnName = "^[a-z][a-z0-9_]*$";
+
+export const tableKind: KindDefinition = {
+  kind: "table",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      description: { type: "string", maxLength: 500 },
+      columns: {
+        type: "object",
+        propertyNames: { pattern: columnName, maxLength: 55 },
+        minProperties: 1,
+        maxProperties: 200,
+        additionalProperties: {
+          type: "object",
+          properties: {
+            type: { enum: [...COLUMN_TYPES] },
+            required: { type: "boolean" },
+            unique: { type: "boolean" },
+            default: {
+              description:
+                "Used for a row that gives no value, and for existing rows when the column is added.",
+            },
+            references: { ...path, description: "For a reference: the table it points to." },
+            renamedFrom: {
+              type: "string",
+              pattern: columnName,
+              description: "The column's previous name. Its data is kept.",
+            },
+          },
+          required: ["type"],
+          additionalProperties: false,
+        },
+      },
+      policy: {
+        oneOf: [
+          {
+            type: "object",
+            properties: { type: { const: "open" } },
+            required: ["type"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              type: { const: "owner" },
+              column: {
+                type: "string",
+                pattern: columnName,
+                description: "The column holding each row's owner.",
+              },
+            },
+            required: ["type", "column"],
+            additionalProperties: false,
+          },
+        ],
+      },
+      indexes: {
+        type: "array",
+        maxItems: 20,
+        items: {
+          type: "array",
+          items: { type: "string", pattern: columnName },
+          minItems: 1,
+          maxItems: 5,
+        },
+      },
+      renamedFrom: { ...path, description: "The table's previous path. Its data is kept." },
+    },
+    required: ["columns"],
+    additionalProperties: false,
+  },
+};
+
+export const dataSourceKind: KindDefinition = {
+  kind: "data_source",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      connector: { const: "postgres" },
+      description: { type: "string", maxLength: 500 },
+    },
+    required: ["connector"],
+    additionalProperties: false,
+  },
+};
+
 /** Every kind the platform ships, in the order a deploy applies them. */
 export const platformKinds: KindDefinition[] = [
   roleKind,
   connectionKind,
   variableKind,
+  tableKind,
+  dataSourceKind,
   eventKind,
   scriptKind,
   scheduleKind,

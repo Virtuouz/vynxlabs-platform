@@ -417,6 +417,66 @@ export interface WorkerTable {
   last_seen_at: Timestamp;
 }
 
+export type CatalogStatus = "active" | "retired";
+
+export interface DataTableTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  resource_id: string | null;
+  name: string;
+  physical_name: string;
+  status: CatalogStatus;
+  policy: ColumnType<
+    { type: "open" } | { type: "owner"; column: string },
+    string | undefined,
+    string
+  >;
+  previous_names: Generated<string[]>;
+  retired_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface DataColumnTable {
+  id: string;
+  table_id: string;
+  name: string;
+  physical_name: string;
+  type: string;
+  required: Generated<boolean>;
+  is_unique: Generated<boolean>;
+  default_value: ColumnType<unknown, string | null | undefined, string | null>;
+  reference_table: string | null;
+  previous_names: Generated<string[]>;
+  status: CatalogStatus;
+  retired_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface DataSourceBindingTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  config: Json<Record<string, unknown>>;
+  credential: Buffer | null;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
+}
+
+export interface FileTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  name: string;
+  content_type: string;
+  size_bytes: ColumnType<string, number, never>;
+  storage_key: string;
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+}
+
 /** Tables shared by every tenant in the platform database. */
 export interface PlatformSchema {
   platform_migration: PlatformMigrationTable;
@@ -450,4 +510,8 @@ export interface PlatformSchema {
   flow_run: FlowRunTable;
   step_run: StepRunTable;
   flow_layout: FlowLayoutTable;
+  data_table: DataTableTable;
+  data_column: DataColumnTable;
+  data_source_binding: DataSourceBindingTable;
+  file: FileTable;
 }

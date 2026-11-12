@@ -12,6 +12,7 @@ import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { authRoutes } from "./routes/auth.js";
+import { dataRoutes } from "./routes/data.js";
 import { executionRoutes } from "./routes/execution.js";
 import { flowRoutes } from "./routes/flows.js";
 import { healthRoutes } from "./routes/health.js";
@@ -131,6 +132,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(workspaceRoutes(kernel));
       await api.register(executionRoutes(kernel));
       await api.register(flowRoutes(kernel));
+      await api.register(dataRoutes(kernel));
       await api.register(workerRoutes(kernel));
       api.get(
         "/openapi.json",

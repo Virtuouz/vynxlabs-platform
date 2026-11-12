@@ -45,6 +45,8 @@ const KIND_ORDER = [
   "role",
   "connection",
   "variable",
+  "table",
+  "data_source",
   "event",
   "script",
   "schedule",

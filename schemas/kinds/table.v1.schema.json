@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/table.v1.schema.json",
+  "title": "table body, version 1",
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "columns": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 55
+      },
+      "minProperties": 1,
+      "maxProperties": 200,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "text",
+              "integer",
+              "number",
+              "boolean",
+              "timestamp",
+              "date",
+              "json",
+              "uuid",
+              "reference",
+              "file"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "unique": {
+            "type": "boolean"
+          },
+          "default": {
+            "description": "Used for a row that gives no value, and for existing rows when the column is added."
+          },
+          "references": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255,
+            "description": "For a reference: the table it points to."
+          },
+          "renamedFrom": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "The column's previous name. Its data is kept."
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "policy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "open"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "owner"
+            },
+            "column": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "The column holding each row's owner."
+            }
+          },
+          "required": [
+            "type",
+            "column"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "indexes": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      }
+    },
+    "renamedFrom": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255,
+      "description": "The table's previous path. Its data is kept."
+    }
+  },
+  "required": [
+    "columns"
+  ],
+  "additionalProperties": false
+}

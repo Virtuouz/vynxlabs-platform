@@ -2,6 +2,7 @@ import type { BundleManifest } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowReferences } from "./flow.js";
 import { registerPlatformKinds } from "./kinds.js";
 import { KindRegistry } from "./registry.js";
+import { checkTable, type TableBody } from "./table.js";
 
 /** Events the platform publishes itself. No repository declares them. */
 export const PLATFORM_EVENT_PREFIX = "platform/";
@@ -12,6 +13,8 @@ interface ScriptUses {
   connections?: string[];
   variables?: string[];
   events?: string[];
+  tables?: string[];
+  sources?: string[];
 }
 
 /**
@@ -73,8 +76,24 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const path of body.uses?.variables ?? [])
         expect(manifest, "variables", path, "variable");
       for (const path of body.uses?.events ?? []) expect(manifest, "events", path, "event");
+      for (const path of body.uses?.tables ?? []) expect(manifest, "tables", path, "table");
+      for (const path of body.uses?.sources ?? []) expect(manifest, "sources", path, "data_source");
       expect(manifest, "onFailure.script", body.onFailure?.script, "script");
       expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+    }
+    if (manifest.kind === "table") {
+      const table = manifest.body as unknown as TableBody;
+      for (const issue of checkTable(table)) {
+        problems.push(`${manifest.path} (table): ${issue.path} ${issue.message}`);
+      }
+      for (const [name, column] of Object.entries(table.columns)) {
+        expect(manifest, `/body/columns/${name}/references`, column.references, "table");
+      }
+      if (table.renamedFrom !== undefined && byPath.has(table.renamedFrom)) {
+        problems.push(
+          `${manifest.path} (table): /body/renamedFrom "${table.renamedFrom}" is still declared, so it cannot also be this table's old path.`,
+        );
+      }
     }
     if (manifest.kind === "flow") {
       const flow = manifest.body as unknown as FlowBody;

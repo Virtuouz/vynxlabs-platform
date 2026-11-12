@@ -1,6 +1,7 @@
 import { newId } from "@vynxlabs/db";
 import { type BundleManifest, coreInRange } from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
+import { reconcileReferences } from "../data/apply.js";
 import { HttpError, notFound } from "../errors.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
@@ -150,7 +151,7 @@ export async function deployBundle(
     // Bindings and triggers before the roles and scripts they refer to.
     .sort((a, b) => order(b.kind) - order(a.kind));
   for (const row of removed) {
-    await deleteResource(trx, audit, workspace, row.path);
+    await deleteResource(trx, audit, workspace, row.path, kernel.hooks);
     summary.deleted += 1;
   }
 
@@ -175,6 +176,9 @@ export async function deployBundle(
     if (result.created) summary.created += 1;
     else summary.updated += 1;
   }
+
+  // Every table is in place now, so a reference to a table that is not there is a mistake.
+  await reconcileReferences(trx, workspace.id, true);
 
   const id = newId();
   await trx
@@ -216,6 +220,8 @@ const KIND_ORDER = [
   "role",
   "connection",
   "variable",
+  "table",
+  "data_source",
   "event",
   "script",
   "schedule",

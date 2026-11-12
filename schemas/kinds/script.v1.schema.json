@@ -94,6 +94,26 @@
           },
           "uniqueItems": true,
           "description": "Events the script may publish."
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true,
+          "description": "Custom tables the script reads or writes."
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true,
+          "description": "External data sources the script reads or writes."
         }
       },
       "required": [

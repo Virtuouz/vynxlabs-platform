@@ -3,6 +3,7 @@ import type { Audit, Db, Trx } from "./audit.js";
 import { badRequest, conflict, notFound } from "./errors.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
+import type { KindHook } from "./kinds.js";
 
 export interface ResourceInput {
   path: string;
@@ -136,6 +137,7 @@ export async function deleteResource(
   audit: Audit,
   workspace: WorkspaceRef,
   path: string,
+  hooks?: Map<string, KindHook>,
 ) {
   const existing = await trx
     .selectFrom("resource")
@@ -161,6 +163,13 @@ export async function deleteResource(
       deleted: true,
     })
     .execute();
+  await hooks?.get(existing.kind)?.remove?.(trx, {
+    id: existing.id,
+    tenantId: existing.tenant_id,
+    workspaceId: existing.workspace_id,
+    path: existing.path,
+    body: existing.body,
+  });
   // Roles and bindings projected from this resource go with it.
   await trx.deleteFrom("resource").where("id", "=", existing.id).execute();
   await audit({

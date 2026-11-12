@@ -284,7 +284,8 @@ Postgres is the only platform database, custom tables live in one schema per wor
 
 ### Schema changes
 
-- A change to a custom table is a migration that travels inside the bundle and runs on deploy.
+- A change to a custom table is a migration that travels inside the bundle and runs on deploy. The bundle carries each table's definition, and the control plane compares it with what the workspace has and applies the difference.
+- A deploy never drops data. A column or table that leaves the definition is retired: hidden, with its data kept. Dropping it is a separate, explicit, audited action.
 - Promotion carries schema changes only. It never carries data.
 
 ### Access
@@ -565,7 +566,7 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Platform table isolation | Tenant ID on every platform row | Locked |
 | User classes | Developers, client staff, end users and guests | Locked |
 | Permission model | Roles with groups, at tenant, workspace and resource scope | Locked |
-| Row-level policies | Hook built in the data phase, starting with an owner-column rule | Locked |
+| Row-level policies | Postgres row-level security, starting with an owner-column rule | Locked |
 | Workflow model | Declarative graph with code steps, free canvas placement, several triggers per flow | Locked |
 | Flow data wiring | Plain references plus a small language-neutral expression language | Locked |
 | Resource identity | Readable path in files, immutable ID in the database | Locked |
@@ -683,7 +684,7 @@ Nothing below is in scope for the early phases, but no design may block the defe
 - [ ] Choose a product name and check it for trademark conflicts.
 - [ ] Get legal review of Apache 2.0 together with the contract clause that assigns the tenant repository.
 - [ ] Decide whether a clone of a production workspace is always a dev workspace.
-- [ ] Decide the rollback policy for custom table migrations.
+- [x] Decide the rollback policy for custom table migrations: a deploy or rollback never drops data. A column or table that leaves the definition is retired and kept, and dropping it is a separate, explicit action.
 - [ ] Set default retention for runs and audit entries.
 - [x] Define what an operator admin can see inside a tenant, and how the tenant is shown that access: nothing by default, then explicit time-limited access grants that are audited and listed for the tenant's admins.
 - [x] Choose the hosting provider for the Vynxlabs shared instance: Fly.io.

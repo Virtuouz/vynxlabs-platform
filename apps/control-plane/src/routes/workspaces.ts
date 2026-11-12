@@ -483,7 +483,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
-        await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path));
+        await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path, kernel.hooks));
         return reply.code(204).send(null);
       },
     );

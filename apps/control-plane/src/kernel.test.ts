@@ -673,11 +673,13 @@ describe("resource registry", () => {
     ).toEqual([
       "binding",
       "connection",
+      "data_source",
       "event",
       "flow",
       "role",
       "schedule",
       "script",
+      "table",
       "trigger",
       "variable",
     ]);
@@ -1000,7 +1002,7 @@ describe("the write path", () => {
   test("every kernel route that changes something was exercised and audited", () => {
     // The execution routes have the same check in execution.test.ts.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files)(\/|$)/;
     expect(t.unexercised((route) => !execution.test(route))).toEqual([]);
   });
 });

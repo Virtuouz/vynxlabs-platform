@@ -242,5 +242,25 @@ export function RemoveButton({
   );
 }
 
+/** Copies a value that has to be passed on by hand, such as a link or a DNS record. */
+export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  return (
+    <Button
+      size="small"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setState("copied");
+        } catch {
+          setState("failed");
+        }
+      }}
+    >
+      {state === "copied" ? "Copied" : state === "failed" ? "Select it and copy" : label}
+    </Button>
+  );
+}
+
 export const when = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });

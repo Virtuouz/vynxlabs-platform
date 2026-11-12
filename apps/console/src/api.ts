@@ -43,9 +43,9 @@ export const api = {
   patch: <T>(path: string, body: unknown) => call<T>("PATCH", path, body),
   delete: <T>(path: string) => call<T>("DELETE", path),
   /** Sends a file's bytes as they are. */
-  upload: async <T>(path: string, file: File): Promise<T> => {
+  upload: async <T>(path: string, file: File, method: "POST" | "PUT" = "POST"): Promise<T> => {
     const response = await fetch(`/api/v1${path}`, {
-      method: "POST",
+      method,
       credentials: "same-origin",
       headers: { "content-type": file.type || "application/octet-stream" },
       body: file,

@@ -11,8 +11,12 @@ import {
 } from "../ListScreen.tsx";
 import { Link, match } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
+import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
+import { Branding } from "./Branding.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
+import { Domains } from "./Domains.tsx";
+import { EndUsers } from "./EndUsers.tsx";
 import { Promotion, TenantExport, WorkspaceControls } from "./Environments.tsx";
 import {
   Connections,
@@ -192,6 +196,12 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <Workers base={base} />
       ) : section === "members" ? (
         <Members base={base} />
+      ) : section === "end-users" ? (
+        <EndUsers base={base} />
+      ) : section === "branding" ? (
+        <Branding base={base} tenantId={tenantId} />
+      ) : section === "domains" ? (
+        <Domains base={base} />
       ) : section === "groups" ? (
         <Groups base={base} />
       ) : section === "service-accounts" ? (
@@ -346,6 +356,7 @@ function WorkspaceDetail({
         reload={workspace.reload}
       />
       <nav aria-label="Workspace" class="flex flex-wrap gap-x-5 border-line border-b">
+        {link("apps", "Apps")}
         {link("flows", "Flows")}
         {link("scripts", "Scripts")}
         {link("runs", "Runs")}
@@ -396,7 +407,9 @@ function WorkspaceDetail({
       ) : tab === "sources" ? (
         <Sources root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : null}
-      {tab === "scripts" ? (
+      {tab === "apps" ? (
+        <Apps root={root} />
+      ) : tab === "scripts" ? (
         <Scripts root={root} runsLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />
       ) : tab === "runs" && runId ? (
         <RunDetail
@@ -714,6 +727,9 @@ function Access({ base }: { base: string }) {
   const members = useLoad<{ items: { id: string; email: string }[] }>(`${base}/members?limit=200`);
   const groups = useLoad<{ items: { id: string; name: string }[] }>(`${base}/groups`);
   const accounts = useLoad<{ items: { id: string; name: string }[] }>(`${base}/service-accounts`);
+  const endUsers = useLoad<{ items: { id: string; email: string }[] }>(
+    `${base}/end-users?limit=200`,
+  );
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
   const workspaceName = (id: string | null) =>
     workspaces.data?.items.find((w) => w.id === id)?.name ?? "";
@@ -726,6 +742,12 @@ function Access({ base }: { base: string }) {
     ...(accounts.data?.items ?? []).map((a) => ({
       value: `service_account:${a.id}`,
       label: `Service account: ${a.name}`,
+    })),
+    // Every end user is one principal with no ID: whoever has signed in to this tenant's portal.
+    { value: "end_users:", label: "Every end user" },
+    ...(endUsers.data?.items ?? []).map((u) => ({
+      value: `end_user:${u.id}`,
+      label: `End user: ${u.email}`,
     })),
   ];
   return (
@@ -752,7 +774,7 @@ function Access({ base }: { base: string }) {
       ]}
       empty={{
         title: "Nobody has access yet",
-        text: "Give a member, a group or a service account a role.",
+        text: "Give a member, a group, a service account or an end user a role.",
       }}
       create={{
         action: "Give access",
@@ -778,7 +800,7 @@ function Access({ base }: { base: string }) {
           const [principalType, principalId] = principal.split(":");
           return api.post(`${base}/bindings`, {
             principalType,
-            principalId,
+            ...(principalId ? { principalId } : {}),
             roleId,
             ...(workspaceId ? { workspaceId } : {}),
           });

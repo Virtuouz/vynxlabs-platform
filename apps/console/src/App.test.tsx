@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { App } from "./App.tsx";
+import { App, returnTarget } from "./App.tsx";
 import { match } from "./router.tsx";
 
 type Handler = (body: unknown) => [number, unknown];
@@ -54,6 +54,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 test("signing in: a wrong password explains itself, the right one shows the member's tenants", async () => {
@@ -86,4 +87,43 @@ test("route matching", () => {
   });
   expect(match("/t/:t/workspaces/:w/:tab", "/t/a/workspaces")).toBeNull();
   expect(match("/instance/members", "/instance/audit")).toBeNull();
+});
+
+test("after signing in, a member an app sent here goes back to the app", async () => {
+  const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  history.replaceState(null, "", "/?return=%2Fapps%2Facme%2Fmain%2Forders%2F%3Ftab%3Dopen");
+  render(<App />);
+  await screen.findByRole("heading", { name: "Sign in" });
+  expect(assign).not.toHaveBeenCalled();
+  fireEvent.input(screen.getByLabelText("Email"), { target: { value: "alice@acme.example" } });
+  fireEvent.input(screen.getByLabelText("Password"), { target: { value: "right-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  await waitFor(() => expect(assign).toHaveBeenCalledWith("/apps/acme/main/orders/?tab=open"));
+  // The console itself is not shown on the way.
+  expect(screen.queryByRole("heading", { name: "Tenants" })).toBeNull();
+});
+
+test("a member who is already signed in is sent back at once", async () => {
+  signedIn = true;
+  const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  history.replaceState(null, "", "/?return=%2Fapi%2Fv1%2Fapp-handoffs%2Fstart%3Fto%3Dx");
+  render(<App />);
+  await waitFor(() => expect(assign).toHaveBeenCalledWith("/api/v1/app-handoffs/start?to=x"));
+});
+
+test("a return address that is not an app's is ignored", async () => {
+  signedIn = true;
+  const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  history.replaceState(null, "", "/?return=https%3A%2F%2Fevil.example%2Fapps%2F");
+  render(<App />);
+  await screen.findByRole("heading", { name: "Tenants" });
+  expect(assign).not.toHaveBeenCalled();
+
+  expect(returnTarget("?return=/portal/acme/")).toBe("/portal/acme/");
+  expect(returnTarget("?return=/apps/acme/main/orders/")).toBe("/apps/acme/main/orders/");
+  expect(returnTarget("?return=//evil.example/apps/")).toBeNull();
+  expect(returnTarget("?return=/t/t1/members")).toBeNull();
+  expect(returnTarget("?return=/api/v1/tenants")).toBeNull();
+  expect(returnTarget("?return=")).toBeNull();
+  expect(returnTarget("")).toBeNull();
 });

@@ -1,0 +1,404 @@
+import {
+  Badge,
+  Button,
+  Dialog,
+  EmptyState,
+  Notice,
+  SelectField,
+  Table,
+  TextField,
+} from "@vynxlabs/ui";
+import { useState } from "preact/hooks";
+import { type ApiError, api, useLoad } from "../api.ts";
+import { CopyButton, Page, when } from "../ListScreen.tsx";
+import type { AppSummary } from "./Apps.tsx";
+
+interface Domain {
+  id: string;
+  workspaceId: string;
+  app: string;
+  hostname: string;
+  url: string;
+  enabled: boolean;
+  verifiedAt: string | null;
+  checkedAt: string | null;
+  checkError: string | null;
+  /** The DNS TXT record that shows whoever controls the name agrees. */
+  challenge: { name: string; value: string };
+  createdAt: string;
+}
+interface WorkspaceName {
+  id: string;
+  name: string;
+}
+
+const code = (text: string) => <code class="font-mono text-[13px] break-all">{text}</code>;
+
+const failed = (error: unknown) => {
+  const failure = error as ApiError;
+  if (failure.code === "domain_not_verified") {
+    return "This hostname is not verified yet, so it cannot be enabled. Create the TXT record shown here, wait for DNS to carry it, and press Check now. For a name that exists only inside a network and cannot be checked from here, ask an operator of this instance to enable it.";
+  }
+  return [failure.message, ...(failure.fields ?? []).map((field) => field.message)].join(" ");
+};
+
+function State({ domain }: { domain: Domain }) {
+  return (
+    <span class="flex flex-wrap gap-1">
+      {domain.enabled ? <Badge tone="success">Enabled</Badge> : <Badge>Disabled</Badge>}
+      {domain.verifiedAt ? (
+        <Badge tone="action">Verified</Badge>
+      ) : (
+        <Badge tone="attention">Not verified</Badge>
+      )}
+    </span>
+  );
+}
+
+function AddDialog({
+  base,
+  open,
+  workspaces,
+  onClose,
+  onAdded,
+}: {
+  base: string;
+  open: boolean;
+  workspaces: WorkspaceName[];
+  onClose: () => void;
+  onAdded: (domain: Domain) => void;
+}) {
+  const [chosen, setChosen] = useState("");
+  const [app, setApp] = useState("");
+  const [hostname, setHostname] = useState("");
+  const [error, setError] = useState<ApiError>();
+  const [busy, setBusy] = useState(false);
+  const workspaceId = chosen || (workspaces[0]?.id ?? "");
+  const apps = useLoad<{ items: AppSummary[] }>(
+    open && workspaceId ? `${base}/workspaces/${workspaceId}/apps` : null,
+  );
+  const choices = apps.data?.items ?? [];
+  const appPath = choices.some((candidate) => candidate.path === app)
+    ? app
+    : (choices[0]?.path ?? "");
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Add a hostname"
+      description="The app is served at the hostname's root once the hostname is verified and enabled."
+    >
+      <form
+        class="flex flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setBusy(true);
+          setError(undefined);
+          try {
+            const domain = await api.post<Domain>(`${base}/domains`, {
+              workspaceId,
+              app: appPath,
+              hostname: hostname.trim(),
+            });
+            setHostname("");
+            onAdded(domain);
+          } catch (caught) {
+            setError(caught as ApiError);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <SelectField
+          label="Workspace"
+          name="workspaceId"
+          value={workspaceId}
+          options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))}
+          onChange={(value) => {
+            setChosen(value);
+            setApp("");
+          }}
+        />
+        <SelectField
+          label="App"
+          name="app"
+          value={appPath}
+          disabled={choices.length === 0}
+          options={choices.map((candidate) => ({
+            value: candidate.path,
+            label: `${candidate.title} (${candidate.path})`,
+          }))}
+          {...(apps.data && choices.length === 0
+            ? { hint: "This workspace has no apps. Deploy one first, or choose another workspace." }
+            : {})}
+          error={apps.error?.message}
+          onChange={setApp}
+        />
+        <TextField
+          label="Hostname"
+          name="hostname"
+          value={hostname}
+          placeholder="portal.example.com"
+          hint="The name alone, without https:// or a path."
+          error={error?.fields.find((field) => field.path.endsWith("/hostname"))?.message}
+          onInput={setHostname}
+        />
+        {error ? <Notice tone="danger">{error.message}</Notice> : null}
+        <div class="mt-1 flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={busy || apps.loading || appPath === ""}>
+            Add hostname
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/** One line of the DNS record, with a button to copy it. */
+function RecordLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <span class="min-w-0">
+        <span class="block text-[13px] text-ink-muted">{label}</span>
+        {code(value)}
+      </span>
+      <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
+    </div>
+  );
+}
+
+function DetailsDialog({
+  base,
+  domain,
+  onClose,
+  onChanged,
+  onRemoved,
+}: {
+  base: string;
+  domain: Domain | undefined;
+  onClose: () => void;
+  onChanged: (domain: Domain) => void;
+  onRemoved: () => void;
+}) {
+  const [problem, setProblem] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const close = () => {
+    setProblem(undefined);
+    onClose();
+  };
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setProblem(undefined);
+    try {
+      await action();
+    } catch (error) {
+      setProblem(failed(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={domain !== undefined} onClose={close} title={domain?.hostname ?? ""}>
+      {domain ? (
+        <div class="flex flex-col gap-4">
+          <State domain={domain} />
+          <div class="flex flex-col gap-2">
+            <p class="m-0">
+              Create this TXT record where the hostname's DNS is managed. It shows that whoever
+              controls the name agrees to this tenant using it.
+            </p>
+            <div class="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
+              <RecordLine label="Record name" value={domain.challenge.name} />
+              <RecordLine label="Record value" value={domain.challenge.value} />
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <p class="m-0 text-ink-muted" role="status">
+              {domain.verifiedAt
+                ? `Verified ${when(domain.verifiedAt)}.`
+                : domain.checkedAt
+                  ? `Not verified. Last checked ${when(domain.checkedAt)}.`
+                  : "Not checked yet."}
+            </p>
+            {domain.checkError ? <Notice tone="attention">{domain.checkError}</Notice> : null}
+            {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          </div>
+          <div class="flex flex-wrap justify-between gap-2">
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `Remove ${domain.hostname}? The app is no longer served there, and sign-ins made at that hostname end.`,
+                  )
+                )
+                  return;
+                return run(async () => {
+                  await api.delete(`${base}/domains/${domain.id}`);
+                  onRemoved();
+                });
+              }}
+            >
+              Remove
+            </Button>
+            <span class="flex flex-wrap gap-2">
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  run(async () =>
+                    onChanged(
+                      await api.patch<Domain>(`${base}/domains/${domain.id}`, {
+                        enabled: !domain.enabled,
+                      }),
+                    ),
+                  )
+                }
+              >
+                {domain.enabled ? "Disable" : "Enable"}
+              </Button>
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  run(async () =>
+                    onChanged(await api.post<Domain>(`${base}/domains/${domain.id}/checks`)),
+                  )
+                }
+              >
+                Check now
+              </Button>
+              <Button variant="primary" onClick={close}>
+                Done
+              </Button>
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </Dialog>
+  );
+}
+
+export function Domains({ base }: { base: string }) {
+  const list = useLoad<{ items: Domain[] }>(`${base}/domains`);
+  const workspaces = useLoad<{ items: WorkspaceName[] }>(`${base}/workspaces`);
+  const [adding, setAdding] = useState(false);
+  const [shown, setShown] = useState<Domain>();
+  const workspaceName = (id: string) =>
+    workspaces.data?.items.find((workspace) => workspace.id === id)?.name ?? "";
+
+  const addButton = (
+    <Button variant="primary" onClick={() => setAdding(true)}>
+      Add a hostname
+    </Button>
+  );
+
+  return (
+    <Page title="Domains" action={addButton}>
+      <div class="flex max-w-[75ch] flex-col gap-2 text-ink-muted">
+        <p class="m-0">
+          A hostname of the client's own, public or internal to their network, serves one app at its
+          root. Point the name at this instance with a CNAME or an address record. Whatever
+          terminates TLS in front of the instance must hold the certificate for it: the platform
+          issues none.
+        </p>
+        <p class="m-0">
+          Then create the TXT record shown for the hostname and run a check. Once the check finds
+          the record, the hostname is verified and can be enabled.
+        </p>
+      </div>
+      {list.error ? (
+        <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
+          {list.error.message}
+        </Notice>
+      ) : list.data ? (
+        <Table<Domain>
+          rows={list.data.items}
+          rowKey={(row) => row.id}
+          columns={[
+            {
+              header: "Hostname",
+              cell: (row) =>
+                row.enabled ? (
+                  <a
+                    href={row.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    class="font-medium break-all text-action"
+                  >
+                    {row.hostname}
+                  </a>
+                ) : (
+                  <span class="font-medium break-all">{row.hostname}</span>
+                ),
+            },
+            {
+              header: "Serves",
+              cell: (row) => (
+                <span>
+                  {code(row.app)}{" "}
+                  <span class="text-ink-muted">in {workspaceName(row.workspaceId)}</span>
+                </span>
+              ),
+            },
+            { header: "State", cell: (row) => <State domain={row} /> },
+            {
+              header: "Last check",
+              cell: (row) =>
+                row.checkError ? (
+                  <span class="text-danger">{row.checkError}</span>
+                ) : row.checkedAt ? (
+                  <span class="whitespace-nowrap text-ink-muted">Passed {when(row.checkedAt)}</span>
+                ) : (
+                  <span class="text-ink-muted">Not checked yet</span>
+                ),
+            },
+            {
+              header: "",
+              align: "end",
+              cell: (row) => (
+                <Button size="small" onClick={() => setShown(row)}>
+                  Details<span class="sr-only"> of {row.hostname}</span>
+                </Button>
+              ),
+            },
+          ]}
+          empty={
+            <EmptyState title="No hostnames yet" action={addButton}>
+              Every app already has an address on this instance. Add a hostname when the client
+              wants one of their own for an app.
+            </EmptyState>
+          }
+        />
+      ) : (
+        <p class="text-ink-muted">Loading…</p>
+      )}
+      <AddDialog
+        base={base}
+        open={adding}
+        workspaces={workspaces.data?.items ?? []}
+        onClose={() => setAdding(false)}
+        onAdded={(domain) => {
+          setAdding(false);
+          setShown(domain);
+          list.reload();
+        }}
+      />
+      <DetailsDialog
+        base={base}
+        domain={shown}
+        onClose={() => setShown(undefined)}
+        onChanged={(domain) => {
+          setShown(domain);
+          list.reload();
+        }}
+        onRemoved={() => {
+          setShown(undefined);
+          list.reload();
+        }}
+      />
+    </Page>
+  );
+}

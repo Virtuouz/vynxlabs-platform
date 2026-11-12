@@ -54,7 +54,7 @@ async function finished(id: string) {
 }
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.2.0" });
+  t = await startTestApp({ version: "0.3.0" });
   url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   home = await mkdtemp(join(tmpdir(), "cli-example-"));
 

@@ -409,6 +409,33 @@ describe("deploying", () => {
         .version,
     ).toBe(1);
   });
+
+  test("a bundle built for an earlier core still deploys after the instance is upgraded, as far back as it supports", async () => {
+    // A workspace of its own, so the versions the other tests count are left alone.
+    const apart = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "compat",
+        name: "Compat",
+        type: "dev",
+      })
+    ).body.id;
+    const at = `/tenants/${tenant}/workspaces/${apart}`;
+    const tryDeploy = async (core: { min: string; below: string }) => {
+      const built = { ...bundle(1), core, sdkVersion: core.min };
+      const uploaded = await alice.post(`${at}/bundles`, { ...built, digest: bundleDigest(built) });
+      return alice.post(`${at}/deployments`, { bundleId: uploaded.body.id });
+    };
+    // The SDK that built it knew cores up to 0.3.0. This instance is later, and still runs it:
+    // the only thing in its way is what any bundle needs, bindings in a new workspace.
+    const earlier = await tryDeploy({ min: "0.2.0", below: "0.3.0" });
+    expect(earlier.body.code, JSON.stringify(earlier.body)).not.toBe("incompatible_bundle");
+
+    const ancient = await tryDeploy({ min: "0.1.0", below: "0.2.0" });
+    expect(ancient.status).toBe(409);
+    expect(ancient.body.detail).toBe(
+      "This bundle was built for a core from 0.1.0, which this instance no longer runs: it runs 1.2.3 and supports bundles built for 0.2.0 or later. Rebuild the bundle with a current SDK.",
+    );
+  });
 });
 
 describe("running", () => {

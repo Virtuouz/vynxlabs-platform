@@ -91,3 +91,23 @@ export function coreInRange(coreVersion: string, range: { min: string; below: st
     compareVersions(coreVersion, range.min) >= 0 && compareVersions(coreVersion, range.below) < 0
   );
 }
+
+/**
+ * Whether a core can run a bundle, and if not, which of the two is behind.
+ *
+ * A bundle states the range of cores its SDK knew about. A newer core is
+ * outside that range by definition, but it knows something the bundle could
+ * not: which older bundles it still runs. So a core at or past the range's
+ * end accepts the bundle as long as the bundle was built for a core no older
+ * than `oldestSupported`. That is what lets an instance be upgraded without
+ * every tenant rebuilding at once.
+ */
+export function bundleCompatibility(
+  coreVersion: string,
+  range: { min: string; below: string },
+  oldestSupported: string,
+): "ok" | "core_too_old" | "bundle_too_old" {
+  if (compareVersions(coreVersion, range.min) < 0) return "core_too_old";
+  if (compareVersions(coreVersion, range.below) < 0) return "ok";
+  return compareVersions(range.min, oldestSupported) >= 0 ? "ok" : "bundle_too_old";
+}

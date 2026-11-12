@@ -1,6 +1,7 @@
 export {
   Bundle,
   BundleManifest,
+  bundleCompatibility,
   bundleDigest,
   compareVersions,
   coreInRange,

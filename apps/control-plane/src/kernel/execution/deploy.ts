@@ -1,5 +1,5 @@
 import { newId } from "@vynxlabs/db";
-import { type BundleManifest, coreInRange } from "@vynxlabs/manifest";
+import { type BundleManifest, bundleCompatibility } from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";
@@ -111,6 +111,14 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
+/**
+ * The oldest core whose bundles this version still runs. An instance can be
+ * upgraded and keep running, redeploying, promoting and rolling back to every
+ * bundle built for this version or later. Raising this number breaks tenants'
+ * deployed code, so it needs a deprecation period and an owner's decision.
+ */
+export const OLDEST_SUPPORTED_BUNDLE_CORE = "0.2.0";
+
 /** One resource a deploy created, changed or removed. */
 export interface ResourceChange {
   change: "created" | "updated" | "deleted";
@@ -151,11 +159,23 @@ export async function deployBundle(
     .executeTakeFirst();
   if (!bundle) throw notFound("The bundle");
 
-  if (!coreInRange(kernel.version, { min: bundle.core_min, below: bundle.core_below })) {
+  const compatible = bundleCompatibility(
+    kernel.version,
+    { min: bundle.core_min, below: bundle.core_below },
+    OLDEST_SUPPORTED_BUNDLE_CORE,
+  );
+  if (compatible === "core_too_old") {
     throw new HttpError(
       409,
       "incompatible_bundle",
-      `This bundle needs a core from ${bundle.core_min} up to, not including, ${bundle.core_below}. This instance runs ${kernel.version}. Rebuild the bundle with an SDK that matches.`,
+      `This bundle needs a core from ${bundle.core_min} up to, not including, ${bundle.core_below}. This instance runs ${kernel.version}. Upgrade the instance, or rebuild the bundle with the SDK that matches it.`,
+    );
+  }
+  if (compatible === "bundle_too_old") {
+    throw new HttpError(
+      409,
+      "incompatible_bundle",
+      `This bundle was built for a core from ${bundle.core_min}, which this instance no longer runs: it runs ${kernel.version} and supports bundles built for ${OLDEST_SUPPORTED_BUNDLE_CORE} or later. Rebuild the bundle with a current SDK.`,
     );
   }
   const content = await loadBundle(kernel, bundle);

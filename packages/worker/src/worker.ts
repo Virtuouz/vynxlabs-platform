@@ -55,7 +55,7 @@ class CredentialRefused extends Error {}
 /** The control plane said this attempt is over: cancelled, timed out or taken back. */
 class AttemptOver extends Error {}
 
-const WORKER_VERSION = "0.2.0";
+const WORKER_VERSION = "0.3.0";
 
 /**
  * Runs a tenant's scripts. It only ever calls the control plane: it claims a

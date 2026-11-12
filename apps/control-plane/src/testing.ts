@@ -38,6 +38,8 @@ export interface ApiResponse {
   // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
   body: any;
   headers: Record<string, unknown>;
+  /** The response exactly as sent, for answers that are not JSON. */
+  bytes: Buffer;
 }
 
 export interface Client {
@@ -47,7 +49,12 @@ export interface Client {
   patch(url: string, body?: unknown): Promise<ApiResponse>;
   delete(url: string): Promise<ApiResponse>;
   /** Sends bytes as the request body, as a file upload does. */
-  upload(url: string, content: Buffer | string, contentType: string): Promise<ApiResponse>;
+  upload(
+    url: string,
+    content: Buffer | string,
+    contentType: string,
+    extraHeaders?: Record<string, string>,
+  ): Promise<ApiResponse>;
 }
 
 /** A running app on a throwaway database, with the first operator admin created. */
@@ -100,6 +107,7 @@ export async function startTestApp(
       url: string,
       body?: unknown,
       contentType?: string,
+      extraHeaders: Record<string, string> = {},
     ): Promise<ApiResponse> => {
       // Webhooks are public and are recorded on the run they start, not in the audit log.
       const mutating = method !== "GET" && !url.startsWith("/hooks/");
@@ -111,6 +119,7 @@ export async function startTestApp(
           origin: config.publicUrl,
           ...headers,
           ...(contentType ? { "content-type": contentType } : {}),
+          ...extraHeaders,
         },
         ...(body === undefined ? {} : { payload: body as object }),
       });
@@ -128,7 +137,12 @@ export async function startTestApp(
           parsed = response.body;
         }
       }
-      return { status: response.statusCode, body: parsed, headers: response.headers };
+      return {
+        status: response.statusCode,
+        body: parsed,
+        headers: response.headers,
+        bytes: response.rawPayload,
+      };
     };
     return {
       get: (url) => call("GET", url),
@@ -136,7 +150,8 @@ export async function startTestApp(
       put: (url, body) => call("PUT", url, body),
       patch: (url, body) => call("PATCH", url, body ?? {}),
       delete: (url) => call("DELETE", url),
-      upload: (url, content, contentType) => call("POST", url, content, contentType),
+      upload: (url, content, contentType, extraHeaders) =>
+        call("POST", url, content, contentType, extraHeaders),
     };
   }
 

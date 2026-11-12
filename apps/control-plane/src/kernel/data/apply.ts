@@ -552,6 +552,94 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
   }
 }
 
+/**
+ * Builds a workspace's tables from catalog rows that are already in place, as
+ * an import does. Every column the catalog knows is made, retired ones too,
+ * under exactly the names it records. No rule is put on yet, so that rows can
+ * be loaded in any order.
+ */
+export async function restoreStructure(trx: Trx, role: string, workspaceId: string) {
+  const catalog = await loadCatalog(trx, workspaceId);
+  if (catalog.length === 0) return catalog;
+  const schema = workspaceSchema(workspaceId);
+  await sql`create schema if not exists ${sql.id(schema)}`.execute(trx);
+  await sql`grant usage on schema ${sql.id(schema)} to ${sql.id(role)}`.execute(trx);
+  for (const table of catalog) {
+    const target = sql.id(schema, table.physicalName);
+    const columns = table.columns.map((column) =>
+      columnDefinition({
+        name: column.name,
+        physicalName: column.physicalName,
+        type: column.type as ColumnType,
+        required: false,
+        unique: false,
+        default: column.default,
+        referenceTable: null,
+      }),
+    );
+    await sql`
+      create table ${target} (
+        id uuid primary key,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+        ${columns.length > 0 ? sql`, ${sql.join(columns)}` : sql``}
+      )
+    `.execute(trx);
+    await sql`alter table ${target} enable row level security`.execute(trx);
+    await sql`grant select, insert, update, delete on ${target} to ${sql.id(role)}`.execute(trx);
+  }
+  return catalog;
+}
+
+/**
+ * Puts the rules back on tables made by `restoreStructure`, once their rows
+ * are in: required and unique columns, row policies, indexes and references.
+ */
+export async function restoreRules(
+  trx: Trx,
+  role: string,
+  workspaceId: string,
+  indexes: Map<string, string[][]>,
+) {
+  const schema = workspaceSchema(workspaceId);
+  for (const table of await loadCatalog(trx, workspaceId)) {
+    const target = sql.id(schema, table.physicalName);
+    for (const column of table.columns.filter((candidate) => candidate.status === "active")) {
+      const physical = sql.id(column.physicalName);
+      if (column.unique) {
+        await setUnique(trx, schema, table.physicalName, column.physicalName, true);
+      }
+      if (column.required) {
+        const missing =
+          await sql`select 1 from ${target} where ${physical} is null limit 1`.execute(trx);
+        if (missing.rows.length === 0) {
+          await sql`alter table ${target} alter column ${physical} set not null`.execute(trx);
+        } else {
+          // The same lenient rule the source had: required of every row written from now on.
+          await sql`alter table ${target} add constraint ${sql.id(constraintName("nn", table.physicalName, column.physicalName))} check (${physical} is not null) not valid`.execute(
+            trx,
+          );
+        }
+      }
+    }
+    const owner = table.policy.type === "owner" ? table.policy.column : undefined;
+    const ownerIsThere = table.columns.some(
+      (column) => column.status === "active" && column.name === owner,
+    );
+    await setPolicy(
+      trx,
+      role,
+      schema,
+      { id: table.id, physical_name: table.physicalName },
+      owner === undefined || ownerIsThere ? table.policy : { type: "open" },
+    );
+    if (table.status === "active") {
+      await reconcileIndexes(trx, workspaceId, table.name, indexes.get(table.name) ?? []);
+    }
+  }
+  await reconcileReferences(trx, workspaceId, true);
+}
+
 /** Retires a table whose resource is being removed. Its data stays where it is. */
 export async function retireTable(
   trx: Trx,

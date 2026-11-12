@@ -180,7 +180,12 @@ export class DataStores {
    * database it is a transaction there, committed just before the platform's.
    */
   async within(trx: Trx, tenantId: string): Promise<{ db: Trx; store: DataStore }> {
-    const store = await this.forTenant(tenantId);
+    return this.withinLocation(trx, await this.locationOf(tenantId));
+  }
+
+  /** The same, for a location given by name: for a tenant whose record is being written in this very transaction. */
+  async withinLocation(trx: Trx, name: string | null): Promise<{ db: Trx; store: DataStore }> {
+    const store = await (name === null ? this.platform() : this.location(name));
     if (store.shared) return { db: trx, store };
     let held = open.get(trx);
     if (!held) {

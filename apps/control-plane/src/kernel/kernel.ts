@@ -28,6 +28,8 @@ export interface Kernel {
   expressions: Expressions;
   /** The core version, checked against each bundle's range. */
   version: string;
+  /** The highest database migration applied. An export can only be imported at the same level. */
+  migrationLevel(): Promise<number>;
   log: FastifyBaseLogger;
 }
 
@@ -56,6 +58,7 @@ export function createKernel(
     storage,
     expressions: new Expressions(),
     version,
+    migrationLevel: () => database.migrationLevel(),
     log,
   };
   registerDataHooks(hooks, kernel.data);

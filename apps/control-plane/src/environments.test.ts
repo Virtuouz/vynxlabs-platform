@@ -433,7 +433,7 @@ describe("pausing a workspace", () => {
     // Nothing more should fire behind the tests that follow.
     await alice.patch(ws(shop), { triggersPaused: true });
     for (const run of (await alice.get(`${ws(shop)}/runs`)).body.items) {
-      await alice.post(`${ws(shop)}/runs/${run.id}/cancellation`);
+      await alice.post(`${ws(shop)}/runs/${run.id}/cancel`);
     }
   });
 });

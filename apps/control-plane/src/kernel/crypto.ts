@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 
 const VERSION = 1;
 const NONCE_BYTES = 12;
@@ -28,6 +28,34 @@ function open(key: Buffer, sealed: Buffer, context: string): Buffer {
   ]);
 }
 
+/** A tenant's key as it travels in an export: wrapped with a key derived from a passphrase. */
+export interface PassphraseWrappedKey {
+  kdf: "scrypt";
+  /** scrypt's cost settings, so that a later version can raise them and still open old exports. */
+  n: number;
+  r: number;
+  p: number;
+  salt: string;
+  cipher: "aes-256-gcm";
+  /** Version byte, nonce, tag and ciphertext, base64. */
+  wrapped: string;
+}
+
+const SCRYPT = { n: 2 ** 15, r: 8, p: 1 };
+
+function fromPassphrase(
+  passphrase: string,
+  salt: Buffer,
+  cost: { n: number; r: number; p: number },
+) {
+  return scryptSync(passphrase.normalize("NFKC"), salt, 32, {
+    N: cost.n,
+    r: cost.r,
+    p: cost.p,
+    maxmem: 256 * 1024 * 1024,
+  });
+}
+
 export interface SecretName {
   tenantId: string;
   workspaceId: string;
@@ -53,6 +81,40 @@ export class Vault {
 
   unwrapTenantKey(tenantId: string, wrapped: Buffer): Buffer {
     return open(this.#masterKey, wrapped, `tenant-key:${tenantId}`);
+  }
+
+  /**
+   * A tenant's key, taken out from under this instance's master key and
+   * wrapped with a passphrase instead, to travel in an export. The master key
+   * itself never leaves the instance.
+   */
+  exportTenantKey(tenantId: string, wrapped: Buffer, passphrase: string): PassphraseWrappedKey {
+    const key = this.unwrapTenantKey(tenantId, wrapped);
+    const salt = randomBytes(16);
+    return {
+      kdf: "scrypt",
+      ...SCRYPT,
+      salt: salt.toString("base64"),
+      cipher: "aes-256-gcm",
+      wrapped: seal(
+        fromPassphrase(passphrase, salt, SCRYPT),
+        key,
+        `tenant-export:${tenantId}`,
+      ).toString("base64"),
+    };
+  }
+
+  /** The reverse: opens an exported key with its passphrase and wraps it for this instance. Throws on a wrong passphrase. */
+  importTenantKey(tenantId: string, exported: PassphraseWrappedKey, passphrase: string): Buffer {
+    if (exported.kdf !== "scrypt" || exported.cipher !== "aes-256-gcm") {
+      throw new Error("Unrecognized key wrapping.");
+    }
+    const key = open(
+      fromPassphrase(passphrase, Buffer.from(exported.salt, "base64"), exported),
+      Buffer.from(exported.wrapped, "base64"),
+      `tenant-export:${tenantId}`,
+    );
+    return seal(this.#masterKey, key, `tenant-key:${tenantId}`);
   }
 
   /** Encrypts something that belongs to the instance itself, such as the address of a database. */

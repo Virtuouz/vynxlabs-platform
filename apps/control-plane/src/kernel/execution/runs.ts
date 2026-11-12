@@ -4,6 +4,7 @@ import { validateJson } from "@vynxlabs/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { bundleManifest } from "./bundles.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
 export const INLINE_PAYLOAD_BYTES = 256 * 1024;
@@ -17,7 +18,7 @@ export interface ScriptBody {
   timeoutSeconds: number;
   retries: { limit: number; delaySeconds: number; backoff: boolean };
   concurrency?: number;
-  uses: { connections: string[]; secrets: string[]; variables: string[] };
+  uses: { connections: string[]; secrets: string[]; variables: string[]; events?: string[] };
   onFailure?: { script?: string; notify?: string };
 }
 
@@ -32,17 +33,23 @@ export interface StartRun {
   priority?: number | undefined;
   /** Do not start before this time. */
   startAfter?: Date | undefined;
+  /** Run the script from this bundle, not the workspace's active one. For steps of a flow run. */
+  bundleId?: string | undefined;
+  /** The flow step this run belongs to. */
+  step?: { flowRunId: string; node: string; item: string } | undefined;
 }
 
-async function storePayload(
+/** Keeps a small payload for the row, and puts a large one in file storage. */
+export async function storePayload(
   kernel: Kernel,
   runId: string,
-  name: "input" | "output",
+  name: string,
   value: unknown,
+  folder = "runs",
 ) {
   const text = JSON.stringify(value ?? null);
   if (Buffer.byteLength(text) <= INLINE_PAYLOAD_BYTES) return { inline: text, ref: null };
-  const ref = `runs/${runId}/${name}.json`;
+  const ref = `${folder}/${runId}/${name}.json`;
   await kernel.storage.put(ref, text, "application/json");
   return { inline: null, ref };
 }
@@ -69,6 +76,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     .where("tenant_id", "=", request.tenantId)
     .executeTakeFirst();
   if (!workspace) throw notFound("The workspace");
+  const bundleId = request.bundleId ?? workspace.active_bundle_id;
   const script = await trx
     .selectFrom("resource")
     .select(["id", "body"])
@@ -76,10 +84,24 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     .where("kind", "=", "script")
     .where("path", "=", request.script)
     .executeTakeFirst();
-  if (!script || !workspace.active_bundle_id) {
+  let body = script?.body as unknown as ScriptBody | undefined;
+  if (request.bundleId) {
+    // A step of a flow run uses the script as it was in the flow run's own bundle.
+    const bundle = await trx
+      .selectFrom("bundle")
+      .select(["id", "storage_key"])
+      .where("id", "=", request.bundleId)
+      .where("workspace_id", "=", request.workspaceId)
+      .executeTakeFirst();
+    const pinned = bundle
+      ? await bundleManifest(kernel, bundle, "script", request.script)
+      : undefined;
+    body = pinned?.body as unknown as ScriptBody | undefined;
+  }
+  if (!body || !bundleId) {
     throw notFound(`The script ${request.script}`);
   }
-  const body = script.body as unknown as ScriptBody;
+  const resourceId = script?.id ?? bundleId;
 
   const issues = validateJson(body.input, request.input ?? {}, "/input");
   if (issues.length > 0) throw badRequest("The input does not match the script's schema.", issues);
@@ -108,7 +130,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       backoff: body.retries.backoff,
       timeoutSeconds: body.timeoutSeconds,
       ...(request.startAfter ? { startAfter: request.startAfter } : {}),
-      ...(body.concurrency ? { group: { id: script.id, limit: body.concurrency } } : {}),
+      ...(body.concurrency ? { group: { id: resourceId, limit: body.concurrency } } : {}),
     },
     trx,
   );
@@ -118,9 +140,12 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       id,
       tenant_id: request.tenantId,
       workspace_id: request.workspaceId,
-      resource_id: script.id,
+      resource_id: resourceId,
       script_path: request.script,
-      bundle_id: workspace.active_bundle_id,
+      bundle_id: bundleId,
+      flow_run_id: request.step?.flowRunId ?? null,
+      step_node: request.step?.node ?? null,
+      step_item: request.step?.item ?? null,
       status: "queued",
       max_attempts: body.retries.limit + 1,
       queue_job_id: jobId,
@@ -279,6 +304,42 @@ export async function completeRun(
     })
     .where("id", "=", run.id)
     .execute();
+  await afterRun(kernel, run, "succeeded", output);
+}
+
+interface EndedRun {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  script_path: string;
+  flow_run_id: string | null;
+  trigger_detail: Record<string, unknown>;
+}
+
+/** What follows a run reaching its end: its flow moves on, and the platform says so. */
+async function afterRun(
+  kernel: Kernel,
+  run: EndedRun,
+  status: "succeeded" | "failed",
+  detail: unknown,
+) {
+  const { kickFlow } = await import("../flows/engine.js");
+  const { publishPlatformEvent } = await import("../flows/events.js");
+  if (run.flow_run_id) kickFlow(kernel, run.flow_run_id);
+  await publishPlatformEvent(kernel, {
+    tenantId: run.tenant_id,
+    workspaceId: run.workspace_id,
+    name: status === "succeeded" ? "platform/run-succeeded" : "platform/run-failed",
+    payload: {
+      runId: run.id,
+      script: run.script_path,
+      ...(status === "failed" ? { error: (detail as { message: string }).message } : {}),
+    },
+    sourceId: run.id,
+    depth: Number(run.trigger_detail.depth ?? 0),
+  }).catch((error) =>
+    kernel.log.error({ err: error, runId: run.id }, "a platform event could not be published"),
+  );
 }
 
 export interface RunFailure {
@@ -322,6 +383,9 @@ export async function finishFailed(kernel: Kernel, runId: string, error: RunFail
     .returningAll()
     .executeTakeFirst();
   if (!run) return;
+  await afterRun(kernel, run, "failed", error);
+  // Inside a flow, the flow decides what a failed step means.
+  if (run.flow_run_id) return;
   const { sendAlerts } = await import("./alerts.js");
   await sendAlerts(kernel, run).catch((failure) =>
     kernel.log.error({ err: failure, runId }, "failure alert could not be sent"),

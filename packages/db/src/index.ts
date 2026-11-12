@@ -23,10 +23,12 @@ export { type TenantHandle, TenantRouter } from "./router.js";
 export type {
   DataLocation,
   FailureAlert,
+  FlowRunStatus,
   Ownership,
   PlatformSchema,
   PrincipalType,
   RunStatus,
   ScopeType,
+  StepStatus,
   WorkspaceType,
 } from "./schema.js";

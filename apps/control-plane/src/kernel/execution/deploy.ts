@@ -212,5 +212,15 @@ export async function deployBundle(
   return { deployment, bundle, summary };
 }
 
-const KIND_ORDER = ["role", "connection", "variable", "script", "schedule", "trigger", "binding"];
+const KIND_ORDER = [
+  "role",
+  "connection",
+  "variable",
+  "event",
+  "script",
+  "schedule",
+  "trigger",
+  "flow",
+  "binding",
+];
 const order = (kind: string) => KIND_ORDER.indexOf(kind);

@@ -388,7 +388,10 @@ describe("deploying", () => {
     const badManifest = bundle(1, (m) => [...m, script("broken", "x", { timeoutSeconds: 0 })]);
     const refused = await alice.post(`${ws()}/bundles`, badManifest);
     expect(refused.status).toBe(400);
-    expect(refused.body.errors[0].path).toBe("/broken/body/timeoutSeconds");
+    expect(refused.body.errors[0]).toEqual({
+      path: "broken (script)",
+      message: "/body/timeoutSeconds must be >= 1",
+    });
   });
 
   test("a bundle built for another core version is refused with the reason", async () => {
@@ -687,12 +690,15 @@ describe("triggers", () => {
     );
     expect(bad.status).toBe(400);
     expect(bad.body.errors[0].path).toBe("/body/cron");
-    const orphan = await deploy(
+    // A trigger for a script the bundle does not have is caught when the bundle is uploaded.
+    const orphan = await alice.post(
+      `${ws()}/bundles`,
       bundle(4, (m) => [...m, pure("trigger", "orphan", { type: "webhook", script: "missing" })]),
     );
+    expect(orphan.status).toBe(400);
     expect(orphan.body.errors[0]).toEqual({
-      path: "/body/script",
-      message: 'no script has the path "missing" in this workspace',
+      path: "orphan (trigger)",
+      message: 'script refers to "missing", which is not a script in this repository.',
     });
     // Neither failed deploy changed what is active.
     expect(

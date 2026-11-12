@@ -111,6 +111,12 @@ export const scriptKind: KindDefinition = {
             uniqueItems: true,
           },
           variables: { type: "array", items: path, uniqueItems: true },
+          events: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description: "Events the script may publish.",
+          },
         },
         required: ["connections", "secrets", "variables"],
         additionalProperties: false,
@@ -147,17 +153,179 @@ export const scheduleKind: KindDefinition = {
   },
 };
 
+const expression = {
+  type: "string",
+  minLength: 1,
+  maxLength: 2000,
+  description: "A CEL expression.",
+};
+
 export const triggerKind: KindDefinition = {
   kind: "trigger",
   schemaVersion: 1,
   body: {
+    oneOf: [
+      {
+        type: "object",
+        properties: { type: { const: "webhook" }, script: path, enabled: { type: "boolean" } },
+        required: ["type", "script"],
+        additionalProperties: false,
+      },
+      {
+        type: "object",
+        properties: {
+          type: { const: "event" },
+          script: path,
+          event: { ...path, description: "The event to listen for." },
+          filter: {
+            ...expression,
+            description: "CEL over `event`. The script runs only when it is true.",
+          },
+          enabled: { type: "boolean" },
+        },
+        required: ["type", "script", "event"],
+        additionalProperties: false,
+      },
+    ],
+  },
+};
+
+export const eventKind: KindDefinition = {
+  kind: "event",
+  schemaVersion: 1,
+  body: {
     type: "object",
     properties: {
-      type: { const: "webhook" },
-      script: path,
-      enabled: { type: "boolean" },
+      description: { type: "string", maxLength: 500 },
+      payload: { ...jsonSchema, description: "A JSON Schema every published payload must match." },
     },
-    required: ["type", "script"],
+    required: ["payload"],
+    additionalProperties: false,
+  },
+};
+
+const nodeId = "^[a-z][a-z0-9_]*$";
+const node = (type: string, properties: Record<string, object>, required: string[] = []) => ({
+  type: "object",
+  properties: { type: { const: type }, ...properties },
+  required: ["type", ...required],
+  additionalProperties: false,
+});
+
+export const flowKind: KindDefinition = {
+  kind: "flow",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      description: { type: "string", maxLength: 500 },
+      nodes: {
+        type: "object",
+        propertyNames: { pattern: nodeId, maxLength: 63 },
+        minProperties: 1,
+        maxProperties: 200,
+        additionalProperties: {
+          oneOf: [
+            node(
+              "trigger",
+              {
+                trigger: {
+                  oneOf: [
+                    node("manual", {}),
+                    node("webhook", {}),
+                    node(
+                      "schedule",
+                      {
+                        cron: { type: "string", maxLength: 120 },
+                        timezone: { type: "string", maxLength: 64 },
+                      },
+                      ["cron"],
+                    ),
+                    node("event", { event: path, filter: expression }, ["event"]),
+                  ],
+                },
+              },
+              ["trigger"],
+            ),
+            node("script", { script: path, input: expression }, ["script"]),
+            node(
+              "set",
+              {
+                values: {
+                  type: "object",
+                  additionalProperties: expression,
+                  minProperties: 1,
+                  maxProperties: 50,
+                },
+              },
+              ["values"],
+            ),
+            node(
+              "branch",
+              {
+                cases: {
+                  type: "array",
+                  minItems: 1,
+                  maxItems: 20,
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", pattern: nodeId, maxLength: 63 },
+                      when: expression,
+                    },
+                    required: ["name", "when"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              ["cases"],
+            ),
+            node(
+              "foreach",
+              {
+                items: expression,
+                script: path,
+                flow: path,
+                input: expression,
+                concurrency: { type: "integer", minimum: 1, maximum: 20 },
+              },
+              ["items"],
+            ),
+            node("join", {}),
+            node("delay", { seconds: { type: "integer", minimum: 1, maximum: 2592000 } }, [
+              "seconds",
+            ]),
+            node(
+              "approval",
+              {
+                title: { type: "string", minLength: 1, maxLength: 200 },
+                detail: expression,
+                timeoutSeconds: { type: "integer", minimum: 1, maximum: 2592000 },
+              },
+              ["title"],
+            ),
+            node("subflow", { flow: path, input: expression }, ["flow"]),
+            node("fail", { message: expression }, ["message"]),
+          ],
+        },
+      },
+      edges: {
+        type: "array",
+        maxItems: 1000,
+        items: {
+          type: "object",
+          properties: {
+            from: { type: "string", pattern: nodeId },
+            to: { type: "string", pattern: nodeId },
+            output: { type: "string", pattern: nodeId },
+            error: { type: "boolean" },
+          },
+          required: ["from", "to"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["nodes", "edges"],
     additionalProperties: false,
   },
 };
@@ -194,9 +362,11 @@ export const platformKinds: KindDefinition[] = [
   roleKind,
   connectionKind,
   variableKind,
+  eventKind,
   scriptKind,
   scheduleKind,
   triggerKind,
+  flowKind,
   bindingKind,
 ];
 

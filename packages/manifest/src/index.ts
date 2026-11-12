@@ -5,6 +5,7 @@ export {
   compareVersions,
   coreInRange,
 } from "./bundle.js";
+export { bundleExpressions, checkBundleManifests, PLATFORM_EVENT_PREFIX } from "./bundle-check.js";
 export {
   envelopeSchemas,
   KIND_PATTERN,
@@ -14,8 +15,21 @@ export {
   StoredResource,
 } from "./envelope.js";
 export {
+  checkFlow,
+  type FlowBody,
+  type FlowEdge,
+  type FlowNode,
+  type FlowTrigger,
+  flowExpressions,
+  flowReferences,
+  OTHERWISE,
+  reachableFrom,
+} from "./flow.js";
+export {
   bindingKind,
   connectionKind,
+  eventKind,
+  flowKind,
   PERMISSION_PATTERN,
   platformKinds,
   registerPlatformKinds,

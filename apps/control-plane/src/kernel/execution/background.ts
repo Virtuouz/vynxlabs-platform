@@ -1,3 +1,4 @@
+import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { reapDeadRuns, requeueLostRuns } from "./runs.js";
 import type { WorkerSupervisor } from "./supervisor.js";
@@ -15,6 +16,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     ["schedules", () => fireDueSchedules(kernel)],
     ["lost runs", () => requeueLostRuns(kernel)],
     ["dead runs", () => reapDeadRuns(kernel)],
+    ["flows", () => advanceDueFlows(kernel)],
     ...(supervisor
       ? ([["managed workers", () => supervisor.tick()]] as [string, () => Promise<unknown>][])
       : []),

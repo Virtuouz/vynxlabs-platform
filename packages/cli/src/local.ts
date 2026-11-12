@@ -110,6 +110,10 @@ export async function runLocally(args: string[], io: Io) {
         need("secret", name, body.uses.secrets, bindings.secrets?.[name]),
       variable: async (name: string) =>
         need("variable", name, body.uses.variables, bindings.variables?.[name] ?? defaults[name]),
+      events: {
+        publish: async (event: string, payload: unknown) =>
+          io.out(`event ${event} ${JSON.stringify(payload)} (not delivered: this is a local run)`),
+      },
       log: { debug: log("debug"), info: log("info"), warn: log("warn"), error: log("error") },
       run: {
         id: randomUUID(),

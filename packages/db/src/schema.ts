@@ -287,6 +287,9 @@ export interface RunTable {
   >;
   alert: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
   worker_id: string | null;
+  flow_run_id: string | null;
+  step_node: string | null;
+  step_item: string | null;
   created_at: Generated<Date>;
   scheduled_for: Date | null;
   started_at: Date | null;
@@ -306,15 +309,90 @@ export interface RunLogTable {
 
 export interface TriggerStateTable {
   resource_id: string;
+  /** Empty for a trigger resource. The trigger node's ID for a trigger inside a flow. */
+  node_id: Generated<string>;
   tenant_id: string;
   workspace_id: string;
-  type: "schedule" | "webhook";
-  script_path: string;
+  type: "schedule" | "webhook" | "event";
+  target_kind: Generated<"script" | "flow">;
+  /** The path of the script or flow the trigger starts. */
+  target_path: string;
   enabled: boolean;
   next_fire_at: Date | null;
   last_fired_at: Date | null;
   token_hash: string | null;
   token_encrypted: Buffer | null;
+  event_name: string | null;
+  filter: string | null;
+  config: ColumnType<Record<string, unknown>, string | undefined, string>;
+}
+
+export interface EventTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  name: string;
+  payload: Json<Record<string, unknown>>;
+  source_type: string;
+  source_id: string | null;
+  depth: Generated<number>;
+  occurred_at: Generated<Date>;
+}
+
+export type FlowRunStatus = "running" | "succeeded" | "failed" | "cancelled";
+export type StepStatus = "running" | "waiting" | "succeeded" | "failed" | "skipped" | "cancelled";
+type ErrorColumn = ColumnType<{ message: string } | null, string | null | undefined, string | null>;
+
+export interface FlowRunTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  resource_id: string;
+  flow_path: string;
+  bundle_id: string;
+  trigger_node: string;
+  trigger_type: string;
+  trigger_detail: Json<Record<string, unknown>>;
+  status: FlowRunStatus;
+  input: NullableJson;
+  input_ref: string | null;
+  output: NullableJson;
+  error: ErrorColumn;
+  alert: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
+  parent_flow_run_id: string | null;
+  parent_node: string | null;
+  parent_item: string | null;
+  started_by_type: string;
+  started_by_id: string | null;
+  idempotency_key: string;
+  created_at: Generated<Date>;
+  finished_at: Date | null;
+}
+
+export interface StepRunTable {
+  flow_run_id: string;
+  node_id: string;
+  item_key: Generated<string>;
+  status: StepStatus;
+  output_name: string | null;
+  output: NullableJson;
+  output_ref: string | null;
+  error: ErrorColumn;
+  handled: Generated<boolean>;
+  run_id: string | null;
+  child_flow_run_id: string | null;
+  wake_at: Date | null;
+  detail: ColumnType<Record<string, unknown>, string | undefined, string>;
+  decided_by: string | null;
+  decision_comment: string | null;
+  started_at: Generated<Date>;
+  finished_at: Date | null;
+}
+
+export interface FlowLayoutTable {
+  resource_id: string;
+  positions: Json<Record<string, { x: number; y: number }>>;
+  updated_at: Timestamp;
 }
 
 export interface WorkerCredentialTable {
@@ -368,4 +446,8 @@ export interface PlatformSchema {
   trigger_state: TriggerStateTable;
   worker_credential: WorkerCredentialTable;
   worker: WorkerTable;
+  event: EventTable;
+  flow_run: FlowRunTable;
+  step_run: StepRunTable;
+  flow_layout: FlowLayoutTable;
 }

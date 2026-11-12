@@ -80,6 +80,8 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   secrets?: string[];
   /** Variables the script reads, by path or by definition. */
   variables?: (string | { path: string })[];
+  /** Events the script publishes, by name or by definition. */
+  events?: (string | { path: string })[];
   /** How long one attempt may run. Default 300, maximum 3600. */
   timeoutSeconds?: number;
   /**
@@ -128,6 +130,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
         connections: (options.connections ?? []).map(pathOf),
         secrets: options.secrets ?? [],
         variables: (options.variables ?? []).map(pathOf),
+        ...(options.events ? { events: options.events.map(pathOf) } : {}),
       },
       onFailure: options.onFailure
         ? compact({
@@ -213,5 +216,150 @@ export interface VariableOptions {
 export function defineVariable(options: VariableOptions): ResourceDefinition {
   return resource("variable", options.path, () =>
     compact({ description: options.description, default: options.default }),
+  );
+}
+
+export interface EventOptions<Payload extends z.ZodType> {
+  /** The event's name, for example `orders/placed`. */
+  path: string;
+  description?: string;
+  /** Every published payload must match this. */
+  payload: Payload;
+}
+
+/** Declares an event that scripts and flows can publish and listen for. */
+export function defineEvent<Payload extends z.ZodType>(
+  options: EventOptions<Payload>,
+): ResourceDefinition {
+  return resource("event", options.path, () =>
+    compact({
+      description: options.description,
+      payload: z.toJSONSchema(options.payload, { io: "input" }),
+    }),
+  );
+}
+
+export interface EventTriggerOptions {
+  path: string;
+  /** The event to listen for, by name or by definition. */
+  event: string | { path: string };
+  /** The script that receives the event's payload as its input. */
+  script: string | { path: string };
+  /** A CEL expression over `event.payload`. The script runs only when it is true. */
+  filter?: string;
+  enabled?: boolean;
+}
+
+/** Starts a script each time an event is published. */
+export function defineEventTrigger(options: EventTriggerOptions): ResourceDefinition {
+  return resource("trigger", options.path, () =>
+    compact({
+      type: "event",
+      script: pathOf(options.script),
+      event: pathOf(options.event),
+      filter: options.filter,
+      enabled: options.enabled,
+    }),
+  );
+}
+
+type Target = string | { path: string };
+
+/** A node of a flow, as the manifest stores it. */
+export type FlowNode = Record<string, unknown> & { type: string };
+
+/** The entry points of a flow. A flow may have several, each leading into its own part of the graph. */
+export const trigger = {
+  /** Started by hand, from the API, or as a sub-flow. */
+  manual: (): FlowNode => ({ type: "trigger", trigger: { type: "manual" } }),
+  /** Started on a five-field cron schedule. */
+  schedule: (cron: string, options: { timezone?: string } = {}): FlowNode => ({
+    type: "trigger",
+    trigger: compact({ type: "schedule", cron, timezone: options.timezone }),
+  }),
+  /** Started by a request to the flow's webhook address. */
+  webhook: (): FlowNode => ({ type: "trigger", trigger: { type: "webhook" } }),
+  /** Started when an event is published. `filter` is CEL over `event.payload`. */
+  event: (event: Target, options: { filter?: string } = {}): FlowNode => ({
+    type: "trigger",
+    trigger: compact({ type: "event", event: pathOf(event), filter: options.filter }),
+  }),
+};
+
+/**
+ * The steps of a flow. Where a step takes an expression, it is CEL, and can
+ * read `trigger`, `steps.<node>.output`, and inside a foreach, `item` and `index`.
+ */
+export const step = {
+  /** Runs a script. `input` is an expression giving the script's input. */
+  script: (script: Target, options: { input?: string } = {}): FlowNode =>
+    compact({ type: "script", script: pathOf(script), input: options.input }) as FlowNode,
+  /** Computes named values. Its output is an object of the results. */
+  set: (values: Record<string, string>): FlowNode => ({ type: "set", values }),
+  /** Follows the first case whose condition is true, or the edge marked `otherwise`. */
+  branch: (cases: Record<string, string>): FlowNode => ({
+    type: "branch",
+    cases: Object.entries(cases).map(([name, when]) => ({ name, when })),
+  }),
+  /** Runs a script or a flow once per item. Its output is the list of results, in order. */
+  foreach: (
+    items: string,
+    options: { script?: Target; flow?: Target; input?: string; concurrency?: number },
+  ): FlowNode =>
+    compact({
+      type: "foreach",
+      items,
+      script: options.script ? pathOf(options.script) : undefined,
+      flow: options.flow ? pathOf(options.flow) : undefined,
+      input: options.input,
+      concurrency: options.concurrency,
+    }) as FlowNode,
+  /** Waits for every path that leads into it. */
+  join: (): FlowNode => ({ type: "join" }),
+  /** Waits this many seconds. */
+  delay: (seconds: number): FlowNode => ({ type: "delay", seconds }),
+  /** Pauses until a person approves. Rejecting, or the timeout passing, fails the step. */
+  approval: (title: string, options: { detail?: string; timeoutSeconds?: number } = {}): FlowNode =>
+    compact({
+      type: "approval",
+      title,
+      detail: options.detail,
+      timeoutSeconds: options.timeoutSeconds,
+    }) as FlowNode,
+  /** Runs another flow from its manual trigger and waits for it. */
+  subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>
+    compact({ type: "subflow", flow: pathOf(flow), input: options.input }) as FlowNode,
+  /** Fails on purpose, with a message. */
+  fail: (message: string): FlowNode => ({ type: "fail", message }),
+};
+
+/** An edge: `[from, to]`, or with an option naming a branch case or marking the error path. */
+export type FlowEdge<Node extends string> =
+  | [from: Node, to: Node]
+  | [from: Node, to: Node, options: { when?: string; error?: boolean }];
+
+export interface FlowOptions<Nodes extends Record<string, FlowNode>> {
+  path: string;
+  description?: string;
+  nodes: Nodes;
+  /** Each edge names two of the nodes above. */
+  edges: FlowEdge<Extract<keyof Nodes, string>>[];
+}
+
+/**
+ * Declares a flow: a graph of steps the platform runs durably. The nodes and
+ * edges written here are exactly what is deployed and shown.
+ */
+export function defineFlow<Nodes extends Record<string, FlowNode>>(
+  options: FlowOptions<Nodes>,
+): ResourceDefinition {
+  return resource("flow", options.path, () =>
+    compact({
+      description: options.description,
+      nodes: options.nodes,
+      edges: options.edges.map(([from, to, edge]) =>
+        compact({ from, to, output: edge?.when, error: edge?.error ? true : undefined }),
+      ),
+    }),
   );
 }

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/event.v1.schema.json",
+  "title": "event body, version 1",
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "payload": {
+      "type": "object",
+      "description": "A JSON Schema every published payload must match."
+    }
+  },
+  "required": [
+    "payload"
+  ],
+  "additionalProperties": false
+}

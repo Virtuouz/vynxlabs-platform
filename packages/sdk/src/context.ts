@@ -25,6 +25,10 @@ export interface ScriptContext {
   secret(name: string): Promise<string>;
   /** The value of a variable the script declared. */
   variable(path: string): Promise<string>;
+  events: {
+    /** Publishes an event the script declared. Its subscribers are started before this returns. */
+    publish(event: string, payload: Record<string, unknown>): Promise<void>;
+  };
   log: Logger;
   run: RunInfo;
   /** Aborts when the run is cancelled or runs out of time. Pass it to anything slow. */

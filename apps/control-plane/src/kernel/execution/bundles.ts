@@ -1,7 +1,15 @@
 import { newId } from "@vynxlabs/db";
-import { Bundle, type BundleManifest, bundleDigest, validateJson } from "@vynxlabs/manifest";
+import {
+  Bundle,
+  type BundleManifest,
+  bundleDigest,
+  bundleExpressions,
+  checkBundleManifests,
+  validateJson,
+} from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { badRequest } from "../errors.js";
+import { ExpressionError } from "../flows/expressions.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 
@@ -55,14 +63,22 @@ export async function storeBundle(
   if (bundleDigest(bundle) !== bundle.digest) {
     throw badRequest("The bundle's digest does not match its contents. Build it again.");
   }
-  for (const manifest of bundle.manifests) {
-    const result = kernel.kinds.validateManifest(manifest);
-    if (!result.ok) {
-      throw badRequest(
-        `The manifest for ${manifest.path} is not valid.`,
-        result.issues.map((issue) => ({ ...issue, path: `/${manifest.path}${issue.path}` })),
-      );
-    }
+  // The build runs these same checks. The control plane does not take its word for it.
+  const problems = checkBundleManifests(bundle.manifests);
+  for (const { where, expression } of bundleExpressions(bundle.manifests)) {
+    await kernel.expressions.check(expression).catch((error) => {
+      if (!(error instanceof ExpressionError)) throw error;
+      problems.push(`${where} is not a valid expression: ${error.message}`);
+    });
+  }
+  if (problems.length > 0) {
+    throw badRequest(
+      "The bundle's manifests are not valid.",
+      problems.map((problem) => {
+        const [where, ...rest] = problem.split(": ");
+        return { path: where ?? "", message: rest.join(": ") };
+      }),
+    );
   }
 
   const existing = await trx

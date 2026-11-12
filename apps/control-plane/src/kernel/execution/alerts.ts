@@ -17,6 +17,19 @@ interface FailedRun {
   error: { message: string } | null;
 }
 
+interface Failure {
+  tenantId: string;
+  workspaceId: string;
+  /** The run or flow run that failed. */
+  id: string;
+  /** The script's or flow's path. */
+  name: string;
+  attempt: number;
+  error: string;
+  /** What the failed thing asks for itself. Wins over the workspace's default. */
+  own?: FailureAlert | undefined;
+}
+
 /**
  * Tells people about a run that failed for the last time: starts the handler
  * script, posts to the notification connection, or both. The script's own
@@ -25,48 +38,91 @@ interface FailedRun {
 export async function sendAlerts(kernel: Kernel, run: FailedRun): Promise<void> {
   // A failing handler must not start another handler.
   if (run.trigger_type === "alert") return;
-
   const script = await kernel.db
     .selectFrom("resource")
     .select("body")
     .where("id", "=", run.resource_id)
     .executeTakeFirst();
+  const outcome = await alert(kernel, {
+    tenantId: run.tenant_id,
+    workspaceId: run.workspace_id,
+    id: run.id,
+    name: run.script_path,
+    attempt: run.attempt,
+    error: run.error?.message ?? "The run failed.",
+    own: (script?.body as unknown as ScriptBody | undefined)?.onFailure,
+  });
+  if (outcome) {
+    await kernel.db
+      .updateTable("run")
+      .set({ alert: JSON.stringify(outcome) })
+      .where("id", "=", run.id)
+      .execute();
+  }
+}
+
+/** The same for a flow run that failed. A flow uses the workspace's alert. */
+export async function alertFlowFailure(
+  kernel: Kernel,
+  flowRun: { id: string; tenant_id: string; workspace_id: string; flow_path: string },
+  error: string,
+): Promise<void> {
+  const outcome = await alert(kernel, {
+    tenantId: flowRun.tenant_id,
+    workspaceId: flowRun.workspace_id,
+    id: flowRun.id,
+    name: flowRun.flow_path,
+    attempt: 1,
+    error,
+  });
+  if (outcome) {
+    await kernel.db
+      .updateTable("flow_run")
+      .set({ alert: JSON.stringify(outcome) })
+      .where("id", "=", flowRun.id)
+      .execute();
+  }
+}
+
+async function alert(
+  kernel: Kernel,
+  failure: Failure,
+): Promise<Record<string, unknown> | undefined> {
   const workspace = await kernel.db
     .selectFrom("workspace")
     .select(["failure_alert", "slug"])
-    .where("id", "=", run.workspace_id)
+    .where("id", "=", failure.workspaceId)
     .executeTakeFirstOrThrow();
-  const own = (script?.body as unknown as ScriptBody | undefined)?.onFailure;
-  const alert: FailureAlert = { ...workspace.failure_alert, ...own };
-  if (!alert.script && !alert.notify) return;
+  const wanted: FailureAlert = { ...workspace.failure_alert, ...failure.own };
+  if (!wanted.script && !wanted.notify) return undefined;
 
   const summary = {
-    id: run.id,
-    script: run.script_path,
-    attempt: run.attempt,
-    error: run.error?.message ?? "The run failed.",
+    id: failure.id,
+    script: failure.name,
+    attempt: failure.attempt,
+    error: failure.error,
   };
   const outcome: Record<string, unknown> = {};
 
-  if (alert.script) {
+  if (wanted.script) {
     try {
       const handler = await mutate(kernel.db, { principal: SYSTEM }, async (trx, audit) => {
         const started = await startRun(kernel, trx, {
-          tenantId: run.tenant_id,
-          workspaceId: run.workspace_id,
-          script: alert.script as string,
+          tenantId: failure.tenantId,
+          workspaceId: failure.workspaceId,
+          script: wanted.script as string,
           input: { run: summary },
-          trigger: { type: "alert", detail: { failedRunId: run.id } },
+          trigger: { type: "alert", detail: { failedRunId: failure.id } },
           startedBy: { type: "system", id: null },
-          idempotencyKey: `alert:${run.id}`,
+          idempotencyKey: `alert:${failure.id}`,
         });
         await audit({
           action: "run.alert_started",
           targetType: "run",
           targetId: started.run.id,
-          tenantId: run.tenant_id,
-          workspaceId: run.workspace_id,
-          details: { failedRunId: run.id, script: alert.script },
+          tenantId: failure.tenantId,
+          workspaceId: failure.workspaceId,
+          details: { failedRunId: failure.id, script: wanted.script },
         });
         return started.run;
       });
@@ -76,14 +132,14 @@ export async function sendAlerts(kernel: Kernel, run: FailedRun): Promise<void> 
     }
   }
 
-  if (alert.notify) {
+  if (wanted.notify) {
     try {
       const connection = await readConnection(kernel, kernel.db, {
-        tenantId: run.tenant_id,
-        workspaceId: run.workspace_id,
-        path: alert.notify,
+        tenantId: failure.tenantId,
+        workspaceId: failure.workspaceId,
+        path: wanted.notify,
       });
-      if (!connection) throw new Error(`The connection "${alert.notify}" is not bound.`);
+      if (!connection) throw new Error(`The connection "${wanted.notify}" is not bound.`);
       const client = httpConnector.create(
         connection.config as unknown as HttpConfig,
         connection.credential,
@@ -99,10 +155,5 @@ export async function sendAlerts(kernel: Kernel, run: FailedRun): Promise<void> 
       outcome.notifyError = (error as Error).message;
     }
   }
-
-  await kernel.db
-    .updateTable("run")
-    .set({ alert: JSON.stringify(outcome) })
-    .where("id", "=", run.id)
-    .execute();
+  return outcome;
 }

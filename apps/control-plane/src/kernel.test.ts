@@ -670,7 +670,17 @@ describe("resource registry", () => {
   test("lists the registered kinds", async () => {
     expect(
       (await bob.client.get("/kinds")).body.items.map((k: { kind: string }) => k.kind),
-    ).toEqual(["binding", "connection", "role", "schedule", "script", "trigger", "variable"]);
+    ).toEqual([
+      "binding",
+      "connection",
+      "event",
+      "flow",
+      "role",
+      "schedule",
+      "script",
+      "trigger",
+      "variable",
+    ]);
   });
 
   test("create, update, rename and version history", async () => {
@@ -990,7 +1000,7 @@ describe("the write path", () => {
   test("every kernel route that changes something was exercised and audited", () => {
     // The execution routes have the same check in execution.test.ts.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events)(\/|$)/;
     expect(t.unexercised((route) => !execution.test(route))).toEqual([]);
   });
 });

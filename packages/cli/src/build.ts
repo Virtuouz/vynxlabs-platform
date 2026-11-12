@@ -2,12 +2,13 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { Environment } from "@marcbachmann/cel-js";
 import {
   type Bundle,
   type BundleManifest,
   bundleDigest,
-  KindRegistry,
-  registerPlatformKinds,
+  bundleExpressions,
+  checkBundleManifests,
 } from "@vynxlabs/manifest";
 import { build as esbuild } from "esbuild";
 
@@ -40,7 +41,17 @@ export interface BuildOptions {
 }
 
 /** Deploy order: what others refer to comes first. */
-const KIND_ORDER = ["role", "connection", "variable", "script", "schedule", "trigger", "binding"];
+const KIND_ORDER = [
+  "role",
+  "connection",
+  "variable",
+  "event",
+  "script",
+  "schedule",
+  "trigger",
+  "flow",
+  "binding",
+];
 
 /** Compiles a tenant repository into one bundle: its manifests and its code. */
 export async function buildBundle(options: BuildOptions): Promise<Bundle> {
@@ -123,51 +134,13 @@ export async function buildBundle(options: BuildOptions): Promise<Bundle> {
 
 /** Everything wrong with a set of manifests, each problem naming the resource and field. */
 export function check(manifests: BundleManifest[]): string[] {
-  const registry = registerPlatformKinds(new KindRegistry());
-  const problems: string[] = [];
-  const byPath = new Map<string, BundleManifest>();
-
-  for (const manifest of manifests) {
-    const existing = byPath.get(manifest.path);
-    if (existing) {
-      problems.push(
-        `${manifest.path}: used by both a ${existing.kind} and a ${manifest.kind}. Paths must be unique.`,
-      );
-    }
-    byPath.set(manifest.path, manifest);
-    const result = registry.validateManifest(manifest);
-    if (!result.ok) {
-      for (const issue of result.issues) {
-        problems.push(`${manifest.path} (${manifest.kind}): ${issue.path} ${issue.message}`);
-      }
-    }
-  }
-
-  const expect = (from: BundleManifest, field: string, path: unknown, kind: string) => {
-    if (typeof path !== "string") return;
-    const target = byPath.get(path);
-    if (target?.kind !== kind) {
-      problems.push(
-        `${from.path} (${from.kind}): ${field} refers to "${path}", which is not a ${kind} in this repository.`,
-      );
-    }
-  };
-  for (const manifest of manifests) {
-    const body = manifest.body as {
-      script?: string;
-      uses?: { connections?: string[]; variables?: string[] };
-      onFailure?: { script?: string; notify?: string };
-    };
-    if (manifest.kind === "schedule" || manifest.kind === "trigger") {
-      expect(manifest, "script", body.script, "script");
-    }
-    if (manifest.kind === "script") {
-      for (const path of body.uses?.connections ?? [])
-        expect(manifest, "connections", path, "connection");
-      for (const path of body.uses?.variables ?? [])
-        expect(manifest, "variables", path, "variable");
-      expect(manifest, "onFailure.script", body.onFailure?.script, "script");
-      expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+  const problems = checkBundleManifests(manifests);
+  for (const { where, expression } of bundleExpressions(manifests)) {
+    try {
+      cel.parse(expression);
+    } catch (error) {
+      const reason = ((error as Error).message.split("\n")[0] ?? "").trim();
+      problems.push(`${where} is not a valid expression: ${reason}`);
     }
   }
   return problems;
@@ -183,3 +156,15 @@ export function describeBundle(bundle: Bundle): string[] {
     ...bundle.manifests.map((manifest) => `  ${manifest.kind.padEnd(10)} ${manifest.path}`),
   ];
 }
+
+const cel = new Environment({
+  unlistedVariablesAreDyn: true,
+  homogeneousAggregateLiterals: false,
+  limits: {
+    maxAstNodes: 2000,
+    maxDepth: 64,
+    maxListElements: 200,
+    maxMapEntries: 200,
+    maxCallArguments: 16,
+  },
+});

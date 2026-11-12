@@ -10,6 +10,7 @@ import { deployBundle } from "../kernel/execution/deploy.js";
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
 import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { PageQuery, pageOf } from "../pagination.js";
@@ -312,6 +313,16 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const workspace = ctx.workspace as WorkspaceRef;
         const result = await ctx.mutate((trx, audit) =>
           deployBundle(kernel, trx, audit, workspace, ctx.principal, body.bundleId),
+        );
+        await publishPlatformEvent(kernel, {
+          tenantId: workspace.tenantId,
+          workspaceId: workspace.id,
+          name: "platform/deployment-created",
+          payload: { deploymentId: result.deployment.id, bundleVersion: result.bundle.version },
+          sourceId: result.deployment.id,
+          depth: 0,
+        }).catch((error) =>
+          kernel.log.error({ err: error }, "a platform event could not be published"),
         );
         return reply.code(201).send({
           id: result.deployment.id,
@@ -654,7 +665,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               return {
                 path: row.path,
                 type: row.type,
-                script: row.script_path,
+                script: row.target_path,
                 enabled: row.enabled,
                 cron: body.cron ?? null,
                 timezone: row.type === "schedule" ? (body.timezone ?? "UTC") : null,
@@ -1133,7 +1144,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           typeof key === "string" && key.length > 0 && key.length <= 200 ? key : undefined,
         );
         if (!started) throw notFound("The webhook");
-        return reply.code(202).send({ runId: started.run.id });
+        return reply.code(202).send({ runId: started.id });
       },
     );
 

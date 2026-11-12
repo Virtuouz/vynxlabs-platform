@@ -266,6 +266,11 @@ export class Worker {
       secret: async (name) =>
         (await read<{ value: string }>(`/secrets/${encodeURIComponent(name)}`)).value,
       variable: async (path) => (await read<{ value: string }>(`/variables/${path}`)).value,
+      events: {
+        publish: async (event, payload) => {
+          await this.#call("POST", `${runPath}/events`, { attempt: job.attempt, event, payload });
+        },
+      },
       log: {
         debug: write("debug"),
         info: write("info"),

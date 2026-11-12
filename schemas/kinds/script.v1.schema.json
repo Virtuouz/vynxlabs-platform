@@ -84,6 +84,16 @@
             "maxLength": 255
           },
           "uniqueItems": true
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true,
+          "description": "Events the script may publish."
         }
       },
       "required": [

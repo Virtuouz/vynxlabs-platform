@@ -14,7 +14,9 @@ import {
   readPayload,
   type ScriptBody,
 } from "../kernel/execution/runs.js";
+import { kickStarted } from "../kernel/execution/triggers.js";
 import { seeWorker } from "../kernel/execution/workers.js";
+import { publishEvent } from "../kernel/flows/events.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { revealSecret } from "../kernel/secrets.js";
@@ -345,6 +347,39 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: bound.config,
           ...(bound.credential !== undefined ? { credential: bound.credential } : {}),
         };
+      },
+    );
+
+    app.post(
+      "/worker/runs/:id/events",
+      {
+        config,
+        schema: {
+          summary: "Publish an event the running script declared",
+          description: "The event is stored and its subscribers are started before this answers.",
+          tags: ["worker protocol"],
+          params: RunParams,
+          body: Type.Object({ attempt: Attempt, event: Type.String(), payload: AnyObject }),
+          response: { 200: Type.Object({ eventId: Id, started: Type.Integer() }) },
+        },
+      },
+      async ({ worker, params, body }) => {
+        const { run, body: script } = await pinned(worker, params.id, body.attempt);
+        if (!(script.uses.events ?? []).includes(body.event)) {
+          throw forbidden(`a declared use of the event "${body.event}"`);
+        }
+        const published = await db.transaction().execute((trx) =>
+          publishEvent(kernel, trx, {
+            tenantId: run.tenant_id,
+            workspaceId: run.workspace_id,
+            name: body.event,
+            payload: body.payload,
+            source: { type: "script", id: run.id },
+            depth: Number(run.trigger_detail.depth ?? 0),
+          }),
+        );
+        await kickStarted(kernel, published.started);
+        return { eventId: published.event.id, started: published.started.length };
       },
     );
 

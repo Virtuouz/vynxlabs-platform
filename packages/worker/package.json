@@ -1,0 +1,23 @@
+{
+  "name": "@vynxlabs/worker",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "platform-worker": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bin": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@vynxlabs/manifest": "workspace:*",
+    "@vynxlabs/sdk": "workspace:*"
+  }
+}

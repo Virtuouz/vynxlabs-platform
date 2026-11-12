@@ -1,0 +1,73 @@
+{
+  "type": "object",
+  "required": [
+    "kind",
+    "schemaVersion",
+    "path",
+    "ownership",
+    "body",
+    "workspace",
+    "id",
+    "version"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 63,
+      "description": "The resource kind, for example script."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The version of this kind's body schema."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255,
+      "description": "Human-readable name, unique within the workspace."
+    },
+    "ownership": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "code"
+        },
+        {
+          "type": "string",
+          "const": "ui"
+        }
+      ],
+      "description": "Whether the resource is managed from a repository or from the interface."
+    },
+    "body": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      },
+      "description": "Kind-specific definition, validated by the kind's own schema."
+    },
+    "workspace": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 63,
+      "description": "Slug of the workspace the resource belongs to."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Immutable internal ID. A rename keeps it."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Assigned by the control plane on each change."
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "resource.schema.json",
+  "title": "StoredResource",
+  "description": "A resource as held by the control plane.",
+  "additionalProperties": false
+}

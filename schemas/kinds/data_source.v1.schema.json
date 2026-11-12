@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/data_source.v1.schema.json",
+  "title": "data_source body, version 1",
+  "type": "object",
+  "properties": {
+    "connector": {
+      "const": "postgres"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "connector"
+  ],
+  "additionalProperties": false
+}

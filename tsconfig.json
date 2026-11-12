@@ -1,0 +1,23 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/db"
+    },
+    {
+      "path": "packages/manifest"
+    },
+    {
+      "path": "packages/sdk"
+    },
+    {
+      "path": "packages/worker"
+    },
+    {
+      "path": "apps/control-plane"
+    },
+    {
+      "path": "packages/cli"
+    }
+  ]
+}

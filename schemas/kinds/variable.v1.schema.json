@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/variable.v1.schema.json",
+  "title": "variable body, version 1",
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "default": {
+      "type": "string",
+      "maxLength": 65536
+    }
+  },
+  "additionalProperties": false
+}

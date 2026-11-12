@@ -1,0 +1,30 @@
+# Fly.io runs the same image as every other deployment mode.
+# See deploy/fly/README.md for the one-time setup. Deploy from the repo root:
+#
+#   fly deploy . --config deploy/fly/fly.toml --dockerfile Dockerfile
+
+app = "vynxlabs-platform"
+primary_region = "iad"
+
+[env]
+  PORT = "8080"
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # The control plane will run the scheduler and queue, so it must not sleep.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/v1/readyz"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

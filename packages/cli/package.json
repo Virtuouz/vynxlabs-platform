@@ -1,0 +1,28 @@
+{
+  "name": "@vynxlabs/cli",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "platform": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@vynxlabs/control-plane": "workspace:*",
+    "@vynxlabs/example-acme": "workspace:*",
+    "@vynxlabs/worker": "workspace:*"
+  },
+  "dependencies": {
+    "@marcbachmann/cel-js": "^8.0.0",
+    "@vynxlabs/manifest": "workspace:*",
+    "esbuild": "^0.28.2"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  }
+}

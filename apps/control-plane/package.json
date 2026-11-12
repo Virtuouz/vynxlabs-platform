@@ -1,0 +1,31 @@
+{
+  "name": "@vynxlabs/control-plane",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1167.0",
+    "@fastify/rate-limit": "^11.2.2",
+    "@fastify/static": "^10.1.10",
+    "@fastify/swagger": "^9.9.3",
+    "@fastify/type-provider-typebox": "^6.3.0",
+    "@marcbachmann/cel-js": "^8.0.0",
+    "@vynxlabs/db": "workspace:*",
+    "@vynxlabs/manifest": "workspace:*",
+    "@vynxlabs/sdk": "workspace:^",
+    "@vynxlabs/worker": "workspace:*",
+    "better-auth": "^1.7.21",
+    "cron-parser": "^5.10.4",
+    "fastify": "^5.12.8",
+    "typebox": "^1.4.6"
+  },
+  "exports": {
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
+  }
+}

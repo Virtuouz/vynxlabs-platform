@@ -1,5 +1,7 @@
 import { type Kysely, newId, type PlatformSchema, type Transaction } from "@vynxlabs/db";
 
+import { commitDataTransactions, rollbackDataTransactions } from "./data/stores.js";
+
 export type Db = Kysely<PlatformSchema>;
 export type Trx = Transaction<PlatformSchema>;
 
@@ -69,7 +71,7 @@ export async function mutate<T>(
   actor: Actor,
   change: (trx: Trx, audit: Audit) => Promise<T>,
 ): Promise<T> {
-  return db.transaction().execute(async (trx) => {
+  return transact(db, async (trx) => {
     let entries = 0;
     const result = await change(trx, async (input) => {
       await writeAudit(trx, actor, input);
@@ -79,5 +81,23 @@ export async function mutate<T>(
       throw new Error("A change must record at least one audit entry.");
     }
     return result;
+  });
+}
+
+/**
+ * A transaction on the platform database that may also change a tenant's
+ * tables in a dedicated database. Those changes commit just before this one
+ * does, and roll back if it fails first.
+ */
+export function transact<T>(db: Db, change: (trx: Trx) => Promise<T>): Promise<T> {
+  return db.transaction().execute(async (trx) => {
+    try {
+      const result = await change(trx);
+      await commitDataTransactions(trx);
+      return result;
+    } catch (error) {
+      await rollbackDataTransactions(trx);
+      throw error;
+    }
   });
 }

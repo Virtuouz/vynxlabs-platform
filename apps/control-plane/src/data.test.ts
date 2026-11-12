@@ -1,13 +1,26 @@
-import { sql } from "@vynxlabs/db";
+import { type Kysely, type PlatformSchema, sql } from "@vynxlabs/db";
+import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import { describeTable, findRows, withData } from "./kernel/data/rows.js";
+import { commitDataTransactions } from "./kernel/data/stores.js";
+import { deployBundle } from "./kernel/execution/deploy.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
 
+/**
+ * This suite runs twice: with the tenant's tables in the platform database,
+ * and with them in a database of their own (see data-dedicated.test.ts).
+ * Everything a tenant can do with its data must behave the same in both.
+ */
+const DEDICATED = process.env.VX_DATA_MODE === "dedicated";
+
 let t: TestApp;
+/** The database that holds the tenant's tables and their catalog, as its owner. */
+let data: Kysely<PlatformSchema>;
+let dedicatedDb: TestDatabase | undefined;
 let tenant: string;
 let dev: string;
 let prod: string;
@@ -101,7 +114,7 @@ const rows = async (
 async function stored(workspace: string, physical: string, columns: string): Promise<Any[]> {
   const result = await sql
     .raw(`select ${columns} from "${workspaceSchema(workspace)}"."${physical}" order by 1`)
-    .execute(t.db);
+    .execute(data);
   return result.rows;
 }
 
@@ -112,8 +125,22 @@ beforeAll(async () => {
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
     ).map((role) => [role.name, role.id]),
   );
+  if (DEDICATED) {
+    dedicatedDb = await createTestDatabase();
+    const registered = await t.admin.put("/instance/database-locations/acme-db", {
+      connectionString: dedicatedDb.connectionString,
+      description: "Acme's own database",
+    });
+    expect(registered.status, JSON.stringify(registered.body)).toBe(204);
+  }
   const seed = async (slug: string, email: string) => {
-    const id = (await t.admin.post("/tenants", { slug, name: slug })).body.id as string;
+    const created = await t.admin.post("/tenants", {
+      slug,
+      name: slug,
+      ...(DEDICATED && slug === "acme" ? { dataLocation: "acme-db" } : {}),
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.id as string;
     const grant = await t.admin.post(`/tenants/${id}/access-grants`, {
       reason: "Setup",
       roleId: roles.tenant_admin,
@@ -179,10 +206,12 @@ beforeAll(async () => {
   erin = await member("erin", null);
   viewer = (await member("vera", { roleId: roles.viewer })).client;
   roles.rows_only = rowsOnly;
+  data = (await t.kernel.data.forTenant(tenant)).owner;
 }, 60_000);
 
 afterAll(async () => {
   await t.stop();
+  await dedicatedDb?.drop();
 });
 
 describe("deploying tables", () => {
@@ -213,7 +242,7 @@ describe("deploying tables", () => {
         (select count(*) from pg_indexes i where i.schemaname = n.nspname and i.tablename = c.relname and i.indexname like 'ix\\_%') as indexes
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = ${workspaceSchema(dev)} and c.relname = 't_orders'
-    `.execute(t.db);
+    `.execute(data);
     expect(facts.rows[0]).toEqual({ rls: true, policies: "1", indexes: "2" });
 
     // Deploying the same thing again touches nothing.
@@ -523,23 +552,23 @@ describe("row policies", () => {
   });
 
   test("a query written wrongly on purpose still returns only the caller's rows", async () => {
-    const target = await describeTable(t.db, dev, "orders");
+    const target = await describeTable(data, dev, "orders");
     const scope = { principalId: carol.id, all: false };
     // No filter at all, as if the code that adds one had been forgotten.
-    const unfiltered = await withData(t.kernel, scope, (data) => findRows(data, target));
+    const unfiltered = await withData(t.kernel, tenant, scope, (data) => findRows(data, target));
     expect(unfiltered.items.map((row) => row.number)).toEqual(["C-1"]);
     // Even SQL written by hand inside the request sees no more, and cannot touch the platform's tables.
-    const counted = await withData(t.kernel, scope, (data) =>
+    const counted = await withData(t.kernel, tenant, scope, (data) =>
       sql<{
         n: string;
       }>`select count(*) as n from ${sql.id(workspaceSchema(dev), "t_orders")}`.execute(data),
     );
     expect(counted.rows[0]?.n).toBe("1");
     await expect(
-      withData(t.kernel, scope, (data) => sql`select count(*) from member`.execute(data)),
-    ).rejects.toThrow(/permission denied/);
+      withData(t.kernel, tenant, scope, (data) => sql`select count(*) from member`.execute(data)),
+    ).rejects.toThrow(/permission denied|does not exist/);
     await expect(
-      withData(t.kernel, scope, (data) =>
+      withData(t.kernel, tenant, scope, (data) =>
         sql`update ${sql.id(workspaceSchema(dev), "t_orders")} set note = 'x'`
           .execute(data)
           .then((r) => r.numAffectedRows),
@@ -548,15 +577,11 @@ describe("row policies", () => {
     // Nobody stated: nothing is visible.
     expect(
       (
-        await withData(t.kernel, { principalId: null, all: false }, (data) =>
-          findRows(data, target),
+        await withData(t.kernel, tenant, { principalId: null, all: false }, (rows) =>
+          findRows(rows, target),
         )
       ).items,
     ).toEqual([]);
-    // And afterwards the connection is the platform's own again.
-    expect(
-      (await sql<{ who: string }>`select current_user as who`.execute(t.db)).rows[0]?.who,
-    ).not.toBe("platform_data");
   });
 
   test("access can be granted at one table only", async () => {
@@ -595,6 +620,73 @@ describe("row policies", () => {
     expect((await alice.delete(`/tenants/${tenant}/groups/${group.body.id}`)).status).toBe(204);
     expect((await erin.client.get(`${ws()}/rows/orders`)).status).toBe(403);
   });
+
+  test("a request for rows runs on a connection that cannot become the platform", async () => {
+    const scope = { principalId: carol.id, all: false };
+    const owner = (await sql<{ who: string }>`select current_user as who`.execute(data)).rows[0]
+      ?.who as string;
+    const asked = <T>(run: Parameters<typeof withData<T>>[3]) =>
+      withData(t.kernel, tenant, scope, run);
+    const who = await asked((rows) =>
+      sql<{
+        current: string;
+        session: string;
+      }>`select current_user as current, session_user as session`.execute(rows),
+    );
+    expect(who.rows[0]?.current).toMatch(/^vxd_[0-9a-f]{20}$/);
+    expect(who.rows[0]?.session).toBe(who.rows[0]?.current);
+    expect(who.rows[0]?.current).not.toBe(owner);
+    // Every way back to the role that owns the tables is closed.
+    await expect(asked((rows) => sql`set role ${sql.id(owner)}`.execute(rows))).rejects.toThrow(
+      /permission denied/,
+    );
+    await expect(
+      asked((rows) => sql`set session authorization ${sql.id(owner)}`.execute(rows)),
+    ).rejects.toThrow(/permission denied/);
+    const afterReset = await asked(async (rows) => {
+      await sql`reset role`.execute(rows);
+      return sql<{ who: string }>`select current_user as who`.execute(rows);
+    });
+    expect(afterReset.rows[0]?.who).toBe(who.rows[0]?.current);
+    // It cannot change the tables, the policies or the catalog.
+    const orders = sql.id(workspaceSchema(dev), "t_orders");
+    for (const attempt of [
+      sql`alter table ${orders} disable row level security`,
+      sql`drop policy rows on ${orders}`,
+      sql`create table ${sql.id(workspaceSchema(dev), "sneaky")} (x int)`,
+      sql`update data_table set policy = '{"type":"open"}'`,
+      sql`select * from data_column`,
+    ]) {
+      await expect(asked((rows) => attempt.execute(rows))).rejects.toThrow(
+        /permission denied|must be owner/,
+      );
+    }
+  });
+
+  test.runIf(DEDICATED)(
+    "a tenant on a dedicated database has nothing of its tables in the platform database",
+    async () => {
+      const here = await sql<{ n: string }>`
+        select count(*) as n from pg_namespace where nspname in (${workspaceSchema(dev)}, ${workspaceSchema(prod)})
+      `.execute(t.db);
+      expect(here.rows[0]?.n).toBe("0");
+      expect(
+        await t.db.selectFrom("data_table").select("id").where("tenant_id", "=", tenant).execute(),
+      ).toEqual([]);
+      const there = await sql<{ n: string }>`
+        select count(*) as n from pg_namespace where nspname = ${workspaceSchema(dev)}
+      `.execute(data);
+      expect(there.rows[0]?.n).toBe("1");
+      // The operator sees the location, how many tenants use it and that it answers. Never its password.
+      const listed = (await t.admin.get("/instance/database-locations")).body.items;
+      expect(listed).toEqual([
+        expect.objectContaining({ name: "acme-db", tenants: 1, reachable: true, problem: null }),
+      ]);
+      expect(JSON.stringify(listed)).not.toMatch(/password|postgres:\/\//);
+      expect((await t.admin.delete("/instance/database-locations/acme-db")).status).toBe(409);
+      expect((await alice.get("/instance/database-locations")).status).toBe(403);
+    },
+  );
 });
 
 describe("changing a table without losing data: the exit criterion", () => {
@@ -942,6 +1034,67 @@ describe("tables made in the console, isolation and guards", () => {
     expect(refused.body.detail).toContain('column "extra" is now required');
     expect((await alice.delete(`${ws()}/resources/gaps`)).status).toBe(204);
   });
+
+  test.runIf(DEDICATED)(
+    "a deploy that changed the tables but then failed is completed by deploying again",
+    async () => {
+      const made = await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "window",
+        name: "Window",
+        type: "dev",
+      });
+      const window = made.body.id as string;
+      const first = bundle([table("things", { name: { type: "text", required: true } })], "w1");
+      expect((await deploy(first, window)).status).toBe(201);
+      await alice.post(`${ws(window)}/rows/things`, { rows: [{ name: "one" }, { name: "two" }] });
+
+      const second = bundle(
+        [
+          table("things", {
+            title: { type: "text", required: true, renamedFrom: "name" },
+            done: { type: "boolean", default: false },
+          }),
+        ],
+        "w2",
+      );
+      const uploaded = await alice.post(`${ws(window)}/bundles`, second);
+      // The tenant's database commits. Then the platform's transaction fails before it can.
+      const interrupted = t.db.transaction().execute(async (trx) => {
+        await deployBundle(
+          t.kernel,
+          trx,
+          async () => {},
+          { id: window, tenantId: tenant, slug: "window" },
+          { type: "system", id: null },
+          uploaded.body.id,
+        );
+        await commitDataTransactions(trx);
+        throw new Error("the platform database went away");
+      });
+      await expect(interrupted).rejects.toThrow("the platform database went away");
+
+      // The registry still shows the first bundle. The tables are already at the second definition.
+      const active = async () =>
+        (await alice.get(`${ws(window)}/bundles`)).body.items.find((b: Any) => b.active).version;
+      expect(await active()).toBe(1);
+      const between = await rows(alice, "things", "?sort=title", window);
+      // Nothing was lost, and the rows can be read as they now are.
+      expect(between.map((row) => [row.title, row.done])).toEqual([
+        ["one", false],
+        ["two", false],
+      ]);
+
+      // Deploying again finds the tables already changed, and finishes the job.
+      const again = await alice.post(`${ws(window)}/deployments`, { bundleId: uploaded.body.id });
+      expect(again.status, JSON.stringify(again.body)).toBe(201);
+      expect(again.body.summary).toMatchObject({ updated: 1, data: [] });
+      expect(await active()).toBe(2);
+      expect((await rows(alice, "things", "?sort=title", window)).map((row) => row.title)).toEqual([
+        "one",
+        "two",
+      ]);
+    },
+  );
 
   test("each workspace has its own tables, and another tenant reaches none", async () => {
     expect(

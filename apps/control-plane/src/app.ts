@@ -19,6 +19,7 @@ import { flowRoutes } from "./routes/flows.js";
 import { healthRoutes } from "./routes/health.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
+import { locationRoutes } from "./routes/locations.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { sourceRoutes } from "./routes/sources.js";
 import { tenantRoutes } from "./routes/tenants.js";
@@ -72,6 +73,7 @@ export async function buildApp(options: AppOptions) {
   app.decorate("kernel", kernel);
   app.addHook("onClose", () => kernel.expressions.close());
   app.addHook("onClose", () => closeAllSources());
+  app.addHook("onClose", () => kernel.data.close());
 
   app.setErrorHandler(errorHandler);
   app.addHook("onRequest", async (request, reply) => {
@@ -137,6 +139,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
       await api.register(sourceRoutes(kernel));
+      await api.register(locationRoutes(kernel));
       await api.register(workerRoutes(kernel));
       api.get(
         "/openapi.json",

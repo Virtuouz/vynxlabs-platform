@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Database } from "./database.js";
-import { DedicatedLocationNotSupportedError, TenantNotFoundError } from "./errors.js";
+import { TenantNotFoundError } from "./errors.js";
 import { newId } from "./id.js";
 import { createTestDatabase, type TestDatabase } from "./testing.js";
 
@@ -49,11 +49,10 @@ describe("tenant routing", () => {
     expect(row.slug).toBe("acme");
   });
 
-  test("a dedicated location is refused with a typed error", async () => {
+  test("a tenant with a dedicated location resolves, and says where its tables live", async () => {
     const id = await createTenant("globex", { kind: "dedicated", ref: "globex-db" });
-    await expect(database.router.forTenant(id)).rejects.toBeInstanceOf(
-      DedicatedLocationNotSupportedError,
-    );
+    const handle = await database.router.forTenant(id);
+    expect(handle.location).toEqual({ kind: "dedicated", ref: "globex-db" });
   });
 
   test("an unknown or malformed tenant ID is refused with a typed error", async () => {

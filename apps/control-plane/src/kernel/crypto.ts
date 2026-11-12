@@ -55,6 +55,15 @@ export class Vault {
     return open(this.#masterKey, wrapped, `tenant-key:${tenantId}`);
   }
 
+  /** Encrypts something that belongs to the instance itself, such as the address of a database. */
+  sealForInstance(context: string, value: string): Buffer {
+    return seal(this.#masterKey, Buffer.from(value, "utf8"), `instance:${context}`);
+  }
+
+  openForInstance(context: string, sealed: Buffer): string {
+    return open(this.#masterKey, sealed, `instance:${context}`).toString("utf8");
+  }
+
   /** The tenant, workspace and name are bound in, so a ciphertext cannot be moved elsewhere. */
   encrypt(tenantKey: Buffer, id: SecretName, value: string): Buffer {
     return seal(tenantKey, Buffer.from(value, "utf8"), context(id));

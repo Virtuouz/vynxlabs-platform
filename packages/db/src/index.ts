@@ -2,8 +2,13 @@ export type { Kysely, Transaction } from "kysely";
 export { sql } from "kysely";
 export { Database, type DatabaseOptions } from "./database.js";
 export {
+  type DataStore,
+  type DataStoreOptions,
+  dataRoleName,
+  openDataStore,
+} from "./datastore.js";
+export {
   DatabaseNewerThanCodeError,
-  DedicatedLocationNotSupportedError,
   MigrationChecksumError,
   MigrationFailedError,
   MigrationFilesError,

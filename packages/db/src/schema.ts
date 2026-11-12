@@ -479,6 +479,14 @@ export interface FileTable {
   created_at: Generated<Date>;
 }
 
+export interface DatabaseLocationTable {
+  name: string;
+  description: Generated<string>;
+  connection_encrypted: Buffer;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 /** Tables shared by every tenant in the platform database. */
 export interface PlatformSchema {
   platform_migration: PlatformMigrationTable;
@@ -516,4 +524,5 @@ export interface PlatformSchema {
   data_column: DataColumnTable;
   data_source_binding: DataSourceBindingTable;
   file: FileTable;
+  database_location: DatabaseLocationTable;
 }

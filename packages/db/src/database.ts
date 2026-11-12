@@ -1,5 +1,6 @@
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
+import { type DataStore, openDataStore } from "./datastore.js";
 import { type MigrationResult, runMigrations } from "./migrate.js";
 import { JobQueue, type QueueTuning } from "./queue.js";
 import { TenantRouter } from "./router.js";
@@ -26,8 +27,10 @@ export class Database {
   readonly #pool: pg.Pool;
   readonly #kysely: Kysely<PlatformSchema>;
   readonly #migrationsDir: string | undefined;
+  readonly #options: DatabaseOptions;
 
   constructor(options: DatabaseOptions) {
+    this.#options = options;
     this.#pool = new pg.Pool({
       connectionString: options.connectionString,
       max: options.maxConnections ?? 10,
@@ -46,6 +49,22 @@ export class Database {
   /** Applies pending migrations. Call once at start, before serving. */
   migrate(): Promise<MigrationResult> {
     return runMigrations(this.#pool, this.#migrationsDir);
+  }
+
+  /**
+   * This database as a place for custom tables. Call after `migrate()`.
+   * `secret` is the instance's own: the restricted sign-in is derived from it.
+   */
+  openDataStore(secret: Buffer): Promise<DataStore> {
+    return openDataStore({
+      connectionString: this.#options.connectionString,
+      secret,
+      platform: this.#kysely,
+      ...(this.#options.maxConnections ? { maxConnections: this.#options.maxConnections } : {}),
+      ...(this.#options.onConnectionError
+        ? { onConnectionError: this.#options.onConnectionError }
+        : {}),
+    });
   }
 
   /** The highest applied migration, or 0. */

@@ -1000,9 +1000,9 @@ describe("the write path", () => {
   });
 
   test("every kernel route that changes something was exercised and audited", () => {
-    // The execution routes have the same check in execution.test.ts.
+    // The execution, data and environment routes have the same check in their own test files.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|trigger-pause|deletion|exports|imports)(\/|$)/;
     expect(t.unexercised((route) => !execution.test(route))).toEqual([]);
   });
 });

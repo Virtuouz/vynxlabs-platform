@@ -127,9 +127,10 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       table: string,
       verb: "read" | "write",
     ) {
-      await kernel.router.forTenant(params.t).catch(() => undefined);
+      await findWorkspace(kernel, params.t, params.w);
+      const data = (await kernel.data.forTenant(params.t)).owner;
       // The permission may be held at the workspace or at this one table.
-      const known = await db
+      const known = await data
         .selectFrom("data_table")
         .select("resource_id")
         .where("workspace_id", "=", params.w)
@@ -143,8 +144,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         resourceId: known?.resource_id ?? undefined,
       };
       await ctx.authorize(`data:${verb}`, at);
-      await findWorkspace(kernel, params.t, params.w);
-      const target = await describeTable(db, params.w, table);
+      const target = await describeTable(data, params.w, table);
       const scope: DataScope = {
         principalId: ctx.principal.id,
         all: await ctx.allowed(`data_all:${verb}`, at),
@@ -182,7 +182,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params }) => {
-        const catalog = await loadCatalog(db, params.w);
+        const data = (await kernel.data.forTenant(params.t)).owner;
+        const catalog = await loadCatalog(data, params.w);
         const resources = await db
           .selectFrom("resource")
           .select(["path", "body", "ownership"])
@@ -198,7 +199,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               : undefined;
           const count = await sql<{
             n: string;
-          }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(db);
+          }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(data);
           items.push({
             name: table.name,
             description:
@@ -240,11 +241,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params }) => {
         const name = wildPath(params);
-        const catalog = await loadCatalog(db, params.w);
+        const data = (await kernel.data.forTenant(params.t)).owner;
+        const catalog = await loadCatalog(data, params.w);
         const table =
           catalog.find((candidate) => candidate.name === name && candidate.status === "active") ??
           catalog.find((candidate) => candidate.name === name);
-        if (!table) return describeTable(db, params.w, name) as never;
+        if (!table) return describeTable(data, params.w, name) as never;
         const resource = await db
           .selectFrom("resource")
           .select("ownership")
@@ -255,13 +257,13 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const schema = workspaceSchema(params.w);
         const count = await sql<{
           n: string;
-        }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(db);
+        }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(data);
         const held = new Map<string, number>();
         for (const column of table.columns.filter((candidate) => candidate.status === "retired")) {
           const kept = await sql<{
             n: string;
           }>`select count(${sql.ref(column.physicalName)}) as n from ${sql.id(schema, table.physicalName)}`.execute(
-            db,
+            data,
           );
           held.set(column.id, Number(kept.rows[0]?.n ?? 0));
         }
@@ -306,7 +308,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) =>
         ctx.mutate(async (trx, audit) => {
-          const result = await purgeRetired(trx, params.w, body);
+          const data = (await kernel.data.within(trx, params.t)).db;
+          const result = await purgeRetired(data, params.w, body);
           await audit({
             action: "table.purged",
             targetType: "table",
@@ -338,7 +341,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, query }) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "read");
         const asked = parseRowsQuery(query);
-        return toRowsPage(await withData(kernel, scope, (data) => findRows(data, target, asked)));
+        return toRowsPage(
+          await withData(kernel, params.t, scope, (data) => findRows(data, target, asked)),
+        );
       },
     );
 
@@ -363,7 +368,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             : [body];
         if (rows.length === 0 || rows.length > 1000)
           throw badRequest("Send between 1 and 1,000 rows.");
-        const items = await withData(kernel, scope, (data) =>
+        const items = await withData(kernel, params.t, scope, (data) =>
           insertRows(data, target, rows, scope),
         );
         // Rows are business data, not configuration: they are not written to the audit log one by one.
@@ -400,7 +405,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "read");
-        return withData(kernel, scope, (data) => getRow(data, target, params.id));
+        return withData(kernel, params.t, scope, (data) => getRow(data, target, params.id));
       },
     );
 
@@ -418,7 +423,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
-        const row = await withData(kernel, scope, (data) =>
+        const row = await withData(kernel, params.t, scope, (data) =>
           updateRow(data, target, params.id, body),
         );
         ctx.mutated = true;
@@ -440,7 +445,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }, reply) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
-        await withData(kernel, scope, (data) => deleteRow(data, target, params.id));
+        await withData(kernel, params.t, scope, (data) => deleteRow(data, target, params.id));
         ctx.mutated = true;
         await announceRows(kernel, params.t, params.w, target.name, "deleted", [params.id]);
         return reply.code(204).send(null);

@@ -7,7 +7,6 @@ import type { AppliedResource } from "../kinds.js";
 import { type CatalogTable, type NewColumn, planTable, type Step } from "./plan.js";
 
 /** The database role that requests for tenant data switch to. Row policies apply to it. */
-export const DATA_ROLE = "platform_data";
 
 export const workspaceSchema = (workspaceId: string) => `ws_${workspaceId.replaceAll("-", "")}`;
 
@@ -107,7 +106,11 @@ const refuse = (table: string, column: string, message: string) =>
  * caller's transaction. Schema changes are transactional in Postgres, so if
  * anything later in the deploy fails, none of this happened.
  */
-export async function applyTable(trx: Trx, resource: AppliedResource): Promise<Step[]> {
+export async function applyTable(
+  trx: Trx,
+  role: string,
+  resource: AppliedResource,
+): Promise<Step[]> {
   const body = resource.body as unknown as TableBody;
   const catalog = await loadCatalog(trx, resource.workspaceId);
   const plan = planTable(catalog, resource.path, body);
@@ -119,9 +122,9 @@ export async function applyTable(trx: Trx, resource: AppliedResource): Promise<S
   }
   const schema = workspaceSchema(resource.workspaceId);
   await sql`create schema if not exists ${sql.id(schema)}`.execute(trx);
-  await sql`grant usage on schema ${sql.id(schema)} to ${sql.id(DATA_ROLE)}`.execute(trx);
+  await sql`grant usage on schema ${sql.id(schema)} to ${sql.id(role)}`.execute(trx);
 
-  for (const step of plan.steps) await applyStep(trx, resource, schema, step);
+  for (const step of plan.steps) await applyStep(trx, role, resource, schema, step);
 
   // The catalog row always points at the resource that declares the table.
   await trx
@@ -151,7 +154,13 @@ async function hasRows(trx: Trx, schema: string, table: string): Promise<boolean
   return found.rows.length > 0;
 }
 
-async function applyStep(trx: Trx, resource: AppliedResource, schema: string, step: Step) {
+async function applyStep(
+  trx: Trx,
+  role: string,
+  resource: AppliedResource,
+  schema: string,
+  step: Step,
+) {
   const { workspaceId, tenantId } = resource;
 
   if (step.op === "create_table") {
@@ -167,9 +176,7 @@ async function applyStep(trx: Trx, resource: AppliedResource, schema: string, st
     // The platform's own role owns the table and is not subject to its policies.
     // Requests for data switch to the data role, which is.
     await sql`alter table ${target} enable row level security`.execute(trx);
-    await sql`grant select, insert, update, delete on ${target} to ${sql.id(DATA_ROLE)}`.execute(
-      trx,
-    );
+    await sql`grant select, insert, update, delete on ${target} to ${sql.id(role)}`.execute(trx);
     const tableId = newId();
     await trx
       .insertInto("data_table")
@@ -214,7 +221,7 @@ async function applyStep(trx: Trx, resource: AppliedResource, schema: string, st
   const target = sql.id(schema, table.physical_name);
 
   if (step.op === "set_policy") {
-    await setPolicy(trx, schema, table, step.policy);
+    await setPolicy(trx, role, schema, table, step.policy);
     return;
   }
 
@@ -410,6 +417,7 @@ async function setUnique(trx: Trx, schema: string, table: string, column: string
 /** Replaces a table's row policy with the one its definition asks for. */
 async function setPolicy(
   trx: Trx,
+  role: string,
   schema: string,
   table: { id: string; physical_name: string },
   policy: TablePolicy,
@@ -430,11 +438,11 @@ async function setPolicy(
       or ${sql.id(owner.physical_name)}::text = current_setting('app.principal', true)
     `;
     await sql`
-      create policy rows on ${target} for all to ${sql.id(DATA_ROLE)}
+      create policy rows on ${target} for all to ${sql.id(role)}
       using (${allowed}) with check (${allowed})
     `.execute(trx);
   } else {
-    await sql`create policy rows on ${target} for all to ${sql.id(DATA_ROLE)} using (true) with check (true)`.execute(
+    await sql`create policy rows on ${target} for all to ${sql.id(role)} using (true) with check (true)`.execute(
       trx,
     );
   }

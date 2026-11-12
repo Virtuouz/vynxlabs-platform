@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import pg from "pg";
+import { dataRoleName } from "./datastore.js";
 
 /** The Postgres started by `pnpm stack:up`. */
 const DEV_STACK_URL = "postgres://platform:platform@localhost:54329/platform";
@@ -37,6 +38,8 @@ export async function createTestDatabase(): Promise<TestDatabase> {
       await client.connect();
       try {
         await client.query(`drop database if exists ${name} with (force)`);
+        // The sign-in the platform made for row requests in that database.
+        await client.query(`drop role if exists "${dataRoleName(name)}"`).catch(() => {});
       } finally {
         await client.end();
       }

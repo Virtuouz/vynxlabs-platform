@@ -6,9 +6,10 @@ import type { ObjectStore } from "../storage.js";
 import type { Db } from "./audit.js";
 import { type Auth, createAuth } from "./auth.js";
 import { Vault } from "./crypto.js";
+import { DataStores } from "./data/stores.js";
 import { registerExecutionHooks } from "./execution/triggers.js";
 import { Expressions } from "./flows/expressions.js";
-import { type KindHook, registerKernelKinds } from "./kinds.js";
+import { type KindHook, registerDataHooks, registerKernelKinds } from "./kinds.js";
 
 /** Everything the kernel's routes and services share. */
 export interface Kernel {
@@ -16,6 +17,8 @@ export interface Kernel {
   router: TenantRouter;
   auth: Auth;
   vault: Vault;
+  /** Where each tenant's custom tables live. */
+  data: DataStores;
   kinds: KindRegistry;
   hooks: Map<string, KindHook>;
   config: Config;
@@ -39,11 +42,13 @@ export function createKernel(
   const kinds = new KindRegistry();
   const hooks = new Map<string, KindHook>();
   registerKernelKinds(kinds, hooks);
+  const vault = new Vault(config.masterKey);
   const kernel: Kernel = {
     db,
     router: database.router,
     auth: createAuth(db, config, log),
-    vault: new Vault(config.masterKey),
+    vault,
+    data: new DataStores(database, vault, config.masterKey, log),
     kinds,
     hooks,
     config,
@@ -53,6 +58,7 @@ export function createKernel(
     version,
     log,
   };
+  registerDataHooks(hooks, kernel.data);
   registerExecutionHooks(kernel);
   return kernel;
 }

@@ -486,12 +486,18 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!(script.uses.tables ?? []).includes(body.table)) {
           throw forbidden(`a declared use of the table "${body.table}"`);
         }
-        const target = await describeTable(db, run.workspace_id, body.table);
+        const target = await describeTable(
+          (await kernel.data.forTenant(run.tenant_id)).owner,
+          run.workspace_id,
+          body.table,
+        );
         // A script is the workspace's own code. Acting for a person, it is held to what they may see.
         const scope: DataScope = body.as
           ? { principalId: body.as, all: false }
           : { principalId: null, all: true };
-        const result = await withData(kernel, scope, (data) => perform(data, target, scope));
+        const result = await withData(kernel, run.tenant_id, scope, (data) =>
+          perform(data, target, scope),
+        );
         if (body.op !== "find" && body.op !== "get") {
           const ids =
             body.op === "insert"

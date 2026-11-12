@@ -41,14 +41,3 @@ export class TenantNotFoundError extends Error {
     this.tenantId = tenantId;
   }
 }
-
-export class DedicatedLocationNotSupportedError extends Error {
-  readonly tenantId: string;
-  constructor(tenantId: string) {
-    super(
-      `Tenant ${tenantId} has a dedicated data location, which this version does not support yet.`,
-    );
-    this.name = "DedicatedLocationNotSupportedError";
-    this.tenantId = tenantId;
-  }
-}

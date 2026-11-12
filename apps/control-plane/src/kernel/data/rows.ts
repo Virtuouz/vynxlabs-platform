@@ -3,7 +3,7 @@ import type { TablePolicy } from "@vynxlabs/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
-import { constraintName, DATA_ROLE, workspaceSchema } from "./apply.js";
+import { constraintName, workspaceSchema } from "./apply.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: rows of a custom table have no fixed shape
 type AnyDb = Kysely<any>;
@@ -112,20 +112,22 @@ export interface DataScope {
 }
 
 /**
- * Runs a request for tenant data. Inside, the connection is the data role,
- * which owns nothing and is subject to every table's row policy, and the
- * policy is told who is asking. Both last only as long as the transaction.
+ * Runs a request for a tenant's rows. It runs on a connection signed in as a
+ * role that owns nothing, so every table's row policy applies, and the policy
+ * is told who is asking for as long as the transaction lasts. Nothing run on
+ * that connection can become the role that owns the tables.
  *
- * Nothing in here may run SQL that a caller wrote. Row policies guard against
- * our mistakes, not against injected SQL, which could switch the role back.
+ * Nothing in here may run SQL that a caller wrote: whoever can run SQL can
+ * also say they are someone else.
  */
-export function withData<T>(
+export async function withData<T>(
   kernel: Kernel,
+  tenantId: string,
   scope: DataScope,
   run: (trx: AnyDb) => Promise<T>,
 ): Promise<T> {
-  return kernel.db.transaction().execute(async (trx) => {
-    await sql`set local role ${sql.id(DATA_ROLE)}`.execute(trx);
+  const store = await kernel.data.forTenant(tenantId);
+  return store.rows.transaction().execute(async (trx) => {
     await sql`select set_config('app.principal', ${scope.principalId ?? ""}, true), set_config('app.data_all', ${scope.all ? "on" : "off"}, true)`.execute(
       trx,
     );

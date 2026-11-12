@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { type DataLocation, newId } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { badRequest, notFound } from "../kernel/errors.js";
@@ -18,11 +18,27 @@ import {
 } from "./identity.js";
 import { Id, iso, Name, NoContent, pageArgs, Slug, TenantParams, Time, toPage } from "./shared.js";
 
-const Tenant = Type.Object({ id: Id, slug: Type.String(), name: Type.String(), createdAt: Time });
-const toTenant = (row: { id: string; slug: string; name: string; created_at: Date }) => ({
+const Tenant = Type.Object({
+  id: Id,
+  slug: Type.String(),
+  name: Type.String(),
+  dataLocation: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "The dedicated database that holds this tenant's custom tables, or null for the platform database.",
+  }),
+  createdAt: Time,
+});
+const toTenant = (row: {
+  id: string;
+  slug: string;
+  name: string;
+  data_location: DataLocation;
+  created_at: Date;
+}) => ({
   id: row.id,
   slug: row.slug,
   name: row.name,
+  dataLocation: row.data_location.kind === "dedicated" ? row.data_location.ref : null,
   createdAt: iso(row.created_at),
 });
 
@@ -61,7 +77,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, query }) => {
         const args = pageArgs(query);
         const { principal } = ctx;
-        let select = db.selectFrom("tenant").select(["id", "slug", "name", "created_at"]);
+        let select = db
+          .selectFrom("tenant")
+          .select(["id", "slug", "name", "data_location", "created_at"]);
         if (!(await ctx.allowed("tenant:read", {}))) {
           select =
             principal.type === "member"
@@ -89,16 +107,48 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Create a tenant",
           tags: ["tenancy"],
-          body: Type.Object({ slug: Slug, name: Name }),
+          body: Type.Object({
+            slug: Slug,
+            name: Name,
+            dataLocation: Type.Optional(
+              Type.String({
+                description:
+                  "The name of a registered dedicated database for this tenant's custom tables. " +
+                  "It is chosen once: moving a tenant later is an export and an import.",
+              }),
+            ),
+          }),
           response: { 201: Tenant },
         },
       },
       async ({ ctx, body }, reply) => {
         const tenant = await ctx.mutate(async (trx, audit) => {
+          if (body.dataLocation !== undefined) {
+            const known = await trx
+              .selectFrom("database_location")
+              .select("name")
+              .where("name", "=", body.dataLocation)
+              .executeTakeFirst();
+            if (!known) {
+              throw badRequest("The tenant cannot be created.", [
+                {
+                  path: "/body/dataLocation",
+                  message: `no database location is registered as "${body.dataLocation}"`,
+                },
+              ]);
+            }
+          }
           const row = await trx
             .insertInto("tenant")
-            .values({ id: newId(), slug: body.slug, name: body.name })
-            .returning(["id", "slug", "name", "created_at"])
+            .values({
+              id: newId(),
+              slug: body.slug,
+              name: body.name,
+              ...(body.dataLocation !== undefined
+                ? { data_location: JSON.stringify({ kind: "dedicated", ref: body.dataLocation }) }
+                : {}),
+            })
+            .returning(["id", "slug", "name", "data_location", "created_at"])
             .executeTakeFirstOrThrow();
           // The tenant's own log starts with its creation.
           await audit({
@@ -106,7 +156,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetType: "tenant",
             targetId: row.id,
             tenantId: row.id,
-            details: { slug: row.slug, name: row.name },
+            details: { slug: row.slug, name: row.name, dataLocation: body.dataLocation ?? null },
           });
           return row;
         });
@@ -128,7 +178,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params }) => {
         const row = await db
           .selectFrom("tenant")
-          .select(["id", "slug", "name", "created_at"])
+          .select(["id", "slug", "name", "data_location", "created_at"])
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
         return toTenant(row);
@@ -153,7 +203,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .updateTable("tenant")
             .set({ name: body.name })
             .where("id", "=", params.t)
-            .returning(["id", "slug", "name", "created_at"])
+            .returning(["id", "slug", "name", "data_location", "created_at"])
             .executeTakeFirstOrThrow();
           await audit({
             action: "tenant.updated",

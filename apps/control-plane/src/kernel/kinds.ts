@@ -2,6 +2,7 @@ import { newId } from "@vynxlabs/db";
 import { type KindRegistry, registerPlatformKinds } from "@vynxlabs/manifest";
 import type { Trx } from "./audit.js";
 import { applyTable, retireTable } from "./data/apply.js";
+import type { DataStores } from "./data/stores.js";
 import { badRequest } from "./errors.js";
 
 export interface AppliedResource {
@@ -143,11 +144,19 @@ export function registerKernelKinds(kinds: KindRegistry, hooks: Map<string, Kind
   registerPlatformKinds(kinds);
   hooks.set("role", roleHook);
   hooks.set("binding", bindingHook);
+}
+
+/** The hook that makes a table resource's definition real, wherever the tenant's tables live. */
+export function registerDataHooks(hooks: Map<string, KindHook>, data: DataStores) {
   hooks.set("table", {
     async apply(trx, resource) {
-      await applyTable(trx, resource);
+      const { db, store } = await data.within(trx, resource.tenantId);
+      await applyTable(db, store.role, resource);
     },
     // The table's data outlives its definition. It is retired, not dropped.
-    remove: (trx, resource) => retireTable(trx, resource),
+    async remove(trx, resource) {
+      const { db } = await data.within(trx, resource.tenantId);
+      await retireTable(db, resource);
+    },
   });
 }

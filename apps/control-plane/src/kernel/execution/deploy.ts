@@ -182,7 +182,9 @@ export async function deployBundle(
   const note = (change: ResourceChange["change"], kind: string, path: string) => {
     if (summary.changes.length < MAX_LISTED_CHANGES) summary.changes.push({ change, kind, path });
   };
-  const dataBefore = await loadCatalog(trx, workspace.id);
+  // The tenant's tables and their catalog may be in a database of their own.
+  const data = (await kernel.data.within(trx, workspace.tenantId)).db;
+  const dataBefore = await loadCatalog(data, workspace.id);
 
   // Resources the bundle no longer has go first, so a path can be reused by another kind.
   const wanted = new Set(content.manifests.map((manifest) => manifest.path));
@@ -220,8 +222,8 @@ export async function deployBundle(
   }
 
   // Every table is in place now, so a reference to a table that is not there is a mistake.
-  await reconcileReferences(trx, workspace.id, true);
-  summary.data = describeChanges(dataBefore, await loadCatalog(trx, workspace.id));
+  await reconcileReferences(data, workspace.id, true);
+  summary.data = describeChanges(dataBefore, await loadCatalog(data, workspace.id));
 
   const id = newId();
   await trx

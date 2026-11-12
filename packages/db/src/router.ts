@@ -1,9 +1,13 @@
 import type { Kysely } from "kysely";
-import { DedicatedLocationNotSupportedError, TenantNotFoundError } from "./errors.js";
+import { TenantNotFoundError } from "./errors.js";
 import { isId } from "./id.js";
 import type { DataLocation, PlatformSchema } from "./schema.js";
 
-/** Database access for one tenant, resolved from that tenant's data location. */
+/**
+ * Database access for one tenant's platform records, and where its custom
+ * tables live. Platform records are always in the platform database. Custom
+ * tables are in the database `location` names, opened as a `DataStore`.
+ */
 export interface TenantHandle {
   readonly tenantId: string;
   readonly location: DataLocation;
@@ -39,10 +43,6 @@ export class TenantRouter {
     if (!tenant) {
       throw new TenantNotFoundError(tenantId);
     }
-    const location = tenant.data_location;
-    if (location.kind === "dedicated") {
-      throw new DedicatedLocationNotSupportedError(tenantId);
-    }
-    return { tenantId, location, db: this.#platform };
+    return { tenantId, location: tenant.data_location, db: this.#platform };
   }
 }

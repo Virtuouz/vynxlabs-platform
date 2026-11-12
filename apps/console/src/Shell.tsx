@@ -37,6 +37,7 @@ function Group({ label, children }: { label: string; children: ComponentChildren
 
 export const TENANT_SECTIONS = [
   ["workspaces", "Workspaces"],
+  ["approvals", "Approvals"],
   ["members", "Members"],
   ["groups", "Groups"],
   ["service-accounts", "Service accounts"],

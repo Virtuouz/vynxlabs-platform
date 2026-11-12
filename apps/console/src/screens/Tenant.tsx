@@ -22,6 +22,7 @@ import {
   Variables,
   Workers,
 } from "./Execution.tsx";
+import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
 
 interface Role {
   id: string;
@@ -179,8 +180,11 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
           tenantId={tenantId}
           workspaceId={workspace.w}
           tab={workspace.tab ?? "scripts"}
+          rest={path.split("/").slice(6).map(decodeURIComponent).join("/")}
           runId={runId}
         />
+      ) : section === "approvals" ? (
+        <Approvals base={base} tenantId={tenantId} />
       ) : section === "workers" ? (
         <Workers base={base} />
       ) : section === "members" ? (
@@ -287,12 +291,15 @@ function WorkspaceDetail({
   tenantId,
   workspaceId,
   tab,
+  rest,
   runId,
 }: {
   base: string;
   tenantId: string;
   workspaceId: string;
   tab: string;
+  /** What follows the tab in the address: a flow's path, or a flow run's ID. */
+  rest: string;
   runId: string | undefined;
 }) {
   const workspace = useLoad<Workspace>(`${base}/workspaces/${workspaceId}`);
@@ -319,15 +326,36 @@ function WorkspaceDetail({
         <TypeBadge type={workspace.data.type} />
       </div>
       <nav aria-label="Workspace" class="flex flex-wrap gap-x-5 border-line border-b">
+        {link("flows", "Flows")}
         {link("scripts", "Scripts")}
         {link("runs", "Runs")}
         {link("triggers", "Triggers")}
+        {link("events", "Events")}
         {link("deployments", "Deployments")}
         {link("connections", "Connections")}
         {link("variables", "Variables")}
         {link("secrets", "Secrets")}
         {link("resources", "Resources")}
       </nav>
+      {tab === "flows" && rest ? (
+        <FlowView
+          key={rest}
+          root={root}
+          path={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "flows" ? (
+        <Flows root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "flow-runs" && rest ? (
+        <FlowRunView
+          key={rest}
+          root={root}
+          id={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "events" ? (
+        <Events root={root} />
+      ) : null}
       {tab === "scripts" ? (
         <Scripts root={root} runsLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />
       ) : tab === "runs" && runId ? (

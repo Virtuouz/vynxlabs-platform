@@ -43,11 +43,16 @@ describe("building the example repository", () => {
       "connection erp",
       "connection shop",
       "variable orders/batch-size",
+      "event orders/received",
+      "event orders/synced",
       "script alerts/run-failed",
+      "script orders/check",
       "script orders/receive",
+      "script orders/send-to-erp",
       "script orders/sync",
       "schedule orders/sync-every-five-minutes",
       "trigger orders/placed",
+      "flow orders/handle",
     ]);
     expect(bundle).toMatchObject({
       formatVersion: 1,
@@ -66,11 +71,44 @@ describe("building the example repository", () => {
         timeoutSeconds: 120,
         retries: { limit: 3, delaySeconds: 30, backoff: true },
         concurrency: 1,
-        uses: { connections: ["shop", "erp"], secrets: [], variables: ["orders/batch-size"] },
+        uses: {
+          connections: ["shop", "erp"],
+          secrets: [],
+          variables: ["orders/batch-size"],
+          events: ["orders/synced"],
+        },
         onFailure: { script: "alerts/run-failed", notify: "alerts" },
         input: { type: "object", properties: { since: { type: "string" } } },
         output: { type: "object", required: ["sent", "skipped"] },
       },
+    });
+    // The flow is written as nodes and edges, and that is exactly what the manifest holds.
+    const flow = bundle.manifests.find((manifest) => manifest.path === "orders/handle");
+    expect(flow?.body).toMatchObject({
+      nodes: {
+        from_event: { type: "trigger", trigger: { type: "event", event: "orders/received" } },
+        by_hand: { type: "trigger", trigger: { type: "manual" } },
+        check: { type: "script", script: "orders/check", input: "{'order': trigger}" },
+        route: {
+          type: "branch",
+          cases: [
+            { name: "invalid", when: "!steps.check.output.valid" },
+            { name: "large", when: "trigger.total > 1000.0" },
+          ],
+        },
+        approve: { type: "approval", title: "Approve a large order" },
+      },
+    });
+    const edges = (flow?.body.edges ?? []) as object[];
+    expect(edges).toContainEqual({
+      from: "route",
+      to: "approve",
+      output: "large",
+    });
+    expect(edges).toContainEqual({
+      from: "send",
+      to: "report",
+      error: true,
     });
     // No manifest names a workspace: the same bundle deploys anywhere.
     expect(bundle.manifests.every((manifest) => !("workspace" in manifest))).toBe(true);
@@ -118,6 +156,30 @@ describe("a repository with mistakes", () => {
       'jobs/a (script): connections refers to "crm", which is not a connection in this repository.',
       'jobs/a (script): onFailure.script refers to "jobs/missing", which is not a script in this repository.',
       'jobs/nightly (schedule): script refers to "jobs/other", which is not a script in this repository.',
+    ]);
+  });
+
+  test("catches a flow that does not hold together", async () => {
+    const flowHead =
+      'import { defineFlow, defineScript, step, trigger, z } from "@vynxlabs/sdk";\n';
+    const source = `${flowHead}${script()}export const f = defineFlow({
+      path: "flows/broken",
+      nodes: {
+        start: trigger.manual(),
+        work: step.script("jobs/missing", { input: "trigger.n >" }),
+        choose: step.branch({ big: "trigger.n > 10.0" }),
+        lonely: step.set({ x: "1" }),
+      },
+      edges: [["start", "work"], ["work", "choose"], ["choose", "work", { when: "huge" }]],
+    });`;
+    expect(await problems(source)).toEqual([
+      'flows/broken (flow): /body/edges/2/output the branch "choose" has no case "huge"',
+      "flows/broken (flow): /body/nodes/lonely no trigger leads to this node",
+      "flows/broken (flow): /body/nodes/work the flow loops back on itself: work -> choose -> work. Use a foreach to repeat",
+      'flows/broken (flow): /body/nodes/work/script refers to "jobs/missing", which is not a script in this repository.',
+      expect.stringMatching(
+        /^flows\/broken \(flow\): \/body\/nodes\/work\/input is not a valid expression: /,
+      ),
     ]);
   });
 

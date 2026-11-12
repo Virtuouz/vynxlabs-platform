@@ -147,7 +147,7 @@ describe("the example integration", () => {
     expect(built.out).toContain("schedule   orders/sync-every-five-minutes");
     expect(
       JSON.parse(await readFile(join(example, ".platform", "bundle.json"), "utf8")).manifests,
-    ).toHaveLength(9);
+    ).toHaveLength(14);
   });
 
   test("deploy says exactly what the workspace is missing", async () => {
@@ -202,7 +202,7 @@ describe("the example integration", () => {
     ]);
     expect(deployed.err).toBe("");
     expect(deployed.out).toContain(
-      "Deployed version 1 to main (production): 9 created, 0 updated, 0 deleted, 0 unchanged.",
+      "Deployed version 1 to main (production): 14 created, 0 updated, 0 deleted, 0 unchanged.",
     );
 
     // Deploying the same code again changes nothing.
@@ -216,7 +216,7 @@ describe("the example integration", () => {
       "main",
     ]);
     expect(again.out).toContain(
-      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 9 unchanged.",
+      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 14 unchanged.",
     );
   });
 
@@ -272,15 +272,82 @@ describe("the example integration", () => {
     expect(erpImports.at(-1)?.order.id).toBe("2001");
   });
 
+  test("the order flow asks for approval of a large order, then sends it to the ERP", async () => {
+    interface FlowRunBody {
+      status: string;
+      error: { message: string } | null;
+      steps: { node: string; status: string }[];
+    }
+    const flowRun = async (id: string): Promise<FlowRunBody> =>
+      (await alice.get(`${base}/flow-runs/${id}`)).body;
+    const settled = async (id: string, done: (run: FlowRunBody) => boolean) => {
+      for (let i = 0; i < 150; i++) {
+        const current = await flowRun(id);
+        if (done(current)) return current;
+        await sleep(100);
+      }
+      throw new Error(`Flow run ${id} did not get there.`);
+    };
+    const latest = async () =>
+      (await alice.get(`${base}/flow-runs?flow=orders/handle`)).body.items[0].id as string;
+
+    // A small order goes straight through.
+    await alice.post(`${base}/events`, {
+      name: "orders/received",
+      payload: { id: "3001", total: 80, currency: "EUR" },
+    });
+    const small = await settled(await latest(), (run) => run.status !== "running");
+    expect(small.status).toBe("succeeded");
+    expect(small.steps.find((s) => s.node === "approve")?.status).toBe("skipped");
+    expect(erpImports.at(-1)?.order.id).toBe("3001");
+
+    // A large one waits for a person.
+    await alice.post(`${base}/events`, {
+      name: "orders/received",
+      payload: { id: "3002", total: 4200, currency: "EUR" },
+    });
+    const waiting = await settled(await latest(), (run) =>
+      run.steps.some((s) => s.node === "approve" && s.status === "waiting"),
+    );
+    expect(erpImports.at(-1)?.order.id).toBe("3001");
+    const approvals = (await alice.get(`${base}/approvals`)).body.items;
+    expect(approvals[0]).toMatchObject({
+      title: "Approve a large order",
+      detail: { order: "3002", total: 4200, currency: "EUR" },
+    });
+    await alice.post(`${base}/flow-runs/${approvals[0].flowRunId}/approvals/approve`, {
+      decision: "approve",
+    });
+    const approved = await settled(approvals[0].flowRunId, (run) => run.status !== "running");
+    expect(approved.status).toBe("succeeded");
+    expect(erpImports.at(-1)?.order.id).toBe("3002");
+    expect(waiting.steps.find((s) => s.node === "refuse")?.status).toBe("skipped");
+
+    // One the check refuses fails the flow with the reason.
+    await alice.post(`${base}/events`, {
+      name: "orders/received",
+      payload: { id: "3003", total: 50, currency: "USD" },
+    });
+    const refused = await settled(await latest(), (run) => run.status !== "running");
+    expect(refused).toMatchObject({
+      status: "failed",
+      error: {
+        message: 'The step "refuse" failed: Order 3003 was refused: Only EUR orders are handled.',
+      },
+    });
+  });
+
   test("runs are listed and shown, with their logs, from the command line", async () => {
     const listed = await cli(["runs", "--tenant", "acme", "--workspace", "main"]);
     expect(listed.code).toBe(0);
     const lines = listed.out.split("\n");
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(/succeeded\s+webhook\s+orders\/receive/);
-    expect(lines[2]).toMatch(/succeeded\s+manual\s+orders\/sync/);
+    expect(lines.some((line) => /succeeded\s+webhook\s+orders\/receive/.test(line))).toBe(true);
+    expect(lines.some((line) => /succeeded\s+flow\s+orders\/send-to-erp/.test(line))).toBe(true);
+    const first = lines.findLast((line) =>
+      /succeeded\s+manual\s+orders\/sync/.test(line),
+    ) as string;
 
-    const id = (lines[2] as string).split(/\s+/).at(-1) as string;
+    const id = first.split(/\s+/).at(-1) as string;
     const shown = await cli(["runs", "--tenant", "acme", "--workspace", "main", id]);
     expect(shown.out).toContain("orders/sync: succeeded, attempt 1 of 4, bundle version 1");
     expect(shown.out).toContain('Output: {"sent":2,"skipped":1}');
@@ -323,7 +390,7 @@ describe("working locally", () => {
     expect(ran.out).toMatch(/Output: \{"sent":\d,"skipped":\d\}/);
 
     expect((await cli(["run", "orders/unknown", "--dir", example])).err).toContain(
-      'There is no script "orders/unknown". This repository has: alerts/run-failed, orders/receive, orders/sync',
+      'There is no script "orders/unknown". This repository has: alerts/run-failed, orders/check, orders/receive, orders/send-to-erp, orders/sync',
     );
     expect((await cli(["run", "orders/sync", "--dir", example, "--input", "{bad"])).err).toContain(
       "--input must be JSON",

@@ -243,6 +243,26 @@ async function runs(args: string[], io: Io) {
       trigger: { type: string };
       createdAt: string;
     }[];
+    // Flow runs are listed with the script runs, newest first. A flow's steps appear as runs started by "flow".
+    const flows = values.script
+      ? { status: 200, body: { items: [] } }
+      : await request(settings.url, `${base}/flow-runs?limit=20`, settings.token);
+    for (const flow of (flows.body?.items ?? []) as {
+      id: string;
+      flow: string;
+      status: string;
+      trigger: { type: string };
+      createdAt: string;
+    }[]) {
+      items.push({
+        id: flow.id,
+        script: `${flow.flow} (flow)`,
+        status: flow.status,
+        trigger: flow.trigger,
+        createdAt: flow.createdAt,
+      });
+    }
+    items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     if (items.length === 0) {
       io.out("No runs yet.");
       return;

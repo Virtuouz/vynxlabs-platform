@@ -184,10 +184,17 @@ async function naming<T>(target: RowTarget, write: () => Promise<T>): Promise<T>
   try {
     return await write();
   } catch (error) {
-    const violated =
-      (error as { code?: string; constraint?: string }).code === "23505"
-        ? (error as { constraint?: string }).constraint
+    const failure = error as { code?: string; constraint?: string };
+    // A column that came back from retirement is required of every row written from then on.
+    const gap =
+      failure.code === "23514"
+        ? target.columns.find(
+            (candidate) =>
+              constraintName("nn", target.table, candidate.physicalName) === failure.constraint,
+          )
         : undefined;
+    if (gap) throw badRequest(`A value is required for "${gap.name}".`);
+    const violated = failure.code === "23505" ? failure.constraint : undefined;
     const column = target.columns.find(
       (candidate) => constraintName("uq", target.table, candidate.physicalName) === violated,
     );

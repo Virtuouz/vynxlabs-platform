@@ -218,6 +218,7 @@ async function deploy(args: string[], io: Io) {
     `Deployed version ${deployed.body.bundleVersion} to ${values.workspace} (${workspace.type}): ` +
       `${created} created, ${updated} updated, ${deleted} deleted, ${unchanged} unchanged.`,
   );
+  for (const line of (deployed.body.summary.data ?? []) as string[]) io.out(`  ${line}`);
 }
 
 const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);

@@ -85,6 +85,19 @@ function columnDefinition(column: NewColumn) {
 export const constraintName = (prefix: string, table: string, column: string) =>
   `${prefix}_${createHash("sha256").update(`${table}.${column}`).digest("hex").slice(0, 16)}`;
 
+/** Lifts the rule that a column must have a value, in whichever form it was put in place. */
+async function dropRequired(
+  trx: Trx,
+  target: ReturnType<typeof sql.id>,
+  table: string,
+  column: string,
+) {
+  await sql`alter table ${target} alter column ${sql.id(column)} drop not null`.execute(trx);
+  await sql`alter table ${target} drop constraint if exists ${sql.id(constraintName("nn", table, column))}`.execute(
+    trx,
+  );
+}
+
 /** A problem with the data already in a table, which the author has to resolve. */
 const refuse = (table: string, column: string, message: string) =>
   conflict(`The table "${table}" cannot be changed: column "${column}" ${message}`);
@@ -249,7 +262,7 @@ async function applyStep(trx: Trx, resource: AppliedResource, schema: string, st
       break;
     case "retire_column":
       // The data stays. The rules go, so that rows can still be written without it.
-      await sql`alter table ${target} alter column ${physical} drop not null`.execute(trx);
+      await dropRequired(trx, target, table.physical_name, column.physical_name);
       await setUnique(trx, schema, table.physical_name, column.physical_name, false);
       await sql`alter table ${target} drop constraint if exists ${sql.id(constraintName("fk", table.physical_name, column.physical_name))}`.execute(
         trx,
@@ -306,16 +319,26 @@ async function applyStep(trx: Trx, resource: AppliedResource, schema: string, st
         }
         const missing =
           await sql`select 1 from ${target} where ${physical} is null limit 1`.execute(trx);
-        if (missing.rows.length > 0) {
+        const lenient = sql.id(constraintName("nn", table.physical_name, column.physical_name));
+        await sql`alter table ${target} drop constraint if exists ${lenient}`.execute(trx);
+        if (missing.rows.length === 0) {
+          await sql`alter table ${target} alter column ${physical} set not null`.execute(trx);
+        } else if (step.restored) {
+          // Rows written while the column was retired have no value for it. Going back to
+          // an earlier definition must always be possible, so the column comes back required
+          // for every row written from now on, and those rows keep their gap.
+          await sql`alter table ${target} add constraint ${lenient} check (${physical} is not null) not valid`.execute(
+            trx,
+          );
+        } else {
           throw refuse(
             step.table,
             step.name,
             "is now required, and some rows have no value for it. Give it a default, or fill those rows first.",
           );
         }
-        await sql`alter table ${target} alter column ${physical} set not null`.execute(trx);
       } else {
-        await sql`alter table ${target} alter column ${physical} drop not null`.execute(trx);
+        await dropRequired(trx, target, table.physical_name, column.physical_name);
       }
       await trx
         .updateTable("data_column")

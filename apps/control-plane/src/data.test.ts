@@ -576,6 +576,25 @@ describe("row policies", () => {
     expect((await erin.client.get(`${ws()}/rows/orders`)).status).toBe(403);
     expect((await erin.client.get(`${ws()}/tables`)).status).toBe(403);
   });
+
+  test("someone whose access comes through a group is held to their own rows like anyone else", async () => {
+    const group = await alice.post(`/tenants/${tenant}/groups`, { name: "Order handlers" });
+    await alice.put(`/tenants/${tenant}/groups/${group.body.id}/members/${erin.id}`);
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      principalType: "group",
+      principalId: group.body.id,
+      roleId: roles.rows_only,
+    });
+    const own = await erin.client.post(`${ws()}/rows/orders`, { number: "E-1", total: 5 });
+    expect(own.status).toBe(201);
+    // The owner is the person, not the group.
+    expect(own.body.items[0].owner_id).toBe(erin.id);
+    expect((await rows(erin.client, "orders")).map((row) => row.number)).toEqual(["E-1"]);
+    expect((await alice.delete(`${ws()}/row/${own.body.items[0].id}/orders`)).status).toBe(204);
+    expect((await alice.delete(`/tenants/${tenant}/groups/${group.body.id}`)).status).toBe(204);
+    expect((await erin.client.get(`${ws()}/rows/orders`)).status).toBe(403);
+  });
 });
 
 describe("changing a table without losing data: the exit criterion", () => {
@@ -610,6 +629,13 @@ describe("changing a table without losing data: the exit criterion", () => {
     expect(onDev.body.summary).toMatchObject({ updated: 1, unchanged: 2 });
     const onProd = await deploy(v2, prod);
     expect(onProd.status).toBe(201);
+    // The deploy says what it did to the data, the same in both workspaces.
+    expect(onProd.body.summary.data).toEqual(onDev.body.summary.data);
+    expect([...onProd.body.summary.data].sort()).toEqual([
+      "Table orders: column currency added.",
+      "Table orders: column note retired. Its values are kept.",
+      "Table orders: column total renamed to amount. Its values are kept.",
+    ]);
 
     for (const [workspace, before] of [
       [dev, devBefore],
@@ -664,6 +690,11 @@ describe("changing a table without losing data: the exit criterion", () => {
     );
     const rolledBack = await alice.post(`${ws(prod)}/deployments`, { bundleId: first.id });
     expect(rolledBack.status).toBe(201);
+    expect([...rolledBack.body.summary.data].sort()).toEqual([
+      "Table orders: column amount renamed to total. Its values are kept.",
+      "Table orders: column currency retired. Its values are kept.",
+      "Table orders: column note brought back, with its values.",
+    ]);
     const now = await rows(alice, "orders", "?sort=number", prod);
     expect(now.map((row) => [row.number, row.total, row.note])).toEqual([
       ["P-1", 500, "first"],
@@ -864,6 +895,52 @@ describe("tables made in the console, isolation and guards", () => {
       (await alice.get(`${ws()}/tables`)).body.items.find((item: Any) => item.name === "notes")
         .status,
     ).toBe("retired");
+  });
+
+  test("a required column that was removed comes back even when rows were written without it", async () => {
+    const put = (columns: Record<string, object>) =>
+      alice.put(`${ws()}/resources/gaps`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: { columns },
+      });
+    const both = {
+      title: { type: "text", required: true },
+      code: { type: "text", required: true },
+    };
+    expect((await put(both)).status).toBe(201);
+    await alice.post(`${ws()}/rows/gaps`, { title: "Before", code: "A" });
+    // The column leaves the definition, and a row is written that never had it.
+    expect((await put({ title: both.title })).status).toBe(200);
+    const during = (await alice.post(`${ws()}/rows/gaps`, { title: "During" })).body.items[0];
+    // Going back is never refused. The row written meanwhile keeps its gap.
+    const back = await put(both);
+    expect(back.status, JSON.stringify(back.body)).toBe(200);
+    expect((await rows(alice, "gaps", "?sort=title")).map((row) => [row.title, row.code])).toEqual([
+      ["Before", "A"],
+      ["During", null],
+    ]);
+    // From now on the column is required again.
+    expect((await alice.post(`${ws()}/rows/gaps`, { title: "After" })).body.errors).toEqual([
+      { path: "/code", message: "is required" },
+    ]);
+    // The row with the gap must be given a value when it is next changed.
+    const untouched = await alice.patch(`${ws()}/row/${during.id}/gaps`, { title: "Renamed" });
+    expect(untouched.status).toBe(400);
+    expect(untouched.body.detail).toBe('A value is required for "code".');
+    const filled = await alice.patch(`${ws()}/row/${during.id}/gaps`, {
+      title: "Renamed",
+      code: "B",
+    });
+    expect(filled.body).toMatchObject({ title: "Renamed", code: "B" });
+    // Making an ordinary column required while rows lack a value is still refused.
+    const optional = { ...both, extra: { type: "text" } };
+    expect((await put(optional)).status).toBe(200);
+    const refused = await put({ ...both, extra: { type: "text", required: true } });
+    expect(refused.status).toBe(409);
+    expect(refused.body.detail).toContain('column "extra" is now required');
+    expect((await alice.delete(`${ws()}/resources/gaps`)).status).toBe(204);
   });
 
   test("each workspace has its own tables, and another tenant reaches none", async () => {

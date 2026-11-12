@@ -264,6 +264,21 @@ describe("planning a table", () => {
       "set_required",
       "set_unique",
     ]);
+    // The step says the column is coming back, so that rows written meanwhile do not stop it.
+    expect(
+      planTable(retired, "orders", v1).steps.find((step) => step.op === "set_required"),
+    ).toMatchObject({ required: true, restored: true });
+    const optional = apply(
+      start(),
+      planTable(start(), "orders", {
+        columns: { ...v1.columns, total: { type: "integer" } },
+      }),
+    );
+    expect(
+      planTable(optional, "orders", {
+        columns: { ...v1.columns, total: { type: "integer", required: true } },
+      }).steps,
+    ).toEqual([expect.not.objectContaining({ restored: true })]);
   });
 
   test("a type is widened in place when nothing can be lost, and refused otherwise", () => {

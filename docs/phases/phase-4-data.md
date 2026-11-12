@@ -1,6 +1,6 @@
 # Phase 4: data
 
-Status: in progress
+Status: built and verified locally on 2026-11-11. Not yet run in CI or on Fly.io
 Last updated: 2026-11-11
 
 Phase 4 adds tenant-owned data: custom tables defined as resources, changed through deploys, protected by row policies, and reachable from scripts, the API and a studio in the console.
@@ -47,6 +47,11 @@ The owner's decision after the spike: switch role per transaction on the platfor
 - **`*:read` includes reading every row.** The built-in `viewer` and `developer` roles hold `*:read`, which matches `data_all:read`. So staff with those roles see all rows of an owner-policy table. That is intended for staff. The owner rule bites for principals bound to a role that holds `data:read` and `data:write` only, which is what end users will get in phase 6.
 - **Numbers are stored as double precision.** JSON has one number type, and a value must come back exactly as it went in. Money should be stored as an integer of the smallest unit.
 - **An external source's row policies are its own.** The platform connects with the credentials it was given and sees what they allow.
+- **Row-level security hides why a unique value was refused.** The restricted role may not see other people's rows, so Postgres withholds the detail of a unique violation. The data API works out the column from the constraint's name instead.
+- **Rolling back a rename.** A bundle that renames a column, rolled back to the bundle before it, declares the old name with no `renamedFrom`. Read naively that is a new, empty column, and the values would drop out of view. The catalog therefore remembers every name a column or table has had, and a definition that uses an earlier name gets the same column back.
+- **A rollback could be blocked by rows written after the change.** Found on the Compose stack, not in the tests. Production was promoted to a definition without `currency`, an order arrived, and rolling back was refused because `currency` is required and the new row had none. Nothing was lost, but the rows could not be filled either, because the column was retired and hidden. A column returning from retirement now always comes back. Where rows have a gap, the rule is put in place as a check that applies to every later write, and Postgres is told not to hold the existing rows to it. Making an ordinary column required while rows lack a value is still refused, because there the author can fill the rows first.
+- **Columns are shown in the order they were created, then by name.** Columns made in the same deploy therefore appear alphabetically, not in the order the definition lists them. The catalog does not record a position.
+- **A file column holds an ID and nothing more.** Deleting a file does not change the rows that point at it, and deleting a row does not delete its file.
 - **Binding an external source lets the control plane connect to an address a tenant admin chose.** On a shared instance that is a path into the operator's network. It is the same trust already extended to connections, and operators can restrict egress at the network. An allow-list setting is left for later.
 
 ## Tables
@@ -89,6 +94,7 @@ The control plane compares each table's definition with the catalog and applies 
 | `renamedFrom` on a table or column | Renamed. Data untouched |
 | Column or table no longer declared | Retired: hidden from the API and scripts, data kept, and no longer required or unique so that new rows can still be written |
 | A retired column or table declared again with the same type | Brought back, with its data |
+| A retired column that comes back as required, when rows written meanwhile have no value for it | Brought back. It is required of every row written or changed from then on. The rows with a gap keep it until they are next changed, when a value must be given |
 | A retired column declared again with another type | A new column. The retired one stays retired |
 | integer to number, or anything to text | Widened in place |
 | Any other type change | Refused |
@@ -97,11 +103,13 @@ The control plane compares each table's definition with the catalog and applies 
 
 A refused deploy changes nothing, and names the table and column.
 
+A deployment's summary lists what it did to the data, one sentence per change, and the CLI prints it: "Table orders: column total renamed to amount. Its values are kept."
+
 Dropping retired data is the purge route: explicit, audited, permission `table:write`.
 
 ## Row policies
 
-- Every workspace table has row-level security forced on.
+- Every workspace table has row-level security enabled. It is not forced: the platform's own role owns the tables and is not subject to the policies, which is what lets a deploy change them. The restricted role never owns a table, so the policies always apply to it.
 - A data request runs in a transaction that switches to the restricted role and states the principal and whether they may see every row.
 - `open`: permissions alone decide.
 - `owner`: a caller sees and changes only rows whose owner column holds their ID. A row inserted without an owner gets the caller's. Holders of `data_all` see and change every row.
@@ -129,7 +137,7 @@ Under `/api/v1/tenants/{t}/workspaces/{w}`.
 | `/rows/{path...}` | GET, POST | `data:read`, `data:write` |
 | `/row/{id}/{path...}` | GET, PATCH, DELETE | `data:read`, `data:write` |
 | `/data-source-bindings`, `/data-source-bindings/{path...}` | GET, PUT, DELETE | `data_source:*` |
-| `/data-sources/{path...}/tables` | GET | `data_source:read` |
+| `/data-source-tables/{path...}` | GET | `data_source:read` |
 | `/source-rows/{table}/{path...}`, `/source-row/{table}/{key}/{path...}` | GET, POST, PATCH, DELETE | `data_source:*` |
 | `/files`, `/files/{id}`, `/files/{id}/content` | GET, POST, DELETE | `file:*` |
 
@@ -161,7 +169,16 @@ Under `/api/v1/tenants/{t}/workspaces/{w}`.
 
 ## Studio
 
-A Tables tab in the console: the list, a grid of rows with sorting, filtering and paging, add, edit and delete for those allowed, the definition with retired columns and a purge action, and creating and changing UI-managed tables. A Data sources tab: bind a source and browse its tables.
+A Tables tab in the console:
+
+- the list of tables, with row counts, who sees rows, and whether each is managed in the repository or the console;
+- a grid of rows with sorting, a filter under each heading, paging, editing in place, adding and deleting. A file column uploads and downloads;
+- the definition, with retired columns, how many values each still holds, and "Delete for good";
+- for tables managed in the console: create, add a column, rename, retire, bring back, change who sees rows. A table from the repository is read-only here and says so.
+
+A Data sources tab: connect a database, browse its tables, and read and write their rows in the same grid. A table with no primary key can be read and added to, not changed.
+
+The grid is a new component in `packages/ui`.
 
 ## Schemas
 
@@ -193,7 +210,53 @@ And the restricted database role, `platform_data`.
 
 ## Check against the master spec
 
-To be completed when the build is verified.
+Checked on 2026-11-11 against the build on the `phase-4-data` branch.
+
+### Guiding principles
+
+| Principle | Result |
+| --- | --- |
+| 1. One platform, one experience | Met. Tables, sources and files use the same identity, permission check, audit path, API and console as everything else |
+| 2. Everything is a resource | Met. `table` and `data_source` are kinds with the common envelope. A stored file is not a resource: it is data, like a row |
+| 3. Code first, git as the source of truth | Met. A table is declared in the repository and changed by a deploy. Tables made in the console are marked as such and a deploy leaves them alone |
+| 4. Language-neutral core | Met. A table definition is JSON. Scripts reach data through the worker protocol, which is documented and does not assume TypeScript. The tests speak it with hand-built bundles |
+| 5. Same software everywhere | Met. Nothing was added to the deployment |
+| 6. Minimal footprint | Met. Tenant data lives in the same Postgres, files in the same object store. No container was added |
+| 7. No central dependency | Met. Nothing new makes an outbound call, except to a data source a tenant binds |
+| 8. Tenant portability | Strengthened. A workspace's tables are one Postgres schema with readable names, and the console says where each table is stored |
+| 9. The core uses its own SDK | Met where it applies: scripts use `ctx.table`, the same client the example uses. The studio uses only the public API |
+| 10. Reuse libraries and engines, not applications | Met. Row policies are Postgres row-level security. No library was added for the grid |
+| 11. Keep the end-user version possible | Met. Definitions are data that a visual editor can read and write, and the console already edits console-managed tables that way |
+| 12. Kernel before features | Met. No generated screens, no reporting, no connector beyond Postgres |
+
+### Ownership promise
+
+Strengthened. A deploy cannot destroy tenant data. A rollback cannot destroy it and cannot be blocked by it. The only code that drops anything is one explicit, audited route. A tenant's rows are ordinary Postgres tables they can read directly. A data source's password is encrypted with the tenant's key and never returned.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Lint, type check, schema, migration and licence checks | Passed |
+| Every test on Postgres 16 and 18 | Passed |
+| The example, built with the SDK and deployed by the CLI: the order flow writes each order it sends to the `orders` table | Passed, in `packages/cli/src/example.test.ts` and on the Compose stack |
+| **Exit criterion on the single-host stack.** A dev workspace with 5 orders and a production workspace with 7, written by the flow and through the API. The repository's table was changed to add a column, rename one and remove one. The bundle was deployed to dev, then the same bundle (same digest) to production | Passed. Every row and value was intact in both, checked through the API and by reading the tables directly in Postgres. The removed column was still there, retired, holding its values |
+| Rolling production back to the first bundle, after a new order had been written under the new definition | Passed after the fix described under Findings. The removed column came back with its values, the renamed one under its old name, and the added one was retired with its values kept |
+| Two ordinary members, each bound to a role with `data:read` and `data:write` only | Passed. Each saw only their own orders, in the studio and through the API. Reading, changing or deleting another person's row answered 404, and inserting a row owned by someone else answered 403 |
+| An external Postgres in a separate container, connected from the studio | Passed. Tables listed, rows browsed, a value changed, a row added. A table with no primary key was read-only |
+| A file uploaded with a row in the studio, then downloaded | Passed. The same bytes and the same name |
+| A table created in the console: column added, renamed, retired, brought back with its value | Passed |
+| The studio in a real browser, at desktop and phone width, with no page errors | Passed |
+
+### Known gaps
+
+- Policies beyond the owner rule.
+- A separate login role and connection pool for data requests. Until then row-level security guards against mistakes in our own queries, not against an injection, which is why no route accepts SQL.
+- Column order follows creation, not the definition.
+- An owner is one principal. A group can be given access to a table, but cannot own rows.
+- Deleting a file does not check for rows that point at it.
+- An allow-list for the addresses a data source may be bound to.
+- Data sources other than Postgres. Dedicated databases per tenant (phase 5). Masking of personal data, and retention.
 
 ## Proposed deviations
 

@@ -12,7 +12,7 @@ import {
   Table,
   TextField,
 } from "@vynxlabs/ui";
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -101,13 +101,12 @@ function RowsBrowser(props: RowsBrowserProps) {
   const page = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
     `${props.rowsPath}?${query}`,
   );
-  const [rows, setRows] = useState<DataRow[]>([]);
-  useEffect(() => {
-    if (page.data) setRows(page.data.items);
-  }, [page.data]);
-
   const canChange = rowPath !== null && keyColumn !== null;
   const keyOf = (row: DataRow) => String(row[keyColumn ?? ""] ?? JSON.stringify(row));
+  // Rows saved in place since this page was loaded. They are shown as saved without loading again.
+  const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
+  const changed = saved && saved.of === page.data ? saved.rows : {};
+  const rows = (page.data?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
   const restart = () => setTrail([null]);
   const grid: GridColumn[] = columns.map((column) => ({
     name: column.name,
@@ -159,10 +158,8 @@ function RowsBrowser(props: RowsBrowserProps) {
         {...(canChange
           ? {
               onEdit: async (row: DataRow, column: string, value: unknown) => {
-                const saved = await api.patch<DataRow>(rowPath(keyOf(row)), { [column]: value });
-                setRows((current) =>
-                  current.map((candidate) => (keyOf(candidate) === keyOf(row) ? saved : candidate)),
-                );
+                const now = await api.patch<DataRow>(rowPath(keyOf(row)), { [column]: value });
+                setSaved({ of: page.data, rows: { ...changed, [keyOf(row)]: now } });
               },
               rowActions: (row: DataRow) => (
                 <RemoveButton
@@ -189,7 +186,7 @@ function RowsBrowser(props: RowsBrowserProps) {
           return undefined;
         }}
         empty={
-          page.loading
+          !page.data
             ? "Loading…"
             : filter
               ? "No rows match the filters."

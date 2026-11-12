@@ -1,7 +1,8 @@
 import { newId } from "@vynxlabs/db";
 import { type BundleManifest, coreInRange } from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
-import { reconcileReferences } from "../data/apply.js";
+import { loadCatalog, reconcileReferences } from "../data/apply.js";
+import { describeChanges } from "../data/plan.js";
 import { HttpError, notFound } from "../errors.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
@@ -160,7 +161,8 @@ export async function deployBundle(
     .where("workspace_id", "=", workspace.id)
     .execute();
   const byPath = new Map(existing.map((row) => [row.path, row]));
-  const summary = { created: 0, updated: 0, unchanged: 0, deleted: 0 };
+  const summary = { created: 0, updated: 0, unchanged: 0, deleted: 0, data: [] as string[] };
+  const dataBefore = await loadCatalog(trx, workspace.id);
 
   // Resources the bundle no longer has go first, so a path can be reused by another kind.
   const wanted = new Set(content.manifests.map((manifest) => manifest.path));
@@ -197,6 +199,7 @@ export async function deployBundle(
 
   // Every table is in place now, so a reference to a table that is not there is a mistake.
   await reconcileReferences(trx, workspace.id, true);
+  summary.data = describeChanges(dataBefore, await loadCatalog(trx, workspace.id));
 
   const id = newId();
   await trx

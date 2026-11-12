@@ -45,7 +45,18 @@ export type Step =
   | { op: "restore_column"; table: string; columnId: string; name: string }
   | { op: "retire_column"; table: string; columnId: string; name: string }
   | { op: "widen_column"; table: string; columnId: string; name: string; to: ColumnType }
-  | { op: "set_required"; table: string; columnId: string; name: string; required: boolean }
+  | {
+      op: "set_required";
+      table: string;
+      columnId: string;
+      name: string;
+      required: boolean;
+      /**
+       * The column is coming back from retirement. Rows written while it was
+       * away have no value for it, and that must not stop it coming back.
+       */
+      restored?: true;
+    }
   | { op: "set_unique"; table: string; columnId: string; name: string; unique: boolean }
   | { op: "set_default"; table: string; columnId: string; name: string; default: unknown }
   | { op: "set_reference"; table: string; columnId: string; name: string; referenceTable: string }
@@ -252,7 +263,12 @@ export function planTable(catalog: CatalogTable[], name: string, body: TableBody
     if (!same(current.default, want.default))
       steps.push({ op: "set_default", ...target, default: want.default });
     if (current.required !== want.required || (restored && want.required)) {
-      steps.push({ op: "set_required", ...target, required: want.required });
+      steps.push({
+        op: "set_required",
+        ...target,
+        required: want.required,
+        ...(restored ? { restored: true as const } : {}),
+      });
     }
     if (current.unique !== want.unique || (restored && want.unique)) {
       steps.push({ op: "set_unique", ...target, unique: want.unique });
@@ -272,4 +288,49 @@ export function planTable(catalog: CatalogTable[], name: string, body: TableBody
   }
   if (!same(table.policy, policy)) steps.push({ op: "set_policy", table: name, policy });
   return { steps, issues };
+}
+
+/**
+ * What a deploy did to a workspace's data, in words for the person who
+ * deployed: the catalog before set against the catalog after.
+ */
+export function describeChanges(before: CatalogTable[], after: CatalogTable[]): string[] {
+  const lines: string[] = [];
+  const was = new Map(before.map((table) => [table.id, table]));
+  for (const table of after) {
+    const old = was.get(table.id);
+    if (!old) {
+      if (table.status === "active") lines.push(`Table ${table.name} created.`);
+      continue;
+    }
+    if (old.name !== table.name) lines.push(`Table ${old.name} renamed to ${table.name}.`);
+    if (old.status === "active" && table.status === "retired") {
+      lines.push(`Table ${table.name} retired. Its rows are kept.`);
+      continue;
+    }
+    if (old.status === "retired" && table.status === "active") {
+      lines.push(`Table ${table.name} brought back, with its rows.`);
+    }
+    const columns = new Map(old.columns.map((column) => [column.id, column]));
+    for (const column of table.columns) {
+      const previous = columns.get(column.id);
+      const at = `Table ${table.name}: column`;
+      if (!previous) {
+        if (column.status === "active") lines.push(`${at} ${column.name} added.`);
+        continue;
+      }
+      if (previous.name !== column.name) {
+        lines.push(`${at} ${previous.name} renamed to ${column.name}. Its values are kept.`);
+      }
+      if (previous.status === "active" && column.status === "retired") {
+        lines.push(`${at} ${column.name} retired. Its values are kept.`);
+      } else if (previous.status === "retired" && column.status === "active") {
+        lines.push(`${at} ${column.name} brought back, with its values.`);
+      }
+      if (previous.type !== column.type) {
+        lines.push(`${at} ${column.name} changed from ${previous.type} to ${column.type}.`);
+      }
+    }
+  }
+  return lines;
 }

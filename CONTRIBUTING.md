@@ -69,6 +69,15 @@ The control plane knows nothing about TypeScript. It depends on the manifest for
 - Expressions are CEL and are only ever evaluated through the sandbox in `kernel/flows/expressions.ts`. Never evaluate one in the main thread, and do not add custom functions: the language must stay the published one.
 - Large data does not go through flow state. A step's output over the size limit is stored as a file, and expressions see a note in its place.
 
+## Tenant data
+
+- A deploy never drops a table or a column. What leaves a definition is retired. The purge route is the only code that may drop tenant data, and it must stay explicit and audited.
+- No route, and no worker call, accepts SQL. Every statement on tenant data is built from names checked against the catalog (or, for an external source, against what the source reports) and from bound values. Row-level security guards against our own mistakes. It does not contain an injection.
+- Everything that reads or writes rows of a workspace table goes through `withData` in `kernel/data/rows.ts`, which switches to the restricted database role and states who is asking. Never query a workspace table on the platform's own role outside the code that changes its structure.
+- A table change must be worked out by the pure planner in `kernel/data/plan.ts` and tested there without a database. Applying a plan must stay inside the deploy's transaction.
+- The platform never changes the structure of an external data source.
+- Reads and writes of rows are not audited one by one. Changes to definitions, bindings and purges are.
+
 ## Interface
 
 - The console and client apps use components from `packages/ui`. Do not style with raw colours or sizes: use the theme tokens, through the Tailwind utilities generated from them.

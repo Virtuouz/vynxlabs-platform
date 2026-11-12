@@ -88,6 +88,49 @@ Answers only for an event the script declared in its manifest, and 403 otherwise
 
 This route was added after version 1 was published. A worker that does not offer event publishing to scripts needs no change.
 
+### `POST /runs/{runId}/data`
+
+Reads or writes rows for the running script: in one of the workspace's own tables, or in a table of an external data source.
+
+Request:
+
+| Field | Meaning |
+| --- | --- |
+| `attempt` | As everywhere |
+| `table` | The table's path. For an external source, the table's name there |
+| `source` | Optional. The path of an external data source. Without it, `table` is a workspace table |
+| `op` | `find`, `get`, `insert`, `update` or `delete` |
+| `args` | For `find`: `filter`, `sort`, `limit`, `offset`. For `get` and `delete`: `id`. For `insert`: `rows`, 1 to 1,000 of them. For `update`: `id` and `patch` |
+| `as` | Optional. A principal's ID. The table's row policy then applies as it would to that person. Without it the script acts as the workspace and reaches every row. Ignored for an external source |
+
+Response: `{"result": ...}`.
+
+| `op` | `result` |
+| --- | --- |
+| `find` | `{"items": [...], "nextOffset": number or null}` |
+| `get` | The row, or `null` |
+| `insert` | The inserted rows. Either all are inserted or none |
+| `update` | The row as it now is |
+| `delete` | `null` |
+
+A filter is `{"column", "op", "value"}`, or `{"and": [...]}`, or `{"or": [...]}`. Operators: `eq` (the default), `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`. No field accepts SQL.
+
+Answers only for a table or a source the script declared in its manifest, and 403 otherwise. 400 means a value does not fit its column, with the column named. 404 means the table or the row is not there. 409 means a value that must be unique is already taken. 502 means an external source could not be reached or refused the request.
+
+### `POST /runs/{runId}/files`
+
+Stores a file in the workspace.
+
+Request: `attempt`, `name`, `base64` (the bytes), and optionally `contentType`. At most 25 MB.
+
+Response: the stored file: `{"id", "name", "contentType", "sizeBytes", "createdAt"}`. The `id` is what a `file` column holds.
+
+### `GET /runs/{runId}/files/{fileId}?attempt=N`
+
+Response: the stored file as above, plus `base64`. 404 when the workspace has no such file.
+
+The data and file routes were added after version 1 was published. A worker that does not offer them to scripts needs no change.
+
 ### `POST /runs/{runId}/complete`
 
 Request: `attempt`, `output`. The run succeeds. 409 means the attempt was no longer in progress and the output was not recorded.

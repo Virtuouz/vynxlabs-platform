@@ -633,7 +633,14 @@ describe("deploys and runs in progress", () => {
       (b: { version: number }) => b.version === 1,
     );
     const rolledBack = await alice.post(`${ws()}/deployments`, { bundleId: first.id });
-    expect(rolledBack.body.summary).toEqual({ created: 1, updated: 0, unchanged: 11, deleted: 0 });
+    expect(rolledBack.body.summary).toEqual({
+      created: 1,
+      updated: 0,
+      unchanged: 11,
+      deleted: 0,
+      // This bundle has no tables, so the deploy did nothing to the data.
+      data: [],
+    });
     expect(await finished(await start("slow", { ms: 10 }), 20)).toMatchObject({
       bundleVersion: 1,
       output: { version: 1 },

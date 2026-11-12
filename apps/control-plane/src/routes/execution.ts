@@ -74,6 +74,12 @@ const Summary = Type.Object({
   updated: Type.Integer(),
   unchanged: Type.Integer(),
   deleted: Type.Integer(),
+  data: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "What the deploy did to the workspace's tables, one sentence each. A deploy never drops data.",
+    }),
+  ),
 });
 const Deployment = Type.Object({
   id: Id,

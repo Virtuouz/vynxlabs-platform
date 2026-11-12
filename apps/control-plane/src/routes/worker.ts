@@ -84,12 +84,10 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ worker, body, raw }) => {
         await seeWorker(kernel, worker, body.workerId, body.version);
         const deadline = Date.now() + (body.waitSeconds ?? 20) * 1000;
-        let gone = false;
-        raw.once("close", () => {
-          gone = true;
-        });
+        // A worker that hung up must not be handed a job.
+        const gone = () => raw.socket.destroyed;
         for (;;) {
-          const claimed = await claimRun(kernel, worker, body.workerId);
+          const claimed = await claimRun(kernel, worker, body.workerId, gone);
           if (claimed) {
             const { run } = claimed;
             const bundle = await db
@@ -116,7 +114,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               },
             };
           }
-          if (gone || Date.now() >= deadline) return { job: null };
+          if (gone() || Date.now() >= deadline) return { job: null };
           await sleep(Math.min(500, Math.max(0, deadline - Date.now())));
         }
       },

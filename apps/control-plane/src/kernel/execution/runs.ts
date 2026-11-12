@@ -145,14 +145,22 @@ export interface WorkerScope {
   workspaceId: string | null;
 }
 
+class ClaimAbandoned extends Error {}
+
 let rotation = 0;
 
 /**
  * Gives a worker the next job it may run, or null. Each workspace's limit is
  * checked and the job taken under one lock, so two workers cannot both take
- * the last slot.
+ * the last slot. If the worker disconnects while waiting, nothing is claimed.
  */
-export async function claimRun(kernel: Kernel, scope: WorkerScope, workerId: string) {
+export async function claimRun(
+  kernel: Kernel,
+  scope: WorkerScope,
+  workerId: string,
+  /** Says whether the worker has gone away. A job is never handed to a worker that has. */
+  abandoned: () => boolean = () => false,
+) {
   let query = kernel.db
     .selectFrom("workspace")
     .select(["id", "concurrency_limit"])
@@ -167,50 +175,61 @@ export async function claimRun(kernel: Kernel, scope: WorkerScope, workerId: str
 
   for (const workspace of ordered) {
     for (;;) {
-      const outcome = await kernel.db.transaction().execute(async (trx) => {
-        await sql`select pg_advisory_xact_lock(hashtextextended(${workspace.id}, 0))`.execute(trx);
-        const running = await trx
-          .selectFrom("run")
-          .select((eb) => eb.fn.countAll<string>().as("n"))
-          .where("workspace_id", "=", workspace.id)
-          .where("status", "=", "running")
-          .executeTakeFirstOrThrow();
-        if (Number(running.n) >= workspace.concurrency_limit) return "full" as const;
+      const outcome = await kernel.db
+        .transaction()
+        .execute(async (trx) => {
+          await sql`select pg_advisory_xact_lock(hashtextextended(${workspace.id}, 0))`.execute(
+            trx,
+          );
+          const running = await trx
+            .selectFrom("run")
+            .select((eb) => eb.fn.countAll<string>().as("n"))
+            .where("workspace_id", "=", workspace.id)
+            .where("status", "=", "running")
+            .executeTakeFirstOrThrow();
+          if (Number(running.n) >= workspace.concurrency_limit) return "full" as const;
 
-        const job = await kernel.queue.claim<{ runId: string }>(queueName(workspace.id), trx);
-        if (!job) return "empty" as const;
-        const run = await trx
-          .selectFrom("run")
-          .selectAll()
-          .where("id", "=", job.data.runId)
-          .forUpdate()
-          .executeTakeFirst();
-        if (
-          !run ||
-          run.status === "succeeded" ||
-          run.status === "failed" ||
-          run.status === "cancelled"
-        ) {
-          // The run ended some other way. Drop the job and look again.
-          await kernel.queue.complete(queueName(workspace.id), job.id);
-          return "stale" as const;
-        }
-        const now = new Date();
-        const updated = await trx
-          .updateTable("run")
-          .set({
-            status: "running",
-            attempt: job.attempt,
-            queue_job_id: job.id,
-            worker_id: workerId,
-            started_at: run.started_at ?? now,
-            last_heartbeat_at: now,
-          })
-          .where("id", "=", run.id)
-          .returningAll()
-          .executeTakeFirstOrThrow();
-        return { run: updated, timeoutSeconds: job.timeoutSeconds };
-      });
+          const job = await kernel.queue.claim<{ runId: string }>(queueName(workspace.id), trx);
+          if (!job) return "empty" as const;
+          const run = await trx
+            .selectFrom("run")
+            .selectAll()
+            .where("id", "=", job.data.runId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (
+            !run ||
+            run.status === "succeeded" ||
+            run.status === "failed" ||
+            run.status === "cancelled"
+          ) {
+            // The run ended some other way. Drop the job and look again.
+            await kernel.queue.complete(queueName(workspace.id), job.id);
+            return "stale" as const;
+          }
+          const now = new Date();
+          const updated = await trx
+            .updateTable("run")
+            .set({
+              status: "running",
+              attempt: job.attempt,
+              queue_job_id: job.id,
+              worker_id: workerId,
+              started_at: run.started_at ?? now,
+              last_heartbeat_at: now,
+            })
+            .where("id", "=", run.id)
+            .returningAll()
+            .executeTakeFirstOrThrow();
+          // Checked last, inside the transaction: rolling back leaves the job unclaimed.
+          if (abandoned()) throw new ClaimAbandoned();
+          return { run: updated, timeoutSeconds: job.timeoutSeconds };
+        })
+        .catch((error) => {
+          if (error instanceof ClaimAbandoned) return "abandoned" as const;
+          throw error;
+        });
+      if (outcome === "abandoned") return null;
       if (outcome === "stale") continue;
       if (outcome === "full" || outcome === "empty") break;
       return outcome;
@@ -348,4 +367,42 @@ export async function reapDeadRuns(kernel: Kernel): Promise<number> {
     closed += 1;
   }
   return closed;
+}
+
+/**
+ * Puts back in line the runs whose worker went silent. The queue takes such a
+ * job back by itself. This brings the run record in step, so the run shows as
+ * waiting and a worker is started for it. Returns how many it put back.
+ */
+export async function requeueLostRuns(kernel: Kernel): Promise<number> {
+  const silentSince = new Date(Date.now() - kernel.queue.heartbeatSeconds * 1000);
+  const silent = await kernel.db
+    .selectFrom("run")
+    .select(["id", "workspace_id", "queue_job_id"])
+    .where("status", "=", "running")
+    .where("last_heartbeat_at", "<", silentSince)
+    .limit(100)
+    .execute();
+  let requeued = 0;
+  for (const run of silent) {
+    if (!run.queue_job_id) continue;
+    const state = await kernel.queue.state(queueName(run.workspace_id), run.queue_job_id);
+    // Still "active" means the queue has not given up on the worker yet.
+    if (state !== "retry" && state !== "created") continue;
+    const updated = await kernel.db
+      .updateTable("run")
+      .set({
+        status: "queued",
+        worker_id: null,
+        error: JSON.stringify({
+          message: "The worker stopped responding. The run is being retried.",
+        }),
+      })
+      .where("id", "=", run.id)
+      .where("status", "=", "running")
+      .where("last_heartbeat_at", "<", silentSince)
+      .executeTakeFirst();
+    requeued += Number(updated.numUpdatedRows);
+  }
+  return requeued;
 }

@@ -53,6 +53,8 @@ export async function startTestApp(
   options: {
     storage?: ObjectStore;
     config?: Partial<Config>;
+    /** The core version the instance reports. Default 1.2.3. */
+    version?: string;
     /** Faster queue supervision, for tests that wait on timeouts. */
     queue?: { superviseIntervalSeconds?: number; heartbeatSeconds?: number };
   } = {},
@@ -70,7 +72,7 @@ export async function startTestApp(
   const app = await buildApp({
     database,
     storage,
-    version: "1.2.3",
+    version: options.version ?? "1.2.3",
     config,
     onRoute: (route) => routes.push(route),
   });

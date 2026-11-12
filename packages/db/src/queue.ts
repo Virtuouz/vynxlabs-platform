@@ -11,6 +11,9 @@ export const MAX_GROUP_LIMIT = 64;
 /** A worker must send a heartbeat at least this often, or its job is taken back. */
 export const HEARTBEAT_SECONDS = 30;
 
+/** How often the queue looks for jobs that timed out or whose worker went silent. */
+const DEFAULT_SUPERVISE_SECONDS = 10;
+
 export interface EnqueueOptions {
   /** Higher runs first. Default 0. */
   priority?: number;
@@ -71,24 +74,22 @@ const GROUP_TIERS = Object.fromEntries(
 export class JobQueue {
   readonly #boss: PgBoss;
   readonly #known = new Set<string>();
-  readonly #heartbeatSeconds: number;
+  /** A worker silent for this long loses its job. */
+  readonly heartbeatSeconds: number;
   #started = false;
 
   /** Built by `Database`. The pool never leaves this package. */
   constructor(pool: pg.Pool, tuning: QueueTuning = {}, onError: (error: Error) => void = () => {}) {
-    this.#heartbeatSeconds = tuning.heartbeatSeconds ?? HEARTBEAT_SECONDS;
+    this.heartbeatSeconds = tuning.heartbeatSeconds ?? HEARTBEAT_SECONDS;
+    const supervise = tuning.superviseIntervalSeconds ?? DEFAULT_SUPERVISE_SECONDS;
     this.#boss = new PgBoss({
       db: { executeSql: (text: string, values?: unknown[]) => pool.query(text, values) },
       schema: "pgboss",
       // The platform has its own scheduler and its own instance records.
       schedule: false,
       registerInstance: false,
-      ...(tuning.superviseIntervalSeconds
-        ? {
-            superviseIntervalSeconds: tuning.superviseIntervalSeconds,
-            monitorIntervalSeconds: tuning.superviseIntervalSeconds,
-          }
-        : {}),
+      superviseIntervalSeconds: supervise,
+      monitorIntervalSeconds: supervise,
     });
     this.#boss.on("error", onError);
   }
@@ -113,7 +114,7 @@ export class JobQueue {
       await this.#boss
         .createQueue(
           name,
-          work ? { deadLetter: DEAD_LETTER_QUEUE, heartbeatSeconds: this.#heartbeatSeconds } : {},
+          work ? { deadLetter: DEAD_LETTER_QUEUE, heartbeatSeconds: this.heartbeatSeconds } : {},
         )
         .catch(async (error) => {
           // Another replica created it first.

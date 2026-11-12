@@ -47,6 +47,20 @@ Every route follows the conventions in [docs/phases/phase-0-foundations.md](docs
 - Never put a secret value, password or key in an audit entry or a log line.
 - A new route that changes something must be called in the test suite. A test fails if any such route is not exercised, or succeeds without leaving an audit entry.
 
+## The two contracts
+
+The control plane knows nothing about TypeScript. It depends on the manifest format in `schemas/` and the worker protocol in `docs/contracts/worker-protocol.md`.
+
+- The control plane never imports or runs a tenant's code. Only the CLI (at build time) and the worker do.
+- A change to a kind's schema, the bundle format or a worker route is a change to a contract. Update the schema or the protocol document in the same commit, and keep old bundles and old workers working.
+- The execution tests build bundles by hand and speak the protocol over plain HTTP on purpose. Keep them free of the SDK.
+
+## Runs
+
+- A run started by a person or an API key is audited. A run started by a schedule or a webhook is recorded on the run itself.
+- Delivery is at-least-once. Anything that reacts to a run must be safe to see it twice.
+- A secret value or a credential must never reach a log line, a run record or an audit entry. `execution.test.ts` checks this.
+
 ## Interface
 
 - The console and client apps use components from `packages/ui`. Do not style with raw colours or sizes: use the theme tokens, through the Tailwind utilities generated from them.

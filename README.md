@@ -2,7 +2,7 @@
 
 One self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
 
-The platform is at phase 1, the kernel: tenants and workspaces, member sign-in, roles and bindings, per-tenant encrypted secrets, a resource registry, an append-only audit log, and an admin console. It does not run scripts or flows yet.
+The platform is at phase 2, execution: a developer writes scripts in a tenant repository, deploys them with the CLI, and they run on a schedule, a webhook or a manual start, with run history, logs and failure alerts. Flows, events, custom tables and apps come in later phases.
 
 ## Requirements
 
@@ -25,14 +25,25 @@ To work on the console with hot reload, also run `pnpm dev:console`, set `PUBLIC
 
 The API describes itself at http://localhost:8080/api/v1/openapi.json.
 
-### Command line
+### Deploy something
+
+`examples/acme` is a sample tenant repository: an order sync between a shop and an ERP.
 
 ```sh
-node packages/cli/dist/bin.js login --url http://localhost:8080 --token <api key>
-node packages/cli/dist/bin.js whoami
+alias platform="node $PWD/packages/cli/dist/bin.js"
+
+platform login --url http://localhost:8080 --token <api key>   # create the key in the console, under your account menu
+cd examples/acme
+platform build                                    # lists what the repository contains
+platform deploy --tenant <slug> --workspace <slug>
+platform runs --tenant <slug> --workspace <slug>
 ```
 
-Create the API key in the console, under your account menu.
+The first deploy tells you which connections and secrets the workspace still needs. Bind them in the console, under the workspace's Connections and Secrets tabs, then deploy again.
+
+`platform init <directory>` writes a starter repository, and `platform run <script>` runs one script on your machine.
+
+The control plane starts a worker for a tenant when it has work. To run one yourself, for example inside a client's network, create a credential under the tenant's Workers page and start `node packages/worker/dist/bin.js --url <instance> --token <credential>`.
 
 ## Checks
 
@@ -65,7 +76,11 @@ For Fly.io, see [deploy/fly](deploy/fly/README.md).
 | `apps/control-plane` | The control plane service |
 | `apps/console` | The admin console, a Preact single-page app |
 | `packages/ui` | The component kit and theme tokens |
-| `packages/cli` | The `platform` command |
+| `packages/cli` | The `platform` command: build, deploy, run |
+| `packages/sdk` | What a tenant repository imports to define scripts and other resources |
+| `packages/worker` | The worker that runs a tenant's scripts |
+| `examples/acme` | A sample tenant repository |
+| `docs/contracts` | The worker protocol |
 | `packages/db` | Database access, migrations, tenant routing |
 | `packages/manifest` | The resource envelope, kind registry and validation |
 | `schemas` | The manifest contract as JSON Schema, generated |

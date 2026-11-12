@@ -38,6 +38,8 @@ From the repository root:
 fly deploy . --config deploy/fly/fly.toml --dockerfile Dockerfile
 ```
 
+The control plane starts worker processes inside its own machine, one per tenant with work, so size the machine for the scripts it will run. Set `MANAGED_WORKERS=false` if every tenant is served by standalone workers instead.
+
 Migrations run when the new machine starts, before it accepts traffic. The health check holds traffic until `/api/v1/readyz` returns 200.
 
 ## Verify

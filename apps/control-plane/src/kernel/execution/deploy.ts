@@ -54,18 +54,21 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
   );
   return [
     ...[...need.connections]
+      .sort()
       .filter((path) => !connections.has(path))
       .map((path) => ({
         path: `/connections/${path}`,
         message: `the connection "${path}" is not bound in this workspace`,
       })),
     ...[...need.secrets]
+      .sort()
       .filter((name) => !secrets.has(name))
       .map((name) => ({
         path: `/secrets/${name}`,
         message: `the secret "${name}" is not set in this workspace`,
       })),
     ...[...need.variables]
+      .sort()
       .filter((path) => !variables.has(path) && !withDefault.has(path))
       .map((path) => ({
         path: `/variables/${path}`,

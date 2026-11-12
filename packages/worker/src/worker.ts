@@ -123,15 +123,11 @@ export class Worker {
   }
 
   /**
-   * Stops taking new work and lets runs in progress finish. A claim already
-   * on its way is allowed to return, so a job it was given is not left behind.
+   * Stops taking new work and lets runs in progress finish. A claim that is
+   * still waiting is dropped: the control plane sees the connection close and
+   * hands out nothing for it.
    */
   stop(): void {
-    this.#stopping = true;
-  }
-
-  /** Stops at once, abandoning claims in flight. Jobs they held are retried after the heartbeat window. */
-  abort(): void {
     this.#stopping = true;
     for (const claim of this.#claims) claim.abort();
   }

@@ -11,7 +11,8 @@
   ],
   "devDependencies": {
     "@vynxlabs/control-plane": "workspace:*",
-    "@vynxlabs/example-acme": "workspace:*"
+    "@vynxlabs/example-acme": "workspace:*",
+    "@vynxlabs/worker": "workspace:*"
   },
   "dependencies": {
     "@vynxlabs/manifest": "workspace:*",

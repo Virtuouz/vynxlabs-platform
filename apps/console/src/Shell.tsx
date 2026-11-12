@@ -40,6 +40,7 @@ export const TENANT_SECTIONS = [
   ["members", "Members"],
   ["groups", "Groups"],
   ["service-accounts", "Service accounts"],
+  ["workers", "Workers"],
   ["roles", "Roles"],
   ["access", "Access"],
   ["operator-access", "Operator access"],

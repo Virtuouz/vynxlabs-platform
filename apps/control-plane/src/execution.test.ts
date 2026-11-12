@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { Worker } from "@vynxlabs/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { reapDeadRuns } from "./kernel/execution/runs.js";
+import { reapDeadRuns, requeueLostRuns } from "./kernel/execution/runs.js";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -731,7 +731,9 @@ describe("triggers", () => {
         headers: { "idempotency-key": "delivery-1" },
         payload: { name: "Dup" },
       });
-    expect((await send()).json().runId).toBe((await send()).json().runId);
+    const [once, twice] = [(await send()).json().runId, (await send()).json().runId];
+    expect(once).toBe(twice);
+    expect((await finished(once)).status).toBe("succeeded");
   });
 
   test("webhooks are rate limited", async () => {
@@ -891,6 +893,37 @@ describe("the worker protocol", () => {
       attempt: 2,
     });
   }, 60_000);
+
+  test("a run whose worker vanished shows as waiting again, so a worker is started for it", async () => {
+    const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
+    const ours = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "vanishes" })).body.token,
+    );
+    const id = await start("flaky", { succeedOn: 1 });
+    expect((await ours.claim()).body.job.runId).toBe(id);
+    expect(await requeueLostRuns(t.kernel)).toBe(0);
+
+    // The worker is gone. Nothing claims the job, and yet the run must not stay "running".
+    const requeued = await until(
+      async () => {
+        await requeueLostRuns(t.kernel);
+        return (await alice.get(`${ws()}/runs/${id}`)).body;
+      },
+      (run) => run.status === "queued",
+      40,
+    );
+    expect(requeued).toMatchObject({
+      status: "queued",
+      error: { message: expect.stringContaining("stopped responding") },
+    });
+
+    // Now the supervisor sees work for the tenant and starts a worker, which finishes the run.
+    const supervisor = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    await supervisor.tick();
+    expect(supervisor.tenants).toEqual([tenant]);
+    expect(await finished(id, 30)).toMatchObject({ status: "succeeded", attempt: 2, error: null });
+    await supervisor.stop();
+  }, 90_000);
 
   test("a run with no retries left whose worker vanished is closed as failed", async () => {
     const ours = protocol(

@@ -118,6 +118,9 @@ importers:
       '@vynxlabs/example-acme':
         specifier: workspace:*
         version: link:../../examples/acme
+      '@vynxlabs/worker':
+        specifier: workspace:*
+        version: link:../worker
 
   packages/db:
     dependencies:

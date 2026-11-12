@@ -1,6 +1,6 @@
 # Phase 2: execution
 
-Status: in progress
+Status: built and verified locally. The production exit check is open
 Last updated: 2026-11-11
 
 Phase 2 delivers the first useful product: a script with visibility. A developer writes a script in a tenant repository, builds and deploys it with the CLI, and it runs on a schedule, a webhook or a manual start, with run history, logs and failure alerts.
@@ -37,6 +37,9 @@ Not in this phase: events and event triggers, flows, custom tables, promotion be
 - **A bundle must not name its workspace.** Promotion deploys the same bundle to another workspace without rebuilding. So `workspace` becomes optional in an authored manifest, and the control plane fills it in at deploy. A stored resource always has it.
 - **Auditing every run start would drown the audit log.** A schedule that fires each minute would add 1,440 entries a day. A run started by a person or an API key is audited. A run started by a schedule or webhook is recorded on the run itself, which names its trigger.
 - **The webhook rate limit is per replica**, like the sign-in limit, until there is shared state for it.
+- **Two faults found by running the real stack, both fixed.** Killing a managed worker mid-run left the run showing as running for ever: the queue had taken the job back, but nothing told the run record, so no new worker was started. The control plane now puts such runs back in line. And a worker killed while waiting for work left a claim on the server that could still take a job for a client that was gone. The control plane now checks the connection inside the claiming transaction and rolls back if it has closed.
+- **A script that ignores its abort signal keeps running in the worker** after its attempt has been closed. The attempt is reported as failed on time, but the stray work only ends when the worker process does. Managed workers exit when idle, which bounds it. Hard isolation per run is part of the deferred sandboxing work.
+- **A bundle's code is not minified.** The starter repository builds to about 750 KB, most of it the schema library. That is fine for now and easy to reduce later.
 
 ## How it fits together
 
@@ -208,7 +211,56 @@ Under `/api/v1/tenants/{t}/workspaces/{w}` unless noted.
 
 ## Check against the master spec
 
-To be completed when the build is verified.
+Checked on 2026-11-11 against the build on the `phase-2-execution` branch.
+
+### Guiding principles
+
+| Principle | Result |
+| --- | --- |
+| 1. One platform, one experience | Met. Runs, deploys and bindings use the same identity, permission check, audit path, API and console |
+| 2. Everything is a resource | Met. Scripts, schedules, webhooks, connections and variables are resources with the common envelope |
+| 3. Code first, git as the source of truth | Met. Resources arrive from a repository through a deploy and are read-only in the interface |
+| 4. Language-neutral core | Met. The control plane reads only manifests and speaks only the worker protocol. The execution tests drive both with hand-written bundles and plain HTTP, with no SDK involved |
+| 5. Same software everywhere | Met. One image now holds the control plane, the console and the worker |
+| 6. Minimal footprint | Met. The queue lives in Postgres. No container was added |
+| 7. No central dependency | Met. pg-boss makes no outbound call. Its instrumentation is inert without an exporter |
+| 8. Tenant portability | Not weakened. Bundles are files in the tenant's storage prefix and rows carry the tenant ID |
+| 9. The core uses its own SDK | Met for what exists: the HTTP connector and the three triggers are written against the SDK's extension interfaces |
+| 10. Reuse libraries and engines, not applications | Met. pg-boss, esbuild, Zod and cron-parser are libraries |
+| 11. Keep the end-user version possible | Met. Schedules, webhooks, connections and variables are pure data and could be created from an editor |
+| 12. Kernel before features | Met. No events, flows or custom connectors were built ahead of need |
+
+### Ownership promise
+
+| Promise | Result |
+| --- | --- |
+| You own the code | Met. The example repository builds and deploys with the public SDK and CLI only |
+| You own the data | Not weakened |
+| You own the keys | Met. Connection credentials and webhook tokens are encrypted with the tenant's key |
+| No lock-in | Met. The worker protocol is documented, so a tenant could run its code with its own worker |
+| Any location | Met for local and single-host. A standalone worker was run from outside the stack |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Every test on Postgres 16 and 18 | Passed |
+| The example repository built and deployed by the CLI, run by a real worker against stand-in systems | Passed, in `packages/cli/src/example.test.ts` |
+| On the single-host stack: starter repository initialised, run locally, deployed, run from the console on a managed worker, with logs and output shown | Passed |
+| A run started before a deploy finishes on its own bundle, and the next run uses the new one | Passed on the stack |
+| A managed worker killed mid-run: the run is retried by a new worker | Passed on the stack, 45 seconds after the kill |
+| A standalone worker from outside the stack registers and serves its tenant | Passed |
+| Console screens driven in a real browser | Passed |
+| A real client integration in production on the shared instance | Open. Needs a hosted instance and a client integration |
+
+### Known gaps
+
+- The production exit check, and with it the Fly.io deploy from phase 0.
+- No email, so alerts are a handler script or an HTTP notification.
+- Custom connectors and custom triggers shipped in a bundle. The interfaces exist. Loading them from a bundle does not.
+- `platform run` runs one script in-process. It does not start a local instance.
+- Rate limits are per replica.
+- Run and log retention is not enforced.
 
 ## Proposed deviations
 

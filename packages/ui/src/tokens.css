@@ -20,6 +20,8 @@
   --vx-attention-soft: #fdf0dc;
   --vx-danger: #b3261e;
   --vx-danger-soft: #fbe9e7;
+  --vx-success: #1f7a4d;
+  --vx-success-soft: #e1f3e9;
   --vx-radius-control: 6px;
   --vx-radius-panel: 10px;
   --vx-font: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -42,6 +44,8 @@
     --vx-attention-soft: #3a2a12;
     --vx-danger: #f2857d;
     --vx-danger-soft: #3d1b18;
+    --vx-success: #6fcf9a;
+    --vx-success-soft: #153326;
     color-scheme: dark;
   }
 }
@@ -60,6 +64,8 @@
   --color-attention-soft: var(--vx-attention-soft);
   --color-danger: var(--vx-danger);
   --color-danger-soft: var(--vx-danger-soft);
+  --color-success: var(--vx-success);
+  --color-success-soft: var(--vx-success-soft);
   --radius-control: var(--vx-radius-control);
   --radius-panel: var(--vx-radius-panel);
   --font-sans: var(--vx-font);

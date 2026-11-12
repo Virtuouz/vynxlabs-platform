@@ -1,12 +1,13 @@
 import type { ComponentChildren } from "preact";
 
-export type BadgeTone = "neutral" | "action" | "attention" | "danger";
+export type BadgeTone = "neutral" | "action" | "attention" | "danger" | "success";
 
 const tones: Record<BadgeTone, string> = {
   neutral: "bg-sunken text-ink-muted",
   action: "bg-action-soft text-action",
   attention: "bg-attention-soft text-attention",
   danger: "bg-danger-soft text-danger",
+  success: "bg-success-soft text-success",
 };
 
 export function Badge({

@@ -12,6 +12,16 @@ import {
 import { Link, match } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { AuditTable } from "./Audit.tsx";
+import {
+  Connections,
+  Deployments,
+  RunDetail,
+  Runs,
+  Scripts,
+  Triggers,
+  Variables,
+  Workers,
+} from "./Execution.tsx";
 
 interface Role {
   id: string;
@@ -140,7 +150,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   }
 
   const section = match("/t/:t/:section/*", path)?.section ?? "workspaces";
-  const workspace = match("/t/:t/workspaces/:w/:tab", path);
+  const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
+  const runId = match("/t/:t/workspaces/:w/runs/:id", path)?.id;
   return (
     <div class="flex flex-col gap-5">
       {mine ? (
@@ -167,8 +178,11 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
           base={base}
           tenantId={tenantId}
           workspaceId={workspace.w}
-          tab={workspace.tab ?? "secrets"}
+          tab={workspace.tab ?? "scripts"}
+          runId={runId}
         />
+      ) : section === "workers" ? (
+        <Workers base={base} />
       ) : section === "members" ? (
         <Members base={base} />
       ) : section === "groups" ? (
@@ -210,7 +224,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           header: "Name",
           cell: (row) => (
             <Link
-              to={`/t/${tenantId}/workspaces/${row.id}/secrets`}
+              to={`/t/${tenantId}/workspaces/${row.id}/scripts`}
               class="font-medium text-action"
             >
               {row.name}
@@ -273,11 +287,13 @@ function WorkspaceDetail({
   tenantId,
   workspaceId,
   tab,
+  runId,
 }: {
   base: string;
   tenantId: string;
   workspaceId: string;
   tab: string;
+  runId: string | undefined;
 }) {
   const workspace = useLoad<Workspace>(`${base}/workspaces/${workspaceId}`);
   const root = `${base}/workspaces/${workspaceId}`;
@@ -302,10 +318,35 @@ function WorkspaceDetail({
         <span class="font-medium">{workspace.data.name}</span>
         <TypeBadge type={workspace.data.type} />
       </div>
-      <nav aria-label="Workspace" class="flex gap-5 border-line border-b">
+      <nav aria-label="Workspace" class="flex flex-wrap gap-x-5 border-line border-b">
+        {link("scripts", "Scripts")}
+        {link("runs", "Runs")}
+        {link("triggers", "Triggers")}
+        {link("deployments", "Deployments")}
+        {link("connections", "Connections")}
+        {link("variables", "Variables")}
         {link("secrets", "Secrets")}
         {link("resources", "Resources")}
       </nav>
+      {tab === "scripts" ? (
+        <Scripts root={root} runsLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />
+      ) : tab === "runs" && runId ? (
+        <RunDetail
+          root={root}
+          runId={runId}
+          backLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`}
+        />
+      ) : tab === "runs" ? (
+        <Runs root={root} link={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />
+      ) : tab === "triggers" ? (
+        <Triggers root={root} />
+      ) : tab === "deployments" ? (
+        <Deployments root={root} />
+      ) : tab === "connections" ? (
+        <Connections root={root} />
+      ) : tab === "variables" ? (
+        <Variables root={root} />
+      ) : null}
       {tab === "resources" ? (
         <ListScreen<{
           id: string;
@@ -334,7 +375,7 @@ function WorkspaceDetail({
             text: "Resources appear here when they are deployed from the tenant's repository.",
           }}
         />
-      ) : (
+      ) : tab === "secrets" ? (
         <ListScreen<{ name: string; updatedAt: string }>
           title="Secrets"
           description="Values are encrypted with this tenant's own key. A value can be replaced but never read back here."
@@ -374,7 +415,7 @@ function WorkspaceDetail({
             />
           )}
         />
-      )}
+      ) : null}
     </div>
   );
 }

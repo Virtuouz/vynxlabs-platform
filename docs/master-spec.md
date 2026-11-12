@@ -329,7 +329,7 @@ The queue must support:
 
 Delivery is at-least-once. Scripts and steps must therefore be safe to run twice, and the platform provides idempotency keys to help.
 
-The queue is implemented by embedding a Postgres-native library with an Apache-compatible license. No separate queue service is allowed. The specific library is provisional.
+The queue is implemented by embedding pg-boss, a Postgres-native library with an Apache-compatible license. No separate queue service is allowed.
 
 ### Events
 
@@ -585,7 +585,7 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Secrets | Encrypted with a key per tenant | Provisional |
 | Clone safety default | Triggers paused and connections unbound unless switched off | Provisional |
 | Control plane language | TypeScript on Node | Locked |
-| Queue engine | An embedded Postgres-native library | Provisional |
+| Queue engine | pg-boss, embedded in the control plane | Locked |
 | Flow engine | Built in-house on the queue | Provisional |
 | Authentication | Better Auth inside the control plane, with external single sign-on as an option | Locked |
 | Expression language | Specific language not chosen | Open, flows phase |
@@ -674,7 +674,8 @@ Nothing below is in scope for the early phases, but no design may block the defe
 ### Open questions for the owner
 
 - [x] Confirm the control plane language: TypeScript on Node.
-- [ ] Confirm the queue approach: an embedded Postgres-native library, with the flow engine built in-house.
+- [x] Confirm the queue approach: pg-boss, embedded in the control plane.
+- [ ] Confirm that the flow engine is built in-house on the queue.
 - [x] Confirm the authentication approach: Better Auth inside the control plane.
 - [ ] Confirm the remaining provisional rows in the technology decisions table.
 - [ ] Choose the flow expression language.

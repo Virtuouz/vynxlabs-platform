@@ -1,6 +1,7 @@
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 import { type MigrationResult, runMigrations } from "./migrate.js";
+import { JobQueue, type QueueTuning } from "./queue.js";
 import { TenantRouter } from "./router.js";
 import type { PlatformSchema } from "./schema.js";
 
@@ -11,6 +12,7 @@ export interface DatabaseOptions {
   migrationsDir?: string;
   /** Called when an idle connection fails. Without it such errors are dropped. */
   onConnectionError?: (error: Error) => void;
+  queue?: QueueTuning;
 }
 
 /**
@@ -19,6 +21,8 @@ export interface DatabaseOptions {
  */
 export class Database {
   readonly router: TenantRouter;
+  /** The job queue. Call `queue.start()` after `migrate()`. */
+  readonly queue: JobQueue;
   readonly #pool: pg.Pool;
   readonly #kysely: Kysely<PlatformSchema>;
   readonly #migrationsDir: string | undefined;
@@ -34,6 +38,9 @@ export class Database {
     });
     this.#migrationsDir = options.migrationsDir;
     this.router = new TenantRouter(this.#kysely);
+    this.queue = new JobQueue(this.#pool, options.queue, (error) =>
+      options.onConnectionError?.(error),
+    );
   }
 
   /** Applies pending migrations. Call once at start, before serving. */
@@ -56,6 +63,7 @@ export class Database {
   }
 
   async close(): Promise<void> {
+    await this.queue.stop();
     await this.#kysely.destroy();
   }
 }

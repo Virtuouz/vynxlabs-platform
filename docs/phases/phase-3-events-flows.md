@@ -1,6 +1,6 @@
 # Phase 3: events and flows
 
-Status: in progress
+Status: built and verified locally
 Last updated: 2026-11-11
 
 Phase 3 adds orchestration: an event bus, and flows, which are declarative graphs of steps that the platform runs durably.
@@ -34,13 +34,16 @@ CEL and JSONata were run against the same wiring cases and the same hostile inpu
 - Neither is safe to evaluate directly in the control plane. Three nested passes over a 3,000-item list blocks the process in both.
 - In a worker thread with a 250 ms limit and a memory cap, every hostile CEL expression was stopped cleanly, at about 0.08 ms of overhead per evaluation. JSONata crashed the whole process from inside that thread by building a 200 MB string.
 
-So flows use CEL, through `@marcbachmann/cel-js` (MIT, no dependencies), always inside that sandbox. An optional field is written with `has(...)`. There are no custom functions: anything CEL cannot express becomes a code step, which keeps the language exactly the published one.
+So flows use CEL, through `@marcbachmann/cel-js` (MIT, no dependencies), always inside that sandbox. Numbers from step outputs are doubles, as in other CEL implementations that read JSON, so arithmetic is written with `1.0` or with `int(...)`. The error for getting this wrong says so. An optional field is written with `has(...)`. There are no custom functions: anything CEL cannot express becomes a code step, which keeps the language exactly the published one.
 
 ## Findings
 
 - **A trigger resource starts scripts. A flow carries its own triggers.** The spec puts trigger entry nodes inside the flow, so a flow needs no separate trigger resource, and the standalone `trigger` kind stays script-only. It gains the `event` type.
 - **A platform event is stored only when something subscribes to it.** Subscriptions are deployed resources, so they exist whether or not anything is running, and nothing can be missed. Storing an event for every run of every script that nobody listens to would only add writes.
 - **Outputs too large for the run row are not visible to expressions.** They are kept in file storage under the existing 256 KB rule, and an expression sees a reference in their place. This is the spec's rule that large datasets never travel through flow state.
+- **The engine keeps no queue of its own.** The plan had advancing requested through queue jobs. Building it showed that the tables already say everything: a flow run with something to do can be found by a query. So advancing is asked for directly where that is quick, and a sweep finds anything that was missed. Code steps are still ordinary jobs on the queue.
+- **A node that two paths lead into, and is not a join, runs once**, when the first path arrives. To wait for several paths, use a join.
+- **The graph in a flow run's view is the flow as it is deployed now.** A run that started on an older bundle is drawn on the current graph. Its steps and statuses are its own.
 - **A code step that fails inside a flow does not alert by itself.** The flow decides: an error path handles it, or the flow fails and the workspace's failure alert fires once.
 
 ## Events
@@ -99,7 +102,9 @@ Node positions are kept in their own table, keyed by flow. They are not part of 
 - **Advancing** a flow run is one function, run in one transaction under a lock per flow run: find the nodes that are ready, start them, record results, repeat until nothing more can move.
 - A node is ready when one of its incoming edges has been taken. A `join` is ready when every incoming edge is settled and at least one was taken. A node whose incoming edges are all dead is skipped, and that passes downstream.
 - A failed step takes its error path if it has one. Otherwise the flow run fails and its other steps are cancelled.
-- Advancing is requested through a queue job, so it survives a restart. It is requested when a flow run starts, when a code step's run ends, when a delay is due, and when an approval is decided.
+- Advancing is asked for at once when a flow run starts, when a code step's run ends, and when an approval is decided.
+- It does not depend on being asked. A sweep, every two seconds, finds every flow run that has something to do: one that just started, one whose step's run has ended, one whose child flow has ended, one whose wait is over. This is what makes a flow run survive a restart. Whatever was lost when the control plane stopped is found by the sweep when it starts again.
+- Advancing a flow run twice, or a hundred times, is harmless: it only acts on what the tables say.
 - A code step is an ordinary run with a link to its step. Its idempotency key is derived from the flow run, node and item, so starting it twice gives the same run.
 - A flow run, and every script it starts, is pinned to the bundle the flow run started on.
 - A step that has finished is never started again.
@@ -167,7 +172,49 @@ Under `/api/v1/tenants/{t}/workspaces/{w}` unless noted.
 
 ## Check against the master spec
 
-To be completed when the build is verified.
+Checked on 2026-11-11 against the build on the `phase-3-events-flows` branch.
+
+### Guiding principles
+
+| Principle | Result |
+| --- | --- |
+| 1. One platform, one experience | Met. Flow runs, approvals and events use the same identity, permission check, audit path, API and console |
+| 2. Everything is a resource | Met. Flows and events are resources with the common envelope |
+| 3. Code first, git as the source of truth | Met. Flows are defined in the repository and arrive through a deploy |
+| 4. Language-neutral core | Met. A flow is data: nodes, edges and CEL expressions. The engine tests run flows written as plain JSON, with no SDK |
+| 5. Same software everywhere | Met. Nothing was added to the deployment |
+| 6. Minimal footprint | Met. Flow state lives in Postgres. No container was added |
+| 7. No central dependency | Met. The expression library makes no outbound call |
+| 8. Tenant portability | Not weakened. Every new row carries the tenant ID |
+| 9. The core uses its own SDK | Met for triggers: a flow's triggers go through the same registration as trigger resources. The built-in nodes are not yet behind a published step interface, because custom nodes are not in this phase |
+| 10. Reuse libraries and engines, not applications | Met. cel-js and dagre are libraries |
+| 11. Keep the end-user version possible | Met. The manifest is the graph, positions are stored apart, and every node is described by JSON Schema, so an editor can read and write flows |
+| 12. Kernel before features | Met. No visual editor, no node pack |
+
+### Ownership promise
+
+Not weakened by anything in this phase. Webhook tokens of flow triggers are encrypted with the tenant's key.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Every test on Postgres 16 and 18 | Passed |
+| The example flow, built with the SDK and deployed by the CLI: event in, check, approval for a large order, ERP import, refusal with a reason | Passed, in `packages/cli/src/example.test.ts` |
+| **Exit criterion on the single-host stack.** A flow of two slow steps with a delay between them. The control plane container was restarted during the delay, and again while the second step was running | Passed. The flow run finished 30 seconds after the second restart. One run per step. The interrupted step's run was retried as attempt 2 |
+| The flow is visible as a graph, and the run is drawn on it with each step's status | Passed, in a real browser |
+| Dragging a node saves its position, which survives a reload, and the flow's version does not change | Passed |
+| Approving on the flow run page, and rejecting from the Approvals page, with the error path then taken | Passed |
+
+### Known gaps
+
+- Custom nodes through the step extension point.
+- Visual editing of flows.
+- A `foreach` runs at most 1,000 items, and a flow has at most 200 nodes.
+- Approvers are whoever holds `approval:write` in the workspace. There are no per-step approver lists.
+- Events stay inside their workspace.
+- Event, run and flow run retention is not enforced.
+- The sweep runs on every replica. It is correct, because advancing is locked per flow run, but with many replicas it is repeated work.
 
 ## Proposed deviations
 

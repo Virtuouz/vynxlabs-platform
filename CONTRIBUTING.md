@@ -61,6 +61,14 @@ The control plane knows nothing about TypeScript. It depends on the manifest for
 - Delivery is at-least-once. Anything that reacts to a run must be safe to see it twice.
 - A secret value or a credential must never reach a log line, a run record or an audit entry. `execution.test.ts` checks this.
 
+## Flows
+
+- A flow is data. The engine reads nodes, edges and expressions from the manifest and nothing else.
+- Advancing a flow run must stay safe to repeat. It acts only on what the tables say, inside one transaction, under the lock for that flow run. Never keep flow state in memory.
+- Anything that can make a flow run ready to move must be findable by the sweep in `advanceDueFlows`. A direct call to advance is an optimisation, never the only way.
+- Expressions are CEL and are only ever evaluated through the sandbox in `kernel/flows/expressions.ts`. Never evaluate one in the main thread, and do not add custom functions: the language must stay the published one.
+- Large data does not go through flow state. A step's output over the size limit is stored as a file, and expressions see a note in its place.
+
 ## Interface
 
 - The console and client apps use components from `packages/ui`. Do not style with raw colours or sizes: use the theme tokens, through the Tailwind utilities generated from them.

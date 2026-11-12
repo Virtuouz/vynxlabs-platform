@@ -76,6 +76,18 @@ Read what the running script needs. Each answers only for a name the script decl
 
 Fetch these when the script asks, not ahead of time. Do not write the values to logs or to disk.
 
+### `POST /runs/{runId}/events`
+
+Publishes an event on behalf of the running script.
+
+Request: `attempt`, `event` (the event's name), `payload`.
+
+Response: `{"eventId", "started"}`, where `started` is how many subscribers were started. The event is stored and its subscribers are started before the response is sent.
+
+Answers only for an event the script declared in its manifest, and 403 otherwise. 400 means the payload does not match the event's schema.
+
+This route was added after version 1 was published. A worker that does not offer event publishing to scripts needs no change.
+
 ### `POST /runs/{runId}/complete`
 
 Request: `attempt`, `output`. The run succeeds. 409 means the attempt was no longer in progress and the output was not recorded.

@@ -20,6 +20,15 @@ const StatusBadge = ({ status }: { status: string }) => (
   <Badge tone={STATUS[status]?.[0] ?? "neutral"}>{STATUS[status]?.[1] ?? status}</Badge>
 );
 
+/** How a run began, as the end of a sentence. */
+const STARTED: Record<string, string> = {
+  manual: "by hand",
+  schedule: "by its schedule",
+  webhook: "by a webhook",
+  event: "by an event",
+  flow: "by another flow",
+};
+
 const TRIGGER: Record<string, string> = {
   manual: "By hand",
   schedule: "Schedule",
@@ -327,9 +336,8 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
         </Link>
         <StatusBadge status={run.status} />
         <span class="text-ink-muted">
-          Started {when(run.createdAt)} by{" "}
-          {(TRIGGER[run.trigger.type] ?? run.trigger.type).toLowerCase()}, on bundle version{" "}
-          {run.bundleVersion}
+          Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`}, on
+          bundle version {run.bundleVersion}
         </span>
       </div>
       {run.error ? (

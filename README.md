@@ -2,7 +2,7 @@
 
 One self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
 
-The platform is at phase 2, execution: a developer writes scripts in a tenant repository, deploys them with the CLI, and they run on a schedule, a webhook or a manual start, with run history, logs and failure alerts. Flows, events, custom tables and apps come in later phases.
+The platform is at phase 3, events and flows: on top of scripts that run on a schedule, a webhook or a manual start, a developer can now publish events and chain steps into flows, which are graphs of steps the platform runs durably, with branches, loops, waits and approvals. Custom tables and apps come in later phases.
 
 ## Requirements
 
@@ -40,6 +40,8 @@ platform runs --tenant <slug> --workspace <slug>
 ```
 
 The first deploy tells you which connections and secrets the workspace still needs. Bind them in the console, under the workspace's Connections and Secrets tabs, then deploy again.
+
+The example also has a flow, `orders/handle`. Publish an `orders/received` event, or start it by hand under the workspace's Flows tab, and watch it move across its graph. A large order waits on the tenant's Approvals page.
 
 `platform init <directory>` writes a starter repository, and `platform run <script>` runs one script on your machine.
 

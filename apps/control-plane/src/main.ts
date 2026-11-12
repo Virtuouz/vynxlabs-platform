@@ -2,6 +2,8 @@ import { Database } from "@vynxlabs/db";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
+import { startBackground } from "./kernel/execution/background.js";
+import { WorkerSupervisor } from "./kernel/execution/supervisor.js";
 import { S3ObjectStore } from "./storage.js";
 import { version } from "./version.js";
 
@@ -32,9 +34,12 @@ const migrations = await database.migrate().catch(async (error) => {
   await database.close();
   process.exit(1);
 });
+await database.queue.start();
 const app = await buildApp({ database, storage, version, config, logLevel: config.logLevel });
+let background: ReturnType<typeof startBackground> | undefined;
 
 app.addHook("onClose", async () => {
+  await background?.stop();
   await database.close();
   storage.close();
 });
@@ -64,7 +69,13 @@ try {
   app.log.info({ bucket: config.s3.bucket }, "object store is ready");
   await bootstrapAdmin(app.kernel, app.log);
   await app.listen({ host: config.host, port: config.port });
-  app.log.info({ version }, "control plane started");
+  background = startBackground(
+    app.kernel,
+    config.managedWorkers
+      ? new WorkerSupervisor(app.kernel, { url: `http://127.0.0.1:${config.port}` })
+      : undefined,
+  );
+  app.log.info({ version, managedWorkers: config.managedWorkers }, "control plane started");
 } catch (error) {
   app.log.fatal({ err: error }, "boot failed");
   await app.close().catch(() => {});

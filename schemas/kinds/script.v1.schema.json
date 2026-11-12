@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/script.v1.schema.json",
+  "title": "script body, version 1",
+  "type": "object",
+  "properties": {
+    "entry": {
+      "type": "string",
+      "description": "The name the script is exported under in the bundle."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "input": {
+      "type": "object",
+      "description": "A JSON Schema (draft 2020-12)."
+    },
+    "output": {
+      "type": "object",
+      "description": "A JSON Schema (draft 2020-12)."
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    },
+    "retries": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "delaySeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "backoff": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "limit",
+        "delaySeconds",
+        "backoff"
+      ],
+      "additionalProperties": false
+    },
+    "concurrency": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "description": "How many runs of this script may be in progress at once."
+    },
+    "uses": {
+      "type": "object",
+      "description": "Everything the script may read at run time. Each must be bound before a deploy.",
+      "properties": {
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "connections",
+        "secrets",
+        "variables"
+      ],
+      "additionalProperties": false
+    },
+    "onFailure": {
+      "type": "object",
+      "description": "What to do when a run fails for the last time.",
+      "properties": {
+        "script": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "A script to start with the failed run as input."
+        },
+        "notify": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "An HTTP connection to POST a summary to."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "entry",
+    "input",
+    "output",
+    "timeoutSeconds",
+    "retries",
+    "uses"
+  ],
+  "additionalProperties": false
+}

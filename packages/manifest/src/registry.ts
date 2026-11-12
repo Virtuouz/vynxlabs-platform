@@ -109,3 +109,16 @@ export class KindRegistry {
     return { ok: true, value };
   }
 }
+
+const schemaValidator = new Ajv2020({ allErrors: true, strict: false });
+const compiled = new WeakMap<object, ValidateFunction>();
+
+/** Checks a value against any JSON Schema. Returns the problems, or an empty list. */
+export function validateJson(schema: object, value: unknown, prefix = ""): ManifestIssue[] {
+  let validate = compiled.get(schema);
+  if (!validate) {
+    validate = schemaValidator.compile(schema);
+    compiled.set(schema, validate);
+  }
+  return validate(value) ? [] : toIssues(validate.errors, prefix);
+}

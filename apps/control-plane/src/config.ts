@@ -18,6 +18,8 @@ export interface Config {
   masterKey: Buffer;
   /** Creates the first operator admin when the instance has no members. */
   bootstrapAdmin: { email: string; password: string } | undefined;
+  /** Whether the control plane starts worker processes itself, one per tenant with work. */
+  managedWorkers: boolean;
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
 }
@@ -102,6 +104,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     problems.push(`BOOTSTRAP_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
 
+  const managed = value("MANAGED_WORKERS") ?? "true";
+  if (managed !== "true" && managed !== "false") {
+    problems.push("MANAGED_WORKERS must be true or false.");
+  }
+
   const config: Config = {
     databaseUrl,
     s3: {
@@ -122,6 +129,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       bootstrapEmail !== undefined && bootstrapPassword !== undefined
         ? { email: bootstrapEmail.toLowerCase(), password: bootstrapPassword }
         : undefined,
+    managedWorkers: managed === "true",
     consoleDir: value("CONSOLE_DIR"),
   };
 

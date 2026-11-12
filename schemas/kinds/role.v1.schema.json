@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/role.v1.schema.json",
+  "title": "role body, version 1",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 63
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "name",
+    "permissions"
+  ],
+  "additionalProperties": false
+}

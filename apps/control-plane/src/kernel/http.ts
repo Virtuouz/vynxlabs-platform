@@ -11,6 +11,8 @@ import {
 } from "./audit.js";
 import { check, type Target } from "./authorize.js";
 import { forbidden, notFound, unauthenticated } from "./errors.js";
+import type { WorkerScope } from "./execution/runs.js";
+import { resolveWorker } from "./execution/workers.js";
 import type { Kernel } from "./kernel.js";
 import { resolvePrincipal } from "./principal.js";
 
@@ -22,12 +24,15 @@ export type Access =
   | { kind: "signed-in" }
   /** The handler calls `ctx.authorize` itself, because the target depends on the request body. */
   | { kind: "custom" }
+  /** Called by a worker with a worker credential, under the worker protocol. */
+  | { kind: "worker" }
   | { kind: "permission"; permission: string; scope: Scope };
 
 export const access = {
   public: { kind: "public" } as Access,
   signedIn: { kind: "signed-in" } as Access,
   custom: { kind: "custom" } as Access,
+  worker: { kind: "worker" } as Access,
   instance: (permission: string): Access => ({ kind: "permission", permission, scope: "instance" }),
   tenant: (permission: string): Access => ({ kind: "permission", permission, scope: "tenant" }),
   tenantOrInstance: (permission: string): Access => ({
@@ -48,6 +53,8 @@ declare module "fastify" {
   }
   interface FastifyRequest {
     ctx: RequestContext;
+    /** Set on worker protocol routes. */
+    worker: WorkerScope;
   }
 }
 
@@ -131,11 +138,16 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 /** Installs the hooks that resolve the caller and enforce each route's declared access. */
 export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
   app.decorateRequest("ctx", null as unknown as RequestContext);
+  app.decorateRequest("worker", null as unknown as WorkerScope);
 
   app.addHook("preHandler", async (request) => {
     const declared = request.routeOptions.config.access;
     if (!declared) {
       throw new Error(`Route ${request.routeOptions.url} declares no access rule.`);
+    }
+    if (declared.kind === "worker") {
+      request.worker = await resolveWorker(kernel, request);
+      return;
     }
     const principal =
       declared.kind === "public" ? ANONYMOUS : await resolvePrincipal(kernel, request);
@@ -179,6 +191,7 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
     if (
       declared &&
       declared.kind !== "public" &&
+      declared.kind !== "worker" &&
       !READ_METHODS.has(request.method) &&
       reply.statusCode < 400 &&
       !request.ctx?.mutated

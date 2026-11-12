@@ -1,6 +1,6 @@
 {
   "name": "@vynxlabs/cli",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -10,6 +10,17 @@
     "dist"
   ],
   "devDependencies": {
-    "@vynxlabs/control-plane": "workspace:*"
+    "@vynxlabs/control-plane": "workspace:*",
+    "@vynxlabs/example-acme": "workspace:*"
+  },
+  "dependencies": {
+    "@vynxlabs/manifest": "workspace:*",
+    "esbuild": "^0.28.2"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   }
 }

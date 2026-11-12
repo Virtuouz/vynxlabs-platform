@@ -4,7 +4,6 @@
     "kind",
     "schemaVersion",
     "path",
-    "workspace",
     "ownership",
     "body"
   ],
@@ -26,12 +25,6 @@
       "maxLength": 255,
       "description": "Human-readable name, unique within the workspace."
     },
-    "workspace": {
-      "type": "string",
-      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-      "maxLength": 63,
-      "description": "Slug of the workspace the resource belongs to."
-    },
     "ownership": {
       "anyOf": [
         {
@@ -51,6 +44,12 @@
         "^.*$": {}
       },
       "description": "Kind-specific definition, validated by the kind's own schema."
+    },
+    "workspace": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 63,
+      "description": "Slug of the workspace the resource belongs to."
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

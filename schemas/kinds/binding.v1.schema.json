@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/binding.v1.schema.json",
+  "title": "binding body, version 1",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "The name of a role visible in this workspace."
+    },
+    "principal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "member"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "email"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "group",
+                "service_account"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "anonymous"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "resource": {
+      "type": "string",
+      "description": "Path of one resource to bind at. Omit to bind at the workspace."
+    }
+  },
+  "required": [
+    "role",
+    "principal"
+  ],
+  "additionalProperties": false
+}

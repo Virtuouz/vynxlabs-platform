@@ -349,7 +349,7 @@ describe("permissions", () => {
     const listed = (await alice.client.get(`/tenants/${acme}/roles`)).body.items.map(
       (r: { name: string }) => r.name,
     );
-    expect(listed).toEqual(["developer", "tenant_admin", "viewer", "workspace_admin"]);
+    expect(listed).toEqual(["deployer", "developer", "tenant_admin", "viewer", "workspace_admin"]);
   });
 
   test("a role from another tenant, or the operator role, cannot be bound", async () => {
@@ -668,10 +668,9 @@ describe("resource registry", () => {
   };
 
   test("lists the registered kinds", async () => {
-    expect((await bob.client.get("/kinds")).body.items).toEqual([
-      { kind: "binding", schemaVersions: [1] },
-      { kind: "role", schemaVersions: [1] },
-    ]);
+    expect(
+      (await bob.client.get("/kinds")).body.items.map((k: { kind: string }) => k.kind),
+    ).toEqual(["binding", "connection", "role", "schedule", "script", "trigger", "variable"]);
   });
 
   test("create, update, rename and version history", async () => {
@@ -988,15 +987,10 @@ describe("the write path", () => {
     expect(t.unaudited).toEqual([]);
   });
 
-  test("every route that changes something was exercised and audited", () => {
-    const mutating = t.routes
-      .filter((route) => route.url.startsWith("/api/v1/") && !route.url.startsWith("/api/v1/auth/"))
-      .flatMap((route) =>
-        ([] as string[]).concat(route.method).map((method) => `${method} ${route.url}`),
-      )
-      .filter((route) => !/^(GET|HEAD|OPTIONS) /.test(route));
-    const missing = mutating.filter((route) => !t.audited.has(route));
-    expect(missing).toEqual([]);
-    expect(mutating.length).toBeGreaterThan(25);
+  test("every kernel route that changes something was exercised and audited", () => {
+    // The execution routes have the same check in execution.test.ts.
+    const execution =
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth)(\/|$)/;
+    expect(t.unexercised((route) => !execution.test(route))).toEqual([]);
   });
 });

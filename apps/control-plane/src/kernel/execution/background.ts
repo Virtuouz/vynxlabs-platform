@@ -1,0 +1,36 @@
+import type { Kernel } from "../kernel.js";
+import { reapDeadRuns } from "./runs.js";
+import type { WorkerSupervisor } from "./supervisor.js";
+import { fireDueSchedules } from "./triggers.js";
+
+/**
+ * The control plane's recurring work: fire schedules that are due, close runs
+ * whose retries ran out, and keep managed workers running where there is work.
+ * Every replica runs this. Each step is safe to run concurrently.
+ */
+export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, intervalMs = 2000) {
+  let running = false;
+  const steps: [string, () => Promise<unknown>][] = [
+    ["schedules", () => fireDueSchedules(kernel)],
+    ["dead runs", () => reapDeadRuns(kernel)],
+    ...(supervisor
+      ? ([["managed workers", () => supervisor.tick()]] as [string, () => Promise<unknown>][])
+      : []),
+  ];
+  const timer = setInterval(async () => {
+    if (running) return;
+    running = true;
+    for (const [name, step] of steps) {
+      await step().catch((error) =>
+        kernel.log.error({ err: error, step: name }, "a background step failed"),
+      );
+    }
+    running = false;
+  }, intervalMs);
+  return {
+    async stop() {
+      clearInterval(timer);
+      await supervisor?.stop();
+    },
+  };
+}

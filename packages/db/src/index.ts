@@ -22,9 +22,11 @@ export {
 export { type TenantHandle, TenantRouter } from "./router.js";
 export type {
   DataLocation,
+  FailureAlert,
   Ownership,
   PlatformSchema,
   PrincipalType,
+  RunStatus,
   ScopeType,
   WorkspaceType,
 } from "./schema.js";

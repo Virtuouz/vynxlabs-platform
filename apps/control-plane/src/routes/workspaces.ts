@@ -29,6 +29,11 @@ const Workspace = Type.Object({
   name: Type.String(),
   type: WorkspaceType,
   linkedWorkspaceId: NullableId,
+  concurrencyLimit: Type.Integer({ description: "How many runs may be in progress at once." }),
+  failureAlert: Type.Object({
+    script: Type.Optional(Type.String()),
+    notify: Type.Optional(Type.String()),
+  }),
   createdAt: Time,
 });
 interface WorkspaceRow {
@@ -38,6 +43,8 @@ interface WorkspaceRow {
   name: string;
   type: "production" | "dev";
   linked_workspace_id: string | null;
+  concurrency_limit: number;
+  failure_alert: { script?: string; notify?: string };
   created_at: Date;
 }
 const toWorkspace = (row: WorkspaceRow) => ({
@@ -47,6 +54,8 @@ const toWorkspace = (row: WorkspaceRow) => ({
   name: row.name,
   type: row.type,
   linkedWorkspaceId: row.linked_workspace_id,
+  concurrencyLimit: row.concurrency_limit,
+  failureAlert: row.failure_alert,
   createdAt: iso(row.created_at),
 });
 
@@ -224,13 +233,25 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("workspace:write") },
         schema: {
-          summary: "Rename a workspace or change its link",
-          description: "The type cannot be changed.",
+          summary: "Change a workspace's name, link, run limit or failure alert",
+          description:
+            "The type cannot be changed. `failureAlert` names a script to start and an HTTP " +
+            "connection to notify when a run fails for the last time.",
           tags: ["tenancy"],
           params: WorkspaceParams,
           body: Type.Object({
             name: Type.Optional(Name),
             linkedWorkspaceId: Type.Optional(NullableId),
+            concurrencyLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+            failureAlert: Type.Optional(
+              Type.Object(
+                {
+                  script: Type.Optional(Type.String({ pattern: PATH_PATTERN })),
+                  notify: Type.Optional(Type.String({ pattern: PATH_PATTERN })),
+                },
+                { additionalProperties: false },
+              ),
+            ),
           }),
           response: { 200: Workspace },
         },
@@ -250,7 +271,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
             .updateTable("workspace")
-            .set({ name: body.name ?? current.name, linked_workspace_id: linked })
+            .set({
+              name: body.name ?? current.name,
+              linked_workspace_id: linked,
+              concurrency_limit: body.concurrencyLimit ?? current.concurrency_limit,
+              ...(body.failureAlert ? { failure_alert: JSON.stringify(body.failureAlert) } : {}),
+            })
             .where("id", "=", params.w)
             .returningAll()
             .executeTakeFirstOrThrow();
@@ -260,7 +286,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetId: params.w,
             tenantId: params.t,
             workspaceId: params.w,
-            details: { name: updated.name, linkedWorkspaceId: linked },
+            details: {
+              name: updated.name,
+              linkedWorkspaceId: linked,
+              concurrencyLimit: updated.concurrency_limit,
+              failureAlert: updated.failure_alert,
+            },
           });
           return updated;
         });

@@ -3,7 +3,7 @@ import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
 import type { RouteOptions } from "fastify";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { buildApp } from "./app.js";
-import type { ObjectStore } from "./storage.js";
+import { MemoryObjectStore } from "./storage.js";
 import { testConfig } from "./testing.js";
 
 let testDb: TestDatabase;
@@ -12,13 +12,12 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 let storageUp = true;
 const routes: RouteOptions[] = [];
 
-const storage: ObjectStore = {
-  async check() {
+class FlakyStore extends MemoryObjectStore {
+  override async check() {
     if (!storageUp) throw new Error("connection refused to 10.0.0.5");
-  },
-  async ensureBucket() {},
-  close() {},
-};
+  }
+}
+const storage = new FlakyStore();
 
 beforeAll(async () => {
   testDb = await createTestDatabase();

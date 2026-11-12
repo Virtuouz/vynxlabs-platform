@@ -1,7 +1,7 @@
 import { sql } from "@vynxlabs/db";
 import type { Db, Principal, Trx } from "./audit.js";
 
-export const PERMISSION_PATTERN = "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$";
+export { PERMISSION_PATTERN } from "@vynxlabs/manifest";
 
 export interface Target {
   tenantId?: string | undefined;

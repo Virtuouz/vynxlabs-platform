@@ -1,3 +1,4 @@
+import { CompiledQuery, type Transaction } from "kysely";
 import type pg from "pg";
 import { PgBoss } from "pg-boss";
 
@@ -41,6 +42,21 @@ export interface QueueTuning {
   superviseIntervalSeconds?: number;
   heartbeatSeconds?: number;
 }
+
+// biome-ignore lint/suspicious/noExplicitAny: the queue works inside a transaction over any schema
+type AnyTransaction = Transaction<any>;
+
+/** Makes the queue run its statements inside a transaction of ours. */
+const within = (trx: AnyTransaction | undefined) =>
+  trx
+    ? {
+        db: {
+          executeSql: async (text: string, values?: unknown[]) => ({
+            rows: (await trx.executeQuery(CompiledQuery.raw(text, values ?? []))).rows as unknown[],
+          }),
+        },
+      }
+    : {};
 
 const tier = (limit: number) => `c${limit}`;
 const GROUP_TIERS = Object.fromEntries(
@@ -107,7 +123,13 @@ export class JobQueue {
     this.#known.add(name);
   }
 
-  async enqueue(queue: string, data: object, options: EnqueueOptions = {}): Promise<string> {
+  /** With `trx`, the job exists only if that transaction commits. */
+  async enqueue(
+    queue: string,
+    data: object,
+    options: EnqueueOptions = {},
+    trx?: AnyTransaction,
+  ): Promise<string> {
     await this.#ensure(queue);
     if (options.group && (options.group.limit < 1 || options.group.limit > MAX_GROUP_LIMIT)) {
       throw new Error(`A concurrency limit must be from 1 to ${MAX_GROUP_LIMIT}.`);
@@ -122,18 +144,23 @@ export class JobQueue {
       ...(options.group
         ? { group: { id: options.group.id, tier: tier(options.group.limit) } }
         : {}),
+      ...within(trx),
     });
     if (!id) throw new Error(`The job could not be queued on ${queue}.`);
     return id;
   }
 
   /** Takes the next job that is due and within its group's limit, or null. */
-  async claim<Data = object>(queue: string): Promise<ClaimedJob<Data> | null> {
+  async claim<Data = object>(
+    queue: string,
+    trx?: AnyTransaction,
+  ): Promise<ClaimedJob<Data> | null> {
     await this.#ensure(queue);
     const [job] = await this.#boss.fetch<Data>(queue, {
       batchSize: 1,
       priority: true,
       groupConcurrency: { default: MAX_GROUP_LIMIT * 1000, tiers: GROUP_TIERS },
+      ...within(trx),
     });
     if (!job) return null;
     return {

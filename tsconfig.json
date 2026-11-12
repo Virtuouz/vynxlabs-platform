@@ -8,6 +8,12 @@
       "path": "packages/manifest"
     },
     {
+      "path": "packages/sdk"
+    },
+    {
+      "path": "packages/worker"
+    },
+    {
       "path": "apps/control-plane"
     },
     {

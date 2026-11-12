@@ -181,3 +181,23 @@ describe("job queue", () => {
     }
   }, 60_000);
 });
+
+describe("job queue inside a transaction", () => {
+  test("a job queued in a transaction that rolls back never existed", async () => {
+    const q = queue();
+    const db = database.router.platform();
+    await expect(
+      db.transaction().execute(async (trx) => {
+        await database.queue.enqueue(q, { n: 1 }, {}, trx);
+        throw new Error("roll back");
+      }),
+    ).rejects.toThrow("roll back");
+    expect(await database.queue.claim(q)).toBeNull();
+
+    await db.transaction().execute((trx) => database.queue.enqueue(q, { n: 2 }, {}, trx));
+    const claimed = await db
+      .transaction()
+      .execute((trx) => database.queue.claim<{ n: number }>(q, trx));
+    expect(claimed?.data).toEqual({ n: 2 });
+  });
+});

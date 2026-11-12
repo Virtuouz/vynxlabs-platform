@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
@@ -11,11 +12,13 @@ import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { authRoutes } from "./routes/auth.js";
+import { executionRoutes } from "./routes/execution.js";
 import { healthRoutes } from "./routes/health.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { tenantRoutes } from "./routes/tenants.js";
+import { workerRoutes } from "./routes/worker.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 import type { ObjectStore } from "./storage.js";
 
@@ -45,6 +48,8 @@ export async function buildApp(options: AppOptions) {
   const app = Fastify({
     logger: options.logLevel ? { level: options.logLevel } : false,
     requestIdHeader: false,
+    // On shutdown, do not wait for idle connections or for workers that are long-polling.
+    forceCloseConnections: true,
     // Behind a proxy, the caller's address is in the forwarding header.
     trustProxy: true,
     genReqId: (request) => {
@@ -53,7 +58,13 @@ export async function buildApp(options: AppOptions) {
     },
   }).withTypeProvider<TypeBoxTypeProvider>();
 
-  const kernel = createKernel(options.database, options.config, app.log);
+  const kernel = createKernel(
+    options.database,
+    options.storage,
+    options.version,
+    options.config,
+    app.log,
+  );
   app.decorate("kernel", kernel);
 
   app.setErrorHandler(errorHandler);
@@ -61,6 +72,9 @@ export async function buildApp(options: AppOptions) {
     reply.header("x-request-id", request.id);
   });
   if (options.onRoute) app.addHook("onRoute", options.onRoute);
+
+  // Applies only to routes that ask for it, such as public webhooks.
+  await app.register(rateLimit, { global: false });
 
   await app.register(swagger, {
     openapi: {
@@ -113,6 +127,8 @@ export async function buildApp(options: AppOptions) {
       await api.register(tenantRoutes(kernel));
       await api.register(permissionRoutes(kernel));
       await api.register(workspaceRoutes(kernel));
+      await api.register(executionRoutes(kernel));
+      await api.register(workerRoutes(kernel));
       api.get(
         "/openapi.json",
         {

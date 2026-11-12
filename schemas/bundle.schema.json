@@ -1,0 +1,95 @@
+{
+  "type": "object",
+  "required": [
+    "formatVersion",
+    "sdkVersion",
+    "core",
+    "manifests",
+    "code",
+    "digest"
+  ],
+  "properties": {
+    "formatVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "sdkVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "core": {
+      "type": "object",
+      "required": [
+        "min",
+        "below"
+      ],
+      "properties": {
+        "min": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Lowest core version it runs on."
+        },
+        "below": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "First core version it does not run on."
+        }
+      },
+      "additionalProperties": false
+    },
+    "manifests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "schemaVersion",
+          "path",
+          "ownership",
+          "body"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 63
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "ownership": {
+            "type": "string",
+            "const": "code"
+          },
+          "body": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {}
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "code": {
+      "type": "string",
+      "description": "One ES module exporting every code-backed resource."
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 over the other fields."
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bundle.schema.json",
+  "title": "Bundle",
+  "description": "An immutable package of one workspace's manifests and code.",
+  "additionalProperties": false
+}

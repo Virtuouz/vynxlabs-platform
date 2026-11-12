@@ -55,6 +55,9 @@ export interface WorkspaceTable {
   name: string;
   type: WorkspaceType;
   linked_workspace_id: string | null;
+  active_bundle_id: string | null;
+  concurrency_limit: Generated<number>;
+  failure_alert: ColumnType<FailureAlert, string | undefined, string>;
   created_at: Generated<Date>;
 }
 
@@ -196,6 +199,146 @@ export interface AuditEntryTable {
   request_id: string | null;
 }
 
+/** What to do when a run fails for the last time. Paths of a script and of an HTTP connection. */
+export interface FailureAlert {
+  script?: string;
+  notify?: string;
+}
+
+export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface BundleTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  version: number;
+  digest: string;
+  sdk_version: string;
+  core_min: string;
+  core_below: string;
+  storage_key: string;
+  size_bytes: number;
+  manifest_count: number;
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface DeploymentTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  bundle_id: string;
+  previous_bundle_id: string | null;
+  summary: Json<Record<string, unknown>>;
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface ConnectionBindingTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  config: Json<Record<string, unknown>>;
+  credential: Buffer | null;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
+}
+
+export interface VariableValueTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  value: string;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
+}
+
+type NullableJson = ColumnType<unknown, string | null | undefined, string | null>;
+
+export interface RunTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  resource_id: string;
+  script_path: string;
+  bundle_id: string;
+  status: RunStatus;
+  attempt: Generated<number>;
+  max_attempts: number;
+  queue_job_id: string | null;
+  priority: Generated<number>;
+  trigger_type: string;
+  trigger_detail: Json<Record<string, unknown>>;
+  started_by_type: string;
+  started_by_id: string | null;
+  idempotency_key: string;
+  input: NullableJson;
+  input_ref: string | null;
+  output: NullableJson;
+  output_ref: string | null;
+  error: ColumnType<
+    { message: string; stack?: string } | null,
+    string | null | undefined,
+    string | null
+  >;
+  alert: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
+  worker_id: string | null;
+  created_at: Generated<Date>;
+  scheduled_for: Date | null;
+  started_at: Date | null;
+  finished_at: Date | null;
+  last_heartbeat_at: Date | null;
+}
+
+export interface RunLogTable {
+  run_id: string;
+  seq: Generated<string>;
+  attempt: number;
+  logged_at: Date;
+  level: "debug" | "info" | "warn" | "error";
+  message: string;
+  fields: Json<Record<string, unknown>>;
+}
+
+export interface TriggerStateTable {
+  resource_id: string;
+  tenant_id: string;
+  workspace_id: string;
+  type: "schedule" | "webhook";
+  script_path: string;
+  enabled: boolean;
+  next_fire_at: Date | null;
+  last_fired_at: Date | null;
+  token_hash: string | null;
+  token_encrypted: Buffer | null;
+}
+
+export interface WorkerCredentialTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string | null;
+  name: string;
+  prefix: string;
+  token_hash: string;
+  managed: Generated<boolean>;
+  expires_at: Date | null;
+  revoked_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface WorkerTable {
+  id: string;
+  credential_id: string;
+  tenant_id: string;
+  version: string | null;
+  started_at: Generated<Date>;
+  last_seen_at: Timestamp;
+}
+
 /** Tables shared by every tenant in the platform database. */
 export interface PlatformSchema {
   platform_migration: PlatformMigrationTable;
@@ -216,4 +359,13 @@ export interface PlatformSchema {
   tenant_key: TenantKeyTable;
   secret: SecretTable;
   audit_entry: AuditEntryTable;
+  bundle: BundleTable;
+  deployment: DeploymentTable;
+  connection_binding: ConnectionBindingTable;
+  variable_value: VariableValueTable;
+  run: RunTable;
+  run_log: RunLogTable;
+  trigger_state: TriggerStateTable;
+  worker_credential: WorkerCredentialTable;
+  worker: WorkerTable;
 }

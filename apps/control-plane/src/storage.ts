@@ -1,4 +1,11 @@
-import { CreateBucketCommand, HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import type { Config } from "./config.js";
 
 /** The platform's file storage. Any S3-compatible store. */
@@ -7,6 +14,10 @@ export interface ObjectStore {
   check(): Promise<void>;
   /** Creates the bucket if it does not exist yet. */
   ensureBucket(): Promise<void>;
+  put(key: string, body: string | Buffer, contentType: string): Promise<void>;
+  /** Throws if there is no such object. */
+  get(key: string): Promise<Buffer>;
+  remove(key: string): Promise<void>;
   close(): void;
 }
 
@@ -39,7 +50,49 @@ export class S3ObjectStore implements ObjectStore {
     }
   }
 
+  async put(key: string, body: string | Buffer, contentType: string): Promise<void> {
+    await this.#client.send(
+      new PutObjectCommand({
+        Bucket: this.#bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+      }),
+    );
+  }
+
+  async get(key: string): Promise<Buffer> {
+    const result = await this.#client.send(
+      new GetObjectCommand({ Bucket: this.#bucket, Key: key }),
+    );
+    if (!result.Body) throw new Error(`The stored object ${key} is empty.`);
+    return Buffer.from(await result.Body.transformToByteArray());
+  }
+
+  async remove(key: string): Promise<void> {
+    await this.#client.send(new DeleteObjectCommand({ Bucket: this.#bucket, Key: key }));
+  }
+
   close(): void {
     this.#client.destroy();
   }
+}
+
+/** An object store that lives in memory. For tests and for running scripts locally. */
+export class MemoryObjectStore implements ObjectStore {
+  readonly objects = new Map<string, Buffer>();
+  async check() {}
+  async ensureBucket() {}
+  async put(key: string, body: string | Buffer) {
+    this.objects.set(key, Buffer.from(body));
+  }
+  async get(key: string) {
+    const found = this.objects.get(key);
+    if (!found) throw new Error(`No stored object at ${key}.`);
+    return found;
+  }
+  async remove(key: string) {
+    this.objects.delete(key);
+  }
+  close() {}
 }

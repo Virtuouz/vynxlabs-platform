@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/schedule.v1.schema.json",
+  "title": "schedule body, version 1",
+  "type": "object",
+  "properties": {
+    "script": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255
+    },
+    "cron": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Five-field cron expression."
+    },
+    "timezone": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "IANA time zone. Default UTC."
+    },
+    "input": {
+      "type": "object"
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "script",
+    "cron"
+  ],
+  "additionalProperties": false
+}

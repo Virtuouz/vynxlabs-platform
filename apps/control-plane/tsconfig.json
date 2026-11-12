@@ -11,6 +11,12 @@
     },
     {
       "path": "../../packages/manifest"
+    },
+    {
+      "path": "../../packages/sdk"
+    },
+    {
+      "path": "../../packages/worker"
     }
   ]
 }

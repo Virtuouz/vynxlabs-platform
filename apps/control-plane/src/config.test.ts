@@ -40,6 +40,7 @@ describe("configuration", () => {
       authSecret: "a".repeat(32),
       masterKey: Buffer.alloc(32, 7),
       bootstrapAdmin: undefined,
+      managedWorkers: true,
       consoleDir: undefined,
     });
   });

@@ -1,0 +1,10 @@
+{
+  "name": "@vynxlabs/example-acme",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A sample tenant repository: one integration between a shop and an ERP.",
+  "dependencies": {
+    "@vynxlabs/sdk": "workspace:*"
+  }
+}

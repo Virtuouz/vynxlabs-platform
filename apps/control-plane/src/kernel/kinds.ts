@@ -1,7 +1,6 @@
 import { newId } from "@vynxlabs/db";
-import type { KindRegistry } from "@vynxlabs/manifest";
+import { type KindRegistry, registerPlatformKinds } from "@vynxlabs/manifest";
 import type { Trx } from "./audit.js";
-import { PERMISSION_PATTERN } from "./authorize.js";
 import { badRequest } from "./errors.js";
 
 export interface AppliedResource {
@@ -22,68 +21,6 @@ export interface KindHook {
 }
 
 export const INSTANCE_ONLY_ROLE = "operator_admin";
-
-const roleKind = {
-  kind: "role",
-  schemaVersion: 1,
-  body: {
-    type: "object",
-    properties: {
-      name: { type: "string", pattern: "^[a-z][a-z0-9_]*$", maxLength: 63 },
-      description: { type: "string", maxLength: 500 },
-      permissions: {
-        type: "array",
-        items: { type: "string", pattern: PERMISSION_PATTERN },
-        minItems: 1,
-        uniqueItems: true,
-      },
-    },
-    required: ["name", "permissions"],
-    additionalProperties: false,
-  },
-};
-
-const bindingKind = {
-  kind: "binding",
-  schemaVersion: 1,
-  body: {
-    type: "object",
-    properties: {
-      role: { type: "string", description: "The name of a role visible in this workspace." },
-      principal: {
-        oneOf: [
-          {
-            type: "object",
-            properties: { type: { const: "member" }, email: { type: "string" } },
-            required: ["type", "email"],
-            additionalProperties: false,
-          },
-          {
-            type: "object",
-            properties: {
-              type: { enum: ["group", "service_account"] },
-              name: { type: "string" },
-            },
-            required: ["type", "name"],
-            additionalProperties: false,
-          },
-          {
-            type: "object",
-            properties: { type: { const: "anonymous" } },
-            required: ["type"],
-            additionalProperties: false,
-          },
-        ],
-      },
-      resource: {
-        type: "string",
-        description: "Path of one resource to bind at. Omit to bind at the workspace.",
-      },
-    },
-    required: ["role", "principal"],
-    additionalProperties: false,
-  },
-};
 
 const roleHook: KindHook = {
   async apply(trx, resource) {
@@ -200,7 +137,7 @@ const bindingHook: KindHook = {
 };
 
 export function registerKernelKinds(kinds: KindRegistry, hooks: Map<string, KindHook>) {
-  kinds.register(roleKind).register(bindingKind);
+  registerPlatformKinds(kinds);
   hooks.set("role", roleHook);
   hooks.set("binding", bindingHook);
 }

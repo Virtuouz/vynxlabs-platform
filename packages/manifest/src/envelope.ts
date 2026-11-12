@@ -23,11 +23,6 @@ const envelopeFields = {
     maxLength: 255,
     description: "Human-readable name, unique within the workspace.",
   }),
-  workspace: Type.String({
-    pattern: SLUG_PATTERN,
-    maxLength: 63,
-    description: "Slug of the workspace the resource belongs to.",
-  }),
   ownership: Type.Union([Type.Literal("code"), Type.Literal("ui")], {
     description: "Whether the resource is managed from a repository or from the interface.",
   }),
@@ -36,20 +31,34 @@ const envelopeFields = {
   }),
 };
 
-/** What the build emits and a bundle contains: a resource named by path only. */
-export const Manifest = Type.Object(envelopeFields, {
-  $schema: SCHEMA_DIALECT,
-  $id: "manifest.schema.json",
-  title: "Manifest",
-  description: "The authored, language-neutral description of a resource.",
-  additionalProperties: false,
+const workspace = Type.String({
+  pattern: SLUG_PATTERN,
+  maxLength: 63,
+  description: "Slug of the workspace the resource belongs to.",
 });
+
+/**
+ * What the build emits and a bundle contains: a resource named by path only.
+ * A bundle can be deployed to any workspace, so its manifests leave the
+ * workspace out and the control plane fills it in.
+ */
+export const Manifest = Type.Object(
+  { ...envelopeFields, workspace: Type.Optional(workspace) },
+  {
+    $schema: SCHEMA_DIALECT,
+    $id: "manifest.schema.json",
+    title: "Manifest",
+    description: "The authored, language-neutral description of a resource.",
+    additionalProperties: false,
+  },
+);
 export type Manifest = Static<typeof Manifest>;
 
 /** What the registry holds: a manifest plus the identity the control plane assigns. */
 export const StoredResource = Type.Object(
   {
     ...envelopeFields,
+    workspace,
     id: Type.String({
       pattern: UUID_PATTERN,
       description: "Immutable internal ID. A rename keeps it.",
@@ -70,7 +79,7 @@ export const StoredResource = Type.Object(
 export type StoredResource = Static<typeof StoredResource>;
 
 /** The files that make up the language-neutral manifest contract. */
-export const contractSchemas = {
+export const envelopeSchemas = {
   "manifest.schema.json": Manifest,
   "resource.schema.json": StoredResource,
 } as const;

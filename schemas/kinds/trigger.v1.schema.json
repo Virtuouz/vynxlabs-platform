@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/trigger.v1.schema.json",
+  "title": "trigger body, version 1",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "webhook"
+    },
+    "script": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "type",
+    "script"
+  ],
+  "additionalProperties": false
+}

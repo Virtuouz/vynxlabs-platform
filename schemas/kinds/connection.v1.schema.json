@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/connection.v1.schema.json",
+  "title": "connection body, version 1",
+  "type": "object",
+  "properties": {
+    "connector": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 63
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "connector"
+  ],
+  "additionalProperties": false
+}

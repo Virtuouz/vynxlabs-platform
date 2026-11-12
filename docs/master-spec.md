@@ -429,7 +429,7 @@ Resources can be edited through the interface in a dev workspace. Those edits sy
 
 ### Cloning
 
-- A new workspace can be created as a copy of a production workspace, with or without its data.
+- A new workspace can be created as a copy of a production workspace, with or without its data. The copy is always a dev workspace, linked to the workspace it came from.
 - Cloning has a safety setting chosen at clone time. By default the clone starts with its triggers paused and its connections unbound, so it cannot act on real systems.
 - Turning the safety setting off is allowed and is recorded in the audit log.
 - Masking of personal data in clones is deferred.
@@ -582,7 +582,10 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Platform database | Postgres only. SQLite is a data source, never the platform database | Provisional |
 | Footprint | Containers, Postgres and S3-compatible file storage only | Provisional |
 | Identity pools | Platform members per instance, end users per tenant | Provisional |
-| Tenant portability | Data routing per tenant, plus export and import | Provisional |
+| Tenant portability | Data routing per tenant, plus export and import | Locked |
+| Dedicated database contents | A tenant's custom tables and their catalog. Platform records, the queue and sign-in stay in the instance database | Locked |
+| Tenant export | One archive in standard formats (tar, JSON Lines). The tenant's key travels wrapped with a passphrase. Members and the audit log always travel, run history on request | Locked |
+| Workspace clones | Always a dev workspace, linked to its source | Locked |
 | Secrets | Encrypted with a key per tenant | Provisional |
 | Clone safety default | Triggers paused and connections unbound unless switched off | Provisional |
 | Control plane language | TypeScript on Node | Locked |
@@ -683,7 +686,7 @@ Nothing below is in scope for the early phases, but no design may block the defe
 - [x] Choose the frontend framework and the component kit's foundation: Preact, Vite, Base UI and Tailwind.
 - [ ] Choose a product name and check it for trademark conflicts.
 - [ ] Get legal review of Apache 2.0 together with the contract clause that assigns the tenant repository.
-- [ ] Decide whether a clone of a production workspace is always a dev workspace.
+- [x] Decide whether a clone of a production workspace is always a dev workspace: yes. A clone is a dev workspace linked to the workspace it came from.
 - [x] Decide the rollback policy for custom table migrations: a deploy or rollback never drops data. A column or table that leaves the definition is retired and kept, and dropping it is a separate, explicit action.
 - [ ] Set default retention for runs and audit entries.
 - [x] Define what an operator admin can see inside a tenant, and how the tenant is shown that access: nothing by default, then explicit time-limited access grants that are audited and listed for the tenant's admins.

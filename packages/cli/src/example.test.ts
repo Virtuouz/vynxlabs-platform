@@ -33,13 +33,13 @@ const erpImports: { order: { id: string }; key: string | undefined; auth: string
   [];
 const shopQueries: string[] = [];
 
-async function cli(args: string[]) {
+async function cli(args: string[], env: Record<string, string> = {}) {
   const out: string[] = [];
   const err: string[] = [];
   const code = await run(args, {
     out: (line) => out.push(line),
     err: (line) => err.push(line),
-    env: { XDG_CONFIG_HOME: home },
+    env: { XDG_CONFIG_HOME: home, ...env },
   });
   return { code, out: out.join("\n"), err: err.join("\n") };
 }
@@ -421,6 +421,46 @@ describe("working locally", () => {
     );
     const latest = (await alice.get(`${base}/deployments`)).body.items[0];
     expect(latest.promotedFromWorkspaceId).toBe(dev);
+  });
+
+  test("tenant export writes the archive, and tenant import sends it to an instance", async () => {
+    const file = join(home, "acme.tar");
+    const secret = { PLATFORM_EXPORT_PASSPHRASE: "a passphrase long enough" };
+    const unset = await cli(["tenant", "export", "--tenant", "acme", "--out", file]);
+    expect(unset.code).toBe(1);
+    expect(unset.err).toContain("Set PLATFORM_EXPORT_PASSPHRASE");
+
+    const exported = await cli(
+      ["tenant", "export", "--tenant", "acme", "--out", file, "--history"],
+      secret,
+    );
+    expect(exported.err).toBe("");
+    expect(exported.out).toMatch(/Exported acme to .*acme\.tar \(\d+\.\d MB\)\./);
+    expect(exported.out).toContain("It includes run, flow and event history.");
+    const bytes = await readFile(file);
+    // A tar archive that ends with its list of contents.
+    expect(bytes.subarray(257, 262).toString()).toBe("ustar");
+    expect(bytes.toString("latin1")).toContain('"format": "vynxlabs-tenant-export"');
+
+    // Importing is for operators: the tenant's own key is refused.
+    const asTenant = await cli(["tenant", "import", file], secret);
+    expect(asTenant.code).toBe(1);
+    expect(asTenant.err).toContain("Could not import the tenant.");
+    const operator = (await t.admin.post("/api-keys", { name: "import" })).body.token as string;
+    const wrong = await cli(["tenant", "import", file], {
+      PLATFORM_TOKEN: operator,
+      PLATFORM_EXPORT_PASSPHRASE: "not the right passphrase",
+    });
+    expect(wrong.err).toContain("The passphrase does not open this export.");
+    // The whole file arrived and was checked: the only objection is that the tenant is already here.
+    const here = await cli(["tenant", "import", file, "--slug", "acme-copy"], {
+      PLATFORM_TOKEN: operator,
+      ...secret,
+    });
+    expect(here.err).toContain("This tenant is already on this instance.");
+    expect((await cli(["tenant", "import", join(home, "missing.tar")], secret)).err).toContain(
+      "There is no file at",
+    );
   });
 
   test("run executes one script on this machine with local bindings", async () => {

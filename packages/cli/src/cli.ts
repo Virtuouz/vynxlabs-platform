@@ -1,6 +1,9 @@
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { BuildError, buildBundle, describeBundle } from "./build.js";
 import { init, runLocally } from "./local.js";
@@ -32,6 +35,13 @@ Work on a tenant repository
   promote --tenant <slug> --workspace <slug> [--preview]
                                         Activate this workspace's bundle in the workspace
                                         it is linked to. Nothing is rebuilt
+
+Move a tenant
+  tenant export --tenant <slug> --out <file> [--history]
+                                        Write everything the tenant has to one file. The file's
+                                        passphrase is read from PLATFORM_EXPORT_PASSPHRASE
+  tenant import <file> [--slug <slug>] [--location <name>]
+                                        Bring an exported tenant into this instance. Operators only
 
 See what ran
   runs --tenant <slug> --workspace <slug> [run id]
@@ -284,6 +294,137 @@ async function promote(args: string[], io: Io) {
   for (const line of describeChanges(promoted.body.summary)) io.out(line);
 }
 
+/** The passphrase for an export file. Kept out of the command line, where it would be visible to others. */
+function passphrase(io: Io): string {
+  const value = io.env.PLATFORM_EXPORT_PASSPHRASE;
+  if (!value) {
+    throw new CliError(
+      "Set PLATFORM_EXPORT_PASSPHRASE to the passphrase for the export file. It protects every secret the tenant has: make it long, and pass it on separately from the file.",
+    );
+  }
+  return value;
+}
+
+async function failure(response: Response, doing: string): Promise<CliError> {
+  const text = await response.text();
+  let body: unknown = null;
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  return refusal({ status: response.status, body }, doing);
+}
+
+async function tenant(args: string[], io: Io) {
+  const [action, ...rest] = args;
+  const settings = await loadSettings(io.env);
+  const base = `${settings.url.replace(/\/+$/, "")}/api/v1`;
+  const authorization = `Bearer ${settings.token}`;
+
+  if (action === "export") {
+    const { values } = parseArgs({
+      args: rest,
+      options: {
+        tenant: { type: "string" as const },
+        out: { type: "string" as const },
+        history: { type: "boolean" as const },
+      },
+    });
+    if (!values.tenant || !values.out) {
+      throw new CliError("This needs --tenant <slug> and --out <file>.");
+    }
+    const secret = passphrase(io);
+    const tenants = await request(settings.url, "/tenants?limit=200", settings.token);
+    if (tenants.status !== 200) throw refusal(tenants, "list tenants");
+    const found = (tenants.body.items as { id: string; slug: string }[]).find(
+      (item) => item.slug === values.tenant,
+    );
+    if (!found) throw new CliError(`You have no access to a tenant called "${values.tenant}".`);
+    const response = await fetch(`${base}/tenants/${found.id}/exports`, {
+      method: "POST",
+      headers: { authorization, "content-type": "application/json" },
+      body: JSON.stringify({ passphrase: secret, history: values.history ?? false }),
+    });
+    if (!response.ok || !response.body) throw await failure(response, `export ${values.tenant}`);
+    const file = resolve(values.out);
+    await pipeline(
+      Readable.fromWeb(response.body as never),
+      createWriteStream(file, { mode: 0o600 }),
+    );
+    const { size } = await stat(file);
+    io.out(`Exported ${values.tenant} to ${file} (${(size / 1024 / 1024).toFixed(1)} MB).`);
+    io.out(
+      values.history
+        ? "It includes run, flow and event history."
+        : "Run, flow and event history is not in it. Add --history to include it.",
+    );
+    io.out(
+      "API keys and worker credentials are never exported. Make new ones where the tenant goes.",
+    );
+    return;
+  }
+
+  if (action === "import") {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: { slug: { type: "string" as const }, location: { type: "string" as const } },
+    });
+    const [path] = positionals;
+    if (!path) throw new CliError("This needs the export file: platform tenant import <file>");
+    const secret = passphrase(io);
+    const file = resolve(path);
+    const { size } = await stat(file).catch(() => {
+      throw new CliError(`There is no file at ${file}.`);
+    });
+    const query = new URLSearchParams();
+    if (values.slug) query.set("slug", values.slug);
+    if (values.location) query.set("dataLocation", values.location);
+    const response = await fetch(`${base}/instance/tenant-imports?${query}`, {
+      method: "POST",
+      headers: {
+        authorization,
+        "content-type": "application/x-tar",
+        "content-length": String(size),
+        "x-export-passphrase": secret,
+      },
+      body: Readable.toWeb(createReadStream(file)) as never,
+      // Node needs this said to send a body as it is read.
+      duplex: "half",
+    } as RequestInit);
+    if (!response.ok) throw await failure(response, "import the tenant");
+    const report = (await response.json()) as {
+      tenant: { slug: string; dataLocation: string | null };
+      counts: Record<string, number>;
+      objects: number;
+      members: { created: number; linked: number };
+      pausedWorkspaces: number;
+      cancelled: { runs: number; flowRuns: number };
+      notCarried: string[];
+    };
+    const rows = Object.values(report.counts).reduce((a, b) => a + b, 0);
+    io.out(
+      `Imported ${report.tenant.slug}: ${rows} rows, ${report.objects} stored objects, ` +
+        `${report.members.created} members created and ${report.members.linked} linked to accounts already here.`,
+    );
+    io.out(
+      report.tenant.dataLocation
+        ? `Its custom tables are in the database location "${report.tenant.dataLocation}".`
+        : "Its custom tables are in the platform database.",
+    );
+    io.out(
+      `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one when the instance it came from has stopped.`,
+    );
+    if (report.cancelled.runs + report.cancelled.flowRuns > 0) {
+      io.out(
+        `${report.cancelled.runs} runs and ${report.cancelled.flowRuns} flow runs were unfinished in the export and are recorded as cancelled.`,
+      );
+    }
+    for (const line of report.notCarried) io.out(`Not carried: ${line}`);
+    return;
+  }
+  throw new CliError("Use: platform tenant export ..., or: platform tenant import <file>");
+}
+
 const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);
 
 async function runs(args: string[], io: Io) {
@@ -413,6 +554,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       case "promote":
         await promote(rest, io);
+        return 0;
+      case "tenant":
+        await tenant(rest, io);
         return 0;
       case "runs":
         await runs(rest, io);

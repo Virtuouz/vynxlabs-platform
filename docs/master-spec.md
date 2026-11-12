@@ -377,7 +377,7 @@ Nodes can be placed freely on a canvas. Positions are stored apart from the logi
 - A step refers to an earlier step's output with a plain reference.
 - Simple transformations use a small, language-neutral expression language that the control plane evaluates safely.
 - Anything more complex becomes a code step.
-- The specific expression language is chosen in the flows phase. It must not allow arbitrary code.
+- The expression language is CEL. It cannot express unbounded work or run arbitrary code, and the control plane evaluates it in a sandbox with time and memory limits.
 
 ### Durability
 
@@ -396,7 +396,7 @@ ETL jobs are flows. Steps pass references to files or staging tables. Large data
 
 ### Engine
 
-The flow engine is built in-house on top of the queue, because the graph model is specific to this platform. This choice is provisional.
+The flow engine is built in-house on top of the queue, because the graph model is specific to this platform.
 
 ## Environments, deploys and promotion
 
@@ -586,9 +586,9 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Clone safety default | Triggers paused and connections unbound unless switched off | Provisional |
 | Control plane language | TypeScript on Node | Locked |
 | Queue engine | pg-boss, embedded in the control plane | Locked |
-| Flow engine | Built in-house on the queue | Provisional |
+| Flow engine | Built in-house on the queue | Locked |
 | Authentication | Better Auth inside the control plane, with external single sign-on as an option | Locked |
-| Expression language | Specific language not chosen | Open, flows phase |
+| Expression language | CEL (Common Expression Language), evaluated in a sandbox with time and memory limits | Locked |
 | Frontend framework and component kit | Preact and Vite, with a kit built on Base UI and Tailwind | Locked |
 | Chart library | Vega-Lite is the candidate | Open, apps phase |
 | Hosting provider | Fly.io for Vynxlabs-hosted instances, single-host Compose for VPS and on-prem. No provider is locked in | Locked |
@@ -675,10 +675,10 @@ Nothing below is in scope for the early phases, but no design may block the defe
 
 - [x] Confirm the control plane language: TypeScript on Node.
 - [x] Confirm the queue approach: pg-boss, embedded in the control plane.
-- [ ] Confirm that the flow engine is built in-house on the queue.
+- [x] Confirm that the flow engine is built in-house on the queue.
 - [x] Confirm the authentication approach: Better Auth inside the control plane.
 - [ ] Confirm the remaining provisional rows in the technology decisions table.
-- [ ] Choose the flow expression language.
+- [x] Choose the flow expression language: CEL.
 - [x] Choose the frontend framework and the component kit's foundation: Preact, Vite, Base UI and Tailwind.
 - [ ] Choose a product name and check it for trademark conflicts.
 - [ ] Get legal review of Apache 2.0 together with the contract clause that assigns the tenant repository.

@@ -72,6 +72,9 @@ importers:
       '@fastify/type-provider-typebox':
         specifier: ^6.3.0
         version: 6.3.0(ajv-formats@3.0.1(ajv@8.20.0))(typebox@1.4.6)
+      '@marcbachmann/cel-js':
+        specifier: ^8.0.0
+        version: 8.0.0
       '@vynxlabs/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -773,6 +776,11 @@ packages:
   '@lukeed/ms@2.0.2':
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
     engines: {node: '>=8'}
+
+  '@marcbachmann/cel-js@8.0.0':
+    resolution: {integrity: sha512-oaTrAziGr3zDLFiMt/yLU3nZuRMawyWQB5X1a0I7s9eGy3JYzX9l8ZXXHyMd64nzbeVFZTewuUShwsZQdK6UCA==}
+    engines: {node: '>=20.19.0'}
+    hasBin: true
 
   '@napi-rs/wasm-runtime@1.2.6':
     resolution: {integrity: sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw==}
@@ -2740,6 +2748,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   '@lukeed/ms@2.0.2': {}
+
+  '@marcbachmann/cel-js@8.0.0': {}
 
   '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
     dependencies:

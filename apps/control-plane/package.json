@@ -12,6 +12,7 @@
     "@fastify/static": "^10.1.10",
     "@fastify/swagger": "^9.9.3",
     "@fastify/type-provider-typebox": "^6.3.0",
+    "@marcbachmann/cel-js": "^8.0.0",
     "@vynxlabs/db": "workspace:*",
     "@vynxlabs/manifest": "workspace:*",
     "@vynxlabs/sdk": "workspace:^",

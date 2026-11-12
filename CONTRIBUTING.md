@@ -34,6 +34,7 @@ Adding a license to the allowlist is a decision for the owner.
 - A schema change is a new file in `packages/db/migrations`, named `NNNN_description.sql` with the next number. Run `pnpm lock:migrations` to record it.
 - Migrations move forward only. Never edit one that has merged. Fix a mistake with a new migration.
 - A migration must work on a database from any earlier release, so it cannot rely on application code having run in between. Put data backfills in the migration.
+- Inside a transaction, use that transaction for every query. Work that holds one connection and waits for another from the same pool stops the instance once enough of it runs at once. Look things up before the transaction opens, or pass it down. The queue has connections of its own for this reason. `pool.test.ts` runs an instance on a single connection to catch it.
 
 ## API
 

@@ -78,7 +78,10 @@ export class JobQueue {
   readonly heartbeatSeconds: number;
   #started = false;
 
-  /** Built by `Database`. The pool never leaves this package. */
+  /**
+   * Built by `Database`. The pool never leaves this package. It must be a pool of the
+   * queue's own, not the one transactions are taken from: see `Database`.
+   */
   constructor(pool: pg.Pool, tuning: QueueTuning = {}, onError: (error: Error) => void = () => {}) {
     this.heartbeatSeconds = tuning.heartbeatSeconds ?? HEARTBEAT_SECONDS;
     const supervise = tuning.superviseIntervalSeconds ?? DEFAULT_SUPERVISE_SECONDS;
@@ -178,8 +181,14 @@ export class JobQueue {
     return result.affected > 0;
   }
 
-  async complete(queue: string, id: string, output?: object): Promise<boolean> {
-    return (await this.#boss.complete(queue, id, output ?? null)).affected > 0;
+  /** With `trx`, the job is completed only if that transaction commits. */
+  async complete(
+    queue: string,
+    id: string,
+    output?: object,
+    trx?: AnyTransaction,
+  ): Promise<boolean> {
+    return (await this.#boss.complete(queue, id, output ?? null, within(trx))).affected > 0;
   }
 
   /** Fails the attempt. The job is retried if it has retries left. */

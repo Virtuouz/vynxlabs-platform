@@ -71,13 +71,15 @@ export async function startTestApp(
      * from the database an earlier version left behind.
      */
     prepare?: (database: Database) => Promise<void>;
+    /** The size of the platform's connection pool. Default 6. */
+    maxConnections?: number;
   } = {},
 ) {
   const testDb = await createTestDatabase();
   const database = new Database({
     connectionString: testDb.connectionString,
     // Many test files run at once against one server, each with several pools.
-    maxConnections: 6,
+    maxConnections: options.maxConnections ?? 6,
     ...(options.queue ? { queue: options.queue } : {}),
   });
   await options.prepare?.(database);
@@ -94,6 +96,7 @@ export async function startTestApp(
     onRoute: (route) => routes.push(route),
   });
   await bootstrapAdmin(app.kernel, app.log);
+  await app.kernel.data.platform();
   await app.ready();
   const db = database.router.platform();
 

@@ -14,6 +14,7 @@ Environments and portability (phase 5), on top of data (phase 4) and events and 
 - **Tenant export and import**, and deleting a tenant.
 - **Bundles keep working across the upgrade.** A bundle built with the 0.2.0 SDK still deploys, promotes and rolls back.
 - A standalone worker can be run from `deploy/worker`.
+- **A stop under load is fixed.** An export, a deploy or a worker asking for work could hold a database connection while waiting for another. With enough of them at once, every connection was held and the instance stopped answering. Each now uses the connection it has. A request that finds every connection busy fails after five seconds instead of waiting without limit. The queue keeps two connections of its own, so an instance opens up to two more than before.
 
 ### For tenant developers
 

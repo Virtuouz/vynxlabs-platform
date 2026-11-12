@@ -88,7 +88,10 @@ export class DataStores {
     this.#log = log;
   }
 
-  /** The platform database as a data store. */
+  /**
+   * The platform database as a data store. Opening it takes a connection, so it is
+   * opened once at start, before any request can ask for it from inside a transaction.
+   */
   platform(): Promise<DataStore> {
     this.#platform ??= this.#database.openDataStore(this.#secret).catch((error) => {
       this.#platform = undefined;
@@ -113,12 +116,15 @@ export class DataStores {
     });
   }
 
-  /** The store registered under a name. */
-  location(name: string): Promise<DataStore> {
+  /**
+   * The store registered under a name. A caller inside a transaction passes it as `db`,
+   * so that opening the store for the first time does not wait for a second connection.
+   */
+  location(name: string, db: Db | Trx = this.#db): Promise<DataStore> {
     let store = this.#dedicated.get(name);
     if (!store) {
       store = (async () => {
-        const row = await this.#db
+        const row = await db
           .selectFrom("database_location")
           .select("connection_encrypted")
           .where("name", "=", name)
@@ -153,10 +159,10 @@ export class DataStores {
   }
 
   /** The name of the dedicated location a tenant uses, or null for the platform database. */
-  async locationOf(tenantId: string): Promise<string | null> {
+  async locationOf(tenantId: string, db: Db | Trx = this.#db): Promise<string | null> {
     const known = this.#locations.get(tenantId);
     if (known !== undefined) return known;
-    const tenant = await this.#db
+    const tenant = await db
       .selectFrom("tenant")
       .select("data_location")
       .where("id", "=", tenantId)
@@ -180,12 +186,13 @@ export class DataStores {
    * database it is a transaction there, committed just before the platform's.
    */
   async within(trx: Trx, tenantId: string): Promise<{ db: Trx; store: DataStore }> {
-    return this.withinLocation(trx, await this.locationOf(tenantId));
+    // Looked up on the transaction itself: it holds a connection, and must not wait for another.
+    return this.withinLocation(trx, await this.locationOf(tenantId, trx));
   }
 
   /** The same, for a location given by name: for a tenant whose record is being written in this very transaction. */
   async withinLocation(trx: Trx, name: string | null): Promise<{ db: Trx; store: DataStore }> {
-    const store = await (name === null ? this.platform() : this.location(name));
+    const store = await (name === null ? this.platform() : this.location(name, trx));
     if (store.shared) return { db: trx, store };
     let held = open.get(trx);
     if (!held) {

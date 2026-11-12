@@ -66,9 +66,33 @@ export async function* exportTenant(
   options: { passphrase: string; history: boolean },
 ): AsyncGenerator<Buffer> {
   const store = await kernel.data.forTenant(tenantId);
+  // Everything that needs a connection of its own happens before the snapshots are
+  // opened. From there on an export holds its connections and asks for no other: if
+  // it did, enough exports at once would each wait for a connection the others hold.
+  const exists = await kernel.db
+    .selectFrom("tenant")
+    .select("id")
+    .where("id", "=", tenantId)
+    .executeTakeFirst();
+  if (!exists) throw notFound("The tenant");
+  // A tenant that never stored a secret is given its key now, so that every export has
+  // one and an import can always tell a right passphrase from a wrong one.
+  await tenantKey(kernel.db, kernel.vault, tenantId);
+  const migrationLevel = await kernel.migrationLevel();
+
   const trx = await snapshot(kernel.db);
-  // For a tenant on the platform database this is a second snapshot of it, taken a moment later.
-  const data = await snapshot(store.owner);
+  // A tenant on the platform database is read from that one snapshot. A tenant with a
+  // database of its own needs a second, there, taken a moment later.
+  const shared = store.shared;
+  const data = shared
+    ? trx
+    : await snapshot(store.owner).catch(async (error) => {
+        await trx
+          .rollback()
+          .execute()
+          .catch(() => {});
+        throw error;
+      });
   const entries: ExportManifest["entries"] = [];
   const counts: Record<string, number> = {};
   let cursors = 0;
@@ -126,11 +150,8 @@ export async function* exportTenant(
       .executeTakeFirst();
     if (!tenant) throw notFound("The tenant");
 
-    // The key first: without it nothing else in the archive can be used. A tenant that
-    // never stored a secret is given its key now, so that every export has one and an
-    // import can always tell a right passphrase from a wrong one.
-    await tenantKey(kernel.db, kernel.vault, tenantId);
-    const key = await kernel.db
+    // The key first: without it nothing else in the archive can be used.
+    const key = await trx
       .selectFrom("tenant_key")
       .select("wrapped_key")
       .where("tenant_id", "=", tenantId)
@@ -226,7 +247,7 @@ export async function* exportTenant(
       format: EXPORT_FORMAT,
       formatVersion: EXPORT_FORMAT_VERSION,
       coreVersion: kernel.version,
-      migrationLevel: await kernel.migrationLevel(),
+      migrationLevel,
       exportedAt: new Date().toISOString(),
       tenant: {
         id: tenant.id,
@@ -245,10 +266,12 @@ export async function* exportTenant(
     yield* tarEntry("manifest.json", Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`));
     yield TAR_END;
   } finally {
-    await data
-      .rollback()
-      .execute()
-      .catch(() => {});
+    if (!shared) {
+      await data
+        .rollback()
+        .execute()
+        .catch(() => {});
+    }
     await trx
       .rollback()
       .execute()

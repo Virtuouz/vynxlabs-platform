@@ -86,6 +86,8 @@ async function appliedMigrations(client: PoolClient) {
 export async function runMigrations(
   pool: Pool,
   dir: string = defaultMigrationsDir,
+  /** Stops after this migration. Only for tests that start from an earlier version. */
+  upTo?: number,
 ): Promise<MigrationResult> {
   const files = await loadMigrations(dir);
   const client = await pool.connect();
@@ -105,7 +107,7 @@ export async function runMigrations(
         }
       }
 
-      const pending = files.slice(applied.length);
+      const pending = files.slice(applied.length, upTo);
       for (const file of pending) {
         try {
           await client.query("begin");
@@ -123,7 +125,7 @@ export async function runMigrations(
 
       return {
         applied: pending.map(({ version, name }) => ({ version, name })),
-        level: newest,
+        level: upTo === undefined ? newest : Math.min(newest, Math.max(upTo, applied.length)),
       };
     } finally {
       await client.query("select pg_advisory_unlock($1)", [LOCK_KEY]).catch(() => {});

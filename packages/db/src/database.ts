@@ -47,8 +47,8 @@ export class Database {
   }
 
   /** Applies pending migrations. Call once at start, before serving. */
-  migrate(): Promise<MigrationResult> {
-    return runMigrations(this.#pool, this.#migrationsDir);
+  migrate(upTo?: number): Promise<MigrationResult> {
+    return runMigrations(this.#pool, this.#migrationsDir, upTo);
   }
 
   /**

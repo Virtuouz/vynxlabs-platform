@@ -66,6 +66,11 @@ export async function startTestApp(
     version?: string;
     /** Faster queue supervision, for tests that wait on timeouts. */
     queue?: { superviseIntervalSeconds?: number; heartbeatSeconds?: number };
+    /**
+     * Runs on the empty database before it is migrated: for tests that start
+     * from the database an earlier version left behind.
+     */
+    prepare?: (database: Database) => Promise<void>;
   } = {},
 ) {
   const testDb = await createTestDatabase();
@@ -75,6 +80,7 @@ export async function startTestApp(
     maxConnections: 6,
     ...(options.queue ? { queue: options.queue } : {}),
   });
+  await options.prepare?.(database);
   await database.migrate();
   await database.queue.start();
   const routes: RouteOptions[] = [];

@@ -244,7 +244,7 @@ export async function claimRun(
             run.status === "cancelled"
           ) {
             // The run ended some other way. Drop the job and look again.
-            await kernel.queue.complete(queue, job.id);
+            await kernel.queue.complete(queue, job.id, undefined, trx);
             return "stale" as const;
           }
           const now = new Date();

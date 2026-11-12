@@ -52,6 +52,13 @@ const Job = Type.Object({
   heartbeatSeconds: Type.Integer({ description: "Send a heartbeat at least this often." }),
   idempotencyKey: Type.String(),
   trigger: AnyObject,
+  startedBy: Type.Object(
+    { type: Type.String(), id: Type.Union([Id, Type.Null()]) },
+    {
+      description:
+        "Who started the run: a member, an end user, a service account, or the system for a schedule, webhook or event.",
+    },
+  ),
 });
 
 const MAX_WAIT_SECONDS = 25;
@@ -67,6 +74,24 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const config = { access: access.worker };
 
     /** The script manifest a run is pinned to, from the bundle it started on. */
+    /** Whether an ID is someone a script may act for: a member or an end user of the tenant. */
+    async function isPerson(tenantId: string, id: string): Promise<boolean> {
+      const member = await db
+        .selectFrom("tenant_member")
+        .select("member_id")
+        .where("tenant_id", "=", tenantId)
+        .where("member_id", "=", id)
+        .executeTakeFirst();
+      if (member) return true;
+      const user = await db
+        .selectFrom("end_user")
+        .select("id")
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", id)
+        .executeTakeFirst();
+      return user !== undefined;
+    }
+
     async function pinned(scope: Parameters<typeof activeRun>[1], runId: string, attempt: number) {
       const run = await activeRun(db, scope, runId, attempt);
       const bundle = await db
@@ -128,6 +153,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 heartbeatSeconds: Math.floor(HEARTBEAT_SECONDS / 3),
                 idempotencyKey: run.idempotency_key,
                 trigger: { type: run.trigger_type, ...run.trigger_detail },
+                startedBy: { type: run.started_by_type, id: run.started_by_id },
               },
             };
           }
@@ -495,6 +521,9 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body.table,
         );
         // A script is the workspace's own code. Acting for a person, it is held to what they may see.
+        if (body.as && !(await isPerson(run.tenant_id, body.as))) {
+          throw badRequest("`as` is not a member or an end user of this tenant.");
+        }
         const scope: DataScope = body.as
           ? { principalId: body.as, all: false }
           : { principalId: null, all: true };

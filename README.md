@@ -2,7 +2,7 @@
 
 One self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
 
-The platform is at phase 5, environments and portability. A developer defines scripts, flows, tables and data sources in a tenant's repository and deploys them. Changes move from a dev workspace to production as the same bundle. A tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another. Apps for end users come in the next phase.
+The platform is at phase 6, apps. A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another. Editing by end users is the next track.
 
 To run an instance, read [docs/self-hosting.md](docs/self-hosting.md).
 
@@ -49,6 +49,14 @@ The example also defines a table, `orders`, and the flow writes each order it se
 
 An existing Postgres database can be connected under the workspace's Data sources tab, then browsed there and used by scripts through `ctx.source(...)`.
 
+The example has two apps. After a deploy, the workspace's Apps tab lists them with their addresses: a portal at `/apps/<tenant>/<workspace>/portal/`, where staff see every order and a customer sees their own, and a public page of notices. Invite a customer under the tenant's End users page and open the link it gives you. To work on an app with reload, against a workspace's real data:
+
+```sh
+platform dev portal --tenant <slug> --workspace <slug>
+```
+
+An app is a directory with an `index.html`, named by `defineApp` in `src/index.ts`. It uses `@vynxlabs/app` for rows, scripts and the session, and `@vynxlabs/ui` for its components. Who may open it, and whose rows it shows, is said with `defineBinding` in the same file.
+
 To move a change between environments, link a dev workspace to the one it promotes to, deploy to dev, and run `platform promote --tenant <slug> --workspace <dev slug> --preview` to see what would change, then without `--preview` to do it. The same bundle is activated: nothing is rebuilt.
 
 `platform init <directory>` writes a starter repository, and `platform run <script>` runs one script on your machine.
@@ -61,7 +69,7 @@ The control plane starts a worker for a tenant when it has work. To run one your
 | --- | --- |
 | `pnpm test` | Builds, then runs all tests. Needs `pnpm stack:up` or `TEST_DATABASE_URL` |
 | `pnpm lint` | Lint and format check. `pnpm format` fixes what it can |
-| `pnpm typecheck` | Type checks every package, including the console |
+| `pnpm typecheck` | Type checks every package, including the console, the kit, the app client and the example |
 | `pnpm check:schemas` | Fails if `schemas/` is out of date. `pnpm emit:schemas` regenerates it |
 | `pnpm check:migrations` | Fails if a locked migration changed. `pnpm lock:migrations` records new ones |
 | `pnpm check:licenses` | Fails on a dependency outside the license allowlist |

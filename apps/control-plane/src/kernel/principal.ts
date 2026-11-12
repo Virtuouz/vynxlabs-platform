@@ -1,8 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
+import { isId } from "@vynxlabs/db";
 import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyRequest } from "fastify";
+import type { Place } from "./apps/hosts.js";
+import { appPrincipal } from "./apps/sessions.js";
 import { ANONYMOUS, type Principal } from "./audit.js";
-import { unauthenticated } from "./errors.js";
+import { HttpError, unauthenticated } from "./errors.js";
 import type { Kernel } from "./kernel.js";
 
 export const API_KEY_PREFIX = "vxk_";
@@ -59,10 +62,40 @@ async function fromApiKey(kernel: Kernel, token: string): Promise<Principal> {
   };
 }
 
-/** Works out who is calling: an API key, a member session, or nobody. */
+const READS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * A browser sends cookies by itself, also when another site makes it send the
+ * request. So a change that arrives with a cookie must come from a page of this
+ * instance: from the address it was sent to, or from the instance's own.
+ */
+function refuseCrossSite(kernel: Kernel, request: FastifyRequest, place: Place): void {
+  if (READS.has(request.method)) return;
+  const origin = request.headers.origin;
+  if (origin === undefined) return;
+  // The instance may be reached by a name other than its configured one, so both count
+  // there. At an app's address only that address does: not even the console's.
+  const allowed =
+    place.kind === "main"
+      ? [kernel.hosts.originOf(request), kernel.hosts.mainOrigin]
+      : [kernel.hosts.originOf(request)];
+  if (!allowed.includes(origin)) {
+    throw new HttpError(403, "cross_site", "This request came from another site.");
+  }
+}
+
+/**
+ * Works out who is calling: an API key, a member's session, a sign-in to a
+ * tenant's apps, or nobody.
+ *
+ * A member's session counts only at the instance's own address. At an app's
+ * address a person is known by a sign-in to that tenant's apps and nothing else.
+ * `tenantId` is the tenant the request is about, when it is about one.
+ */
 export async function resolvePrincipal(
   kernel: Kernel,
   request: FastifyRequest,
+  tenantId?: string,
 ): Promise<Principal> {
   const authorization = request.headers.authorization;
   if (authorization) {
@@ -73,14 +106,29 @@ export async function resolvePrincipal(
     return fromApiKey(kernel, token);
   }
   if (!request.headers.cookie) return ANONYMOUS;
-  const session = await kernel.auth.api.getSession({
-    headers: fromNodeHeaders(request.headers),
-  });
-  if (!session) return ANONYMOUS;
-  return {
-    type: "member",
-    id: session.user.id,
-    name: session.user.name,
-    email: session.user.email,
-  };
+  const place = await kernel.hosts.place(request);
+  if (place.kind === "main") {
+    const session = await kernel.auth.api.getSession({
+      headers: fromNodeHeaders(request.headers),
+    });
+    if (session) {
+      refuseCrossSite(kernel, request, place);
+      return {
+        type: "member",
+        id: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        viaCookie: true,
+      };
+    }
+  }
+  const tenant = tenantId ?? (place.kind === "domain" ? place.domain.tenantId : undefined);
+  if (tenant !== undefined && isId(tenant)) {
+    const principal = await appPrincipal(kernel, request, tenant);
+    if (principal) {
+      refuseCrossSite(kernel, request, place);
+      return principal;
+    }
+  }
+  return ANONYMOUS;
 }

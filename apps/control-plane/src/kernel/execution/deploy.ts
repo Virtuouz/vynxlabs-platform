@@ -304,6 +304,8 @@ const KIND_ORDER = [
   "schedule",
   "trigger",
   "flow",
+  "theme",
+  "app",
   "binding",
 ];
 /** Where a kind comes when resources are applied: what others refer to goes first. */

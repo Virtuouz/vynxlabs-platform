@@ -9,8 +9,14 @@ type Json<T> = ColumnType<T, string, string>;
 export type WorkspaceType = "production" | "dev";
 export type Ownership = "code" | "ui";
 export type ScopeType = "instance" | "tenant" | "workspace" | "resource";
-/** `end_user` is reserved for the per-tenant end-user pool. */
-export type PrincipalType = "member" | "group" | "service_account" | "anonymous" | "end_user";
+/** `end_user` is one person in a tenant's pool. `end_users` is every signed-in one of them. */
+export type PrincipalType =
+  | "member"
+  | "group"
+  | "service_account"
+  | "anonymous"
+  | "end_user"
+  | "end_users";
 
 export interface PlatformMigrationTable {
   version: number;
@@ -508,6 +514,91 @@ export interface DatabaseLocationTable {
 }
 
 /** Tables shared by every tenant in the platform database. */
+export interface BundleAssetTable {
+  tenant_id: string;
+  sha256: string;
+  size_bytes: number;
+  storage_key: string;
+  created_at: Generated<Date>;
+}
+
+export interface EndUserTable {
+  id: string;
+  tenant_id: string;
+  email: string;
+  name: Generated<string>;
+  password_hash: string | null;
+  disabled_at: Date | null;
+  last_signed_in_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface EndUserTokenTable {
+  id: string;
+  tenant_id: string;
+  end_user_id: string;
+  purpose: "invite" | "reset";
+  token_hash: string;
+  expires_at: Timestamp;
+  used_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface AppSessionTable {
+  id: string;
+  tenant_id: string;
+  principal_type: "end_user" | "member";
+  principal_id: string;
+  token_hash: string;
+  host: string;
+  expires_at: Timestamp;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface AppHandoffTable {
+  id: string;
+  tenant_id: string;
+  member_id: string;
+  code_hash: string;
+  host: string;
+  expires_at: Timestamp;
+  used_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface AppDomainTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  app_path: string;
+  hostname: string;
+  enabled: Generated<boolean>;
+  verified_at: Date | null;
+  checked_at: Date | null;
+  check_error: string | null;
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+}
+
+/** Theme token overrides, for light and for dark. */
+export interface ThemeValues {
+  tokens?: Record<string, string>;
+  dark?: Record<string, string>;
+}
+
+export interface TenantPortalTable {
+  tenant_id: string;
+  sign_up: Generated<boolean>;
+  theme: ColumnType<ThemeValues, string | undefined, string>;
+  logo_key: string | null;
+  logo_content_type: string | null;
+  updated_at: Generated<Date>;
+}
+
 export interface PlatformSchema {
   platform_migration: PlatformMigrationTable;
   tenant: TenantTable;
@@ -546,4 +637,11 @@ export interface PlatformSchema {
   file: FileTable;
   database_location: DatabaseLocationTable;
   workspace_clone: WorkspaceCloneTable;
+  bundle_asset: BundleAssetTable;
+  end_user: EndUserTable;
+  end_user_token: EndUserTokenTable;
+  app_session: AppSessionTable;
+  app_handoff: AppHandoffTable;
+  app_domain: AppDomainTable;
+  tenant_portal: TenantPortalTable;
 }

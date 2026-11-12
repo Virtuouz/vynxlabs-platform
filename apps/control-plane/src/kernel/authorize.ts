@@ -34,6 +34,14 @@ export function grants(permissions: readonly string[], permission: string): bool
   });
 }
 
+/**
+ * The kinds of permission an app needs. An end user, and a member signed in to a
+ * tenant's apps only, hold nothing outside this list whatever role they are bound to:
+ * a binding made too wide cannot hand a portal user the tenant's settings or secrets.
+ */
+const APP_FACING = new Set(["app", "data", "data_all", "file", "run", "script", "table", "theme"]);
+const appFacing = (permission: string) => APP_FACING.has(permission.split(":")[0] as string);
+
 interface Held {
   permissions: string[];
   scope_type: string;
@@ -59,10 +67,18 @@ export async function check(
   const { tenantId = null, workspaceId = null, resourceId = null } = target;
   const instanceCounts = tenantId === null || target.orInstance === true;
   const id = principal.id;
-  // A service account has no standing outside its own tenant.
-  if (principal.type === "service_account" && principal.tenantId !== tenantId) {
+  // A service account has no standing outside its own tenant. Nor has an end user.
+  if (
+    (principal.type === "service_account" || principal.type === "end_user") &&
+    principal.tenantId !== tenantId
+  ) {
     return { allowed: false, related: false };
   }
+  const appOnly = principal.type === "end_user" || principal.appTenantId !== undefined;
+  if (principal.appTenantId !== undefined && principal.appTenantId !== tenantId) {
+    return { allowed: false, related: false };
+  }
+  if (appOnly && !appFacing(permission)) return { allowed: false, related: true };
 
   const principalMatch =
     principal.type === "member"
@@ -78,7 +94,12 @@ export async function check(
             (b.principal_type = 'service_account' and b.principal_id = ${id})
             or b.principal_type = 'anonymous'
           )`
-        : sql`b.principal_type = 'anonymous'`;
+        : principal.type === "end_user"
+          ? sql`(
+              (b.principal_type = 'end_user' and b.principal_id = ${id})
+              or b.principal_type in ('end_users', 'anonymous')
+            )`
+          : sql`b.principal_type = 'anonymous'`;
 
   const held = await sql<Held>`
     select r.permissions, b.scope_type, null::uuid as access_grant_id
@@ -100,7 +121,7 @@ export async function check(
     select r.permissions, 'tenant' as scope_type, g.id as access_grant_id
     from access_grant g
     join role r on r.id = g.role_id
-    where ${principal.type === "member"}
+    where ${principal.type === "member" && !appOnly}
       and g.member_id = ${id}
       and g.tenant_id = ${tenantId}
       and g.revoked_at is null
@@ -114,7 +135,7 @@ export async function check(
 
   let related = held.rows.some((row) => row.scope_type !== "instance");
   if (!related && tenantId !== null) {
-    if (principal.type === "service_account") {
+    if (principal.type === "service_account" || principal.type === "end_user") {
       related = true;
     } else if (principal.type === "member") {
       const membership = await sql`

@@ -17,10 +17,43 @@ export const BundleManifest = Type.Object(
 );
 export type BundleManifest = Static<typeof BundleManifest>;
 
+/** The longest path of a file inside an app, and what it may be made of. */
+export const ASSET_PATH_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._@~-]*(/[A-Za-z0-9][A-Za-z0-9._@~-]*)*$";
+
+/**
+ * One file of an app. The bundle names it by checksum. The bytes are stored
+ * apart, once per tenant, so a bundle stays small and moving it to another
+ * workspace moves no files.
+ */
+export const BundleAsset = Type.Object(
+  {
+    app: Type.String({
+      pattern: PATH_PATTERN,
+      maxLength: 255,
+      description: "The path of the app resource the file belongs to.",
+    }),
+    path: Type.String({
+      pattern: ASSET_PATH_PATTERN,
+      maxLength: 500,
+      description: "The file's path inside the app, for example assets/index-3f9a.js.",
+    }),
+    sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    size: Type.Integer({ minimum: 0 }),
+    contentType: Type.String({ maxLength: 100 }),
+  },
+  { additionalProperties: false },
+);
+export type BundleAsset = Static<typeof BundleAsset>;
+
+/** The most files one bundle may list. */
+export const MAX_BUNDLE_ASSETS = 5000;
+
 /** The unit of deploy: one workspace's manifests and code, immutable once built. */
 export const Bundle = Type.Object(
   {
-    formatVersion: Type.Literal(1),
+    formatVersion: Type.Union([Type.Literal(1), Type.Literal(2)], {
+      description: "2 adds `assets`. A bundle without apps may still be written as 1.",
+    }),
     sdkVersion: Type.String({ pattern: VERSION_PATTERN }),
     core: Type.Object(
       {
@@ -37,6 +70,12 @@ export const Bundle = Type.Object(
     ),
     manifests: Type.Array(BundleManifest),
     code: Type.String({ description: "One ES module exporting every code-backed resource." }),
+    assets: Type.Optional(
+      Type.Array(BundleAsset, {
+        maxItems: MAX_BUNDLE_ASSETS,
+        description: "The files of the bundle's apps. Format 2 only.",
+      }),
+    ),
     digest: Type.String({
       pattern: "^[0-9a-f]{64}$",
       description: "SHA-256 over the other fields.",
@@ -66,9 +105,12 @@ function canonical(value: unknown): string {
 
 export function bundleDigest(bundle: Omit<Bundle, "digest">): string {
   const { formatVersion, sdkVersion, core, manifests, code } = bundle;
-  return createHash("sha256")
-    .update(canonical({ formatVersion, sdkVersion, core, manifests, code }))
-    .digest("hex");
+  // A format 1 bundle is hashed exactly as it always was, so its digest does not change.
+  const hashed =
+    formatVersion === 1
+      ? { formatVersion, sdkVersion, core, manifests, code }
+      : { formatVersion, sdkVersion, core, manifests, code, assets: bundle.assets ?? [] };
+  return createHash("sha256").update(canonical(hashed)).digest("hex");
 }
 
 function parts(version: string): [number, number, number] {

@@ -3,6 +3,7 @@ import { KindRegistry } from "@vynxlabs/manifest";
 import type { FastifyBaseLogger } from "fastify";
 import type { Config } from "../config.js";
 import type { ObjectStore } from "../storage.js";
+import { Hosts } from "./apps/hosts.js";
 import type { Db } from "./audit.js";
 import { type Auth, createAuth } from "./auth.js";
 import { Vault } from "./crypto.js";
@@ -10,6 +11,7 @@ import { DataStores } from "./data/stores.js";
 import { registerExecutionHooks } from "./execution/triggers.js";
 import { Expressions } from "./flows/expressions.js";
 import { type KindHook, registerDataHooks, registerKernelKinds } from "./kinds.js";
+import { Mailer } from "./mail.js";
 
 /** Everything the kernel's routes and services share. */
 export interface Kernel {
@@ -31,6 +33,9 @@ export interface Kernel {
   /** The highest database migration applied. An export can only be imported at the same level. */
   migrationLevel(): Promise<number>;
   log: FastifyBaseLogger;
+  /** Which of the instance's addresses a request came to, and what may be reached there. */
+  hosts: Hosts;
+  mail: Mailer;
 }
 
 export function createKernel(
@@ -60,6 +65,8 @@ export function createKernel(
     version,
     migrationLevel: () => database.migrationLevel(),
     log,
+    hosts: new Hosts(db, config),
+    mail: new Mailer(config, log),
   };
   registerDataHooks(hooks, kernel.data);
   registerExecutionHooks(kernel);

@@ -27,3 +27,31 @@ export interface TriggerSource<Body> {
   /** For sources driven by a request: the script input for an incoming request. */
   toInput?(body: Body, request: { headers: Record<string, string>; body: unknown }): unknown;
 }
+
+/** What a screen hands a widget along with its configuration. Every part is optional. */
+export interface WidgetContext {
+  /** The rows to show, for a widget that shows data. */
+  rows?: Record<string, unknown>[];
+  /** The record a widget that edits one starts from. */
+  values?: Record<string, unknown>;
+  /** Messages from the server about what was last submitted, by field name. */
+  errors?: Record<string, string>;
+  /** Called with what a person submitted. The widget waits for the promise it returns. */
+  onSubmit?(values: Record<string, unknown>): void | Promise<void>;
+  /** Called with the row a person chose. */
+  onRowClick?(row: Record<string, unknown>): void;
+}
+
+/** A component for apps and generated screens. */
+export interface InterfaceWidget<Config> {
+  /** The name a screen refers to the widget by. */
+  name: string;
+  /** JSON Schema for the widget's configuration. */
+  configSchema: object;
+  /**
+   * Returns what the interface kit draws: a Preact node. It is typed as
+   * `unknown` so that the SDK does not depend on Preact. It is called on
+   * every draw, so it must not keep state itself: components it returns can.
+   */
+  render(config: Config, context: WidgetContext): unknown;
+}

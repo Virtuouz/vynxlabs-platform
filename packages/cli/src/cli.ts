@@ -5,7 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
-import { BuildError, buildBundle, describeBundle } from "./build.js";
+import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
+import { startDevServer } from "./dev.js";
 import { init, runLocally } from "./local.js";
 
 export interface Io {
@@ -30,6 +31,9 @@ Work on a tenant repository
   init [directory]                      Write a starter repository
   build                                 Build the bundle and list what it contains
   run <script> [--input <json>]         Run one script on this machine
+  dev [app] --tenant <slug> --workspace <slug> [--port <n>]
+                                        Serve an app from its source, with reload, against
+                                        that workspace's data, as yourself
   deploy --tenant <slug> --workspace <slug>
                                         Build, upload and activate the bundle
   promote --tenant <slug> --workspace <slug> [--preview]
@@ -47,7 +51,7 @@ See what ran
   runs --tenant <slug> --workspace <slug> [run id]
                                         List recent runs, or show one with its logs
 
-build, run and deploy read the repository in the current directory, or --dir <path>.
+build, run, dev and deploy read the repository in the current directory, or --dir <path>.
 Create an API key in the console under your account menu.
 PLATFORM_URL and PLATFORM_TOKEN override the saved settings.`;
 
@@ -166,7 +170,7 @@ const directoryOption = { dir: { type: "string" as const } };
 async function build(args: string[], io: Io) {
   const { values } = parseArgs({ args, options: directoryOption });
   const directory = resolve(values.dir ?? ".");
-  const bundle = await buildBundle({ directory });
+  const { bundle } = await buildRepository({ directory });
   const file = join(directory, ".platform", "bundle.json");
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(bundle));
@@ -184,7 +188,7 @@ async function locate(
     throw new CliError("This needs --tenant <slug> and --workspace <slug>.");
   const tenants = await request(settings.url, "/tenants?limit=200", settings.token);
   if (tenants.status !== 200) throw refusal(tenants, "list tenants");
-  const tenant = (tenants.body.items as { id: string; slug: string }[]).find(
+  const tenant = (tenants.body.items as { id: string; slug: string; name?: string }[]).find(
     (item) => item.slug === tenantSlug,
   );
   if (!tenant) throw new CliError(`You have no access to a tenant called "${tenantSlug}".`);
@@ -201,7 +205,35 @@ async function locate(
     throw new CliError(
       `The tenant "${tenantSlug}" has no workspace called "${workspaceSlug}" that you can read.`,
     );
-  return { base: `/tenants/${tenant.id}/workspaces/${workspace.id}`, workspace };
+  return { base: `/tenants/${tenant.id}/workspaces/${workspace.id}`, workspace, tenant };
+}
+
+/** Sends the files of the bundle's apps that the tenant does not have yet. */
+async function uploadFiles(settings: Settings, base: string, built: Built, io: Io) {
+  const wanted = [...new Set((built.bundle.assets ?? []).map((asset) => asset.sha256))];
+  if (wanted.length === 0) return;
+  const root = `${settings.url.replace(/\/+$/, "")}/api/v1${base}/bundle-assets`;
+  const authorization = `Bearer ${settings.token}`;
+  let sent = 0;
+  let next = 0;
+  const one = async () => {
+    for (;;) {
+      const sha256 = wanted[next++];
+      if (sha256 === undefined) return;
+      const have = await request(settings.url, `${base}/bundle-assets/${sha256}`, settings.token);
+      if (have.status === 200) continue;
+      if (have.status !== 404) throw refusal(have, "check the app's files");
+      const response = await fetch(`${root}/${sha256}`, {
+        method: "PUT",
+        headers: { authorization, "content-type": "application/octet-stream" },
+        body: built.files.get(sha256) as Buffer,
+      });
+      if (!response.ok) throw await failure(response, "upload a file of an app");
+      sent += 1;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, wanted.length) }, one));
+  io.out(`App files: ${wanted.length}, ${sent} new.`);
 }
 
 const targetOptions = {
@@ -213,8 +245,10 @@ async function deploy(args: string[], io: Io) {
   const { values } = parseArgs({ args, options: { ...directoryOption, ...targetOptions } });
   const settings = await loadSettings(io.env);
   const { base, workspace } = await locate(settings, values.tenant, values.workspace);
-  const bundle = await buildBundle({ directory: resolve(values.dir ?? ".") });
+  const built = await buildRepository({ directory: resolve(values.dir ?? ".") });
+  const { bundle } = built;
   for (const line of describeBundle(bundle)) io.out(line);
+  await uploadFiles(settings, base, built, io);
 
   const uploaded = await request(settings.url, `${base}/bundles`, settings.token, {
     method: "POST",
@@ -251,6 +285,35 @@ function describeChanges(summary: DeploySummary): string[] {
     ),
     ...(summary.data ?? []).map((line) => `  ${line}`),
   ];
+}
+
+async function dev(args: string[], io: Io) {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { ...directoryOption, ...targetOptions, port: { type: "string" as const } },
+  });
+  const settings = await loadSettings(io.env);
+  const { workspace, tenant } = await locate(settings, values.tenant, values.workspace);
+  const me = await whoami(settings);
+  const server = await startDevServer({
+    directory: resolve(values.dir ?? "."),
+    app: positionals[0],
+    port: values.port ? Number(values.port) : 5174,
+    instance: settings,
+    tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name ?? tenant.slug },
+    workspace: { id: workspace.id, slug: workspace.slug },
+    principal: me.principal,
+  });
+  io.out(`${server.app.path} is at ${server.url}`);
+  io.out(
+    `It reads and writes ${values.tenant}/${values.workspace} on ${settings.url}, as ${describe(me.principal)}. Press Ctrl+C to stop.`,
+  );
+  await new Promise<void>((done) => {
+    process.once("SIGINT", done);
+    process.once("SIGTERM", done);
+  });
+  await server.close();
 }
 
 async function promote(args: string[], io: Io) {
@@ -558,6 +621,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       case "run":
         await runLocally(rest, io);
+        return 0;
+      case "dev":
+        await dev(rest, io);
         return 0;
       case "deploy":
         await deploy(rest, io);

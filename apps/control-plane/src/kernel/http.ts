@@ -47,6 +47,18 @@ export const access = {
   }),
 };
 
+/**
+ * A limit for routes an app may call for someone who is not signed in. It counts
+ * only those callers, by address: a public app must not let anyone who finds it
+ * read the tenant's tables as fast as they like.
+ */
+export const guestLimit = {
+  max: 120,
+  timeWindow: "1 minute",
+  hook: "preHandler" as const,
+  allowList: (request: FastifyRequest) => request.ctx?.principal.type !== "anonymous",
+};
+
 declare module "fastify" {
   interface FastifyContextConfig {
     access?: Access;
@@ -91,7 +103,11 @@ export class RequestContext {
 
   /** The member calling, or a 403 for any other kind of principal. */
   get memberId(): string {
-    if (this.principal.type !== "member" || !this.principal.id) {
+    if (
+      this.principal.type !== "member" ||
+      !this.principal.id ||
+      this.principal.appTenantId !== undefined
+    ) {
       throw forbidden("member-only");
     }
     return this.principal.id;
@@ -149,18 +165,28 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       request.worker = await resolveWorker(kernel, request);
       return;
     }
+    const params = request.params as { t?: string; w?: string };
+    // At a hostname a tenant registered, the API answers for that tenant and no other.
+    const place = await kernel.hosts.place(request);
+    if (place.kind === "domain" && params.t !== undefined && params.t !== place.domain.tenantId) {
+      throw notFound("The tenant");
+    }
     const principal =
-      declared.kind === "public" ? ANONYMOUS : await resolvePrincipal(kernel, request);
+      declared.kind === "public" ? ANONYMOUS : await resolvePrincipal(kernel, request, params.t);
     const ctx = new RequestContext(kernel, principal, request);
     request.ctx = ctx;
 
     if (declared.kind === "public" || declared.kind === "custom") return;
     if (declared.kind === "signed-in") {
       if (principal.type === "anonymous") throw unauthenticated();
+      // These routes are a member's own account: its tenants, its API keys. A sign-in
+      // to one tenant's apps is not a sign-in to that.
+      if (principal.type === "end_user" || principal.appTenantId !== undefined) {
+        throw forbidden("member-only");
+      }
       return;
     }
 
-    const params = request.params as { t?: string; w?: string };
     if (declared.scope === "instance") {
       await ctx.authorize(declared.permission, {});
       return;

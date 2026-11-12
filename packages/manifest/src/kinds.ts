@@ -53,7 +53,19 @@ export const bindingKind: KindDefinition = {
           },
           {
             type: "object",
-            properties: { type: { const: "anonymous" } },
+            properties: { type: { const: "end_user" }, email: { type: "string" } },
+            required: ["type", "email"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              type: {
+                enum: ["anonymous", "end_users"],
+                description:
+                  "anonymous is anyone, signed in or not. end_users is every signed-in end user of the tenant.",
+              },
+            },
             required: ["type"],
             additionalProperties: false,
           },
@@ -482,6 +494,96 @@ export const dataSourceKind: KindDefinition = {
   },
 };
 
+/**
+ * The theme tokens a tenant or a workspace may set. The component kit's
+ * stylesheet defines the same names, each as a CSS variable `--vx-<name>`.
+ */
+export const THEME_TOKENS = [
+  "canvas",
+  "surface",
+  "sunken",
+  "line",
+  "ink",
+  "ink-muted",
+  "action",
+  "action-ink",
+  "action-soft",
+  "attention",
+  "attention-soft",
+  "danger",
+  "danger-soft",
+  "success",
+  "success-soft",
+  "radius-control",
+  "radius-panel",
+  "font",
+  "font-code",
+] as const;
+
+/**
+ * What a token's value may be made of: enough for a colour, a length or a list
+ * of fonts, and nothing that could end the declaration it is written into or
+ * make a browser fetch something.
+ */
+export const THEME_VALUE_PATTERN = "^[A-Za-z0-9#(),.%\"' -]{1,200}$";
+const FORBIDDEN_IN_THEME_VALUE = /url|image|expression|var\(|env\(|attr\(/i;
+
+/** Whether a string is acceptable as a theme token's value. */
+export function isThemeValue(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    new RegExp(THEME_VALUE_PATTERN).test(value) &&
+    !FORBIDDEN_IN_THEME_VALUE.test(value)
+  );
+}
+
+const themeValues = {
+  type: "object",
+  properties: Object.fromEntries(
+    THEME_TOKENS.map((token) => [token, { type: "string", pattern: THEME_VALUE_PATTERN }]),
+  ),
+  additionalProperties: false,
+};
+
+export const themeKind: KindDefinition = {
+  kind: "theme",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      description: { type: "string", maxLength: 500 },
+      tokens: { ...themeValues, description: "Values that replace the tenant's, by token name." },
+      dark: { ...themeValues, description: "The same, for when the viewer prefers a dark scheme." },
+    },
+    additionalProperties: false,
+  },
+};
+
+export const appKind: KindDefinition = {
+  kind: "app",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      description: { type: "string", maxLength: 500 },
+      entry: {
+        type: "string",
+        maxLength: 500,
+        description: "The file, among the app's files in the bundle, that is the page itself.",
+      },
+      fallback: {
+        type: "boolean",
+        description:
+          "Whether an address under the app that names no file answers with the entry page, " +
+          "for apps that route in the browser. Default true.",
+      },
+    },
+    required: ["title", "entry"],
+    additionalProperties: false,
+  },
+};
+
 /** Every kind the platform ships, in the order a deploy applies them. */
 export const platformKinds: KindDefinition[] = [
   roleKind,
@@ -494,6 +596,8 @@ export const platformKinds: KindDefinition[] = [
   scheduleKind,
   triggerKind,
   flowKind,
+  themeKind,
+  appKind,
   bindingKind,
 ];
 

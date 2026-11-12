@@ -5,7 +5,10 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
-  "include": ["src"]
+  "include": ["src", "apps"]
 }

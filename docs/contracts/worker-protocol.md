@@ -46,6 +46,7 @@ Response: `{"job": null}`, or a job:
 | `heartbeatSeconds` | Send a heartbeat at least this often |
 | `idempotencyKey` | The same on every attempt of this run |
 | `trigger` | What started the run |
+| `startedBy` | Who started the run: `type` (`member`, `end_user`, `service_account`, or `system` for a schedule, a webhook or an event) and `id`. Absent from a control plane older than 0.4.0 |
 
 If the worker disconnects while waiting, nothing is claimed for it.
 
@@ -103,7 +104,7 @@ Request:
 | `source` | Optional. The path of an external data source. Without it, `table` is a workspace table |
 | `op` | `find`, `get`, `insert`, `update` or `delete` |
 | `args` | For `find`: `filter`, `sort`, `limit`, `offset`. For `get` and `delete`: `id`. For `insert`: `rows`, 1 to 1,000 of them. For `update`: `id` and `patch` |
-| `as` | Optional. A principal's ID. The table's row policy then applies as it would to that person. Without it the script acts as the workspace and reaches every row. Ignored for an external source |
+| `as` | Optional. The ID of a member or an end user of the tenant, usually the run's `startedBy.id`. The table's row policy then applies as it would to that person. An ID that is neither is refused with 400. Without it the script acts as the workspace and reaches every row. Ignored for an external source |
 
 Response: `{"result": ...}`.
 

@@ -3,7 +3,7 @@ import type { ScriptContext } from "./context.js";
 import type { ColumnSpec, InsertOf, RowOf } from "./tables.js";
 
 export type { Logger, RunInfo, ScriptContext } from "./context.js";
-export type { Connector, TriggerSource } from "./extensions.js";
+export type { Connector, InterfaceWidget, TriggerSource, WidgetContext } from "./extensions.js";
 export {
   type HttpClient,
   type HttpConfig,
@@ -26,8 +26,8 @@ export {
 export { z };
 
 /** The version of the SDK, and the core versions a bundle built with it works on. */
-export const SDK_VERSION = "0.3.0";
-export const CORE_RANGE = { min: "0.3.0", below: "0.4.0" };
+export const SDK_VERSION = "0.4.0";
+export const CORE_RANGE = { min: "0.4.0", below: "0.5.0" };
 
 /** An authored manifest, before the control plane assigns a workspace, ID and version. */
 export interface AuthoredManifest {
@@ -443,5 +443,146 @@ export interface DataSourceOptions {
 export function defineDataSource(options: DataSourceOptions): ResourceDefinition {
   return resource("data_source", options.path, () =>
     compact({ connector: "postgres", description: options.description }),
+  );
+}
+
+/** The theme tokens a workspace may set. Each is the CSS variable `--vx-<name>` in the component kit. */
+export type ThemeToken =
+  | "canvas"
+  | "surface"
+  | "sunken"
+  | "line"
+  | "ink"
+  | "ink-muted"
+  | "action"
+  | "action-ink"
+  | "action-soft"
+  | "attention"
+  | "attention-soft"
+  | "danger"
+  | "danger-soft"
+  | "success"
+  | "success-soft"
+  | "radius-control"
+  | "radius-panel"
+  | "font"
+  | "font-code";
+
+export interface ThemeOptions {
+  /** Default `theme`. A workspace has one theme. */
+  path?: string;
+  description?: string;
+  /** Values that replace the tenant's: plain colours, lengths and font lists. */
+  tokens?: Partial<Record<ThemeToken, string>>;
+  /** The same, for when the viewer prefers a dark scheme. */
+  dark?: Partial<Record<ThemeToken, string>>;
+}
+
+/**
+ * Declares how this workspace's apps look, where it differs from the tenant's
+ * branding. Tokens that are not set keep the tenant's value.
+ */
+export function defineTheme(options: ThemeOptions): ResourceDefinition {
+  return resource("theme", options.path ?? "theme", () =>
+    compact({ description: options.description, tokens: options.tokens, dark: options.dark }),
+  );
+}
+
+export interface AppOptions {
+  /** Unique within the workspace. It is part of the app's address, for example `orders`. */
+  path: string;
+  title: string;
+  description?: string;
+  /**
+   * The app's own directory in the repository, holding its `index.html`. The build
+   * compiles it with Vite. Relative to the repository root, for example `apps/orders`.
+   */
+  source: string;
+  /** The page inside the built app. Default `index.html`. */
+  entry?: string;
+  /**
+   * Whether an address under the app that names no file answers with the page,
+   * for apps that route in the browser. Default true.
+   */
+  fallback?: boolean;
+}
+
+export interface AppDefinition extends ResourceDefinition {
+  readonly kind: "app";
+  /** Read by the build. Not part of the manifest. */
+  readonly source: string;
+}
+
+/**
+ * Declares an app: an interface the platform builds from `source` and serves.
+ * Who may open it is decided by bindings, like any other resource: bind a role
+ * holding `app:read` to members, to `end_users`, or to `anonymous` for a public app.
+ */
+export function defineApp(options: AppOptions): AppDefinition {
+  const definition = resource("app", options.path, () =>
+    compact({
+      title: options.title,
+      description: options.description,
+      entry: options.entry ?? "index.html",
+      fallback: options.fallback,
+    }),
+  );
+  return { ...definition, kind: "app", source: options.source };
+}
+
+export interface RoleOptions {
+  /** Unique within the workspace, for example `roles/order-reader`. */
+  path: string;
+  /** The name bindings refer to. Lower case letters, digits and underscores. */
+  name: string;
+  description?: string;
+  /** Each is `kind:read`, `kind:write` or `kind:*`, for example `data:read`. */
+  permissions: string[];
+}
+
+/** Declares a custom role for this workspace. */
+export function defineRole(options: RoleOptions): ResourceDefinition & { readonly name: string } {
+  const definition = resource("role", options.path, () =>
+    compact({
+      name: options.name,
+      description: options.description,
+      permissions: options.permissions,
+    }),
+  );
+  return { ...definition, name: options.name };
+}
+
+export type BindingPrincipal =
+  | { type: "member"; email: string }
+  | { type: "group"; name: string }
+  | { type: "service_account"; name: string }
+  /** One person in the tenant's end-user pool. */
+  | { type: "end_user"; email: string }
+  /** Every signed-in end user of the tenant. */
+  | { type: "end_users" }
+  /** Anyone, signed in or not. This is what makes something public. */
+  | { type: "anonymous" };
+
+export interface BindingOptions {
+  /** Unique within the workspace, for example `bindings/portal-orders`. */
+  path: string;
+  /** A role by name or by definition: built-in, the tenant's, or one this workspace defines. */
+  role: string | { name: string };
+  principal: BindingPrincipal;
+  /** Bind at one resource, by path or by definition. Omit to bind at the whole workspace. */
+  resource?: string | { path: string };
+}
+
+/**
+ * Grants a role to a principal, at the workspace or at one resource. This is
+ * how a repository says who may open an app and whose rows it shows.
+ */
+export function defineBinding(options: BindingOptions): ResourceDefinition {
+  return resource("binding", options.path, () =>
+    compact({
+      role: typeof options.role === "string" ? options.role : options.role.name,
+      principal: options.principal,
+      resource: options.resource === undefined ? undefined : pathOf(options.resource),
+    }),
   );
 }

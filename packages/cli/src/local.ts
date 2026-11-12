@@ -130,6 +130,7 @@ export async function runLocally(args: string[], io: Io) {
         attempt: 1,
         idempotencyKey: randomUUID(),
         trigger: { type: "local" },
+        startedBy: { type: "system", id: null },
       },
       signal: abort.signal,
     });
@@ -147,7 +148,7 @@ const STARTER: Record<string, string> = {
       name: "tenant-repository",
       private: true,
       type: "module",
-      dependencies: { "@vynxlabs/sdk": "^0.3.0" },
+      dependencies: { "@vynxlabs/sdk": "^0.4.0" },
     },
     null,
     2,

@@ -64,6 +64,8 @@ const PrincipalType = Type.Union([
   Type.Literal("group"),
   Type.Literal("service_account"),
   Type.Literal("anonymous"),
+  Type.Literal("end_user"),
+  Type.Literal("end_users"),
 ]);
 const Binding = Type.Object({
   id: Id,
@@ -76,7 +78,9 @@ const Binding = Type.Object({
   resourceId: NullableId,
   principalType: Type.String(),
   principalId: NullableId,
-  principalLabel: Type.String({ description: "The member's email, or the group or account name." }),
+  principalLabel: Type.String({
+    description: "The member's or end user's email, or the group or account name.",
+  }),
   roleId: Id,
   roleName: Type.String(),
   managedByResource: Type.Boolean(),
@@ -297,6 +301,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .onRef("service_account.id", "=", "binding.principal_id")
               .on("binding.principal_type", "=", "service_account"),
           )
+          .leftJoin("end_user", (join) =>
+            join
+              .onRef("end_user.id", "=", "binding.principal_id")
+              .on("binding.principal_type", "=", "end_user"),
+          )
           .select([
             "binding.id",
             "binding.scope_type",
@@ -309,6 +318,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "binding.created_at",
             "role.name as role_name",
             "member.email",
+            "end_user.email as end_user_email",
             "principal_group.name as group_name",
             "service_account.name as account_name",
           ])
@@ -324,7 +334,12 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             resourceId: row.resource_id,
             principalType: row.principal_type,
             principalId: row.principal_id,
-            principalLabel: row.email ?? row.group_name ?? row.account_name ?? "anyone",
+            principalLabel:
+              row.email ??
+              row.end_user_email ??
+              row.group_name ??
+              row.account_name ??
+              (row.principal_type === "end_users" ? "every end user" : "anyone"),
             roleId: row.role_id,
             roleName: row.role_name,
             managedByResource: row.source_resource_id !== null,
@@ -364,8 +379,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: workspaceId ?? undefined,
           resourceId: resourceId ?? undefined,
         });
-        if ((body.principalType === "anonymous") !== (body.principalId === undefined)) {
-          throw badRequest("principalId is required, except for the anonymous principal.");
+        const everyone = body.principalType === "anonymous" || body.principalType === "end_users";
+        if (everyone !== (body.principalId === undefined)) {
+          throw badRequest(
+            "principalId is required, except for anonymous and end_users, which take none.",
+          );
         }
 
         const id = newId();
@@ -410,14 +428,21 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     .where("tenant_id", "=", tenantId)
                     .where("member_id", "=", principalId)
                     .executeTakeFirst()
-                : await trx
-                    .selectFrom(
-                      body.principalType === "group" ? "principal_group" : "service_account",
-                    )
-                    .select("id")
-                    .where("tenant_id", "=", tenantId)
-                    .where("id", "=", principalId)
-                    .executeTakeFirst();
+                : body.principalType === "end_user"
+                  ? await trx
+                      .selectFrom("end_user")
+                      .select("id")
+                      .where("tenant_id", "=", tenantId)
+                      .where("id", "=", principalId)
+                      .executeTakeFirst()
+                  : await trx
+                      .selectFrom(
+                        body.principalType === "group" ? "principal_group" : "service_account",
+                      )
+                      .select("id")
+                      .where("tenant_id", "=", tenantId)
+                      .where("id", "=", principalId)
+                      .executeTakeFirst();
             if (!found) throw badRequest("The principal does not belong to this tenant.");
           }
 

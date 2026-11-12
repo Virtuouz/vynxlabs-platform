@@ -69,6 +69,8 @@ try {
   await storage.ensureBucket();
   app.log.info({ bucket: config.s3.bucket }, "object store is ready");
   await bootstrapAdmin(app.kernel, app.log);
+  // Sets up the sign-in for row requests. Done now, not by the first request that needs it.
+  await app.kernel.data.platform();
   await app.listen({ host: config.host, port: config.port });
   // A clone that was running an hour ago, when this process was not, did not survive.
   await failInterruptedClones(app.kernel, new Date(Date.now() - 60 * 60 * 1000));

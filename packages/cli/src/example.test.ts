@@ -9,6 +9,7 @@ import { type Client, startTestApp, type TestApp } from "@vynxlabs/control-plane
 import { Worker } from "@vynxlabs/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
+import { startDevServer } from "./dev.js";
 
 /**
  * The phase 2 story end to end, with the real pieces: the example tenant
@@ -22,6 +23,7 @@ const PASSWORD = "a-good-long-password";
 let t: TestApp;
 let url: string;
 let alice: Client;
+let tenantId: string;
 let token: string;
 let base: string;
 let home: string;
@@ -54,7 +56,7 @@ async function finished(id: string) {
 }
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.3.0" });
+  t = await startTestApp({ version: "0.4.0" });
   url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   home = await mkdtemp(join(tmpdir(), "cli-example-"));
 
@@ -97,6 +99,7 @@ beforeAll(async () => {
     ).map((role) => [role.name, role.id]),
   );
   const tenant = (await t.admin.post("/tenants", { slug: "acme", name: "Acme" })).body.id;
+  tenantId = tenant;
   const grant = await t.admin.post(`/tenants/${tenant}/access-grants`, {
     reason: "Setup",
     roleId: roles.tenant_admin,
@@ -147,7 +150,7 @@ describe("the example integration", () => {
     expect(built.out).toContain("schedule   orders/sync-every-five-minutes");
     expect(
       JSON.parse(await readFile(join(example, ".platform", "bundle.json"), "utf8")).manifests,
-    ).toHaveLength(16);
+    ).toHaveLength(28);
   });
 
   test("deploy says exactly what the workspace is missing", async () => {
@@ -202,7 +205,7 @@ describe("the example integration", () => {
     ]);
     expect(deployed.err).toBe("");
     expect(deployed.out).toContain(
-      "Deployed version 1 to main (production): 16 created, 0 updated, 0 deleted, 0 unchanged.",
+      "Deployed version 1 to main (production): 28 created, 0 updated, 0 deleted, 0 unchanged.",
     );
 
     // Deploying the same code again changes nothing.
@@ -216,7 +219,7 @@ describe("the example integration", () => {
       "main",
     ]);
     expect(again.out).toContain(
-      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 16 unchanged.",
+      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 28 unchanged.",
     );
   });
 
@@ -374,6 +377,98 @@ describe("the example integration", () => {
     ]);
     expect(filtered.out.split("\n")).toHaveLength(1);
   });
+  test("the portal serves staff and customers, each with their own orders, and anyone the notices", async () => {
+    const host = new URL(url).host;
+    /** A browser: it keeps the cookies it is given. */
+    const visitor = () => {
+      const jar = new Map<string, string>();
+      return async (
+        path: string,
+        init: { method?: string; json?: unknown; form?: Record<string, string> } = {},
+      ) => {
+        const response = await fetch(`${url}${path}`, {
+          method: init.method ?? (init.json || init.form ? "POST" : "GET"),
+          redirect: "manual",
+          headers: {
+            cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; "),
+            ...(init.json ? { "content-type": "application/json", origin: url } : {}),
+            ...(init.form
+              ? { "content-type": "application/x-www-form-urlencoded", origin: url }
+              : {}),
+          },
+          ...(init.json ? { body: JSON.stringify(init.json) } : {}),
+          ...(init.form ? { body: new URLSearchParams(init.form).toString() } : {}),
+        });
+        for (const line of response.headers.getSetCookie()) {
+          const [pair = ""] = line.split(";");
+          jar.set(pair.slice(0, pair.indexOf("=")), pair.slice(pair.indexOf("=") + 1));
+        }
+        const text = await response.text();
+        return { status: response.status, text, location: response.headers.get("location") };
+      };
+    };
+    expect(host).toBeTruthy();
+
+    // Anyone may open the public page and read the notices. Nothing else.
+    await alice.post(`${base}/rows/notices`, {
+      title: "Closed on Friday",
+      body: "Back on Monday.",
+    });
+    const guest = visitor();
+    const page = await guest("/apps/acme/main/public/");
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('id="vx-context"');
+    const script = /src="(\.\/assets\/[^"]+\.js)"/.exec(page.text)?.[1] as string;
+    expect((await guest(`/apps/acme/main/public/${script.slice(2)}`)).status).toBe(200);
+    const noticesSeen = JSON.parse((await guest(`/api/v1${base}/rows/notices`)).text);
+    expect(noticesSeen.items.map((row: { title: string }) => row.title)).toEqual([
+      "Closed on Friday",
+    ]);
+    expect((await guest(`/api/v1${base}/rows/orders`)).status).toBe(401);
+    expect((await guest("/apps/acme/main/portal/")).status).toBe(303);
+
+    // Two customers, each invited by staff.
+    const customer = async (email: string) => {
+      const invited = await alice.post(`/tenants/${tenantId}/end-users`, { email });
+      const link = new URL(invited.body.invitation.url);
+      const browse = visitor();
+      const set = await browse(link.pathname, {
+        form: { token: link.searchParams.get("token") as string, password: PASSWORD },
+      });
+      expect(set.status).toBe(303);
+      return { id: invited.body.endUser.id as string, browse };
+    };
+    const carl = await customer("carl@customer.example");
+    const dana = await customer("dana@customer.example");
+    expect((await carl.browse("/apps/acme/main/portal/")).text).toContain('"type":"end_user"');
+
+    // Carl asks for an order. The script writes it as his.
+    const started = JSON.parse(
+      (
+        await carl.browse(`/api/v1${base}/runs`, {
+          json: {
+            script: "orders/request",
+            input: { number: "C-1", total: 12.5, currency: "EUR" },
+          },
+        })
+      ).text,
+    );
+    const run = await finished(started.id);
+    expect(run.status, JSON.stringify(run.error)).toBe("succeeded");
+    const mine = JSON.parse((await carl.browse(`/api/v1${base}/rows/orders`)).text).items;
+    expect(mine).toMatchObject([{ number: "C-1", status: "requested", owner_id: carl.id }]);
+    expect(JSON.parse((await dana.browse(`/api/v1${base}/rows/orders`)).text).items).toEqual([]);
+    expect((await dana.browse(`/api/v1${base}/row/${mine[0].id}/orders`)).status).toBe(404);
+    // Staff see it among all the others.
+    const all = (await alice.get(`${base}/rows/orders?limit=200`)).body.items as {
+      number: string;
+    }[];
+    expect(all.length).toBeGreaterThan(1);
+    expect(all.map((row) => row.number)).toContain("C-1");
+
+    // The workspace's theme is over the kit's values.
+    expect((await guest(`/api/v1${base}/theme.css`)).text).toContain("--vx-action: #0b6e4f;");
+  });
 });
 
 describe("working locally", () => {
@@ -410,14 +505,14 @@ describe("working locally", () => {
     expect(preview.err).toBe("");
     expect(preview.out).toContain(`Bundle ${digest}, version 1 here, to main (production).`);
     expect(preview.out).toContain(
-      "Promoting would leave main (production) with: 0 created, 0 updated, 0 deleted, 16 unchanged.",
+      "Promoting would leave main (production) with: 0 created, 0 updated, 0 deleted, 28 unchanged.",
     );
     expect(preview.out).toContain("Nothing was changed.");
 
     const promoted = await promote();
     expect(promoted.err).toBe("");
     expect(promoted.out).toContain(
-      "Promoted to main (production) as version 1: 0 created, 0 updated, 0 deleted, 16 unchanged.",
+      "Promoted to main (production) as version 1: 0 created, 0 updated, 0 deleted, 28 unchanged.",
     );
     const latest = (await alice.get(`${base}/deployments`)).body.items[0];
     expect(latest.promotedFromWorkspaceId).toBe(dev);
@@ -463,6 +558,56 @@ describe("working locally", () => {
     );
   });
 
+  test("dev serves an app from its source, with the platform's context and the instance's data", async () => {
+    const server = await startDevServer({
+      directory: example,
+      app: "public",
+      port: 0,
+      instance: { url, token },
+      tenant: { id: tenantId, slug: "acme", name: "Acme" },
+      workspace: { id: base.split("/").at(-1) as string, slug: "main" },
+      principal: { type: "member", id: null, name: "Alice", email: "alice@acme.example" },
+    });
+    try {
+      const page = await (await fetch(server.url)).text();
+      const context = JSON.parse(
+        /<script type="application\/json" id="vx-context">(.*?)<\/script>/.exec(
+          page,
+        )?.[1] as string,
+      );
+      expect(context).toMatchObject({
+        api: "/api/v1",
+        base: "/",
+        tenant: { slug: "acme" },
+        app: { path: "public" },
+        principal: { email: "alice@acme.example" },
+      });
+      expect(page).toContain("/theme.css");
+      // The page's source is served as it is, compiled on the way.
+      expect((await fetch(`${server.url}main.tsx`)).status).toBe(200);
+      // Its API calls reach the instance as the developer.
+      // biome-ignore lint/suspicious/noExplicitAny: replies are read field by field
+      const read = async (path: string): Promise<any> =>
+        (await fetch(`${server.url}${path}`)).json();
+      const me = await read("api/v1/me");
+      expect(me.principal.email).toBe("alice@acme.example");
+      const rows = await read(`api/v1${base}/rows/notices`);
+      expect(rows.items).toHaveLength(1);
+    } finally {
+      await server.close();
+    }
+    const which = await startDevServer({
+      directory: example,
+      app: undefined,
+      port: 0,
+      instance: { url, token },
+      tenant: { id: tenantId, slug: "acme", name: "Acme" },
+      workspace: { id: "x", slug: "main" },
+      principal: { type: "member", name: null, email: null },
+    }).catch((error) => error);
+    expect(which.message).toContain("Say which app: portal, public.");
+  }, 60_000);
+
   test("run executes one script on this machine with local bindings", async () => {
     const missing = await cli(["run", "orders/sync", "--dir", example]);
     expect(missing.code).toBe(1);
@@ -485,7 +630,7 @@ describe("working locally", () => {
     expect(ran.out).toMatch(/Output: \{"sent":\d,"skipped":\d\}/);
 
     expect((await cli(["run", "orders/unknown", "--dir", example])).err).toContain(
-      'There is no script "orders/unknown". This repository has: alerts/run-failed, orders/check, orders/receive, orders/record, orders/send-to-erp, orders/sync',
+      'There is no script "orders/unknown". This repository has: alerts/run-failed, orders/check, orders/receive, orders/record, orders/request, orders/send-to-erp, orders/sync',
     );
     expect((await cli(["run", "orders/sync", "--dir", example, "--input", "{bad"])).err).toContain(
       "--input must be JSON",

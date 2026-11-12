@@ -8,19 +8,14 @@ import {
   type BundleManifest,
   bundleDigest,
   bundleExpressions,
+  checkBundleAssets,
   checkBundleManifests,
 } from "@vynxlabs/manifest";
 import { build as esbuild } from "esbuild";
+import { type AppSource, buildApps } from "./apps.js";
+import { BuildError } from "./errors.js";
 
-/** A build that failed for a reason the developer can fix. */
-export class BuildError extends Error {
-  readonly problems: string[];
-  constructor(problems: string[]) {
-    super(problems.join("\n"));
-    this.name = "BuildError";
-    this.problems = problems;
-  }
-}
+export { BuildError };
 
 interface Definition {
   kind: string;
@@ -52,11 +47,81 @@ const KIND_ORDER = [
   "schedule",
   "trigger",
   "flow",
+  "theme",
+  "app",
   "binding",
 ];
 
+/** A built repository: the bundle, and the bytes of the files its apps are made of. */
+export interface Built {
+  bundle: Bundle;
+  /** By checksum. Each is uploaded before the bundle that lists it. */
+  files: Map<string, Buffer>;
+}
+
 /** Compiles a tenant repository into one bundle: its manifests and its code. */
 export async function buildBundle(options: BuildOptions): Promise<Bundle> {
+  return (await buildRepository(options)).bundle;
+}
+
+/** The apps a repository defines, with where each one's source is. */
+export async function appSources(options: BuildOptions): Promise<AppSource[]> {
+  const { definitions } = await loadDefinitions(options);
+  return definitions
+    .map(([, definition]) => definition)
+    .filter((definition) => definition.kind === "app")
+    .map((definition) => ({
+      path: definition.path,
+      source: (definition as unknown as { source: string }).source,
+    }));
+}
+
+/** Compiles a tenant repository: its manifests, its code, and its apps. */
+export async function buildRepository(options: BuildOptions): Promise<Built> {
+  const directory = resolve(options.directory);
+  const entry = options.entry ?? "src/index.ts";
+  const { code, definitions, sdk } = await loadDefinitions(options);
+
+  const manifests = definitions
+    .map(([name, definition]) => definition.toManifest(name))
+    .sort(
+      (a, b) =>
+        KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1),
+    );
+  if (manifests.length === 0) {
+    throw new BuildError([`${entry} exports no resources. Export what you define with the SDK.`]);
+  }
+  const problems = check(manifests);
+  if (problems.length > 0) throw new BuildError(problems);
+
+  const apps = definitions
+    .map(([, definition]) => definition)
+    .filter((definition) => definition.kind === "app")
+    .map((definition) => ({
+      path: definition.path,
+      source: (definition as unknown as { source: string }).source,
+    }));
+  const built = await buildApps(directory, apps);
+
+  const common = {
+    sdkVersion: sdk.SDK_VERSION as string,
+    core: sdk.CORE_RANGE as { min: string; below: string },
+    manifests,
+    code,
+  };
+  // A repository without apps is still written as format 1, so that it keeps deploying
+  // to an instance that has not been upgraded yet.
+  const unsigned =
+    apps.length === 0
+      ? { formatVersion: 1 as const, ...common }
+      : { formatVersion: 2 as const, ...common, assets: built.assets };
+  const assetProblems = checkBundleAssets(unsigned);
+  if (assetProblems.length > 0) throw new BuildError(assetProblems);
+  return { bundle: { ...unsigned, digest: bundleDigest(unsigned) }, files: built.files };
+}
+
+/** Bundles the repository's code and loads it once, to read what it defines. */
+async function loadDefinitions(options: BuildOptions) {
   const directory = resolve(options.directory);
   const entry = options.entry ?? "src/index.ts";
 
@@ -110,28 +175,10 @@ export async function buildBundle(options: BuildOptions): Promise<Bundle> {
     throw new BuildError(["@vynxlabs/sdk is not installed in this repository."]);
   });
 
-  const manifests = Object.entries(exported)
-    .filter((pair): pair is [string, Definition] => isDefinition(pair[1]))
-    .map(([name, definition]) => definition.toManifest(name))
-    .sort(
-      (a, b) =>
-        KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1),
-    );
-  if (manifests.length === 0) {
-    throw new BuildError([`${entry} exports no resources. Export what you define with the SDK.`]);
-  }
-
-  const problems = check(manifests);
-  if (problems.length > 0) throw new BuildError(problems);
-
-  const unsigned = {
-    formatVersion: 1 as const,
-    sdkVersion: sdk.SDK_VERSION as string,
-    core: sdk.CORE_RANGE as { min: string; below: string },
-    manifests,
-    code,
-  };
-  return { ...unsigned, digest: bundleDigest(unsigned) };
+  const definitions = Object.entries(exported).filter((pair): pair is [string, Definition] =>
+    isDefinition(pair[1]),
+  );
+  return { code, definitions, sdk: sdk as { SDK_VERSION: string; CORE_RANGE: object } };
 }
 
 /** Everything wrong with a set of manifests, each problem naming the resource and field. */
@@ -155,7 +202,13 @@ export function describeBundle(bundle: Bundle): string[] {
     counts.set(manifest.kind, (counts.get(manifest.kind) ?? 0) + 1);
   return [
     `Bundle ${bundle.digest.slice(0, 12)}, ${(bundle.code.length / 1024).toFixed(0)} KB of code, SDK ${bundle.sdkVersion}`,
-    ...bundle.manifests.map((manifest) => `  ${manifest.kind.padEnd(10)} ${manifest.path}`),
+    ...bundle.manifests.map((manifest) => {
+      const files = (bundle.assets ?? []).filter((asset) => asset.app === manifest.path);
+      const size = files.reduce((sum, file) => sum + file.size, 0);
+      const detail =
+        manifest.kind === "app" ? `  (${files.length} files, ${(size / 1024).toFixed(0)} KB)` : "";
+      return `  ${manifest.kind.padEnd(10)} ${manifest.path}${detail}`;
+    }),
   ];
 }
 

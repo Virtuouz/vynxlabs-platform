@@ -1,11 +1,15 @@
 import {
   column,
+  defineApp,
+  defineBinding,
   defineConnection,
   defineEvent,
   defineFlow,
+  defineRole,
   defineSchedule,
   defineScript,
   defineTable,
+  defineTheme,
   defineVariable,
   defineWebhook,
   step,
@@ -254,4 +258,117 @@ export const handleOrder = defineFlow({
     ["send", "record"],
     ["send", "report", { error: true }],
   ],
+});
+
+// ----- The portal: one app for staff and for customers -----
+
+/** Things customers should know, written by staff. Anyone may read them. */
+export const notices = defineTable({
+  path: "notices",
+  description: "Short messages for customers, shown on the public page.",
+  columns: {
+    title: column.text({ required: true }),
+    body: column.text(),
+  },
+});
+
+/**
+ * A customer asks for an order from the portal. The script runs as the
+ * workspace, and writes the row as the person who started it, so the row is
+ * theirs and the table's policy holds.
+ */
+export const requestOrder = defineScript({
+  path: "orders/request",
+  description: "Records an order someone asks for from the portal, as theirs.",
+  input: z.object({
+    number: z.string().min(1).max(40),
+    total: z.number().positive(),
+    currency: z.string().length(3),
+  }),
+  output: z.object({ id: z.string() }),
+  tables: [orders],
+  async run(input, ctx) {
+    const who = ctx.run.startedBy;
+    if (who.id === null) throw new Error("An order is requested by a person.");
+    const row = await ctx
+      .table(orders)
+      .as(who.id)
+      .insert({ ...input, status: "requested" });
+    ctx.log.info("Order requested", { number: input.number });
+    return { id: row.id };
+  },
+});
+
+/** Acme's colours, where they differ from the tenant's branding. */
+export const theme = defineTheme({
+  tokens: { action: "#0b6e4f", "action-soft": "#dff3ea", "radius-panel": "14px" },
+  dark: { action: "#5fd3a6", "action-ink": "#04261a", "action-soft": "#143a2c" },
+});
+
+/**
+ * Staff see every order and write notices. A customer signs in and sees their
+ * own orders. It is the same app: what each person sees is decided by their
+ * role and by the orders table's policy, not by the app.
+ */
+export const portal = defineApp({
+  path: "portal",
+  title: "Acme orders",
+  description: "Your orders with Acme.",
+  source: "apps/portal",
+});
+
+/** A page for anyone, signed in or not. */
+export const publicPage = defineApp({
+  path: "public",
+  title: "Acme notices",
+  source: "apps/public",
+});
+
+// Who may open what. Staff need nothing here: their roles already let them read.
+
+/** Customers open the portal and read and write their own orders. */
+export const customersOpenPortal = defineBinding({
+  path: "access/customers-portal",
+  role: "portal_user",
+  principal: { type: "end_users" },
+  resource: portal,
+});
+export const customersReadOrders = defineBinding({
+  path: "access/customers-orders",
+  role: "portal_user",
+  principal: { type: "end_users" },
+  resource: orders,
+});
+
+export const orderRequester = defineRole({
+  path: "roles/order-requester",
+  name: "order_requester",
+  description: "May start a script it is bound at.",
+  permissions: ["run:write"],
+});
+export const customersRequestOrders = defineBinding({
+  path: "access/customers-request",
+  role: orderRequester,
+  principal: { type: "end_users" },
+  resource: requestOrder,
+});
+
+export const publicReader = defineRole({
+  path: "roles/public-reader",
+  name: "public_reader",
+  description: "Opens an app and reads rows, where it is bound.",
+  permissions: ["app:read", "data:read"],
+});
+/** Binding to `anonymous` is what makes the page and the notices public. */
+export const anyoneOpensPublicPage = defineBinding({
+  path: "access/public-page",
+  role: publicReader,
+  principal: { type: "anonymous" },
+  resource: publicPage,
+});
+export const anyoneReadsNotices = defineBinding({
+  path: "access/public-notices",
+  role: publicReader,
+  principal: { type: "anonymous" },
+  resource: notices,
 });

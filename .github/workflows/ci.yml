@@ -81,6 +81,10 @@ jobs:
           curl -fsS -H 'content-type: application/json' -H 'origin: http://127.0.0.1:8080' \
             -d "{\"email\":\"$BOOTSTRAP_ADMIN_EMAIL\",\"password\":\"$BOOTSTRAP_ADMIN_PASSWORD\"}" \
             http://127.0.0.1:8080/api/v1/auth/sign-in/email | jq -e .user.email
+      - name: The pages for apps are served, and an app's address that does not exist says so
+        run: |
+          curl -fsS http://127.0.0.1:8080/_platform/portal.css | grep -q -- '--vx-canvas'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/apps/nobody/main/portal/)" = 404
       - name: A restart applies no migration twice
         run: |
           docker compose -f deploy/compose/compose.yaml restart control-plane

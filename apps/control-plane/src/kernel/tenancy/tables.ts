@@ -172,6 +172,35 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "never",
   },
   { table: "workspace_clone", ofTenant: own, key: ["id"], export: "never" },
+  // App files are kept once per tenant and shared by its workspaces, so they go with the tenant.
+  {
+    table: "bundle_asset",
+    ofTenant: own,
+    key: ["sha256"],
+    export: "always",
+    stored: ["storage_key"],
+  },
+  // The end-user pool travels, with the hash each person signs in with.
+  { table: "end_user", ofTenant: own, key: ["id"], export: "always" },
+  // Links and sign-ins are made again where the tenant arrives.
+  { table: "end_user_token", ofTenant: own, key: ["id"], export: "never" },
+  { table: "app_session", ofTenant: own, key: ["id"], export: "never" },
+  { table: "app_handoff", ofTenant: own, key: ["id"], export: "never" },
+  // A hostname points at one instance. It is registered again on the next.
+  {
+    table: "app_domain",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
+  {
+    table: "tenant_portal",
+    ofTenant: own,
+    key: ["tenant_id"],
+    export: "always",
+    stored: ["logo_key"],
+  },
   // The record of what was done is never removed, even when what it describes is.
   { table: "audit_entry", ofTenant: own, key: ["id"], export: "always", keep: true },
 ];

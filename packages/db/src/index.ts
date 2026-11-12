@@ -36,5 +36,6 @@ export type {
   RunStatus,
   ScopeType,
   StepStatus,
+  ThemeValues,
   WorkspaceType,
 } from "./schema.js";

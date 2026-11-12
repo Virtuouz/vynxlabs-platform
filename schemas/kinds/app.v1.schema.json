@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/app.v1.schema.json",
+  "title": "app body, version 1",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "entry": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "The file, among the app's files in the bundle, that is the page itself."
+    },
+    "fallback": {
+      "type": "boolean",
+      "description": "Whether an address under the app that names no file answers with the entry page, for apps that route in the browser. Default true."
+    }
+  },
+  "required": [
+    "title",
+    "entry"
+  ],
+  "additionalProperties": false
+}

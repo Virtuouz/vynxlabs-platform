@@ -8,12 +8,15 @@ import { type Database, newId } from "@vynxlabs/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
 import type { Config, LogLevel } from "./config.js";
+import { installFrontDoor } from "./kernel/apps/front.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
+import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
 import { dataRoutes } from "./routes/data.js";
+import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionRoutes } from "./routes/execution.js";
 import { flowRoutes } from "./routes/flows.js";
@@ -83,6 +86,10 @@ export async function buildApp(options: AppOptions) {
   });
   if (options.onRoute) app.addHook("onRoute", options.onRoute);
 
+  app.addHook("onClose", () => kernel.mail.close());
+  // Apps and their sign-in pages, at whichever address the request came to.
+  installFrontDoor(app, kernel);
+
   // Applies only to routes that ask for it, such as public webhooks.
   await app.register(rateLimit, { global: false });
 
@@ -144,6 +151,8 @@ export async function buildApp(options: AppOptions) {
       await api.register(locationRoutes(kernel));
       await api.register(environmentRoutes(kernel));
       await api.register(portabilityRoutes(kernel));
+      await api.register(endUserRoutes(kernel));
+      await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
       api.get(
         "/openapi.json",

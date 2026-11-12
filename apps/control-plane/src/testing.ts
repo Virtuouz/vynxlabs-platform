@@ -29,6 +29,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
     consoleDir: undefined,
+    appsUrl: undefined,
+    mail: undefined,
     ...overrides,
   };
 }
@@ -71,13 +73,15 @@ export async function startTestApp(
      * from the database an earlier version left behind.
      */
     prepare?: (database: Database) => Promise<void>;
+    /** The size of the platform's connection pool. Default 6. */
+    maxConnections?: number;
   } = {},
 ) {
   const testDb = await createTestDatabase();
   const database = new Database({
     connectionString: testDb.connectionString,
     // Many test files run at once against one server, each with several pools.
-    maxConnections: 6,
+    maxConnections: options.maxConnections ?? 6,
     ...(options.queue ? { queue: options.queue } : {}),
   });
   await options.prepare?.(database);
@@ -94,6 +98,7 @@ export async function startTestApp(
     onRoute: (route) => routes.push(route),
   });
   await bootstrapAdmin(app.kernel, app.log);
+  await app.kernel.data.platform();
   await app.ready();
   const db = database.router.platform();
 
@@ -202,6 +207,8 @@ export async function startTestApp(
     admin: await signIn(ADMIN.email, ADMIN.password),
     signIn,
     withKey: (token: string) => client({ authorization: `Bearer ${token}` }),
+    /** A client that sends these headers, for callers that are neither a member nor a key. */
+    withHeaders: (headers: Record<string, string>) => client(headers),
     /** Every mutating route under `prefixes` that no test called successfully with an audit entry. */
     unexercised(include: (route: string) => boolean) {
       return routes

@@ -6,10 +6,19 @@ export type Db = Kysely<PlatformSchema>;
 export type Trx = Transaction<PlatformSchema>;
 
 export interface Principal {
-  type: "member" | "service_account" | "anonymous" | "system";
+  type: "member" | "service_account" | "end_user" | "anonymous" | "system";
   id: string | null;
-  /** The tenant a service account belongs to. */
+  /** The tenant a service account or an end user belongs to. */
   tenantId?: string;
+  /**
+   * Set when a member is signed in to one tenant's apps, on an address other than
+   * the instance's own. Such a sign-in reaches that tenant only, and only what apps use.
+   */
+  appTenantId?: string;
+  /** The app sign-in this request came with, when it came with one. */
+  appSessionId?: string;
+  /** Whether the caller was recognised by a cookie, which a browser sends by itself. */
+  viaCookie?: boolean;
   apiKeyId?: string;
   name?: string;
   email?: string;

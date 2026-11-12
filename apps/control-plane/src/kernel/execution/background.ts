@@ -1,3 +1,4 @@
+import { removeExpiredAppSessions } from "../apps/sessions.js";
 import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { reapDeadRuns, requeueLostRuns } from "./runs.js";
@@ -12,11 +13,19 @@ import { fireDueSchedules } from "./triggers.js";
  */
 export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, intervalMs = 2000) {
   let running = false;
+  let swept = 0;
+  /** Sign-ins and links that have run out are useless already. Clearing them can wait a minute. */
+  const sweep = async () => {
+    if (Date.now() - swept < 60_000) return;
+    swept = Date.now();
+    await removeExpiredAppSessions(kernel.db);
+  };
   const steps: [string, () => Promise<unknown>][] = [
     ["schedules", () => fireDueSchedules(kernel)],
     ["lost runs", () => requeueLostRuns(kernel)],
     ["dead runs", () => reapDeadRuns(kernel)],
     ["flows", () => advanceDueFlows(kernel)],
+    ["expired sign-ins", sweep],
     ...(supervisor
       ? ([["managed workers", () => supervisor.tick()]] as [string, () => Promise<unknown>][])
       : []),

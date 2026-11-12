@@ -1,0 +1,23 @@
+{
+  "name": "@vynxlabs/console",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@vynxlabs/ui": "workspace:*",
+    "preact": "^11.2.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@tailwindcss/vite": "^4.3.5",
+    "@testing-library/preact": "^3.2.6",
+    "happy-dom": "^21.0.4",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.8"
+  }
+}

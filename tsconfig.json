@@ -1,8 +1,17 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/db" },
-    { "path": "packages/manifest" },
-    { "path": "apps/control-plane" }
+    {
+      "path": "packages/db"
+    },
+    {
+      "path": "packages/manifest"
+    },
+    {
+      "path": "apps/control-plane"
+    },
+    {
+      "path": "packages/cli"
+    }
   ]
 }

@@ -1,0 +1,89 @@
+/*
+ * Theme tokens. Every colour, radius and font in the kit comes from one of
+ * these variables, so a tenant's branding is a different set of values and
+ * nothing else. Tailwind utilities are generated from the same variables.
+ */
+@import "tailwindcss";
+@source "./";
+
+:root {
+  --vx-canvas: #eef1f4;
+  --vx-surface: #ffffff;
+  --vx-sunken: #e3e8ed;
+  --vx-line: #d3dae2;
+  --vx-ink: #16202e;
+  --vx-ink-muted: #5b6777;
+  --vx-action: #0e5f7a;
+  --vx-action-ink: #ffffff;
+  --vx-action-soft: #dcedf3;
+  --vx-attention: #b45309;
+  --vx-attention-soft: #fdf0dc;
+  --vx-danger: #b3261e;
+  --vx-danger-soft: #fbe9e7;
+  --vx-radius-control: 6px;
+  --vx-radius-panel: 10px;
+  --vx-font: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --vx-font-code: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --vx-canvas: #10161f;
+    --vx-surface: #18212d;
+    --vx-sunken: #0c1118;
+    --vx-line: #2b3746;
+    --vx-ink: #e6ebf1;
+    --vx-ink-muted: #9aa7b6;
+    --vx-action: #5cb8d6;
+    --vx-action-ink: #06222c;
+    --vx-action-soft: #17323d;
+    --vx-attention: #f0a94b;
+    --vx-attention-soft: #3a2a12;
+    --vx-danger: #f2857d;
+    --vx-danger-soft: #3d1b18;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--vx-canvas);
+  --color-surface: var(--vx-surface);
+  --color-sunken: var(--vx-sunken);
+  --color-line: var(--vx-line);
+  --color-ink: var(--vx-ink);
+  --color-ink-muted: var(--vx-ink-muted);
+  --color-action: var(--vx-action);
+  --color-action-ink: var(--vx-action-ink);
+  --color-action-soft: var(--vx-action-soft);
+  --color-attention: var(--vx-attention);
+  --color-attention-soft: var(--vx-attention-soft);
+  --color-danger: var(--vx-danger);
+  --color-danger-soft: var(--vx-danger-soft);
+  --radius-control: var(--vx-radius-control);
+  --radius-panel: var(--vx-radius-panel);
+  --font-sans: var(--vx-font);
+  --font-mono: var(--vx-font-code);
+}
+
+body {
+  margin: 0;
+  background: var(--vx-canvas);
+  color: var(--vx-ink);
+  font-family: var(--vx-font);
+  font-size: 14px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--vx-action);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

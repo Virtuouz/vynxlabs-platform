@@ -20,8 +20,15 @@ This setup has not been run yet. Treat the commands as a starting point and chec
      S3_REGION='auto' \
      S3_BUCKET='...' \
      S3_ACCESS_KEY_ID='...' \
-     S3_SECRET_ACCESS_KEY='...'
+     S3_SECRET_ACCESS_KEY='...' \
+     PUBLIC_URL='https://<app>.fly.dev' \
+     AUTH_SECRET="$(openssl rand -hex 32)" \
+     MASTER_KEY="$(openssl rand -base64 32)" \
+     BOOTSTRAP_ADMIN_EMAIL='you@example.com' \
+     BOOTSTRAP_ADMIN_PASSWORD='...'
    ```
+
+Keep a copy of `MASTER_KEY` somewhere safe. Without it, no stored secret can be read again. Remove the two bootstrap secrets after the first sign-in.
 
 ## Deploy
 

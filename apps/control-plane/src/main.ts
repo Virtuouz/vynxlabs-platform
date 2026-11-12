@@ -21,7 +21,16 @@ const config = loadConfigOrExit();
 const storage = new S3ObjectStore(config.s3);
 const database = new Database({
   connectionString: config.databaseUrl,
-  onConnectionError: (error) => app.log.warn({ err: error }, "idle database connection failed"),
+  onConnectionError: (error) =>
+    console.warn(`An idle database connection failed: ${error.message}`),
+});
+// Migrations run before anything else looks at the database.
+const migrations = await database.migrate().catch(async (error) => {
+  console.error(
+    `Boot failed while migrating the database: ${error instanceof Error ? error.message : error}`,
+  );
+  await database.close();
+  process.exit(1);
 });
 const app = await buildApp({ database, storage, version, config, logLevel: config.logLevel });
 
@@ -47,7 +56,6 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 }
 
 try {
-  const migrations = await database.migrate();
   app.log.info(
     { applied: migrations.applied, migrationLevel: migrations.level },
     migrations.applied.length > 0 ? "migrations applied" : "database is up to date",

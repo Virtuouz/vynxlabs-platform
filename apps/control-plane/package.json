@@ -16,5 +16,11 @@
     "better-auth": "^1.7.21",
     "fastify": "^5.12.8",
     "typebox": "^1.4.6"
+  },
+  "exports": {
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
   }
 }

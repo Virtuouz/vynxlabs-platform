@@ -7,8 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "build": "tsc -b && pnpm --filter @vynxlabs/console build",
+    "typecheck": "tsc -b && tsc -p packages/ui && tsc -p apps/console",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "pnpm build && vitest run",
@@ -20,7 +20,8 @@
     "check:schemas": "pnpm build && node packages/manifest/dist/emit-cli.js --check",
     "lock:migrations": "node scripts/migrations-lock.mjs --update",
     "check:migrations": "node scripts/migrations-lock.mjs",
-    "check:licenses": "node scripts/check-licenses.mjs"
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "dev:console": "pnpm --filter @vynxlabs/console dev"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.7",

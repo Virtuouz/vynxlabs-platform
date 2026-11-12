@@ -1,6 +1,6 @@
 # Phase 1: kernel
 
-Status: in progress
+Status: built and verified locally
 Last updated: 2026-11-11
 
 Phase 1 builds the shared core that every later feature depends on: tenancy, the resource registry, member identity, permissions, secrets, audit, the console shell and the CLI skeleton.
@@ -218,10 +218,13 @@ A caller with no access to a tenant gets 404 for anything inside it, not 403, so
 ## Console shell
 
 - `packages/ui` is the component kit. It defines the theme tokens as CSS variables and maps them into Tailwind, so every colour, radius and font in a component comes from a token. Tenant branding in phase 6 becomes a token override.
-- Kit components in phase 1: button, text field, select, dialog, menu, tabs, table, badge, toast and the app shell layout. Each wraps a Base UI primitive where one exists.
+- Kit components in phase 1: button, text field, select field, dialog, menu, table, badge, notice and empty state. Fields, dialog and menu wrap Base UI primitives. The select field is a native select, which already works with every keyboard, screen reader and phone.
 - `apps/console` is a single-page app built with Vite. The control plane serves the built files, so there is still one image and one container.
 - The console calls only the public API, with the session cookie.
 - Screens: sign in, tenants, and inside a tenant: workspaces, members, groups, roles and bindings, service accounts, secrets, resources (read-only), access grants and the audit log. Plus the instance pages for operator admins: members, instance bindings, instance audit.
+- An operator who opens a tenant without a grant sees a screen that explains why and offers to open one. While a grant is active, an amber banner states the access level, the reason and the end time on every tenant screen.
+- Production workspaces are always marked in the same amber.
+- The typeface is the system font. A bundled webfont would bring a font licence outside the allowlist, and the console must work offline. The font is a theme token, so a tenant's branding can set one.
 
 ## CLI skeleton
 
@@ -256,7 +259,52 @@ Build, deploy and sync arrive in phase 2. The command name is a placeholder unti
 
 ## Check against the master spec
 
-To be completed when the build is verified.
+Checked on 2026-11-11 against the build on the `phase-1-kernel` branch.
+
+### Guiding principles
+
+| Principle | Result |
+| --- | --- |
+| 1. One platform, one experience | Met. One identity model, one permission check, one audit stream, one API, one console |
+| 2. Everything is a resource | Met with one recorded interpretation: roles and bindings above workspace level are administrative records, because the envelope requires a workspace |
+| 3. Code first, git as the source of truth | Prepared. Code-managed resources are read-only through the interface routes. Deploys arrive in phase 2 |
+| 4. Language-neutral core | Met. Kinds are JSON Schema. Nothing in the registry depends on the authoring language |
+| 5. Same software everywhere | Met. One image, now including the console's static files |
+| 6. Minimal footprint | Met. Still the control plane, Postgres and an object store. Authentication added no container |
+| 7. No central dependency | Met. The authentication library's telemetry is off. No outbound calls were added |
+| 8. Tenant portability | Not weakened. Every tenant-owned row carries the tenant ID, and each tenant has its own key, ready to travel with an export |
+| 9. The core uses its own SDK | Not applicable yet. The `role` and `binding` kinds use the same kind registry and hook that later kinds will |
+| 10. Reuse libraries and engines, not applications | Met. Better Auth is a library: no interface, and its users are our member table |
+| 11. Keep the end-user version possible | Met. The end-user pool is reserved, and UI-managed ownership exists in the registry |
+| 12. Kernel before features | Met |
+
+### Ownership promise
+
+| Promise | Result |
+| --- | --- |
+| You own the code | Not weakened |
+| You own the data | Not weakened. Export arrives in phase 5 |
+| You own the keys | Met. Secrets are encrypted with a key per tenant, wrapped by the instance master key |
+| No lock-in | Met. An operator has no access path into a tenant that the tenant cannot see: access needs a grant, and grants and their use are in the tenant's audit log |
+| Any location | Met for local and single-host. Fly.io is still not run |
+
+### Exit criterion
+
+| Check | Result |
+| --- | --- |
+| A tenant, workspace, members and roles can be created through the API | Passed, in `exit-criterion.test.ts` |
+| Every change is audited | Passed. A test fails if any route that changes something is not exercised, or succeeds without leaving an audit entry |
+| The same flow through the console in a real browser | Passed, driven by a script against a local instance |
+| The image boots as the single-host stack, serves the console and signs in the bootstrap admin | Passed |
+| Tests pass on Postgres 16 and 18 | See the phase summary |
+
+### Known gaps
+
+- Rate limiting on sign-in uses the authentication library's in-memory limiter, which is per replica.
+- No email, so no invitations or password reset. An admin sets an initial password.
+- The console is not laid out for phones beyond stacking the navigation above the content.
+- Audit retention is not enforced. The default is still an open question in the master spec.
+- A tenant or workspace cannot be deleted. That waits for export in phase 5.
 
 ## Proposed deviations
 

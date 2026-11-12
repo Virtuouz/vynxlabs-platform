@@ -17,8 +17,12 @@ const SHIPPED = new Set([
   "Python-2.0",
 ]);
 
-/** Development tools are never distributed, so file-level copyleft is also accepted there. */
-const TOOLING = new Set([...SHIPPED, "MPL-2.0"]);
+/**
+ * Development tools are never distributed, so two more are accepted there:
+ * file-level copyleft (MPL-2.0), and the attribution licence on the browser
+ * support data that the console's build tooling reads (CC-BY-4.0).
+ */
+const TOOLING = new Set([...SHIPPED, "MPL-2.0", "CC-BY-4.0"]);
 
 /** Evaluates an SPDX expression: every AND term must be allowed, any OR term may be. */
 export function isAllowed(expression, allowed = SHIPPED) {

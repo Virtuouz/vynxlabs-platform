@@ -18,7 +18,7 @@ CI runs the same checks, on the oldest supported Postgres and the newest.
 
 ## Dependencies
 
-Everything that ships in the image must carry an Apache-compatible license. The allowlist is in `scripts/check-licenses.mjs`. Development tools are never distributed, so MPL-2.0 is also accepted for them.
+Everything that ships in the image must carry an Apache-compatible license. The allowlist is in `scripts/check-licenses.mjs`. Development tools are never distributed, so MPL-2.0 and CC-BY-4.0 are also accepted for them.
 
 Before adding a dependency, check that:
 
@@ -38,6 +38,20 @@ Adding a license to the allowlist is a decision for the owner.
 ## API
 
 Every route follows the conventions in [docs/phases/phase-0-foundations.md](docs/phases/phase-0-foundations.md): the `/api/v1` prefix, a TypeBox schema for the request and every response, problem-details errors and cursor pagination. A route without a response schema fails the tests. There are no private routes.
+
+## Access and audit
+
+- Every route declares its access rule in its `config`. A route without one fails the tests and fails at run time.
+- Permission checks go through `ctx.authorize` and nowhere else.
+- Every change goes through `ctx.mutate`, which writes the audit entry in the same transaction. A change that records no entry is rolled back.
+- Never put a secret value, password or key in an audit entry or a log line.
+- A new route that changes something must be called in the test suite. A test fails if any such route is not exercised, or succeeds without leaving an audit entry.
+
+## Interface
+
+- The console and client apps use components from `packages/ui`. Do not style with raw colours or sizes: use the theme tokens, through the Tailwind utilities generated from them.
+- The interface runs on Preact. `react` and `react-dom` resolve to Preact's compatibility layer, so that Base UI works. Do not add a dependency that needs real React.
+- The console calls only the public API.
 
 ## Resource kinds
 

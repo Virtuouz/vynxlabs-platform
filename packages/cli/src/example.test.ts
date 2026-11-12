@@ -377,6 +377,52 @@ describe("the example integration", () => {
 });
 
 describe("working locally", () => {
+  test("promote previews, then activates the same bundle in the linked workspace", async () => {
+    const [, , tenant, , workspace] = base.split("/");
+    const dev = (
+      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "dev", name: "Dev", type: "dev" })
+    ).body.id;
+    const devBase = `/tenants/${tenant}/workspaces/${dev}`;
+    const promote = (...more: string[]) =>
+      cli(["promote", "--tenant", "acme", "--workspace", "dev", ...more]);
+    expect((await promote()).err).toContain("This workspace is not linked to another one.");
+
+    await alice.patch(devBase, { linkedWorkspaceId: workspace });
+    for (const path of ["shop", "erp", "alerts"]) {
+      await alice.put(`${devBase}/connection-bindings/${path}`, {
+        config: { baseUrl: `${outsideUrl}/${path}` },
+      });
+    }
+    await alice.put(`${devBase}/secrets/SHOP_WEBHOOK_SECRET`, { value: "dev-secret" });
+    const deployed = await cli([
+      "deploy",
+      "--dir",
+      example,
+      "--tenant",
+      "acme",
+      "--workspace",
+      "dev",
+    ]);
+    expect(deployed.err).toBe("");
+    const digest = /Bundle ([0-9a-f]{12})/.exec(deployed.out)?.[1];
+
+    const preview = await promote("--preview");
+    expect(preview.err).toBe("");
+    expect(preview.out).toContain(`Bundle ${digest}, version 1 here, to main (production).`);
+    expect(preview.out).toContain(
+      "Promoting would leave main (production) with: 0 created, 0 updated, 0 deleted, 16 unchanged.",
+    );
+    expect(preview.out).toContain("Nothing was changed.");
+
+    const promoted = await promote();
+    expect(promoted.err).toBe("");
+    expect(promoted.out).toContain(
+      "Promoted to main (production) as version 1: 0 created, 0 updated, 0 deleted, 16 unchanged.",
+    );
+    const latest = (await alice.get(`${base}/deployments`)).body.items[0];
+    expect(latest.promotedFromWorkspaceId).toBe(dev);
+  });
+
   test("run executes one script on this machine with local bindings", async () => {
     const missing = await cli(["run", "orders/sync", "--dir", example]);
     expect(missing.code).toBe(1);

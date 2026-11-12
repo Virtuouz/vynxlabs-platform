@@ -111,6 +111,15 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
+/** One resource a deploy created, changed or removed. */
+export interface ResourceChange {
+  change: "created" | "updated" | "deleted";
+  kind: string;
+  path: string;
+}
+/** A deploy lists the resources it changed, up to this many. The counts are always complete. */
+const MAX_LISTED_CHANGES = 500;
+
 /**
  * Activates a bundle in a workspace. Runs inside one transaction: either the
  * workspace is entirely on the new bundle, or nothing changed.
@@ -122,6 +131,7 @@ export async function deployBundle(
   workspace: WorkspaceRef,
   principal: Principal,
   bundleId: string,
+  options: { promotedFrom?: string } = {},
 ) {
   const current = await trx
     .selectFrom("workspace")
@@ -161,7 +171,17 @@ export async function deployBundle(
     .where("workspace_id", "=", workspace.id)
     .execute();
   const byPath = new Map(existing.map((row) => [row.path, row]));
-  const summary = { created: 0, updated: 0, unchanged: 0, deleted: 0, data: [] as string[] };
+  const summary = {
+    created: 0,
+    updated: 0,
+    unchanged: 0,
+    deleted: 0,
+    data: [] as string[],
+    changes: [] as ResourceChange[],
+  };
+  const note = (change: ResourceChange["change"], kind: string, path: string) => {
+    if (summary.changes.length < MAX_LISTED_CHANGES) summary.changes.push({ change, kind, path });
+  };
   const dataBefore = await loadCatalog(trx, workspace.id);
 
   // Resources the bundle no longer has go first, so a path can be reused by another kind.
@@ -173,6 +193,7 @@ export async function deployBundle(
   for (const row of removed) {
     await deleteResource(trx, audit, workspace, row.path, kernel.hooks);
     summary.deleted += 1;
+    note("deleted", row.kind, row.path);
   }
 
   for (const manifest of content.manifests) {
@@ -195,6 +216,7 @@ export async function deployBundle(
     });
     if (result.created) summary.created += 1;
     else summary.updated += 1;
+    note(result.created ? "created" : "updated", manifest.kind, manifest.path);
   }
 
   // Every table is in place now, so a reference to a table that is not there is a mistake.
@@ -215,6 +237,7 @@ export async function deployBundle(
       workspace_id: workspace.id,
       bundle_id: bundle.id,
       previous_bundle_id: current.active_bundle_id,
+      promoted_from_workspace_id: options.promotedFrom ?? null,
       summary: JSON.stringify(summary),
       created_by_type: principal.type,
       created_by_id: principal.id,
@@ -231,7 +254,12 @@ export async function deployBundle(
       bundleId: bundle.id,
       version: bundle.version,
       previousBundleId: current.active_bundle_id,
-      ...summary,
+      promotedFromWorkspaceId: options.promotedFrom ?? null,
+      created: summary.created,
+      updated: summary.updated,
+      unchanged: summary.unchanged,
+      deleted: summary.deleted,
+      data: summary.data,
     },
   });
   return { deployment, bundle, summary };

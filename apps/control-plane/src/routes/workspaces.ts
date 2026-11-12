@@ -110,17 +110,32 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
 
-    /** A production workspace of the same tenant that a dev workspace may link to. */
-    async function checkLink(tenantId: string, type: string, linkedWorkspaceId: string | null) {
+    /**
+     * A dev workspace links to the workspace it promotes to: production, or
+     * another dev workspace such as QA. Links must lead somewhere and end.
+     */
+    async function checkLink(
+      tenantId: string,
+      type: string,
+      linkedWorkspaceId: string | null,
+      self?: string,
+    ) {
       if (linkedWorkspaceId === null) return;
       if (type !== "dev") throw badRequest("Only a dev workspace can link to another workspace.");
-      const target = await db
-        .selectFrom("workspace")
-        .select("type")
-        .where("id", "=", linkedWorkspaceId)
-        .where("tenant_id", "=", tenantId)
-        .executeTakeFirst();
-      if (!target) throw badRequest("The linked workspace is not in this tenant.");
+      let next: string | null = linkedWorkspaceId;
+      for (let hops = 0; next !== null; hops++) {
+        if (next === self || hops > 50) {
+          throw badRequest("That link would lead back to this workspace.");
+        }
+        const target: { linked_workspace_id: string | null } | undefined = await db
+          .selectFrom("workspace")
+          .select("linked_workspace_id")
+          .where("id", "=", next)
+          .where("tenant_id", "=", tenantId)
+          .executeTakeFirst();
+        if (!target) throw badRequest("The linked workspace is not in this tenant.");
+        next = target.linked_workspace_id;
+      }
     }
 
     app.get(
@@ -267,7 +282,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ? current.linked_workspace_id
             : body.linkedWorkspaceId;
         if (linked === params.w) throw badRequest("A workspace cannot link to itself.");
-        await checkLink(params.t, current.type, linked);
+        await checkLink(params.t, current.type, linked, params.w);
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
             .updateTable("workspace")

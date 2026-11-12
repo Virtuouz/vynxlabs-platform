@@ -56,6 +56,7 @@ export interface WorkspaceTable {
   type: WorkspaceType;
   linked_workspace_id: string | null;
   active_bundle_id: string | null;
+  triggers_paused: Generated<boolean>;
   concurrency_limit: Generated<number>;
   failure_alert: ColumnType<FailureAlert, string | undefined, string>;
   created_at: Generated<Date>;
@@ -230,6 +231,7 @@ export interface DeploymentTable {
   workspace_id: string;
   bundle_id: string;
   previous_bundle_id: string | null;
+  promoted_from_workspace_id: Generated<string | null>;
   summary: Json<Record<string, unknown>>;
   created_by_type: string;
   created_by_id: string | null;

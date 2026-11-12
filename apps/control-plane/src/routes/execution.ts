@@ -7,6 +7,7 @@ import { badRequest, notFound } from "../kernel/errors.js";
 import { bindConnection } from "../kernel/execution/bindings.js";
 import { MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
+import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
 import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
@@ -80,12 +81,27 @@ const Summary = Type.Object({
         "What the deploy did to the workspace's tables, one sentence each. A deploy never drops data.",
     }),
   ),
+  changes: Type.Optional(
+    Type.Array(
+      Type.Object({
+        change: Type.Union([
+          Type.Literal("created"),
+          Type.Literal("updated"),
+          Type.Literal("deleted"),
+        ]),
+        kind: Type.String(),
+        path: Type.String(),
+      }),
+      { description: "The resources the deploy changed. At most 500 are listed." },
+    ),
+  ),
 });
 const Deployment = Type.Object({
   id: Id,
   bundleId: Id,
   bundleVersion: Type.Integer(),
   previousBundleId: NullableId,
+  promotedFromWorkspaceId: NullableId,
   summary: AnyObject,
   createdByType: Type.String(),
   createdById: NullableId,
@@ -268,6 +284,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "deployment.id",
             "deployment.bundle_id",
             "deployment.previous_bundle_id",
+            "deployment.promoted_from_workspace_id",
             "deployment.summary",
             "deployment.created_by_type",
             "deployment.created_by_id",
@@ -284,6 +301,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             bundleId: row.bundle_id,
             bundleVersion: row.version,
             previousBundleId: row.previous_bundle_id,
+            promotedFromWorkspaceId: row.promoted_from_workspace_id,
             summary: row.summary,
             createdByType: row.created_by_type,
             createdById: row.created_by_id,
@@ -334,6 +352,109 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           id: result.deployment.id,
           bundleId: result.bundle.id,
           bundleVersion: result.bundle.version,
+          summary: result.summary,
+        });
+      },
+    );
+
+    // ----- Promotion -----
+
+    const PromotionTarget = Type.Object({
+      id: Id,
+      slug: Type.String(),
+      name: Type.String(),
+      type: Type.String(),
+    });
+
+    app.get(
+      `${base}/promotion-preview`,
+      {
+        config: { access: access.workspace("deployment:read") },
+        schema: {
+          summary: "What promoting this workspace's bundle to its linked workspace would do",
+          description:
+            "Found by carrying the promotion out and taking it all back, so it is exactly what " +
+            "the promotion would do: the resources and tables it would change, or why it would be refused.",
+          tags: ["deploys"],
+          params: WorkspaceParams,
+          response: {
+            200: Type.Object({
+              target: PromotionTarget,
+              bundle: Type.Object({ digest: Type.String(), version: Type.Integer() }),
+              possible: Type.Boolean(),
+              refusal: Type.Union([
+                Type.Object({
+                  code: Type.String(),
+                  detail: Type.String(),
+                  errors: Type.Array(Type.Object({ path: Type.String(), message: Type.String() })),
+                }),
+                Type.Null(),
+              ]),
+              summary: Type.Union([Summary, Type.Null()]),
+            }),
+          },
+        },
+      },
+      async ({ ctx }) => {
+        const workspace = ctx.workspace as WorkspaceRef;
+        const { target } = await promotionOf(db, workspace);
+        await ctx.authorize("deployment:read", {
+          tenantId: target.tenantId,
+          workspaceId: target.id,
+        });
+        return previewPromotion(kernel, ctx.actor, workspace);
+      },
+    );
+
+    app.post(
+      `${base}/promotions`,
+      {
+        config: { access: access.workspace("deployment:read") },
+        schema: {
+          summary: "Promote this workspace's active bundle to its linked workspace",
+          description:
+            "Deploys the same bundle, by digest, in the workspace this one is linked to. Nothing " +
+            "is rebuilt. Needs `deployment:write` in the workspace promoted to.",
+          tags: ["deploys"],
+          params: WorkspaceParams,
+          response: {
+            201: Type.Object({
+              id: Id,
+              workspaceId: Id,
+              bundleId: Id,
+              bundleVersion: Type.Integer(),
+              digest: Type.String(),
+              summary: Summary,
+            }),
+          },
+        },
+      },
+      async ({ ctx }, reply) => {
+        const workspace = ctx.workspace as WorkspaceRef;
+        const { target } = await promotionOf(db, workspace);
+        await ctx.authorize("deployment:write", {
+          tenantId: target.tenantId,
+          workspaceId: target.id,
+        });
+        const result = await ctx.mutate((trx, audit) =>
+          promote(kernel, trx, audit, workspace, ctx.principal),
+        );
+        await publishPlatformEvent(kernel, {
+          tenantId: target.tenantId,
+          workspaceId: target.id,
+          name: "platform/deployment-created",
+          payload: { deploymentId: result.deployment.id, bundleVersion: result.bundle.version },
+          sourceId: result.deployment.id,
+          depth: 0,
+        }).catch((error) =>
+          kernel.log.error({ err: error }, "a platform event could not be published"),
+        );
+        return reply.code(201).send({
+          id: result.deployment.id,
+          workspaceId: target.id,
+          bundleId: result.bundle.id,
+          bundleVersion: result.bundle.version,
+          digest: result.bundle.digest,
           summary: result.summary,
         });
       },

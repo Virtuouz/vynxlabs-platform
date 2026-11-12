@@ -29,6 +29,9 @@ Work on a tenant repository
   run <script> [--input <json>]         Run one script on this machine
   deploy --tenant <slug> --workspace <slug>
                                         Build, upload and activate the bundle
+  promote --tenant <slug> --workspace <slug> [--preview]
+                                        Activate this workspace's bundle in the workspace
+                                        it is linked to. Nothing is rebuilt
 
 See what ran
   runs --tenant <slug> --workspace <slug> [run id]
@@ -221,6 +224,66 @@ async function deploy(args: string[], io: Io) {
   for (const line of (deployed.body.summary.data ?? []) as string[]) io.out(`  ${line}`);
 }
 
+interface DeploySummary {
+  created: number;
+  updated: number;
+  unchanged: number;
+  deleted: number;
+  data?: string[];
+  changes?: { change: string; kind: string; path: string }[];
+}
+
+/** The resources and tables a deploy changed, or would change, one per line. */
+function describeChanges(summary: DeploySummary): string[] {
+  return [
+    ...(summary.changes ?? []).map(
+      (entry) => `  ${entry.change.padEnd(8)} ${entry.kind.padEnd(10)} ${entry.path}`,
+    ),
+    ...(summary.data ?? []).map((line) => `  ${line}`),
+  ];
+}
+
+async function promote(args: string[], io: Io) {
+  const { values } = parseArgs({
+    args,
+    options: { ...targetOptions, preview: { type: "boolean" as const } },
+  });
+  const settings = await loadSettings(io.env);
+  const { base } = await locate(settings, values.tenant, values.workspace);
+  const preview = await request(settings.url, `${base}/promotion-preview`, settings.token);
+  if (preview.status >= 300) throw refusal(preview, `promote ${values.workspace}`);
+  const { target, bundle, possible, refusal: why, summary } = preview.body;
+  const where = `${target.slug} (${target.type})`;
+  io.out(
+    `Bundle ${String(bundle.digest).slice(0, 12)}, version ${bundle.version} here, to ${where}.`,
+  );
+  if (!possible) {
+    throw new CliError(
+      [
+        `It cannot be promoted. ${why.detail}`,
+        ...(why.errors as { message: string }[]).map((problem) => `  - ${problem.message}`),
+      ].join("\n"),
+    );
+  }
+  const counts = (s: DeploySummary) =>
+    `${s.created} created, ${s.updated} updated, ${s.deleted} deleted, ${s.unchanged} unchanged`;
+  if (values.preview) {
+    io.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
+    for (const line of describeChanges(summary)) io.out(line);
+    io.out("Nothing was changed. Run it again without --preview to promote.");
+    return;
+  }
+  const promoted = await request(settings.url, `${base}/promotions`, settings.token, {
+    method: "POST",
+    body: {},
+  });
+  if (promoted.status >= 300) throw refusal(promoted, `promote to ${target.slug}`);
+  io.out(
+    `Promoted to ${where} as version ${promoted.body.bundleVersion}: ${counts(promoted.body.summary)}.`,
+  );
+  for (const line of describeChanges(promoted.body.summary)) io.out(line);
+}
+
 const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);
 
 async function runs(args: string[], io: Io) {
@@ -347,6 +410,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       case "deploy":
         await deploy(rest, io);
+        return 0;
+      case "promote":
+        await promote(rest, io);
         return 0;
       case "runs":
         await runs(rest, io);

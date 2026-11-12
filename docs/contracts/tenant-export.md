@@ -12,7 +12,7 @@ A tar archive in the POSIX "ustar" layout, holding only regular files. Any tar p
 
 | Path | Contents |
 | --- | --- |
-| `key.json` | The tenant's encryption key, wrapped with the export's passphrase. `null` if the tenant never stored a secret |
+| `key.json` | The tenant's encryption key, wrapped with the export's passphrase. Always present: a tenant that never stored a secret is given its key when it is first exported, so that a wrong passphrase is always refused |
 | `members.NNNN.jsonl` | The tenant's members |
 | `platform/<table>.NNNN.jsonl` | The rows of one platform table that belong to the tenant |
 | `data/catalog/data_table.NNNN.jsonl`, `data/catalog/data_column.NNNN.jsonl` | The catalog of the tenant's custom tables: every table and column, active or retired, with the names they have in the database and the names they had before |
@@ -55,7 +55,9 @@ A custom table's rows carry every column the table has in the database, includin
 
 The wrapping key is `scrypt(passphrase, salt)`, 32 bytes, with the passphrase normalized to Unicode NFKC. The associated data is the text `tenant-export:<tenant id>`.
 
-Every secret, connection credential, data source password and webhook token in the export is ciphertext under the tenant's data key, in the same layout (version byte, nonce, tag, ciphertext), with associated data `secret:<tenant id>:<workspace id>:<name>`. Nothing in the file is readable without the passphrase, and the passphrase is not stored anywhere.
+Every secret, connection credential, data source password and webhook token in the export is ciphertext under the tenant's data key, in the same layout (version byte, nonce, tag, ciphertext), with associated data `secret:<tenant id>:<workspace id>:<name>`. No secret in the file is readable without the passphrase, and the passphrase is not stored anywhere.
+
+**The file as a whole is not encrypted.** Rows, files, the audit log and history are in it as plain JSON and plain bytes, which is what makes it readable without the platform. Whoever holds the file can read them. In particular, history holds each run's input and output exactly as they were, so anything a caller sent to a webhook is there. Treat an export as you would a copy of the database: keep it somewhere access is controlled, and encrypt it yourself if it travels.
 
 The instance's own master key is never in an export.
 

@@ -2,7 +2,9 @@
 
 ## Reporting a problem
 
-Please report a suspected vulnerability privately, to the address in the repository's profile, and not in a public issue. Say what you found, how to reproduce it, and which version you tested. You will get an answer within five working days.
+Please report a suspected vulnerability privately, and not in a public issue. Say what you found, how to reproduce it, and which version you tested.
+
+The address to write to, and how quickly a report is answered, are to be set by the owner before the first public release.
 
 ## What the platform protects, and how
 

@@ -360,6 +360,9 @@ async function tenant(args: string[], io: Io) {
     io.out(
       "API keys and worker credentials are never exported. Make new ones where the tenant goes.",
     );
+    io.out(
+      "The passphrase protects the secrets in the file. Its rows, files and history are readable by anyone who has it: keep it somewhere safe.",
+    );
     return;
   }
 
@@ -379,6 +382,9 @@ async function tenant(args: string[], io: Io) {
     const query = new URLSearchParams();
     if (values.slug) query.set("slug", values.slug);
     if (values.location) query.set("dataLocation", values.location);
+    // Asked first, because a key that is refused while a file is being sent cannot be told apart from a broken connection.
+    const me = await request(settings.url, "/me", settings.token);
+    if (me.status !== 200) throw refusal(me, "import the tenant");
     const response = await fetch(`${base}/instance/tenant-imports?${query}`, {
       method: "POST",
       headers: {
@@ -390,7 +396,11 @@ async function tenant(args: string[], io: Io) {
       body: Readable.toWeb(createReadStream(file)) as never,
       // Node needs this said to send a body as it is read.
       duplex: "half",
-    } as RequestInit);
+    } as RequestInit).catch((error: Error) => {
+      throw new CliError(
+        `The file could not be sent to ${settings.url}. ${(error.cause as Error | undefined)?.message ?? error.message}`,
+      );
+    });
     if (!response.ok) throw await failure(response, "import the tenant");
     const report = (await response.json()) as {
       tenant: { slug: string; dataLocation: string | null };

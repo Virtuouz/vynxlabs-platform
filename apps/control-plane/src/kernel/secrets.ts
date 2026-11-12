@@ -3,7 +3,7 @@ import type { Db, Trx } from "./audit.js";
 import type { SecretName, Vault } from "./crypto.js";
 
 /** The tenant's data key, created on first use. */
-async function tenantKey(db: Db | Trx, vault: Vault, tenantId: string): Promise<Buffer> {
+export async function tenantKey(db: Db | Trx, vault: Vault, tenantId: string): Promise<Buffer> {
   const fresh = vault.newTenantKey(tenantId);
   // If two requests race, one insert wins and both read the winner's key.
   await db

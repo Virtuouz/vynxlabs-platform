@@ -134,16 +134,15 @@ export async function importTenant(
       if (!entry) throw refuse(`The export is missing ${path}.`);
       return tarRead(file, entry);
     };
-    let wrappedKey: Buffer | null = null;
     const exportedKey = JSON.parse(
       (await read("key.json")).toString("utf8"),
     ) as PassphraseWrappedKey | null;
-    if (exportedKey) {
-      try {
-        wrappedKey = kernel.vault.importTenantKey(tenantId, exportedKey, options.passphrase);
-      } catch {
-        throw refuse("The passphrase does not open this export.");
-      }
+    if (!exportedKey) throw refuse("The export has no key, so it cannot be checked or used.");
+    let wrappedKey: Buffer;
+    try {
+      wrappedKey = kernel.vault.importTenantKey(tenantId, exportedKey, options.passphrase);
+    } catch {
+      throw refuse("The passphrase does not open this export.");
     }
 
     const existing = await kernel.db
@@ -246,12 +245,10 @@ export async function importTenant(
           ),
         })
         .execute();
-      if (wrappedKey) {
-        await trx
-          .insertInto("tenant_key")
-          .values({ tenant_id: tenantId, wrapped_key: wrappedKey })
-          .execute();
-      }
+      await trx
+        .insertInto("tenant_key")
+        .values({ tenant_id: tenantId, wrapped_key: wrappedKey })
+        .execute();
 
       let created = 0;
       for (const member of members) {

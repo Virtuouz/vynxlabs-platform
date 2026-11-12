@@ -3,6 +3,7 @@ import { type Kysely, type PlatformSchema, sql, type Transaction } from "@vynxla
 import { workspaceSchema } from "../data/apply.js";
 import { notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { tenantKey } from "../secrets.js";
 import { OWNED_TABLES, type OwnedTable } from "./tables.js";
 import { TAR_END, tarEntry } from "./tar.js";
 
@@ -125,18 +126,19 @@ export async function* exportTenant(
       .executeTakeFirst();
     if (!tenant) throw notFound("The tenant");
 
-    // The key first: without it nothing else in the archive can be used.
+    // The key first: without it nothing else in the archive can be used. A tenant that
+    // never stored a secret is given its key now, so that every export has one and an
+    // import can always tell a right passphrase from a wrong one.
+    await tenantKey(kernel.db, kernel.vault, tenantId);
     const key = await kernel.db
       .selectFrom("tenant_key")
       .select("wrapped_key")
       .where("tenant_id", "=", tenantId)
-      .executeTakeFirst();
+      .executeTakeFirstOrThrow();
     yield* write(
       "key.json",
       Buffer.from(
-        JSON.stringify(
-          key ? kernel.vault.exportTenantKey(tenantId, key.wrapped_key, options.passphrase) : null,
-        ),
+        JSON.stringify(kernel.vault.exportTenantKey(tenantId, key.wrapped_key, options.passphrase)),
       ),
     );
 

@@ -255,8 +255,8 @@ test("an import sends the file with its passphrase in a header, and reports what
   expect(call?.headers["x-export-passphrase"]).toBe("the passphrase");
   expect(call?.body).toBe(file);
   const page = document.body.textContent ?? "";
-  expect(page).toContain(
-    "32 rows and 5 stored objects. 2 members were created and 1 linked to accounts already here.",
+  expect(page).toMatch(
+    /32 rows and 5 stored objects\. Members created:\s*2\. Members linked to accounts already here:\s*1\./,
   );
   expect(page).toContain('Its custom tables are in the database location "acme-db".');
   expect(page).toContain("All 2 workspaces arrived with their triggers paused.");

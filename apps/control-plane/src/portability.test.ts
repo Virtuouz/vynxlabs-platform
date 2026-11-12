@@ -891,6 +891,29 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
   });
 });
 
+describe("a tenant with no secrets", () => {
+  test("still has a key in its export, so a wrong passphrase is refused", async () => {
+    const globex = (await a.admin.get("/tenants?limit=200")).body.items.find(
+      (entry: Any) => entry.slug === "globex",
+    );
+    const roles = await rolesOf(a);
+    await a.admin.post(`/tenants/${globex.id}/access-grants`, {
+      reason: "Export for the test",
+      roleId: roles.tenant_admin,
+    });
+    const exported = await a.admin.post(`/tenants/${globex.id}/exports`, {
+      passphrase: "the right passphrase",
+    });
+    expect(exported.status).toBe(200);
+    const wrong = await importInto(operatorB, exported.bytes, "", "not the right passphrase");
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.detail).toBe("The passphrase does not open this export.");
+    expect((await operatorB.get(`/tenants/${globex.id}`)).status).toBe(404);
+    const right = await importInto(operatorB, exported.bytes, "", "the right passphrase");
+    expect(right.status, JSON.stringify(right.body)).toBe(201);
+  });
+});
+
 describe("back again", () => {
   test("an export without history, from the dedicated database to a shared one, under another name", async () => {
     const aliceB = await b.signIn("alice@acme.example", PASSWORD);

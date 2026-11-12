@@ -185,7 +185,12 @@ function CloneDialog({
             {clone.status === "running" ? null : (
               <Button
                 variant="primary"
-                onClick={() => navigate(`/t/${tenantId}/workspaces/${clone.workspaceId}/scripts`)}
+                onClick={() => {
+                  const made = clone.workspaceId;
+                  setClone(undefined);
+                  onClose();
+                  navigate(`/t/${tenantId}/workspaces/${made}/scripts`);
+                }}
               >
                 Open the copy
               </Button>
@@ -377,7 +382,7 @@ export function Promotion({
               <Notice tone="danger">
                 <p class="m-0">It cannot be promoted yet. {preview.refusal?.detail}</p>
                 {preview.refusal?.errors.length ? (
-                  <ul class="mt-1 mb-0 pl-5">
+                  <ul class="mt-1 mb-0 list-disc pl-5">
                     {preview.refusal.errors.map((entry) => (
                       <li key={entry.path}>{entry.message}</li>
                     ))}
@@ -449,7 +454,7 @@ function PreviewBody({ summary, target }: { summary: Summary; target: string }) 
       {data.length > 0 ? (
         <div>
           <p class="m-0 font-medium">To the data</p>
-          <ul class="mt-1 mb-0 pl-5">
+          <ul class="mt-1 mb-0 list-disc pl-5">
             {data.map((line) => (
               <li key={line}>{line}</li>
             ))}
@@ -549,7 +554,9 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           </Button>
         </div>
         <p class="m-0 text-[13px] text-ink-muted">
-          For a large tenant, use the command line instead: {code("platform tenant export")}.
+          The passphrase protects the secrets in the file. The rest of it, rows and files included,
+          can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
+          the command line instead: {code("platform tenant export")}.
         </p>
       </form>
     </Page>
@@ -667,10 +674,11 @@ export function TenantImport() {
             {Object.values(report.counts)
               .reduce((sum, n) => sum + n, 0)
               .toLocaleString()}{" "}
-            rows and {report.objects.toLocaleString()} stored objects. {report.members.created}{" "}
-            members were created and {report.members.linked} linked to accounts already here.
+            rows and {report.objects.toLocaleString()} stored objects. Members created:{" "}
+            {report.members.created}. Members linked to accounts already here:{" "}
+            {report.members.linked}.
           </Notice>
-          <ul class="m-0 flex flex-col gap-1 pl-5">
+          <ul class="m-0 flex list-disc flex-col gap-1 pl-5">
             <li>
               Its custom tables are in{" "}
               {report.tenant.dataLocation

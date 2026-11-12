@@ -339,6 +339,7 @@ function WorkspaceDetail({
         {workspace.data.triggersPaused ? <Badge tone="attention">Paused</Badge> : null}
       </div>
       <WorkspaceControls
+        key={workspaceId}
         base={base}
         tenantId={tenantId}
         workspace={workspace.data}

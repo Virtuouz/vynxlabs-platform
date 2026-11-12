@@ -127,7 +127,9 @@ platform tenant export --tenant acme --out acme.tar --history
 
 Or in the console, under the tenant's Export page.
 
-The file holds everything the tenant has. Its secrets stay encrypted, and the key travels wrapped with the passphrase, which is not stored anywhere. Pass the passphrase on separately from the file. The format is described in [contracts/tenant-export.md](contracts/tenant-export.md).
+The file holds everything the tenant has. Its secrets stay encrypted, and the key travels wrapped with the passphrase, which is not stored anywhere. Pass the passphrase on separately from the file.
+
+The passphrase protects the secrets, not the whole file. The tenant's rows, files, audit log and, with `--history`, every run's input and output are in it as plain JSON. Treat the file like a database backup: keep it where access is controlled, and encrypt it yourself if it has to travel. The format is described in [contracts/tenant-export.md](contracts/tenant-export.md).
 
 ### Import
 

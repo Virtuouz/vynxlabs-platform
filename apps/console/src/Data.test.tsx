@@ -163,17 +163,22 @@ test("a value is changed in place, and a row is added and deleted", async () => 
   vi.stubGlobal("confirm", () => true);
   render(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
 
+  // Each element that appears after an action is waited for: under a loaded machine the
+  // screen may not have caught up by the next line.
   fireEvent.click(await screen.findByText("10"));
-  fireEvent.input(screen.getByLabelText("total"), { target: { value: "15" } });
-  fireEvent.focusOut(screen.getByLabelText("total"));
+  const editing = await screen.findByLabelText("total");
+  fireEvent.input(editing, { target: { value: "15" } });
+  fireEvent.focusOut(editing);
   await screen.findByText("15");
-  expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ total: 15 });
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ total: 15 }),
+  );
   // The platform's own columns cannot be edited.
   expect(screen.getByText("r1").closest("button")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Add row" }));
   const dialog = await screen.findByRole("dialog");
-  fireEvent.input(screen.getByLabelText("total", { selector: "input[name=total]" }), {
+  fireEvent.input(await screen.findByLabelText("total", { selector: "input[name=total]" }), {
     target: { value: "7" },
   });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
@@ -190,6 +195,7 @@ test("a value is changed in place, and a row is added and deleted", async () => 
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
+  await waitFor(() => expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2));
   fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1] as HTMLElement);
   await waitFor(() =>
     expect(

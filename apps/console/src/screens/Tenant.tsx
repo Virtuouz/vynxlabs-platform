@@ -12,6 +12,7 @@ import {
 import { Link, match } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { AuditTable } from "./Audit.tsx";
+import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
 import {
   Connections,
   Deployments,
@@ -331,6 +332,8 @@ function WorkspaceDetail({
         {link("runs", "Runs")}
         {link("triggers", "Triggers")}
         {link("events", "Events")}
+        {link("tables", "Tables")}
+        {link("sources", "Data sources")}
         {link("deployments", "Deployments")}
         {link("connections", "Connections")}
         {link("variables", "Variables")}
@@ -355,6 +358,24 @@ function WorkspaceDetail({
         />
       ) : tab === "events" ? (
         <Events root={root} />
+      ) : tab === "tables" && rest ? (
+        <TableView
+          key={rest}
+          root={root}
+          name={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "tables" ? (
+        <Tables root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "sources" && rest ? (
+        <SourceView
+          key={rest}
+          root={root}
+          path={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "sources" ? (
+        <Sources root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : null}
       {tab === "scripts" ? (
         <Scripts root={root} runsLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />

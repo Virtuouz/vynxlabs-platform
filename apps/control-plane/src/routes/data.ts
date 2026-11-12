@@ -87,6 +87,9 @@ const Column = Type.Object({
   default: Type.Unknown(),
   references: NullableString,
   status: Type.Union([Type.Literal("active"), Type.Literal("retired")]),
+  held: Type.Union([Type.Integer(), Type.Null()], {
+    description: "For a retired column: how many rows still hold a value in it.",
+  }),
 });
 
 /** Tells subscribers that rows changed. Nothing is stored unless something listens. */
@@ -253,6 +256,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const count = await sql<{
           n: string;
         }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(db);
+        const held = new Map<string, number>();
+        for (const column of table.columns.filter((candidate) => candidate.status === "retired")) {
+          const kept = await sql<{
+            n: string;
+          }>`select count(${sql.ref(column.physicalName)}) as n from ${sql.id(schema, table.physicalName)}`.execute(
+            db,
+          );
+          held.set(column.id, Number(kept.rows[0]?.n ?? 0));
+        }
         return {
           name,
           status: table.status,
@@ -268,6 +280,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             default: column.default ?? null,
             references: column.referenceTable,
             status: column.status,
+            held: held.get(column.id) ?? null,
           })),
         };
       },

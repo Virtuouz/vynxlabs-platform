@@ -1,9 +1,11 @@
 import {
+  column,
   defineConnection,
   defineEvent,
   defineFlow,
   defineSchedule,
   defineScript,
+  defineTable,
   defineVariable,
   defineWebhook,
   step,
@@ -25,7 +27,31 @@ export const batchSize = defineVariable({
   default: "50",
 });
 
-const Order = z.object({ id: z.string(), total: z.number(), currency: z.string() });
+const Order = z.object({
+  id: z.string(),
+  total: z.number(),
+  currency: z.string(),
+  /** The member who looks after this order, when there is one. */
+  owner: z.uuid().optional(),
+});
+
+/**
+ * Every order the flow has handled. Each member sees the orders they look
+ * after. Changing this definition and deploying changes the table: a column
+ * that is removed here is retired, and its data kept.
+ */
+export const orders = defineTable({
+  path: "orders",
+  description: "Every order the flow has handled, and how it ended.",
+  columns: {
+    number: column.text({ required: true, unique: true }),
+    total: column.number({ required: true }),
+    currency: column.text({ required: true }),
+    status: column.text({ required: true, default: "received" }),
+    owner_id: column.uuid(),
+  },
+  policy: { owner: "owner_id" },
+});
 
 /** Published after each sync, for anything that wants to know. */
 export const ordersSynced = defineEvent({
@@ -167,9 +193,35 @@ export const sendToErp = defineScript({
   },
 });
 
+/** Keeps one row per order, so a retry or a second delivery changes the row instead of adding one. */
+export const recordOrder = defineScript({
+  path: "orders/record",
+  description: "Writes an order and how it ended to the orders table.",
+  input: z.object({ order: Order, status: z.string() }),
+  output: z.object({ id: z.string() }),
+  tables: [orders],
+  async run(input, ctx) {
+    const table = ctx.table(orders);
+    const { order } = input;
+    const [known] = await table.find({ filter: { column: "number", value: order.id }, limit: 1 });
+    if (known) {
+      await table.update(known.id, { status: input.status });
+      return { id: known.id };
+    }
+    const row = await table.insert({
+      number: order.id,
+      total: order.total,
+      currency: order.currency,
+      status: input.status,
+      owner_id: order.owner ?? null,
+    });
+    return { id: row.id };
+  },
+});
+
 /**
  * Handles one order: check it, ask a person about large ones, send it to the
- * ERP, and record what went wrong if the ERP refuses it.
+ * ERP, write it to the orders table, and record what went wrong if the ERP refuses it.
  */
 export const handleOrder = defineFlow({
   path: "orders/handle",
@@ -188,6 +240,7 @@ export const handleOrder = defineFlow({
       detail: "{'order': trigger.id, 'total': trigger.total, 'currency': trigger.currency}",
     }),
     send: step.script(sendToErp, { input: "{'order': trigger}" }),
+    record: step.script(recordOrder, { input: "{'order': trigger, 'status': 'sent'}" }),
     report: step.set({ order: "trigger.id", problem: "steps.send.error.message" }),
   },
   edges: [
@@ -198,6 +251,7 @@ export const handleOrder = defineFlow({
     ["route", "approve", { when: "large" }],
     ["route", "send", { when: "otherwise" }],
     ["approve", "send"],
+    ["send", "record"],
     ["send", "report", { error: true }],
   ],
 });

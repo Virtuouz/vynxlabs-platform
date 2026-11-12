@@ -147,7 +147,7 @@ describe("the example integration", () => {
     expect(built.out).toContain("schedule   orders/sync-every-five-minutes");
     expect(
       JSON.parse(await readFile(join(example, ".platform", "bundle.json"), "utf8")).manifests,
-    ).toHaveLength(14);
+    ).toHaveLength(16);
   });
 
   test("deploy says exactly what the workspace is missing", async () => {
@@ -202,7 +202,7 @@ describe("the example integration", () => {
     ]);
     expect(deployed.err).toBe("");
     expect(deployed.out).toContain(
-      "Deployed version 1 to main (production): 14 created, 0 updated, 0 deleted, 0 unchanged.",
+      "Deployed version 1 to main (production): 16 created, 0 updated, 0 deleted, 0 unchanged.",
     );
 
     // Deploying the same code again changes nothing.
@@ -216,7 +216,7 @@ describe("the example integration", () => {
       "main",
     ]);
     expect(again.out).toContain(
-      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 14 unchanged.",
+      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 16 unchanged.",
     );
   });
 
@@ -335,6 +335,15 @@ describe("the example integration", () => {
         message: 'The step "refuse" failed: Order 3003 was refused: Only EUR orders are handled.',
       },
     });
+
+    // Each order that was sent is a row in the workspace's orders table. The refused one is not.
+    const rows = (await alice.get(`${base}/rows/orders?sort=number`)).body.items;
+    expect(rows.map((row: Record<string, unknown>) => [row.number, row.total, row.status])).toEqual(
+      [
+        ["3001", 80, "sent"],
+        ["3002", 4200, "sent"],
+      ],
+    );
   });
 
   test("runs are listed and shown, with their logs, from the command line", async () => {
@@ -390,7 +399,7 @@ describe("working locally", () => {
     expect(ran.out).toMatch(/Output: \{"sent":\d,"skipped":\d\}/);
 
     expect((await cli(["run", "orders/unknown", "--dir", example])).err).toContain(
-      'There is no script "orders/unknown". This repository has: alerts/run-failed, orders/check, orders/receive, orders/send-to-erp, orders/sync',
+      'There is no script "orders/unknown". This repository has: alerts/run-failed, orders/check, orders/receive, orders/record, orders/send-to-erp, orders/sync',
     );
     expect((await cli(["run", "orders/sync", "--dir", example, "--input", "{bad"])).err).toContain(
       "--input must be JSON",

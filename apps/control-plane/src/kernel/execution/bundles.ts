@@ -4,11 +4,13 @@ import {
   type BundleManifest,
   bundleDigest,
   bundleExpressions,
+  checkBundleAssets,
   checkBundleManifests,
   validateJson,
 } from "@vynxlabs/manifest";
+import { missingAssets } from "../apps/assets.js";
 import type { Audit, Principal, Trx } from "../audit.js";
-import { badRequest } from "../errors.js";
+import { badRequest, HttpError } from "../errors.js";
 import { ExpressionError } from "../flows/expressions.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
@@ -64,7 +66,7 @@ export async function storeBundle(
     throw badRequest("The bundle's digest does not match its contents. Build it again.");
   }
   // The build runs these same checks. The control plane does not take its word for it.
-  const problems = checkBundleManifests(bundle.manifests);
+  const problems = [...checkBundleManifests(bundle.manifests), ...checkBundleAssets(bundle)];
   for (const { where, expression } of bundleExpressions(bundle.manifests)) {
     await kernel.expressions.check(expression).catch((error) => {
       if (!(error instanceof ExpressionError)) throw error;
@@ -78,6 +80,21 @@ export async function storeBundle(
         const [where, ...rest] = problem.split(": ");
         return { path: where ?? "", message: rest.join(": ") };
       }),
+    );
+  }
+
+  // A bundle names its apps' files by checksum. Each must already be here, or the
+  // bundle could be deployed and then have nothing to serve.
+  const absent = await missingAssets(trx, workspace.tenantId, bundle.assets ?? []);
+  if (absent.length > 0) {
+    throw new HttpError(
+      409,
+      "assets_missing",
+      "Some files of the bundle's apps have not been uploaded. Upload them, then upload the bundle again.",
+      absent.slice(0, 100).map((asset) => ({
+        path: `${asset.app}/${asset.path}`,
+        message: `sha256 ${asset.sha256}`,
+      })),
     );
   }
 

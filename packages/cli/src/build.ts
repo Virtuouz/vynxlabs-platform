@@ -52,6 +52,8 @@ const KIND_ORDER = [
   "schedule",
   "trigger",
   "flow",
+  "theme",
+  "app",
   "binding",
 ];
 

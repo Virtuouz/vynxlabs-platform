@@ -12,7 +12,7 @@ import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/exe
 import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
-import { access, type WorkspaceRef } from "../kernel/http.js";
+import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
@@ -580,11 +580,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs`,
       {
-        config: { access: access.workspace("run:write") },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "Start a run of a script",
           description:
-            "Starting again with the same `idempotencyKey` for the same script returns the first run.",
+            "Starting again with the same `idempotencyKey` for the same script returns the first run. " +
+            "Needs `run:write` at the workspace or at the script itself, which is how an app's " +
+            "users are let start one script and no other.",
           tags: ["runs"],
           params: WorkspaceParams,
           body: Type.Object({
@@ -598,6 +600,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const target = await db
+          .selectFrom("resource")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "script")
+          .where("path", "=", body.script)
+          .executeTakeFirst();
+        await ctx.authorize("run:write", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          resourceId: target?.id,
+        });
         const result = await ctx.mutate(async (trx, audit) => {
           const started = await startRun(kernel, trx, {
             tenantId: params.t,
@@ -670,16 +685,34 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/runs/:id`,
       {
-        config: { access: access.workspace("run:read") },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "One run, with its input and output",
+          description:
+            "Needs `run:read` in the workspace. Whoever started a run may always read it.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: RunDetail },
         },
       },
-      async ({ params }) => {
-        const row = await findRun(params.w, params.id);
+      async ({ ctx, params }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const mayReadAll = await ctx.allowed("run:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+        });
+        const row = mayReadAll
+          ? await findRun(params.w, params.id)
+          : await findRun(params.w, params.id).catch(() => undefined);
+        const own =
+          row !== undefined &&
+          ctx.principal.id !== null &&
+          row.started_by_id === ctx.principal.id &&
+          row.started_by_type === ctx.principal.type;
+        // To someone who may not read runs, a run that is not theirs does not exist.
+        if (!mayReadAll && !own)
+          await ctx.authorize("run:read", { tenantId: params.t, workspaceId: params.w });
+        if (!row) throw notFound("The run");
         return {
           ...toRun(row, row.bundle_version),
           pool: row.pool,

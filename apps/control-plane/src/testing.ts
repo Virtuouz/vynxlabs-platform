@@ -29,6 +29,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
     consoleDir: undefined,
+    appsUrl: undefined,
+    mail: undefined,
     ...overrides,
   };
 }
@@ -205,6 +207,8 @@ export async function startTestApp(
     admin: await signIn(ADMIN.email, ADMIN.password),
     signIn,
     withKey: (token: string) => client({ authorization: `Bearer ${token}` }),
+    /** A client that sends these headers, for callers that are neither a member nor a key. */
+    withHeaders: (headers: Record<string, string>) => client(headers),
     /** Every mutating route under `prefixes` that no test called successfully with an audit entry. */
     unexercised(include: (route: string) => boolean) {
       return routes

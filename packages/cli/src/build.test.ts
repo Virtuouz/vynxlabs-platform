@@ -58,8 +58,8 @@ describe("building the example repository", () => {
     ]);
     expect(bundle).toMatchObject({
       formatVersion: 1,
-      sdkVersion: "0.3.0",
-      core: { min: "0.3.0", below: "0.4.0" },
+      sdkVersion: "0.4.0",
+      core: { min: "0.4.0", below: "0.5.0" },
     });
     expect(bundle.digest).toBe(bundleDigest(bundle));
     expect(describeBundle(bundle)[0]).toContain(bundle.digest.slice(0, 12));

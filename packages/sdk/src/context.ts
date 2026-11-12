@@ -15,6 +15,13 @@ export interface RunInfo {
    */
   idempotencyKey: string;
   trigger: { type: string; [detail: string]: unknown };
+  /**
+   * Who started the run: a `member`, an `end_user` or a `service_account`, with
+   * their ID, or `system` for a schedule, a webhook or an event. A script started
+   * from an app reads and writes for that person with
+   * `ctx.table(orders).as(ctx.run.startedBy.id)`.
+   */
+  startedBy: { type: string; id: string | null };
 }
 
 /** What a script receives when it runs. */

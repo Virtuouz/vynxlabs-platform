@@ -17,6 +17,10 @@ export function authRoutes(kernel: Kernel): FastifyPluginAsync {
       // Described by merging the library's own description into /openapi.json.
       schema: { hide: true },
       handler: async (request, reply) => {
+        // Members sign in at the instance's own address and nowhere else.
+        if ((await kernel.hosts.place(request)).kind !== "main") {
+          return sendProblem(request, reply, 404);
+        }
         const headers = new Headers();
         for (const [name, value] of Object.entries(request.headers)) {
           if (value !== undefined)

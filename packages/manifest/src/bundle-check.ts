@@ -1,6 +1,6 @@
-import type { BundleManifest } from "./bundle.js";
+import type { Bundle, BundleManifest } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowReferences } from "./flow.js";
-import { registerPlatformKinds } from "./kinds.js";
+import { isThemeValue, registerPlatformKinds } from "./kinds.js";
 import { KindRegistry } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
 
@@ -119,6 +119,29 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     }
   }
 
+  // A workspace has one look. Two themes would leave it to chance which one applies.
+  const themes = manifests.filter((manifest) => manifest.kind === "theme");
+  for (const extra of themes.slice(1)) {
+    problems.push(
+      `${extra.path} (theme): a workspace can have one theme, and "${themes[0]?.path}" is already one.`,
+    );
+  }
+  for (const theme of themes) {
+    const body = theme.body as { tokens?: Record<string, unknown>; dark?: Record<string, unknown> };
+    for (const [set, values] of [
+      ["tokens", body.tokens],
+      ["dark", body.dark],
+    ] as const) {
+      for (const [token, value] of Object.entries(values ?? {})) {
+        if (typeof value === "string" && !isThemeValue(value)) {
+          problems.push(
+            `${theme.path} (theme): /body/${set}/${token} must be a plain colour, length or font list.`,
+          );
+        }
+      }
+    }
+  }
+
   // Flows that use each other in a circle would never finish.
   const uses = new Map<string, string[]>();
   for (const manifest of manifests) {
@@ -147,6 +170,54 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
   };
   for (const path of uses.keys()) visit(path, []);
 
+  return problems;
+}
+
+/** Paths inside an app that the platform keeps for its own pages. */
+const RESERVED_ASSET_PREFIX = "_/";
+
+/**
+ * Everything wrong with the files a bundle lists for its apps: a file for an
+ * app that is not in the bundle, an app whose page is not among its files, or
+ * the same file listed twice.
+ */
+export function checkBundleAssets(
+  bundle: Pick<Bundle, "formatVersion" | "manifests" | "assets">,
+): string[] {
+  const problems: string[] = [];
+  const assets = bundle.assets ?? [];
+  const apps = bundle.manifests.filter((manifest) => manifest.kind === "app");
+  if (bundle.formatVersion === 1) {
+    if (bundle.assets !== undefined) problems.push("assets: a format 1 bundle carries no files.");
+    for (const app of apps) {
+      problems.push(
+        `${app.path} (app): apps need bundle format 2. Build with a current SDK and CLI.`,
+      );
+    }
+    return problems;
+  }
+  const seen = new Set<string>();
+  for (const asset of assets) {
+    const key = `${asset.app}\n${asset.path}`;
+    if (seen.has(key)) problems.push(`${asset.app} (app): the file ${asset.path} is listed twice.`);
+    seen.add(key);
+    if (!apps.some((app) => app.path === asset.app)) {
+      problems.push(
+        `assets: ${asset.path} belongs to "${asset.app}", which is not an app in this bundle.`,
+      );
+    }
+    if (asset.path.startsWith(RESERVED_ASSET_PREFIX) || asset.path === "_") {
+      problems.push(
+        `${asset.app} (app): ${asset.path} is under "_", which the platform keeps for its own pages.`,
+      );
+    }
+  }
+  for (const app of apps) {
+    const entry = (app.body as { entry?: unknown }).entry;
+    if (typeof entry === "string" && !seen.has(`${app.path}\n${entry}`)) {
+      problems.push(`${app.path} (app): its entry ${entry} is not among the app's files.`);
+    }
+  }
   return problems;
 }
 

@@ -22,6 +22,13 @@ export interface Config {
   managedWorkers: boolean;
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
+  /**
+   * A second address for apps. When set, apps are served there and not on the
+   * instance's own address, so that an app never runs where the console's sign-in is.
+   */
+  appsUrl: string | undefined;
+  /** Where mail goes out, for invitations and password resets. Undefined when no mail is sent. */
+  mail: { url: string; from: string } | undefined;
 }
 
 export const MIN_PASSWORD_LENGTH = 12;
@@ -104,6 +111,26 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     problems.push(`BOOTSTRAP_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
 
+  const appsUrl = value("APPS_URL");
+  url("APPS_URL", appsUrl, ["http:", "https:"]);
+  if (
+    appsUrl !== undefined &&
+    URL.canParse(appsUrl) &&
+    URL.canParse(publicUrl) &&
+    new URL(appsUrl).host === new URL(publicUrl).host
+  ) {
+    problems.push(
+      "APPS_URL must be a different host from PUBLIC_URL. Leave it unset to serve apps on PUBLIC_URL.",
+    );
+  }
+
+  const smtpUrl = value("SMTP_URL");
+  url("SMTP_URL", smtpUrl, ["smtp:", "smtps:"]);
+  const mailFrom = value("MAIL_FROM");
+  if ((smtpUrl === undefined) !== (mailFrom === undefined)) {
+    problems.push("SMTP_URL and MAIL_FROM must be set together.");
+  }
+
   const managed = value("MANAGED_WORKERS") ?? "true";
   if (managed !== "true" && managed !== "false") {
     problems.push("MANAGED_WORKERS must be true or false.");
@@ -131,6 +158,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
         : undefined,
     managedWorkers: managed === "true",
     consoleDir: value("CONSOLE_DIR"),
+    appsUrl: appsUrl?.replace(/\/+$/, ""),
+    mail:
+      smtpUrl !== undefined && mailFrom !== undefined
+        ? { url: smtpUrl, from: mailFrom }
+        : undefined,
   };
 
   if (problems.length > 0) throw new ConfigError(problems);

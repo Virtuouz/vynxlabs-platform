@@ -58,8 +58,10 @@ const roleHook: KindHook = {
 
 type PrincipalRef =
   | { type: "member"; email: string }
+  | { type: "end_user"; email: string }
   | { type: "group" | "service_account"; name: string }
-  | { type: "anonymous" };
+  | { type: "anonymous" }
+  | { type: "end_users" };
 
 const bindingHook: KindHook = {
   async apply(trx, resource) {
@@ -98,7 +100,16 @@ const bindingHook: KindHook = {
         .executeTakeFirst();
       if (!member) throw fail("/body/principal/email", "no member of this tenant has that email");
       principalId = member.id;
-    } else if (principal.type !== "anonymous") {
+    } else if (principal.type === "end_user") {
+      const user = await trx
+        .selectFrom("end_user")
+        .select("id")
+        .where("tenant_id", "=", resource.tenantId)
+        .where("email", "=", principal.email.toLowerCase())
+        .executeTakeFirst();
+      if (!user) throw fail("/body/principal/email", "no end user of this tenant has that email");
+      principalId = user.id;
+    } else if (principal.type !== "anonymous" && principal.type !== "end_users") {
       const table = principal.type === "group" ? "principal_group" : "service_account";
       const found = await trx
         .selectFrom(table)

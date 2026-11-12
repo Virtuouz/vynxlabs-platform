@@ -1,12 +1,20 @@
 export {
+  ASSET_PATH_PATTERN,
   Bundle,
+  BundleAsset,
   BundleManifest,
   bundleCompatibility,
   bundleDigest,
   compareVersions,
   coreInRange,
+  MAX_BUNDLE_ASSETS,
 } from "./bundle.js";
-export { bundleExpressions, checkBundleManifests, PLATFORM_EVENT_PREFIX } from "./bundle-check.js";
+export {
+  bundleExpressions,
+  checkBundleAssets,
+  checkBundleManifests,
+  PLATFORM_EVENT_PREFIX,
+} from "./bundle-check.js";
 export {
   envelopeSchemas,
   KIND_PATTERN,
@@ -27,6 +35,7 @@ export {
   reachableFrom,
 } from "./flow.js";
 export {
+  appKind,
   bindingKind,
   COLUMN_TYPES,
   type ColumnType,
@@ -34,6 +43,7 @@ export {
   dataSourceKind,
   eventKind,
   flowKind,
+  isThemeValue,
   PERMISSION_PATTERN,
   platformKinds,
   registerPlatformKinds,
@@ -42,7 +52,10 @@ export {
   SYSTEM_COLUMNS,
   scheduleKind,
   scriptKind,
+  THEME_TOKENS,
+  THEME_VALUE_PATTERN,
   tableKind,
+  themeKind,
   triggerKind,
   variableKind,
 } from "./kinds.js";

@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/theme.v1.schema.json",
+  "title": "theme body, version 1",
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "tokens": {
+      "type": "object",
+      "properties": {
+        "canvas": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "surface": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "sunken": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "line": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "ink": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "ink-muted": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "action": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "action-ink": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "action-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "attention": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "attention-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "danger": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "danger-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "success": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "success-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "radius-control": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "radius-panel": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "font": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "font-code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Values that replace the tenant's, by token name."
+    },
+    "dark": {
+      "type": "object",
+      "properties": {
+        "canvas": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "surface": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "sunken": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "line": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "ink": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "ink-muted": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "action": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "action-ink": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "action-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "attention": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "attention-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "danger": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "danger-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "success": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "success-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "radius-control": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "radius-panel": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "font": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "font-code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        }
+      },
+      "additionalProperties": false,
+      "description": "The same, for when the viewer prefers a dark scheme."
+    }
+  },
+  "additionalProperties": false
+}

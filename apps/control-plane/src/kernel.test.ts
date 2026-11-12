@@ -349,7 +349,14 @@ describe("permissions", () => {
     const listed = (await alice.client.get(`/tenants/${acme}/roles`)).body.items.map(
       (r: { name: string }) => r.name,
     );
-    expect(listed).toEqual(["deployer", "developer", "tenant_admin", "viewer", "workspace_admin"]);
+    expect(listed).toEqual([
+      "deployer",
+      "developer",
+      "portal_user",
+      "tenant_admin",
+      "viewer",
+      "workspace_admin",
+    ]);
   });
 
   test("a role from another tenant, or the operator role, cannot be bound", async () => {
@@ -671,6 +678,7 @@ describe("resource registry", () => {
     expect(
       (await bob.client.get("/kinds")).body.items.map((k: { kind: string }) => k.kind),
     ).toEqual([
+      "app",
       "binding",
       "connection",
       "data_source",
@@ -680,6 +688,7 @@ describe("resource registry", () => {
       "schedule",
       "script",
       "table",
+      "theme",
       "trigger",
       "variable",
     ]);
@@ -1000,9 +1009,9 @@ describe("the write path", () => {
   });
 
   test("every kernel route that changes something was exercised and audited", () => {
-    // The execution, data and environment routes have the same check in their own test files.
+    // The execution, data, environment and app routes have the same check in their own test files.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-auth|bundle-assets|portal|domains)(\/|$)/;
     // Deleting a workspace is exercised in environments.test.ts.
     expect(
       t.unexercised(

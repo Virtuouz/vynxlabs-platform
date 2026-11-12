@@ -16,7 +16,7 @@ import {
 } from "../kernel/data/rows.js";
 import { badRequest } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
-import { access, findWorkspace, type RequestContext } from "../kernel/http.js";
+import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { AnyObject, Id, NoContent, NullableString, WorkspaceParams } from "./shared.js";
 
@@ -327,7 +327,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/rows/*`,
       {
-        config: { access: access.custom },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "Rows of a table",
           description:
@@ -350,7 +350,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/rows/*`,
       {
-        config: { access: access.custom },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "Insert one row, or up to 1,000",
           description: 'Send a row, or `{ "rows": [...] }`. Either all are inserted or none.',
@@ -395,7 +395,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "One row",
           tags: ["data"],
@@ -412,7 +412,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.patch(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "Change some of a row's values",
           tags: ["data"],
@@ -435,7 +435,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "Delete a row",
           tags: ["data"],

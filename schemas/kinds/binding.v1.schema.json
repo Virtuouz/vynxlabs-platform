@@ -49,7 +49,27 @@
           "type": "object",
           "properties": {
             "type": {
-              "const": "anonymous"
+              "const": "end_user"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "email"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "anonymous",
+                "end_users"
+              ],
+              "description": "anonymous is anyone, signed in or not. end_users is every signed-in end user of the tenant."
             }
           },
           "required": [

@@ -1,6 +1,6 @@
 # Worker protocol
 
-Version 1. Last updated: 2026-11-11
+Version 1. Last updated: 2026-11-12
 
 This is one of the platform's two language-neutral contracts. The other is the manifest format in `schemas/`. A worker written in any language that follows this document can run a workspace's code. The control plane needs no change for it.
 
@@ -18,6 +18,8 @@ The machine-readable form of every route below is in the API description at `/ap
 A worker sends `Authorization: Bearer <credential>` on every request. Credentials start with `vxw_`.
 
 A credential is scoped to one tenant, and optionally to one workspace in it. A worker is only ever offered, and can only ever read, what its credential covers. Anything else answers 404.
+
+A credential may also be made for one pool. A script can name the pool it runs on, for work that must happen in a particular place, such as inside a client's network. A worker whose credential has a pool is offered only the runs of scripts that name that pool. A worker whose credential has none is offered only the runs of scripts that name none. The worker itself does nothing different: the pool is a property of its credential. Pools were added after version 1 was published.
 
 401 means the credential is not valid, is revoked or has expired. A worker should stop.
 

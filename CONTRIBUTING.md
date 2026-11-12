@@ -51,6 +51,7 @@ Every route follows the conventions in [docs/phases/phase-0-foundations.md](docs
 
 The control plane knows nothing about TypeScript. It depends on the manifest format in `schemas/` and the worker protocol in `docs/contracts/worker-protocol.md`.
 
+- A third contract, of the same standing, is the tenant export format in `docs/contracts/tenant-export.md`.
 - The control plane never imports or runs a tenant's code. Only the CLI (at build time) and the worker do.
 - A change to a kind's schema, the bundle format or a worker route is a change to a contract. Update the schema or the protocol document in the same commit, and keep old bundles and old workers working.
 - The execution tests build bundles by hand and speak the protocol over plain HTTP on purpose. Keep them free of the SDK.
@@ -77,6 +78,16 @@ The control plane knows nothing about TypeScript. It depends on the manifest for
 - A table change must be worked out by the pure planner in `kernel/data/plan.ts` and tested there without a database. Applying a plan must stay inside the deploy's transaction.
 - The platform never changes the structure of an external data source.
 - Reads and writes of rows are not audited one by one. Changes to definitions, bindings and purges are.
+
+## Tenancy and portability
+
+- A new table that holds anything of a tenant's goes in the list in `kernel/tenancy/tables.ts`, in the place its foreign keys allow, with a decision on whether an export carries it. A test fails until it is there. Deleting, exporting and importing a tenant all work from that list.
+- An export must stay readable. A change to what it contains or how is a change to `docs/contracts/tenant-export.md`, and a format that old files do not fit is a new format version.
+- Anything a workspace can start by itself must respect `triggers_paused`. A clone and an imported tenant rely on it.
+- A tenant's custom tables and their catalog may be in another database. Reach them through `kernel.data`, never through `kernel.db`. Inside a write, use `kernel.data.within(trx, tenantId)`, so that the change commits with the rest.
+- The catalog exists in two places: the platform's migrations and the bootstrap in `packages/db/src/datastore.ts`. Change both. A test holds them to each other.
+- A migration must work on a database from any earlier release, with data in it. `upgrade.test.ts` tries every level. If a migration needs rows to look a certain way, it makes them so itself.
+- Raising `OLDEST_SUPPORTED_BUNDLE_CORE` strands tenants' deployed bundles. It is the owner's decision and needs a deprecation period.
 
 ## Interface
 

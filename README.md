@@ -2,7 +2,9 @@
 
 One self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
 
-The platform is at phase 3, events and flows: on top of scripts that run on a schedule, a webhook or a manual start, a developer can now publish events and chain steps into flows, which are graphs of steps the platform runs durably, with branches, loops, waits and approvals. Custom tables and apps come in later phases.
+The platform is at phase 5, environments and portability. A developer defines scripts, flows, tables and data sources in a tenant's repository and deploys them. Changes move from a dev workspace to production as the same bundle. A tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another. Apps for end users come in the next phase.
+
+To run an instance, read [docs/self-hosting.md](docs/self-hosting.md).
 
 ## Requirements
 
@@ -47,6 +49,8 @@ The example also defines a table, `orders`, and the flow writes each order it se
 
 An existing Postgres database can be connected under the workspace's Data sources tab, then browsed there and used by scripts through `ctx.source(...)`.
 
+To move a change between environments, link a dev workspace to the one it promotes to, deploy to dev, and run `platform promote --tenant <slug> --workspace <dev slug> --preview` to see what would change, then without `--preview` to do it. The same bundle is activated: nothing is rebuilt.
+
 `platform init <directory>` writes a starter repository, and `platform run <script>` runs one script on your machine.
 
 The control plane starts a worker for a tenant when it has work. To run one yourself, for example inside a client's network, create a credential under the tenant's Workers page and start `node packages/worker/dist/bin.js --url <instance> --token <credential>`.
@@ -73,6 +77,8 @@ docker compose -f deploy/compose/compose.yaml up -d --wait
 
 This runs the control plane, Postgres and the object store with persistent volumes. Keep a copy of `MASTER_KEY`: without it, stored secrets cannot be read again. The control plane listens on `127.0.0.1:8080` by default. Put a reverse proxy that terminates TLS in front of it before exposing it.
 
+The full guide, including TLS, backups, upgrades, dedicated databases, workers in another network and moving a tenant, is [docs/self-hosting.md](docs/self-hosting.md).
+
 For Fly.io, see [deploy/fly](deploy/fly/README.md).
 
 ## Layout
@@ -86,11 +92,12 @@ For Fly.io, see [deploy/fly](deploy/fly/README.md).
 | `packages/sdk` | What a tenant repository imports to define scripts and other resources |
 | `packages/worker` | The worker that runs a tenant's scripts |
 | `examples/acme` | A sample tenant repository |
-| `docs/contracts` | The worker protocol |
+| `docs/contracts` | The worker protocol and the tenant export format |
+| `docs/self-hosting.md` | Installing, upgrading, backing up and moving tenants |
 | `packages/db` | Database access, migrations, tenant routing |
 | `packages/manifest` | The resource envelope, kind registry and validation |
 | `schemas` | The manifest contract as JSON Schema, generated |
-| `deploy` | Compose stack and Fly.io configuration |
+| `deploy` | Compose stack, a standalone worker, and Fly.io configuration |
 
 ## License
 

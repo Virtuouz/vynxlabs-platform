@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ScriptContext } from "./context.js";
+import type { ColumnSpec, InsertOf, RowOf } from "./tables.js";
 
 export type { Logger, RunInfo, ScriptContext } from "./context.js";
 export type { Connector, TriggerSource } from "./extensions.js";
@@ -11,6 +12,17 @@ export {
   type HttpResponse,
   httpConnector,
 } from "./http.js";
+export {
+  type ColumnOptions,
+  type ColumnSpec,
+  column,
+  type Filter,
+  type FindOptions,
+  type InsertOf,
+  type RowOf,
+  type SystemColumns,
+  type TableClient,
+} from "./tables.js";
 export { z };
 
 /** The version of the SDK, and the core versions a bundle built with it works on. */
@@ -82,6 +94,10 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   variables?: (string | { path: string })[];
   /** Events the script publishes, by name or by definition. */
   events?: (string | { path: string })[];
+  /** Custom tables the script reads or writes, by path or by definition. */
+  tables?: (string | { path: string })[];
+  /** External data sources the script reads or writes, by path or by definition. */
+  sources?: (string | { path: string })[];
   /** How long one attempt may run. Default 300, maximum 3600. */
   timeoutSeconds?: number;
   /**
@@ -131,6 +147,8 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
         secrets: options.secrets ?? [],
         variables: (options.variables ?? []).map(pathOf),
         ...(options.events ? { events: options.events.map(pathOf) } : {}),
+        ...(options.tables ? { tables: options.tables.map(pathOf) } : {}),
+        ...(options.sources ? { sources: options.sources.map(pathOf) } : {}),
       },
       onFailure: options.onFailure
         ? compact({
@@ -361,5 +379,62 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
         compact({ from, to, output: edge?.when, error: edge?.error ? true : undefined }),
       ),
     }),
+  );
+}
+
+export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean>>> {
+  /** The table's name, for example `crm/orders`. */
+  path: string;
+  description?: string;
+  columns: C;
+  /**
+   * Who may see which rows. With `owner`, a person sees and changes only the
+   * rows whose owner column holds their ID. Without a policy, permissions alone decide.
+   */
+  policy?: { owner: Extract<keyof C, string> };
+  /** Columns to index, each entry one index. */
+  indexes?: Extract<keyof C, string>[][];
+  /** The table's previous path. Its rows are kept. */
+  renamedFrom?: string;
+}
+
+export interface TableDefinition<Row, Insert> extends ResourceDefinition {
+  readonly kind: "table";
+  /** Only for type inference. Never set. */
+  readonly __row?: Row;
+  readonly __insert?: Insert;
+}
+
+/**
+ * Declares a custom table. A deploy changes the workspace's table to match:
+ * new columns are added, and a column that is no longer declared is retired
+ * with its data kept, never dropped.
+ */
+export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean>>>(
+  options: TableOptions<C>,
+): TableDefinition<RowOf<C>, InsertOf<C>> {
+  const definition = resource("table", options.path, () =>
+    compact({
+      description: options.description,
+      columns: Object.fromEntries(
+        Object.entries(options.columns).map(([name, spec]) => [name, spec.manifest]),
+      ),
+      policy: options.policy ? { type: "owner", column: options.policy.owner } : undefined,
+      indexes: options.indexes,
+      renamedFrom: options.renamedFrom,
+    }),
+  );
+  return { ...definition, kind: "table" };
+}
+
+export interface DataSourceOptions {
+  path: string;
+  description?: string;
+}
+
+/** Declares an external Postgres database. Where it is, and its password, are set per workspace. */
+export function defineDataSource(options: DataSourceOptions): ResourceDefinition {
+  return resource("data_source", options.path, () =>
+    compact({ connector: "postgres", description: options.description }),
   );
 }

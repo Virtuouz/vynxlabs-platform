@@ -18,7 +18,14 @@ export interface ScriptBody {
   timeoutSeconds: number;
   retries: { limit: number; delaySeconds: number; backoff: boolean };
   concurrency?: number;
-  uses: { connections: string[]; secrets: string[]; variables: string[]; events?: string[] };
+  uses: {
+    connections: string[];
+    secrets: string[];
+    variables: string[];
+    events?: string[];
+    tables?: string[];
+    sources?: string[];
+  };
   onFailure?: { script?: string; notify?: string };
 }
 

@@ -9,7 +9,7 @@ import { deleteResource, putResource } from "../resources.js";
 import { loadBundle } from "./bundles.js";
 
 interface ScriptBody {
-  uses: { connections: string[]; secrets: string[]; variables: string[] };
+  uses: { connections: string[]; secrets: string[]; variables: string[]; sources?: string[] };
   onFailure?: { notify?: string };
 }
 
@@ -20,12 +20,14 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
     connections: new Set<string>(),
     secrets: new Set<string>(),
     variables: new Set<string>(),
+    sources: new Set<string>(),
   };
   for (const script of scripts) {
     const body = script.body as unknown as ScriptBody;
     for (const path of body.uses.connections) need.connections.add(path);
     for (const name of body.uses.secrets) need.secrets.add(name);
     for (const path of body.uses.variables) need.variables.add(path);
+    for (const path of body.uses.sources ?? []) need.sources.add(path);
     if (body.onFailure?.notify) need.connections.add(body.onFailure.notify);
   }
   const names = async (
@@ -46,6 +48,15 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
     await names("variable_value", "path"),
     await names("secret", "name"),
   ];
+  const sources = new Set(
+    (
+      await trx
+        .selectFrom("data_source_binding")
+        .select("path")
+        .where("workspace_id", "=", workspace.id)
+        .execute()
+    ).map((row) => row.path),
+  );
   const withDefault = new Set(
     manifests
       .filter(
@@ -74,6 +85,13 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
       .map((path) => ({
         path: `/variables/${path}`,
         message: `the variable "${path}" has no value in this workspace and no default`,
+      })),
+    ...[...need.sources]
+      .sort()
+      .filter((path) => !sources.has(path))
+      .map((path) => ({
+        path: `/sources/${path}`,
+        message: `the data source "${path}" is not bound in this workspace`,
       })),
   ];
 }

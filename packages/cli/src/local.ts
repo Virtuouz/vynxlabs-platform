@@ -13,6 +13,13 @@ interface LocalBindings {
   variables?: Record<string, string>;
 }
 
+/** What a local run cannot offer, said plainly. */
+function notLocal(what: string): never {
+  throw new Error(
+    `${what} live in a workspace, so they are not available to a local run. Deploy to a dev workspace to try this script.`,
+  );
+}
+
 /**
  * Runs one script in this process, with connections, secrets and variables
  * read from `.platform/local.json`. Nothing is sent to an instance.
@@ -110,6 +117,9 @@ export async function runLocally(args: string[], io: Io) {
         need("secret", name, body.uses.secrets, bindings.secrets?.[name]),
       variable: async (name: string) =>
         need("variable", name, body.uses.variables, bindings.variables?.[name] ?? defaults[name]),
+      table: () => notLocal("Tables"),
+      source: () => notLocal("Data sources"),
+      files: { put: () => notLocal("Files"), get: () => notLocal("Files") },
       events: {
         publish: async (event: string, payload: unknown) =>
           io.out(`event ${event} ${JSON.stringify(payload)} (not delivered: this is a local run)`),

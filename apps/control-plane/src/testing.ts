@@ -46,6 +46,8 @@ export interface Client {
   put(url: string, body?: unknown): Promise<ApiResponse>;
   patch(url: string, body?: unknown): Promise<ApiResponse>;
   delete(url: string): Promise<ApiResponse>;
+  /** Sends bytes as the request body, as a file upload does. */
+  upload(url: string, content: Buffer | string, contentType: string): Promise<ApiResponse>;
 }
 
 /** A running app on a throwaway database, with the first operator admin created. */
@@ -91,14 +93,23 @@ export async function startTestApp(
   }
 
   function client(headers: Record<string, string>): Client {
-    const call = async (method: string, url: string, body?: unknown): Promise<ApiResponse> => {
+    const call = async (
+      method: string,
+      url: string,
+      body?: unknown,
+      contentType?: string,
+    ): Promise<ApiResponse> => {
       // Webhooks are public and are recorded on the run they start, not in the audit log.
       const mutating = method !== "GET" && !url.startsWith("/hooks/");
       const before = mutating ? await auditCount() : 0;
       const response = await app.inject({
         method: method as "GET",
         url: `/api/v1${url}`,
-        headers: { origin: config.publicUrl, ...headers },
+        headers: {
+          origin: config.publicUrl,
+          ...headers,
+          ...(contentType ? { "content-type": contentType } : {}),
+        },
         ...(body === undefined ? {} : { payload: body as object }),
       });
       if (mutating && response.statusCode < 400) {
@@ -123,6 +134,7 @@ export async function startTestApp(
       put: (url, body) => call("PUT", url, body),
       patch: (url, body) => call("PATCH", url, body ?? {}),
       delete: (url) => call("DELETE", url),
+      upload: (url, content, contentType) => call("POST", url, content, contentType),
     };
   }
 

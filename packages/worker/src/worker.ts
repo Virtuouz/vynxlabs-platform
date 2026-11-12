@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { type Bundle, bundleDigest } from "@vynxlabs/manifest";
-import { type Connector, httpConnector, type ScriptContext } from "@vynxlabs/sdk";
+import { type Connector, httpConnector, type ScriptContext, type TableClient } from "@vynxlabs/sdk";
 
 export type WorkerLog = (
   level: "info" | "warn" | "error",
@@ -252,6 +252,40 @@ export class Worker {
       job.timeoutSeconds * 1000,
     );
 
+    const data = async <T>(
+      table: string,
+      source: string | undefined,
+      as: string | undefined,
+      op: string,
+      args: object,
+    ) =>
+      (
+        await this.#call<{ result: T }>("POST", `${runPath}/data`, {
+          attempt: job.attempt,
+          table,
+          ...(source ? { source } : {}),
+          ...(as ? { as } : {}),
+          op,
+          args,
+        })
+      ).result;
+    const tableClient = <Row, Insert>(
+      table: string,
+      source: string | undefined,
+      as: string | undefined,
+    ): TableClient<Row, Insert> => ({
+      find: async (options = {}) =>
+        (await data<{ items: Row[] }>(table, source, as, "find", options)).items,
+      get: (id) => data<Row | null>(table, source, as, "get", { id }),
+      insert: async (row) =>
+        (await data<Row[]>(table, source, as, "insert", { rows: [row] }))[0] as Row,
+      insertMany: (rows) => data<Row[]>(table, source, as, "insert", { rows }),
+      update: (id, patch) => data<Row>(table, source, as, "update", { id, patch }),
+      delete: async (id) => {
+        await data<null>(table, source, as, "delete", { id });
+      },
+      as: (principalId) => tableClient<Row, Insert>(table, source, principalId),
+    });
     const read = async <T>(path: string) =>
       this.#call<T>("GET", `${runPath}${path}?attempt=${job.attempt}`);
     const context: ScriptContext = {
@@ -266,6 +300,43 @@ export class Worker {
       secret: async (name) =>
         (await read<{ value: string }>(`/secrets/${encodeURIComponent(name)}`)).value,
       variable: async (path) => (await read<{ value: string }>(`/variables/${path}`)).value,
+      table: <Row, Insert>(table: string | { path: string }) =>
+        tableClient<Row, Insert>(
+          typeof table === "string" ? table : table.path,
+          undefined,
+          undefined,
+        ),
+      source: (source) => ({
+        table: (name) =>
+          tableClient<Record<string, unknown>, Partial<Record<string, unknown>>>(
+            name,
+            typeof source === "string" ? source : source.path,
+            undefined,
+          ),
+      }),
+      files: {
+        put: async (name, content, contentType) => {
+          const bytes =
+            typeof content === "string" ? Buffer.from(content, "utf8") : Buffer.from(content);
+          const stored = await this.#call<{ id: string }>("POST", `${runPath}/files`, {
+            attempt: job.attempt,
+            name,
+            ...(contentType ? { contentType } : {}),
+            base64: bytes.toString("base64"),
+          });
+          return { id: stored.id };
+        },
+        get: async (id) => {
+          const file = await read<{ name: string; contentType: string; base64: string }>(
+            `/files/${id}`,
+          );
+          return {
+            name: file.name,
+            contentType: file.contentType,
+            content: new Uint8Array(Buffer.from(file.base64, "base64")),
+          };
+        },
+      },
       events: {
         publish: async (event, payload) => {
           await this.#call("POST", `${runPath}/events`, { attempt: job.attempt, event, payload });

@@ -8,6 +8,7 @@ import { type Database, newId } from "@vynxlabs/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
 import type { Config, LogLevel } from "./config.js";
+import { closeAllSources } from "./kernel/data/sources.js";
 import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
@@ -19,6 +20,7 @@ import { healthRoutes } from "./routes/health.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { permissionRoutes } from "./routes/permissions.js";
+import { sourceRoutes } from "./routes/sources.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -69,6 +71,7 @@ export async function buildApp(options: AppOptions) {
   );
   app.decorate("kernel", kernel);
   app.addHook("onClose", () => kernel.expressions.close());
+  app.addHook("onClose", () => closeAllSources());
 
   app.setErrorHandler(errorHandler);
   app.addHook("onRequest", async (request, reply) => {
@@ -133,6 +136,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(executionRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
+      await api.register(sourceRoutes(kernel));
       await api.register(workerRoutes(kernel));
       api.get(
         "/openapi.json",

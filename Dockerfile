@@ -2,7 +2,7 @@
 FROM node:24-slim AS build
 WORKDIR /repo
 RUN corepack enable
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .pnpmfile.cjs ./
 COPY apps/control-plane/package.json apps/control-plane/
 COPY packages/db/package.json packages/db/
 COPY packages/manifest/package.json packages/manifest/

@@ -1,3 +1,9 @@
 {
-  "0001_tenant.sql": "ab3c816eb17ac7c510332b8bcfef02bcbe0402c2cce8b029a959fed6dac9d52b"
+  "0001_tenant.sql": "ab3c816eb17ac7c510332b8bcfef02bcbe0402c2cce8b029a959fed6dac9d52b",
+  "0002_identity.sql": "5aefd4c60b38be0b96914d9c80528bebe8fcae6adefcccff273cfe70508e6c79",
+  "0003_tenancy.sql": "d42cde40cd8e2185ee90e68f5d27cf951bffccb3d61697f6aaf1b705db35668d",
+  "0004_resources.sql": "116ad180583b8d0e8ccc1a2de1674fb439670b86de94558f59cb12155e0b1137",
+  "0005_permissions.sql": "38eab9c01581a8cff5d90704ee1be66c6487e7bbc9a0e68950e53d3bb064e917",
+  "0006_secrets.sql": "44fc3fd0526da28dccca23c57168985be8956dde0fbe2ce06b9c077dd18a05ec",
+  "0007_audit.sql": "095b96241155d84887ceece0e1b861be56cf43457a339f61c132f3cd641eecea"
 }

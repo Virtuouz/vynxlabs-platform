@@ -252,7 +252,7 @@ The model is role-based access control with groups.
 - A **principal** is a user, a group, a service account or the anonymous principal.
 - A **scope** is the instance, a tenant, a workspace or a single resource.
 
-Tenant admin and workspace admin are roles bound at those scopes. An operator admin exists at instance scope, and its access to tenant data must be visible to the tenant and audited.
+Tenant admin and workspace admin are roles bound at those scopes. An operator admin exists at instance scope and has no access to tenant data by default. To look inside a tenant, an operator opens a time-limited access grant with a stated reason. Each grant, and everything done under it, is audited and visible to the tenant's admins.
 
 ### Rules
 
@@ -263,7 +263,7 @@ Tenant admin and workspace admin are roles bound at those scopes. An operator ad
 
 ### Authentication
 
-Authentication is implemented by a library inside the control plane, so no separate identity server is needed. External single sign-on is supported as a per-tenant option. This choice is provisional.
+Authentication is implemented by a library inside the control plane, Better Auth, so no separate identity server is needed. External single sign-on is supported as a per-tenant option.
 
 ## Data layer
 
@@ -466,9 +466,9 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 - An app is served to members, end users or guests according to its bindings.
 - An app reads and writes data only through the public API, so permissions and row policies always apply.
 
-### Not locked
+### Frontend stack
 
-The frontend framework and the component kit's foundation are chosen in the kernel phase, because the admin console shell is built on them. The app SDK built on that foundation is designed in the apps phase. A drag-and-drop builder is deferred.
+The console and the component kit use Preact and Vite, with the kit built on Base UI and Tailwind. The app SDK built on that foundation is designed in the apps phase. A drag-and-drop builder is deferred.
 
 ## Extensibility
 
@@ -587,9 +587,9 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Control plane language | TypeScript on Node | Locked |
 | Queue engine | An embedded Postgres-native library | Provisional |
 | Flow engine | Built in-house on the queue | Provisional |
-| Authentication | A library inside the control plane, with external single sign-on as an option | Provisional |
+| Authentication | Better Auth inside the control plane, with external single sign-on as an option | Locked |
 | Expression language | Specific language not chosen | Open, flows phase |
-| Frontend framework and component kit | Not chosen | Open, kernel phase for the console, apps phase for the SDK |
+| Frontend framework and component kit | Preact and Vite, with a kit built on Base UI and Tailwind | Locked |
 | Chart library | Vega-Lite is the candidate | Open, apps phase |
 | Hosting provider | Fly.io for Vynxlabs-hosted instances, single-host Compose for VPS and on-prem. No provider is locked in | Locked |
 
@@ -675,14 +675,14 @@ Nothing below is in scope for the early phases, but no design may block the defe
 
 - [x] Confirm the control plane language: TypeScript on Node.
 - [ ] Confirm the queue approach: an embedded Postgres-native library, with the flow engine built in-house.
-- [ ] Confirm the authentication approach: a library inside the control plane.
+- [x] Confirm the authentication approach: Better Auth inside the control plane.
 - [ ] Confirm the remaining provisional rows in the technology decisions table.
 - [ ] Choose the flow expression language.
-- [ ] Choose the frontend framework and the component kit's foundation.
+- [x] Choose the frontend framework and the component kit's foundation: Preact, Vite, Base UI and Tailwind.
 - [ ] Choose a product name and check it for trademark conflicts.
 - [ ] Get legal review of Apache 2.0 together with the contract clause that assigns the tenant repository.
 - [ ] Decide whether a clone of a production workspace is always a dev workspace.
 - [ ] Decide the rollback policy for custom table migrations.
 - [ ] Set default retention for runs and audit entries.
-- [ ] Define what an operator admin can see inside a tenant, and how the tenant is shown that access.
+- [x] Define what an operator admin can see inside a tenant, and how the tenant is shown that access: nothing by default, then explicit time-limited access grants that are audited and listed for the tenant's admins.
 - [x] Choose the hosting provider for the Vynxlabs shared instance: Fly.io.

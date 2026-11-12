@@ -28,6 +28,7 @@ async function createTenant(slug: string, dataLocation?: object) {
     .values({
       id,
       slug,
+      name: slug,
       ...(dataLocation ? { data_location: JSON.stringify(dataLocation) } : {}),
     })
     .execute();

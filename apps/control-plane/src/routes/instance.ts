@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import type { Database } from "@vynxlabs/db";
 import { Type } from "typebox";
+import { access } from "../kernel/http.js";
 
 export function instanceRoutes(deps: {
   database: Database;
@@ -10,6 +11,7 @@ export function instanceRoutes(deps: {
     app.get(
       "/instance",
       {
+        config: { access: access.public },
         schema: {
           summary: "Instance information",
           tags: ["instance"],

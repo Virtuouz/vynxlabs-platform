@@ -1,0 +1,20 @@
+{
+  "name": "@vynxlabs/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.9.0",
+    "preact": "^11.2.0",
+    "react": "npm:@preact/compat@^18.3.2",
+    "react-dom": "npm:@preact/compat@^18.3.2"
+  },
+  "devDependencies": {
+    "@testing-library/preact": "^3.2.6",
+    "happy-dom": "^21.0.4"
+  }
+}

@@ -6,6 +6,9 @@ const valid = {
   S3_BUCKET: "platform",
   S3_ACCESS_KEY_ID: "key",
   S3_SECRET_ACCESS_KEY: "secret",
+  PUBLIC_URL: "https://platform.example.com/",
+  AUTH_SECRET: "a".repeat(32),
+  MASTER_KEY: Buffer.alloc(32, 7).toString("base64"),
 };
 
 function problems(env: Record<string, string | undefined>) {
@@ -33,6 +36,11 @@ describe("configuration", () => {
       host: "0.0.0.0",
       port: 8080,
       logLevel: "info",
+      publicUrl: "https://platform.example.com",
+      authSecret: "a".repeat(32),
+      masterKey: Buffer.alloc(32, 7),
+      bootstrapAdmin: undefined,
+      consoleDir: undefined,
     });
   });
 
@@ -57,6 +65,9 @@ describe("configuration", () => {
   test("reports every missing value at once", () => {
     expect(problems({})).toEqual([
       "DATABASE_URL is required.",
+      "PUBLIC_URL is required.",
+      "AUTH_SECRET is required.",
+      "MASTER_KEY is required.",
       "S3_BUCKET is required.",
       "S3_ACCESS_KEY_ID is required.",
       "S3_SECRET_ACCESS_KEY is required.",
@@ -65,6 +76,37 @@ describe("configuration", () => {
 
   test("treats an empty value as missing", () => {
     expect(problems({ ...valid, S3_BUCKET: "  " })).toEqual(["S3_BUCKET is required."]);
+  });
+
+  test("checks the secrets and the bootstrap admin", () => {
+    expect(
+      problems({
+        ...valid,
+        AUTH_SECRET: "short",
+        MASTER_KEY: "dG9vLXNob3J0",
+        BOOTSTRAP_ADMIN_EMAIL: "Admin@Example.com",
+      }),
+    ).toEqual([
+      "AUTH_SECRET must be at least 32 characters.",
+      "MASTER_KEY must be 32 bytes, base64 encoded. Generate one with: openssl rand -base64 32",
+      "BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD must be set together.",
+    ]);
+    expect(
+      problems({
+        ...valid,
+        BOOTSTRAP_ADMIN_EMAIL: "a@example.com",
+        BOOTSTRAP_ADMIN_PASSWORD: "short",
+      }),
+    ).toEqual(["BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters."]);
+    const config = loadConfig({
+      ...valid,
+      BOOTSTRAP_ADMIN_EMAIL: "Admin@Example.com",
+      BOOTSTRAP_ADMIN_PASSWORD: "a-long-password",
+    });
+    expect(config.bootstrapAdmin).toEqual({
+      email: "admin@example.com",
+      password: "a-long-password",
+    });
   });
 
   test("reports malformed values", () => {

@@ -1,3 +1,5 @@
+export type { Kysely, Transaction } from "kysely";
+export { sql } from "kysely";
 export { Database, type DatabaseOptions } from "./database.js";
 export {
   DatabaseNewerThanCodeError,
@@ -10,4 +12,11 @@ export {
 export { isId, newId } from "./id.js";
 export type { MigrationResult } from "./migrate.js";
 export { type TenantHandle, TenantRouter } from "./router.js";
-export type { DataLocation, PlatformSchema } from "./schema.js";
+export type {
+  DataLocation,
+  Ownership,
+  PlatformSchema,
+  PrincipalType,
+  ScopeType,
+  WorkspaceType,
+} from "./schema.js";

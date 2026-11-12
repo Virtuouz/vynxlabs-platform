@@ -8,9 +8,12 @@
   ],
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1167.0",
+    "@fastify/static": "^10.1.10",
     "@fastify/swagger": "^9.9.3",
     "@fastify/type-provider-typebox": "^6.3.0",
     "@vynxlabs/db": "workspace:*",
+    "@vynxlabs/manifest": "workspace:*",
+    "better-auth": "^1.7.21",
     "fastify": "^5.12.8",
     "typebox": "^1.4.6"
   }

@@ -4,6 +4,7 @@ import type { RouteOptions } from "fastify";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { buildApp } from "./app.js";
 import type { ObjectStore } from "./storage.js";
+import { testConfig } from "./testing.js";
 
 let testDb: TestDatabase;
 let database: Database;
@@ -27,6 +28,7 @@ beforeAll(async () => {
     database,
     storage,
     version: "1.2.3",
+    config: testConfig(),
     onRoute: (route) => routes.push(route),
   });
   // A route that exists only to exercise validation and failure handling.
@@ -104,17 +106,32 @@ describe("API description", () => {
     expect(description.openapi).toBe("3.1.0");
     expect(description.info.version).toBe("1.2.3");
 
-    const api = routes.filter((route) => route.url.startsWith("/api/") && route.method !== "HEAD");
-    expect(api.map((route) => route.url).sort()).toEqual([
-      "/api/v1/healthz",
-      "/api/v1/instance",
-      "/api/v1/openapi.json",
-      "/api/v1/readyz",
-    ]);
+    const api = routes.filter(
+      (route) =>
+        route.url.startsWith("/api/") && route.method !== "HEAD" && !route.url.includes("/auth/"),
+    );
+    expect(api.length).toBeGreaterThan(40);
     for (const route of api) {
+      // The description writes a parameter as {name} and a wildcard as {*}.
+      const path = route.url.replace(/:(\w+)/g, "{$1}").replace(/\*$/, "{*}");
       expect(route.schema?.response, `${route.url} needs a response schema`).toBeDefined();
-      expect(description.paths[route.url], `${route.url} is not described`).toBeDefined();
+      expect(description.paths[path], `${route.url} is not described`).toBeDefined();
     }
+  });
+
+  test("includes the sign-in routes served by the authentication library", async () => {
+    const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
+    expect(description.paths["/api/v1/auth/sign-in/email"]).toBeDefined();
+    expect(description.paths["/api/v1/auth/sign-out"]).toBeDefined();
+    expect(description.paths["/api/v1/auth/get-session"]).toBeDefined();
+  });
+
+  test("every route declares how it decides access", () => {
+    const undeclared = routes
+      .filter((route) => route.url.startsWith("/api/"))
+      .filter((route) => !(route.config as { access?: unknown } | undefined)?.access)
+      .map((route) => `${route.method} ${route.url}`);
+    expect(undeclared).toEqual([]);
   });
 });
 

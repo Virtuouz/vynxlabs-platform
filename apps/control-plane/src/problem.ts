@@ -1,6 +1,7 @@
 import { STATUS_CODES } from "node:http";
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { type Static, Type } from "typebox";
+import { HttpError } from "./kernel/errors.js";
 
 /** RFC 9457 problem details, plus a stable code and the request ID. */
 export const Problem = Type.Object(
@@ -61,7 +62,30 @@ export function notFoundHandler(request: FastifyRequest, reply: FastifyReply) {
   });
 }
 
-export function errorHandler(error: FastifyError, request: FastifyRequest, reply: FastifyReply) {
+/** Postgres error codes that are the caller's doing, not ours. */
+const DATABASE_ERRORS: Record<string, [number, string, string]> = {
+  "23505": [409, "conflict", "That already exists."],
+  "23503": [
+    409,
+    "conflict",
+    "It refers to something that does not exist, or is still referred to.",
+  ],
+  "23514": [400, "bad_request", "A value is not allowed."],
+  "22P02": [400, "bad_request", "A value is malformed."],
+};
+
+export function errorHandler(
+  error: FastifyError | HttpError,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  if (error instanceof HttpError) {
+    return sendProblem(request, reply, error.statusCode, {
+      code: error.problemCode,
+      detail: error.message,
+      ...(error.issues ? { errors: error.issues } : {}),
+    });
+  }
   if (error.validation) {
     const where = error.validationContext ?? "body";
     return sendProblem(request, reply, 400, {
@@ -72,6 +96,10 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
         message: issue.message ?? "is invalid",
       })),
     });
+  }
+  const database = typeof error.code === "string" ? DATABASE_ERRORS[error.code] : undefined;
+  if (database) {
+    return sendProblem(request, reply, database[0], { code: database[1], detail: database[2] });
   }
   const status = error.statusCode ?? 500;
   if (status >= 500) {

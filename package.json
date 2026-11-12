@@ -27,5 +27,11 @@
     "@types/node": "^24.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "npm:@preact/compat@^18.3.2",
+      "react-dom": "npm:@preact/compat@^18.3.2"
+    }
   }
 }

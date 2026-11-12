@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import type { Database } from "@vynxlabs/db";
 import { Type } from "typebox";
+import { access } from "../kernel/http.js";
 import type { ObjectStore } from "../storage.js";
 
 const Check = Type.Object({ ok: Type.Boolean(), error: Type.Optional(Type.String()) });
@@ -37,6 +38,7 @@ export function healthRoutes(deps: {
     app.get(
       "/healthz",
       {
+        config: { access: access.public },
         schema: {
           summary: "Liveness",
           description: "Returns 200 whenever the process is serving requests.",
@@ -50,6 +52,7 @@ export function healthRoutes(deps: {
     app.get(
       "/readyz",
       {
+        config: { access: access.public },
         schema: {
           summary: "Readiness",
           description:

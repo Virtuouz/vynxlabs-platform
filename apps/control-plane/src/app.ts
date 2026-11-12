@@ -1,12 +1,22 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { type Database, newId } from "@vynxlabs/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
-import type { LogLevel } from "./config.js";
+import type { Config, LogLevel } from "./config.js";
+import { access, installAccessControl } from "./kernel/http.js";
+import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
+import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
+import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
+import { permissionRoutes } from "./routes/permissions.js";
+import { tenantRoutes } from "./routes/tenants.js";
+import { workspaceRoutes } from "./routes/workspaces.js";
 import type { ObjectStore } from "./storage.js";
 
 export const API_PREFIX = "/api/v1";
@@ -17,24 +27,36 @@ export interface AppOptions {
   database: Database;
   storage: ObjectStore;
   version: string;
+  config: Config;
   /** Omit to disable logging. */
   logLevel?: LogLevel;
   /** Receives every registered route. For tests. */
   onRoute?: (route: RouteOptions) => void;
 }
 
+/** The built console, when there is one to serve. */
+function consoleDirectory(config: Config): string | undefined {
+  if (config.consoleDir) return config.consoleDir;
+  const inRepo = fileURLToPath(new URL("../../console/dist", import.meta.url));
+  return existsSync(inRepo) ? inRepo : undefined;
+}
+
 export async function buildApp(options: AppOptions) {
   const app = Fastify({
     logger: options.logLevel ? { level: options.logLevel } : false,
     requestIdHeader: false,
+    // Behind a proxy, the caller's address is in the forwarding header.
+    trustProxy: true,
     genReqId: (request) => {
       const incoming = request.headers["x-request-id"];
       return typeof incoming === "string" && REQUEST_ID.test(incoming) ? incoming : newId();
     },
   }).withTypeProvider<TypeBoxTypeProvider>();
 
+  const kernel = createKernel(options.database, options.config, app.log);
+  app.decorate("kernel", kernel);
+
   app.setErrorHandler(errorHandler);
-  app.setNotFoundHandler(notFoundHandler);
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
   });
@@ -48,29 +70,83 @@ export async function buildApp(options: AppOptions) {
         version: options.version,
         description:
           "The one public API of the platform. Errors are RFC 9457 problem details " +
-          "(application/problem+json) with a stable `code` and the `requestId`.",
+          "(application/problem+json) with a stable `code` and the `requestId`. " +
+          "Sign in through `/api/v1/auth/sign-in/email` for a session cookie, or send " +
+          "`Authorization: Bearer <api key>`.",
       },
     },
   });
 
+  let description: Record<string, unknown> | undefined;
+  /** Our routes plus the authentication library's, as one description. */
+  async function describe() {
+    if (description) return description;
+    const own = app.swagger() as unknown as {
+      paths: Record<string, unknown>;
+      components?: { schemas?: Record<string, unknown> };
+    };
+    const auth = (await kernel.auth.api.generateOpenAPISchema()) as {
+      paths: Record<string, unknown>;
+      components?: { schemas?: Record<string, unknown> };
+    };
+    const authPaths = Object.fromEntries(
+      Object.entries(auth.paths).map(([path, item]) => [`${API_PREFIX}/auth${path}`, item]),
+    );
+    description = {
+      ...own,
+      paths: { ...own.paths, ...authPaths },
+      components: {
+        ...own.components,
+        schemas: { ...auth.components?.schemas, ...own.components?.schemas },
+      },
+    };
+    return description;
+  }
+
   await app.register(
     async (api) => {
+      installAccessControl(api, kernel);
       await api.register(healthRoutes(options));
       await api.register(instanceRoutes(options));
+      await api.register(authRoutes(kernel));
+      await api.register(identityRoutes(kernel));
+      await api.register(tenantRoutes(kernel));
+      await api.register(permissionRoutes(kernel));
+      await api.register(workspaceRoutes(kernel));
       api.get(
         "/openapi.json",
         {
+          config: { access: access.public },
           schema: {
             summary: "This API description",
             tags: ["instance"],
             response: { 200: Type.Object({}, { additionalProperties: true }) },
           },
         },
-        async () => app.swagger(),
+        async () => describe(),
       );
     },
     { prefix: API_PREFIX },
   );
 
+  const consoleDir = consoleDirectory(options.config);
+  if (consoleDir) {
+    await app.register(fastifyStatic, { root: consoleDir, wildcard: false });
+  }
+  app.setNotFoundHandler((request, reply) => {
+    const isApi = request.url === "/api" || request.url.startsWith("/api/");
+    // The console is a single-page app: any other path is one of its screens.
+    if (consoleDir && request.method === "GET" && !isApi) {
+      return reply.sendFile("index.html");
+    }
+    return notFoundHandler(request, reply);
+  });
+
   return app;
+}
+
+declare module "fastify" {
+  interface FastifyInstance {
+    kernel: Kernel;
+  }
 }

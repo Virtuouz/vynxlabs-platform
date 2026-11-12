@@ -11,7 +11,18 @@ export interface Config {
   host: string;
   port: number;
   logLevel: LogLevel;
+  /** The URL people use to reach the instance. No trailing slash. */
+  publicUrl: string;
+  authSecret: string;
+  /** 32 bytes. Wraps each tenant's data key. */
+  masterKey: Buffer;
+  /** Creates the first operator admin when the instance has no members. */
+  bootstrapAdmin: { email: string; password: string } | undefined;
+  /** Directory holding the built console. Undefined when the console is not served. */
+  consoleDir: string | undefined;
 }
+
+export const MIN_PASSWORD_LENGTH = 12;
 
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -67,6 +78,30 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     problems.push(`LOG_LEVEL must be one of ${LOG_LEVELS.join(", ")}.`);
   }
 
+  const publicUrl = required("PUBLIC_URL");
+  url("PUBLIC_URL", value("PUBLIC_URL"), ["http:", "https:"]);
+
+  const authSecret = required("AUTH_SECRET");
+  if (authSecret !== "" && authSecret.length < 32) {
+    problems.push("AUTH_SECRET must be at least 32 characters.");
+  }
+
+  const masterKey = Buffer.from(required("MASTER_KEY"), "base64");
+  if (value("MASTER_KEY") !== undefined && masterKey.length !== 32) {
+    problems.push(
+      "MASTER_KEY must be 32 bytes, base64 encoded. Generate one with: openssl rand -base64 32",
+    );
+  }
+
+  const bootstrapEmail = value("BOOTSTRAP_ADMIN_EMAIL");
+  const bootstrapPassword = value("BOOTSTRAP_ADMIN_PASSWORD");
+  if ((bootstrapEmail === undefined) !== (bootstrapPassword === undefined)) {
+    problems.push("BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD must be set together.");
+  }
+  if (bootstrapPassword !== undefined && bootstrapPassword.length < MIN_PASSWORD_LENGTH) {
+    problems.push(`BOOTSTRAP_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+  }
+
   const config: Config = {
     databaseUrl,
     s3: {
@@ -80,6 +115,14 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     host: value("HOST") ?? "0.0.0.0",
     port,
     logLevel: logLevel as LogLevel,
+    publicUrl: publicUrl.replace(/\/+$/, ""),
+    authSecret,
+    masterKey,
+    bootstrapAdmin:
+      bootstrapEmail !== undefined && bootstrapPassword !== undefined
+        ? { email: bootstrapEmail.toLowerCase(), password: bootstrapPassword }
+        : undefined,
+    consoleDir: value("CONSOLE_DIR"),
   };
 
   if (problems.length > 0) throw new ConfigError(problems);

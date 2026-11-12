@@ -1,6 +1,7 @@
 import { Database } from "@vynxlabs/db";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
+import { bootstrapAdmin } from "./kernel/bootstrap.js";
 import { S3ObjectStore } from "./storage.js";
 import { version } from "./version.js";
 
@@ -22,7 +23,7 @@ const database = new Database({
   connectionString: config.databaseUrl,
   onConnectionError: (error) => app.log.warn({ err: error }, "idle database connection failed"),
 });
-const app = await buildApp({ database, storage, version, logLevel: config.logLevel });
+const app = await buildApp({ database, storage, version, config, logLevel: config.logLevel });
 
 app.addHook("onClose", async () => {
   await database.close();
@@ -53,6 +54,7 @@ try {
   );
   await storage.ensureBucket();
   app.log.info({ bucket: config.s3.bucket }, "object store is ready");
+  await bootstrapAdmin(app.kernel, app.log);
   await app.listen({ host: config.host, port: config.port });
   app.log.info({ version }, "control plane started");
 } catch (error) {

@@ -3,6 +3,7 @@ import { api, type Me, useLoad } from "./api.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
+import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
@@ -38,6 +39,8 @@ export function App() {
   else if (path === "/instance/members") screen = <InstanceMembers />;
   else if (path === "/instance/operators") screen = <Operators />;
   else if (path === "/instance/audit") screen = <InstanceAudit />;
+  else if (path === "/instance/databases") screen = <DatabaseLocations />;
+  else if (path === "/instance/import") screen = <TenantImport />;
 
   return (
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>

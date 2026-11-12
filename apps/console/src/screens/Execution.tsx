@@ -540,6 +540,7 @@ export function Workers({ base }: { base: string }) {
   const live = useLoad<{
     items: { id: string; credentialName: string; managed: boolean; lastSeenAt: string }[];
   }>(`${base}/workers`);
+  const tenant = useLoad<{ managedWorkers: boolean }>(base);
   return (
     <div class="flex flex-col gap-8">
       <Page
@@ -560,15 +561,39 @@ export function Workers({ base }: { base: string }) {
           </ul>
         ) : (
           <p class="m-0 text-ink-muted">
-            No worker is running right now. One starts when a script needs to run.
+            No worker is running right now.
+            {tenant.data?.managedWorkers === false
+              ? " This tenant runs on its own workers: start one with a credential from below."
+              : " One starts when a script needs to run."}
           </p>
         )}
+        {tenant.data ? (
+          <div class="flex flex-wrap items-center gap-3">
+            <span>
+              {tenant.data.managedWorkers
+                ? "The instance starts workers for this tenant."
+                : "The instance starts no workers for this tenant."}
+            </span>
+            <Button
+              size="small"
+              onClick={async () => {
+                await api.patch(base, { managedWorkers: !tenant.data?.managedWorkers });
+                tenant.reload();
+              }}
+            >
+              {tenant.data.managedWorkers
+                ? "Run only on our own workers"
+                : "Let the instance run workers"}
+            </Button>
+          </div>
+        ) : null}
       </Page>
       <ListScreen<{
         id: string;
         name: string;
         prefix: string;
         workspaceId: string | null;
+        pool: string | null;
         revokedAt: string | null;
         createdAt: string;
       }>
@@ -579,6 +604,11 @@ export function Workers({ base }: { base: string }) {
         columns={[
           { header: "Name", cell: (row) => row.name },
           { header: "Credential", cell: (row) => code(`${row.prefix}…`) },
+          {
+            header: "Runs",
+            cell: (row) =>
+              row.pool ? `Scripts of the pool "${row.pool}"` : "Scripts that name no pool",
+          },
           { header: "Created", cell: (row) => when(row.createdAt) },
           {
             header: "Status",
@@ -596,8 +626,18 @@ export function Workers({ base }: { base: string }) {
         }}
         create={{
           action: "Create credential",
-          fields: [{ name: "name", label: "Name", placeholder: "Warehouse network" }],
-          submit: (values) => api.post(`${base}/worker-credentials`, values),
+          fields: [
+            { name: "name", label: "Name", placeholder: "Warehouse network" },
+            {
+              name: "pool",
+              label: "Pool",
+              required: false,
+              placeholder: "warehouse",
+              hint: "Leave empty to run scripts that name no pool. With a pool, the worker runs only the scripts that name it.",
+            },
+          ],
+          submit: ({ name, pool }) =>
+            api.post(`${base}/worker-credentials`, { name, ...(pool ? { pool } : {}) }),
           afterCreate: (result) => (
             <span>
               Copy this credential now. It is not shown again:{" "}

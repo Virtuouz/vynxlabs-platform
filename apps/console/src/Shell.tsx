@@ -46,6 +46,7 @@ export const TENANT_SECTIONS = [
   ["access", "Access"],
   ["operator-access", "Operator access"],
   ["audit", "Audit log"],
+  ["export", "Export"],
 ] as const;
 
 export function Shell({
@@ -95,6 +96,12 @@ export function Shell({
             </NavLink>
             <NavLink to="/instance/operators" path={path}>
               Operators
+            </NavLink>
+            <NavLink to="/instance/databases" path={path}>
+              Database locations
+            </NavLink>
+            <NavLink to="/instance/import" path={path}>
+              Import a tenant
             </NavLink>
             <NavLink to="/instance/audit" path={path}>
               Instance audit log

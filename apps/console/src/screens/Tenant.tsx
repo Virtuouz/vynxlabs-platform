@@ -13,6 +13,7 @@ import { Link, match } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { AuditTable } from "./Audit.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
+import { Promotion, TenantExport, WorkspaceControls } from "./Environments.tsx";
 import {
   Connections,
   Deployments,
@@ -40,6 +41,7 @@ interface Workspace {
   name: string;
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
+  triggersPaused: boolean;
 }
 interface Grant {
   id: string;
@@ -200,6 +202,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <Access base={base} />
       ) : section === "operator-access" ? (
         <OperatorAccess base={base} />
+      ) : section === "export" ? (
+        <ExportSection base={base} />
       ) : section === "audit" ? (
         <AuditTable
           title="Audit log"
@@ -287,6 +291,13 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
   );
 }
 
+function ExportSection({ base }: { base: string }) {
+  const tenant = useLoad<{ slug: string }>(base);
+  if (tenant.error) return <Notice tone="danger">{tenant.error.message}</Notice>;
+  if (!tenant.data) return null;
+  return <TenantExport base={base} slug={tenant.data.slug} />;
+}
+
 function WorkspaceDetail({
   base,
   tenantId,
@@ -325,7 +336,14 @@ function WorkspaceDetail({
         <span class="text-ink-muted">/</span>
         <span class="font-medium">{workspace.data.name}</span>
         <TypeBadge type={workspace.data.type} />
+        {workspace.data.triggersPaused ? <Badge tone="attention">Paused</Badge> : null}
       </div>
+      <WorkspaceControls
+        base={base}
+        tenantId={tenantId}
+        workspace={workspace.data}
+        reload={workspace.reload}
+      />
       <nav aria-label="Workspace" class="flex flex-wrap gap-x-5 border-line border-b">
         {link("flows", "Flows")}
         {link("scripts", "Scripts")}
@@ -390,7 +408,10 @@ function WorkspaceDetail({
       ) : tab === "triggers" ? (
         <Triggers root={root} />
       ) : tab === "deployments" ? (
-        <Deployments root={root} />
+        <div class="flex flex-col gap-6">
+          <Promotion base={base} workspace={workspace.data} reload={workspace.reload} />
+          <Deployments root={root} />
+        </div>
       ) : tab === "connections" ? (
         <Connections root={root} />
       ) : tab === "variables" ? (

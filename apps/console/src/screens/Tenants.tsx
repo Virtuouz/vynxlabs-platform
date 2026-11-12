@@ -1,11 +1,13 @@
 import { api, isOperator, type Me } from "../api.ts";
 import { ListScreen, when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
+import { DeleteTenantButton } from "./Environments.tsx";
 
 interface TenantRow {
   id: string;
   slug: string;
   name: string;
+  dataLocation: string | null;
   createdAt: string;
 }
 
@@ -31,6 +33,14 @@ export function Tenants({ me }: { me: Me }) {
           ),
         },
         { header: "Slug", cell: (row) => <code class="font-mono text-[13px]">{row.slug}</code> },
+        ...(operator
+          ? [
+              {
+                header: "Tables kept in",
+                cell: (row: TenantRow) => row.dataLocation ?? "The instance's database",
+              },
+            ]
+          : []),
         { header: "Created", cell: (row) => when(row.createdAt) },
       ]}
       empty={{
@@ -51,9 +61,19 @@ export function Tenants({ me }: { me: Me }) {
                   placeholder: "acme",
                   hint: "Lowercase letters, digits and hyphens. It cannot be changed later.",
                 },
+                {
+                  name: "dataLocation",
+                  label: "Database location",
+                  required: false,
+                  hint: "Leave empty for the instance's own database. Otherwise the name of a registered location. It is chosen once.",
+                },
               ],
-              submit: (values) => api.post("/tenants", values),
+              submit: ({ name, slug, dataLocation }) =>
+                api.post("/tenants", { name, slug, ...(dataLocation ? { dataLocation } : {}) }),
             },
+            rowActions: (row: TenantRow, reload: () => void) => (
+              <DeleteTenantButton tenant={row} onDone={reload} />
+            ),
           }
         : {})}
     />

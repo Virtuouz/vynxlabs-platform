@@ -336,6 +336,8 @@ describe("serving by path, on the instance's own address", () => {
     expect(page.body).toContain('name="return" value="/apps/acme/main/portal/"');
     expect(page.headers["content-security-policy"]).toContain("default-src 'none'");
     expect(page.body).not.toContain("<script");
+    // Its policy allows no inline style either, so it must carry none.
+    expect(page.body).not.toContain("style=");
 
     const staff = browser(t, MAIN);
     expect(await staff.signInMember("alice@acme.example", PASSWORD)).toBe(200);
@@ -477,6 +479,7 @@ describe("end users", () => {
 
     const home = await visitor.get("/portal/acme/");
     expect(home.body).toContain('href="/apps/acme/main/portal/"');
+    expect(home.body).not.toContain("style=");
     expect(home.body).toContain("Order status");
     expect((await visitor.form("/portal/acme/sign-out", {})).status).toBe(303);
     expect((await visitor.get("/apps/acme/main/portal/")).status).toBe(303);

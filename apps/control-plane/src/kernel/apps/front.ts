@@ -388,12 +388,13 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         "resource.body",
         "resource.workspace_id",
         "workspace.slug",
-        "workspace.type",
       ])
       .where("resource.tenant_id", "=", tenant.id)
       .where("resource.kind", "=", "app")
       .where("workspace.active_bundle_id", "is not", null)
-      .orderBy("workspace.type", "desc")
+      // A dev workspace's copy of an app is for the people working on it, who have its address.
+      .where("workspace.type", "=", "production")
+      .orderBy("workspace.slug")
       .orderBy("resource.path")
       .limit(100)
       .execute();
@@ -412,10 +413,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           workspaceSlug: row.slug,
           path: row.path,
         }),
-        title:
-          row.type === "production"
-            ? (body.title ?? row.path)
-            : `${body.title ?? row.path} (${row.slug})`,
+        title: body.title ?? row.path,
         description: body.description,
       });
     }

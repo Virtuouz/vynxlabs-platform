@@ -50,6 +50,7 @@ button.plain { color: var(--vx-ink); background: var(--vx-sunken); }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: var(--vx-radius-control); font-size: 14px; }
 .notice.danger { background: var(--vx-danger-soft); color: var(--vx-danger); }
 .notice.success { background: var(--vx-success-soft); color: var(--vx-success); }
+p.who { margin: 20px 0 0; }
 nav { margin-top: 20px; display: grid; gap: 8px; font-size: 14px; }
 a { color: var(--vx-action); }
 ul.apps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -209,7 +210,7 @@ export function messagePage(
 ${message.link ? `<a class="button" href="${escapeHtml(message.link.href)}">${escapeHtml(message.link.label)}</a>` : ""}
 ${
   signOut
-    ? `<form method="post" action="${escapeHtml(signOut.portal)}/sign-out"><p style="margin-top:20px">Signed in as ${escapeHtml(signOut.who)}.</p><button class="plain" type="submit">Sign out</button></form>`
+    ? `<form method="post" action="${escapeHtml(signOut.portal)}/sign-out"><p class="who">Signed in as ${escapeHtml(signOut.who)}.</p><button class="plain" type="submit">Sign out</button></form>`
     : ""
 }`,
   );
@@ -239,7 +240,7 @@ export function homePage(
 ${list}
 ${
   at.who
-    ? `<form method="post" action="${escapeHtml(at.portal)}/sign-out"><p style="margin-top:20px">Signed in as ${escapeHtml(at.who)}.</p><button class="plain" type="submit">Sign out</button></form>`
+    ? `<form method="post" action="${escapeHtml(at.portal)}/sign-out"><p class="who">Signed in as ${escapeHtml(at.who)}.</p><button class="plain" type="submit">Sign out</button></form>`
     : `<a class="button" href="${escapeHtml(at.portal)}/sign-in">Sign in</a>`
 }`,
   );

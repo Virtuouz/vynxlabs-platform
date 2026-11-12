@@ -296,7 +296,7 @@ Checked on 2026-11-11 against the build on the `phase-1-kernel` branch.
 | Every change is audited | Passed. A test fails if any route that changes something is not exercised, or succeeds without leaving an audit entry |
 | The same flow through the console in a real browser | Passed, driven by a script against a local instance |
 | The image boots as the single-host stack, serves the console and signs in the bootstrap admin | Passed |
-| Tests pass on Postgres 16 and 18 | See the phase summary |
+| All 112 tests pass on Postgres 16 and 18 | Passed |
 
 ### Known gaps
 

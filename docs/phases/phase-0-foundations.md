@@ -222,7 +222,45 @@ Integration tests need a Postgres. They read `TEST_DATABASE_URL` and create a th
 
 ## Check against the master spec
 
-To be completed when the build is verified: the twelve guiding principles and the ownership-promise table, each marked as met, not applicable to this phase, or weakened.
+Checked on 2026-11-11 against the build on the `phase-0-foundations` branch.
+
+### Guiding principles
+
+| Principle | Result |
+| --- | --- |
+| 1. One platform, one experience | Not applicable yet. The one API and its conventions are in place |
+| 2. Everything is a resource | Met. One envelope and one registry for every kind |
+| 3. Code first, git as the source of truth | Not applicable yet |
+| 4. Language-neutral core | Met. The manifest contract is plain JSON Schema in `schemas/` |
+| 5. Same software everywhere | Met. One image ran locally and in the Compose stack, configured only by environment variables |
+| 6. Minimal footprint | Met. The stack is the control plane, Postgres and an S3-compatible store. It booted on a network with no internet access |
+| 7. No central dependency | Met. The control plane makes no outbound call beyond Postgres and the object store. Telemetry in the bundled object store is switched off |
+| 8. Tenant portability | Not weakened. Data location is on the tenant record and every access resolves through the router |
+| 9. The core uses its own SDK | Not applicable yet |
+| 10. Reuse libraries and engines, not applications | Met. Dependencies are libraries. The object store is a separate, replaceable service with no user-facing interface |
+| 11. Keep the end-user version possible | Met. Kinds are described by JSON Schema, which can drive forms later |
+| 12. Kernel before features | Met. No placeholder packages or speculative features |
+
+### Ownership promise
+
+| Promise | Result |
+| --- | --- |
+| You own the code | Not weakened. The repository builds with public dependencies only |
+| You own the data | Not weakened. Export arrives in phase 5. Nothing here blocks it |
+| You own the keys | Not applicable yet. Secrets arrive in phase 1 |
+| No lock-in | Met. No license check, call home or kill switch. The license allowlist is enforced in CI |
+| Any location | Met for local and single-host. The Fly.io deploy is the remaining check |
+
+### Exit criterion
+
+| Check | Result |
+| --- | --- |
+| Boots locally with `pnpm dev`, migrations run on start | Passed |
+| Boots as the Compose stack from clean, migrations run on start | Passed |
+| A restart applies no migration twice | Passed |
+| Boots with no internet access | Passed |
+| Tests pass on Postgres 16 and 18 | Passed |
+| Boots on Fly.io | Not run yet. Needs the owner's Fly account |
 
 ## Proposed deviations
 

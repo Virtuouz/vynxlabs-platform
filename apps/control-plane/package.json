@@ -11,7 +11,6 @@
     "@fastify/swagger": "^9.9.3",
     "@fastify/type-provider-typebox": "^6.3.0",
     "@vynxlabs/db": "workspace:*",
-    "@vynxlabs/manifest": "workspace:*",
     "fastify": "^5.12.8",
     "typebox": "^1.4.6"
   }

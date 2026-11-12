@@ -5,5 +5,5 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "references": [{ "path": "../../packages/db" }, { "path": "../../packages/manifest" }]
+  "references": [{ "path": "../../packages/db" }]
 }

@@ -35,9 +35,6 @@ importers:
       '@vynxlabs/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@vynxlabs/manifest':
-        specifier: workspace:*
-        version: link:../../packages/manifest
       fastify:
         specifier: ^5.12.8
         version: 5.12.8

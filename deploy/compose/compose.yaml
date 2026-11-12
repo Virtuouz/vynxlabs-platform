@@ -1,0 +1,73 @@
+# The whole platform on one machine: on-prem sites and single VPS installs.
+#
+#   cp deploy/compose/.env.example deploy/compose/.env    # then set the secrets
+#   docker compose -f deploy/compose/compose.yaml up -d
+#
+# Set PLATFORM_IMAGE to run a published image instead of building from source.
+name: vynxlabs-platform
+
+services:
+  control-plane:
+    image: ${PLATFORM_IMAGE:-vynxlabs-platform:local}
+    build:
+      context: ../..
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      objectstore:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/platform
+      S3_ENDPOINT: http://objectstore:8333
+      S3_BUCKET: platform
+      S3_ACCESS_KEY_ID: platform
+      S3_SECRET_ACCESS_KEY: ${OBJECTSTORE_SECRET:?set OBJECTSTORE_SECRET in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${PLATFORM_BIND:-127.0.0.1:8080}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/api/v1/readyz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: platform
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  objectstore:
+    image: chrislusf/seaweedfs:4.53
+    restart: unless-stopped
+    # Telemetry off: the platform must never call home, and neither may its bundled services.
+    command: server -s3 -dir=/data -ip.bind=0.0.0.0 -master.telemetry=false
+    environment:
+      AWS_ACCESS_KEY_ID: platform
+      AWS_SECRET_ACCESS_KEY: ${OBJECTSTORE_SECRET:?set OBJECTSTORE_SECRET in .env}
+    volumes:
+      - objectstore:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres:
+  objectstore:

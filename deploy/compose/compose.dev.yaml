@@ -19,5 +19,23 @@ services:
       timeout: 5s
       retries: 30
 
+  objectstore:
+    image: chrislusf/seaweedfs:4.53
+    # Telemetry off: the platform must never call home, and neither may its bundled services.
+    command: server -s3 -dir=/data -ip.bind=0.0.0.0 -master.telemetry=false
+    environment:
+      AWS_ACCESS_KEY_ID: platform
+      AWS_SECRET_ACCESS_KEY: platform-dev-secret
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - objectstore:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
 volumes:
   postgres:
+  objectstore:

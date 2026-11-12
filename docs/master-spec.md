@@ -468,7 +468,7 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 
 ### Not locked
 
-The frontend framework and the component kit's foundation are chosen in the apps phase. A drag-and-drop builder is deferred.
+The frontend framework and the component kit's foundation are chosen in the kernel phase, because the admin console shell is built on them. The app SDK built on that foundation is designed in the apps phase. A drag-and-drop builder is deferred.
 
 ## Extensibility
 
@@ -584,14 +584,14 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Tenant portability | Data routing per tenant, plus export and import | Provisional |
 | Secrets | Encrypted with a key per tenant | Provisional |
 | Clone safety default | Triggers paused and connections unbound unless switched off | Provisional |
-| Control plane language | TypeScript on Node | Provisional |
+| Control plane language | TypeScript on Node | Locked |
 | Queue engine | An embedded Postgres-native library | Provisional |
 | Flow engine | Built in-house on the queue | Provisional |
 | Authentication | A library inside the control plane, with external single sign-on as an option | Provisional |
 | Expression language | Specific language not chosen | Open, flows phase |
 | Frontend framework and component kit | Not chosen | Open, kernel phase for the console, apps phase for the SDK |
 | Chart library | Vega-Lite is the candidate | Open, apps phase |
-| Hosting provider | Any container host with managed Postgres | Open, foundations phase |
+| Hosting provider | Fly.io for Vynxlabs-hosted instances, single-host Compose for VPS and on-prem. No provider is locked in | Locked |
 
 ### Considered and not adopted
 
@@ -673,7 +673,7 @@ Nothing below is in scope for the early phases, but no design may block the defe
 
 ### Open questions for the owner
 
-- [ ] Confirm the control plane language: TypeScript on Node.
+- [x] Confirm the control plane language: TypeScript on Node.
 - [ ] Confirm the queue approach: an embedded Postgres-native library, with the flow engine built in-house.
 - [ ] Confirm the authentication approach: a library inside the control plane.
 - [ ] Confirm the remaining provisional rows in the technology decisions table.
@@ -685,4 +685,4 @@ Nothing below is in scope for the early phases, but no design may block the defe
 - [ ] Decide the rollback policy for custom table migrations.
 - [ ] Set default retention for runs and audit entries.
 - [ ] Define what an operator admin can see inside a tenant, and how the tenant is shown that access.
-- [ ] Choose the hosting provider for the Vynxlabs shared instance.
+- [x] Choose the hosting provider for the Vynxlabs shared instance: Fly.io.

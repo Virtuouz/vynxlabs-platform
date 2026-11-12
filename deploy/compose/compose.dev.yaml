@@ -1,0 +1,23 @@
+# Backing services for local development and tests. The control plane itself
+# runs on the host with `pnpm dev`.
+name: vynxlabs-platform-dev
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres:

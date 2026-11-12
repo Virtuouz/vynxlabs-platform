@@ -1,0 +1,61 @@
+{
+  "type": "object",
+  "required": [
+    "kind",
+    "schemaVersion",
+    "path",
+    "workspace",
+    "ownership",
+    "body"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 63,
+      "description": "The resource kind, for example script."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The version of this kind's body schema."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255,
+      "description": "Human-readable name, unique within the workspace."
+    },
+    "workspace": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 63,
+      "description": "Slug of the workspace the resource belongs to."
+    },
+    "ownership": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "code"
+        },
+        {
+          "type": "string",
+          "const": "ui"
+        }
+      ],
+      "description": "Whether the resource is managed from a repository or from the interface."
+    },
+    "body": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      },
+      "description": "Kind-specific definition, validated by the kind's own schema."
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "manifest.schema.json",
+  "title": "Manifest",
+  "description": "The authored, language-neutral description of a resource.",
+  "additionalProperties": false
+}

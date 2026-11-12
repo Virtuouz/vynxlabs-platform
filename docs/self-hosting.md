@@ -45,6 +45,7 @@ The database is created and migrated on the first start. Open the address, sign 
 
 - Put a reverse proxy that terminates TLS in front of it. The control plane speaks plain HTTP and listens on localhost by default for that reason.
 - Set `PUBLIC_URL` to the address behind the proxy. Sign-in checks requests against it.
+- If the instance will hold more than one tenant's apps, set `APPS_URL` as well. See [Apps, and the addresses they are served at](#apps-and-the-addresses-they-are-served-at).
 - Remove the two `BOOTSTRAP_ADMIN_` lines and restart.
 
 ### Using your own Postgres or object store
@@ -155,6 +156,70 @@ Then, on the new instance:
 
 Every move between deployment modes is this same export and import. There is no other path, and none is needed.
 
+## Apps, and the addresses they are served at
+
+An app is a tenant's own interface, built from its repository and served by the instance. There are three kinds of address, and an instance can use all of them at once.
+
+### By path, on the instance's address
+
+With nothing configured, an app is at `PUBLIC_URL/apps/<tenant>/<workspace>/<app>/`, and a tenant's sign-in pages at `PUBLIC_URL/portal/<tenant>/`. One hostname and one certificate serve everything, which is what a single machine on a plant network wants.
+
+An app is JavaScript written by whoever writes that tenant's code, and here it runs at the same address as the console. A member who opens it is already signed in to the console there. That is fine where everyone who writes code works for you. Where it is not, use a second address.
+
+### A second address for every app
+
+Set `APPS_URL` to another hostname that reaches the same instance, for example `https://apps.example.com` beside `https://platform.example.com`. Then:
+
+- apps and sign-in pages are served only there, at the same paths. The instance's own address sends anyone who asks for one over;
+- the console is not served there, and members cannot sign in there;
+- a member's console session is never sent there. Staff who open an app are carried over by a code that works once, and get a sign-in for that tenant's apps only.
+
+This is the setting to use for an instance with more than one tenant. Point the second name at the same proxy, and give the proxy a certificate for it.
+
+### A hostname of the tenant's own
+
+A tenant's admin can register a hostname for one app under **Domains**, such as `portal.acme.com` or `orders.acme.internal`. The app is then at that name's root.
+
+1. **Point the name at the instance.** A CNAME to the instance's hostname, or an address record. For a name that exists only inside a network, an entry in that network's DNS.
+2. **Give the proxy a certificate for it.** The platform issues none and never sees one.
+   - On Fly.io: `fly certs add portal.acme.com --config deploy/fly/fly.toml`, then create the records it asks for.
+   - Behind Caddy: add the name to the site's addresses and Caddy gets the certificate itself.
+     ```
+     platform.example.com, apps.example.com, portal.acme.com {
+       reverse_proxy 127.0.0.1:8080
+     }
+     ```
+   - Behind any other proxy: add the name and its certificate there. For an internal name, a certificate from the network's own authority.
+3. **Show that the name's owner agrees.** The Domains page gives a TXT record to create, `_vx-challenge.<hostname>`. Create it and press Check. This stops one tenant on a shared instance from claiming a name that belongs to another.
+4. **Enable it.**
+
+An operator can enable a name without the TXT record. That is for a name with no public DNS, where the operator knows whose it is. It is recorded in the audit log.
+
+The proxy must pass the `Host` header through unchanged, and say whether the request came over HTTPS (`X-Forwarded-Proto`), which Caddy and Fly.io both do. Cookies are marked secure when it did.
+
+### What reaches what
+
+| At | The console | The API | A member's console session | Apps |
+| --- | --- | --- | --- | --- |
+| `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set |
+| `APPS_URL` | No | All of it, by API key or app sign-in | Ignored | By path |
+| A registered hostname | No | That tenant only | Ignored | The one app, at the root |
+
+## End users
+
+A tenant's end users are its customers and portal users. They are a pool of the tenant's own, apart from members, and the same email in two tenants is two people. Staff add them under **End users**, which makes a link that works once: whoever opens it chooses the password.
+
+- **Mail is optional.** Set `SMTP_URL` and `MAIL_FROM` and the instance sends invitations and reset links itself. Without them it sends nothing, the person who made the link is shown it to pass on, and "Forgot your password" tells people to ask.
+- **Sign-up** is off. A tenant's admin can turn it on under **Branding**.
+- **What they can reach** is decided by bindings, like everything else: bind the built-in `portal_user` role to `end_users`, or to one end user, at an app and at the tables it shows. A table's owner rule then keeps each person to their own rows. An end user never holds more than what apps use, whatever they are bound to.
+- **Files have no owner.** Whoever may read files in a workspace may read all of them, so `portal_user` does not include them.
+
+Someone who is not signed in reaches only what is bound to `anonymous`, and is limited in how often they may ask. The limit is counted by address, in each replica.
+
+## Branding
+
+A tenant sets its colours, corner radii, fonts and logo under **Branding**. They apply to its apps, its sign-in pages and the console while that tenant is open. A workspace can override them with a theme in its repository. Values are plain colours, lengths and font lists: nothing that could load a file from elsewhere.
+
 ## Environments inside a tenant
 
 - A dev workspace is linked to the workspace it promotes to. Promoting activates there the same bundle that runs here, without rebuilding it. `platform promote --preview` shows what would change first.
@@ -171,3 +236,7 @@ Every move between deployment modes is this same export and import. There is no 
 | A tenant's tables answer 503 | Its dedicated database. See the Database locations page |
 | Runs stay queued | The run's page says what it is waiting for. Otherwise the instance log, for the worker it tried to start |
 | An import is refused | The message names the reason: the passphrase, the version, a damaged file, or a slug already taken |
+| An app's address answers "Nothing here" | Whether the workspace has a deployed bundle with that app, under the workspace's Apps tab |
+| A registered hostname shows the console | It is not enabled, or the proxy rewrites the `Host` header |
+| Staff sign-in from an app loops back to the console | The app's address is not `APPS_URL` or an enabled hostname of that tenant |
+| Invitations are not arriving | `SMTP_URL` and `MAIL_FROM`, and the instance log, which names the address that could not be sent to |

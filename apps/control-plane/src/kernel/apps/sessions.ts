@@ -21,7 +21,12 @@ export function readCookie(request: FastifyRequest, name: string): string | unde
   for (const part of header.split(";")) {
     const at = part.indexOf("=");
     if (at > 0 && part.slice(0, at).trim() === name) {
-      return decodeURIComponent(part.slice(at + 1).trim());
+      try {
+        return decodeURIComponent(part.slice(at + 1).trim());
+      } catch {
+        // Not something this instance wrote.
+        return undefined;
+      }
     }
   }
   return undefined;

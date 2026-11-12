@@ -1,6 +1,6 @@
 # Vynxlabs platform: master specification
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 ## How to use this document
 
@@ -265,6 +265,10 @@ Tenant admin and workspace admin are roles bound at those scopes. An operator ad
 
 Authentication is implemented by a library inside the control plane, Better Auth, so no separate identity server is needed. External single sign-on is supported as a per-tenant option.
 
+End users sign in with an email and a password. An account is made by the tenant's staff, who get a one-time link for the person to set a password with, or by the person, where the tenant has turned sign-up on. A reset is a one-time link too. Sending mail is optional: an instance that sends none hands the link to whoever asked for it.
+
+The end-user pool is kept by the control plane itself, with the same password hashing as members. Better Auth looks a person up by email alone, so it cannot hold the same email in two tenants. This is recorded as provisional until the owner confirms it.
+
 ## Data layer
 
 Postgres is the only platform database, custom tables live in one schema per workspace, and other databases are reached as data sources.
@@ -466,6 +470,22 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 
 - An app is served to members, end users or guests according to its bindings.
 - An app reads and writes data only through the public API, so permissions and row policies always apply.
+- An end user, whatever role they are bound to, holds only the kinds of permission apps use. A binding made too wide cannot hand a portal user the tenant's settings or secrets.
+- Guest access is rate limited, by the caller's address.
+
+### Addresses
+
+An app is JavaScript written for one tenant. Where it is served decides what it can reach.
+
+- **By path**, on the instance's own address. This needs one hostname, so it works on a single-host install. It relies on the trust model: everyone who authors code works for the operator.
+- **On a second address**, when the operator configures one. Every app is then served there and not at the instance's own address.
+- **At a hostname a tenant registers** for one app, public or internal. The app is served at its root. The name's owner shows agreement with a DNS record. Certificates belong to whatever terminates TLS in front of the instance: the platform issues none.
+
+A member's console session counts only at the instance's own address. At any other address a member is carried over by a one-time code and gets a sign-in for that one tenant, limited to what apps use. An operator's reach across tenants therefore never arrives where a tenant's code runs.
+
+### App files
+
+An app's files are listed in the bundle by checksum and stored once per tenant. The bundle stays immutable, and promotion moves no files. Apps are built with the tenant repository's own build tool, so the control plane never runs it.
 
 ### Frontend stack
 
@@ -592,9 +612,13 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Queue engine | pg-boss, embedded in the control plane | Locked |
 | Flow engine | Built in-house on the queue | Locked |
 | Authentication | Better Auth inside the control plane, with external single sign-on as an option | Locked |
+| End-user sign-in | Email and password, with invitation and reset by one-time link. Mail is optional. Sign-up is a tenant setting, off by default | Locked |
+| End-user pool | Kept by the control plane itself, with Better Auth's password hashing. Better Auth cannot hold one email in two tenants | Provisional, proposed in phase 6 |
+| App addresses | By path on the instance's address. Optionally a second address for every app. A hostname a tenant registers serves one app at its root, with TLS left to the proxy in front | Locked |
+| App files | Listed in the bundle by checksum, stored once per tenant | Provisional |
 | Expression language | CEL (Common Expression Language), evaluated in a sandbox with time and memory limits | Locked |
 | Frontend framework and component kit | Preact and Vite, with a kit built on Base UI and Tailwind | Locked |
-| Chart library | Vega-Lite is the candidate | Open, apps phase |
+| Chart library | Vega-Lite, loaded only when a chart is shown, and drawn without evaluating strings as code | Locked |
 | Hosting provider | Fly.io for Vynxlabs-hosted instances, single-host Compose for VPS and on-prem. No provider is locked in | Locked |
 
 ### Considered and not adopted
@@ -691,3 +715,8 @@ Nothing below is in scope for the early phases, but no design may block the defe
 - [ ] Set default retention for runs and audit entries.
 - [x] Define what an operator admin can see inside a tenant, and how the tenant is shown that access: nothing by default, then explicit time-limited access grants that are audited and listed for the tenant's admins.
 - [x] Choose the hosting provider for the Vynxlabs shared instance: Fly.io.
+- [x] Decide where apps are served: by path, with an optional second address, and hostnames registered per app.
+- [x] Decide how end users get accounts: password, with invitation and reset links, and mail optional.
+- [x] Choose the chart library: Vega-Lite, loaded on demand.
+- [ ] Confirm that the end-user pool is kept by the control plane itself and not by a second Better Auth configuration. Phase 6 found that Better Auth cannot hold the same email in two tenants.
+- [ ] Decide whether files need an owner, as rows have. Until then end users are given no access to files.

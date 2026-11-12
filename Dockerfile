@@ -5,6 +5,7 @@ RUN corepack enable
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .pnpmfile.cjs ./
 COPY apps/control-plane/package.json apps/control-plane/
 COPY apps/console/package.json apps/console/
+COPY packages/app/package.json packages/app/
 COPY packages/cli/package.json packages/cli/
 COPY packages/db/package.json packages/db/
 COPY packages/manifest/package.json packages/manifest/

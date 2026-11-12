@@ -1103,6 +1103,22 @@ describe("a hostname of the tenant's own", () => {
       headers: { host: MAIN, cookie: aliceCookie },
     });
     expect(wrongTenant.statusCode).toBe(400);
+
+    // Nor by a member of the instance who is not this tenant's.
+    const gina = browser(t, MAIN);
+    await gina.signInMember("gina@globex.example", PASSWORD);
+    const outsider = await gina.get(
+      `/api/v1/app-handoffs/start?tenant=${tenant}&to=${encodeURIComponent(`http://${DOMAIN}`)}`,
+    );
+    expect(outsider.status).toBe(404);
+    // At an app's address a change must come from that address, not even from the console's.
+    const fromConsole = await visitor.post(
+      `/api/v1/tenants/${tenant}/workspaces/${prod}/rows/orders`,
+      { number: "X-9" },
+      "http://localhost:8080",
+    );
+    expect(fromConsole.status).toBe(403);
+    expect(fromConsole.body.code).toBe("cross_site");
   });
 
   test("an invitation can be made for the hostname, and removing the hostname ends what was there", async () => {

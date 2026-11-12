@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { isId } from "@vynxlabs/db";
 import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyRequest } from "fastify";
+import type { Place } from "./apps/hosts.js";
 import { appPrincipal } from "./apps/sessions.js";
 import { ANONYMOUS, type Principal } from "./audit.js";
 import { HttpError, unauthenticated } from "./errors.js";
@@ -68,11 +69,16 @@ const READS = new Set(["GET", "HEAD", "OPTIONS"]);
  * request. So a change that arrives with a cookie must come from a page of this
  * instance: from the address it was sent to, or from the instance's own.
  */
-function refuseCrossSite(kernel: Kernel, request: FastifyRequest): void {
+function refuseCrossSite(kernel: Kernel, request: FastifyRequest, place: Place): void {
   if (READS.has(request.method)) return;
   const origin = request.headers.origin;
   if (origin === undefined) return;
-  const allowed = [kernel.hosts.originOf(request), kernel.hosts.mainOrigin];
+  // The instance may be reached by a name other than its configured one, so both count
+  // there. At an app's address only that address does: not even the console's.
+  const allowed =
+    place.kind === "main"
+      ? [kernel.hosts.originOf(request), kernel.hosts.mainOrigin]
+      : [kernel.hosts.originOf(request)];
   if (!allowed.includes(origin)) {
     throw new HttpError(403, "cross_site", "This request came from another site.");
   }
@@ -106,7 +112,7 @@ export async function resolvePrincipal(
       headers: fromNodeHeaders(request.headers),
     });
     if (session) {
-      refuseCrossSite(kernel, request);
+      refuseCrossSite(kernel, request, place);
       return {
         type: "member",
         id: session.user.id,
@@ -120,7 +126,7 @@ export async function resolvePrincipal(
   if (tenant !== undefined && isId(tenant)) {
     const principal = await appPrincipal(kernel, request, tenant);
     if (principal) {
-      refuseCrossSite(kernel, request);
+      refuseCrossSite(kernel, request, place);
       return principal;
     }
   }

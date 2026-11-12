@@ -65,6 +65,14 @@ The instance's own master key is never in an export.
 
 Members belong to an instance, not to a tenant, so they are not exported as platform rows. `members.NNNN.jsonl` lists each member of the tenant with `id`, `name`, `email`, `email_verified`, `image`, `created_at` and `password_hash`, the hash they sign in with.
 
+## End users
+
+End users belong to the tenant, so they travel as platform rows: `platform/end_user.NNNN.jsonl`, with `id`, `tenant_id`, `email`, `name`, `password_hash` (the hash they sign in with, or null for an invitation not yet used), `disabled_at`, `last_signed_in_at` and the two timestamps. Bindings name an end user by `id`, which is kept.
+
+## App files
+
+A bundle in format 2 lists the files of its apps by SHA-256. `platform/bundle_asset.NNNN.jsonl` has one row per file the tenant holds, and the bytes are under `objects/assets/<tenant id>/<sha256>`. A file is stored once however many bundles and workspaces list it.
+
 ## The list of contents
 
 `manifest.json`:
@@ -88,7 +96,7 @@ The file is read from one snapshot of each database, so it is the tenant as it w
 
 ## What is in it, and what is not
 
-Always: workspaces, resources and their versions, bundles and deployments, roles, bindings, groups and their members, service accounts, connection and data source bindings, variable values, secrets, triggers with their webhook addresses, flow layouts, files, the custom tables, the members and the audit log.
+Always: workspaces, resources and their versions, bundles and deployments, the files of the bundles' apps, roles, bindings, groups and their members, service accounts, connection and data source bindings, variable values, secrets, triggers with their webhook addresses, flow layouts, files, the custom tables, the members, the end users, the tenant's branding and its logo, and the audit log.
 
 Only with history: runs and their logs, flow runs and their steps, events, and the payloads they point at.
 
@@ -97,6 +105,8 @@ Never:
 - API keys and worker credentials. They are made again where the tenant goes.
 - Operator access grants. They belong to the instance the tenant is leaving.
 - The queue. A run that was waiting is not carried. With history it arrives recorded as cancelled.
+- End users' sign-ins, and invitation and reset links that were not used. People sign in again with the password they had, and staff make new links.
+- Hostnames registered for apps. A name points at one instance, so it is registered again where the tenant arrives.
 - The instance master key.
 
 ## Importing

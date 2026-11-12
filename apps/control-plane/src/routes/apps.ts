@@ -12,7 +12,6 @@ import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
 import { writeAudit } from "../kernel/audit.js";
-import { check } from "../kernel/authorize.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
@@ -919,8 +918,15 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           return reply.redirect(`/?return=${encodeURIComponent(request.url)}`, 302);
         }
         const memberId = ctx.principal.id;
-        const standing = await check(db, ctx.principal, "app:read", { tenantId: query.tenant });
-        if (!standing.related) throw notFound("The tenant");
+        // Only the tenant's own staff are carried over. An operator's access grant does not
+        // count at an app's address, so there is nothing to carry an operator over for.
+        const staff = await db
+          .selectFrom("tenant_member")
+          .select("member_id")
+          .where("tenant_id", "=", query.tenant)
+          .where("member_id", "=", memberId)
+          .executeTakeFirst();
+        if (!staff) throw notFound("The tenant");
         const code = await db.transaction().execute(async (trx) => {
           const made = await createHandoff(trx, {
             tenantId: query.tenant,

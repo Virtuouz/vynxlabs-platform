@@ -2,6 +2,36 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## 0.4.0, not yet released
+
+Apps (phase 6): interfaces built from a tenant's repository and served by the instance, end users, the addresses apps are served at, and branding.
+
+### For operators
+
+- **Database change.** Migration 0018 runs on start. Upgrading from any earlier version is supported and tested.
+- **Where apps are served.** By path at `PUBLIC_URL`, with nothing to set. Set `APPS_URL` to a second hostname to serve them there and keep them away from the console's address: do this on an instance with more than one tenant. A tenant can register hostnames of its own, each for one app. Your proxy holds the certificates. See the self-hosting guide.
+- **Mail is optional.** `SMTP_URL` and `MAIL_FROM` let the instance send end users' invitations and password resets. Without them nothing is sent and staff pass the links on.
+- **Workers.** A 0.3.0 worker keeps working. It does not tell scripts who started a run, so upgrade tenants' own workers before they deploy a script that uses `ctx.run.startedBy`.
+- The proxy in front must pass the `Host` header through and set `X-Forwarded-Proto`.
+
+### For tenant developers
+
+- `defineApp` declares an app from a directory with an `index.html`. `platform build` compiles it with the repository's own Vite: add `vite` and `@preact/preset-vite` to `devDependencies`. `platform dev` serves it with reload against a workspace.
+- `@vynxlabs/app` is the browser client: `table`, `runScript`, `useQuery`, `useSession`. `@vynxlabs/ui` is the component kit, with forms from a JSON Schema and charts from a Vega-Lite spec.
+- `defineBinding` and `defineRole` say who may open an app and read a table. Principals now include `{ type: "end_users" }`, every signed-in end user of the tenant, and `{ type: "end_user", email }`. The built-in `portal_user` role opens apps and reads and writes rows under each table's policy.
+- `defineTheme` sets a workspace's colours where they differ from the tenant's.
+- `ctx.run.startedBy` says who started a run. `ctx.table(t).as(ctx.run.startedBy.id)` reads and writes as that person.
+- A script can be started, and its run read, by someone who holds `run:write` at that script alone.
+- **Rebuild to deploy apps.** A bundle with an app is format 2 and needs the 0.4.0 SDK and CLI. A repository without apps still builds as format 1, and bundles built with 0.2.0 and 0.3.0 keep deploying.
+
+### Changed
+
+- The claim answer of the worker protocol gained `startedBy`. A data request's `as` must now be a member or an end user of the tenant.
+- A binding's `principalType` may be `end_user` or `end_users`.
+- A tenant export also carries end users, the files of apps, and branding. Hostnames and sign-ins are not carried.
+- `POST …/runs` and `GET …/runs/{id}` check the permission at the script as well as at the workspace.
+- A request that arrives with a session cookie and changes something is refused when its `Origin` is another site.
+
 ## 0.3.0, not yet released
 
 Environments and portability (phase 5), on top of data (phase 4) and events and flows (phase 3).

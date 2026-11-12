@@ -15,6 +15,8 @@ export const NOT_CARRIED = [
   "Worker credentials: create new ones and restart the tenant's own workers with them.",
   "Operator access grants: they belong to the instance the tenant is leaving.",
   "Runs that were queued or in progress: a run belongs to the instance that started it.",
+  "End users' sign-ins and unused invitation and reset links: people sign in again, with the password they had.",
+  "Hostnames registered for apps: a name points at one instance. Register it again where the tenant arrives.",
 ];
 
 export interface ExportManifest {

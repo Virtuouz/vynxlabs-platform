@@ -95,6 +95,20 @@ The control plane knows nothing about TypeScript. It depends on the manifest for
 - The console and client apps use components from `packages/ui`. Do not style with raw colours or sizes: use the theme tokens, through the Tailwind utilities generated from them.
 - The interface runs on Preact. `react` and `react-dom` resolve to Preact's compatibility layer, so that Base UI works. Do not add a dependency that needs real React.
 - The console calls only the public API.
+- An app calls only the public API too, through `@vynxlabs/app`. If an app needs something the API lacks, the API grows.
+
+## Apps, end users and addresses
+
+- What a request may reach depends on the address it came to. Ask `kernel.hosts.place(request)`. Never compare the `Host` header yourself, and never accept a member's console session anywhere but the instance's own address.
+- Callers are resolved in one place, `resolvePrincipal`. A new way to be signed in goes there.
+- An end user, and a member signed in at an app's address, hold only what apps use. The list is `APP_FACING` in `kernel/authorize.ts`. Adding a kind to it gives it to every portal user who is bound widely enough: do it on purpose.
+- A route declared `signedIn` is a member's own account. It is refused to app sign-ins. A new route that acts on the member behind a session must do the same.
+- Everything outside `/api` that is not the console is served by `kernel/apps/front.ts`, before routing. An app's page gets its content security policy there. Do not serve tenant-supplied bytes from a route of your own.
+- The platform's own pages for apps carry no script. Keep it so: their policy allows none.
+- A theme value is written into a stylesheet. It is checked by `isThemeValue` when stored and again when written. Do not loosen the pattern without thinking through what it could then load.
+- An app's files are developer code, like a script. They are named by checksum and never change, so they may be cached, but only for the person they were served to.
+- Tables for end users go in `kernel/tenancy/tables.ts` like any other. Sign-ins and one-time links never travel in an export.
+- The control plane never builds an app. The CLI does, with the tenant repository's own tools.
 
 ## Resource kinds
 

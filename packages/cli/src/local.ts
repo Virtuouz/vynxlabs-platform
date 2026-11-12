@@ -130,6 +130,7 @@ export async function runLocally(args: string[], io: Io) {
         attempt: 1,
         idempotencyKey: randomUUID(),
         trigger: { type: "local" },
+        startedBy: { type: "system", id: null },
       },
       signal: abort.signal,
     });

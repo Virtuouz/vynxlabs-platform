@@ -39,10 +39,13 @@ describe("building the example repository", () => {
   test("produces one manifest per resource, in deploy order, and one module of code", async () => {
     const bundle = await buildBundle({ directory: example });
     expect(bundle.manifests.map((manifest) => `${manifest.kind} ${manifest.path}`)).toEqual([
+      "role roles/order-requester",
+      "role roles/public-reader",
       "connection alerts",
       "connection erp",
       "connection shop",
       "variable orders/batch-size",
+      "table notices",
       "table orders",
       "event orders/received",
       "event orders/synced",
@@ -50,19 +53,36 @@ describe("building the example repository", () => {
       "script orders/check",
       "script orders/receive",
       "script orders/record",
+      "script orders/request",
       "script orders/send-to-erp",
       "script orders/sync",
       "schedule orders/sync-every-five-minutes",
       "trigger orders/placed",
       "flow orders/handle",
+      "theme theme",
+      "app portal",
+      "app public",
+      "binding access/customers-orders",
+      "binding access/customers-portal",
+      "binding access/customers-request",
+      "binding access/public-notices",
+      "binding access/public-page",
     ]);
+    // It has apps, so it lists their files and is written as format 2.
     expect(bundle).toMatchObject({
-      formatVersion: 1,
+      formatVersion: 2,
       sdkVersion: "0.4.0",
       core: { min: "0.4.0", below: "0.5.0" },
     });
     expect(bundle.digest).toBe(bundleDigest(bundle));
     expect(describeBundle(bundle)[0]).toContain(bundle.digest.slice(0, 12));
+
+    const pages = (bundle.assets ?? []).filter((asset) => asset.path === "index.html");
+    expect(pages.map((asset) => asset.app)).toEqual(["portal", "public"]);
+    const scripts = (bundle.assets ?? []).filter((asset) => asset.path.endsWith(".js"));
+    expect(scripts.length).toBeGreaterThan(1);
+    expect(scripts.every((asset) => asset.contentType.startsWith("text/javascript"))).toBe(true);
+    expect((bundle.assets ?? []).some((asset) => asset.path.endsWith(".css"))).toBe(true);
 
     const sync = bundle.manifests.find((manifest) => manifest.path === "orders/sync");
     expect(sync).toMatchObject({

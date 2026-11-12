@@ -1003,6 +1003,11 @@ describe("the write path", () => {
     // The execution, data and environment routes have the same check in their own test files.
     const execution =
       /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|trigger-pause|deletion|exports|imports)(\/|$)/;
-    expect(t.unexercised((route) => !execution.test(route))).toEqual([]);
+    // Deleting a workspace is exercised in environments.test.ts.
+    expect(
+      t.unexercised(
+        (route) => !execution.test(route) && route !== "DELETE /api/v1/tenants/:t/workspaces/:w",
+      ),
+    ).toEqual([]);
   });
 });

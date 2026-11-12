@@ -131,7 +131,11 @@ export async function deployBundle(
   workspace: WorkspaceRef,
   principal: Principal,
   bundleId: string,
-  options: { promotedFrom?: string } = {},
+  options: {
+    promotedFrom?: string;
+    /** For a clone made with safety on, which is left unbound on purpose. */
+    allowMissingBindings?: boolean;
+  } = {},
 ) {
   const current = await trx
     .selectFrom("workspace")
@@ -155,7 +159,9 @@ export async function deployBundle(
     );
   }
   const content = await loadBundle(kernel, bundle);
-  const missing = await missingBindings(trx, workspace, content.manifests);
+  const missing = options.allowMissingBindings
+    ? []
+    : await missingBindings(trx, workspace, content.manifests);
   if (missing.length > 0) {
     throw new HttpError(
       409,
@@ -280,4 +286,5 @@ const KIND_ORDER = [
   "flow",
   "binding",
 ];
-const order = (kind: string) => KIND_ORDER.indexOf(kind);
+/** Where a kind comes when resources are applied: what others refer to goes first. */
+export const order = (kind: string) => KIND_ORDER.indexOf(kind);

@@ -71,16 +71,24 @@ export async function publishEvent(kernel: Kernel, trx: Trx, event: PublishEvent
     return { event: stored, started: [] as { kind: string; id: string }[] };
   }
 
-  const subscribers = await trx
-    .selectFrom("trigger_state")
-    .selectAll()
-    .where("workspace_id", "=", event.workspaceId)
-    .where("type", "=", "event")
-    .where("event_name", "=", event.name)
-    .where("enabled", "=", true)
-    .orderBy("resource_id")
-    .orderBy("node_id")
-    .execute();
+  // In a paused workspace the event is kept, and starts nothing.
+  const paused = await trx
+    .selectFrom("workspace")
+    .select("triggers_paused")
+    .where("id", "=", event.workspaceId)
+    .executeTakeFirst();
+  const subscribers = paused?.triggers_paused
+    ? []
+    : await trx
+        .selectFrom("trigger_state")
+        .selectAll()
+        .where("workspace_id", "=", event.workspaceId)
+        .where("type", "=", "event")
+        .where("event_name", "=", event.name)
+        .where("enabled", "=", true)
+        .orderBy("resource_id")
+        .orderBy("node_id")
+        .execute();
   const started: { kind: string; id: string }[] = [];
   for (const subscriber of subscribers) {
     if (subscriber.filter) {
@@ -136,11 +144,13 @@ export async function publishPlatformEvent(
 ): Promise<void> {
   const heard = await kernel.db
     .selectFrom("trigger_state")
-    .select("resource_id")
-    .where("workspace_id", "=", event.workspaceId)
-    .where("type", "=", "event")
-    .where("event_name", "=", event.name)
-    .where("enabled", "=", true)
+    .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
+    .select("trigger_state.resource_id")
+    .where("trigger_state.workspace_id", "=", event.workspaceId)
+    .where("trigger_state.type", "=", "event")
+    .where("trigger_state.event_name", "=", event.name)
+    .where("trigger_state.enabled", "=", true)
+    .where("workspace.triggers_paused", "=", false)
     .limit(1)
     .executeTakeFirst();
   if (!heard) return;

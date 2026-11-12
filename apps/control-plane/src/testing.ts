@@ -64,6 +64,8 @@ export async function startTestApp(
   const testDb = await createTestDatabase();
   const database = new Database({
     connectionString: testDb.connectionString,
+    // Many test files run at once against one server, each with several pools.
+    maxConnections: 6,
     ...(options.queue ? { queue: options.queue } : {}),
   });
   await database.migrate();

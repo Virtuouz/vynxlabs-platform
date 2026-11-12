@@ -331,10 +331,13 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
       const due = await trx
         .selectFrom("trigger_state")
         .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+        .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
         .selectAll("trigger_state")
         .select(["resource.body", "resource.path"])
         .where("trigger_state.type", "=", "schedule")
         .where("trigger_state.enabled", "=", true)
+        // A paused workspace keeps its due time. It fires once when resumed.
+        .where("workspace.triggers_paused", "=", false)
         .where("trigger_state.next_fire_at", "<=", now)
         .orderBy("trigger_state.next_fire_at")
         .limit(1)
@@ -392,12 +395,14 @@ export async function fireWebhook(
   const state = await kernel.db
     .selectFrom("trigger_state")
     .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+    .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
     .selectAll("trigger_state")
-    .select("resource.path")
+    .select(["resource.path", "workspace.triggers_paused"])
     .where("trigger_state.token_hash", "=", hashToken(token))
     .where("trigger_state.type", "=", "webhook")
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
+  if (state.triggers_paused) return "paused" as const;
   // Not audited: the run itself records the webhook that started it.
   const started = await kernel.db.transaction().execute((trx) =>
     startTarget(kernel, trx, state, {

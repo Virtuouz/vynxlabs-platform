@@ -4,6 +4,7 @@ import { ConfigError, loadConfig } from "./config.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
 import { startBackground } from "./kernel/execution/background.js";
 import { WorkerSupervisor } from "./kernel/execution/supervisor.js";
+import { failInterruptedClones } from "./kernel/tenancy/clone.js";
 import { S3ObjectStore } from "./storage.js";
 import { version } from "./version.js";
 
@@ -69,6 +70,8 @@ try {
   app.log.info({ bucket: config.s3.bucket }, "object store is ready");
   await bootstrapAdmin(app.kernel, app.log);
   await app.listen({ host: config.host, port: config.port });
+  // A clone that was running an hour ago, when this process was not, did not survive.
+  await failInterruptedClones(app.kernel, new Date(Date.now() - 60 * 60 * 1000));
   background = startBackground(
     app.kernel,
     config.managedWorkers

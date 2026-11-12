@@ -479,6 +479,22 @@ export interface FileTable {
   created_at: Generated<Date>;
 }
 
+export interface WorkspaceCloneTable {
+  id: string;
+  tenant_id: string;
+  source_workspace_id: string;
+  workspace_id: string;
+  status: "running" | "succeeded" | "failed";
+  with_data: boolean;
+  safe: boolean;
+  report: Json<Record<string, unknown>>;
+  error: string | null;
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+  finished_at: Date | null;
+}
+
 export interface DatabaseLocationTable {
   name: string;
   description: Generated<string>;
@@ -525,4 +541,5 @@ export interface PlatformSchema {
   data_source_binding: DataSourceBindingTable;
   file: FileTable;
   database_location: DatabaseLocationTable;
+  workspace_clone: WorkspaceCloneTable;
 }

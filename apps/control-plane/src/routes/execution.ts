@@ -3,7 +3,7 @@ import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
 import { httpConnector } from "@vynxlabs/sdk";
 import { Type } from "typebox";
-import { badRequest, notFound } from "../kernel/errors.js";
+import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { bindConnection } from "../kernel/execution/bindings.js";
 import { MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
@@ -1271,6 +1271,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           typeof key === "string" && key.length > 0 && key.length <= 200 ? key : undefined,
         );
         if (!started) throw notFound("The webhook");
+        if (started === "paused") {
+          // A sender that retries will get through once the workspace is resumed.
+          throw new HttpError(
+            503,
+            "workspace_paused",
+            "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+          );
+        }
         return reply.code(202).send({ runId: started.id });
       },
     );

@@ -32,7 +32,8 @@ export const sourceConfigSchema = {
   additionalProperties: false,
 };
 
-const credentialName = (path: string) => `data-source:${path}`;
+/** The name a data source's password is encrypted under. */
+export const credentialName = (path: string) => `data-source:${path}`;
 
 /** Open pools, one per binding as it currently stands. */
 const pools = new Map<string, { stamp: string; db: AnyDb }>();

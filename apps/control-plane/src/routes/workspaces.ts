@@ -29,6 +29,10 @@ const Workspace = Type.Object({
   name: Type.String(),
   type: WorkspaceType,
   linkedWorkspaceId: NullableId,
+  triggersPaused: Type.Boolean({
+    description:
+      "While true, no schedule, webhook or event starts anything here. Runs started by hand still work.",
+  }),
   concurrencyLimit: Type.Integer({ description: "How many runs may be in progress at once." }),
   failureAlert: Type.Object({
     script: Type.Optional(Type.String()),
@@ -43,6 +47,7 @@ interface WorkspaceRow {
   name: string;
   type: "production" | "dev";
   linked_workspace_id: string | null;
+  triggers_paused: boolean;
   concurrency_limit: number;
   failure_alert: { script?: string; notify?: string };
   created_at: Date;
@@ -54,6 +59,7 @@ const toWorkspace = (row: WorkspaceRow) => ({
   name: row.name,
   type: row.type,
   linkedWorkspaceId: row.linked_workspace_id,
+  triggersPaused: row.triggers_paused,
   concurrencyLimit: row.concurrency_limit,
   failureAlert: row.failure_alert,
   createdAt: iso(row.created_at),
@@ -248,15 +254,19 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("workspace:write") },
         schema: {
-          summary: "Change a workspace's name, link, run limit or failure alert",
+          summary:
+            "Change a workspace's name, link, run limit or failure alert, or pause its triggers",
           description:
-            "The type cannot be changed. `failureAlert` names a script to start and an HTTP " +
+            "The type cannot be changed. While `triggersPaused` is true, nothing in the " +
+            "workspace starts by itself: schedules do not fire, webhooks answer 503 and " +
+            "events start no subscriber. A schedule that came due while paused fires once on resuming. `failureAlert` names a script to start and an HTTP " +
             "connection to notify when a run fails for the last time.",
           tags: ["tenancy"],
           params: WorkspaceParams,
           body: Type.Object({
             name: Type.Optional(Name),
             linkedWorkspaceId: Type.Optional(NullableId),
+            triggersPaused: Type.Optional(Type.Boolean()),
             concurrencyLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
             failureAlert: Type.Optional(
               Type.Object(
@@ -289,12 +299,24 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .set({
               name: body.name ?? current.name,
               linked_workspace_id: linked,
+              triggers_paused: body.triggersPaused ?? current.triggers_paused,
               concurrency_limit: body.concurrencyLimit ?? current.concurrency_limit,
               ...(body.failureAlert ? { failure_alert: JSON.stringify(body.failureAlert) } : {}),
             })
             .where("id", "=", params.w)
             .returningAll()
             .executeTakeFirstOrThrow();
+          if (updated.triggers_paused !== current.triggers_paused) {
+            await audit({
+              action: updated.triggers_paused
+                ? "workspace.triggers_paused"
+                : "workspace.triggers_resumed",
+              targetType: "workspace",
+              targetId: params.w,
+              tenantId: params.t,
+              workspaceId: params.w,
+            });
+          }
           await audit({
             action: "workspace.updated",
             targetType: "workspace",

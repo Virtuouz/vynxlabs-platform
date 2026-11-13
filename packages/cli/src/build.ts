@@ -1,8 +1,9 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Environment } from "@marcbachmann/cel-js";
+import { ComposeError, composeBundle } from "@vynxlabs/compose";
 import {
   type Bundle,
   type BundleManifest,
@@ -10,6 +11,9 @@ import {
   bundleExpressions,
   checkBundleAssets,
   checkBundleManifests,
+  parseResourceFiles,
+  RESOURCE_FOLDER,
+  type ResourceFile,
 } from "@vynxlabs/manifest";
 import { build as esbuild } from "esbuild";
 import { type AppSource, buildApps } from "./apps.js";
@@ -33,6 +37,33 @@ export interface BuildOptions {
   directory: string;
   /** The file that exports every resource. Default `src/index.ts`. */
   entry?: string;
+  /** The folder of resources managed in the console. Default `platform`. */
+  resources?: string;
+}
+
+/** Every YAML and TypeScript file under the folder of console-managed resources. None if there is no folder. */
+async function resourceFiles(folder: string): Promise<ResourceFile[]> {
+  const files: ResourceFile[] = [];
+  const walk = async (directory: string) => {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await walk(path);
+      else if (entry.isFile() && /\.(yaml|ts)$/.test(entry.name)) {
+        files.push({
+          path: relative(folder, path).split(sep).join("/"),
+          content: await readFile(path, "utf8"),
+        });
+      }
+    }
+  };
+  await walk(folder);
+  return files;
 }
 
 /** Deploy order: what others refer to comes first. */
@@ -80,14 +111,28 @@ export async function appSources(options: BuildOptions): Promise<AppSource[]> {
 export async function buildRepository(options: BuildOptions): Promise<Built> {
   const directory = resolve(options.directory);
   const entry = options.entry ?? "src/index.ts";
-  const { code, definitions, sdk } = await loadDefinitions(options);
+  const { code, definitions, sdk, sdkEntry } = await loadDefinitions(options);
 
-  const manifests = definitions
-    .map(([name, definition]) => definition.toManifest(name))
-    .sort(
-      (a, b) =>
-        KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1),
+  const inOrder = (a: BundleManifest, b: BundleManifest) =>
+    KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1);
+  const fromCode = definitions.map(([name, definition]) => definition.toManifest(name));
+  // Resources managed in the console are files in a reserved folder, not code.
+  const folder = options.resources ?? RESOURCE_FOLDER;
+  const fromFiles = parseResourceFiles(await resourceFiles(join(directory, folder)));
+  if (fromFiles.problems.length > 0) {
+    throw new BuildError(fromFiles.problems.map((problem) => `${folder}/${problem}`));
+  }
+  const defined = new Map(fromCode.map((manifest) => [manifest.path, manifest]));
+  const twice = fromFiles.manifests.filter((manifest) => defined.has(manifest.path));
+  if (twice.length > 0) {
+    throw new BuildError(
+      twice.map(
+        (manifest) =>
+          `${manifest.path} is defined in ${entry} and again in ${folder}/${manifest.path}.${manifest.kind}.yaml. Keep one. A resource taken over in the console is removed from the code.`,
+      ),
     );
+  }
+  const manifests = [...fromCode, ...fromFiles.manifests].sort(inOrder);
   if (manifests.length === 0) {
     throw new BuildError([`${entry} exports no resources. Export what you define with the SDK.`]);
   }
@@ -106,7 +151,7 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   const common = {
     sdkVersion: sdk.SDK_VERSION as string,
     core: sdk.CORE_RANGE as { min: string; below: string },
-    manifests,
+    manifests: fromCode.sort(inOrder),
     code,
   };
   // A repository without apps is still written as format 1, so that it keeps deploying
@@ -117,7 +162,21 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
       : { formatVersion: 2 as const, ...common, assets: built.assets };
   const assetProblems = checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
-  return { bundle: { ...unsigned, digest: bundleDigest(unsigned) }, files: built.files };
+  if (fromFiles.manifests.length === 0) {
+    return { bundle: { ...unsigned, digest: bundleDigest(unsigned) }, files: built.files };
+  }
+  // Console-managed code is compiled and joined on exactly as the control plane does it.
+  try {
+    const composed = await composeBundle(unsigned, fromFiles.manifests, { sdkEntry });
+    const sorted = { ...composed, manifests: [...composed.manifests].sort(inOrder) };
+    const { digest: _stale, ...rest } = sorted;
+    return { bundle: { ...rest, digest: bundleDigest(rest) }, files: built.files };
+  } catch (error) {
+    if (error instanceof ComposeError) {
+      throw new BuildError(error.problems.map((problem) => `${folder}/${problem}`));
+    }
+    throw error;
+  }
 }
 
 /** Bundles the repository's code and loads it once, to read what it defines. */
@@ -169,16 +228,25 @@ async function loadDefinitions(options: BuildOptions) {
     await rm(file, { force: true });
   }
 
-  const sdk = await import(
-    pathToFileURL(createRequire(join(directory, "package.json")).resolve("@vynxlabs/sdk")).href
-  ).catch(() => {
+  let sdkEntry: string;
+  try {
+    sdkEntry = createRequire(join(directory, "package.json")).resolve("@vynxlabs/sdk");
+  } catch {
+    throw new BuildError(["@vynxlabs/sdk is not installed in this repository."]);
+  }
+  const sdk = await import(pathToFileURL(sdkEntry).href).catch(() => {
     throw new BuildError(["@vynxlabs/sdk is not installed in this repository."]);
   });
 
   const definitions = Object.entries(exported).filter((pair): pair is [string, Definition] =>
     isDefinition(pair[1]),
   );
-  return { code, definitions, sdk: sdk as { SDK_VERSION: string; CORE_RANGE: object } };
+  return {
+    code,
+    definitions,
+    sdk: sdk as { SDK_VERSION: string; CORE_RANGE: object },
+    sdkEntry,
+  };
 }
 
 /** Everything wrong with a set of manifests, each problem naming the resource and field. */

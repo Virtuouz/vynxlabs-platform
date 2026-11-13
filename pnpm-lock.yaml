@@ -188,6 +188,9 @@ importers:
       '@marcbachmann/cel-js':
         specifier: ^8.0.0
         version: 8.0.0
+      '@vynxlabs/compose':
+        specifier: workspace:*
+        version: link:../compose
       '@vynxlabs/manifest':
         specifier: workspace:*
         version: link:../manifest
@@ -204,6 +207,15 @@ importers:
       '@vynxlabs/worker':
         specifier: workspace:*
         version: link:../worker
+
+  packages/compose:
+    dependencies:
+      '@vynxlabs/manifest':
+        specifier: workspace:*
+        version: link:../manifest
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
 
   packages/db:
     dependencies:

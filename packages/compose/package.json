@@ -1,0 +1,20 @@
+{
+  "name": "@vynxlabs/compose",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Compiles code written in the console and joins it to a bundle. Used by the CLI and by the control plane, so that both build the same thing.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@vynxlabs/manifest": "workspace:*",
+    "esbuild": "^0.28.2"
+  }
+}

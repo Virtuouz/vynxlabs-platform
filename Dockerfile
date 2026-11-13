@@ -7,6 +7,7 @@ COPY apps/control-plane/package.json apps/control-plane/
 COPY apps/console/package.json apps/console/
 COPY packages/app/package.json packages/app/
 COPY packages/cli/package.json packages/cli/
+COPY packages/compose/package.json packages/compose/
 COPY packages/db/package.json packages/db/
 COPY packages/manifest/package.json packages/manifest/
 COPY packages/sdk/package.json packages/sdk/

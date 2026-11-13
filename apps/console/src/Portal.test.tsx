@@ -231,8 +231,13 @@ test("the kit's values written in the console are the ones in the kit's styleshe
     join(import.meta.dirname, "../../../packages/ui/src/tokens.css"),
     "utf8",
   );
-  // The first `:root` block holds the light values, the second the dark ones.
-  const [tokens, dark] = [...stylesheet.matchAll(/:root\s*\{([^}]*)\}/g)].map((block) =>
+  // The first block holds the light values. The dark ones are written twice, once for a
+  // system set to dark and once for a person's own choice, and the two must not drift.
+  const [tokens, dark, chosen] = [
+    ...stylesheet.matchAll(
+      /:root(?::not\(\[data-theme="light"\]\)|\[data-theme="dark"\])?\s*\{([^}]*)\}/g,
+    ),
+  ].map((block) =>
     Object.fromEntries(
       [...(block[1] ?? "").matchAll(/--vx-([a-z-]+):\s*([^;]+);/g)].map((line) => [
         line[1],
@@ -241,6 +246,7 @@ test("the kit's values written in the console are the ones in the kit's styleshe
     ),
   );
   expect(KIT).toEqual({ tokens, dark });
+  expect(chosen).toEqual(dark);
   expect(Object.keys(KIT.tokens)).toEqual(THEME_TOKENS);
 });
 

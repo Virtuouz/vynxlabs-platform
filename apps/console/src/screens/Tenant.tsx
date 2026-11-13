@@ -320,48 +320,22 @@ function WorkspaceDetail({
   const root = `${base}/workspaces/${workspaceId}`;
   if (workspace.error) return <Notice tone="danger">{workspace.error.message}</Notice>;
   if (!workspace.data) return null;
-  const link = (slug: string, label: string) => (
-    <Link
-      to={`/t/${tenantId}/workspaces/${workspaceId}/${slug}`}
-      current={tab === slug}
-      className={`border-b-2 px-1 pb-2 no-underline ${tab === slug ? "border-action font-medium text-action" : "border-transparent text-ink-muted hover:text-ink"}`}
-    >
-      {label}
-    </Link>
-  );
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <Link to={`/t/${tenantId}/workspaces`} className="text-action">
-          Workspaces
-        </Link>
-        <span className="text-ink-muted">/</span>
-        <span className="font-medium">{workspace.data.name}</span>
-        <TypeBadge type={workspace.data.type} />
-        {workspace.data.triggersPaused ? <Badge tone="attention">Paused</Badge> : null}
-      </div>
-      <WorkspaceControls
-        key={workspaceId}
-        base={base}
-        tenantId={tenantId}
-        workspace={workspace.data}
-        reload={workspace.reload}
-      />
-      <nav aria-label="Workspace" className="flex flex-wrap gap-x-5 border-line border-b">
-        {link("apps", "Apps")}
-        {link("flows", "Flows")}
-        {link("scripts", "Scripts")}
-        {link("runs", "Runs")}
-        {link("triggers", "Triggers")}
-        {link("events", "Events")}
-        {link("tables", "Tables")}
-        {link("sources", "Data sources")}
-        {link("deployments", "Deployments")}
-        {link("connections", "Connections")}
-        {link("variables", "Variables")}
-        {link("secrets", "Secrets")}
-        {link("resources", "Resources")}
-      </nav>
+      {tab === "settings" ? (
+        <Page
+          title="Workspace settings"
+          description="Pause what starts by itself, make a copy, or delete a dev workspace."
+        >
+          <WorkspaceControls
+            key={workspaceId}
+            base={base}
+            tenantId={tenantId}
+            workspace={workspace.data}
+            reload={workspace.reload}
+          />
+        </Page>
+      ) : null}
       {tab === "flows" && rest ? (
         <FlowView
           key={rest}

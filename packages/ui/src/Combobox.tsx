@@ -57,7 +57,7 @@ function Items({ empty }: { empty: string }) {
     <Base.Portal>
       <Base.Positioner sideOffset={4} className="z-50">
         <Base.Popup className={popup}>
-          <Base.Empty className="px-2 py-1.5 text-ink-muted">{empty}</Base.Empty>
+          <Base.Empty className="px-2 py-1.5 text-ink-muted empty:hidden">{empty}</Base.Empty>
           <Base.List>
             {(option: Option) => (
               <Base.Item

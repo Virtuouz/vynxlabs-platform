@@ -28,7 +28,7 @@ export {
 } from "./Fields.tsx";
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
-export { Menu } from "./Menu.tsx";
+export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";

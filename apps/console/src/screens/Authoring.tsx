@@ -467,7 +467,13 @@ export function Changes({
     preview.reload();
   };
   const editLink = (row: DraftRow) =>
-    row.kind === "script" && !row.deleted ? `${link}/scripts/edit/${row.path}` : undefined;
+    row.deleted
+      ? undefined
+      : row.kind === "script"
+        ? `${link}/scripts/edit/${row.path}`
+        : row.kind === "flow"
+          ? `${link}/flows/edit/${row.path}`
+          : undefined;
 
   return (
     <Page

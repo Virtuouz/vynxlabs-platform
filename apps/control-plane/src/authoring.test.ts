@@ -387,6 +387,63 @@ describe("deploying drafts", () => {
   });
 });
 
+describe("flows drawn in the console", () => {
+  test("a flow is a draft like any other, carries where its steps sit, and needs no permission to write code", async () => {
+    const body = {
+      description: "Says hello.",
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        hello: { type: "script", script: "orders/hello", input: "{'name': 'flow'}" },
+      },
+      edges: [{ from: "start", to: "hello" }],
+      layout: { start: { x: 0, y: 0 }, hello: { x: 280, y: 40 } },
+    };
+    const saved = await draft("orders/greet", body, "flow", carol);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // A flow that names a script that is not there is refused when it is deployed, by name.
+    await draft(
+      "orders/broken-flow",
+      { ...body, nodes: { ...body.nodes, hello: { type: "script", script: "nope" } } },
+      "flow",
+    );
+    const preview = await alice.get(`${ws()}/changes/preview`);
+    expect(preview.body.possible).toBe(false);
+    expect(JSON.stringify(preview.body.refusal.errors)).toContain("nope");
+    await alice.delete(`${ws()}/drafts/orders/broken-flow`);
+
+    const deployed = await carol.post(`${ws()}/changes/deploy`, { paths: ["orders/greet"] });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const flow = (await alice.get(`${ws()}/flows/orders/greet`)).body;
+    expect(flow.layout).toEqual(body.layout);
+    expect(Object.keys(flow.nodes).sort()).toEqual(["hello", "start"]);
+    // The bundle, which is what is written to a repository, keeps the steps in their author's order.
+    const stored = await t.db
+      .selectFrom("bundle")
+      .select("storage_key")
+      .where("id", "=", deployed.body.bundleId)
+      .executeTakeFirstOrThrow();
+    const bundle = JSON.parse(
+      (await t.kernel.storage.get(stored.storage_key)).toString("utf8"),
+    ) as {
+      manifests: { path: string; body: { nodes: object } }[];
+    };
+    expect(
+      Object.keys(bundle.manifests.find((one) => one.path === "orders/greet")?.body.nodes ?? {}),
+    ).toEqual(["start", "hello"]);
+
+    const started = await alice.post(`${ws()}/flow-runs`, { flow: "orders/greet", input: {} });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    let run: { status: string; steps: { node: string; output: unknown }[] } | undefined;
+    for (let i = 0; i < 150; i++) {
+      run = (await alice.get(`${ws()}/flow-runs/${started.body.id}`)).body;
+      if (run?.status !== "running") break;
+      await sleep(100);
+    }
+    expect(run?.status).toBe("succeeded");
+    expect(run?.steps.find((step) => step.node === "hello")?.output).toEqual({ hello: "changed" });
+  });
+});
+
 describe("the write path", () => {
   test("every change left an audit entry, and every authoring route was used", () => {
     expect(t.unaudited).toEqual([]);

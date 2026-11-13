@@ -52,7 +52,16 @@ const TRIGGER: Record<string, string> = {
   flow: "Another flow",
 };
 
-export function Flows({ root, link }: { root: string; link: string }) {
+export function Flows({
+  root,
+  link,
+  editable = false,
+}: {
+  root: string;
+  link: string;
+  /** Whether flows can be drawn here: true in a dev workspace. */
+  editable?: boolean;
+}) {
   return (
     <ListScreen<{
       path: string;
@@ -63,6 +72,13 @@ export function Flows({ root, link }: { root: string; link: string }) {
     }>
       title="Flows"
       description="A flow is a graph of steps the platform runs in order, remembering where it is. It survives a restart."
+      action={
+        editable ? (
+          <Button variant="primary" onClick={() => navigate(`${link}/flows/new`)}>
+            New flow
+          </Button>
+        ) : undefined
+      }
       path={`${root}/flows`}
       rowKey={(row) => row.path}
       columns={[
@@ -125,7 +141,17 @@ interface FlowRunRow {
 }
 
 /** One flow: its graph, how it is started, and its recent runs. */
-export function FlowView({ root, path, link }: { root: string; path: string; link: string }) {
+export function FlowView({
+  root,
+  path,
+  link,
+  editable = false,
+}: {
+  root: string;
+  path: string;
+  link: string;
+  editable?: boolean;
+}) {
   const flow = useLoad<FlowDetail>(`${root}/flows/${path}`);
   const runs = useLoad<{ items: FlowRunRow[] }>(
     `${root}/flow-runs?flow=${encodeURIComponent(path)}&limit=20`,
@@ -164,9 +190,16 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
           navigate(`${link}/flow-runs/${started.id}`);
         }}
       />
-      <Link to={`${link}/flows`} className="text-action">
-        All flows
-      </Link>
+      <span className="flex flex-wrap items-center gap-4">
+        <Link to={`${link}/flows`} className="text-action">
+          All flows
+        </Link>
+        {editable ? (
+          <Link to={`${link}/flows/edit/${data.path}`} className="text-action">
+            Edit this flow
+          </Link>
+        ) : null}
+      </span>
       <FlowGraph
         nodes={data.nodes}
         edges={data.edges}

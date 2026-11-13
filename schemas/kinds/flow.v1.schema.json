@@ -364,6 +364,31 @@
         ],
         "additionalProperties": false
       }
+    },
+    "layout": {
+      "type": "object",
+      "description": "Where each node sits in the editor, for a flow drawn in the console. It changes nothing about how the flow runs.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 63
+      },
+      "maxProperties": 200,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

@@ -393,6 +393,20 @@ export const flowKind: KindDefinition = {
           additionalProperties: false,
         },
       },
+      // Last, so that in a file the logic comes first and where things sit on the canvas after it.
+      layout: {
+        type: "object",
+        description:
+          "Where each node sits in the editor, for a flow drawn in the console. It changes nothing about how the flow runs.",
+        propertyNames: { pattern: nodeId, maxLength: 63 },
+        maxProperties: 200,
+        additionalProperties: {
+          type: "object",
+          properties: { x: { type: "integer" }, y: { type: "integer" } },
+          required: ["x", "y"],
+          additionalProperties: false,
+        },
+      },
     },
     required: ["nodes", "edges"],
     additionalProperties: false,

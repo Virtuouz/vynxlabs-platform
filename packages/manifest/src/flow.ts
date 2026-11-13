@@ -5,6 +5,8 @@ export interface FlowBody {
   description?: string;
   nodes: Record<string, FlowNode>;
   edges: FlowEdge[];
+  /** Where each node sits in the editor. Nothing about how the flow runs. */
+  layout?: Record<string, { x: number; y: number }>;
 }
 
 export interface FlowEdge {

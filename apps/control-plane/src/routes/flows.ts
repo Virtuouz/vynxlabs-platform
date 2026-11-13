@@ -251,7 +251,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: body.description ?? "",
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
-          layout: layout?.positions ?? {},
+          // A flow drawn in the console carries its layout in its body. Others keep it apart.
+          layout: {
+            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
+            ...(layout?.positions ?? {}),
+          },
           triggers: await Promise.all(
             states.map(async (state) => {
               const token =

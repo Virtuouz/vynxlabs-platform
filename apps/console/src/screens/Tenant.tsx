@@ -1,5 +1,5 @@
 import { Badge, Button, EmptyState, Notice } from "@vynxlabs/ui";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import {
   type CreateConfig,
@@ -29,6 +29,12 @@ import {
   Variables,
   Workers,
 } from "./Execution.tsx";
+
+// The flow editor brings a canvas library with it, so it is fetched when first opened.
+const FlowEditor = lazy(() =>
+  import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
+);
+
 import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { type Role, Roles } from "./Roles.tsx";
@@ -340,15 +346,36 @@ function WorkspaceDetail({
           />
         </Page>
       ) : null}
-      {tab === "flows" && rest ? (
+      {tab === "flows" && (rest === "new" || rest.startsWith("edit/")) ? (
+        workspace.data.type === "dev" ? (
+          <Suspense fallback={<p className="text-ink-muted">Loading the editor…</p>}>
+            <FlowEditor
+              key={rest}
+              root={root}
+              link={`/t/${tenantId}/workspaces/${workspaceId}`}
+              path={rest === "new" ? undefined : rest.slice("edit/".length)}
+            />
+          </Suspense>
+        ) : (
+          <Notice tone="attention">
+            This is a production workspace. Flows are edited in a dev workspace and reach production
+            by promotion.
+          </Notice>
+        )
+      ) : tab === "flows" && rest ? (
         <FlowView
           key={rest}
           root={root}
           path={rest}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
         />
       ) : tab === "flows" ? (
-        <Flows root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <Flows
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "flow-runs" && rest ? (
         <FlowRunView
           key={rest}

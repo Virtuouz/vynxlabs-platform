@@ -30,7 +30,7 @@ const KIND: Record<string, string> = {
   fail: "Fail",
 };
 
-function describe(node: GraphNode): string {
+export function describe(node: GraphNode): string {
   if (node.type === "trigger") {
     const trigger = node.trigger as { type: string; cron?: string; event?: string };
     return (

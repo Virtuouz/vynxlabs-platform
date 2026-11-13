@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { sql } from "@vynxlabs/db";
-import type { FlowBody, FlowTrigger, WebhookVerify } from "@vynxlabs/manifest";
+import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@vynxlabs/manifest";
 import type { TriggerSource } from "@vynxlabs/sdk";
 import { CronExpressionParser } from "cron-parser";
 import type { Trx } from "../audit.js";
@@ -31,7 +31,8 @@ type TriggerBody =
       verify?: WebhookVerify;
       source?: string;
     }
-  | { type: "event"; script: string; event: string; filter?: string; enabled?: boolean };
+  | { type: "event"; script: string; event: string; filter?: string; enabled?: boolean }
+  | ({ type: "form"; script: string; enabled?: boolean } & FormTrigger);
 
 /** The built-in trigger sources, written against the SDK's extension interface. */
 export const scheduleSource: TriggerSource<ScheduleConfig> = {
@@ -61,17 +62,20 @@ export const eventSource: TriggerSource<unknown> = {
 export const manualSource: TriggerSource<unknown> = { type: "manual", script: () => "" };
 
 export const WEBHOOK_TOKEN_PREFIX = "vxh_";
+/** A form's address ends in a token of its own kind, so that neither opens the other. */
+export const FORM_TOKEN_PREFIX = "vxf_";
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 /** One trigger as it should be registered: a trigger resource, or a trigger node of a flow. */
 interface Registration {
   node: string;
-  type: "schedule" | "webhook" | "event";
+  type: "schedule" | "webhook" | "event" | "form";
   target: { kind: "script" | "flow"; path: string };
   enabled: boolean;
   schedule?: ScheduleConfig;
   event?: { name: string; filter?: string | undefined };
   webhook?: WebhookConfig;
+  form?: FormTrigger;
 }
 
 /** What a webhook does with a request, as its trigger said. Kept with the registered trigger. */
@@ -210,7 +214,9 @@ async function register(
       next_fire_at: registration.schedule ? firstFire(registration.schedule, field) : null,
       event_name: registration.event?.name ?? null,
       filter: registration.event?.filter ?? null,
-      config: JSON.stringify(registration.schedule ?? registration.webhook ?? {}),
+      config: JSON.stringify(
+        registration.schedule ?? registration.webhook ?? registration.form ?? {},
+      ),
     };
     const current = existing.find(
       (row) => row.node_id === registration.node && row.type === registration.type,
@@ -227,6 +233,9 @@ async function register(
     let token: string | undefined;
     if (registration.type === "webhook") {
       token = `${WEBHOOK_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
+    }
+    if (registration.type === "form") {
+      token = `${FORM_TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`;
     }
     await trx
       .insertInto("trigger_state")
@@ -252,6 +261,18 @@ async function register(
       })
       .execute();
   }
+}
+
+/** The form alone, without what says where it sits and what it starts. */
+function formOf(body: FormTrigger): FormTrigger {
+  return {
+    title: body.title,
+    fields: body.fields,
+    ...(body.description ? { description: body.description } : {}),
+    ...(body.submitLabel ? { submitLabel: body.submitLabel } : {}),
+    ...(body.success ? { success: body.success } : {}),
+    ...(body.access ? { access: body.access } : {}),
+  };
 }
 
 async function needScript(trx: Trx, resource: AppliedResource, script: string) {
@@ -305,6 +326,7 @@ export function registerExecutionHooks(kernel: Kernel) {
             ...(body.type === "webhook"
               ? { webhook: { input: body.input, verify: body.verify, source: body.source } }
               : {}),
+            ...(body.type === "form" ? { form: formOf(body) } : {}),
           },
         ]);
       },
@@ -334,6 +356,7 @@ export function registerExecutionHooks(kernel: Kernel) {
             ...(trigger.type === "event"
               ? { event: { name: trigger.event, filter: trigger.filter } }
               : {}),
+            ...(trigger.type === "form" ? { form: formOf(trigger) } : {}),
             ...(trigger.type === "webhook"
               ? {
                   webhook: {
@@ -607,6 +630,53 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
     await kickStarted(kernel, [started]);
     fired += 1;
   }
+}
+
+/** A form trigger as its page needs it. Undefined for an address that is no form of this tenant's. */
+export async function findForm(kernel: Kernel, tenantId: string, token: string) {
+  if (!token.startsWith(FORM_TOKEN_PREFIX)) return undefined;
+  const state = await kernel.db
+    .selectFrom("trigger_state")
+    .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+    .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
+    .selectAll("trigger_state")
+    .select(["resource.path", "workspace.triggers_paused"])
+    .where("trigger_state.token_hash", "=", hashToken(token))
+    .where("trigger_state.type", "=", "form")
+    .where("trigger_state.tenant_id", "=", tenantId)
+    .executeTakeFirst();
+  if (!state?.enabled) return undefined;
+  return { state, form: state.config as unknown as FormTrigger, paused: state.triggers_paused };
+}
+
+/**
+ * Starts what a form starts, with what was sent to it. `key` was made with
+ * the page, so sending the same page twice starts one run.
+ */
+export async function submitForm(
+  kernel: Kernel,
+  found: NonNullable<Awaited<ReturnType<typeof findForm>>>,
+  input: Record<string, unknown>,
+  by: { type: string; id: string } | undefined,
+  key: string | undefined,
+) {
+  const { state } = found;
+  const label = state.node_id ? `${state.path}#${state.node_id}` : state.path;
+  const started = await kernel.db.transaction().execute((trx) =>
+    startTarget(kernel, trx, state, {
+      input,
+      trigger: { type: "form", detail: { trigger: label, ...(by ? { submittedBy: by } : {}) } },
+      idempotencyKey: key ? `form:${state.resource_id}:${state.node_id}:${key}` : undefined,
+    }),
+  );
+  await kernel.db
+    .updateTable("trigger_state")
+    .set({ last_fired_at: new Date() })
+    .where("resource_id", "=", state.resource_id)
+    .where("node_id", "=", state.node_id)
+    .execute();
+  await kickStarted(kernel, [started]);
+  return started;
 }
 
 /**

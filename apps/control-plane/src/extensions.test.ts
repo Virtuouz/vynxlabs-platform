@@ -971,6 +971,316 @@ describe("a flow that answers the request that started it", () => {
   });
 });
 
+describe("a trigger that is a form", () => {
+  const HOST = "localhost:8080";
+  /** A browser at the instance's own address: it keeps its cookies. */
+  function browser() {
+    const jar = new Map<string, string>();
+    const call = async (
+      method: "GET" | "POST",
+      url: string,
+      form?: Record<string, string>,
+      origin?: string,
+    ) => {
+      const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
+      const response = await t.app.inject({
+        method,
+        url,
+        headers: {
+          host: HOST,
+          ...(cookie ? { cookie } : {}),
+          ...(form
+            ? {
+                origin: origin ?? `http://${HOST}`,
+                "content-type": "application/x-www-form-urlencoded",
+              }
+            : {}),
+        },
+        ...(form ? { payload: new URLSearchParams(form).toString() } : {}),
+      });
+      for (const line of ([] as string[]).concat(response.headers["set-cookie"] ?? [])) {
+        const [pair = ""] = line.split(";");
+        const at = pair.indexOf("=");
+        jar.set(pair.slice(0, at), pair.slice(at + 1));
+      }
+      return {
+        status: response.statusCode,
+        body: response.body,
+        headers: response.headers,
+        location: response.headers.location as string | undefined,
+      };
+    };
+    return {
+      get: (url: string) => call("GET", url),
+      send: (url: string, form: Record<string, string>, origin?: string) =>
+        call("POST", url, form, origin),
+    };
+  }
+  const keyOf = (page: string) => /name="key" value="([0-9a-f-]{36})"/.exec(page)?.[1] ?? "";
+  const flowRuns = async (flow: string): Promise<Any[]> =>
+    (await alice.get(`${ws(dev)}/flow-runs?flow=${flow}&limit=50`)).body.items;
+  const settled = async (flow: string, count: number): Promise<Any[]> => {
+    for (let i = 0; i < 100; i++) {
+      const items = await flowRuns(flow);
+      if (items.length >= count && items.every((item) => item.status !== "running")) return items;
+      await sleep(50);
+    }
+    throw new Error(`${flow} did not get to ${count} finished runs.`);
+  };
+  const feedback = (trigger: object) => ({
+    nodes: {
+      asked: { type: "trigger", trigger: { type: "form", ...trigger } },
+      note: { type: "set", values: { summary: "trigger.name + ' said ' + trigger.rating" } },
+    },
+    edges: [{ from: "asked", to: "note" }],
+  });
+  const fields = [
+    { name: "name", label: "Your name", type: "text", required: true },
+    { name: "email", label: "Email", type: "email", help: "Only if you want an answer." },
+    {
+      name: "rating",
+      label: "How was it?",
+      type: "select",
+      options: ["good", "bad"],
+      required: true,
+    },
+    { name: "amount", label: "What you paid", type: "number" },
+    { name: "on", label: "When", type: "date" },
+    { name: "note", label: "Anything else", type: "textarea" },
+    { name: "agree", label: "You may keep this", type: "checkbox", required: true },
+  ];
+  let address: string;
+
+  test("a form is a page of the tenant's portal, and what is sent starts the flow", async () => {
+    const draft = await alice.put(`${ws(dev)}/drafts/feedback`, {
+      kind: "flow",
+      schemaVersion: 1,
+      body: feedback({
+        title: "Tell us how it went",
+        description: "It takes a minute.",
+        fields,
+        submitLabel: "Send it",
+        success: "Thanks. We read every one <3",
+      }),
+    });
+    expect(draft.status, JSON.stringify(draft.body)).toBe(200);
+    const deployed = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["feedback"] });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const listed = (await alice.get(`${ws(dev)}/triggers`)).body.items.find(
+      (item: Any) => item.path === "feedback",
+    );
+    expect(listed.type).toBe("form");
+    address = new URL(listed.url).pathname;
+    expect(address).toMatch(/^\/portal\/acme\/forms\/vxf_[A-Za-z0-9_-]+$/);
+
+    const visitor = browser();
+    const page = await visitor.get(address);
+    expect(page.status).toBe(200);
+    // The page is the platform's own: it carries no script, and may load none.
+    expect(page.headers["content-security-policy"]).toContain("default-src 'none'");
+    expect(page.body).not.toContain("<script");
+    expect(page.body).toContain("<h1>Tell us how it went</h1>");
+    expect(page.body).toContain('<textarea id="f-note" name="note"');
+    expect(page.body).toContain('<option value="good">good</option>');
+    expect(page.body).toContain("Only if you want an answer.");
+    expect(page.body).toContain(">Send it</button>");
+    const key = keyOf(page.body);
+    expect(key).not.toBe("");
+
+    // What does not hold is said beside its field, and what was typed is kept.
+    const short = await visitor.send(address, {
+      key,
+      name: "Pat <b>",
+      email: "nope",
+      amount: "lots",
+    });
+    expect(short.status).toBe(400);
+    expect(short.body).toContain("Some answers need another look.");
+    expect(short.body).toContain('value="Pat &lt;b&gt;"');
+    expect(short.body).toContain("Give an email address.");
+    expect(short.body).toContain("Give a number.");
+    expect(short.body).toContain("This is needed.");
+    expect(await flowRuns("feedback")).toHaveLength(0);
+
+    const sent = await visitor.send(address, {
+      key,
+      name: "Pat",
+      rating: "good",
+      amount: "12.5",
+      on: "2026-11-02",
+      note: "Quick and kind.",
+      agree: "yes",
+    });
+    expect(sent.status, sent.body).toBe(200);
+    expect(sent.body).toContain("Thanks. We read every one &lt;3");
+    // Sending the same page again starts nothing more.
+    expect(
+      (await visitor.send(address, { key, name: "Pat", rating: "good", agree: "yes" })).status,
+    ).toBe(200);
+    const runs = await settled("feedback", 1);
+    expect(runs).toHaveLength(1);
+    const run = (await alice.get(`${ws(dev)}/flow-runs/${runs[0].id}`)).body;
+    expect(run.status).toBe("succeeded");
+    expect(run.trigger).toMatchObject({ type: "form", trigger: "feedback#asked" });
+    expect(run.steps.find((step: Any) => step.node === "note").output).toEqual({
+      summary: "Pat said good",
+    });
+    const input = (
+      await t.db
+        .selectFrom("flow_run")
+        .select("input")
+        .where("id", "=", runs[0].id)
+        .executeTakeFirstOrThrow()
+    ).input;
+    expect(input).toEqual({
+      name: "Pat",
+      rating: "good",
+      amount: 12.5,
+      on: "2026-11-02",
+      note: "Quick and kind.",
+      agree: true,
+    });
+  });
+
+  test("a form is not for machines, for other sites, or for another tenant", async () => {
+    const visitor = browser();
+    const key = keyOf((await visitor.get(address)).body);
+    const answer = { key, name: "Bot", rating: "bad", agree: "yes" };
+    // A field no person sees was filled in: it is told it worked, and nothing starts.
+    const trapped = await visitor.send(address, { ...answer, website: "https://spam.example" });
+    expect(trapped.status).toBe(200);
+    expect(trapped.body).toContain("Thanks. We read every one");
+    // A page of another site cannot send it.
+    expect((await visitor.send(address, answer, "https://elsewhere.example")).status).toBe(403);
+    expect(await flowRuns("feedback")).toHaveLength(1);
+    // The address belongs to one tenant, and to forms.
+    await t.admin.post("/tenants", { slug: "other", name: "Other" });
+    expect((await visitor.get(address.replace("/portal/acme/", "/portal/other/"))).status).toBe(
+      404,
+    );
+    expect((await visitor.get("/portal/acme/forms/vxf_aaaaaaaaaaaaaaaaaaaaaaaa")).status).toBe(404);
+    const token = address.split("/").at(-1) as string;
+    expect((await t.anonymous.upload(`/hooks/${token}`, "{}", "application/json")).status).toBe(
+      404,
+    );
+    // A paused workspace takes no answers, and says so.
+    expect((await alice.patch(ws(dev), { triggersPaused: true })).status).toBeLessThan(300);
+    const paused = await visitor.get(address);
+    expect(paused.status).toBe(503);
+    expect(paused.body).toContain("not taking answers");
+    expect((await alice.patch(ws(dev), { triggersPaused: false })).status).toBeLessThan(300);
+  });
+
+  test("a form can ask for a sign-in, and a script can be what it starts", async () => {
+    t.kernel.mail.deliver = async () => {};
+    for (const [path, kind, body] of [
+      [
+        "members-only",
+        "flow",
+        feedback({ title: "Members only", fields: fields.slice(0, 3), access: "signed_in" }),
+      ],
+      [
+        "shout-form",
+        "trigger",
+        {
+          type: "form",
+          script: "say",
+          title: "Say it loudly",
+          fields: [{ name: "text", label: "What to say", type: "text", required: true }],
+        },
+      ],
+    ] as const) {
+      const saved = await alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    }
+    const deployed = await alice.post(`${ws(dev)}/changes/deploy`, {
+      paths: ["members-only", "shout-form"],
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const listed = (await alice.get(`${ws(dev)}/triggers`)).body.items;
+    const at = (path: string) =>
+      new URL(listed.find((item: Any) => item.path === path).url).pathname;
+
+    const visitor = browser();
+    const turned = await visitor.get(at("members-only"));
+    expect(turned.status).toBe(303);
+    expect(turned.location).toBe(
+      `/portal/acme/sign-in?return=${encodeURIComponent(at("members-only"))}`,
+    );
+    const created = await alice.post(`/tenants/${tenant}/end-users`, {
+      email: "pat@customer.example",
+      name: "Pat",
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const invitation = new URL(created.body.invitation.url);
+    expect(
+      (
+        await visitor.send("/portal/acme/set-password", {
+          token: invitation.searchParams.get("token") as string,
+          password: PASSWORD,
+        })
+      ).status,
+    ).toBe(303);
+    const page = await visitor.get(at("members-only"));
+    expect(page.status).toBe(200);
+    const sent = await visitor.send(at("members-only"), {
+      key: keyOf(page.body),
+      name: "Pat",
+      rating: "bad",
+    });
+    expect(sent.status, sent.body).toBe(200);
+    expect(sent.body).toContain("Thank you. Your answer was sent.");
+    const [run] = await settled("members-only", 1);
+    // The run knows who sent the form.
+    expect((await alice.get(`${ws(dev)}/flow-runs/${run.id}`)).body.trigger.submittedBy).toEqual({
+      type: "end_user",
+      id: created.body.endUser.id,
+    });
+
+    const open = browser();
+    const shout = await open.get(at("shout-form"));
+    expect(
+      (await open.send(at("shout-form"), { key: keyOf(shout.body), text: "hello" })).status,
+    ).toBe(200);
+    for (let i = 0; i < 100; i++) {
+      const runs = (await alice.get(`${ws(dev)}/runs?script=say&limit=50`)).body.items.filter(
+        (item: Any) => item.trigger?.type === "form" && item.status === "succeeded",
+      );
+      if (runs.length === 1) {
+        expect((await alice.get(`${ws(dev)}/runs/${runs[0].id}`)).body.output).toEqual({
+          said: "HELLO! (no key)",
+        });
+        return;
+      }
+      await sleep(50);
+    }
+    throw new Error("The form did not start its script.");
+  });
+
+  test("a form's fields are checked when it is built", async () => {
+    const tried = async (extra: object[]) => {
+      await alice.put(`${ws(dev)}/drafts/badly`, {
+        kind: "flow",
+        schemaVersion: 1,
+        body: feedback({ title: "x", fields: [...fields.slice(0, 3), ...extra] }),
+      });
+      const response = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["badly"] });
+      expect(response.status).toBe(400);
+      return JSON.stringify(response.body);
+    };
+    expect(await tried([{ name: "name", label: "Again", type: "text" }])).toContain(
+      "two fields are named",
+    );
+    expect(await tried([{ name: "website", label: "Site", type: "text" }])).toContain(
+      "kept for the form itself",
+    );
+    expect(await tried([{ name: "pick", label: "Pick", type: "select" }])).toContain(
+      "a select needs options",
+    );
+    expect((await alice.delete(`${ws(dev)}/drafts/badly`)).status).toBeLessThan(300);
+  });
+});
+
 describe("the write path", () => {
   test("every successful change left an audit entry", () => {
     expect(t.unaudited).toEqual([]);

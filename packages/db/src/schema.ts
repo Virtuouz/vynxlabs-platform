@@ -395,7 +395,7 @@ export interface TriggerStateTable {
   node_id: Generated<string>;
   tenant_id: string;
   workspace_id: string;
-  type: "schedule" | "webhook" | "event";
+  type: "schedule" | "webhook" | "event" | "form";
   target_kind: Generated<"script" | "flow">;
   /** The path of the script or flow the trigger starts. */
   target_path: string;

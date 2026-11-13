@@ -1,5 +1,6 @@
 import type { Bundle, BundleManifest } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
+import { checkForm, type FormTrigger } from "./form.js";
 import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
 import { BUILTIN_CONNECTORS, isThemeValue, registerPlatformKinds } from "./kinds.js";
 import { KindRegistry, validateJson } from "./registry.js";
@@ -113,6 +114,11 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         problems.push(
           `${manifest.path} (${manifest.kind}): ${field} names "${source}", which is a source for ${has === "poll" ? "a schedule" : "a webhook"}, not for ${mode === "poll" ? "a schedule" : "a webhook"}.`,
         );
+      }
+    }
+    if (manifest.kind === "trigger" && body.type === "form") {
+      for (const issue of checkForm(manifest.body as unknown as FormTrigger, "/body")) {
+        problems.push(`${manifest.path} (trigger): ${issue.path} ${issue.message}`);
       }
     }
     if (manifest.kind === "trigger" && body.type === "event") {

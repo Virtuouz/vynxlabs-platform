@@ -178,6 +178,103 @@
                       "event"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "const": "form"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "fields": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 30,
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_]*$",
+                              "maxLength": 63,
+                              "description": "The key the value has in the input."
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "type": {
+                              "enum": [
+                                "text",
+                                "textarea",
+                                "email",
+                                "number",
+                                "date",
+                                "select",
+                                "checkbox"
+                              ]
+                            },
+                            "required": {
+                              "type": "boolean"
+                            },
+                            "help": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "uniqueItems": true,
+                              "description": "What a select offers."
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "label",
+                            "type"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "submitLabel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "success": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "What is shown once the form was sent."
+                      },
+                      "access": {
+                        "enum": [
+                          "anyone",
+                          "signed_in"
+                        ],
+                        "description": "Who may send the form. `signed_in` asks for a sign-in to the tenant's portal first. Default `anyone`."
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "title",
+                      "fields"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }

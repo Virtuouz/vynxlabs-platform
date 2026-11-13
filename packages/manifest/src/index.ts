@@ -48,6 +48,15 @@ export {
   type WebhookVerify,
 } from "./flow.js";
 export {
+  checkForm,
+  FORM_FIELD_TYPES,
+  FORM_RESERVED_NAMES,
+  FORM_TEXT_LIMIT,
+  type FormField,
+  type FormTrigger,
+  readFormAnswer,
+} from "./form.js";
+export {
   CHART_MARKS,
   checkInterface,
   checkPage,

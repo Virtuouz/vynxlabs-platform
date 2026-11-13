@@ -1,3 +1,4 @@
+import { checkForm, type FormTrigger } from "./form.js";
 import type { ManifestIssue } from "./registry.js";
 
 /** The body of a `flow` manifest, version 1. */
@@ -43,7 +44,8 @@ export type FlowTrigger =
       /** `flow` holds the request open for a respond step to answer. Default `now`. */
       respond?: "now" | "flow";
     }
-  | { type: "event"; event: string; filter?: string };
+  | { type: "event"; event: string; filter?: string }
+  | ({ type: "form" } & FormTrigger);
 
 /**
  * What a step hands the script it runs, beyond what the script declares for
@@ -335,6 +337,9 @@ export function checkFlow(body: FlowBody): ManifestIssue[] {
         path: `${at}/with`,
         message: "`with` hands something to a script, and this foreach runs a flow",
       });
+    }
+    if (node.type === "trigger" && node.trigger.type === "form") {
+      issues.push(...checkForm(node.trigger, `${at}/trigger`));
     }
     if (node.type === "respond") {
       for (const name of Object.keys(node.headers ?? {})) {

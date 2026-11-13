@@ -258,7 +258,7 @@ export async function awaitResponse(
       .where("id", "=", flowRunId)
       .executeTakeFirst();
     if (row?.response) return row.response as FlowResponse;
-    if (!row || row.status !== "running" || gone() || Date.now() + pause > deadline) {
+    if (row?.status !== "running" || gone() || Date.now() + pause > deadline) {
       return undefined;
     }
     await sleep(pause);

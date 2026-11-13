@@ -898,8 +898,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("trigger:read") },
         schema: {
-          summary: "Schedules and webhooks in a workspace",
-          description: "A webhook's address is included only for callers who hold `trigger:write`.",
+          summary: "Schedules, webhooks, forms and event triggers in a workspace",
+          description:
+            "The address of a webhook or a form is included only for callers who hold " +
+            "`trigger:write`. A form's address is a page under the tenant's portal.",
           tags: ["runs"],
           params: WorkspaceParams,
           response: {
@@ -930,6 +932,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("trigger_state.workspace_id", "=", params.w)
           .orderBy("resource.path")
           .execute();
+        const tenantSlug = (
+          await db
+            .selectFrom("tenant")
+            .select("slug")
+            .where("id", "=", params.t)
+            .executeTakeFirstOrThrow()
+        ).slug;
         const mayAddress = await ctx.allowed("trigger:write", {
           tenantId: params.t,
           workspaceId: params.w,
@@ -939,7 +948,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             rows.map(async (row) => {
               const body = row.body as { cron?: string; timezone?: string };
               const token =
-                mayAddress && row.type === "webhook" ? await webhookToken(kernel, row) : undefined;
+                mayAddress && (row.type === "webhook" || row.type === "form")
+                  ? await webhookToken(kernel, row)
+                  : undefined;
+              const address =
+                row.type === "form"
+                  ? `${kernel.config.publicUrl}/portal/${tenantSlug}/forms/${token}`
+                  : `${kernel.config.publicUrl}/api/v1/hooks/${token}`;
               return {
                 path: row.path,
                 type: row.type,
@@ -949,7 +964,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 timezone: row.type === "schedule" ? (body.timezone ?? "UTC") : null,
                 nextFireAt: isoOrNull(row.next_fire_at),
                 lastFiredAt: isoOrNull(row.last_fired_at),
-                url: token ? `${kernel.config.publicUrl}/api/v1/hooks/${token}` : null,
+                url: token ? address : null,
               };
             }),
           ),

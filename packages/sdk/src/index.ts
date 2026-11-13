@@ -381,6 +381,43 @@ export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   );
 }
 
+/** One field of a form. Its value is in the input under `name`. */
+export interface FormField {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "email" | "number" | "date" | "select" | "checkbox";
+  required?: boolean;
+  help?: string;
+  /** What a `select` offers. */
+  options?: string[];
+}
+
+/** A form the platform serves as a page. What is sent starts the script or the flow. */
+export interface FormOptions {
+  title: string;
+  description?: string;
+  fields: FormField[];
+  /** What the button says. Default "Send". */
+  submitLabel?: string;
+  /** What is shown once the form was sent. */
+  success?: string;
+  /** `signed_in` asks for a sign-in to the tenant's portal first. Default `anyone`. */
+  access?: "anyone" | "signed_in";
+}
+
+/**
+ * Declares a form that starts a script. The platform serves it at an address
+ * of its own under the tenant's portal, with no code of yours.
+ */
+export function defineForm(
+  options: FormOptions & { path: string; script: string | { path: string }; enabled?: boolean },
+): ResourceDefinition {
+  const { path, script, ...form } = options;
+  return resource("trigger", path, () =>
+    compact({ type: "form", script: pathOf(script), ...form }),
+  );
+}
+
 export interface ConnectorOptions<Config, Client> {
   /** Unique within the workspace, for example `connectors/shop`. Connections name it by this. */
   path: string;
@@ -553,6 +590,11 @@ export const trigger = {
       source: options.source ? pathOf(options.source) : undefined,
       respond: options.respond,
     }),
+  }),
+  /** Started when someone sends the form, which the platform serves as a page. The input is the fields. */
+  form: (options: FormOptions): FlowNode => ({
+    type: "trigger",
+    trigger: compact({ type: "form", ...options }),
   }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
   event: (event: Target, options: { filter?: string } = {}): FlowNode => ({

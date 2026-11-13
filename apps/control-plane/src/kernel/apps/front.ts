@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
+import { readFormAnswer } from "@vynxlabs/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
@@ -13,6 +15,7 @@ import {
 } from "../endusers.js";
 import { HttpError } from "../errors.js";
 import { loadBundle } from "../execution/bundles.js";
+import { findForm, submitForm } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolvePrincipal } from "../principal.js";
 import { answer, begin, finish, stateCookie } from "../sso/flow.js";
@@ -32,6 +35,7 @@ import type { Place } from "./hosts.js";
 import { Limiter } from "./limit.js";
 import {
   forgotPage,
+  formPage,
   homePage,
   injectContext,
   messagePage,
@@ -407,6 +411,80 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           { kind: "success", text: "If that email has an account, a link is on its way." },
         ),
       );
+    }
+
+    const formAt = /^\/forms\/(vxf_[A-Za-z0-9_-]{10,80})$/.exec(sub);
+    if (formAt) {
+      const found = await findForm(kernel, tenant.id, formAt[1] as string);
+      if (!found) {
+        return html(
+          reply,
+          404,
+          messagePage(look, {
+            title: "This form is not here",
+            text: "The address may be wrong, or the form may have been taken down.",
+          }),
+        );
+      }
+      const { form: asked } = found;
+      const own = await frame(tenant, found.state.workspace_id);
+      const action = `${base}/forms/${formAt[1]}`;
+      let by: { type: string; id: string } | undefined;
+      if (asked.access === "signed_in") {
+        const principal = await resolvePrincipal(kernel, request, tenant.id);
+        if (principal.type === "anonymous" || !principal.id) {
+          return redirect(reply, `${base}/sign-in?return=${encodeURIComponent(action)}`);
+        }
+        by = { type: principal.type, id: principal.id };
+      }
+      if (found.paused) {
+        return html(
+          reply,
+          503,
+          messagePage(own, {
+            title: asked.title,
+            text: "This form is not taking answers at the moment. Try again later.",
+          }),
+        );
+      }
+      if (!isPost) {
+        return html(reply, 200, formPage(own, { action, form: asked, key: randomUUID() }));
+      }
+      const thanks = () =>
+        html(
+          reply,
+          200,
+          messagePage(own, {
+            title: asked.title,
+            text: asked.success ?? "Thank you. Your answer was sent.",
+          }),
+        );
+      // A field no person sees was filled in. Whatever sent this is told it worked, and nothing starts.
+      if ((form.website ?? "") !== "") return thanks();
+      const key = /^[0-9a-f-]{36}$/.test(form.key ?? "") ? (form.key as string) : randomUUID();
+      const { input, problems } = readFormAnswer(asked, form);
+      const again = (text: string, status = 400) =>
+        html(
+          reply,
+          status,
+          formPage(
+            own,
+            { action, form: asked, key, sent: form, problems },
+            { kind: "danger", text },
+          ),
+        );
+      if (Object.keys(problems).length > 0) return again("Some answers need another look.");
+      try {
+        await submitForm(kernel, found, input, by, key);
+      } catch (error) {
+        if (!(error instanceof HttpError)) throw error;
+        kernel.log.warn(
+          { form: found.state.path, reason: error.message },
+          "a form's answer could not start what the form starts",
+        );
+        return again("This could not be sent. Try again later.", 502);
+      }
+      return thanks();
     }
 
     if (sub === "/sign-out" && isPost) {

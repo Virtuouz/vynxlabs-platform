@@ -537,7 +537,13 @@ export const trigger = {
    * request is handed to that trigger source, which decides what starts.
    */
   webhook: (
-    options: { input?: "body" | "request"; verify?: WebhookVerify; source?: Target } = {},
+    options: {
+      input?: "body" | "request";
+      verify?: WebhookVerify;
+      source?: Target;
+      /** `flow` holds the request open, for up to 25 seconds, for a respond step to answer. */
+      respond?: "now" | "flow";
+    } = {},
   ): FlowNode => ({
     type: "trigger",
     trigger: compact({
@@ -545,6 +551,7 @@ export const trigger = {
       input: options.input,
       verify: options.verify,
       source: options.source ? pathOf(options.source) : undefined,
+      respond: options.respond,
     }),
   }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
@@ -633,6 +640,14 @@ export const step = {
   /** Runs another flow from its manual trigger and waits for it. */
   subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>
     compact({ type: "subflow", flow: pathOf(flow), input: options.input }) as FlowNode,
+  /**
+   * Answers the request that started the flow, for a webhook trigger with
+   * `respond: "flow"`. `body` and each header are expressions. The first
+   * respond step to run is the answer, and the flow carries on after it.
+   */
+  respond: (
+    options: { status?: number; headers?: Record<string, string>; body?: string } = {},
+  ): FlowNode => compact({ type: "respond", ...options }) as FlowNode,
   /** Fails on purpose, with a message. */
   fail: (message: string): FlowNode => ({ type: "fail", message }),
 };

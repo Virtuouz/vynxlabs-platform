@@ -449,6 +449,8 @@ export interface FlowRunTable {
   started_by_type: string;
   started_by_id: string | null;
   idempotency_key: string;
+  /** What a respond step answered the request that started the run. */
+  response: NullableJson;
   created_at: Generated<Date>;
   finished_at: Date | null;
 }

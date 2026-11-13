@@ -431,7 +431,15 @@ export const flowKind: KindDefinition = {
                 trigger: {
                   oneOf: [
                     node("manual", {}),
-                    node("webhook", webhookOptions),
+                    node("webhook", {
+                      ...webhookOptions,
+                      respond: {
+                        enum: ["now", "flow"],
+                        description:
+                          "`now` answers 202 as soon as the flow has started, and is the default. " +
+                          "`flow` holds the request open for up to 25 seconds, for a respond step to answer.",
+                      },
+                    }),
                     node(
                       "schedule",
                       {
@@ -495,6 +503,21 @@ export const flowKind: KindDefinition = {
               },
               ["cases"],
             ),
+            node("respond", {
+              status: { type: "integer", minimum: 200, maximum: 599 },
+              headers: {
+                type: "object",
+                propertyNames: { pattern: "^[A-Za-z0-9-]+$", maxLength: 100 },
+                additionalProperties: expression,
+                maxProperties: 20,
+                description: "An expression for each header. Each must give text.",
+              },
+              body: {
+                ...expression,
+                description:
+                  "An expression. An object or a list is sent as JSON, and text as it is.",
+              },
+            }),
             node(
               "foreach",
               {

@@ -4,6 +4,7 @@ import type {
 } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
+import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
@@ -15,6 +16,7 @@ import { previewPromotion, promote, promotionOf } from "../kernel/execution/prom
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
 import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import { awaitResponse } from "../kernel/flows/engine.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -1606,13 +1608,16 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "A trigger whose `input` is `request` is given the headers, the query, the method " +
               "and the raw body as well. A trigger with `verify` checks the request's signature " +
               "first and answers 401 when it does not match. Send an `idempotency-key` header " +
-              "to make a repeated delivery harmless.",
+              "to make a repeated delivery harmless. A flow whose webhook trigger says " +
+              "`respond: flow` answers the request itself, with a respond step: the request is " +
+              "held open for up to 25 seconds, and answered 202 if the flow has said nothing by " +
+              "then. Such an answer carries the flow run's ID in `x-flow-run`.",
             tags: ["runs"],
             params: Type.Object({ token: Type.String({ maxLength: 200 }) }),
             response: { 202: Type.Object({ runId: Id }) },
           },
         },
-        async ({ params, body, headers, query, method }, reply) => {
+        async ({ params, body, headers, query, method, raw }, reply) => {
           const key = headers["idempotency-key"];
           const flat: Record<string, string> = {};
           for (const [name, value] of Object.entries(headers)) {
@@ -1652,6 +1657,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               );
             }
             throw badRequest(outcome.problem ?? "The request could not be read.");
+          }
+          if ("awaits" in outcome && outcome.awaits) {
+            const answer = await awaitResponse(
+              kernel,
+              outcome.started.id,
+              () => raw.socket.destroyed,
+            );
+            if (answer) {
+              const text = typeof answer.body === "string";
+              // The answer is a tenant's, sent from the platform's address: a browser must never run it.
+              return (reply as unknown as FastifyReply)
+                .code(answer.status)
+                .headers({
+                  "content-type": text ? "text/plain; charset=utf-8" : "application/json",
+                  ...answer.headers,
+                  "content-security-policy": "default-src 'none'; sandbox",
+                  "x-content-type-options": "nosniff",
+                  "x-flow-run": outcome.started.id,
+                })
+                .send(text ? answer.body : JSON.stringify(answer.body ?? null));
+            }
           }
           return reply.code(202).send({ runId: outcome.started.id });
         },

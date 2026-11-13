@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { newId, type StepStatus, sql } from "@vynxlabs/db";
 import {
   type FlowBody,
@@ -223,6 +224,44 @@ async function afterFlowRun(kernel: Kernel, finished: Finished) {
       (error) =>
         kernel.log.error({ err: error, flowRunId: flowRun.id }, "failure alert could not be sent"),
     );
+  }
+}
+
+/** The longest answer a respond step may give, as JSON. */
+export const MAX_RESPONSE_LENGTH = 256 * 1024;
+
+/** How long a webhook waits for its flow to answer before it says only that the flow started. */
+export const RESPONSE_WAIT_MS = 25_000;
+
+export interface FlowResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+/**
+ * Waits for a flow run to answer the request that started it. Gives
+ * undefined when the run ended with no answer, when the wait ran out, or when
+ * whoever asked has gone.
+ */
+export async function awaitResponse(
+  kernel: Kernel,
+  flowRunId: string,
+  gone: () => boolean,
+  waitMs = RESPONSE_WAIT_MS,
+): Promise<FlowResponse | undefined> {
+  const deadline = Date.now() + waitMs;
+  for (let pause = 25; ; pause = Math.min(pause * 2, 250)) {
+    const row = await kernel.db
+      .selectFrom("flow_run")
+      .select(["status", "response"])
+      .where("id", "=", flowRunId)
+      .executeTakeFirst();
+    if (row?.response) return row.response as FlowResponse;
+    if (!row || row.status !== "running" || gone() || Date.now() + pause > deadline) {
+      return undefined;
+    }
+    await sleep(pause);
   }
 }
 
@@ -553,6 +592,35 @@ class Advance {
           }
           const waiting = await this.#update(step, { status: "waiting", detail: { items } });
           await this.#settleForeach(waiting);
+          break;
+        }
+        case "respond": {
+          const body = node.body ? await this.#evaluate("body", node.body) : null;
+          const headers: Record<string, string> = {};
+          for (const [name, expression] of Object.entries(node.headers ?? {})) {
+            const value = await this.#evaluate(`header ${name}`, expression);
+            if (typeof value !== "string" || /[\r\n]/.test(value)) {
+              throw new StepFailure(`The header "${name}" must be one line of text.`);
+            }
+            headers[name.toLowerCase()] = value;
+          }
+          const answer = JSON.stringify({ status: node.status ?? 200, headers, body });
+          if (answer.length > MAX_RESPONSE_LENGTH) {
+            throw new StepFailure(
+              `The answer is longer than ${MAX_RESPONSE_LENGTH} characters. Answer with less, and let the caller fetch the rest.`,
+            );
+          }
+          // The first answer is the answer. Whoever holds the request open finds it here.
+          const first = await this.#trx
+            .updateTable("flow_run")
+            .set({ response: answer })
+            .where("id", "=", this.#flowRun.id)
+            .where("response", "is", null)
+            .executeTakeFirst();
+          await this.#succeed(step, {
+            status: node.status ?? 200,
+            answered: Number(first.numUpdatedRows) > 0,
+          });
           break;
         }
         case "fail": {

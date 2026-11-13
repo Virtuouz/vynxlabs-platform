@@ -80,6 +80,8 @@ export interface WebhookConfig {
   verify?: WebhookVerify | undefined;
   /** A trigger source that is handed each request first. */
   source?: string | undefined;
+  /** `flow` holds the request open for the flow to answer. */
+  respond?: "now" | "flow" | undefined;
 }
 
 /** A request to a webhook's address, as it arrived. */
@@ -338,6 +340,7 @@ export function registerExecutionHooks(kernel: Kernel) {
                     input: trigger.input,
                     verify: trigger.verify,
                     source: trigger.source,
+                    respond: trigger.respond,
                   },
                 }
               : {}),
@@ -699,5 +702,5 @@ export async function fireWebhook(
     }),
   );
   await kickStarted(kernel, [started]);
-  return { started };
+  return { started, awaits: config.respond === "flow" && started.kind === "flow" };
 }

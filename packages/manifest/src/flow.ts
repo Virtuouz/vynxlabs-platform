@@ -35,7 +35,14 @@ export interface WebhookVerify {
 export type FlowTrigger =
   | { type: "manual" }
   | { type: "schedule"; cron: string; timezone?: string; source?: string }
-  | { type: "webhook"; input?: "body" | "request"; verify?: WebhookVerify; source?: string }
+  | {
+      type: "webhook";
+      input?: "body" | "request";
+      verify?: WebhookVerify;
+      source?: string;
+      /** `flow` holds the request open for a respond step to answer. Default `now`. */
+      respond?: "now" | "flow";
+    }
   | { type: "event"; event: string; filter?: string };
 
 /**
@@ -81,7 +88,33 @@ export type FlowNode =
   | { type: "delay"; seconds: number }
   | { type: "approval"; title: string; detail?: string; timeoutSeconds?: number }
   | { type: "subflow"; flow?: string; flowFrom?: string; allow?: string[]; input?: string }
+  | {
+      type: "respond";
+      status?: number;
+      /** An expression for each header. Each must give text. */
+      headers?: Record<string, string>;
+      /** An expression. An object or a list is sent as JSON, and text as it is. */
+      body?: string;
+    }
   | { type: "fail"; message: string };
+
+/**
+ * Headers a respond step may not set. A cookie would be set on the platform's
+ * own address, and the others are the server's to decide.
+ */
+export const RESPONSE_HEADERS_REFUSED: readonly string[] = [
+  "set-cookie",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "keep-alive",
+  "upgrade",
+  "content-security-policy",
+  "x-content-type-options",
+  "strict-transport-security",
+  "access-control-allow-origin",
+  "access-control-allow-credentials",
+];
 
 export const OTHERWISE = "otherwise";
 
@@ -119,6 +152,11 @@ export function flowExpressions(body: FlowBody): { path: string; expression: str
         break;
       case "approval":
         at("detail", node.detail);
+        break;
+      case "respond":
+        at("body", node.body);
+        for (const [name, expression] of Object.entries(node.headers ?? {}))
+          at(`headers/${name}`, expression);
         break;
       case "fail":
         at("message", node.message);
@@ -297,6 +335,36 @@ export function checkFlow(body: FlowBody): ManifestIssue[] {
         path: `${at}/with`,
         message: "`with` hands something to a script, and this foreach runs a flow",
       });
+    }
+    if (node.type === "respond") {
+      for (const name of Object.keys(node.headers ?? {})) {
+        if (RESPONSE_HEADERS_REFUSED.includes(name.toLowerCase())) {
+          issues.push({
+            path: `${at}/headers/${name}`,
+            message: `a flow may not set the header "${name}"`,
+          });
+        }
+      }
+    }
+    if (
+      node.type === "trigger" &&
+      node.trigger.type === "webhook" &&
+      node.trigger.respond === "flow"
+    ) {
+      if (node.trigger.source !== undefined) {
+        issues.push({
+          path: `${at}/trigger/respond`,
+          message:
+            "a webhook that goes through a trigger source is answered at once: the flow starts later, when the source has run",
+        });
+      }
+      const reached = reachableFrom(body, id);
+      if (![...reached].some((other) => body.nodes[other]?.type === "respond")) {
+        issues.push({
+          path: `${at}/trigger/respond`,
+          message: "the webhook waits for the flow to answer, and no respond step follows it",
+        });
+      }
     }
     if (node.type === "branch") {
       const names = node.cases.map((item) => item.name);

@@ -830,6 +830,147 @@ describe("the core nodes, and nodes of a tenant's own", () => {
   });
 });
 
+describe("a flow that answers the request that started it", () => {
+  const draft = (path: string, body: object) =>
+    alice.put(`${ws(dev)}/drafts/${path}`, { kind: "flow", schemaVersion: 1, body });
+  const hooked = { type: "trigger", trigger: { type: "webhook", respond: "flow" } };
+  const address = async (flow: string) => {
+    const listed = (await alice.get(`${ws(dev)}/triggers`)).body.items.find(
+      (item: Any) => item.path === flow,
+    );
+    return new URL(listed.url).pathname;
+  };
+  const call = (url: string, payload: object) =>
+    t.app.inject({
+      method: "POST",
+      url,
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify(payload),
+    });
+
+  test("a respond step answers with its own status, headers and body, and the flow carries on", async () => {
+    const saved = await draft("answer", {
+      nodes: {
+        hook: hooked,
+        which: { type: "branch", cases: [{ name: "quiet", when: "trigger.quiet == true" }] },
+        greet: {
+          type: "respond",
+          status: 201,
+          headers: { "X-Greeted": "trigger.name", Location: "'/people/' + trigger.name" },
+          body: "{'hello': trigger.name, 'tags': ['a', 'b']}",
+        },
+        echo: { type: "respond", body: "trigger.challenge" },
+        after: { type: "set", values: { done: "true" } },
+        late: { type: "respond", status: 500, body: "'too late'" },
+        nothing: { type: "set", values: { said: "false" } },
+      },
+      edges: [
+        { from: "hook", to: "which" },
+        { from: "which", to: "nothing", output: "quiet" },
+        { from: "which", to: "greet", output: "otherwise" },
+        { from: "greet", to: "after" },
+        { from: "after", to: "late" },
+      ],
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // `echo` is reached by nothing, and the build says so.
+    const loose = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["answer"] });
+    expect(loose.status).toBe(400);
+    const again = await draft("answer", {
+      nodes: {
+        hook: hooked,
+        which: {
+          type: "branch",
+          cases: [
+            { name: "quiet", when: "has(trigger.quiet)" },
+            { name: "challenge", when: "has(trigger.challenge)" },
+          ],
+        },
+        greet: {
+          type: "respond",
+          status: 201,
+          headers: { "X-Greeted": "trigger.name", Location: "'/people/' + trigger.name" },
+          body: "{'hello': trigger.name, 'tags': ['a', 'b']}",
+        },
+        echo: { type: "respond", body: "trigger.challenge" },
+        after: { type: "set", values: { done: "true" } },
+        late: { type: "respond", status: 500, body: "'too late'" },
+        nothing: { type: "set", values: { said: "false" } },
+      },
+      edges: [
+        { from: "hook", to: "which" },
+        { from: "which", to: "nothing", output: "quiet" },
+        { from: "which", to: "echo", output: "challenge" },
+        { from: "which", to: "greet", output: "otherwise" },
+        { from: "greet", to: "after" },
+        { from: "after", to: "late" },
+      ],
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    const deployed = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["answer"] });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const url = await address("answer");
+
+    const greeted = await call(url, { name: "ada" });
+    expect(greeted.statusCode).toBe(201);
+    expect(greeted.json()).toEqual({ hello: "ada", tags: ["a", "b"] });
+    expect(greeted.headers["content-type"]).toContain("application/json");
+    expect(greeted.headers["x-greeted"]).toBe("ada");
+    expect(greeted.headers.location).toBe("/people/ada");
+    // The answer is a tenant's, from the platform's address. A browser may not run it.
+    expect(greeted.headers["content-security-policy"]).toBe("default-src 'none'; sandbox");
+    expect(greeted.headers["x-content-type-options"]).toBe("nosniff");
+    // The flow went on after it answered, and a second answer changed nothing.
+    const id = String(greeted.headers["x-flow-run"]);
+    let run: Any;
+    for (let i = 0; i < 100; i++) {
+      run = (await alice.get(`${ws(dev)}/flow-runs/${id}`)).body;
+      if (run.status !== "running") break;
+      await sleep(50);
+    }
+    expect(run.status).toBe("succeeded");
+    const late = run.steps.find((s: Any) => s.node === "late");
+    expect(late.output).toEqual({ status: 500, answered: false });
+
+    // Text is sent as text: what a sender's handshake asks for.
+    const echoed = await call(url, {
+      challenge: "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P",
+    });
+    expect(echoed.statusCode).toBe(200);
+    expect(echoed.headers["content-type"]).toContain("text/plain");
+    expect(echoed.body).toBe("3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P");
+
+    // A flow that ends having said nothing leaves the usual answer.
+    const quiet = await call(url, { quiet: true });
+    expect(quiet.statusCode).toBe(202);
+    expect(quiet.json().runId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  test("what a flow may not answer with is refused when it is built", async () => {
+    const build = async (nodes: object, edges: object[]) => {
+      expect((await draft("badly", { nodes, edges })).status).toBe(200);
+      const tried = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["badly"] });
+      expect(tried.status).toBe(400);
+      return JSON.stringify(tried.body);
+    };
+    expect(
+      await build({ hook: hooked, set: { type: "set", values: { a: "1" } } }, [
+        { from: "hook", to: "set" },
+      ]),
+    ).toContain("no respond step follows it");
+    expect(
+      await build(
+        {
+          hook: hooked,
+          say: { type: "respond", headers: { "Set-Cookie": "'session=1'" }, body: "'x'" },
+        },
+        [{ from: "hook", to: "say" }],
+      ),
+    ).toContain("may not set the header");
+    expect((await alice.delete(`${ws(dev)}/drafts/badly`)).status).toBeLessThan(300);
+  });
+});
+
 describe("the write path", () => {
   test("every successful change left an audit entry", () => {
     expect(t.unaudited).toEqual([]);

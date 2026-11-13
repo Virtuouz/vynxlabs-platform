@@ -68,7 +68,7 @@ export async function loadVite(directory: string): Promise<{ vite: Vite; plugins
   const vite = await load("vite");
   if (!vite) {
     throw new BuildError([
-      "This repository defines an app, which is built with Vite. Install it: add vite and @preact/preset-vite to devDependencies.",
+      "This repository defines an app, which is built with Vite. Install it: add vite and @vitejs/plugin-react to devDependencies.",
     ]);
   }
   // A plugin's package may be loaded in either module format, which changes where its function is.
@@ -77,7 +77,7 @@ export async function loadVite(directory: string): Promise<{ vite: Vite; plugins
       (candidate) => typeof candidate === "function",
     ) as (() => unknown) | undefined;
   const plugins: unknown[] = [];
-  for (const name of ["@preact/preset-vite", "@tailwindcss/vite"]) {
+  for (const name of ["@vitejs/plugin-react", "@tailwindcss/vite"]) {
     const make = factory(await load(name));
     if (make) plugins.push(make());
   }

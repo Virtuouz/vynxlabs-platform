@@ -40,6 +40,16 @@
       }
     },
     {
+      "includes": ["**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noComponentHookFactories": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.css"],
       "linter": {
         "rules": {

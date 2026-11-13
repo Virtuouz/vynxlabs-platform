@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Apps } from "./screens/Apps.tsx";
 import { Branding, KIT, THEME_TOKENS } from "./screens/Branding.tsx";

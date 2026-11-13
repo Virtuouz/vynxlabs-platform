@@ -14,7 +14,7 @@ export interface AppSummary {
 }
 
 const external = (url: string, text: string) => (
-  <a href={url} target="_blank" rel="noreferrer" class="break-all text-action">
+  <a href={url} target="_blank" rel="noreferrer" className="break-all text-action">
     {text}
   </a>
 );
@@ -38,17 +38,17 @@ export function Apps({ root }: { root: string }) {
         {
           header: "App",
           cell: (row) => (
-            <span class="flex flex-col gap-0.5">
-              <span class="font-medium">{row.title}</span>
-              <code class="font-mono text-[13px] text-ink-muted">{row.path}</code>
-              {row.description ? <span class="text-ink-muted">{row.description}</span> : null}
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium">{row.title}</span>
+              <code className="font-mono text-[13px] text-ink-muted">{row.path}</code>
+              {row.description ? <span className="text-ink-muted">{row.description}</span> : null}
             </span>
           ),
         },
         {
           header: "Address",
           cell: (row) => (
-            <span class="flex flex-col gap-0.5">
+            <span className="flex flex-col gap-0.5">
               {external(row.url, row.url)}
               {row.domains
                 .filter((domain) => domain.enabled)
@@ -61,7 +61,7 @@ export function Apps({ root }: { root: string }) {
         {
           header: "Files",
           cell: (row) => (
-            <span class="whitespace-nowrap">
+            <span className="whitespace-nowrap">
               {row.files.toLocaleString()} {row.files === 1 ? "file" : "files"}, {size(row.bytes)}
             </span>
           ),
@@ -72,7 +72,7 @@ export function Apps({ root }: { root: string }) {
             row.access.length > 0 ? (
               row.access.join(", ")
             ) : (
-              <span class="text-ink-muted">
+              <span className="text-ink-muted">
                 Only staff whose role lets them read this workspace
               </span>
             ),

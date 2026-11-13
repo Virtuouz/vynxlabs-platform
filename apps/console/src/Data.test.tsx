@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SourceView, TableView, toFilter } from "./screens/Data.tsx";
 

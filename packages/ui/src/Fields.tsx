@@ -1,6 +1,6 @@
 import { Field } from "@base-ui/react/field";
-import type { ComponentChildren, TargetedEvent } from "preact";
-import { useId, useState } from "preact/hooks";
+import type { ChangeEvent, ReactNode } from "react";
+import { useId, useState } from "react";
 
 const control =
   "h-9 w-full rounded-control border border-line bg-surface px-2.5 text-ink placeholder:text-ink-muted/70 disabled:opacity-60";
@@ -12,17 +12,17 @@ interface Common {
   error?: string | undefined;
 }
 
-function Frame({ label, hint, error, children }: Common & { children: ComponentChildren }) {
+function Frame({ label, hint, error, children }: Common & { children: ReactNode }) {
   return (
-    <Field.Root invalid={error !== undefined} class="flex flex-col gap-1">
-      <Field.Label class="text-[13px] font-medium text-ink">{label}</Field.Label>
+    <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
+      <Field.Label className="text-[13px] font-medium text-ink">{label}</Field.Label>
       {children}
       {error ? (
-        <p role="alert" class="m-0 text-[13px] text-danger">
+        <p role="alert" className="m-0 text-[13px] text-danger">
           {error}
         </p>
       ) : hint ? (
-        <Field.Description class="m-0 text-[13px] text-ink-muted">{hint}</Field.Description>
+        <Field.Description className="m-0 text-[13px] text-ink-muted">{hint}</Field.Description>
       ) : null}
     </Field.Root>
   );
@@ -38,16 +38,16 @@ export interface TextFieldProps extends Common {
   maxLength?: number;
   autoComplete?: string;
   disabled?: boolean;
-  onInput?: (value: string) => void;
+  onChange?: (value: string) => void;
 }
 
-export function TextField({ label, hint, error, onInput, ...input }: TextFieldProps) {
+export function TextField({ label, hint, error, onChange, ...input }: TextFieldProps) {
   return (
     <Frame label={label} {...(hint ? { hint } : {})} error={error}>
       <Field.Control
         {...input}
-        class={control}
-        onInput={(event: TargetedEvent<HTMLInputElement>) => onInput?.(event.currentTarget.value)}
+        className={control}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
       />
     </Frame>
   );
@@ -77,7 +77,7 @@ export function SelectField({
         render={
           <select
             {...select}
-            class={control}
+            className={control}
             onChange={(event) => onChange?.(event.currentTarget.value)}
           >
             {options.map((option) => (
@@ -102,7 +102,7 @@ export interface TextAreaFieldProps extends Common {
   minLength?: number;
   maxLength?: number;
   disabled?: boolean;
-  onInput?: (value: string) => void;
+  onChange?: (value: string) => void;
 }
 
 /** Text that runs over several lines. */
@@ -111,7 +111,7 @@ export function TextAreaField({
   hint,
   error,
   rows = 4,
-  onInput,
+  onChange,
   ...area
 }: TextAreaFieldProps) {
   return (
@@ -121,8 +121,8 @@ export function TextAreaField({
           <textarea
             {...area}
             rows={rows}
-            class={`${control} h-auto resize-y py-1.5`}
-            onInput={(event) => onInput?.(event.currentTarget.value)}
+            className={`${control} h-auto resize-y py-1.5`}
+            onChange={(event) => onChange?.(event.currentTarget.value)}
           />
         }
       />
@@ -154,11 +154,11 @@ export interface NumberFieldProps extends Common {
   required?: boolean;
   disabled?: boolean;
   /** Called with the number typed, or undefined when the box holds no number. */
-  onInput?: (value: number | undefined) => void;
+  onChange?: (value: number | undefined) => void;
 }
 
 export function NumberField(props: NumberFieldProps) {
-  const { label, hint, error, value, onInput, ...input } = props;
+  const { label, hint, error, value, onChange, ...input } = props;
   // The typed text is kept as it is, so that "1." or "-" is not rewritten half-way through.
   // It gives way only when a value is passed in that is not the number it spells.
   const [text, setText] = useState(() => numberText(value));
@@ -169,10 +169,10 @@ export function NumberField(props: NumberFieldProps) {
         {...input}
         type="number"
         value={held ? numberText(value) : text}
-        class={`${control} text-right`}
-        onInput={(event: TargetedEvent<HTMLInputElement>) => {
+        className={`${control} text-right`}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => {
           setText(event.currentTarget.value);
-          onInput?.(typedNumber(event.currentTarget.value));
+          onChange?.(typedNumber(event.currentTarget.value));
         }}
       />
     </Frame>
@@ -190,18 +190,18 @@ export interface DateFieldProps extends Common {
   max?: string;
   required?: boolean;
   disabled?: boolean;
-  onInput?: (value: string) => void;
+  onChange?: (value: string) => void;
 }
 
 /** The browser's own date picker: it follows the person's locale and works on a phone. */
-export function DateField({ label, hint, error, withTime, onInput, ...input }: DateFieldProps) {
+export function DateField({ label, hint, error, withTime, onChange, ...input }: DateFieldProps) {
   return (
     <Frame label={label} {...(hint ? { hint } : {})} error={error}>
       <Field.Control
         {...input}
         type={withTime ? "datetime-local" : "date"}
-        class={control}
-        onInput={(event: TargetedEvent<HTMLInputElement>) => onInput?.(event.currentTarget.value)}
+        className={control}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
       />
     </Frame>
   );
@@ -220,12 +220,12 @@ export function CheckboxField({ label, hint, error, onChange, ...input }: Checkb
   const id = useId();
   const note = error || hint ? `${id}-note` : undefined;
   return (
-    <div class="flex flex-col gap-1">
-      <label class="flex items-center gap-2 text-[13px] font-medium text-ink">
+    <div className="flex flex-col gap-1">
+      <label className="flex items-center gap-2 text-[13px] font-medium text-ink">
         <input
           {...input}
           type="checkbox"
-          class="size-4 accent-(--vx-action) disabled:opacity-60"
+          className="size-4 accent-(--vx-action) disabled:opacity-60"
           aria-invalid={error !== undefined}
           aria-describedby={note}
           onChange={(event) => onChange?.(event.currentTarget.checked)}
@@ -233,11 +233,11 @@ export function CheckboxField({ label, hint, error, onChange, ...input }: Checkb
         {label}
       </label>
       {error ? (
-        <p id={note} role="alert" class="m-0 text-[13px] text-danger">
+        <p id={note} role="alert" className="m-0 text-[13px] text-danger">
           {error}
         </p>
       ) : hint ? (
-        <p id={note} class="m-0 text-[13px] text-ink-muted">
+        <p id={note} className="m-0 text-[13px] text-ink-muted">
           {hint}
         </p>
       ) : null}

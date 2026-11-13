@@ -1,5 +1,5 @@
 import { Badge, Button, EmptyState, Notice } from "@vynxlabs/ui";
-import { useState } from "preact/hooks";
+import { useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import {
   type CreateConfig,
@@ -58,7 +58,7 @@ interface Grant {
   active: boolean;
 }
 
-const code = (text: string) => <code class="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 /** Production is always marked. It is the one thing nobody should have to look for. */
 export const TypeBadge = ({ type }: { type: "production" | "dev" }) =>
@@ -161,7 +161,7 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
   const runId = match("/t/:t/workspaces/:w/runs/:id", path)?.id;
   return (
-    <div class="flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
       {mine ? (
         <Notice
           tone="attention"
@@ -244,7 +244,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           cell: (row) => (
             <Link
               to={`/t/${tenantId}/workspaces/${row.id}/scripts`}
-              class="font-medium text-action"
+              className="font-medium text-action"
             >
               {row.name}
             </Link>
@@ -332,19 +332,19 @@ function WorkspaceDetail({
     <Link
       to={`/t/${tenantId}/workspaces/${workspaceId}/${slug}`}
       current={tab === slug}
-      class={`border-b-2 px-1 pb-2 no-underline ${tab === slug ? "border-action font-medium text-action" : "border-transparent text-ink-muted hover:text-ink"}`}
+      className={`border-b-2 px-1 pb-2 no-underline ${tab === slug ? "border-action font-medium text-action" : "border-transparent text-ink-muted hover:text-ink"}`}
     >
       {label}
     </Link>
   );
   return (
-    <div class="flex flex-col gap-5">
-      <div class="flex flex-wrap items-center gap-3">
-        <Link to={`/t/${tenantId}/workspaces`} class="text-action">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <Link to={`/t/${tenantId}/workspaces`} className="text-action">
           Workspaces
         </Link>
-        <span class="text-ink-muted">/</span>
-        <span class="font-medium">{workspace.data.name}</span>
+        <span className="text-ink-muted">/</span>
+        <span className="font-medium">{workspace.data.name}</span>
         <TypeBadge type={workspace.data.type} />
         {workspace.data.triggersPaused ? <Badge tone="attention">Paused</Badge> : null}
       </div>
@@ -355,7 +355,7 @@ function WorkspaceDetail({
         workspace={workspace.data}
         reload={workspace.reload}
       />
-      <nav aria-label="Workspace" class="flex flex-wrap gap-x-5 border-line border-b">
+      <nav aria-label="Workspace" className="flex flex-wrap gap-x-5 border-line border-b">
         {link("apps", "Apps")}
         {link("flows", "Flows")}
         {link("scripts", "Scripts")}
@@ -422,7 +422,7 @@ function WorkspaceDetail({
       ) : tab === "triggers" ? (
         <Triggers root={root} />
       ) : tab === "deployments" ? (
-        <div class="flex flex-col gap-6">
+        <div className="flex flex-col gap-6">
           <Promotion base={base} workspace={workspace.data} reload={workspace.reload} />
           <Deployments root={root} />
         </div>
@@ -623,7 +623,10 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
         {
           header: "Name",
           cell: (row) => (
-            <Link to={`/t/${tenantId}/service-accounts/${row.id}`} class="font-medium text-action">
+            <Link
+              to={`/t/${tenantId}/service-accounts/${row.id}`}
+              className="font-medium text-action"
+            >
               {row.name}
             </Link>
           ),
@@ -659,7 +662,7 @@ function Roles({ base }: { base: string }) {
         {
           header: "Role",
           cell: (row) => (
-            <span class="flex flex-wrap items-center gap-2">
+            <span className="flex flex-wrap items-center gap-2">
               {code(row.name)}
               {row.builtin ? <Badge>Built in</Badge> : null}
               {row.managedByResource ? <Badge tone="action">From repository</Badge> : null}
@@ -669,7 +672,9 @@ function Roles({ base }: { base: string }) {
         {
           header: "Permissions",
           cell: (row) => (
-            <span class="font-mono text-[13px] text-ink-muted">{row.permissions.join("  ")}</span>
+            <span className="font-mono text-[13px] text-ink-muted">
+              {row.permissions.join("  ")}
+            </span>
           ),
         },
       ]}

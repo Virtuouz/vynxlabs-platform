@@ -1,5 +1,5 @@
 import { Button, Notice, TextField } from "@vynxlabs/ui";
-import { useState } from "preact/hooks";
+import { useState } from "react";
 import { type ApiError, api } from "../api.ts";
 
 export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
@@ -9,11 +9,13 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [busy, setBusy] = useState(false);
 
   return (
-    <main class="mx-auto mt-[14vh] w-full max-w-sm px-4">
-      <h1 class="m-0 text-2xl font-semibold tracking-tight">Sign in</h1>
-      <p class="mt-1 mb-6 text-ink-muted">Use the account your administrator created for you.</p>
+    <main className="mx-auto mt-[14vh] w-full max-w-sm px-4">
+      <h1 className="m-0 text-2xl font-semibold tracking-tight">Sign in</h1>
+      <p className="mt-1 mb-6 text-ink-muted">
+        Use the account your administrator created for you.
+      </p>
       <form
-        class="flex flex-col gap-3"
+        className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
@@ -40,7 +42,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           autoComplete="username"
           value={email}
           required
-          onInput={setEmail}
+          onChange={setEmail}
         />
         <TextField
           label="Password"
@@ -49,7 +51,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           autoComplete="current-password"
           value={password}
           required
-          onInput={setPassword}
+          onChange={setPassword}
         />
         {error ? <Notice tone="danger">{error}</Notice> : null}
         <Button type="submit" variant="primary" disabled={busy}>

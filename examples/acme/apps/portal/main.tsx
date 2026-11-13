@@ -22,8 +22,8 @@ import {
   ToastProvider,
   useToast,
 } from "@vynxlabs/ui";
-import { render } from "preact";
-import { useMemo } from "preact/hooks";
+import { useMemo } from "react";
+import { createRoot } from "react-dom/client";
 // Types only: none of the repository's server code reaches the browser.
 import type { notices, orders } from "../../src/index.ts";
 import "./styles.css";
@@ -69,7 +69,7 @@ function Orders() {
   }, [rows]);
 
   return (
-    <div class="grid gap-6">
+    <div className="grid gap-6">
       {found.error ? <Notice tone="danger">{found.error.message}</Notice> : null}
       <Table
         rows={rows}
@@ -98,7 +98,7 @@ function Orders() {
         ]}
       />
       {rows.length > 0 ? (
-        <section class="rounded-panel border border-line bg-surface p-4">
+        <section className="rounded-panel border border-line bg-surface p-4">
           <Chart
             title="Orders by status"
             height={200}
@@ -113,8 +113,8 @@ function Orders() {
           />
         </section>
       ) : null}
-      <section class="max-w-md rounded-panel border border-line bg-surface p-4">
-        <h2 class="mt-0 text-base">Ask for an order</h2>
+      <section className="max-w-md rounded-panel border border-line bg-surface p-4">
+        <h2 className="mt-0 text-base">Ask for an order</h2>
         <Form
           schema={orderForm}
           submitLabel="Send"
@@ -135,7 +135,7 @@ function Notices() {
   const found = useQuery(() => table<typeof notices>("notices").find({ sort: ["-created_at"] }));
   const rows = found.data?.items ?? [];
   return (
-    <div class="grid gap-6">
+    <div className="grid gap-6">
       <Table
         rows={rows}
         rowKey={(row) => row.id}
@@ -165,8 +165,8 @@ function Notices() {
           },
         ]}
       />
-      <section class="max-w-md rounded-panel border border-line bg-surface p-4">
-        <h2 class="mt-0 text-base">Write a notice</h2>
+      <section className="max-w-md rounded-panel border border-line bg-surface p-4">
+        <h2 className="mt-0 text-base">Write a notice</h2>
         <Form
           key={rows.length}
           schema={noticeForm}
@@ -193,7 +193,7 @@ function App() {
       title={context.app.title}
       logo={logoUrl()}
       actions={
-        <span class="flex items-center gap-3 text-[13px] text-ink-muted">
+        <span className="flex items-center gap-3 text-[13px] text-ink-muted">
           {principal.email ?? principal.name}
           {staff ? <Badge tone="action">Staff</Badge> : null}
           <Button
@@ -223,9 +223,8 @@ function App() {
   );
 }
 
-render(
+createRoot(document.getElementById("app") as HTMLElement).render(
   <ToastProvider>
     <App />
   </ToastProvider>,
-  document.getElementById("app") as HTMLElement,
 );

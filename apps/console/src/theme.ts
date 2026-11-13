@@ -1,4 +1,4 @@
-import { useEffect } from "preact/hooks";
+import { useEffect } from "react";
 
 const href = (tenantId: string) => `/api/v1/tenants/${tenantId}/theme.css`;
 const find = (tenantId: string) =>

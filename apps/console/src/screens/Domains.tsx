@@ -8,7 +8,7 @@ import {
   Table,
   TextField,
 } from "@vynxlabs/ui";
-import { useState } from "preact/hooks";
+import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import type { AppSummary } from "./Apps.tsx";
@@ -32,7 +32,7 @@ interface WorkspaceName {
   name: string;
 }
 
-const code = (text: string) => <code class="font-mono text-[13px] break-all">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px] break-all">{text}</code>;
 
 const failed = (error: unknown) => {
   const failure = error as ApiError;
@@ -44,7 +44,7 @@ const failed = (error: unknown) => {
 
 function State({ domain }: { domain: Domain }) {
   return (
-    <span class="flex flex-wrap gap-1">
+    <span className="flex flex-wrap gap-1">
       {domain.enabled ? <Badge tone="success">Enabled</Badge> : <Badge>Disabled</Badge>}
       {domain.verifiedAt ? (
         <Badge tone="action">Verified</Badge>
@@ -90,7 +90,7 @@ function AddDialog({
       description="The app is served at the hostname's root once the hostname is verified and enabled."
     >
       <form
-        class="flex flex-col gap-3"
+        className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
@@ -142,10 +142,10 @@ function AddDialog({
           placeholder="portal.example.com"
           hint="The name alone, without https:// or a path."
           error={error?.fields.find((field) => field.path.endsWith("/hostname"))?.message}
-          onInput={setHostname}
+          onChange={setHostname}
         />
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
-        <div class="mt-1 flex justify-end gap-2">
+        <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={busy || apps.loading || appPath === ""}>
             Add hostname
@@ -159,9 +159,9 @@ function AddDialog({
 /** One line of the DNS record, with a button to copy it. */
 function RecordLine({ label, value }: { label: string; value: string }) {
   return (
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <span class="min-w-0">
-        <span class="block text-[13px] text-ink-muted">{label}</span>
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="min-w-0">
+        <span className="block text-[13px] text-ink-muted">{label}</span>
         {code(value)}
       </span>
       <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
@@ -203,20 +203,20 @@ function DetailsDialog({
   return (
     <Dialog open={domain !== undefined} onClose={close} title={domain?.hostname ?? ""}>
       {domain ? (
-        <div class="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           <State domain={domain} />
-          <div class="flex flex-col gap-2">
-            <p class="m-0">
+          <div className="flex flex-col gap-2">
+            <p className="m-0">
               Create this TXT record where the hostname's DNS is managed. It shows that whoever
               controls the name agrees to this tenant using it.
             </p>
-            <div class="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
+            <div className="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
               <RecordLine label="Record name" value={domain.challenge.name} />
               <RecordLine label="Record value" value={domain.challenge.value} />
             </div>
           </div>
-          <div class="flex flex-col gap-2">
-            <p class="m-0 text-ink-muted" role="status">
+          <div className="flex flex-col gap-2">
+            <p className="m-0 text-ink-muted" role="status">
               {domain.verifiedAt
                 ? `Verified ${when(domain.verifiedAt)}.`
                 : domain.checkedAt
@@ -226,7 +226,7 @@ function DetailsDialog({
             {domain.checkError ? <Notice tone="attention">{domain.checkError}</Notice> : null}
             {problem ? <Notice tone="danger">{problem}</Notice> : null}
           </div>
-          <div class="flex flex-wrap justify-between gap-2">
+          <div className="flex flex-wrap justify-between gap-2">
             <Button
               variant="danger"
               disabled={busy}
@@ -245,7 +245,7 @@ function DetailsDialog({
             >
               Remove
             </Button>
-            <span class="flex flex-wrap gap-2">
+            <span className="flex flex-wrap gap-2">
               <Button
                 disabled={busy}
                 onClick={() =>
@@ -297,14 +297,14 @@ export function Domains({ base }: { base: string }) {
 
   return (
     <Page title="Domains" action={addButton}>
-      <div class="flex max-w-[75ch] flex-col gap-2 text-ink-muted">
-        <p class="m-0">
+      <div className="flex max-w-[75ch] flex-col gap-2 text-ink-muted">
+        <p className="m-0">
           A hostname of the client's own, public or internal to their network, serves one app at its
           root. Point the name at this instance with a CNAME or an address record. Whatever
           terminates TLS in front of the instance must hold the certificate for it: the platform
           issues none.
         </p>
-        <p class="m-0">
+        <p className="m-0">
           Then create the TXT record shown for the hostname and run a check. Once the check finds
           the record, the hostname is verified and can be enabled.
         </p>
@@ -326,12 +326,12 @@ export function Domains({ base }: { base: string }) {
                     href={row.url}
                     target="_blank"
                     rel="noreferrer"
-                    class="font-medium break-all text-action"
+                    className="font-medium break-all text-action"
                   >
                     {row.hostname}
                   </a>
                 ) : (
-                  <span class="font-medium break-all">{row.hostname}</span>
+                  <span className="font-medium break-all">{row.hostname}</span>
                 ),
             },
             {
@@ -339,7 +339,7 @@ export function Domains({ base }: { base: string }) {
               cell: (row) => (
                 <span>
                   {code(row.app)}{" "}
-                  <span class="text-ink-muted">in {workspaceName(row.workspaceId)}</span>
+                  <span className="text-ink-muted">in {workspaceName(row.workspaceId)}</span>
                 </span>
               ),
             },
@@ -348,11 +348,13 @@ export function Domains({ base }: { base: string }) {
               header: "Last check",
               cell: (row) =>
                 row.checkError ? (
-                  <span class="text-danger">{row.checkError}</span>
+                  <span className="text-danger">{row.checkError}</span>
                 ) : row.checkedAt ? (
-                  <span class="whitespace-nowrap text-ink-muted">Passed {when(row.checkedAt)}</span>
+                  <span className="whitespace-nowrap text-ink-muted">
+                    Passed {when(row.checkedAt)}
+                  </span>
                 ) : (
-                  <span class="text-ink-muted">Not checked yet</span>
+                  <span className="text-ink-muted">Not checked yet</span>
                 ),
             },
             {
@@ -360,7 +362,7 @@ export function Domains({ base }: { base: string }) {
               align: "end",
               cell: (row) => (
                 <Button size="small" onClick={() => setShown(row)}>
-                  Details<span class="sr-only"> of {row.hostname}</span>
+                  Details<span className="sr-only"> of {row.hostname}</span>
                 </Button>
               ),
             },
@@ -373,7 +375,7 @@ export function Domains({ base }: { base: string }) {
           }
         />
       ) : (
-        <p class="text-ink-muted">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       )}
       <AddDialog
         base={base}

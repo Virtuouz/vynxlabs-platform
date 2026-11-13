@@ -94,7 +94,7 @@ For Fly.io, see [deploy/fly](deploy/fly/README.md).
 | Path | Contents |
 | --- | --- |
 | `apps/control-plane` | The control plane service |
-| `apps/console` | The admin console, a Preact single-page app |
+| `apps/console` | The admin console, a React single-page app |
 | `packages/ui` | The component kit and theme tokens |
 | `packages/cli` | The `platform` command: build, deploy, run |
 | `packages/sdk` | What a tenant repository imports to define scripts and other resources |

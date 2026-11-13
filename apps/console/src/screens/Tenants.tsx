@@ -27,12 +27,15 @@ export function Tenants({ me }: { me: Me }) {
         {
           header: "Name",
           cell: (row) => (
-            <Link to={`/t/${row.id}/workspaces`} class="font-medium text-action">
+            <Link to={`/t/${row.id}/workspaces`} className="font-medium text-action">
               {row.name}
             </Link>
           ),
         },
-        { header: "Slug", cell: (row) => <code class="font-mono text-[13px]">{row.slug}</code> },
+        {
+          header: "Slug",
+          cell: (row) => <code className="font-mono text-[13px]">{row.slug}</code>,
+        },
         ...(operator
           ? [
               {

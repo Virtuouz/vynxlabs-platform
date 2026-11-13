@@ -1,10 +1,10 @@
 import { Badge, type BadgeTone, Button, Notice } from "@vynxlabs/ui";
-import { useEffect, useState } from "preact/hooks";
+import { type ReactNode, useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
-const code = (text: string) => <code class="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 const STATUS: Record<Status, [BadgeTone, string]> = {
@@ -60,7 +60,7 @@ export function Scripts({ root, runsLink }: { root: string; runsLink: string }) 
         { header: "Script", cell: (row) => code(row.path) },
         {
           header: "What it does",
-          cell: (row) => <span class="text-ink-muted">{row.description}</span>,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
         },
         {
           header: "Last run",
@@ -68,13 +68,13 @@ export function Scripts({ root, runsLink }: { root: string; runsLink: string }) 
             row.lastRun ? (
               <Link
                 to={`${runsLink}/${row.lastRun.id}`}
-                class="inline-flex items-center gap-2 no-underline"
+                className="inline-flex items-center gap-2 no-underline"
               >
                 <StatusBadge status={row.lastRun.status} />
-                <span class="text-ink-muted">{when(row.lastRun.createdAt)}</span>
+                <span className="text-ink-muted">{when(row.lastRun.createdAt)}</span>
               </Link>
             ) : (
-              <span class="text-ink-muted">Never</span>
+              <span className="text-ink-muted">Never</span>
             ),
         },
       ]}
@@ -126,7 +126,7 @@ export function Runs({ root, link }: { root: string; link: string }) {
         {
           header: "Started",
           cell: (row) => (
-            <Link to={`${link}/${row.id}`} class="whitespace-nowrap text-action">
+            <Link to={`${link}/${row.id}`} className="whitespace-nowrap text-action">
               {when(row.createdAt)}
             </Link>
           ),
@@ -205,12 +205,12 @@ export function RunDetail({
   }, [root, runId]);
 
   if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p class="text-ink-muted">Loading…</p>;
+  if (!run) return <p className="text-ink-muted">Loading…</p>;
   const active = run.status === "queued" || run.status === "running";
-  const fact = (label: string, value: preact.ComponentChildren) => (
+  const fact = (label: string, value: ReactNode) => (
     <div>
-      <dt class="text-[13px] text-ink-muted">{label}</dt>
-      <dd class="m-0">{value}</dd>
+      <dt className="text-[13px] text-ink-muted">{label}</dt>
+      <dd className="m-0">{value}</dd>
     </div>
   );
   return (
@@ -232,10 +232,10 @@ export function RunDetail({
         ) : undefined
       }
     >
-      <Link to={backLink} class="text-action">
+      <Link to={backLink} className="text-action">
         All runs
       </Link>
-      <dl class="m-0 grid grid-cols-2 gap-4 rounded-panel border border-line bg-surface p-4 md:grid-cols-4">
+      <dl className="m-0 grid grid-cols-2 gap-4 rounded-panel border border-line bg-surface p-4 md:grid-cols-4">
         {fact("Status", <StatusBadge status={run.status} />)}
         {fact("Started by", TRIGGER[run.trigger.type] ?? run.trigger.type)}
         {fact("Attempt", `${Math.max(run.attempt, 1)} of ${run.maxAttempts}`)}
@@ -249,31 +249,31 @@ export function RunDetail({
         </Notice>
       ) : null}
       {run.alert?.handlerRunId ? (
-        <p class="m-0 text-ink-muted">
+        <p className="m-0 text-ink-muted">
           A failure handler was started:{" "}
-          <Link to={`${backLink}/${run.alert.handlerRunId}`} class="text-action">
+          <Link to={`${backLink}/${run.alert.handlerRunId}`} className="text-action">
             see its run
           </Link>
         </p>
       ) : null}
-      <div class="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         <Payload title="Input" value={run.input} />
         <Payload title="Output" value={run.status === "succeeded" ? run.output : undefined} />
       </div>
       <section>
-        <h2 class="mt-0 mb-2 text-base font-semibold">Log</h2>
+        <h2 className="mt-0 mb-2 text-base font-semibold">Log</h2>
         {lines.length === 0 ? (
-          <p class="m-0 text-ink-muted">
+          <p className="m-0 text-ink-muted">
             {active ? "Waiting for the first line…" : "The script logged nothing."}
           </p>
         ) : (
-          <ol class="m-0 list-none overflow-x-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
+          <ol className="m-0 list-none overflow-x-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
             {lines.map((line) => (
-              <li key={line.seq} class={`whitespace-pre-wrap ${LEVEL[line.level] ?? ""}`}>
-                <span class="text-ink-muted">{new Date(line.time).toLocaleTimeString()}</span>{" "}
+              <li key={line.seq} className={`whitespace-pre-wrap ${LEVEL[line.level] ?? ""}`}>
+                <span className="text-ink-muted">{new Date(line.time).toLocaleTimeString()}</span>{" "}
                 {line.level.padEnd(5)} {line.message}
                 {Object.keys(line.fields).length > 0 ? (
-                  <span class="text-ink-muted"> {JSON.stringify(line.fields)}</span>
+                  <span className="text-ink-muted"> {JSON.stringify(line.fields)}</span>
                 ) : null}
               </li>
             ))}
@@ -287,8 +287,8 @@ export function RunDetail({
 function Payload({ title, value }: { title: string; value: unknown }) {
   return (
     <section>
-      <h2 class="mt-0 mb-2 text-base font-semibold">{title}</h2>
-      <pre class="m-0 max-h-64 overflow-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
+      <h2 className="mt-0 mb-2 text-base font-semibold">{title}</h2>
+      <pre className="m-0 max-h-64 overflow-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
         {value === undefined ? "—" : JSON.stringify(value, null, 2)}
       </pre>
     </section>
@@ -320,12 +320,12 @@ export function Triggers({ root }: { root: string }) {
           cell: (row) =>
             row.type === "schedule" ? (
               <span>
-                {code(row.cron ?? "")} <span class="text-ink-muted">{row.timezone}</span>
+                {code(row.cron ?? "")} <span className="text-ink-muted">{row.timezone}</span>
               </span>
             ) : row.url ? (
-              <span class="font-mono text-[13px] break-all select-all">POST {row.url}</span>
+              <span className="font-mono text-[13px] break-all select-all">POST {row.url}</span>
             ) : (
-              <span class="text-ink-muted">
+              <span className="text-ink-muted">
                 A webhook. Its address is shown to those who manage triggers.
               </span>
             ),
@@ -371,7 +371,7 @@ export function Deployments({ root }: { root: string }) {
         {
           header: "Version",
           cell: (row) => (
-            <span class="flex items-center gap-2">
+            <span className="flex items-center gap-2">
               {row.version}
               {row.active ? <Badge tone="success">Running</Badge> : null}
             </span>
@@ -431,7 +431,7 @@ export function Connections({ root }: { root: string }) {
       rowKey={(row) => row.path}
       columns={[
         { header: "Connection", cell: (row) => code(row.path) },
-        { header: "For", cell: (row) => <span class="text-ink-muted">{row.description}</span> },
+        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Points to",
           cell: (row) =>
@@ -502,14 +502,14 @@ export function Variables({ root }: { root: string }) {
       rowKey={(row) => row.path}
       columns={[
         { header: "Variable", cell: (row) => code(row.path) },
-        { header: "For", cell: (row) => <span class="text-ink-muted">{row.description}</span> },
+        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Value here",
           cell: (row) =>
             row.value !== null ? (
               code(row.value)
             ) : (
-              <span class="text-ink-muted">Default: {row.default ?? "none"}</span>
+              <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
             ),
         },
       ]}
@@ -542,25 +542,25 @@ export function Workers({ base }: { base: string }) {
   }>(`${base}/workers`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
   return (
-    <div class="flex flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <Page
         title="Workers"
         description="Workers run this tenant's scripts. The instance starts one when there is work and stops it when there is none. A standalone worker is one you run yourself, for example inside your own network."
       >
         {live.data && live.data.items.length > 0 ? (
-          <ul class="m-0 flex list-none flex-col gap-1 p-0">
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {live.data.items.map((worker) => (
-              <li key={worker.id} class="flex items-center gap-2">
+              <li key={worker.id} className="flex items-center gap-2">
                 <Badge tone="success">Running</Badge>
                 {worker.managed
                   ? "Started by the instance"
                   : `Standalone, using "${worker.credentialName}"`}
-                <span class="text-ink-muted">last heard from {when(worker.lastSeenAt)}</span>
+                <span className="text-ink-muted">last heard from {when(worker.lastSeenAt)}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p class="m-0 text-ink-muted">
+          <p className="m-0 text-ink-muted">
             No worker is running right now.
             {tenant.data?.managedWorkers === false
               ? " This tenant runs on its own workers: start one with a credential from below."
@@ -568,7 +568,7 @@ export function Workers({ base }: { base: string }) {
           </p>
         )}
         {tenant.data ? (
-          <div class="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span>
               {tenant.data.managedWorkers
                 ? "The instance starts workers for this tenant."
@@ -641,7 +641,7 @@ export function Workers({ base }: { base: string }) {
           afterCreate: (result) => (
             <span>
               Copy this credential now. It is not shown again:{" "}
-              <code class="font-mono break-all select-all">
+              <code className="font-mono break-all select-all">
                 {(result as { token: string }).token}
               </code>
             </span>

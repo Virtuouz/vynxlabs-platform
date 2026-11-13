@@ -8,8 +8,8 @@ import {
   Table,
   TextField,
 } from "@vynxlabs/ui";
-import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import type { ReactNode } from "react";
+import { useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 
 export interface FormField {
@@ -29,7 +29,7 @@ export interface CreateConfig {
   fields: FormField[];
   submit: (values: Record<string, string>) => Promise<unknown>;
   /** Something to show once after creating, such as a key that is only shown now. */
-  afterCreate?: (result: unknown) => ComponentChildren;
+  afterCreate?: (result: unknown) => ReactNode;
 }
 
 export interface ListScreenProps<Row> {
@@ -42,7 +42,7 @@ export interface ListScreenProps<Row> {
   empty: { title: string; text?: string };
   create?: CreateConfig;
   /** Adds a last column of actions per row. */
-  rowActions?: (row: Row, reload: () => void) => ComponentChildren;
+  rowActions?: (row: Row, reload: () => void) => ReactNode;
 }
 
 export function Page({
@@ -53,15 +53,17 @@ export function Page({
 }: {
   title: string;
   description?: string | undefined;
-  action?: ComponentChildren;
-  children: ComponentChildren;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section class="flex flex-col gap-4">
-      <header class="flex flex-wrap items-end justify-between gap-3">
+    <section className="flex flex-col gap-4">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 class="m-0 text-xl font-semibold tracking-tight">{title}</h1>
-          {description ? <p class="mt-1 mb-0 max-w-[70ch] text-ink-muted">{description}</p> : null}
+          <h1 className="m-0 text-xl font-semibold tracking-tight">{title}</h1>
+          {description ? (
+            <p className="mt-1 mb-0 max-w-[70ch] text-ink-muted">{description}</p>
+          ) : null}
         </div>
         {action}
       </header>
@@ -95,7 +97,7 @@ export function CreateDialog({
       {...(config.description ? { description: config.description } : {})}
     >
       <form
-        class="flex flex-col gap-3"
+        className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
@@ -139,12 +141,12 @@ export function CreateDialog({
               {...(field.placeholder ? { placeholder: field.placeholder } : {})}
               {...(field.hint ? { hint: field.hint } : {})}
               error={fieldError(field.name)}
-              onInput={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
+              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
             />
           ),
         )}
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
-        <div class="mt-1 flex justify-end gap-2">
+        <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={busy}>
             {config.action}
@@ -159,7 +161,7 @@ export function CreateDialog({
 export function ListScreen<Row>(props: ListScreenProps<Row>) {
   const list = useLoad<{ items: Row[] }>(props.path);
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState<ComponentChildren>();
+  const [created, setCreated] = useState<ReactNode>();
   const { create } = props;
 
   const columns: Column<Row>[] = props.rowActions
@@ -193,7 +195,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           }
         />
       ) : (
-        <p class="text-ink-muted">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       )}
       {create ? (
         <CreateDialog

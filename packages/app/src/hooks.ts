@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { appContext, type Principal, type Session, session } from "./client.ts";
 
 export interface Query<T> {
@@ -20,6 +20,7 @@ export function useQuery<T>(load: () => Promise<T>, deps: readonly unknown[] = [
   });
   const [turn, setTurn] = useState(0);
   const latest = useRef(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the caller names what `load` depends on, and `turn` is what `reload` changes
   useEffect(() => {
     const mine = ++latest.current;
     setState((before) => ({ ...before, loading: true }));

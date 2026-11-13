@@ -49,8 +49,8 @@ export interface InterfaceWidget<Config> {
   /** JSON Schema for the widget's configuration. */
   configSchema: object;
   /**
-   * Returns what the interface kit draws: a Preact node. It is typed as
-   * `unknown` so that the SDK does not depend on Preact. It is called on
+   * Returns what the interface kit draws: a React node. It is typed as
+   * `unknown` so that the SDK does not depend on React. It is called on
    * every draw, so it must not keep state itself: components it returns can.
    */
   render(config: Config, context: WidgetContext): unknown;

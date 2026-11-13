@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { render, screen, waitFor } from "@testing-library/preact";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   ApiError,

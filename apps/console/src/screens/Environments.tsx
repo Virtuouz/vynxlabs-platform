@@ -1,10 +1,10 @@
 import { Badge, Button, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { navigate } from "../router.tsx";
 
-const code = (text: string) => <code class="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 export interface WorkspaceSummary {
   id: string;
@@ -55,7 +55,7 @@ export function WorkspaceControls({
   };
 
   return (
-    <div class="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       {workspace.triggersPaused ? (
         <Notice
           tone="attention"
@@ -70,7 +70,7 @@ export function WorkspaceControls({
         </Notice>
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      <div class="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         {workspace.triggersPaused ? null : (
           <Button size="small" onClick={() => setPaused(true)}>
             Pause triggers
@@ -159,9 +159,9 @@ function CloneDialog({
       description="The copy is a dev workspace linked to this one. Its triggers start paused."
     >
       {clone ? (
-        <div class="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {clone.status === "running" ? (
-            <p class="m-0" role="status">
+            <p className="m-0" role="status">
               Copying…
             </p>
           ) : clone.status === "failed" ? (
@@ -170,7 +170,7 @@ function CloneDialog({
               can be deleted.
             </Notice>
           ) : (
-            <p class="m-0" role="status">
+            <p className="m-0" role="status">
               Copied {count(clone.report.resources, "resource", "resources")},{" "}
               {count(clone.report.rows, "row", "rows")} in{" "}
               {count(clone.report.tables, "table", "tables")} and{" "}
@@ -180,7 +180,7 @@ function CloneDialog({
                 : "It has no connections or secret values, so it cannot reach a real system until you bind it."}
             </p>
           )}
-          <div class="flex justify-end gap-2">
+          <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Close</Button>
             {clone.status === "running" ? null : (
               <Button
@@ -199,7 +199,7 @@ function CloneDialog({
         </div>
       ) : (
         <form
-          class="flex flex-col gap-3"
+          className="flex flex-col gap-3"
           onSubmit={async (event) => {
             event.preventDefault();
             setProblem(undefined);
@@ -221,14 +221,14 @@ function CloneDialog({
             label="Name"
             name="name"
             value={name}
-            onInput={setName}
+            onChange={setName}
             error={field("name")}
           />
           <TextField
             label="Slug"
             name="slug"
             value={slug}
-            onInput={setSlug}
+            onChange={setSlug}
             hint="Lowercase letters, digits and hyphens."
             error={field("slug")}
           />
@@ -260,7 +260,7 @@ function CloneDialog({
           {problem ? (
             <Notice tone="danger">{typeof problem === "string" ? problem : problem.message}</Notice>
           ) : null}
-          <div class="mt-1 flex justify-end gap-2">
+          <div className="mt-1 flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary">
               Clone workspace
@@ -326,14 +326,14 @@ export function Promotion({
   };
 
   return (
-    <section class="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4">
-      <h2 class="m-0 text-base font-semibold">Promotion</h2>
-      <p class="m-0 max-w-[70ch] text-ink-muted">
+    <section className="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4">
+      <h2 className="m-0 text-base font-semibold">Promotion</h2>
+      <p className="m-0 max-w-[70ch] text-ink-muted">
         Promoting activates the bundle that is running here in the workspace this one is linked to.
         It is the same bundle: nothing is rebuilt.
       </p>
-      <div class="flex flex-wrap items-end gap-3">
-        <div class="w-64">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-64">
           <SelectField
             label="Promotes to"
             name="link"
@@ -375,14 +375,14 @@ export function Promotion({
         }
       >
         {preview ? (
-          <div class="flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
             {preview.possible && preview.summary ? (
               <PreviewBody summary={preview.summary} target={preview.target.name} />
             ) : (
               <Notice tone="danger">
-                <p class="m-0">It cannot be promoted yet. {preview.refusal?.detail}</p>
+                <p className="m-0">It cannot be promoted yet. {preview.refusal?.detail}</p>
                 {preview.refusal?.errors.length ? (
-                  <ul class="mt-1 mb-0 list-disc pl-5">
+                  <ul className="mt-1 mb-0 list-disc pl-5">
                     {preview.refusal.errors.map((entry) => (
                       <li key={entry.path}>{entry.message}</li>
                     ))}
@@ -390,7 +390,7 @@ export function Promotion({
                 ) : null}
               </Notice>
             )}
-            <div class="flex justify-end gap-2">
+            <div className="flex justify-end gap-2">
               <Button onClick={() => setOpen(false)}>Cancel</Button>
               {preview.possible ? (
                 <Button
@@ -425,15 +425,17 @@ function PreviewBody({ summary, target }: { summary: Summary; target: string }) 
   const changes = summary.changes ?? [];
   const data = summary.data ?? [];
   if (changes.length === 0 && data.length === 0) {
-    return <p class="m-0">{target} already runs this bundle. Promoting changes nothing.</p>;
+    return <p className="m-0">{target} already runs this bundle. Promoting changes nothing.</p>;
   }
   return (
-    <div class="flex max-h-[50vh] flex-col gap-3 overflow-y-auto">
-      <p class="m-0">This is what promoting will do in {target}. Nothing has been changed yet.</p>
+    <div className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto">
+      <p className="m-0">
+        This is what promoting will do in {target}. Nothing has been changed yet.
+      </p>
       {changes.length > 0 ? (
-        <ul class="m-0 flex list-none flex-col gap-1 p-0">
+        <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {changes.map((entry) => (
-            <li key={`${entry.kind}:${entry.path}`} class="flex items-center gap-2">
+            <li key={`${entry.kind}:${entry.path}`} className="flex items-center gap-2">
               <Badge
                 tone={
                   entry.change === "deleted"
@@ -445,7 +447,7 @@ function PreviewBody({ summary, target }: { summary: Summary; target: string }) 
               >
                 {CHANGE[entry.change] ?? entry.change}
               </Badge>
-              <span class="text-ink-muted">{entry.kind}</span>
+              <span className="text-ink-muted">{entry.kind}</span>
               {code(entry.path)}
             </li>
           ))}
@@ -453,8 +455,8 @@ function PreviewBody({ summary, target }: { summary: Summary; target: string }) 
       ) : null}
       {data.length > 0 ? (
         <div>
-          <p class="m-0 font-medium">To the data</p>
-          <ul class="mt-1 mb-0 list-disc pl-5">
+          <p className="m-0 font-medium">To the data</p>
+          <ul className="mt-1 mb-0 list-disc pl-5">
             {data.map((line) => (
               <li key={line}>{line}</li>
             ))}
@@ -481,7 +483,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
       description="Everything this tenant has, in one file you can keep or take to another instance: resources, bindings, secrets, members, the audit log, tables and files. It is yours."
     >
       <form
-        class="flex max-w-md flex-col gap-3"
+        className="flex max-w-md flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
           if (mismatch || passphrase !== again) return;
@@ -517,7 +519,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           minLength={12}
           required
           autoComplete="new-password"
-          onInput={setPassphrase}
+          onChange={setPassphrase}
           hint="At least 12 characters. It protects every secret in the file, and it is not stored: without it the secrets cannot be read. Pass it on separately from the file."
         />
         <TextField
@@ -527,7 +529,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           value={again}
           required
           autoComplete="new-password"
-          onInput={setAgain}
+          onChange={setAgain}
           error={mismatch ? "The two do not match." : undefined}
         />
         <SelectField
@@ -553,7 +555,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
             {state === "working" ? "Exporting…" : "Export tenant"}
           </Button>
         </div>
-        <p class="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-[13px] text-ink-muted">
           The passphrase protects the secrets in the file. The rest of it, rows and files included,
           can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
           the command line instead: {code("platform tenant export")}.
@@ -584,7 +586,7 @@ export function DatabaseLocations() {
       rowKey={(row) => row.name}
       columns={[
         { header: "Name", cell: (row) => code(row.name) },
-        { header: "For", cell: (row) => <span class="text-ink-muted">{row.description}</span> },
+        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         { header: "Database", cell: (row) => `${row.database} on ${row.host}` },
         { header: "Tenants", cell: (row) => row.tenants, align: "end" },
         {
@@ -668,7 +670,7 @@ export function TenantImport() {
       description="Brings a tenant exported from another instance into this one, whole or not at all. The file is checked against its own list of contents before anything is written."
     >
       {report ? (
-        <div class="flex max-w-[70ch] flex-col gap-3">
+        <div className="flex max-w-[70ch] flex-col gap-3">
           <Notice tone="attention">
             <strong>{report.tenant.name}</strong> was imported:{" "}
             {Object.values(report.counts)
@@ -678,7 +680,7 @@ export function TenantImport() {
             {report.members.created}. Members linked to accounts already here:{" "}
             {report.members.linked}.
           </Notice>
-          <ul class="m-0 flex list-disc flex-col gap-1 pl-5">
+          <ul className="m-0 flex list-disc flex-col gap-1 pl-5">
             <li>
               Its custom tables are in{" "}
               {report.tenant.dataLocation
@@ -699,7 +701,7 @@ export function TenantImport() {
               <li key={line}>Not carried: {line}</li>
             ))}
           </ul>
-          <div class="flex gap-2">
+          <div className="flex gap-2">
             <Button variant="primary" onClick={() => navigate(`/t/${report.tenant.id}/workspaces`)}>
               Open the tenant
             </Button>
@@ -708,7 +710,7 @@ export function TenantImport() {
         </div>
       ) : (
         <form
-          class="flex max-w-md flex-col gap-3"
+          className="flex max-w-md flex-col gap-3"
           onSubmit={async (event) => {
             event.preventDefault();
             if (!file) return;
@@ -736,13 +738,13 @@ export function TenantImport() {
             }
           }}
         >
-          <label class="flex flex-col gap-1 text-[13px] font-medium">
+          <label className="flex flex-col gap-1 text-[13px] font-medium">
             Export file
             <input
               type="file"
               accept=".tar,application/x-tar"
               required
-              class="font-normal"
+              className="font-normal"
               onChange={(event) => setFile(event.currentTarget.files?.[0])}
             />
           </label>
@@ -753,14 +755,14 @@ export function TenantImport() {
             value={passphrase}
             required
             autoComplete="off"
-            onInput={setPassphrase}
+            onChange={setPassphrase}
           />
           <TextField
             label="Slug on this instance"
             name="slug"
             value={slug}
             required={false}
-            onInput={setSlug}
+            onChange={setSlug}
             hint="Leave empty to keep the slug it had."
           />
           <SelectField
@@ -782,7 +784,7 @@ export function TenantImport() {
               {working ? "Importing…" : "Import tenant"}
             </Button>
           </div>
-          <p class="m-0 text-[13px] text-ink-muted">
+          <p className="m-0 text-[13px] text-ink-muted">
             The export must come from an instance at the same version as this one. For a large file,
             use the command line: {code("platform tenant import <file>")}.
           </p>

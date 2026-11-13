@@ -1,5 +1,5 @@
 import { Badge, Button, EmptyState, Notice, Table } from "@vynxlabs/ui";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 import { type ApiError, api } from "../api.ts";
 import { Page, when } from "../ListScreen.tsx";
 
@@ -44,6 +44,7 @@ export function AuditTable({
     }
     setLoaded(true);
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the first page is loaded again only when the route changes
   useEffect(() => {
     load(null);
   }, [path]);
@@ -59,13 +60,13 @@ export function AuditTable({
           columns={[
             {
               header: "When",
-              cell: (row) => <span class="whitespace-nowrap">{when(row.occurredAt)}</span>,
+              cell: (row) => <span className="whitespace-nowrap">{when(row.occurredAt)}</span>,
             },
             {
               header: "Action",
               cell: (row) => (
-                <span class="flex flex-wrap items-center gap-2">
-                  <code class="font-mono text-[13px]">{row.action}</code>
+                <span className="flex flex-wrap items-center gap-2">
+                  <code className="font-mono text-[13px]">{row.action}</code>
                   {row.accessGrantId ? <Badge tone="attention">Operator access</Badge> : null}
                 </span>
               ),
@@ -76,7 +77,7 @@ export function AuditTable({
                 <span title={row.actorId ?? ""}>
                   {row.actorType}
                   {row.actorId ? (
-                    <span class="text-ink-muted"> {row.actorId.slice(-8)}</span>
+                    <span className="text-ink-muted"> {row.actorId.slice(-8)}</span>
                   ) : null}
                 </span>
               ),
@@ -84,7 +85,7 @@ export function AuditTable({
             {
               header: "What",
               cell: (row) => (
-                <span class="text-ink-muted">
+                <span className="text-ink-muted">
                   {row.targetType} {row.targetId ?? ""}
                   {Object.keys(row.details).length > 0 ? ` ${JSON.stringify(row.details)}` : ""}
                 </span>
@@ -94,7 +95,7 @@ export function AuditTable({
           ]}
         />
       ) : (
-        <p class="text-ink-muted">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       )}
       {cursor ? (
         <div>

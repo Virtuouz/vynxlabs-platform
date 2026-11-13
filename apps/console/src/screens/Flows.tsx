@@ -1,11 +1,11 @@
 import { Badge, type BadgeTone, Button, EmptyState, Notice, Table } from "@vynxlabs/ui";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
 import { ListScreen, Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
-const code = (text: string) => <code class="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
 const STATUS: Record<string, [BadgeTone, string]> = {
@@ -54,14 +54,14 @@ export function Flows({ root, link }: { root: string; link: string }) {
         {
           header: "Flow",
           cell: (row) => (
-            <Link to={`${link}/flows/${row.path}`} class="font-medium text-action">
+            <Link to={`${link}/flows/${row.path}`} className="font-medium text-action">
               {row.path}
             </Link>
           ),
         },
         {
           header: "What it does",
-          cell: (row) => <span class="text-ink-muted">{row.description}</span>,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
         },
         {
           header: "Started by",
@@ -73,13 +73,13 @@ export function Flows({ root, link }: { root: string; link: string }) {
             row.lastRun ? (
               <Link
                 to={`${link}/flow-runs/${row.lastRun.id}`}
-                class="inline-flex items-center gap-2 no-underline"
+                className="inline-flex items-center gap-2 no-underline"
               >
                 <StatusBadge status={row.lastRun.status} />
-                <span class="text-ink-muted">{when(row.lastRun.createdAt)}</span>
+                <span className="text-ink-muted">{when(row.lastRun.createdAt)}</span>
               </Link>
             ) : (
-              <span class="text-ink-muted">Never</span>
+              <span className="text-ink-muted">Never</span>
             ),
         },
       ]}
@@ -117,7 +117,7 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
   );
   const [saved, setSaved] = useState<"saving" | "saved" | string>();
   if (flow.error) return <Notice tone="danger">{flow.error.message}</Notice>;
-  if (!flow.data) return <p class="text-ink-muted">Loading…</p>;
+  if (!flow.data) return <p className="text-ink-muted">Loading…</p>;
   const data = flow.data;
   const manual = Object.values(data.nodes).some(
     (node) => node.type === "trigger" && (node.trigger as { type: string }).type === "manual",
@@ -154,7 +154,7 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
         ) : undefined
       }
     >
-      <Link to={`${link}/flows`} class="text-action">
+      <Link to={`${link}/flows`} className="text-action">
         All flows
       </Link>
       <FlowGraph
@@ -175,7 +175,7 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
           }
         }}
       />
-      <p class="m-0 text-[13px] text-ink-muted" aria-live="polite">
+      <p className="m-0 text-[13px] text-ink-muted" aria-live="polite">
         {saved === "saving"
           ? "Saving the arrangement…"
           : saved === "saved"
@@ -185,8 +185,8 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
       </p>
       {data.triggers.length > 0 ? (
         <section>
-          <h2 class="mt-2 mb-2 text-base font-semibold">How it starts</h2>
-          <ul class="m-0 flex list-none flex-col gap-1 p-0">
+          <h2 className="mt-2 mb-2 text-base font-semibold">How it starts</h2>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {data.triggers.map((trigger) => (
               <li key={trigger.node}>
                 {code(trigger.node)}{" "}
@@ -194,11 +194,11 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
                   <span>runs next at {when(trigger.nextFireAt)}</span>
                 ) : trigger.type === "webhook" ? (
                   trigger.url ? (
-                    <span class="font-mono text-[13px] break-all select-all">
+                    <span className="font-mono text-[13px] break-all select-all">
                       POST {trigger.url}
                     </span>
                   ) : (
-                    <span class="text-ink-muted">
+                    <span className="text-ink-muted">
                       a webhook. Its address is shown to those who manage triggers.
                     </span>
                   )
@@ -211,7 +211,7 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
         </section>
       ) : null}
       <section>
-        <h2 class="mt-2 mb-2 text-base font-semibold">Recent runs</h2>
+        <h2 className="mt-2 mb-2 text-base font-semibold">Recent runs</h2>
         <Table
           rows={runs.data?.items ?? []}
           rowKey={(row) => row.id}
@@ -220,7 +220,7 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
             {
               header: "Started",
               cell: (row) => (
-                <Link to={`${link}/flow-runs/${row.id}`} class="text-action">
+                <Link to={`${link}/flow-runs/${row.id}`} className="text-action">
                   {when(row.createdAt)}
                 </Link>
               ),
@@ -264,6 +264,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
   const [selected, setSelected] = useState<string>();
   const [tick, setTick] = useState(0);
   const flow = useLoad<FlowDetail>(run ? `${root}/flows/${run.flow}` : null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is changed after an action to poll again
   useEffect(() => {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -285,7 +286,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
   }, [root, id, tick]);
 
   if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p class="text-ink-muted">Loading…</p>;
+  if (!run) return <p className="text-ink-muted">Loading…</p>;
   const steps = run.steps.filter((step) => step.item === "");
   const statuses = Object.fromEntries(steps.map((step) => [step.node, step.status]));
   const chosen = steps.find((step) => step.node === selected);
@@ -330,12 +331,12 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
         ) : undefined
       }
     >
-      <div class="flex flex-wrap items-center gap-3">
-        <Link to={`${link}/flows/${run.flow}`} class="text-action">
+      <div className="flex flex-wrap items-center gap-3">
+        <Link to={`${link}/flows/${run.flow}`} className="text-action">
           {run.flow}
         </Link>
         <StatusBadge status={run.status} />
-        <span class="text-ink-muted">
+        <span className="text-ink-muted">
           Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`}, on
           bundle version {run.bundleVersion}
         </span>
@@ -350,7 +351,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
           key={step.node}
           tone="attention"
           action={
-            <span class="flex gap-2">
+            <span className="flex gap-2">
               <Button size="small" variant="primary" onClick={() => decide(step.node, "approve")}>
                 Approve
               </Button>
@@ -362,7 +363,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
         >
           <strong>Waiting for approval:</strong> {step.detail.title}
           {step.detail.detail ? (
-            <span class="ml-2 font-mono text-[13px]">{JSON.stringify(step.detail.detail)}</span>
+            <span className="ml-2 font-mono text-[13px]">{JSON.stringify(step.detail.detail)}</span>
           ) : null}
         </Notice>
       ))}
@@ -377,52 +378,52 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
         />
       ) : null}
       {chosen ? (
-        <section class="rounded-panel border border-line bg-surface p-4">
-          <h2 class="mt-0 mb-2 flex items-center gap-2 text-base font-semibold">
+        <section className="rounded-panel border border-line bg-surface p-4">
+          <h2 className="mt-0 mb-2 flex items-center gap-2 text-base font-semibold">
             {code(chosen.node)} <StatusBadge status={chosen.status} />
             {chosen.outputName ? (
-              <span class="font-normal text-ink-muted">took the case {chosen.outputName}</span>
+              <span className="font-normal text-ink-muted">took the case {chosen.outputName}</span>
             ) : null}
           </h2>
           {chosen.error ? (
-            <p class="mt-0 text-danger">
+            <p className="mt-0 text-danger">
               {chosen.error.message}
               {chosen.handled ? (
-                <span class="text-ink-muted"> The flow carried on down its error path.</span>
+                <span className="text-ink-muted"> The flow carried on down its error path.</span>
               ) : null}
             </p>
           ) : null}
           {chosen.wakeAt && chosen.status === "waiting" ? (
-            <p class="mt-0 text-ink-muted">Waits until {when(chosen.wakeAt)}.</p>
+            <p className="mt-0 text-ink-muted">Waits until {when(chosen.wakeAt)}.</p>
           ) : null}
           {chosen.runId ? (
-            <p class="mt-0">
-              <Link to={`${link}/runs/${chosen.runId}`} class="text-action">
+            <p className="mt-0">
+              <Link to={`${link}/runs/${chosen.runId}`} className="text-action">
                 See this step's run and its log
               </Link>
             </p>
           ) : null}
           {chosen.childFlowRunId ? (
-            <p class="mt-0">
-              <Link to={`${link}/flow-runs/${chosen.childFlowRunId}`} class="text-action">
+            <p className="mt-0">
+              <Link to={`${link}/flow-runs/${chosen.childFlowRunId}`} className="text-action">
                 See the flow run this step started
               </Link>
             </p>
           ) : null}
           {items.length > 0 ? (
-            <p class="mt-0 text-ink-muted">
+            <p className="mt-0 text-ink-muted">
               {items.filter((item) => item.status === "succeeded").length} of {items.length} items
               done.
             </p>
           ) : null}
           {chosen.status === "succeeded" ? (
-            <pre class="m-0 max-h-64 overflow-auto rounded-control bg-canvas p-3 font-mono text-[13px]">
+            <pre className="m-0 max-h-64 overflow-auto rounded-control bg-canvas p-3 font-mono text-[13px]">
               {JSON.stringify(chosen.output, null, 2)}
             </pre>
           ) : null}
         </section>
       ) : (
-        <p class="m-0 text-ink-muted">Choose a step to see what it produced.</p>
+        <p className="m-0 text-ink-muted">Choose a step to see what it produced.</p>
       )}
     </Page>
   );
@@ -452,7 +453,7 @@ export function Approvals({ base, tenantId }: { base: string; tenantId: string }
           cell: (row) => (
             <Link
               to={`/t/${tenantId}/workspaces/${row.workspaceId}/flow-runs/${row.flowRunId}`}
-              class="font-medium text-action"
+              className="font-medium text-action"
             >
               {row.title}
             </Link>
@@ -461,7 +462,7 @@ export function Approvals({ base, tenantId }: { base: string; tenantId: string }
         {
           header: "Details",
           cell: (row) => (
-            <span class="font-mono text-[13px] text-ink-muted">
+            <span className="font-mono text-[13px] text-ink-muted">
               {row.detail ? JSON.stringify(row.detail) : ""}
             </span>
           ),
@@ -494,7 +495,7 @@ export function Approvals({ base, tenantId }: { base: string; tenantId: string }
           }
         };
         return (
-          <span class="inline-flex gap-2">
+          <span className="inline-flex gap-2">
             <Button size="small" variant="primary" onClick={() => decide("approve")}>
               Approve
             </Button>
@@ -524,7 +525,7 @@ export function Events({ root }: { root: string }) {
       columns={[
         {
           header: "When",
-          cell: (row) => <span class="whitespace-nowrap">{when(row.occurredAt)}</span>,
+          cell: (row) => <span className="whitespace-nowrap">{when(row.occurredAt)}</span>,
         },
         { header: "Event", cell: (row) => code(row.name) },
         {
@@ -536,7 +537,9 @@ export function Events({ root }: { root: string }) {
         {
           header: "Payload",
           cell: (row) => (
-            <span class="font-mono text-[13px] text-ink-muted">{JSON.stringify(row.payload)}</span>
+            <span className="font-mono text-[13px] text-ink-muted">
+              {JSON.stringify(row.payload)}
+            </span>
           ),
         },
       ]}

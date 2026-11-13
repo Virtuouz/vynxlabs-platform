@@ -1,23 +1,15 @@
 import { Menu } from "@vynxlabs/ui";
-import type { ComponentChildren } from "preact";
+import type { ReactNode } from "react";
 import { isOperator, type Me, useLoad } from "./api.ts";
 import { Link, navigate } from "./router.tsx";
 
-function NavLink({
-  to,
-  path,
-  children,
-}: {
-  to: string;
-  path: string;
-  children: ComponentChildren;
-}) {
+function NavLink({ to, path, children }: { to: string; path: string; children: ReactNode }) {
   const current = path === to || path.startsWith(`${to}/`);
   return (
     <Link
       to={to}
       current={current}
-      class={`block rounded-control px-2 py-1.5 no-underline ${
+      className={`block rounded-control px-2 py-1.5 no-underline ${
         current ? "bg-action-soft font-medium text-action" : "text-ink hover:bg-sunken"
       }`}
     >
@@ -26,10 +18,10 @@ function NavLink({
   );
 }
 
-function Group({ label, children }: { label: string; children: ComponentChildren }) {
+function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div class="flex flex-col gap-0.5">
-      <p class="m-0 px-2 pb-1 text-[13px] text-ink-muted">{label}</p>
+    <div className="flex flex-col gap-0.5">
+      <p className="m-0 px-2 pb-1 text-[13px] text-ink-muted">{label}</p>
       {children}
     </div>
   );
@@ -63,19 +55,19 @@ export function Shell({
   path: string;
   tenantId: string | undefined;
   onSignOut: () => void;
-  children: ComponentChildren;
+  children: ReactNode;
 }) {
   const known = me.tenants.find((candidate) => candidate.id === tenantId);
   // An operator is not a member of most tenants, so the name comes from the tenant record.
   const fetched = useLoad<{ name: string }>(tenantId && !known ? `/tenants/${tenantId}` : null);
   const tenant = known ?? fetched.data;
   return (
-    <div class="grid min-h-screen grid-cols-1 md:grid-cols-[15rem_1fr]">
+    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[15rem_1fr]">
       <nav
         aria-label="Main"
-        class="flex flex-col gap-5 border-line border-b bg-surface p-3 md:border-r md:border-b-0"
+        className="flex flex-col gap-5 border-line border-b bg-surface p-3 md:border-r md:border-b-0"
       >
-        <Link to="/" class="px-2 pt-1 font-semibold text-ink no-underline">
+        <Link to="/" className="px-2 pt-1 font-semibold text-ink no-underline">
           Console
         </Link>
         <Group label="Tenants">
@@ -111,9 +103,9 @@ export function Shell({
             </NavLink>
           </Group>
         ) : null}
-        <div class="mt-auto border-line border-t pt-3">
+        <div className="mt-auto border-line border-t pt-3">
           <Menu
-            label={<span class="truncate">{me.principal.email ?? me.principal.name}</span>}
+            label={<span className="truncate">{me.principal.email ?? me.principal.name}</span>}
             items={[
               { label: "API keys", onSelect: () => navigate("/account/api-keys") },
               { label: "Sign out", onSelect: onSignOut },
@@ -121,8 +113,8 @@ export function Shell({
           />
         </div>
       </nav>
-      <main class="min-w-0 px-4 py-6 md:px-8">
-        <div class="mx-auto max-w-5xl">{children}</div>
+      <main className="min-w-0 px-4 py-6 md:px-8">
+        <div className="mx-auto max-w-5xl">{children}</div>
       </main>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { ComponentChildren } from "preact";
+import type { ReactNode } from "react";
 import { Button } from "./Button.tsx";
 import { Chart } from "./Chart.tsx";
 import { Form, type FormSchema } from "./Form.tsx";
@@ -29,7 +29,7 @@ export interface InterfaceWidget<Config> {
   name: string;
   /** JSON Schema for the widget's configuration. */
   configSchema: object;
-  /** Returns the Preact node to draw. Called on every draw, so it must not keep state itself. */
+  /** Returns the React node to draw. Called on every draw, so it must not keep state itself. */
   render(config: Config, context: WidgetContext): unknown;
 }
 
@@ -62,7 +62,7 @@ export interface WidgetProps {
 export function Widget({ name, config, context = {} }: WidgetProps) {
   const widget = widgets.get(name);
   if (!widget) return <Notice tone="danger">There is no widget called "{name}".</Notice>;
-  return <>{widget.render(config, context) as ComponentChildren}</>;
+  return <>{widget.render(config, context) as ReactNode}</>;
 }
 
 export interface TableWidgetConfig {

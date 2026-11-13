@@ -1,5 +1,5 @@
 import { Notice } from "@vynxlabs/ui";
-import { useEffect } from "preact/hooks";
+import { useEffect } from "react";
 import { api, type Me, useLoad } from "./api.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
@@ -38,7 +38,7 @@ export function App() {
   if (me.error?.status === 401 || !me.data) {
     if (me.error && me.error.status !== 401) {
       return (
-        <main class="mx-auto mt-24 max-w-md px-4">
+        <main className="mx-auto mt-24 max-w-md px-4">
           <Notice tone="danger">The instance could not be reached. {me.error.message}</Notice>
         </main>
       );

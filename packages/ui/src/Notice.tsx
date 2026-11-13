@@ -1,4 +1,4 @@
-import type { ComponentChildren } from "preact";
+import type { ReactNode } from "react";
 
 const tones = {
   attention: "border-attention/40 bg-attention-soft text-ink",
@@ -12,13 +12,13 @@ export function Notice({
   action,
 }: {
   tone: keyof typeof tones;
-  children: ComponentChildren;
-  action?: ComponentChildren;
+  children: ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <div
       role={tone === "danger" ? "alert" : "status"}
-      class={`flex flex-wrap items-center justify-between gap-3 rounded-control border px-3 py-2 ${tones[tone]}`}
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-control border px-3 py-2 ${tones[tone]}`}
     >
       <div>{children}</div>
       {action}
@@ -33,14 +33,14 @@ export function EmptyState({
   action,
 }: {
   title: string;
-  children?: ComponentChildren;
-  action?: ComponentChildren;
+  children?: ReactNode;
+  action?: ReactNode;
 }) {
   return (
-    <div class="rounded-panel border border-dashed border-line px-5 py-8">
-      <p class="m-0 font-medium">{title}</p>
-      {children ? <p class="mt-1 mb-0 max-w-[60ch] text-ink-muted">{children}</p> : null}
-      {action ? <div class="mt-4">{action}</div> : null}
+    <div className="rounded-panel border border-dashed border-line px-5 py-8">
+      <p className="m-0 font-medium">{title}</p>
+      {children ? <p className="mt-1 mb-0 max-w-[60ch] text-ink-muted">{children}</p> : null}
+      {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );
 }

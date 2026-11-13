@@ -17,7 +17,7 @@ export function InstanceMembers() {
         { header: "Created", cell: (row) => when(row.createdAt) },
         {
           header: "ID",
-          cell: (row) => <code class="font-mono text-[13px] text-ink-muted">{row.id}</code>,
+          cell: (row) => <code className="font-mono text-[13px] text-ink-muted">{row.id}</code>,
         },
       ]}
       empty={{ title: "No members" }}

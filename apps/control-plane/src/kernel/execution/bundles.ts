@@ -58,6 +58,8 @@ export async function storeBundle(
   workspace: WorkspaceRef,
   principal: Principal,
   input: unknown,
+  /** `compose` and `preview` are bundles the control plane made itself. */
+  origin: "upload" | "compose" | "preview" = "upload",
 ) {
   const issues = validateJson(Bundle, input, "/body");
   if (issues.length > 0) throw badRequest("That is not a bundle.", issues);
@@ -105,6 +107,11 @@ export async function storeBundle(
     .where("digest", "=", bundle.digest)
     .executeTakeFirst();
   if (existing) {
+    // A bundle first made to try a draft out, and now deployed or uploaded, is no longer a preview.
+    if (existing.origin === "preview" && origin !== "preview") {
+      await trx.updateTable("bundle").set({ origin }).where("id", "=", existing.id).execute();
+      existing.origin = origin;
+    }
     await audit({
       action: "bundle.uploaded",
       targetType: "bundle",
@@ -146,6 +153,7 @@ export async function storeBundle(
       storage_key: storageKey,
       size_bytes: Buffer.byteLength(text),
       manifest_count: bundle.manifests.length,
+      origin,
       created_by_type: principal.type,
       created_by_id: principal.id,
     })
@@ -153,12 +161,17 @@ export async function storeBundle(
     .executeTakeFirstOrThrow();
   loaded.set(id, bundle);
   await audit({
-    action: "bundle.uploaded",
+    action: origin === "upload" ? "bundle.uploaded" : "bundle.composed",
     targetType: "bundle",
     targetId: id,
     tenantId: workspace.tenantId,
     workspaceId: workspace.id,
-    details: { version: row.version, digest: bundle.digest, manifests: bundle.manifests.length },
+    details: {
+      version: row.version,
+      digest: bundle.digest,
+      manifests: bundle.manifests.length,
+      ...(origin === "upload" ? {} : { origin }),
+    },
   });
   return { created: true, bundle: row };
 }

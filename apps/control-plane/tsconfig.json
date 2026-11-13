@@ -17,6 +17,9 @@
     },
     {
       "path": "../../packages/worker"
+    },
+    {
+      "path": "../../packages/compose"
     }
   ]
 }

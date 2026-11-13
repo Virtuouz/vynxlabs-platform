@@ -3,6 +3,7 @@ import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
 import { httpConnector } from "@vynxlabs/sdk";
 import { Type } from "typebox";
+import { keepConsoleManaged } from "../kernel/authoring.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { bindConnection } from "../kernel/execution/bindings.js";
 import { MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
@@ -243,6 +244,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectFrom("bundle")
           .selectAll()
           .where("workspace_id", "=", params.w)
+          // A bundle made to try a draft out was never offered for deploying.
+          .where("origin", "<>", "preview")
           .orderBy("version", "desc")
           .limit(100)
           .execute();
@@ -347,8 +350,16 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
-        const result = await ctx.mutate((trx, audit) =>
-          deployBundle(kernel, trx, audit, workspace, ctx.principal, body.bundleId),
+        const result = await ctx.mutate(async (trx, audit) =>
+          deployBundle(
+            kernel,
+            trx,
+            audit,
+            workspace,
+            ctx.principal,
+            // A bundle that says nothing about console-managed resources keeps the workspace's.
+            await keepConsoleManaged(kernel, trx, audit, workspace, ctx.principal, body.bundleId),
+          ),
         );
         await publishPlatformEvent(kernel, {
           tenantId: workspace.tenantId,

@@ -15,6 +15,7 @@ import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
+import { authoringRoutes } from "./routes/authoring.js";
 import { dataRoutes } from "./routes/data.js";
 import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
@@ -145,6 +146,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(permissionRoutes(kernel));
       await api.register(workspaceRoutes(kernel));
       await api.register(executionRoutes(kernel));
+      await api.register(authoringRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
       await api.register(sourceRoutes(kernel));

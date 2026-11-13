@@ -76,6 +76,13 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["resource_id", "version"],
     export: "always",
   },
+  {
+    table: "resource_draft",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id", "path"],
+    export: "always",
+  },
   { table: "role", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },
   { table: "binding", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },
   { table: "deployment", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },

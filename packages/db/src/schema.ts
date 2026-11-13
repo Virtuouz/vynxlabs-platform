@@ -31,6 +31,7 @@ export interface TenantTable {
   name: string;
   data_location: ColumnType<DataLocation, string | undefined, string>;
   managed_workers: Generated<boolean>;
+  console_code: Generated<boolean>;
   created_at: Generated<Date>;
 }
 
@@ -227,9 +228,24 @@ export interface BundleTable {
   storage_key: string;
   size_bytes: number;
   manifest_count: number;
+  origin: Generated<"upload" | "compose" | "preview">;
   created_by_type: string;
   created_by_id: string | null;
   created_at: Generated<Date>;
+}
+
+export interface ResourceDraftTable {
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  kind: string;
+  schema_version: number;
+  body: Json<Record<string, unknown>>;
+  deleted: Generated<boolean>;
+  revision: Generated<number>;
+  updated_by_type: string;
+  updated_by_id: string | null;
+  updated_at: Generated<Date>;
 }
 
 export interface DeploymentTable {
@@ -240,6 +256,7 @@ export interface DeploymentTable {
   previous_bundle_id: string | null;
   promoted_from_workspace_id: Generated<string | null>;
   summary: Json<Record<string, unknown>>;
+  message: Generated<string | null>;
   created_by_type: string;
   created_by_id: string | null;
   created_at: Generated<Date>;
@@ -620,6 +637,7 @@ export interface PlatformSchema {
   audit_entry: AuditEntryTable;
   bundle: BundleTable;
   deployment: DeploymentTable;
+  resource_draft: ResourceDraftTable;
   connection_binding: ConnectionBindingTable;
   variable_value: VariableValueTable;
   run: RunTable;

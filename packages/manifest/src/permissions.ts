@@ -197,6 +197,16 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "code",
+    label: "Code written in the console",
+    group: "Code and runs",
+    scope: "workspace",
+    verbs: {
+      write:
+        "Write scripts, connectors and trigger sources in the console. Workers run this code as it is.",
+    },
+  },
+  {
     kind: "bundle",
     label: "Bundles",
     group: "Code and runs",

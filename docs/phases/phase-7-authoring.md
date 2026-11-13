@@ -1,6 +1,6 @@
 # Phase 7: authoring in the console
 
-Status: in progress. The interface has moved to React and six spikes have run. Nothing else is built yet
+Status: in progress. Built so far: the move to React, six spikes, and most of the console's polish (milestone 1). Milestones 2 to 10 are not started
 Last updated: 2026-11-13
 
 Phase 7 makes the console the place where work is done. Scripts, flows and other resources are edited there and synced to the tenant's git repository. Flows are drawn on a canvas from a generic core node pack. Connectors, trigger sources and nodes can be written in the repository or in the console. Members and end users can sign in through their identity provider. Members build screens over tables without code.
@@ -114,7 +114,45 @@ A webhook answered through a worker, single sign-on against Keycloak, and MCP in
 ## Findings
 
 - **The example's bundle is 778 kB,** most of it the SDK's schema library. A console-managed section adds little to that.
+- **The control plane lists the console's files once, at start.** A rebuilt console is not served until the process restarts. That is right for an image and surprising in development.
 - **The console is served with no compression of its own.** Monaco makes that matter. The self-hosting guide says to put a proxy in front; the image should compress by itself.
+
+## The console (milestone 1)
+
+Built and checked in a browser against an instance started for the purpose, in light and dark.
+
+- **Dialogs.** The kit has a `DialogsProvider` with a confirmation, a short answer, and a name typed out before something is destroyed. Each resolves when answered. The console used the browser's `confirm`, `prompt` and `alert` in 24 places and now uses none; a lint rule refuses them. Failures show as toasts.
+- **Starting things.** A script is run and a flow started from a dialog that draws a form from the input schema when it is a flat list of fields, with JSON as the other tab.
+- **Permissions.** `packages/manifest/src/permissions.ts` lists every permission with what each verb allows, where it is checked and whether an end user can hold it. `GET /permissions` serves it. A role is built from a grid of boxes, and an existing role can be changed.
+- **Choices in place of typed names.** A create dialog can take its choices from the API. The operator's member, a tenant's database location, a connection, a variable, a referenced table and a data source are chosen from a searchable list.
+- **Shell.** The sidebar shows a tenant's screens in a tenant and a workspace's screens in a workspace, grouped, with icons. Tenants and workspaces are switched from it. A top bar says where you are and holds the account menu and a choice of light, dark or the system's theme.
+- **A run.** One panel: outcome and duration, facts, input and result as coloured JSON, and a log with search, a lowest level, wrapping, following and a download.
+- **A flow run.** A timeline with each step cut into waiting for a worker, running, and held on purpose. The graph is the second tab.
+- **Audit log.** Narrowed by area on the server and by kind of action in the list, with the chosen entry's facts and details beside it. Entries name who acted.
+
+Kit additions: `DialogsProvider`, `ComboboxField`, `MultiSelectField`, `JsonView`, `LogViewer`, `Facts`, `Timeline`, a wider `Dialog`, and a `Menu` with icons, separators and a marked current item.
+
+Still open in milestone 1: screens loaded on demand, a data cache in place of `useLoad`, group membership, resource-scoped bindings, renaming a tenant, forms for nested schemas, the triggers and deployments screens, and a suite of browser tests in CI.
+
+## Schemas
+
+Migration 0019. Version 0.5.0 is not yet set.
+
+| Change | Purpose |
+| --- | --- |
+| `export:write` added to roles that hold `tenant:*` | Exporting a tenant was checked as `tenant:export`, which no role could list |
+
+## Tests
+
+| Area | Where |
+| --- | --- |
+| The kit's dialogs | `packages/ui/src/Dialogs.test.tsx` |
+| Log, JSON, facts, timeline | `packages/ui/src/views.test.tsx` |
+| Roles and the permission grid | `apps/console/src/Roles.test.tsx` |
+| The shell and the theme choice | `apps/console/src/Shell.test.tsx` |
+| The audit screen | `apps/console/src/Audit.test.tsx` |
+| Every route's permission is listed | `apps/control-plane/src/app.test.ts` |
+| Audit filters and actor names | `apps/control-plane/src/kernel.test.ts` |
 
 ## Proposed deviations
 
@@ -124,3 +162,5 @@ A webhook answered through a worker, single sign-on against Keycloak, and MCP in
 | --- | --- | --- |
 | Run nine spikes before building | Six ran first. Three run at the start of their milestones | Each of the three needs its feature half built to measure anything |
 | React as milestone 1, after the spikes | The move was the spike, and is committed | Proving it meant doing it |
+| Migration 0019 is `authoring` | 0019 is `permissions`. Authoring takes 0020 | The permission rename was needed first |
+| TanStack Query and a route table in milestone 1 | Not yet done | The visible work came first. They change no behaviour |

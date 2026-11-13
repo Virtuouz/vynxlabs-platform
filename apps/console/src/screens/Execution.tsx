@@ -1,5 +1,15 @@
-import { Badge, type BadgeTone, Button, Notice } from "@vynxlabs/ui";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  Badge,
+  type BadgeTone,
+  Button,
+  Facts,
+  JsonView,
+  type LogLine,
+  LogViewer,
+  Notice,
+} from "@vynxlabs/ui";
+import { Ban, Check, Clock, LoaderCircle, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
@@ -153,21 +163,6 @@ export function Runs({ root, link }: { root: string; link: string }) {
   );
 }
 
-interface LogLine {
-  seq: number;
-  attempt: number;
-  time: string;
-  level: string;
-  message: string;
-  fields: Record<string, unknown>;
-}
-
-const LEVEL: Record<string, string> = {
-  error: "text-danger",
-  warn: "text-attention",
-  debug: "text-ink-muted",
-};
-
 /** One run, refreshed while it is in progress, with its log lines as they arrive. */
 export function RunDetail({
   root,
@@ -179,7 +174,13 @@ export function RunDetail({
   backLink: string;
 }) {
   const [run, setRun] = useState<
-    Run & { input: unknown; output: unknown; alert: Record<string, unknown> | null }
+    Run & {
+      input: unknown;
+      output: unknown;
+      alert: Record<string, unknown> | null;
+      pool: string | null;
+      waitingFor: string | null;
+    }
   >();
   const [lines, setLines] = useState<LogLine[]>([]);
   const [error, setError] = useState<string>();
@@ -216,97 +217,154 @@ export function RunDetail({
   if (error) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
   const active = run.status === "queued" || run.status === "running";
-  const fact = (label: string, value: ReactNode) => (
-    <div>
-      <dt className="text-[13px] text-ink-muted">{label}</dt>
-      <dd className="m-0">{value}</dd>
-    </div>
-  );
+  const duration = took(run);
+  const waited =
+    run.startedAt && Date.parse(run.startedAt) - Date.parse(run.createdAt) >= 1000
+      ? `${((Date.parse(run.startedAt) - Date.parse(run.createdAt)) / 1000).toFixed(1)} s`
+      : "";
+  const outcome =
+    run.status === "succeeded"
+      ? `Succeeded${duration ? ` in ${duration}` : ""}`
+      : run.status === "failed"
+        ? `Failed${duration ? ` after ${duration}` : ""}`
+        : run.status === "cancelled"
+          ? "Cancelled"
+          : run.status === "running"
+            ? "Running"
+            : "Waiting for a worker";
+  const Mark =
+    run.status === "succeeded"
+      ? Check
+      : run.status === "failed"
+        ? X
+        : run.status === "cancelled"
+          ? Ban
+          : run.status === "running"
+            ? LoaderCircle
+            : Clock;
+  const tone = STATUS[run.status][0];
+  const markTone: Record<BadgeTone, string> = {
+    success: "bg-success-soft text-success",
+    danger: "bg-danger-soft text-danger",
+    action: "bg-action-soft text-action",
+    attention: "bg-attention-soft text-attention",
+    neutral: "bg-sunken text-ink-muted",
+  };
+  const failed = run.status === "failed";
+
   return (
-    <Page
-      title={run.script}
-      action={
-        active ? (
-          <Button
-            variant="danger"
-            onClick={async () => {
-              const sure = await ask.confirm({
-                title: "Cancel this run?",
-                action: "Cancel run",
-                cancel: "Keep running",
-                danger: true,
-              });
-              if (!sure) return;
-              await api.post(`${root}/runs/${runId}/cancel`).catch(notify.error);
-            }}
-          >
-            Cancel run
-          </Button>
-        ) : undefined
-      }
-    >
-      <Link to={backLink} className="text-action">
+    <section className="flex flex-col gap-4">
+      <Link to={backLink} className="text-[13px] text-action">
         All runs
       </Link>
-      <dl className="m-0 grid grid-cols-2 gap-4 rounded-panel border border-line bg-surface p-4 md:grid-cols-4">
-        {fact("Status", <StatusBadge status={run.status} />)}
-        {fact("Started by", TRIGGER[run.trigger.type] ?? run.trigger.type)}
-        {fact("Attempt", `${Math.max(run.attempt, 1)} of ${run.maxAttempts}`)}
-        {fact("Bundle version", run.bundleVersion)}
-        {fact("Created", when(run.createdAt))}
-        {fact("Took", took(run) || (active ? "In progress" : ""))}
-      </dl>
-      {run.error ? (
-        <Notice tone="danger">
-          <strong>The run failed.</strong> {run.error.message}
-        </Notice>
-      ) : null}
-      {run.alert?.handlerRunId ? (
-        <p className="m-0 text-ink-muted">
-          A failure handler was started:{" "}
-          <Link to={`${backLink}/${run.alert.handlerRunId}`} className="text-action">
-            see its run
-          </Link>
-        </p>
-      ) : null}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Payload title="Input" value={run.input} />
-        <Payload title="Output" value={run.status === "succeeded" ? run.output : undefined} />
-      </div>
-      <section>
-        <h2 className="mt-0 mb-2 text-base font-semibold">Log</h2>
-        {lines.length === 0 ? (
+      <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-4">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className={`flex size-7 shrink-0 items-center justify-center rounded-control ${markTone[tone]}`}
+            >
+              <Mark
+                aria-hidden="true"
+                size={16}
+                strokeWidth={2.25}
+                className={run.status === "running" ? "animate-spin" : ""}
+              />
+            </span>
+            <h1 className="m-0 truncate font-mono text-base font-semibold">{run.script}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge tone={tone}>{outcome}</Badge>
+            {active ? (
+              <Button
+                size="small"
+                variant="danger"
+                onClick={async () => {
+                  const sure = await ask.confirm({
+                    title: "Cancel this run?",
+                    action: "Cancel run",
+                    cancel: "Keep running",
+                    danger: true,
+                  });
+                  if (!sure) return;
+                  await api.post(`${root}/runs/${runId}/cancel`).catch(notify.error);
+                }}
+              >
+                Cancel run
+              </Button>
+            ) : null}
+          </div>
+        </header>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge>{run.id.slice(-12)}</Badge>
+          <Badge>Version {run.bundleVersion}</Badge>
+          {run.pool ? <Badge tone="action">Pool: {run.pool}</Badge> : null}
+          {run.maxAttempts > 1 ? (
+            <Badge>
+              Attempt {Math.max(run.attempt, 1)} of {run.maxAttempts}
+            </Badge>
+          ) : null}
+        </div>
+        {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
+        <Facts
+          facts={[
+            { label: "Received", value: stamp(run.createdAt) },
+            { label: "Started", value: run.startedAt ? stamp(run.startedAt) : "" },
+            { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "" },
+            { label: "By", value: TRIGGER[run.trigger.type] ?? run.trigger.type },
+            { label: "Waited", value: waited },
+            { label: "Ran", value: duration || (run.status === "running" ? "In progress" : "") },
+            { label: "Run ID", value: run.id, code: true },
+            {
+              label: "Trigger",
+              value: typeof run.trigger.trigger === "string" ? run.trigger.trigger : "",
+              code: true,
+            },
+          ]}
+        />
+        {run.alert?.handlerRunId ? (
           <p className="m-0 text-ink-muted">
-            {active ? "Waiting for the first line…" : "The script logged nothing."}
+            A failure handler was started:{" "}
+            <Link to={`${backLink}/${run.alert.handlerRunId}`} className="text-action">
+              see its run
+            </Link>
           </p>
-        ) : (
-          <ol className="m-0 list-none overflow-x-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
-            {lines.map((line) => (
-              <li key={line.seq} className={`whitespace-pre-wrap ${LEVEL[line.level] ?? ""}`}>
-                <span className="text-ink-muted">{new Date(line.time).toLocaleTimeString()}</span>{" "}
-                {line.level.padEnd(5)} {line.message}
-                {Object.keys(line.fields).length > 0 ? (
-                  <span className="text-ink-muted"> {JSON.stringify(line.fields)}</span>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-    </Page>
-  );
-}
-
-function Payload({ title, value }: { title: string; value: unknown }) {
-  return (
-    <section>
-      <h2 className="mt-0 mb-2 text-base font-semibold">{title}</h2>
-      <pre className="m-0 max-h-64 overflow-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
-        {value === undefined ? "—" : JSON.stringify(value, null, 2)}
-      </pre>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Input</h2>
+            <JsonView label="Input" value={run.input} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Result</h2>
+            <JsonView
+              label="Result"
+              tone={failed ? "danger" : "plain"}
+              value={
+                failed ? { error: run.error } : run.status === "succeeded" ? run.output : undefined
+              }
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          <h2 className="m-0 w-fit border-action border-b-2 pb-1 text-[13px] font-medium">Logs</h2>
+          <LogViewer
+            lines={lines}
+            live={active}
+            fileName={`${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`}
+            empty={active ? "Waiting for the first line…" : "The script logged nothing."}
+          />
+        </div>
+      </div>
     </section>
   );
 }
+
+/** A date and time to the second, in the same shape on every line so that they compare by eye. */
+const stamp = (iso: string) => {
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
 
 export function Triggers({ root }: { root: string }) {
   return (

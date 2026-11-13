@@ -18,6 +18,7 @@ export {
   type TypeToConfirmOptions,
   useDialogs,
 } from "./Dialogs.tsx";
+export { type Fact, Facts } from "./Facts.tsx";
 export {
   CheckboxField,
   DateField,
@@ -28,6 +29,8 @@ export {
 } from "./Fields.tsx";
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
+export { JsonView, type JsonViewProps } from "./JsonView.tsx";
+export { type LogLine, LogViewer, type LogViewerProps } from "./LogViewer.tsx";
 export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";

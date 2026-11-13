@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Changes } from "./screens/Authoring.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 const link = "/t/t1/workspaces/w1";
@@ -101,9 +101,7 @@ test("changes that cannot be deployed say why, and offer no deploy", async () =>
 test("a draft is discarded after asking, and a production workspace has none", async () => {
   const { unmount } = show(<Changes root={root} link={link} editable />);
   fireEvent.click((await screen.findAllByRole("button", { name: "Discard" }))[0] as HTMLElement);
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Discard", hidden: false, description: undefined }),
-  );
+  expect(await answer("Discard")).toContain("It goes back to how it was last deployed.");
   await waitFor(() => expect(calls.some((call) => call.method === "DELETE")).toBe(true));
   expect(calls.find((call) => call.method === "DELETE")?.url).toBe(
     `/api/v1${root}/drafts/orders/sync`,

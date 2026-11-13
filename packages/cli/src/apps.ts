@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -119,7 +119,14 @@ export async function buildApps(directory: string, apps: AppSource[]): Promise<B
     if (!existsSync(join(root, "index.html"))) {
       throw new BuildError([`${app.path} (app): ${app.source}/index.html does not exist.`]);
     }
-    const out = join(directory, ".platform", "apps", app.path);
+    // A directory of this build's own: two builds of one repository at once, such as a
+    // build beside `platform dev`, must not write each other's files.
+    const out = join(
+      directory,
+      ".platform",
+      `apps-${process.pid}-${randomBytes(4).toString("hex")}`,
+      app.path,
+    );
     try {
       await vite.build({
         ...viteSettings(root, plugins),
@@ -144,7 +151,10 @@ export async function buildApps(directory: string, apps: AppSource[]): Promise<B
       });
       built.files.set(sha256, content);
     }
-    await rm(out, { recursive: true, force: true });
+    await rm(resolve(out, ...app.path.split("/").map(() => "..")), {
+      recursive: true,
+      force: true,
+    });
   }
   return built;
 }

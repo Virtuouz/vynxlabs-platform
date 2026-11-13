@@ -1,6 +1,6 @@
 # Phase 7: authoring in the console
 
-Status: in progress. Built and tested locally: the move to React, six spikes, most of the console's polish (milestone 1), console-managed resources with drafts and deploys (milestone 2, scripts only in the console), and git sync (milestone 3). Milestones 4 to 10 are not started. Nothing has run in CI yet
+Status: in progress. Built and tested locally: milestones 1 to 3, the flow editor and flows chosen by data from milestone 4, webhook intake from milestone 5, and flow starts from apps from milestone 7. Not started: custom connectors and trigger sources, the core node pack, connection groups, the form trigger, the MCP server, single sign-on, groups of end users, wider row policies, and generated screens. Nothing has run in CI yet
 Last updated: 2026-11-13
 
 Phase 7 makes the console the place where work is done. Scripts, flows and other resources are edited there and synced to the tenant's git repository. Flows are drawn on a canvas from a generic core node pack. Connectors, trigger sources and nodes can be written in the repository or in the console. Members and end users can sign in through their identity provider. Members build screens over tables without code.
@@ -118,6 +118,9 @@ A webhook answered through a worker, single sign-on against Keycloak, and MCP in
 - **A deploy from the console and a test run can build the same bundle.** Bundles are stored once per digest, so a bundle first made to try a draft out is the one later deployed. Its origin is corrected when that happens.
 - **A draft's source must not reach the audit log.** The entry for a saved draft records the kind and revision only.
 - **Monaco's plain API module is not enough.** Its features look for services that only the whole editor registers. The console loads the whole editor, on demand.
+- **jsonb reorders an object's keys.** A flow saved as a draft lost the order of its steps, and its file in the repository would have changed for no reason. Drafts are stored as `json`. A resource is still `jsonb`, so the API returns a flow's steps in the database's order; the bundle and the repository keep the author's.
+- **Two builds of one repository shared an output folder.** `platform build` compiled each app into `.platform/apps/<app>`. Two builds at once could give different digests. Each build now has a folder of its own. It showed as one test failing once in the full suite.
+- **The test suite is close to the development database's connection limit.** 52 suites run side by side against a server that allows 100 connections. With another instance running on the same server, a suite failed to start once. CI is unaffected, and locally the answer is not to leave an instance running.
 - **The console is served with no compression of its own.** Monaco makes that matter. The self-hosting guide says to put a proxy in front; the image should compress by itself.
 
 ## The console (milestone 1)
@@ -192,9 +195,34 @@ Routes: `GET|PUT|DELETE /tenants/:t/git-repository`; `GET|PUT â€¦/git`, `POST â€
 
 Checked in a browser against a git server on this machine: a wrong token was refused, and a change deployed in the console arrived as a commit on the branch, authored by the member who pushed it.
 
+## Flows (milestone 4, in part)
+
+- **Drawing a flow.** A canvas in a dev workspace, on React Flow, fetched when first opened. A palette adds steps: four ways to start, running a script or a flow, setting values, a branch, for each, join, wait, approval and fail. A branch has one way out per case and one for "otherwise". A step that can fail has a second way out for its error path. The chosen step's settings are beside the canvas, with scripts, flows and events picked from what the workspace has, drafts included. Saving makes a draft.
+- **Layout travels.** A flow's body may carry where its steps sit, so the layout goes into the repository with the flow. Flows from a repository keep theirs apart, as before.
+- **A flow chosen by the data.** A sub-flow step, and a foreach that runs a flow per item, may give `flowFrom`, an expression, and `allow`, the flows it may give. A flow off the list is never started. Every flow on the list is checked at build like a flow named outright, so the checks for existence, a manual trigger and loops all cover it.
+- **Depth.** A flow started by a flow counts how deep it is, and the tenth refuses.
+
+Checked in a browser: a flow was drawn, its two steps connected by dragging, saved, deployed and run.
+
+Still open in milestone 4: starting a script or flow from inside a script, `inputs` as one expression per field, an expression editor with completion, undo and redo, and custom nodes in the palette.
+
+## Webhook intake (milestone 5, in part)
+
+- A webhook's address takes JSON, a form or text. The body is read as raw bytes on that address only.
+- `input: "request"` hands the script `{ method, headers, query, body, rawBody }`. The sender's `authorization`, `cookie` and `proxy-authorization` headers are not handed on or kept.
+- `verify` checks an HMAC before anything starts: SHA-256 or SHA-1, hex or base64, an optional prefix, an optional template for what was signed, and an optional timestamp header with a tolerance. The comparison is constant-time. A failure is a 401 and starts nothing.
+- A deploy is refused until the secret a webhook checks against is set.
+- The default is unchanged: the body alone.
+
+Not covered by `verify`: a sender that packs several values into one header, as Stripe does. That needs a custom trigger source, which is not built yet.
+
+## Apps and flows (milestone 7, in part)
+
+Starting a flow needs `flow_run:write` at the workspace or at the flow itself. Whoever started a flow run may read how it ended and what it gave, without its steps. The app client gains `startFlow`, `flowRun` and `runFlow`.
+
 ## Schemas
 
-Migrations 0019 to 0021. Bundle format 3. Version 0.5.0 is not yet set.
+Migrations 0019 to 0022. Bundle format 3. Version 0.5.0 is not yet set.
 
 | Change | Purpose |
 | --- | --- |
@@ -207,6 +235,7 @@ Migrations 0019 to 0021. Bundle format 3. Version 0.5.0 is not yet set.
 | `git_repository` | A tenant's repository and its encrypted token |
 | `workspace_git` | The branch a dev workspace follows, what it last agreed with it at, and a lease |
 | `git_operation` | Each push and pull, with its outcome |
+| `resource_draft.body` becomes `json` | A draft is kept as written, so a flow's steps keep their author's order |
 
 ## Tests
 
@@ -225,6 +254,10 @@ Migrations 0019 to 0021. Bundle format 3. Version 0.5.0 is not yet set.
 | Drafts, test runs, deploys, takeover, rollback, promotion | `apps/control-plane/src/authoring.test.ts`, with a real worker |
 | Git sync | `apps/control-plane/src/git.test.ts`, against git's own HTTP backend and a developer's clone |
 | The changes screen and the repository screens | `apps/console/src/Authoring.test.tsx`, `apps/console/src/Git.test.tsx` |
+| What a drawn flow is missing | `apps/console/src/FlowEditor.test.tsx` |
+| A flow chosen by data, and starting one flow and no other | `apps/control-plane/src/flows.test.ts` |
+| Webhook bodies, the whole request, signatures | `apps/control-plane/src/webhooks.test.ts` |
+| The app client's flow calls | `packages/app/src/app.test.tsx` |
 
 ## Proposed deviations
 

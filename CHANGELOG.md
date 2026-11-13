@@ -21,6 +21,9 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 - **A `platform/` folder in the repository** holds resources managed in the console, one `<path>.<kind>.yaml` each, with source beside it as `<path>.<kind>.ts`. `platform build` includes them. A path defined in the code and in a file is an error.
 - Code written in the console may import `@vynxlabs/sdk` and `node:` modules only.
 - A bundle from an older CLI still deploys, and keeps the workspace's console-managed resources.
+- `defineWebhook`, and `trigger.webhook()` in a flow, take `input: "request"` to be given headers, query, method and the raw body, and `verify` to check an HMAC signature against a workspace secret. A webhook's address also takes forms and text.
+- A sub-flow step may choose its flow when it runs: `flowFrom` with `allow`.
+- `@vynxlabs/app` gains `startFlow`, `flowRun` and `runFlow`. `flow_run:write` can be bound at one flow.
 
 ### Changed
 

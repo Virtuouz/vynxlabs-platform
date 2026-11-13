@@ -38,6 +38,7 @@ Not in this phase: SSH deploy keys, a GitHub App, merging inside a file, npm pac
 | Extensions | Connectors, trigger sources and nodes can all be written in the console |
 | Code authoring | A new permission, `code:write`, held by `tenant_admin` and `developer` only, and a switch per tenant that an operator can turn off |
 | Licences | Zlib joins the allowlist, for the port of zlib that the git library depends on |
+| Single sign-on | Our own flows with `openid-client` and `node-saml`, built to the bar an enterprise buyer and a security review would hold it to |
 
 ## Design in brief
 
@@ -129,6 +130,25 @@ All three passed. Each signed one person in through a Keycloak container standin
 Every option needs the auth proxy to stop turning a posted form into JSON (`routes/auth.ts`), since SAML answers with a form.
 
 In this spike the customer's provider and the broker were one Keycloak container, which cannot reach itself on its published port. Option B's token and key addresses were pointed at the container's own port and its issuer check left off to get round that. A real deployment has neither problem.
+
+**The owner chose C, our own flows, on one condition: an institutional or enterprise buyer must find their needs met, in what it does and under a security review.** That is the bar single sign-on is built to and checked against:
+
+| Area | What must hold |
+| --- | --- |
+| SAML, what is trusted | Only a signed assertion, or a signed response that covers it. The audience, the recipient, the destination and the validity window are each checked. Unsigned, expired and not-yet-valid assertions are refused |
+| SAML, replay | A request is answered once: `InResponseTo` must match a request this instance made, and an assertion's ID is not accepted twice |
+| SAML, algorithms | SHA-256 or stronger for signatures and digests. SHA-1 is refused unless a tenant turns it on for a provider that cannot do better, and that is audited |
+| SAML, who starts it | Started by the platform by default. Sign-in started by the provider is off unless a tenant turns it on |
+| SAML, options a provider may require | Signed requests, encrypted assertions, several signing certificates at once so that one can be rotated, and reading the provider's metadata from an address or a file |
+| OIDC | Authorization code with PKCE, a state and a nonce per sign-in. The issuer, audience, signature and expiry of the ID token are checked against the provider's published keys |
+| Who a person is | Linked by the provider's own subject, never by email alone after the first sign-in. An email is trusted for the first link only when the provider says it is verified and its domain is one the tenant has proved it owns |
+| Domains | A tenant proves a domain with a DNS record before sign-in is routed by it |
+| Provisioning | People are created on first sign-in when a tenant allows it, with a default role. Groups and attributes are set from the provider on every sign-in |
+| Enforcing it | A tenant can require single sign-on, after which passwords are refused. One break-glass account remains |
+| Secrets | Client secrets and private keys are sealed with the tenant's key, never returned and never logged |
+| The record | Every sign-in, refusal, provider change and enforcement change is in the audit log, with the provider and the reason |
+| For the provider's administrator | Service-provider metadata to download, the exact values to paste, and a test sign-in that shows what the provider sent before it is turned on |
+| Left for a later unit, and said so | SCIM provisioning, single logout, and sign-in step-up |
 
 ### Spikes that were built instead
 

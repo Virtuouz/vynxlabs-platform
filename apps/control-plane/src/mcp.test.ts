@@ -180,6 +180,7 @@ beforeAll(async () => {
   working = worker.run();
   narrow = await connect(one.key);
   wide = await connect(two.key);
+  accounts = { narrow: one.id, wide: two.id };
 }, 60_000);
 
 afterAll(async () => {
@@ -189,6 +190,14 @@ afterAll(async () => {
   await working;
   await t.stop();
 });
+
+/** A fresh API key for a service account. */
+const keyOf = async (account: string) =>
+  (await alice.post(`/tenants/${tenant}/service-accounts/${account}/api-keys`, { name: "extra" }))
+    .body.token as string;
+
+/** The service accounts the two agents connect as. */
+let accounts: { narrow: string; wide: string };
 
 describe("an agent's tools", () => {
   test("are the scripts and flows its service account may start, and no others", async () => {
@@ -297,6 +306,44 @@ describe("an agent's tools", () => {
     }
     expect(run).toMatchObject({ status: "succeeded", output: { done: { refunded: "A-7" } } });
   }, 60_000);
+});
+
+describe("what an agent would be offered, seen from the console", () => {
+  const offered = (account: string, at = workspace) =>
+    alice.get(`/tenants/${tenant}/service-accounts/${account}/tools?workspace=${at}`);
+
+  test("is what the agent itself is told, worked out for the account and not for whoever asks", async () => {
+    const narrowly = await offered(accounts.narrow);
+    expect(narrowly.status, JSON.stringify(narrowly.body)).toBe(200);
+    expect(narrowly.body.address).toBe(`http://localhost:8080/api/v1${ws()}/mcp`);
+    expect(narrowly.body.reachable).toBe(true);
+    // Alice may do everything here. The list is the account's all the same.
+    expect(narrowly.body.tools).toEqual(
+      (await narrow.listTools()).tools.map(({ name, description, inputSchema }) => ({
+        name,
+        description,
+        inputSchema,
+      })),
+    );
+    expect(
+      (await offered(accounts.wide)).body.tools.map((tool: { name: string }) => tool.name),
+    ).toEqual((await wide.listTools()).tools.map((tool) => tool.name));
+  });
+
+  test("says when the account has no place in the workspace, and is not for everyone to read", async () => {
+    const stranger = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "idle" });
+    const none = await offered(stranger.body.id);
+    expect(none.body).toMatchObject({ reachable: false, tools: [] });
+    expect((await offered("00000000-0000-7000-8000-00000000dead")).status).toBe(404);
+    expect((await offered(accounts.narrow, "00000000-0000-7000-8000-00000000dead")).status).toBe(
+      404,
+    );
+    // An agent cannot ask what another account would be offered.
+    const asAgent = await t
+      .withKey(await keyOf(accounts.wide))
+      .get(`/tenants/${tenant}/service-accounts/${accounts.narrow}/tools?workspace=${workspace}`);
+    expect(asAgent.status).toBe(403);
+  });
 });
 
 describe("who may connect", () => {

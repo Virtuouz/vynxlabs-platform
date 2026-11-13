@@ -12,6 +12,7 @@ import {
 } from "../ListScreen.tsx";
 import { Link, match } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
+import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
 import { Changes, type CodeKind, Extensions, ScriptEditor } from "./Authoring.tsx";
@@ -646,30 +647,38 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
   if (selected) {
     const keys = `${base}/service-accounts/${selected}/api-keys`;
     return (
-      <ListScreen<KeyRow>
-        title="Service account keys"
-        description="A key acts as the service account, with the access the account has been given."
-        path={keys}
-        rowKey={(row) => row.id}
-        columns={keyColumns}
-        empty={{ title: "No keys yet" }}
-        create={{
-          action: "Create API key",
-          fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
-          submit: (values) => api.post(keys, values),
-          afterCreate: showNewKey,
-        }}
-        rowActions={(row, reload) =>
-          row.revokedAt ? null : (
-            <RemoveButton
-              label="Revoke"
-              confirm={`Revoke the key "${row.name}"?`}
-              run={() => api.delete(`${keys}/${row.id}`)}
-              onDone={reload}
-            />
-          )
-        }
-      />
+      <>
+        <ListScreen<KeyRow>
+          title="Service account keys"
+          description="A key acts as the service account, with the access the account has been given."
+          path={keys}
+          rowKey={(row) => row.id}
+          columns={keyColumns}
+          empty={{ title: "No keys yet" }}
+          create={{
+            action: "Create API key",
+            fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
+            submit: (values) => api.post(keys, values),
+            afterCreate: showNewKey,
+          }}
+          rowActions={(row, reload) =>
+            row.revokedAt ? null : (
+              <RemoveButton
+                label="Revoke"
+                confirm={`Revoke the key "${row.name}"?`}
+                run={() => api.delete(`${keys}/${row.id}`)}
+                onDone={reload}
+              />
+            )
+          }
+        />
+        <Page
+          title="Agent access"
+          description="What an AI agent gets when it connects with one of these keys."
+        >
+          <AgentAccess base={base} account={selected} />
+        </Page>
+      </>
     );
   }
   const tenantId = base.split("/")[2];

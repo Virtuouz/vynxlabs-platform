@@ -6,7 +6,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { sql } from "@vynxlabs/db";
 import type { FlowBody } from "@vynxlabs/manifest";
 import { Type } from "typebox";
-import { HttpError } from "../kernel/errors.js";
+import { check } from "../kernel/authorize.js";
+import { HttpError, notFound } from "../kernel/errors.js";
 import { startRun } from "../kernel/execution/runs.js";
 import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
@@ -47,11 +48,10 @@ const objectSchema = (schema: unknown): Record<string, unknown> => {
   return given.type === "object" ? given : { type: "object", additionalProperties: true };
 };
 
-async function toolsFor(
-  kernel: Kernel,
-  ctx: RequestContext,
-  workspace: WorkspaceRef,
-): Promise<Tool[]> {
+/** What working out the tools needs of a caller: who they are, and what they may do. */
+type Caller = Pick<RequestContext, "principal" | "allowed" | "authorize" | "mutate">;
+
+async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): Promise<Tool[]> {
   const { db } = kernel;
   const target = { tenantId: workspace.tenantId, workspaceId: workspace.id };
   const tools: Tool[] = [];
@@ -321,6 +321,80 @@ async function toolsFor(
 
 export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
+    app.get(
+      "/tenants/:t/service-accounts/:id/tools",
+      {
+        config: { access: access.tenant("service_account:read") },
+        schema: {
+          summary: "The tools an agent is offered with a service account's key",
+          description:
+            "What `tools/list` would answer over the Model Context Protocol in one workspace, " +
+            "worked out for the service account and not for the caller. Nothing is run. " +
+            "`address` is where an agent connects, with one of the account's API keys.",
+          tags: ["agents"],
+          params: Type.Object({ t: Id, id: Id }),
+          querystring: Type.Object({ workspace: Id }),
+          response: {
+            200: Type.Object({
+              address: Type.String(),
+              reachable: Type.Boolean({
+                description:
+                  "Whether the account may see the workspace at all. Without that an agent is refused.",
+              }),
+              tools: Type.Array(
+                Type.Object({
+                  name: Type.String(),
+                  description: Type.String(),
+                  inputSchema: Type.Object({}, { additionalProperties: true }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params, query }) => {
+        const account = await kernel.db
+          .selectFrom("service_account")
+          .select(["id", "name"])
+          .where("id", "=", params.id)
+          .where("tenant_id", "=", params.t)
+          .executeTakeFirst();
+        if (!account) throw notFound("The service account");
+        const workspace = await findWorkspace(kernel, params.t, query.workspace);
+        const principal = {
+          type: "service_account" as const,
+          id: account.id,
+          name: account.name,
+          tenantId: params.t,
+        };
+        const allowed = async (permission: string, target: Parameters<typeof check>[3]) =>
+          (await check(kernel.db, principal, permission, target)).allowed;
+        const never = async (): Promise<never> => {
+          throw new Error("A tool is not run from its listing.");
+        };
+        const reachable = await allowed("workspace:read", {
+          tenantId: params.t,
+          workspaceId: workspace.id,
+        });
+        const tools = reachable
+          ? await toolsFor(
+              kernel,
+              { principal, allowed, authorize: never, mutate: never },
+              workspace,
+            )
+          : [];
+        return {
+          address: `${kernel.config.publicUrl}/api/v1/tenants/${params.t}/workspaces/${workspace.id}/mcp`,
+          reachable,
+          tools: tools.map(({ name, description, inputSchema }) => ({
+            name,
+            description,
+            inputSchema: inputSchema as Record<string, unknown>,
+          })),
+        };
+      },
+    );
+
     app.post(
       "/tenants/:t/workspaces/:w/mcp",
       {

@@ -3,6 +3,7 @@ import { newId, type StepStatus, sql } from "@vynxlabs/db";
 import {
   type FlowBody,
   type FlowEdge,
+  type FlowGrants,
   type FlowNode,
   OTHERWISE,
   reachableFrom,
@@ -478,8 +479,16 @@ class Advance {
     try {
       switch (node.type) {
         case "script": {
-          const input = node.input ? await this.#evaluate("input", node.input) : {};
-          await this.#startScript(step, node.script, input);
+          let input: unknown = {};
+          if (node.input) input = await this.#evaluate("input", node.input);
+          else if (node.inputs) {
+            const fields: Record<string, unknown> = {};
+            for (const [name, expression] of Object.entries(node.inputs)) {
+              fields[name] = await this.#evaluate(`input ${name}`, expression);
+            }
+            input = fields;
+          }
+          await this.#startScript(step, node.script, input, node.with);
           break;
         }
         case "set": {
@@ -561,7 +570,7 @@ class Advance {
     }
   }
 
-  async #startScript(step: StepRow, script: string, input: unknown) {
+  async #startScript(step: StepRow, script: string, input: unknown, grants?: FlowGrants) {
     try {
       const started = await startRun(this.#kernel, this.#trx, {
         tenantId: this.#flowRun.tenant_id,
@@ -575,6 +584,8 @@ class Advance {
             flow: this.#flowRun.flow_path,
             node: step.node_id,
             depth: Number(this.#flowRun.trigger_detail.depth ?? 0),
+            // What the step hands the script. The worker's routes honour it for this run alone.
+            ...(grants ? { grants } : {}),
           },
         },
         startedBy: { type: "flow", id: null },
@@ -731,7 +742,7 @@ class Advance {
       try {
         const scope = { item: items[index], index };
         const input = node.input ? await this.#evaluate("input", node.input, scope) : items[index];
-        if (node.script) await this.#startScript(item, node.script, input);
+        if (node.script) await this.#startScript(item, node.script, input, node.with);
         else await this.#startChildFlow(item, await this.#flowOf(node, scope), input);
       } catch (error) {
         if (!(error instanceof StepFailure)) throw error;

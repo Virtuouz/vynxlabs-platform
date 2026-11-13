@@ -1,0 +1,19 @@
+{
+  "name": "@vynxlabs/nodes",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "The core node pack: generic steps for flows, shipped with the platform as scripts.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@vynxlabs/manifest": "workspace:*"
+  }
+}

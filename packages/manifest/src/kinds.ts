@@ -205,6 +205,13 @@ export const scriptKind: KindDefinition = {
             description: "The name of an icon from the interface's set.",
           },
           category: { type: "string", minLength: 1, maxLength: 40 },
+          takes: {
+            type: "array",
+            items: { enum: ["connection", "table", "event"] },
+            uniqueItems: true,
+            description:
+              "What a flow step may hand the script with `with`: a connection, a table or an event the script does not name itself.",
+          },
         },
         required: ["label"],
         additionalProperties: false,
@@ -370,6 +377,24 @@ const node = (type: string, properties: Record<string, object>, required: string
   additionalProperties: false,
 });
 
+const granted = (what: string) => ({
+  type: "array",
+  items: path,
+  maxItems: 20,
+  uniqueItems: true,
+  description: `${what} the script may reach in this step, beyond what it declares itself.`,
+});
+/** What a step hands the script it runs. The script must say it takes that kind of thing. */
+const grants = {
+  type: "object",
+  properties: {
+    connections: granted("Connections"),
+    tables: granted("Tables"),
+    events: granted("Events"),
+  },
+  additionalProperties: false,
+};
+
 /** A flow chosen when the step runs, from a list written down beforehand. */
 const flowFrom = {
   ...expression,
@@ -422,7 +447,22 @@ export const flowKind: KindDefinition = {
               },
               ["trigger"],
             ),
-            node("script", { script: path, input: expression }, ["script"]),
+            node(
+              "script",
+              {
+                script: path,
+                input: expression,
+                inputs: {
+                  type: "object",
+                  propertyNames: { pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 63 },
+                  additionalProperties: expression,
+                  maxProperties: 50,
+                  description: "An expression for each field of the script's input.",
+                },
+                with: grants,
+              },
+              ["script"],
+            ),
             node(
               "set",
               {
@@ -465,6 +505,7 @@ export const flowKind: KindDefinition = {
                 allow: allowedFlows,
                 input: expression,
                 concurrency: { type: "integer", minimum: 1, maximum: 20 },
+                with: grants,
               },
               ["items"],
             ),

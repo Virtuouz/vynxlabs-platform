@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { ComposeError, composeBundle, SOURCE_KINDS, type UnsignedBundle } from "@vynxlabs/compose";
 import { sql } from "@vynxlabs/db";
-import { type Bundle, type BundleManifest, entryFor } from "@vynxlabs/manifest";
+import { type Bundle, type BundleManifest, CORE_PREFIX, entryFor } from "@vynxlabs/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@vynxlabs/sdk";
 import type { Audit, Db, Principal, Trx } from "./audit.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
@@ -83,6 +83,14 @@ export async function saveDraft(
   input: DraftInput,
 ) {
   await devWorkspace(trx, workspace);
+  if (input.path.startsWith(CORE_PREFIX)) {
+    throw badRequest("The manifest is not valid.", [
+      {
+        path: "/path",
+        message: `paths under ${CORE_PREFIX} are kept for the platform's own nodes. Choose another path`,
+      },
+    ]);
+  }
   const body = isCodeKind(input.kind)
     ? { ...input.body, entry: entryFor(input.kind, input.path) }
     : input.body;

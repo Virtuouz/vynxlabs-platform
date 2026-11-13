@@ -38,9 +38,31 @@ export type FlowTrigger =
   | { type: "webhook"; input?: "body" | "request"; verify?: WebhookVerify; source?: string }
   | { type: "event"; event: string; filter?: string };
 
+/**
+ * What a step hands the script it runs, beyond what the script declares for
+ * itself. A generic step such as "send email" declares nothing: the flow says
+ * which connection it sends through, and the run may reach that one.
+ */
+export interface FlowGrants {
+  connections?: string[];
+  tables?: string[];
+  events?: string[];
+}
+
+/** The kinds of thing a step can hand a script, as a script's `node.takes` names them. */
+export const GRANT_KINDS = { connections: "connection", tables: "table", events: "event" } as const;
+
 export type FlowNode =
   | { type: "trigger"; trigger: FlowTrigger }
-  | { type: "script"; script: string; input?: string }
+  | {
+      type: "script";
+      script: string;
+      /** One expression for the whole input. */
+      input?: string;
+      /** An expression per field of the input. Use this or `input`. */
+      inputs?: Record<string, string>;
+      with?: FlowGrants;
+    }
   | { type: "set"; values: Record<string, string> }
   | { type: "branch"; cases: { name: string; when: string }[] }
   | {
@@ -52,6 +74,8 @@ export type FlowNode =
       allow?: string[];
       input?: string;
       concurrency?: number;
+      /** For a foreach that runs a script. */
+      with?: FlowGrants;
     }
   | { type: "join" }
   | { type: "delay"; seconds: number }
@@ -74,6 +98,8 @@ export function flowExpressions(body: FlowBody): { path: string; expression: str
         break;
       case "script":
         at("input", node.input);
+        for (const [name, expression] of Object.entries(node.inputs ?? {}))
+          at(`inputs/${name}`, expression);
         break;
       case "subflow":
         at("flowFrom", node.flowFrom);
@@ -125,6 +151,27 @@ export function flowReferences(
     }
     if (node.type === "trigger" && node.trigger.type === "event")
       at("trigger/event", "event", node.trigger.event);
+  }
+  return found;
+}
+
+/** What the steps of a flow hand their scripts, with the place each is written and the script it goes to. */
+export function flowGrants(
+  body: FlowBody,
+): { path: string; kind: "connection" | "table" | "event"; target: string; script: string }[] {
+  const found: ReturnType<typeof flowGrants> = [];
+  for (const [id, node] of Object.entries(body.nodes)) {
+    if ((node.type !== "script" && node.type !== "foreach") || !node.with || !node.script) continue;
+    for (const [field, kind] of Object.entries(GRANT_KINDS)) {
+      for (const [index, target] of (node.with[field as keyof FlowGrants] ?? []).entries()) {
+        found.push({
+          path: `/body/nodes/${id}/with/${field}/${index}`,
+          kind,
+          target,
+          script: node.script,
+        });
+      }
+    }
   }
   return found;
 }
@@ -236,6 +283,19 @@ export function checkFlow(body: FlowBody): ManifestIssue[] {
       issues.push({
         path: at,
         message: "a foreach runs either a script or a flow: give exactly one",
+      });
+    }
+    if (node.type === "script" && node.input !== undefined && node.inputs !== undefined) {
+      issues.push({
+        path: `${at}/inputs`,
+        message:
+          "give the input as one expression with `input`, or field by field with `inputs`: not both",
+      });
+    }
+    if (node.type === "foreach" && node.with !== undefined && node.script === undefined) {
+      issues.push({
+        path: `${at}/with`,
+        message: "`with` hands something to a script, and this foreach runs a flow",
       });
     }
     if (node.type === "branch") {

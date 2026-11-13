@@ -116,6 +116,9 @@ importers:
       '@vynxlabs/manifest':
         specifier: workspace:*
         version: link:../../packages/manifest
+      '@vynxlabs/nodes':
+        specifier: workspace:*
+        version: link:../../packages/nodes
       '@vynxlabs/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk
@@ -252,6 +255,9 @@ importers:
       '@vynxlabs/manifest':
         specifier: workspace:*
         version: link:../manifest
+      '@vynxlabs/nodes':
+        specifier: workspace:*
+        version: link:../nodes
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
@@ -286,6 +292,12 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  packages/nodes:
+    dependencies:
+      '@vynxlabs/manifest':
+        specifier: workspace:*
+        version: link:../manifest
 
   packages/screens:
     dependencies:

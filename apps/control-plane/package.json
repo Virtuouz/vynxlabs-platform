@@ -18,6 +18,7 @@
     "@vynxlabs/compose": "workspace:*",
     "@vynxlabs/db": "workspace:*",
     "@vynxlabs/manifest": "workspace:*",
+    "@vynxlabs/nodes": "workspace:*",
     "@vynxlabs/sdk": "workspace:^",
     "@vynxlabs/worker": "workspace:*",
     "@xmldom/xmldom": "^0.8.15",

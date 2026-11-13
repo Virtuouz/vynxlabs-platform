@@ -120,6 +120,17 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   worker?: string;
   /** What happens when a run fails for the last time. */
   onFailure?: { script?: string | { path: string }; notify?: string | { path: string } };
+  /**
+   * Makes the script a step people can pick in the flow editor. Its input
+   * schema becomes the step's form. `takes` says what a step may hand it with
+   * `with`: a connection, a table or an event the script does not name itself.
+   */
+  node?: {
+    label: string;
+    icon?: string;
+    category?: string;
+    takes?: ("connection" | "table" | "event")[];
+  };
   run(input: z.output<Input>, ctx: ScriptContext): Promise<z.input<Output>> | z.input<Output>;
 }
 
@@ -171,6 +182,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
             notify: options.onFailure.notify ? pathOf(options.onFailure.notify) : undefined,
           })
         : undefined,
+      node: options.node,
     }),
   );
   return {
@@ -542,14 +554,43 @@ export const trigger = {
   }),
 };
 
+/** What a step hands the script it runs, by path or by definition. */
+export interface StepGrants {
+  connections?: Target[];
+  tables?: Target[];
+  events?: Target[];
+}
+
+const grantsOf = (grants: StepGrants | undefined) =>
+  grants
+    ? compact({
+        connections: grants.connections?.map(pathOf),
+        tables: grants.tables?.map(pathOf),
+        events: grants.events?.map(pathOf),
+      })
+    : undefined;
+
 /**
  * The steps of a flow. Where a step takes an expression, it is CEL, and can
  * read `trigger`, `steps.<node>.output`, and inside a foreach, `item` and `index`.
  */
 export const step = {
-  /** Runs a script. `input` is an expression giving the script's input. */
-  script: (script: Target, options: { input?: string } = {}): FlowNode =>
-    compact({ type: "script", script: pathOf(script), input: options.input }) as FlowNode,
+  /**
+   * Runs a script. `input` is one expression giving the script's input, or
+   * `inputs` gives an expression for each field. `with` hands the script
+   * connections, tables or events for this step, when the script takes them.
+   */
+  script: (
+    script: Target,
+    options: { input?: string; inputs?: Record<string, string>; with?: StepGrants } = {},
+  ): FlowNode =>
+    compact({
+      type: "script",
+      script: pathOf(script),
+      input: options.input,
+      inputs: options.inputs,
+      with: grantsOf(options.with),
+    }) as FlowNode,
   /** Computes named values. Its output is an object of the results. */
   set: (values: Record<string, string>): FlowNode => ({ type: "set", values }),
   /** Follows the first case whose condition is true, or the edge marked `otherwise`. */
@@ -560,7 +601,13 @@ export const step = {
   /** Runs a script or a flow once per item. Its output is the list of results, in order. */
   foreach: (
     items: string,
-    options: { script?: Target; flow?: Target; input?: string; concurrency?: number },
+    options: {
+      script?: Target;
+      flow?: Target;
+      input?: string;
+      concurrency?: number;
+      with?: StepGrants;
+    },
   ): FlowNode =>
     compact({
       type: "foreach",
@@ -569,6 +616,7 @@ export const step = {
       flow: options.flow ? pathOf(options.flow) : undefined,
       input: options.input,
       concurrency: options.concurrency,
+      with: grantsOf(options.with),
     }) as FlowNode,
   /** Waits for every path that leads into it. */
   join: (): FlowNode => ({ type: "join" }),

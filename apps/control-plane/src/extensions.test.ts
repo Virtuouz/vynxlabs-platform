@@ -572,6 +572,264 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
   });
 });
 
+describe("the core nodes, and nodes of a tenant's own", () => {
+  const draft = (path: string, kind: string, body: object) =>
+    alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+  const manual = { type: "trigger", trigger: { type: "manual" } };
+  const core = (name: string, inputs: Record<string, string>, grants?: object) => ({
+    type: "script",
+    script: `core/${name}`,
+    inputs,
+    ...(grants ? { with: grants } : {}),
+  });
+  async function flowRun(flow: string, input: unknown): Promise<Any> {
+    const started = await alice.post(`${ws(dev)}/flow-runs`, { flow, input });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    for (let i = 0; i < 200; i++) {
+      const body = (await alice.get(`${ws(dev)}/flow-runs/${started.body.id}`)).body;
+      if (body.status !== "running") return body;
+      await sleep(100);
+    }
+    throw new Error("The flow did not finish.");
+  }
+  const step = (run: Any, node: string) => run.steps.find((s: Any) => s.node === node);
+
+  test("the platform says which nodes it comes with, and keeps their paths to itself", async () => {
+    const listed = await alice.get("/core-nodes");
+    expect(listed.status).toBe(200);
+    expect(listed.body.items.map((item: Any) => item.path)).toEqual([
+      "core/http-request",
+      "core/send-email",
+      "core/table-read",
+      "core/table-write",
+      "core/publish-event",
+    ]);
+    const send = listed.body.items[1];
+    expect(send).toMatchObject({ label: "Send email", category: "Core", takes: ["connection"] });
+    expect(send.input.properties.connection["x-pick"]).toBe("connection");
+    // Nothing of a tenant's may sit where the platform's nodes do.
+    const taken = await draft("core/mine", "variable", { type: "string" });
+    expect(taken.status).toBe(400);
+    expect(JSON.stringify(taken.body)).toContain("kept for the platform's own nodes");
+    const uploaded = await alice.post(
+      `${ws()}/bundles`,
+      bundle((m) => [...m, script("core/http-request", "greet", {})]),
+    );
+    expect(uploaded.status).toBe(400);
+    expect(JSON.stringify(uploaded.body)).toContain("kept for the platform's own nodes");
+  });
+
+  test("a flow drawn from core nodes reads and writes a table, calls out, sends mail and publishes", async () => {
+    delivered.length = 0;
+    for (const [path, kind, body] of [
+      ["notes", "table", { columns: { title: { type: "text", required: true } } }],
+      ["outbox", "connection", { connector: "smtp" }],
+      ["self", "connection", { connector: "http" }],
+      [
+        "notes/added",
+        "event",
+        { payload: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+      ],
+      [
+        "note",
+        "flow",
+        {
+          nodes: {
+            start: manual,
+            add: core(
+              "table-write",
+              { table: "'notes'", values: "{'title': trigger.title}" },
+              { tables: ["notes"] },
+            ),
+            read: core(
+              "table-read",
+              {
+                table: "'notes'",
+                filter: "{'column': 'title', 'op': 'eq', 'value': trigger.title}",
+              },
+              { tables: ["notes"] },
+            ),
+            ping: core(
+              "http-request",
+              { connection: "'self'", url: "'/api/v1/healthz'" },
+              { connections: ["self"] },
+            ),
+            mail: core(
+              "send-email",
+              {
+                connection: "'outbox'",
+                to: "trigger.to",
+                subject: "'Note: ' + steps.read.output.row.title",
+                text: "'The service answered ' + string(steps.ping.output.status) + '.'",
+              },
+              { connections: ["outbox"] },
+            ),
+            tell: core(
+              "publish-event",
+              { event: "'notes/added'", payload: "{'id': steps.add.output.row.id}" },
+              { events: ["notes/added"] },
+            ),
+          },
+          edges: [
+            { from: "start", to: "add" },
+            { from: "add", to: "read" },
+            { from: "read", to: "ping" },
+            { from: "ping", to: "mail" },
+            { from: "mail", to: "tell" },
+          ],
+        },
+      ],
+    ] as const) {
+      const saved = await draft(path, kind, body);
+      expect(saved.status, `${path}: ${JSON.stringify(saved.body)}`).toBe(200);
+    }
+    const address = `http://127.0.0.1:${(t.app.server.address() as AddressInfo).port}`;
+    expect(
+      (await alice.put(`${ws(dev)}/connection-bindings/self`, { config: { baseUrl: address } }))
+        .status,
+    ).toBe(204);
+    expect(
+      (
+        await alice.put(`${ws(dev)}/connection-bindings/outbox`, {
+          config: {
+            host: "127.0.0.1",
+            port: mailPort,
+            security: "none",
+            from: "notes@acme.example",
+          },
+        })
+      ).status,
+    ).toBe(204);
+    const deployed = await alice.post(`${ws(dev)}/changes/deploy`, {});
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+
+    // The bundle carries the nodes the flow uses, and no others.
+    const scripts = (await alice.get(`${ws(dev)}/resources?kind=script&limit=200`)).body.items
+      .map((item: Any) => item.path)
+      .filter((path: string) => path.startsWith("core/"));
+    expect(scripts.sort()).toEqual([
+      "core/http-request",
+      "core/publish-event",
+      "core/send-email",
+      "core/table-read",
+      "core/table-write",
+    ]);
+
+    const done = await flowRun("note", { title: "Call the bank", to: "pat@customer.example" });
+    expect(done.status, JSON.stringify(done.steps)).toBe("succeeded");
+    expect(step(done, "add").output.row.title).toBe("Call the bank");
+    expect(step(done, "read").output).toMatchObject({ count: 1, row: { title: "Call the bank" } });
+    expect(step(done, "ping").output).toMatchObject({ status: 200, body: { status: "ok" } });
+    expect(step(done, "tell").output).toEqual({ published: true });
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({
+      from: "notes@acme.example",
+      to: ["pat@customer.example"],
+    });
+    expect(delivered[0]?.data).toContain("Subject: Note: Call the bank");
+    expect(delivered[0]?.data).toContain("The service answered 200.");
+    const events = await alice.get(`${ws(dev)}/events?event=notes/added`);
+    expect(events.body.items).toHaveLength(1);
+  });
+
+  test("a node reaches what its step hands it, and nothing else", async () => {
+    // Started by hand, a core node was handed nothing.
+    const byHand = await run("core/table-read", { table: "notes" }, dev);
+    expect(byHand.status).toBe("failed");
+    expect(byHand.error.message).toContain("notes");
+    // A step that names a table in its input and does not hand it over gets nowhere either.
+    const sly = await draft("sly", "flow", {
+      nodes: { start: manual, read: core("table-read", { table: "'notes'" }) },
+      edges: [{ from: "start", to: "read" }],
+    });
+    expect(sly.status, JSON.stringify(sly.body)).toBe(200);
+    expect((await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["sly"] })).status).toBe(201);
+    const refused = await flowRun("sly", {});
+    expect(refused.status).toBe("failed");
+    expect(step(refused, "read").error.message).toContain("notes");
+    // What is handed over must exist, and must be of a kind the script takes.
+    const missing = await draft("sly", "flow", {
+      nodes: {
+        start: manual,
+        read: core("table-read", { table: "'ghosts'" }, { tables: ["ghosts"] }),
+      },
+      edges: [{ from: "start", to: "read" }],
+    });
+    expect(missing.status).toBe(200);
+    const unmade = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["sly"] });
+    expect(unmade.status).toBe(400);
+    expect(JSON.stringify(unmade.body)).toContain("which is not a table in this repository");
+    await draft("sly", "flow", {
+      nodes: {
+        start: manual,
+        read: core("table-read", { table: "'notes'" }, { connections: ["outbox"] }),
+      },
+      edges: [{ from: "start", to: "read" }],
+    });
+    const mistaken = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["sly"] });
+    expect(mistaken.status).toBe(400);
+    expect(JSON.stringify(mistaken.body)).toContain("which does not take one");
+    // `input` and `inputs` are two ways to say one thing.
+    const both = await draft("sly", "flow", {
+      nodes: {
+        start: manual,
+        read: { ...core("table-read", { table: "'notes'" }), input: "{}" },
+      },
+      edges: [{ from: "start", to: "read" }],
+    });
+    expect(both.status).toBe(200);
+    const twice = await alice.post(`${ws(dev)}/changes/deploy`, { paths: ["sly"] });
+    expect(twice.status).toBe(400);
+    expect(JSON.stringify(twice.body)).toContain("not both");
+    expect((await alice.delete(`${ws(dev)}/drafts/sly`)).status).toBeLessThan(300);
+  });
+
+  test("a tenant's own script becomes a node, and takes what it says it takes", async () => {
+    const counter = await draft("count-rows", "script", {
+      description: "Counts the rows of a table.",
+      input: {
+        type: "object",
+        properties: { table: { type: "string", "x-pick": "table" } },
+        required: ["table"],
+      },
+      output: { type: "object" },
+      timeoutSeconds: 30,
+      retries: { limit: 0, delaySeconds: 0, backoff: false },
+      uses: { connections: [], secrets: [], variables: [] },
+      node: { label: "Count rows", icon: "hash", category: "Ours", takes: ["table"] },
+      source: {
+        language: "typescript",
+        code: 'import type { ScriptContext } from "@vynxlabs/sdk";\nexport default async (input: { table: string }, ctx: ScriptContext) => ({\n  rows: (await ctx.table(input.table).find({ limit: 100 })).length,\n});\n',
+      },
+    });
+    expect(counter.status, JSON.stringify(counter.body)).toBe(200);
+    const counting = await draft("counting", "flow", {
+      nodes: {
+        start: manual,
+        count: {
+          type: "script",
+          script: "count-rows",
+          inputs: { table: "'notes'" },
+          with: { tables: ["notes"] },
+        },
+      },
+      edges: [{ from: "start", to: "count" }],
+    });
+    expect(counting.status, JSON.stringify(counting.body)).toBe(200);
+    const deployed = await alice.post(`${ws(dev)}/changes/deploy`, {
+      paths: ["count-rows", "counting"],
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const done = await flowRun("counting", {});
+    expect(done.status, JSON.stringify(done.steps)).toBe("succeeded");
+    expect(step(done, "count").output).toEqual({ rows: 1 });
+    const listed = (await alice.get(`${ws(dev)}/resources?kind=script&limit=200`)).body.items;
+    expect(listed.find((item: Any) => item.path === "count-rows").body?.node ?? null).not.toBe(
+      undefined,
+    );
+  });
+});
+
 describe("the write path", () => {
   test("every successful change left an audit entry", () => {
     expect(t.unaudited).toEqual([]);

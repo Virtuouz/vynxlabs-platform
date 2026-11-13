@@ -11,6 +11,7 @@ The machine-readable form of every route below is in the API description at `/ap
 - **The worker always calls.** Every exchange is an HTTPS request from the worker to the control plane. The control plane never opens a connection to a worker, so a worker can sit inside a private network.
 - **JSON** request and response bodies. Errors are RFC 9457 problem details.
 - **Delivery is at-least-once.** A run may be attempted more than once, and two attempts can overlap for a moment after a worker is presumed lost. Code must be safe to run twice. Each run carries an idempotency key that is the same on every attempt.
+- **A run reaches what its script declared, and what its flow step handed it.** Added in 0.5.0. A step of a flow can hand its script connections, tables and events with `with`, when the script says in `node.takes` that it takes such things. Where a route below answers only for something the script declared, it answers for these too, for that run alone. A worker needs to do nothing for this.
 - **An attempt is identified by the run ID and an attempt number.** Every report names both. A report for an attempt that is no longer in progress is refused with 409 and changes nothing.
 
 ## Credentials

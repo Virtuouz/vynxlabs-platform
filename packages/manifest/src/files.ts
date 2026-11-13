@@ -84,6 +84,8 @@ export function renderResourceFiles(
 ): ResourceFile[] {
   const files: ResourceFile[] = [];
   for (const manifest of manifests) {
+    // The platform's own nodes are added again on every compose. They are not the repository's.
+    if (manifest.path.startsWith("core/")) continue;
     const schema = kinds.find(
       (kind) => kind.kind === manifest.kind && kind.schemaVersion === manifest.schemaVersion,
     )?.body as Schema | undefined;

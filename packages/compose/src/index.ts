@@ -5,9 +5,13 @@ import {
   type Bundle,
   type BundleManifest,
   bundleDigest,
+  CORE_PREFIX,
   entryFor,
+  type FlowBody,
+  flowReferences,
   MAX_SOURCE_LENGTH,
 } from "@vynxlabs/manifest";
+import { CORE_NODES, coreManifest } from "@vynxlabs/nodes";
 import { build, type Plugin, transform } from "esbuild";
 
 /**
@@ -221,6 +225,26 @@ export async function composeCode(
   return code;
 }
 
+/**
+ * The core nodes the flows among `manifests` use, as scripts to compose in.
+ * A bundle carries the nodes its flows use and no others, in the version the
+ * platform had when it was composed, so a run keeps the node it was deployed with.
+ */
+export function coreNodesFor(manifests: readonly BundleManifest[]): BundleManifest[] {
+  const used = new Set<string>();
+  for (const manifest of manifests) {
+    if (manifest.kind !== "flow") continue;
+    const body = manifest.body as unknown as FlowBody;
+    if (typeof body?.nodes !== "object" || body.nodes === null) continue;
+    for (const reference of flowReferences(body)) {
+      if (reference.kind === "script" && reference.target.startsWith(CORE_PREFIX)) {
+        used.add(reference.target);
+      }
+    }
+  }
+  return CORE_NODES.filter((node) => used.has(node.path)).map(coreManifest);
+}
+
 /** A bundle before its digest is known. */
 export type UnsignedBundle = Omit<Bundle, "digest">;
 
@@ -229,12 +253,23 @@ export type UnsignedBundle = Omit<Bundle, "digest">;
  * console-managed ones. A console-managed resource takes the place of a
  * repository-managed one at the same path. The result is format 3 when it
  * holds anything console-managed, and otherwise keeps the base's format.
+ *
+ * The core nodes the result's flows use are composed in with them, and any
+ * the base carried are dropped and added again as the platform now has them.
  */
 export async function composeBundle(
   base: UnsignedBundle,
-  consoleManaged: readonly BundleManifest[],
+  given: readonly BundleManifest[],
   options: ComposeOptions,
 ): Promise<Bundle> {
+  const own = given.filter((manifest) => !manifest.path.startsWith(CORE_PREFIX));
+  const consoleManaged = [
+    ...own,
+    ...coreNodesFor([
+      ...base.manifests.filter((manifest) => manifest.ownership === "code"),
+      ...own,
+    ]),
+  ];
   const wrong = consoleManaged.filter((manifest) => manifest.ownership !== "ui");
   if (wrong.length > 0) {
     throw new ComposeError(

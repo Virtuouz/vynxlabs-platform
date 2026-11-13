@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId } from "@vynxlabs/db";
 import { PERMISSION_KINDS } from "@vynxlabs/manifest";
+import { CORE_NODES } from "@vynxlabs/nodes";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Trx } from "../kernel/audit.js";
@@ -327,6 +328,50 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async () => ({ items: kernel.kinds.kinds() }),
+    );
+
+    app.get(
+      "/core-nodes",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "The core nodes: steps for flows that come with the platform",
+          description:
+            "Each is a script under `core/`. A flow uses one by naming it in a script step, and " +
+            "the platform adds it to the workspace's bundle when the bundle is composed. " +
+            "`takes` is what a step may hand it with `with`. In `input`, a field marked " +
+            "`x-pick` names a connection, a table or an event of the workspace.",
+          tags: ["flows"],
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  label: Type.String(),
+                  icon: Type.String(),
+                  category: Type.String(),
+                  description: Type.String(),
+                  takes: Type.Array(Type.String()),
+                  input: AnyObject,
+                  output: AnyObject,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async () => ({
+        items: CORE_NODES.map(({ path, label, icon, description, takes, input, output }) => ({
+          path,
+          label,
+          icon,
+          category: "Core",
+          description,
+          takes,
+          input,
+          output,
+        })),
+      }),
     );
 
     app.get(

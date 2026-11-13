@@ -1,5 +1,10 @@
 import { newId } from "@vynxlabs/db";
-import { type BundleManifest, bundleCompatibility } from "@vynxlabs/manifest";
+import {
+  type BundleManifest,
+  bundleCompatibility,
+  type FlowBody,
+  flowGrants,
+} from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";
@@ -44,6 +49,10 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
       ).nodes;
       for (const node of Object.values(nodes ?? {})) {
         if (node.trigger?.verify?.secret) need.secrets.add(node.trigger.verify.secret);
+      }
+      // A connection a step hands its script is needed like one a script names.
+      for (const grant of flowGrants(manifest.body as unknown as FlowBody)) {
+        if (grant.kind === "connection") need.connections.add(grant.target);
       }
     }
   }

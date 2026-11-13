@@ -1,5 +1,5 @@
 import type { Bundle, BundleManifest } from "./bundle.js";
-import { checkFlow, type FlowBody, flowExpressions, flowReferences } from "./flow.js";
+import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
 import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
 import { BUILTIN_CONNECTORS, isThemeValue, registerPlatformKinds } from "./kinds.js";
 import { KindRegistry, validateJson } from "./registry.js";
@@ -7,6 +7,12 @@ import { checkTable, type TableBody } from "./table.js";
 
 /** Events the platform publishes itself. No repository declares them. */
 export const PLATFORM_EVENT_PREFIX = "platform/";
+
+/**
+ * Paths under this are the platform's own: the core nodes it adds to a bundle
+ * whose flows use them. Nothing of a tenant's may live there.
+ */
+export const CORE_PREFIX = "core/";
 
 const registry = registerPlatformKinds(new KindRegistry());
 
@@ -39,6 +45,14 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       );
     }
     byPath.set(manifest.path, manifest);
+    if (
+      manifest.path.startsWith(CORE_PREFIX) &&
+      !(manifest.kind === "script" && manifest.ownership === "ui")
+    ) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): paths under ${CORE_PREFIX} are kept for the platform's own nodes.`,
+      );
+    }
     const result = registry.validateManifest(manifest);
     if (!result.ok) {
       for (const issue of result.issues) {
@@ -199,6 +213,17 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
               `${manifest.path} (flow): ${reference.path} uses the flow "${reference.target}", which has no manual trigger to start it from.`,
             );
           }
+        }
+      }
+      // What a step hands a script must exist, and the script must say it takes such a thing.
+      for (const grant of flowGrants(flow)) {
+        expect(manifest, grant.path, grant.target, grant.kind);
+        const script = byPath.get(grant.script);
+        const takes = (script?.body as { node?: { takes?: string[] } } | undefined)?.node?.takes;
+        if (script?.kind === "script" && !takes?.includes(grant.kind)) {
+          problems.push(
+            `${manifest.path} (flow): ${grant.path} hands ${grant.kind === "event" ? "an" : "a"} ${grant.kind} to the script "${grant.script}", which does not take one. A script says what it takes with \`node.takes\`.`,
+          );
         }
       }
     }

@@ -11,6 +11,7 @@ export {
 } from "./bundle.js";
 export {
   bundleExpressions,
+  CORE_PREFIX,
   checkBundleAssets,
   checkBundleManifests,
   PLATFORM_EVENT_PREFIX,
@@ -35,9 +36,11 @@ export {
   checkFlow,
   type FlowBody,
   type FlowEdge,
+  type FlowGrants,
   type FlowNode,
   type FlowTrigger,
   flowExpressions,
+  flowGrants,
   flowReferences,
   OTHERWISE,
   reachableFrom,

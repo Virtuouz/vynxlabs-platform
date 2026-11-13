@@ -177,6 +177,18 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 40
+        },
+        "takes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "connection",
+              "table",
+              "event"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "What a flow step may hand the script with `with`: a connection, a table or an event the script does not name itself."
         }
       },
       "required": [

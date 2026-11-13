@@ -107,7 +107,19 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .executeTakeFirstOrThrow();
       const body = await runnable(kernel, bundle, run.script_path);
       if (!body) throw notFound("The script");
-      return { run, body };
+      // A step of a flow may hand its script things the script does not name itself.
+      const handed = (run.trigger_type === "flow" ? run.trigger_detail.grants : undefined) as
+        | { connections?: string[]; tables?: string[]; events?: string[] }
+        | undefined;
+      const may = {
+        connection: (path: string) =>
+          body.uses.connections.includes(path) || (handed?.connections ?? []).includes(path),
+        table: (path: string) =>
+          (body.uses.tables ?? []).includes(path) || (handed?.tables ?? []).includes(path),
+        event: (path: string) =>
+          (body.uses.events ?? []).includes(path) || (handed?.events ?? []).includes(path),
+      };
+      return { run, body, may };
     }
 
     app.post(
@@ -158,7 +170,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 timeoutSeconds: claimed.timeoutSeconds,
                 heartbeatSeconds: Math.floor(HEARTBEAT_SECONDS / 3),
                 idempotencyKey: run.idempotency_key,
-                trigger: { type: run.trigger_type, ...run.trigger_detail },
+                trigger: { type: run.trigger_type, ...run.trigger_detail, grants: undefined },
                 startedBy: { type: run.started_by_type, id: run.started_by_id },
               },
             };
@@ -375,8 +387,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ worker, params, query }) => {
         const path = params["*"];
-        const { run, body } = await pinned(worker, params.id, query.attempt);
-        if (!body.uses.connections.includes(path)) {
+        const { run, may } = await pinned(worker, params.id, query.attempt);
+        if (!may.connection(path)) {
           throw forbidden(`a declared use of the connection "${path}"`);
         }
         const bound = await readConnection(kernel, db, {
@@ -509,8 +521,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, params, body }) => {
-        const { run, body: script } = await pinned(worker, params.id, body.attempt);
-        if (!(script.uses.events ?? []).includes(body.event)) {
+        const { run, may } = await pinned(worker, params.id, body.attempt);
+        if (!may.event(body.event)) {
           throw forbidden(`a declared use of the event "${body.event}"`);
         }
         const published = await db.transaction().execute((trx) =>
@@ -563,7 +575,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, params, body }) => {
-        const { run, body: script } = await pinned(worker, params.id, body.attempt);
+        const { run, body: script, may } = await pinned(worker, params.id, body.attempt);
         const args = (body.args ?? {}) as {
           filter?: unknown;
           sort?: string[];
@@ -618,7 +630,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
 
-        if (!(script.uses.tables ?? []).includes(body.table)) {
+        if (!may.table(body.table)) {
           throw forbidden(`a declared use of the table "${body.table}"`);
         }
         const target = await describeTable(

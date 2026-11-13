@@ -197,6 +197,60 @@
                 "minLength": 1,
                 "maxLength": 2000,
                 "description": "A CEL expression."
+              },
+              "inputs": {
+                "type": "object",
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "maxLength": 63
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "description": "A CEL expression."
+                },
+                "maxProperties": 50,
+                "description": "An expression for each field of the script's input."
+              },
+              "with": {
+                "type": "object",
+                "properties": {
+                  "connections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Connections the script may reach in this step, beyond what it declares itself."
+                  },
+                  "tables": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Tables the script may reach in this step, beyond what it declares itself."
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Events the script may reach in this step, beyond what it declares itself."
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [
@@ -318,6 +372,45 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 20
+              },
+              "with": {
+                "type": "object",
+                "properties": {
+                  "connections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Connections the script may reach in this step, beyond what it declares itself."
+                  },
+                  "tables": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Tables the script may reach in this step, beyond what it declares itself."
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Events the script may reach in this step, beyond what it declares itself."
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [

@@ -15,6 +15,7 @@
   ],
   "dependencies": {
     "@vynxlabs/manifest": "workspace:*",
+    "@vynxlabs/nodes": "workspace:*",
     "esbuild": "^0.28.2"
   }
 }

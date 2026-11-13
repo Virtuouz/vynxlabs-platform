@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Environment } from "@marcbachmann/cel-js";
-import { ComposeError, composeBundle } from "@vynxlabs/compose";
+import { ComposeError, composeBundle, coreNodesFor } from "@vynxlabs/compose";
 import {
   type Bundle,
   type BundleManifest,
@@ -171,7 +171,7 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
     : { formatVersion: 2 as const, ...common, assets: built.assets };
   const assetProblems = checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
-  if (fromFiles.manifests.length === 0) {
+  if (fromFiles.manifests.length === 0 && coreNodesFor(unsigned.manifests).length === 0) {
     return { bundle: { ...unsigned, digest: bundleDigest(unsigned) }, files: built.files };
   }
   // Console-managed code is compiled and joined on exactly as the control plane does it.

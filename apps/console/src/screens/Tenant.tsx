@@ -1,6 +1,7 @@
 import { Badge, Button, EmptyState, Notice } from "@vynxlabs/ui";
 import { lazy, Suspense, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -572,7 +573,7 @@ function WorkspaceDetail({
 
 function Members({ base }: { base: string }) {
   return (
-    <ListScreen<{ id: string; name: string; email: string }>
+    <ListScreen<{ id: string; name: string; email: string; suspended?: boolean }>
       title="Members"
       description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access."
       path={`${base}/members?limit=200`}
@@ -580,6 +581,10 @@ function Members({ base }: { base: string }) {
       columns={[
         { header: "Name", cell: (row) => row.name },
         { header: "Email", cell: (row) => row.email },
+        {
+          header: "",
+          cell: (row) => (row.suspended ? <Badge tone="attention">Suspended</Badge> : null),
+        },
       ]}
       empty={{ title: "No members yet" }}
       create={{
@@ -605,11 +610,32 @@ function Members({ base }: { base: string }) {
           }),
       }}
       rowActions={(row, reload) => (
-        <RemoveButton
-          confirm={`Remove ${row.email} from this tenant? Their access here is removed too.`}
-          run={() => api.delete(`${base}/members/${row.id}`)}
-          onDone={reload}
-        />
+        <span className="flex justify-end gap-2">
+          <Button
+            size="small"
+            onClick={async () => {
+              if (!row.suspended) {
+                const sure = await ask.confirm({
+                  title: `Suspend ${row.email}?`,
+                  text: "They hold nothing in this tenant until they are resumed. What they were given is kept, and so is whatever they hold in other tenants.",
+                  action: "Suspend",
+                  danger: true,
+                });
+                if (!sure) return;
+              }
+              await api
+                .patch(`${base}/members/${row.id}`, { suspended: !row.suspended })
+                .then(reload, notify.error);
+            }}
+          >
+            {row.suspended ? "Resume" : "Suspend"}
+          </Button>
+          <RemoveButton
+            confirm={`Remove ${row.email} from this tenant? Their access here is removed too.`}
+            run={() => api.delete(`${base}/members/${row.id}`)}
+            onDone={reload}
+          />
+        </span>
       )}
     />
   );

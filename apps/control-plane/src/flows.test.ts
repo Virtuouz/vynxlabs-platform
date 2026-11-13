@@ -858,7 +858,9 @@ describe("waiting", () => {
     );
     expect(paused.status).toBe("running");
     expect(Date.parse(step(paused, "pause").wakeAt)).toBeGreaterThan(Date.now() + 3000_000);
-    expect(await advanceDueFlows(t.kernel)).toBe(0);
+    // Whatever else is due on the instance, this flow is not: it stays where it is.
+    await advanceDueFlows(t.kernel);
+    expect(step(await read(id), "pause").status).toBe("waiting");
 
     await t.db
       .updateTable("step_run")
@@ -866,7 +868,7 @@ describe("waiting", () => {
       .where("flow_run_id", "=", id)
       .where("node_id", "=", "pause")
       .execute();
-    expect(await advanceDueFlows(t.kernel)).toBe(1);
+    expect(await advanceDueFlows(t.kernel)).toBeGreaterThanOrEqual(1);
     expect((await read(id)).output).toEqual({ after: { done: true } });
   });
 

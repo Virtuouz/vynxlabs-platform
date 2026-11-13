@@ -19,6 +19,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
+import { Provisioning } from "./Provisioning.tsx";
 
 type Audience = "members" | "end_users";
 type Protocol = "oidc" | "saml";
@@ -1088,6 +1089,17 @@ function ProviderDetail({
             ),
           },
           { id: "people", label: "People", content: <People root={root} /> },
+          {
+            id: "provisioning",
+            label: "Provisioning",
+            content: (
+              <Provisioning
+                root={`${base}/provisioning/${provider.id}`}
+                instance={instance}
+                audience={provider.audience}
+              />
+            ),
+          },
         ]}
       />
     </section>

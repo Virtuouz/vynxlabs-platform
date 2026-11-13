@@ -61,6 +61,8 @@ describe("building the example repository", () => {
       "trigger orders/placed",
       "flow orders/handle",
       "theme theme",
+      "interface screens/invoices",
+      "app invoice-desk",
       "app portal",
       "app public",
       "binding access/customers-orders",

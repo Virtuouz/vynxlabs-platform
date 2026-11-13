@@ -1,6 +1,6 @@
 # Phase 7: authoring in the console
 
-Status: in progress. Built and tested locally: milestones 1 to 3, the flow editor and flows chosen by data (milestone 4), webhook intake (milestone 5), flow starts from apps, connection groups and the MCP server (milestone 7), and identity: groups of end users, row rules, and single sign-on over OIDC and SAML for members and end users. Single sign-on was also driven through a browser against Keycloak. Not started: custom connectors, trigger sources and nodes, the core node pack, the form trigger, and generated screens. Nothing has run in CI or on a second instance yet
+Status: in progress. Built and tested locally: milestones 1 to 3, the flow editor and flows chosen by data (milestone 4), webhook intake (milestone 5), flow starts from apps, connection groups and the MCP server (milestone 7), identity (groups of end users, row rules, single sign-on), and apps made in the console with personal dashboards. Single sign-on was driven through a browser against Keycloak, and the builder, a published app and a dashboard through a browser against a running instance. Not started: custom connectors, trigger sources and nodes, the core node pack, the form trigger, and SCIM. Nothing has run in CI or on a second instance yet
 Last updated: 2026-11-13
 
 Phase 7 makes the console the place where work is done. Scripts, flows and other resources are edited there and synced to the tenant's git repository. Flows are drawn on a canvas from a generic core node pack. Connectors, trigger sources and nodes can be written in the repository or in the console. Members and end users can sign in through their identity provider. Members build screens over tables without code.
@@ -39,6 +39,13 @@ Not in this phase: SSH deploy keys, a GitHub App, merging inside a file, npm pac
 | Code authoring | A new permission, `code:write`, held by `tenant_admin` and `developer` only, and a switch per tenant that an operator can turn off |
 | Licences | Zlib joins the allowlist, for the port of zlib that the git library depends on |
 | Single sign-on | Our own flows with `openid-client` and `node-saml`, built to the bar an enterprise buyer and a security review would hold it to |
+| The rest of the phase | Four units, in order: apps made in the console, extensions and the node pack, SCIM, then finishing |
+| Who builds screens | Members, gated by permission, so that some become maintainers with no developer. End users use what is published. This replaces "end users make personal dashboards" above: dashboards are a member's |
+| Reference for screens | Grist's behaviour: pages of widgets over tables, summaries, linked widgets. No formula engine. Grist is not embedded |
+| Publishing a screen | Edited in a dev workspace with a live preview, deployed to publish, promoted to production |
+| Dashboards | Private to the member, with optional read-only sharing with the workspace |
+| Send email | The tenant's own SMTP connection |
+| SCIM and members | A tenant's provider suspends the member in that tenant. The instance's provider disables the account |
 
 ## Design in brief
 
@@ -168,6 +175,11 @@ A webhook answered through a worker and MCP inside Fastify were each small enoug
 - **A provider set up from this side's SAML metadata expects what the metadata offers.** Keycloak, reading the metadata, required signed requests and turned on encryption. Requests were unsigned and were refused. Requests are now signed unless that is turned off, and the certificate for encryption is published only when asked for.
 - **Encrypted assertions are opened for one way of wrapping the key.** The decryption library that node-saml 5.2 pins opens a key wrapped with RSA-OAEP and MGF1 with SHA-1 (`rsa-oaep-mgf1p`, SHA-1 digest). Keycloak 26 wraps with `xmlenc11#rsa-oaep` and SHA-256 unless told otherwise, and that is refused with a message that says what to set. A newer version of the library opens it, and also refuses AES-CBC, which other providers use. Replacing a security library that another pins was not done here.
 - **A check on routes by name caught a new route it did not mean.** The apps suite claims every route with `domains` in it. A provider's email domains are tested in the single sign-on suite, and are named as an exception there.
+- **A check that passed had not run.** The command that gated every commit piped each check into `tail`, and a pipeline's result is its last command's. A lint error went into a commit unnoticed and was caught by the next run. Every gate now keeps each check's own result.
+- **A correct password is refused, rarely, in the full test run.** Four times so far, each in a different suite, never when a suite runs alone and never in 5,760 hash-and-check pairs run across twelve processes at once. The library says "Invalid password": the account is found and the check itself comes out different. The harness now checks the stored hash again directly and tries once more when it happens, to tell a wrong hash from an unsteady check. It has not happened since. The cause is not known, and it matters: if it is real under load it would refuse people in production.
+- **The `viewer` role reads every row.** It holds `*:read`, which includes the permission to read every row of a table whatever its rules say. Sharing an app with it would have undone row rules for everyone it was shared with. Sharing uses a new role, `portal_reader`.
+- **A widget dropped on another hid it.** Found by dragging one in a browser. A moved widget now pushes what it lands on down, and what is under a removed one rises.
+- **What an end user may be told about a table is less than the table's own route tells.** That route gives the policy, the storage name and a count of every row. The app that draws interfaces reads a route of its own, which gives the columns and whether the caller may read and write.
 - **The console is served with no compression of its own.** Monaco makes that matter. The self-hosting guide says to put a proxy in front; the image should compress by itself.
 
 ## The console (milestone 1)
@@ -334,9 +346,35 @@ A member is one person on the whole instance, so nothing less than a proved doma
 
 **Not built, and said so:** SCIM, single logout, step-up, and a provider shared by several tenants.
 
+## Apps made in the console (unit A)
+
+A member builds an app over a workspace's tables with no code: pages of widgets, where choosing a row in one widget decides what another shows. The idea is Grist's. There is no formula engine, and Grist is not embedded.
+
+**An interface is a resource.** The new kind `interface` is pages of widgets, written as data: a table, a card, a list of cards, a chart, a form, or text. A table or a chart can show totals in place of rows. A widget can follow the row chosen in another in four ways: the row itself, the rows that refer to it, the row it refers to, and the rows behind a line of totals. An app serves an interface by naming it: `app.interface` in place of `app.entry`. Being a resource, an interface is saved as a draft in a dev workspace, deployed, promoted, rolled back and written to the repository like a flow.
+
+**It is served by the platform's own app.** An app that points at an interface has no files. It is served a small app built with the platform into the image (`SCREENS_DIR`), at the same addresses and under the same content security policy as any app. That app reads one route, which answers for whoever may open an app that serves the interface, and then reads rows through the public API as the person using it. So a table's policy decides what each person sees, with nothing new to enforce it.
+
+**Totals are a route of the rows API.** Counts, sums, averages, the least and the most, over all rows or over groups, with a date or a time gathered into days, weeks, months or years. They run where rows are read, under the same policy, so two people get the totals of their own rows. Apps and scripts both get the call.
+
+**One renderer, two hosts.** `packages/screens` draws a page through the kit's widget interface, which grew for it: a chosen row, paging, editing, deleting, and what to show in place of a reference. The console's builder and the served app both use it. A link becomes a filter in a function with no state.
+
+**The builder.** Under "Apps made here" in a dev workspace. The page is drawn from the workspace's rows as the member may read them, beside the settings of the widget being worked on, all chosen from menus. What a widget can follow is offered as a sentence for each way the page's tables allow. A widget is dragged by its heading and stretched by its corner. A change is saved as a draft a moment after it is made, and comes back with what is wrong against the tables that are really there. Publish deploys the interface and its app by name.
+
+**Maintainers.** `interface:write` is enough to save and deploy interfaces and the apps that serve them, and nothing else: no script, no flow, no deploy of everything. The built-in role `app_maintainer` holds it with what building needs.
+
+**Sharing.** The apps screen shares an app with every end user, a group of end users, a group of members, or anyone, to read or to read and change. The app and each table it shows are given together.
+
+**Dashboards.** A member keeps pages of their own in a workspace: the same page, editor and renderer, saved when they say, with no deploy, in any workspace. Private until shared read-only with the workspace. Whoever looks is given the rows they may read.
+
+**Hiding a value is not keeping it from someone.** The rows API returns whole rows. A field left off a screen is still sent to whoever may read the row. The builder says so. Row rules are what keep rows from people, and nothing yet keeps a column from them.
+
+Tried in a browser against a running instance: an app with a table of customers, their orders following the chosen customer with the customer shown by name, a chart of totals and a form that adds an order for the chosen customer, built in the builder and published; the same app shared from the console and opened by one person of each of two groups, who saw 3 rows totalling 600 and 2 rows totalling 30; and a dashboard built, rearranged by dragging, saved and shared.
+
+Not built: a button that starts a flow, formulas and computed columns, sorting or filtering by what a reference shows, choosing a row by pressing a chart, filters each viewer keeps for themselves, custom widgets inside a generated screen, refreshing by itself when rows change, periods in a time zone other than UTC, and keeping a column from someone who may read the row.
+
 ## Schemas
 
-Migrations 0019 to 0025. Bundle format 3. Version 0.5.0 is not yet set.
+Migrations 0019 to 0028. Bundle format 3. Version 0.5.0 is not yet set.
 
 | Change | Purpose |
 | --- | --- |
@@ -361,6 +399,11 @@ Migrations 0019 to 0025. Bundle format 3. Version 0.5.0 is not yet set.
 | `identity_group_map` | A group at the provider and the group here |
 | `sso_state` | One sign-in on its way to a provider and back, as hashes |
 | `sso_assertion` | Each SAML assertion accepted, until it would have run out |
+| The kind `interface`, and `app.interface` | Pages of widgets over tables, and an app that serves them. In the manifest |
+| The role `app_maintainer` | Builds and deploys interfaces and the apps that serve them, and no code |
+| The role `portal_reader` | Opens apps and reads rows, held to each table's policy |
+| `member_dashboard` | A member's own pages in a workspace |
+| Permissions `interface` and `dashboard` | Building apps in the console, and keeping dashboards |
 
 ## Tests
 
@@ -390,6 +433,13 @@ Migrations 0019 to 0025. Bundle format 3. Version 0.5.0 is not yet set.
 | Single sign-on, against an OIDC and a SAML provider made for the test, so that answers can be bent | `apps/control-plane/src/sso.test.ts` |
 | A tenant with providers, exported and imported into a second instance | `apps/control-plane/src/sso.test.ts` |
 | The single sign-on screen and the console's sign-in | `apps/console/src/SingleSignOn.test.tsx` |
+| Totals: each function, groups and periods, refusals, and that they are of the caller's rows | `apps/control-plane/src/data.test.ts`, `apps.test.ts`, `data-access.test.ts` |
+| The interface kind: limits, links, what each widget may name | `packages/manifest/src/interface.test.ts` |
+| An app that serves an interface, what its route gives away, the maintainer role, dashboards | `apps/control-plane/src/interfaces.test.ts` |
+| Each link as a filter, totals as rows, settling a layout | `packages/screens/src/links.test.ts`, `layout.test.ts` |
+| A page drawn against a stand-in client: linked widgets, forms, editing, missing tables, reference lookups, dragging | `packages/screens/src/Renderer.test.tsx` |
+| The widgets' new abilities | `packages/ui/src/widgets.test.tsx` |
+| The builder, sharing an app, and dashboards in the console | `apps/console/src/Interfaces.test.tsx`, `Dashboards.test.tsx` |
 
 ## Proposed deviations
 
@@ -413,3 +463,9 @@ Migrations 0019 to 0025. Bundle format 3. Version 0.5.0 is not yet set.
 | A provider's SAML metadata is read by a route of its own | It is read when the provider is saved | A route that changes nothing cannot be a `POST` here, and the metadata is only wanted on a save |
 | The identity provider answers at the address the person began at | It answers at one address, and the person is sent back with a one-time code | A provider is then given one address, and a SAML answer, which a browser posts from another site, needs no cookie |
 | An end user's email is trusted on the same terms as a member's | A tenant may take the provider's word for its own end users | See "Where it falls short of the bar as written" |
+| End users make personal dashboards | Dashboards are a member's | The owner's decision, taken when this unit was planned |
+| The route for an interface's view ends in `/view` | It is `GET …/interfaces/{path}` | A path has slashes in it, so nothing can follow it |
+| A widget type `button` | Not built | A form adds rows and the form trigger will start flows. A button that runs something for an end user needs a design for what it may run |
+| An interface is checked when it is deployed | A bundle checks it against the tables the bundle carries. A draft is checked against the tables that are really in the workspace, and the builder will not publish with problems. A deploy from the Changes screen does not make the second check | A table made in the console is in no bundle. The renderer says so in the widget when a table or a column is gone |
+| Migration 0026 is dashboards | 0026 and 0027 are two built-in roles. Dashboards are 0028 | Each role was needed where its step was built |
+| Drag and resize after everything else | Built, with a layout that settles | A browser check showed overlapping widgets hide each other |

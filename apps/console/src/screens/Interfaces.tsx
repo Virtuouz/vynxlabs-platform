@@ -10,6 +10,7 @@ import {
   type Filter,
   heading,
   PageRenderer,
+  settle,
   type TableInfo,
 } from "@vynxlabs/screens";
 import {
@@ -1047,6 +1048,8 @@ export function PageEditor({
               onChange((target) => {
                 const moved = target.widgets.find((one) => one.id === id);
                 if (moved) moved.at = to;
+                // Whatever it was dropped on moves out of its way.
+                settle(target.widgets, id);
               }),
           }}
         />
@@ -1077,7 +1080,10 @@ export function PageEditor({
             onChange={(apply) =>
               onChange((target) => {
                 const changed = target.widgets.find((one) => one.id === widget.id);
-                if (changed) apply(changed);
+                if (!changed) return;
+                const before = JSON.stringify(changed.at);
+                apply(changed);
+                if (JSON.stringify(changed.at) !== before) settle(target.widgets, widget.id);
               })
             }
             onRemove={() => {
@@ -1087,6 +1093,8 @@ export function PageEditor({
                 for (const one of target.widgets) {
                   if (one.link?.from === widget.id) delete one.link;
                 }
+                // What was under it rises into the room it left.
+                settle(target.widgets, undefined);
               });
               onSelect(undefined);
             }}

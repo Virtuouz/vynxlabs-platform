@@ -8,6 +8,7 @@ export {
   type TableInfo,
   type Totals,
 } from "./data.ts";
+export { settle } from "./layout.ts";
 export {
   all,
   groupName,

@@ -222,6 +222,15 @@ End users have groups of their own, under **End-user groups**. Bind a role to a 
 
 A table's rows can be ruled by both. Under a table's **Row rules**, say who may read or change a row: everyone, the person a column names, people in the group a column names, or people whose attribute equals a column. **See it as** shows the rows as one end user sees them.
 
+## Apps made in the console
+
+A member can build an app over a workspace's tables with no code, under **Apps made here** in a dev workspace: tables, cards, charts, totals and forms, where choosing a row in one decides what another shows. It is published by deploying, promoted to production like anything else, and then shared from **Apps** with a group or with every end user.
+
+- **Who may build.** Give the built-in role `app_maintainer`. Its holder builds and deploys these apps and nothing else: no script and no flow.
+- **Who sees what.** Sharing gives the app and its tables. Which rows each person sees is decided by each table's row rules, so one app can show two groups different rows. Leaving a value off a screen does not keep it from someone who may read the row.
+- **Dashboards** are a member's own pages, under **Dashboards** in any workspace: saved without a deploy, private unless shared read-only with the workspace.
+- **The image carries the app that draws them.** `SCREENS_DIR` says where it is, and is set in the image. An instance run from source finds it after `pnpm build`. Without it, such an app says it cannot be shown.
+
 ## Single sign-on
 
 A tenant's admin connects an identity provider under **Single sign-on**, for members or for end users, over OIDC or SAML. Operators connect one for themselves under **Instance**. The instance needs nothing new to run, and makes outbound requests to the provider: to read an OIDC provider's settings and keys, and to read SAML metadata when given an address for it.

@@ -5,6 +5,7 @@ import {
   defineConnection,
   defineEvent,
   defineFlow,
+  defineInterface,
   defineRole,
   defineSchedule,
   defineScript,
@@ -295,6 +296,67 @@ export const invoices = defineTable({
       { allow: "read", when: { column: "customer_id", equals: { attribute: "customer_id" } } },
     ],
   },
+});
+
+/**
+ * An app with no code of its own: a screen over the invoices, as it would be
+ * made in the console under "Apps made here". It is written here to show the
+ * shape. A list of invoices, the one that is chosen beside it, and what is
+ * owed by customer. Each person who opens it is given the rows the table's
+ * rules give them, so finance and a customer see different invoices in the
+ * same app.
+ */
+export const invoiceScreen = defineInterface({
+  path: "screens/invoices",
+  title: "Invoices",
+  pages: [
+    {
+      id: "invoices",
+      title: "Invoices",
+      widgets: [
+        {
+          id: "list",
+          type: "table",
+          title: "Invoices",
+          table: "invoices",
+          fields: [
+            { column: "number" },
+            { column: "customer_id", label: "Customer" },
+            { column: "total" },
+          ],
+          sort: [{ column: "number" }],
+          at: { x: 0, y: 0, w: 8, h: 9 },
+        },
+        {
+          id: "chosen",
+          type: "card",
+          title: "The invoice chosen",
+          table: "invoices",
+          link: { from: "list", type: "same" },
+          at: { x: 8, y: 0, w: 4, h: 9 },
+        },
+        {
+          id: "owed",
+          type: "chart",
+          title: "Owed by customer",
+          table: "invoices",
+          summary: {
+            groupBy: [{ column: "customer_id" }],
+            aggregates: [{ fn: "sum", column: "total", as: "owed" }],
+          },
+          options: { mark: "bar", x: "customer_id", y: "owed" },
+          at: { x: 0, y: 9, w: 12, h: 8 },
+        },
+      ],
+    },
+  ],
+});
+
+export const invoiceApp = defineApp({
+  path: "invoice-desk",
+  title: "Invoices",
+  description: "Invoices, as each person may see them.",
+  interface: "screens/invoices",
 });
 
 /**

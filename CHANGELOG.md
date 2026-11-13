@@ -8,7 +8,10 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 
 ### For operators
 
-- **Database change.** Migrations 0019 to 0025 run on start.
+- **Database change.** Migrations 0019 to 0028 run on start.
+- **Apps can be made in the console,** with no code, over a workspace's tables. The image carries the app that draws them, under `SCREENS_DIR`. An instance run from source needs `pnpm build`, which builds it.
+- **Three new built-in roles' worth of access:** `app_maintainer` builds and deploys apps made in the console and no code; `portal_reader` opens apps and reads rows; `developer`, `workspace_admin` and `app_maintainer` may keep dashboards.
+- **Sharing an app with `viewer` shows every row.** That role reads everything, a table's every row included. Share with `portal_reader` or `portal_user`, which the Share button does.
 - **Single sign-on.** A tenant can connect an identity provider over OIDC or SAML, for its members or its end users, and operators can connect one for themselves under Instance. The control plane makes outbound requests to the provider. Nothing new has to run. See "Single sign-on" in the self-hosting guide.
 - **The console's sign-in asks for the email first,** then for a password or the organisation's sign-in.
 - **A tenant can require single sign-on.** Passwords are then refused for the people a provider covers. Members bound at the instance keep theirs: keep one such account.
@@ -29,6 +32,9 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 - `defineWebhook`, and `trigger.webhook()` in a flow, take `input: "request"` to be given headers, query, method and the raw body, and `verify` to check an HMAC signature against a workspace secret. A webhook's address also takes forms and text.
 - A sub-flow step may choose its flow when it runs: `flowFrom` with `allow`.
 - `@vynxlabs/app` gains `startFlow`, `flowRun` and `runFlow`. `flow_run:write` can be bound at one flow.
+- **Totals.** `table().aggregate({ group, measures, filter })` in apps and `ctx.table().aggregate(...)` in scripts give counts, sums, averages, the least and the most, over rows or groups of them, under the table's row policy. `GET …/aggregate/{table}` over HTTP.
+- `defineInterface` declares pages of widgets over tables, and `defineApp({ interface })` serves one as an app with no code. Most are made in the console instead.
+- The widget interface grew: a widget can be handed the chosen row, more rows to ask for, and ways to edit and delete. `card` and `cards` are new, and `chart` takes `mark`, `x` and `y` in place of a spec. An app's own widgets keep working.
 - `defineTable` takes `policy: { rules: [...] }`: a rule allows `read`, `write` or `all` when a column holds the person's ID, names a group they are in, or equals one of their attributes. `{ owner }` works as before.
 - `defineBinding` can name a group of end users: `{ type: "end_user_group", name }`.
 - An app that draws its own sign-in screen can list the tenant's identity providers at `GET /tenants/{id}/end-user-auth/providers` and send the browser to each one's path under the tenant's sign-in pages.

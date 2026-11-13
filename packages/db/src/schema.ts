@@ -248,6 +248,46 @@ export interface ResourceDraftTable {
   updated_at: Generated<Date>;
 }
 
+export interface GitRepositoryTable {
+  tenant_id: string;
+  url: string;
+  default_branch: Generated<string>;
+  folder: Generated<string>;
+  username: Generated<string>;
+  credential: Buffer;
+  paused: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type GitState = "never" | "synced" | "ahead" | "behind" | "conflict" | "error";
+
+export interface WorkspaceGitTable {
+  workspace_id: string;
+  tenant_id: string;
+  branch: string;
+  synced_commit: Generated<string | null>;
+  synced_files: ColumnType<Record<string, string>, string | undefined, string>;
+  state: Generated<GitState>;
+  last_error: Generated<string | null>;
+  lease_until: Generated<Date | null>;
+  updated_at: Generated<Date>;
+}
+
+export interface GitOperationTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  kind: "push" | "pull";
+  status: "done" | "nothing" | "refused" | "failed";
+  commit_id: string | null;
+  message: string | null;
+  detail: Json<Record<string, unknown>>;
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+}
+
 export interface DeploymentTable {
   id: string;
   tenant_id: string;
@@ -638,6 +678,9 @@ export interface PlatformSchema {
   bundle: BundleTable;
   deployment: DeploymentTable;
   resource_draft: ResourceDraftTable;
+  git_repository: GitRepositoryTable;
+  workspace_git: WorkspaceGitTable;
+  git_operation: GitOperationTable;
   connection_binding: ConnectionBindingTable;
   variable_value: VariableValueTable;
   run: RunTable;

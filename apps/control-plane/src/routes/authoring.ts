@@ -12,6 +12,7 @@ import {
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { storeBundle } from "../kernel/execution/bundles.js";
 import { startRun } from "../kernel/execution/runs.js";
+import { markAhead } from "../kernel/git.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
@@ -358,6 +359,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             message: body.message,
           }),
         );
+        // The branch the workspace follows, if any, no longer has what the workspace runs.
+        await markAhead(db, workspace.id);
         return reply.code(201).send({
           id: result.deployment.id,
           bundleId: result.bundle.id,

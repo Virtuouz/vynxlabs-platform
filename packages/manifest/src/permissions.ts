@@ -150,6 +150,16 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "git",
+    label: "Repository",
+    group: "Tenant",
+    scope: "workspace",
+    verbs: {
+      read: "See the tenant's repository and how each workspace stands against its branch.",
+      write: "Connect the repository, choose a workspace's branch, and push to it.",
+    },
+  },
+  {
     kind: "workspace",
     label: "Workspaces",
     group: "Workspace",

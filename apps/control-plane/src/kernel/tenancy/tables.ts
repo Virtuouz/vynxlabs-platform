@@ -83,6 +83,22 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["workspace_id", "path"],
     export: "always",
   },
+  // The token is encrypted under the tenant's key, which travels with the export.
+  { table: "git_repository", ofTenant: own, key: ["tenant_id"], export: "always" },
+  {
+    table: "workspace_git",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id"],
+    export: "always",
+  },
+  {
+    table: "git_operation",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "history",
+  },
   { table: "role", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },
   { table: "binding", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },
   { table: "deployment", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },

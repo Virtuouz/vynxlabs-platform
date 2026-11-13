@@ -21,6 +21,7 @@ import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionRoutes } from "./routes/execution.js";
 import { flowRoutes } from "./routes/flows.js";
+import { gitRoutes } from "./routes/git.js";
 import { healthRoutes } from "./routes/health.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
@@ -147,6 +148,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(workspaceRoutes(kernel));
       await api.register(executionRoutes(kernel));
       await api.register(authoringRoutes(kernel));
+      await api.register(gitRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
       await api.register(sourceRoutes(kernel));

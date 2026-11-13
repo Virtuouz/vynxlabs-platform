@@ -249,6 +249,50 @@ export async function composeDrafts(
   }
 }
 
+/** The console-managed resources a workspace is running, as its active bundle carries them. */
+export async function activeConsoleManaged(
+  kernel: Kernel,
+  db: Db | Trx,
+  workspaceId: string,
+): Promise<BundleManifest[]> {
+  const active = await activeBundle(kernel, db, workspaceId);
+  return active?.content.manifests.filter((manifest) => manifest.ownership === "ui") ?? [];
+}
+
+/**
+ * Deploys a whole set of console-managed resources in place of the one the
+ * workspace has: what a pull from the repository does. The repository-managed
+ * part of the workspace's bundle is kept as it is.
+ */
+export async function deployConsoleManaged(
+  kernel: Kernel,
+  trx: Trx,
+  audit: Audit,
+  workspace: WorkspaceRef,
+  principal: Principal,
+  manifests: readonly BundleManifest[],
+  message: string,
+) {
+  await devWorkspace(trx, workspace);
+  const active = await activeBundle(kernel, trx, workspace.id);
+  const { digest: _digest, ...base } = active?.content ?? { ...emptyBase(), digest: "" };
+  let bundle: Bundle;
+  try {
+    bundle = await composeBundle(base, manifests, { sdkEntry });
+  } catch (error) {
+    if (!(error instanceof ComposeError)) throw error;
+    throw badRequest(
+      "The code does not build.",
+      error.problems.map((problem) => {
+        const [where, ...rest] = problem.split(": ");
+        return { path: where ?? "", message: rest.join(": ") };
+      }),
+    );
+  }
+  const stored = await storeBundle(kernel, trx, audit, workspace, principal, bundle, "compose");
+  return deployBundle(kernel, trx, audit, workspace, principal, stored.bundle.id, { message });
+}
+
 /** Composes the drafts into a bundle, activates it, and clears the drafts it carried. */
 export async function deployDrafts(
   kernel: Kernel,

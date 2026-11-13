@@ -444,6 +444,14 @@ export async function importTenant(
         }
       }
 
+      // The tenant came from another instance, which may still be pushing to the same
+      // branches. Sync stays off here until someone looks at the repository's settings.
+      await trx
+        .updateTable("git_repository")
+        .set({ paused: true })
+        .where("tenant_id", "=", tenantId)
+        .execute();
+
       const result: ImportReport = {
         tenant: { id: tenantId, slug, name: manifest.tenant.name, dataLocation: location },
         counts,

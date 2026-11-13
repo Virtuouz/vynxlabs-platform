@@ -2,13 +2,16 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
-## 0.5.0, in progress
+## 0.5.0, not yet released
 
-Authoring in the console (phase 7). This entry grows as the phase is built.
+Authoring in the console (phase 7).
 
 ### For operators
 
 - **Database change.** Migrations 0019 to 0032 run on start.
+- **The console is sent compressed.** The image carries Brotli and gzip copies of the console's files and sends them itself. A proxy in front no longer needs to compress them.
+- **Old try-out bundles are removed.** A bundle made only to try a draft out is removed a week later, with the test runs that ran on it.
+- **A pull from a repository has a size limit:** 2000 files and 8 MB in the repository's folder.
 - **Provisioning over SCIM.** An identity provider can push people and groups to `/api/v1/scim/v2/<provider>` with a token made under the provider's Provisioning tab. The provider must be able to reach the instance. It was tested against the request shapes Entra ID and Okta send, not against a live tenant of either. See "Provisioning (SCIM)" in the self-hosting guide.
 - **Members can be suspended in a tenant, and accounts disabled.** A suspended member holds nothing in that tenant until resumed. A disabled account can sign in nowhere, and its API keys are refused. A provider does both by push; an admin and an operator can by hand.
 - **Removing a member from a tenant, or an end user,** now also removes their ties to the tenant's identity providers.
@@ -40,6 +43,9 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 - A sub-flow step may choose its flow when it runs: `flowFrom` with `allow`.
 - `@vynxlabs/app` gains `startFlow`, `flowRun` and `runFlow`. `flow_run:write` can be bound at one flow.
 - **Totals.** `table().aggregate({ group, measures, filter })` in apps and `ctx.table().aggregate(...)` in scripts give counts, sums, averages, the least and the most, over rows or groups of them, under the table's row policy. `GET …/aggregate/{table}` over HTTP.
+- **Settings can be made in the console.** Connections, connection groups, variables, events, schedules and triggers are made and changed under Resources in a dev workspace, and deployed like any draft.
+- **A repository that uses a core node builds as bundle format 3.** Deploying it keeps what was made in the console, as a bundle of an older format does.
+- **Build with the 0.5.0 SDK** to deploy to a 0.5.0 instance with new features. A bundle built with an earlier SDK, back to 0.2.0, keeps deploying.
 - **Connectors.** `defineConnector({ path, configSchema, create })` says how a kind of connection reaches an outside system, and a connection names it with `connector`. `smtp` is built in beside `http`: a script is given `send({ to, subject, text })`.
 - **Trigger sources.** `defineTriggerSource({ mode: "webhook" | "poll", run })` decides what a webhook's request or a schedule's tick starts. `defineWebhook`, `defineSchedule` and a flow's triggers take `source`.
 - **Nodes.** `defineScript({ node: { label, category, takes } })` puts a script in the flow editor's palette, with a form made from its input schema. A step can hand it a connection, a table or an event with `with`, and give an expression per field with `inputs`.

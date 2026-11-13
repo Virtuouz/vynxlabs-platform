@@ -177,11 +177,14 @@ A webhook answered through a worker and MCP inside Fastify were each small enoug
 - **Encrypted assertions are opened for one way of wrapping the key.** The decryption library that node-saml 5.2 pins opens a key wrapped with RSA-OAEP and MGF1 with SHA-1 (`rsa-oaep-mgf1p`, SHA-1 digest). Keycloak 26 wraps with `xmlenc11#rsa-oaep` and SHA-256 unless told otherwise, and that is refused with a message that says what to set. A newer version of the library opens it, and also refuses AES-CBC, which other providers use. Replacing a security library that another pins was not done here.
 - **A check on routes by name caught a new route it did not mean.** The apps suite claims every route with `domains` in it. A provider's email domains are tested in the single sign-on suite, and are named as an exception there.
 - **A check that passed had not run.** The command that gated every commit piped each check into `tail`, and a pipeline's result is its last command's. A lint error went into a commit unnoticed and was caught by the next run. Every gate now keeps each check's own result.
-- **A correct password is refused, rarely, in the full test run.** Four times so far, each in a different suite, never when a suite runs alone and never in 5,760 hash-and-check pairs run across twelve processes at once. The library says "Invalid password": the account is found and the check itself comes out different. The harness now checks the stored hash again directly and tries once more when it happens, to tell a wrong hash from an unsteady check. It has not happened since. The cause is not known, and it matters: if it is real under load it would refuse people in production.
+- **A correct password is refused, rarely, in the full test run. The cause is not known.** Five times so far, each in a different suite, never when a suite runs alone. The library says "Invalid password": the account is found and the check comes out different. When it last happened the harness looked again: the hash on record was whole, checking it directly gave the right answer three times, and a second sign-in over HTTP a moment later succeeded. Hashing was then run 5,760 times across eight threads at once, and across twelve processes before that, and never gave a wrong answer, so the fault is not in the hashing. The harness now uses the second sign-in and says loudly that it did, so that it is seen and counted. It matters: if it is real under load it would, once in a great while, refuse someone in production who would get in on trying again. It should be looked at before a release that people depend on.
+- **A repository that uses a core node could not be built, and deploying it would have removed what was made in the console.** Both were found by putting a core node in the example. The CLI checked what flows refer to before the nodes were added. And the nodes make the bundle format 3, which a deploy took to mean that the bundle lists everything console-managed. A bundle that is format 3 only for its core nodes is now treated as saying nothing about that.
+- **A test of a flow's delay counted every flow due on the instance.** It failed once under the full run, when another test's flow was still due. It now looks at its own flow.
 - **The `viewer` role reads every row.** It holds `*:read`, which includes the permission to read every row of a table whatever its rules say. Sharing an app with it would have undone row rules for everyone it was shared with. Sharing uses a new role, `portal_reader`.
 - **A widget dropped on another hid it.** Found by dragging one in a browser. A moved widget now pushes what it lands on down, and what is under a removed one rises.
 - **What an end user may be told about a table is less than the table's own route tells.** That route gives the policy, the storage name and a count of every row. The app that draws interfaces reads a route of its own, which gives the columns and whether the caller may read and write.
-- **The console is served with no compression of its own.** Monaco makes that matter. The self-hosting guide says to put a proxy in front; the image should compress by itself.
+- **The console was served with no compression of its own.** Monaco makes that matter. The build now leaves compressed copies and the image sends them.
+- **Port 8080 was taken by an instance left running from an earlier phase,** so the image could not start there for the browser test. It was run on 8090, which the development Keycloak also allows. CI runs it on 8080.
 
 ## The console (milestone 1)
 
@@ -423,9 +426,29 @@ Tried against a running instance with `curl` standing in for a directory and Key
 
 Not built: bulk operations, sorting, ETags, password sync, attributes for end users from a push, a change of a member's email from a push, and groups for the instance's own provider.
 
+## Finishing (unit D)
+
+**Settings are made in the console.** Connections, connection groups, variables, events, schedules and triggers are made and changed from the Resources screen, as drafts like everything else. A trigger is a webhook, an event or a form, with the settings and the designer the flow editor has.
+
+**What an agent would be offered.** A service account's screen shows the address an agent connects to in a workspace, settings to paste into the agent, and the tools the account would be offered there, worked out for the account by the code that answers an agent.
+
+**The console loads less and is sent compressed.** The code editor's screens, the screen builder, dashboards and single sign-on are fetched when first opened. What every visit loads went from 820 kB to 471 kB, and to 121 kB as sent: the build leaves Brotli and gzip copies and the control plane sends them, with files named by their content kept by the browser for good.
+
+**Tidying.** A bundle made only to try a draft out is removed a week later with its test runs. A pull takes in at most 2000 files and 8 MB from the repository's folder. The steps that come with the platform are marked as such and cannot be changed.
+
+**The example** has a contact form: a form trigger and a flow of two core nodes, with no script of its own.
+
+**The exit criterion is walked in a browser.** `e2e/exit-criterion.spec.ts` does all of it on a fresh instance: a member signs in through Keycloak, writes a script, draws a flow that a signed webhook starts and that starts one of two flows by the data, deploys from the Changes screen, finds the commit on the branch under her own name, promotes to production once production has its own secret, builds and publishes an app that people of two groups see differently, and has a developer's pushed change pulled in. It fails if a browser dialog opens or a page throws. A CI job builds the image and runs it. It passes against the image in fifteen seconds. The CI job has not yet run on GitHub.
+
+**Two instances, from the image.** The tenant the browser test built on one instance was exported and imported into a second with a different master key. On the second: both workspaces had every resource, the core node among them; the orders were there; the member suspended on the first was suspended; the people and the group a provider had pushed were there under the same IDs, and the provider was paused, its old token refused and a new one refused until the provider was saved again; the workspace's triggers arrived paused, and once resumed a webhook signed with the secret that travelled started the flow, which wrote its row; and two end users signed in with the passwords they had set on the first instance and saw three rows and two, totalling 30 for the second. A wrong passphrase was refused.
+
+**Version 0.5.0.** Every package, the SDK's range of cores, the worker and the CLI's local project. The oldest bundle taken stays 0.2.0.
+
+Not done, and said so: TanStack Query and a route table in the console; `platform pull` and `platform fmt`; a history of versions with a difference between them; editors for a theme and a data source beyond the screens they already have; compression of the app that draws interfaces, which is small; and a form drawn from any kind's schema, in place of which each kind has a form of its own.
+
 ## Schemas
 
-Migrations 0019 to 0032. Bundle format 3. Version 0.5.0 is not yet set.
+Migrations 0019 to 0032. Bundle format 3. Version 0.5.0.
 
 | Change | Purpose |
 | --- | --- |
@@ -507,6 +530,11 @@ Migrations 0019 to 0032. Bundle format 3. Version 0.5.0 is not yet set.
 | The Extensions screen and a connection's form | `apps/console/src/Extensions.test.tsx` |
 | SCIM: tokens, people and groups as Entra ID and Okta send them, suspension and disabling, and that a suspended member holds nothing | `apps/control-plane/src/scim.test.ts` |
 | The Provisioning tab | `apps/console/src/Provisioning.test.tsx` |
+| The editor for settings, and what an agent would be offered | `apps/console/src/ResourceEditor.test.tsx`, `AgentAccess.test.tsx`, `apps/control-plane/src/mcp.test.ts` |
+| The console's files: compressed copies, and what a browser may keep | `apps/control-plane/src/console-files.test.ts` |
+| Old try-out bundles swept, and the limit on a pull | `apps/control-plane/src/authoring.test.ts`, `git.test.ts` |
+| The example's contact form, sent and handled | `packages/cli/src/example.test.ts` |
+| The exit criterion, in a browser against the image | `e2e/exit-criterion.spec.ts`, run by `pnpm e2e` and by CI |
 
 ## Proposed deviations
 
@@ -529,6 +557,8 @@ Migrations 0019 to 0032. Bundle format 3. Version 0.5.0 is not yet set.
 | The core pack is added by `packages/compose` and `packages/cli` | By `composeBundle` alone, which both call | One place, so both build the same thing |
 | SCIM tokens are API keys bound to one purpose | They are a table of their own, on the pattern of worker credentials | A token belongs to a provider, not to a person, and must open nothing else |
 | The console's provisioning routes sit under `/identity-providers` | They are under `/provisioning/<provider>` | So that each suite's check of its own routes stays whole |
+| One editor drawn from each kind's schema, with `Form` taking nested schemas | A form for each of six kinds | They read better, and reuse the flow editor's webhook settings and form designer |
+| The browser test starts the image with Compose | It runs the image on the host's network beside the development stack | The instance, the browser, Keycloak and the test's git server must all reach each other at `localhost`, as Keycloak's realm expects |
 | Single sign-on is tested against Keycloak in the development stack | The suite uses providers made for the test. Keycloak was driven by hand, through a browser | A tampered or replayed answer has to be made, and Keycloak will not make one. CI also stays without a 700 MB image |
 | Group maps name a group by type and ID in one column | Two columns, one per kind of group | Each can then refer to its table, and a deleted group takes its mapping with it |
 | A member's sign-in starts at `/auth/sso/start` | It starts at `/sso/:id/start`. Only the last step is in the authentication library | Only making the session needs the library |

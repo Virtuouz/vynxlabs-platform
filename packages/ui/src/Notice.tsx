@@ -3,9 +3,11 @@ import type { ReactNode } from "react";
 const tones = {
   attention: "border-attention/40 bg-attention-soft text-ink",
   danger: "border-danger/40 bg-danger-soft text-ink",
+  success: "border-success/40 bg-success-soft text-ink",
+  plain: "border-line bg-surface text-ink",
 };
 
-/** A message that needs to be seen: an error, or a state the person must not miss. */
+/** A message that needs to be seen: an error, a state the person must not miss, or that something worked. */
 export function Notice({
   tone,
   children,

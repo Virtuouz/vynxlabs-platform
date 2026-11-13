@@ -84,6 +84,8 @@ export interface ListScreenProps<Row> {
   create?: CreateConfig;
   /** Adds a last column of actions per row. */
   rowActions?: (row: Row, reload: () => void) => ReactNode;
+  /** A button beside the title, for a screen whose way to add something is not a dialog. */
+  action?: ReactNode;
 }
 
 export function Page({
@@ -223,7 +225,9 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
     <Button variant="primary" onClick={() => setCreating(true)}>
       {create.action}
     </Button>
-  ) : undefined;
+  ) : (
+    props.action
+  );
 
   return (
     <Page title={props.title} description={props.description} action={createButton}>

@@ -13,6 +13,7 @@ import { Link, match } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
+import { Changes, ScriptEditor } from "./Authoring.tsx";
 import { Branding } from "./Branding.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
 import { Domains } from "./Domains.tsx";
@@ -375,8 +376,26 @@ function WorkspaceDetail({
       ) : null}
       {tab === "apps" ? (
         <Apps root={root} />
+      ) : tab === "scripts" && (rest === "new" || rest.startsWith("edit/")) ? (
+        <ScriptEditor
+          key={rest}
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          path={rest === "new" ? undefined : rest.slice("edit/".length)}
+          editable={workspace.data.type === "dev"}
+        />
+      ) : tab === "changes" ? (
+        <Changes
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "scripts" ? (
-        <Scripts root={root} runsLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />
+        <Scripts
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "runs" && runId ? (
         <RunDetail
           root={root}

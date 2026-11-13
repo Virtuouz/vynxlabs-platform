@@ -57,7 +57,17 @@ const TRIGGER: Record<string, string> = {
   alert: "Failure handler",
 };
 
-export function Scripts({ root, runsLink }: { root: string; runsLink: string }) {
+export function Scripts({
+  root,
+  link,
+  editable,
+}: {
+  root: string;
+  link: string;
+  /** Whether scripts can be written here: true in a dev workspace. */
+  editable: boolean;
+}) {
+  const runsLink = `${link}/runs`;
   return (
     <ListScreen<{
       path: string;
@@ -66,11 +76,28 @@ export function Scripts({ root, runsLink }: { root: string; runsLink: string }) 
       lastRun: { id: string; status: Status; createdAt: string } | null;
     }>
       title="Scripts"
-      description="The scripts in the bundle this workspace is running."
+      description="The scripts this workspace is running. Open one to read it, or to change it in a dev workspace."
+      action={
+        editable ? (
+          <Button variant="primary" onClick={() => navigate(`${link}/scripts/new`)}>
+            New script
+          </Button>
+        ) : undefined
+      }
       path={`${root}/scripts`}
       rowKey={(row) => row.path}
       columns={[
-        { header: "Script", cell: (row) => code(row.path) },
+        {
+          header: "Script",
+          cell: (row) => (
+            <Link
+              to={`${link}/scripts/edit/${row.path}`}
+              className="font-mono text-[13px] text-action"
+            >
+              {row.path}
+            </Link>
+          ),
+        },
         {
           header: "What it does",
           cell: (row) => <span className="text-ink-muted">{row.description}</span>,

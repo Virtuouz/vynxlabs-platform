@@ -11,6 +11,7 @@ import {
   Database,
   Download,
   FileCode2,
+  GitCompareArrows,
   Globe,
   KeyRound,
   KeySquare,
@@ -93,6 +94,7 @@ export const WORKSPACE_GROUPS: readonly SectionGroup[] = [
       ["scripts", "Scripts", FileCode2],
       ["apps", "Apps", AppWindow],
       ["triggers", "Triggers", Zap],
+      ["changes", "Changes", GitCompareArrows],
     ],
   ],
   [

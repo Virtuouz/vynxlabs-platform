@@ -14,7 +14,7 @@ const smtp = {
   properties: {
     host: { type: "string", title: "Server" },
     port: { type: "integer", title: "Port", default: 587 },
-    security: { type: "string", enum: ["starttls", "tls", "none"] },
+    security: { enum: ["starttls", "tls", "none"], default: "starttls", title: "Security" },
     from: { type: "string", title: "From" },
   },
   required: ["host", "from"],
@@ -121,7 +121,8 @@ test("a connection's form is what its connector's schema can say plainly, and a 
     hasCredential: true,
     configSchema: {
       properties: {
-        host: { type: "string" },
+        host: { type: "string", maxLength: 253 },
+        security: { enum: ["starttls", "tls", "none"], default: "starttls" },
         secret: { type: "string" },
         auth: { type: "object" },
         tags: { type: "array" },
@@ -129,7 +130,15 @@ test("a connection's form is what its connector's schema can say plainly, and a 
       required: ["host", "auth"],
     },
   });
-  expect(Object.keys(form.schema.properties)).toEqual(["host", "secret", "connection_secret"]);
+  expect(Object.keys(form.schema.properties)).toEqual([
+    "host",
+    "security",
+    "secret",
+    "connection_secret",
+  ]);
+  // A list of values is a choice, and a name is one line however long it may be.
+  expect(form.schema.properties.security).toMatchObject({ type: "string", default: "starttls" });
+  expect(form.schema.properties.host).toEqual({ type: "string" });
   expect(form.secret).toBe("connection_secret");
   expect(form.left).toEqual(["auth", "tags"]);
   expect(form.schema.required).toEqual(["host"]);
@@ -158,7 +167,12 @@ test("a mail connection is set up from its row, with the form its connector give
     method: "PUT",
     url: `/api/v1${root}/connection-bindings/outbox`,
     body: {
-      config: { host: "mail.acme.example", port: 587, from: "orders@acme.example" },
+      config: {
+        host: "mail.acme.example",
+        port: 587,
+        security: "starttls",
+        from: "orders@acme.example",
+      },
       credential: "s3cret",
     },
   });

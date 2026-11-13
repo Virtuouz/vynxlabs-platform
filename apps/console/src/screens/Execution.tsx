@@ -520,7 +520,13 @@ interface ConnectionRow {
   defined: boolean;
   bound: boolean;
   config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
-  configSchema: { properties?: Record<string, { type?: unknown }>; required?: string[] };
+  configSchema: {
+    properties?: Record<
+      string,
+      { type?: unknown; enum?: unknown[]; maxLength?: number; [more: string]: unknown }
+    >;
+    required?: string[];
+  };
   hasCredential: boolean;
 }
 
@@ -532,8 +538,21 @@ export function connectionForm(row: Pick<ConnectionRow, "configSchema" | "hasCre
   const properties: Record<string, FormProperty> = {};
   const left: string[] = [];
   for (const [name, property] of Object.entries(row.configSchema.properties ?? {})) {
-    if (SIMPLE.has(String(property.type))) properties[name] = property as FormProperty;
-    else left.push(name);
+    // A list of values to choose from says what it is without naming a type.
+    const type =
+      property.type ??
+      (property.enum?.every((value) => typeof value === "string") ? "string" : undefined);
+    if (!SIMPLE.has(String(type))) {
+      left.push(name);
+      continue;
+    }
+    // An address or a name is one line, however long the connector lets it be. The server holds the limit.
+    const { maxLength, ...rest } = property;
+    properties[name] = {
+      ...rest,
+      type,
+      ...(maxLength !== undefined && maxLength > 1000 ? { maxLength } : {}),
+    } as unknown as FormProperty;
   }
   const secret = "secret" in properties ? "connection_secret" : "secret";
   properties[secret] = {
@@ -579,10 +598,12 @@ function SetUpConnection({
         description={`A ${CONNECTOR_NAMES[row.connector] ?? row.connector} connection. What is set here applies to this workspace only.`}
       >
         {form.left.length > 0 ? (
-          <Notice tone="attention">
-            This connector also takes {form.left.join(", ")}, which cannot be set here. Set them
-            through the API.
-          </Notice>
+          <div className="mb-3">
+            <Notice tone="attention">
+              This connector also takes {form.left.join(", ")}, which cannot be set here. Set them
+              through the API.
+            </Notice>
+          </div>
         ) : null}
         <Form
           key={String(open)}

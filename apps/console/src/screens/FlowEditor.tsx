@@ -912,7 +912,14 @@ export function FlowEditor({
                   ) : null}
                 </>
               ) : null}
-              {node.type === "script" || node.type === "foreach" ? (
+              {node.type === "script" && specs.has(String(node.script)) ? (
+                <p className="m-0 text-[13px]">
+                  <span className="font-semibold">{specs.get(String(node.script))?.label}</span>{" "}
+                  <code className="font-mono text-[12px] text-ink-muted">
+                    {String(node.script)}
+                  </code>
+                </p>
+              ) : node.type === "script" || node.type === "foreach" ? (
                 <ComboboxField
                   label="Script"
                   options={scriptOptions}

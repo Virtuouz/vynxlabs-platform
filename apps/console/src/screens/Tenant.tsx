@@ -30,6 +30,7 @@ import {
   Workers,
 } from "./Execution.tsx";
 import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
+import { RepositorySettings } from "./Git.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 
 interface Workspace {
@@ -205,6 +206,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <Access base={base} />
       ) : section === "operator-access" ? (
         <OperatorAccess base={base} />
+      ) : section === "repository" ? (
+        <RepositorySettings base={base} />
       ) : section === "export" ? (
         <ExportSection base={base} />
       ) : section === "audit" ? (

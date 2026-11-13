@@ -19,6 +19,7 @@ import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { RunDetail } from "./Execution.tsx";
+import { GitPanel } from "./Git.tsx";
 
 const STARTER = `import type { ScriptContext } from "@vynxlabs/sdk";
 
@@ -598,6 +599,12 @@ export function Changes({
           </div>
         </section>
       ) : null}
+      <GitPanel
+        root={root}
+        tenantLink={link.split("/workspaces/")[0] as string}
+        onPulled={drafts.reload}
+        key={done}
+      />
     </Page>
   );
 }

@@ -11,6 +11,7 @@ import {
   Database,
   Download,
   FileCode2,
+  GitBranch,
   GitCompareArrows,
   Globe,
   KeyRound,
@@ -75,6 +76,7 @@ export const TENANT_GROUPS: readonly SectionGroup[] = [
   [
     "Settings",
     [
+      ["repository", "Repository", GitBranch],
       ["branding", "Branding", Palette],
       ["domains", "Domains", Globe],
       ["workers", "Workers", Cpu],

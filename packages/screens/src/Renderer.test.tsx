@@ -362,6 +362,57 @@ test("references are fetched once each, at most two hundred to a request", async
   ]);
 });
 
+test("in the builder a widget is dragged by its heading and stretched by its corner, on the grid", async () => {
+  const { client } = fake();
+  const onMove = vi.fn();
+  const onSelect = vi.fn();
+  const { container } = render(
+    <PageRenderer
+      tables={tables}
+      client={client}
+      page={page([widget("orders", { title: "Orders", at: { x: 0, y: 0, w: 6, h: 6 } })])}
+      editing={{ onSelect, onMove }}
+    />,
+  );
+  const region = await screen.findByRole("region", { name: "Orders" });
+  // The page is 1,188 pixels wide here, so a column is 100 pixels and a row 52.
+  const grid = container.querySelector(".grid") as HTMLElement;
+  grid.getBoundingClientRect = () => ({ width: 1188, left: 0, top: 0 }) as DOMRect;
+  const pointer = (type: string, target: Element, x: number, y: number) => {
+    const event = new Event(type, { bubbles: true, cancelable: true }) as Any;
+    Object.assign(event, { button: 0, pointerId: 1, clientX: x, clientY: y });
+    target.dispatchEvent(event);
+  };
+  const header = region.querySelector("header") as HTMLElement;
+  header.setPointerCapture = () => {};
+  pointer("pointerdown", header, 10, 10);
+  pointer("pointermove", header, 10 + 205, 10 + 110);
+  // While it is held it is drawn where it would land.
+  await waitFor(() => expect(region.style.getPropertyValue("--col")).toBe("3 / span 6"));
+  pointer("pointerup", header, 10 + 205, 10 + 110);
+  expect(onMove).toHaveBeenCalledWith("orders", { x: 2, y: 2, w: 6, h: 6 });
+  // It cannot be dragged off the page.
+  pointer("pointerdown", header, 10, 10);
+  pointer("pointermove", header, 2000, -500);
+  pointer("pointerup", header, 2000, -500);
+  expect(onMove).toHaveBeenLastCalledWith("orders", { x: 6, y: 0, w: 6, h: 6 });
+
+  const corner = region.querySelector('[title="Drag to change its size"]') as HTMLElement;
+  corner.setPointerCapture = () => {};
+  pointer("pointerdown", corner, 600, 300);
+  pointer("pointermove", corner, 600 + 300, 300 - 104);
+  pointer("pointerup", corner, 600 + 300, 300 - 104);
+  expect(onMove).toHaveBeenLastCalledWith("orders", { x: 0, y: 0, w: 9, h: 4 });
+  // Pressing Edit in the heading is not a drag, and letting go where it was changes nothing.
+  onMove.mockClear();
+  pointer("pointerdown", region.querySelector("header button") as HTMLElement, 10, 10);
+  pointer("pointerdown", header, 10, 10);
+  pointer("pointerup", header, 10, 10);
+  expect(onMove).not.toHaveBeenCalled();
+  fireEvent.click(within(region).getByRole("button", { name: "Edit" }));
+  expect(onSelect).toHaveBeenCalledWith("orders");
+});
+
 test("an interface with several pages shows them as tabs, and one page as itself", async () => {
   const { client } = fake();
   const body = {

@@ -11,6 +11,7 @@ import {
   Widget,
   type WidgetContext,
 } from "@vynxlabs/ui";
+import type React from "react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type DataClient, type Filter, failure, type Row, type TableInfo } from "./data.ts";
 import { all, heading, linkDefaults, linkFilter, sortOf, summaryRows } from "./links.ts";
@@ -444,7 +445,17 @@ export interface PageRendererProps {
   tables: Record<string, TableInfo>;
   client: DataClient;
   /** For the builder: the widget being worked on, and how another is picked. */
-  editing?: { selected?: string | undefined; onSelect: (widget: string) => void } | undefined;
+  editing?:
+    | {
+        selected?: string | undefined;
+        onSelect: (widget: string) => void;
+        /**
+         * Lets a widget be dragged by its heading and stretched by its corner,
+         * and is called with where it was let go, on the twelve-column grid.
+         */
+        onMove?: (widget: string, at: PageWidget["at"]) => void;
+      }
+    | undefined;
 }
 
 function PageBody({ page, tables, client, editing }: PageRendererProps) {
@@ -469,30 +480,102 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
   // Top to bottom and left to right, so the page reads in order without the grid.
   const ordered = [...page.widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
 
+  // A widget being dragged or stretched is drawn where it would land, before it is let go.
+  const grid = useRef<HTMLDivElement>(null);
+  const [held, setHeld] = useState<{ id: string; at: PageWidget["at"] }>();
+  const grab = (
+    event: React.PointerEvent<HTMLElement>,
+    widget: PageWidget,
+    how: "move" | "stretch",
+  ) => {
+    const onMove = editing?.onMove;
+    const box = grid.current?.getBoundingClientRect();
+    if (!onMove || !box || event.button !== 0) return;
+    // A press on a button in the heading is that button's, not the start of a drag.
+    if (how === "move" && (event.target as HTMLElement).closest("button")) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const gap = 12;
+    const column = (box.width + gap) / 12;
+    const row = 40 + gap;
+    const from = { x: event.clientX, y: event.clientY };
+    let latest = widget.at;
+    const follow = (moved: PointerEvent) => {
+      const across = Math.round((moved.clientX - from.x) / column);
+      const down = Math.round((moved.clientY - from.y) / row);
+      const start = widget.at;
+      latest =
+        how === "move"
+          ? {
+              ...start,
+              x: Math.min(12 - start.w, Math.max(0, start.x + across)),
+              y: Math.min(199, Math.max(0, start.y + down)),
+            }
+          : {
+              ...start,
+              w: Math.min(12 - start.x, Math.max(1, start.w + across)),
+              h: Math.min(40, Math.max(1, start.h + down)),
+            };
+      setHeld({ id: widget.id, at: latest });
+    };
+    const drop = () => {
+      handle.removeEventListener("pointermove", follow);
+      handle.removeEventListener("pointerup", drop);
+      handle.removeEventListener("pointercancel", drop);
+      setHeld(undefined);
+      const start = widget.at;
+      if (
+        latest.x !== start.x ||
+        latest.y !== start.y ||
+        latest.w !== start.w ||
+        latest.h !== start.h
+      ) {
+        onMove(widget.id, latest);
+      }
+    };
+    handle.addEventListener("pointermove", follow);
+    handle.addEventListener("pointerup", drop);
+    handle.addEventListener("pointercancel", drop);
+  };
+
   if (ordered.length === 0) {
     return <p className="m-0 text-ink-muted">This page has nothing on it yet.</p>;
   }
+  const movable = editing?.onMove !== undefined;
   return (
-    <div className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
+    <div ref={grid} className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
       {ordered.map((widget) => {
         const source = widget.link ? byId.get(widget.link.from) : undefined;
         const active = editing?.selected === widget.id;
+        const at = held?.id === widget.id ? held.at : widget.at;
         return (
           <section
             key={widget.id}
             aria-label={widget.title || widget.id}
             style={
               {
-                "--col": `${widget.at.x + 1} / span ${widget.at.w}`,
-                "--row": `${widget.at.y + 1} / span ${widget.at.h}`,
+                "--col": `${at.x + 1} / span ${at.w}`,
+                "--row": `${at.y + 1} / span ${at.h}`,
               } as CSSProperties
             }
-            className={`flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
+            className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
               active ? "border-action ring-2 ring-action/30" : "border-line"
-            }`}
+            } ${held?.id === widget.id ? "z-10 opacity-90 shadow-lg" : ""}`}
           >
             {widget.title || editing ? (
-              <header className="flex items-center justify-between gap-2 border-line border-b px-3 py-2">
+              <header
+                className={`flex items-center justify-between gap-2 border-line border-b px-3 py-2 ${
+                  movable ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
+                }`}
+                {...(movable
+                  ? {
+                      title: "Drag to move",
+                      onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
+                        grab(event, widget, "move"),
+                    }
+                  : {})}
+              >
                 <h2 className="m-0 truncate text-[14px] font-semibold">
                   {widget.title || heading(widget.id)}
                 </h2>
@@ -506,6 +589,14 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
                   </Button>
                 ) : null}
               </header>
+            ) : null}
+            {movable ? (
+              <span
+                aria-hidden="true"
+                title="Drag to change its size"
+                className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 md:block"
+                onPointerDown={(event) => grab(event, widget, "stretch")}
+              />
             ) : null}
             <div className="min-h-0 flex-1 overflow-auto p-3">
               <WidgetView

@@ -934,7 +934,10 @@ function WidgetSettings({
       ) : null}
 
       <h3 className={section}>Place and size</h3>
-      <p className="m-0 text-[12.5px] text-ink-muted">The page is twelve columns wide.</p>
+      <p className="m-0 text-[12.5px] text-ink-muted">
+        The page is twelve columns wide. A widget can also be dragged by its heading and stretched
+        by its bottom right corner.
+      </p>
       <div className="grid grid-cols-2 gap-2">
         {(
           [
@@ -1314,7 +1317,17 @@ export function InterfaceBuilder({
               page={page}
               tables={known}
               client={client}
-              editing={{ selected, onSelect: setSelected }}
+              editing={{
+                selected,
+                onSelect: setSelected,
+                onMove: (id, to) =>
+                  change((draft) => {
+                    const target = draft.pages
+                      .find((one) => one.id === page.id)
+                      ?.widgets.find((one) => one.id === id);
+                    if (target) target.at = to;
+                  }),
+              }}
             />
           ) : null}
           {page && page.widgets.length < 12 ? (

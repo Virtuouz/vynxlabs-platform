@@ -1,6 +1,6 @@
 # Phase 7: authoring in the console
 
-Status: in progress. Built and tested locally: milestones 1 to 3, the flow editor and flows chosen by data from milestone 4, webhook intake from milestone 5, and flow starts from apps from milestone 7. Not started: custom connectors and trigger sources, the core node pack, connection groups, the form trigger, the MCP server, single sign-on, groups of end users, wider row policies, and generated screens. Nothing has run in CI yet
+Status: in progress. Built and tested locally: milestones 1 to 3, the flow editor and flows chosen by data (milestone 4), webhook intake (milestone 5), and flow starts from apps, connection groups and the MCP server (milestone 7). Not started: custom connectors, trigger sources and nodes, the core node pack, the form trigger, single sign-on, groups of end users, wider row policies, and generated screens. Nothing has run in CI or on a second instance yet
 Last updated: 2026-11-13
 
 Phase 7 makes the console the place where work is done. Scripts, flows and other resources are edited there and synced to the tenant's git repository. Flows are drawn on a canvas from a generic core node pack. Connectors, trigger sources and nodes can be written in the repository or in the console. Members and end users can sign in through their identity provider. Members build screens over tables without code.
@@ -217,13 +217,21 @@ Still open in milestone 4: starting a script or flow from inside a script, `inpu
 
 Not covered by `verify`: a sender that packs several values into one header, as Stripe does. That needs a custom trigger source, which is not built yet.
 
-## Apps and flows (milestone 7, in part)
+## Apps, credentials and agents (milestone 7, in part)
 
-Starting a flow needs `flow_run:write` at the workspace or at the flow itself. Whoever started a flow run may read how it ended and what it gave, without its steps. The app client gains `startFlow`, `flowRun` and `runFlow`.
+**Flow starts from apps.** Starting a flow needs `flow_run:write` at the workspace or at the flow itself. Whoever started a flow run may read how it ended and what it gave, without its steps. The app client gains `startFlow`, `flowRun` and `runFlow`.
+
+**Connection groups.** A new kind, `connection_group`, declared like a connection. Its members are added per workspace, each with a key, an address and a credential, and take effect on the next run with no deploy. A script lists the group in `uses.connectionGroups` and picks a member when it runs: `ctx.connections("shops").get(input.shop)`, or lists them with `.keys()`. A deploy needs no member bound. A script reaches only the groups it declared. The worker protocol gains two routes, in its contract. The console lists each group with its members on the Connections screen.
+
+**The MCP server.** `POST /tenants/:t/workspaces/:w/mcp` speaks the Model Context Protocol over streamable HTTP, with no session. A caller with an API key is offered one tool per script and per flow it may start, the script's tool taking the script's own input schema, plus `get_run`, `get_flow_run`, and `list_approvals` and `decide_approval` for a caller that may. Tools are worked out on each request. Every call passes the same authorization check and leaves the same audit entry as the API route that does the same thing, marked `via: "mcp"`. A refusal is the tool's answer.
+
+The spike for MCP is this build: it passed with the protocol's own client library over HTTP. It has not been tried from Claude Code or another agent product.
+
+Still open in milestone 7: the form trigger, and an "Agent access" tab on a service account.
 
 ## Schemas
 
-Migrations 0019 to 0022. Bundle format 3. Version 0.5.0 is not yet set.
+Migrations 0019 to 0023. Bundle format 3. Version 0.5.0 is not yet set.
 
 | Change | Purpose |
 | --- | --- |
@@ -237,6 +245,7 @@ Migrations 0019 to 0022. Bundle format 3. Version 0.5.0 is not yet set.
 | `workspace_git` | The branch a dev workspace follows, what it last agreed with it at, and a lease |
 | `git_operation` | Each push and pull, with its outcome |
 | `resource_draft.body` becomes `json` | A draft is kept as written, so a flow's steps keep their author's order |
+| `connection_group_member` | A member of a connection group in one workspace, with its encrypted credential |
 
 ## Tests
 
@@ -259,6 +268,8 @@ Migrations 0019 to 0022. Bundle format 3. Version 0.5.0 is not yet set.
 | A flow chosen by data, and starting one flow and no other | `apps/control-plane/src/flows.test.ts` |
 | Webhook bodies, the whole request, signatures | `apps/control-plane/src/webhooks.test.ts` |
 | The app client's flow calls | `packages/app/src/app.test.tsx` |
+| Connection groups, with a worker and a stand-in for the outside system | `apps/control-plane/src/runtime.test.ts`, `apps/console/src/ConnectionGroups.test.tsx` |
+| The MCP server, with the protocol's own client | `apps/control-plane/src/mcp.test.ts` |
 
 ## Proposed deviations
 
@@ -274,3 +285,5 @@ Migrations 0019 to 0022. Bundle format 3. Version 0.5.0 is not yet set.
 | Git operations run as queued jobs | They run inside the request, under a lease, holding no database connection | Simpler, and the person asking sees the outcome. A queue is still the right place for a slow remote |
 | A push follows every deploy by itself | A deploy marks the workspace "ahead", and a person pushes | A push that fails after a deploy needs somewhere to be seen and retried, which the panel is |
 | `git:write` to pull | Pulling needs `deployment:write` and `code:write` | A pull deploys, and can bring code in |
+| A connection group's member is read at `/connection-groups/{path}/members/{key}` | `/connection-group-members/{key}/{path}` | A path has slashes in it, so it has to come last |
+| The webhook, single sign-on and MCP spikes run before their milestones | Webhooks and MCP were built and tested directly | Each was small enough that building it was the spike |

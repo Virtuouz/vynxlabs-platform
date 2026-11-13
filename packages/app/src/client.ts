@@ -265,6 +265,74 @@ export async function runScript<Output = unknown>(
   return run.output as Output;
 }
 
+/** A flow run as an app sees it: how it ended and what it gave. */
+export interface FlowRun<Output = unknown> {
+  id: string;
+  flow: string;
+  status: "running" | "succeeded" | "failed" | "cancelled";
+  output?: Output;
+  error?: { message: string } | null;
+}
+
+/** Thrown by `runFlow` when the flow fails, is cancelled, or has not ended in time. */
+export class FlowRunError extends Error {
+  constructor(readonly flowRun: FlowRun) {
+    super(flowRun.error?.message ?? `The flow ended as ${flowRun.status}.`);
+    this.name = "FlowRunError";
+  }
+}
+
+/**
+ * Starts a flow from its manual trigger and returns at once, with the flow
+ * run's ID. A flow can wait for hours, for an approval or a delay, so an app
+ * usually starts one and says that it has started. Read it later with
+ * `flowRun`. The person needs `flow_run:write` on the flow.
+ */
+export async function startFlow(
+  flow: string,
+  input: unknown = {},
+  options: { idempotencyKey?: string } = {},
+): Promise<FlowRun> {
+  return api.post<FlowRun>(`${workspacePath()}/flow-runs`, {
+    flow,
+    input,
+    ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+  });
+}
+
+/** A flow run this person started: whether it has ended, and what it gave. */
+export async function flowRun<Output = unknown>(id: string): Promise<FlowRun<Output>> {
+  return api.get<FlowRun<Output>>(`${workspacePath()}/flow-runs/${id}`);
+}
+
+/**
+ * Starts a flow and waits for what it gives. For a flow that ends within
+ * seconds. Throws `FlowRunError` when it fails, and when it has not ended
+ * after `timeoutMs` (default 60 seconds). The flow itself goes on.
+ */
+export async function runFlow<Output = unknown>(
+  flow: string,
+  input: unknown = {},
+  options: { timeoutMs?: number; idempotencyKey?: string } = {},
+): Promise<Output> {
+  let run = (await startFlow(flow, input, options)) as FlowRun<Output>;
+  const deadline = Date.now() + (options.timeoutMs ?? 60_000);
+  let pause = 200;
+  while (run.status === "running") {
+    if (Date.now() > deadline) {
+      throw new FlowRunError({
+        ...run,
+        error: { message: "The flow is still running. Look again in a moment." },
+      });
+    }
+    await wait(pause);
+    pause = Math.min(pause * 1.5, 2000);
+    run = await flowRun<Output>(run.id);
+  }
+  if (run.status !== "succeeded") throw new FlowRunError(run);
+  return run.output as Output;
+}
+
 // ----- Who is using the app -----
 
 export interface Session {

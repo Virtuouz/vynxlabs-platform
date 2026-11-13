@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ApiError,
   type AppContext,
@@ -183,4 +183,39 @@ test("useQuery loads, reloads, and useSession starts from who the page was serve
   await screen.findByText("A-1");
   screen.getByText("Again").click();
   await waitFor(() => expect(screen.getByText("A-2")).toBeTruthy());
+});
+
+describe("flows", () => {
+  test("startFlow returns at once, and runFlow waits for what the flow gives", async () => {
+    const { runFlow, startFlow, flowRun, FlowRunError } = await import("./client.ts");
+    const calls: { method: string; url: string; body: unknown }[] = [];
+    let reads = 0;
+    let ending: "succeeded" | "failed" = "succeeded";
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      const method = init.method ?? "GET";
+      calls.push({ method, url, body: init.body ? JSON.parse(init.body as string) : undefined });
+      const run =
+        method === "POST" || ++reads < 2
+          ? { id: "f1", flow: "orders/handle", status: "running" }
+          : ending === "succeeded"
+            ? { id: "f1", flow: "orders/handle", status: "succeeded", output: { sent: true } }
+            : { id: "f1", flow: "orders/handle", status: "failed", error: { message: "Refused." } };
+      return new Response(JSON.stringify(run), { status: method === "POST" ? 201 : 200 });
+    });
+    const started = await startFlow("orders/handle", { id: "1" }, { idempotencyKey: "k1" });
+    expect(started).toMatchObject({ id: "f1", status: "running" });
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      body: { flow: "orders/handle", input: { id: "1" }, idempotencyKey: "k1" },
+    });
+    expect(calls[0]?.url).toMatch(/\/flow-runs$/);
+    expect((await flowRun("f1")).status).toBe("running");
+
+    expect(await runFlow("orders/handle", { id: "1" })).toEqual({ sent: true });
+    reads = 0;
+    ending = "failed";
+    await expect(runFlow("orders/handle")).rejects.toThrow(FlowRunError);
+    reads = 0;
+    await expect(runFlow("orders/handle")).rejects.toThrow("Refused.");
+  });
 });

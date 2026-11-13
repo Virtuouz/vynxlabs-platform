@@ -274,6 +274,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     label: "Flow runs",
     group: "Flows",
     scope: "workspace",
+    appFacing: true,
     verbs: { read: "See flow runs and their steps.", write: "Start and cancel a flow." },
   },
   {

@@ -797,6 +797,57 @@ describe("a flow chosen when the step runs", () => {
   });
 });
 
+describe("starting one flow and no other", () => {
+  test("someone allowed to start a single flow starts it, reads how it ended, and nothing else", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "flow_starter",
+      description: "Starts flows it is bound to.",
+      permissions: ["flow_run:write"],
+    });
+    const member = await alice.post(`/tenants/${tenant}/members`, {
+      email: "petra@acme.example",
+      name: "Petra",
+      password: PASSWORD,
+    });
+    const linear = (await alice.get(`${ws()}/resources/linear`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: linear.id,
+      principalType: "member",
+      principalId: member.body.id,
+      roleId: role.body.id,
+    });
+    const petra = await t.signIn("petra@acme.example", PASSWORD);
+
+    const started = await petra.post(`${ws()}/flow-runs`, { flow: "linear", input: { n: 3 } });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    // A flow she was not given, and one that does not exist, answer the same.
+    expect(
+      (await petra.post(`${ws()}/flow-runs`, { flow: "parent", input: { n: 1 } })).status,
+    ).toBe(403);
+    expect(
+      (await petra.post(`${ws()}/flow-runs`, { flow: "no-such-flow", input: {} })).status,
+    ).toBe(403);
+
+    await finished(started.body.id);
+    const hers = await petra.get(`${ws()}/flow-runs/${started.body.id}`);
+    expect(hers.status).toBe(200);
+    expect(hers.body.status).toBe("succeeded");
+    expect(hers.body.output).toMatchObject({ c: { result: 12 } });
+    // What each step produced is not hers to read.
+    expect(hers.body.steps).toEqual([]);
+    expect(
+      (await alice.get(`${ws()}/flow-runs/${started.body.id}`)).body.steps.length,
+    ).toBeGreaterThan(0);
+
+    // Someone else's run does not exist for her, and neither does the list.
+    const aliceRun = await start("linear", { n: 1 });
+    expect((await petra.get(`${ws()}/flow-runs/${aliceRun}`)).status).toBe(403);
+    expect((await petra.get(`${ws()}/flow-runs`)).status).toBe(403);
+    expect((await petra.post(`${ws()}/flow-runs/${started.body.id}/cancel`)).status).toBe(403);
+  });
+});
+
 describe("waiting", () => {
   test("a delay holds the flow until its time comes", async () => {
     const id = await start("waiting");

@@ -93,3 +93,59 @@ jobs:
       - name: Logs
         if: failure()
         run: docker compose -f deploy/compose/compose.yaml logs
+
+  browser:
+    name: The exit criterion, in a browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Postgres, an object store and Keycloak
+        run: docker compose -f deploy/compose/compose.dev.yaml --profile sso up -d --wait
+      - name: Keycloak has its realm
+        run: |
+          for i in $(seq 1 90); do
+            curl -fsS http://localhost:8180/realms/acme/.well-known/openid-configuration > /dev/null && exit 0
+            sleep 2
+          done
+          exit 1
+      - name: Build the image
+        run: docker build -t vynxlabs-platform:e2e .
+      - name: Run the image beside them
+        # On the host's network, so that the instance, the browser and the test's own git
+        # server all reach each other and Keycloak at localhost, as its realm expects.
+        run: |
+          docker run -d --name platform --network host \
+            -e DATABASE_URL=postgres://platform:platform@localhost:54329/platform \
+            -e PORT=8080 -e PUBLIC_URL=http://localhost:8080 \
+            -e S3_ENDPOINT=http://localhost:8333 -e S3_BUCKET=platform \
+            -e S3_ACCESS_KEY_ID=platform -e S3_SECRET_ACCESS_KEY=platform-dev-secret \
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e MASTER_KEY="$(openssl rand -base64 32)" \
+            -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=change-me-please \
+            -e MANAGED_WORKERS=true \
+            vynxlabs-platform:e2e
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/api/v1/readyz > /dev/null && exit 0
+            sleep 1
+          done
+          docker logs platform
+          exit 1
+      - name: Walk the exit criterion
+        run: pnpm e2e
+      - name: Logs
+        if: failure()
+        run: |
+          docker logs platform
+          docker compose -f deploy/compose/compose.dev.yaml logs keycloak | tail -50
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: e2e/results
+          retention-days: 7

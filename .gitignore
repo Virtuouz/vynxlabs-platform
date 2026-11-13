@@ -154,3 +154,6 @@ dist/
 *.tsbuildinfo
 .pnpm-store/
 .platform/
+
+# Browser test output
+e2e/results

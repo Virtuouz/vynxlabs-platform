@@ -353,6 +353,7 @@ describe("permissions", () => {
       "app_maintainer",
       "deployer",
       "developer",
+      "portal_reader",
       "portal_user",
       "tenant_admin",
       "viewer",

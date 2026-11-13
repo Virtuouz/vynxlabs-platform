@@ -309,5 +309,106 @@ test("widgets are added and removed, and what is wrong is said before anything c
   });
 });
 
+test("sharing an app gives a group the app and the tables it shows, and stopping takes both back", async () => {
+  const tenant = "/api/v1/tenants/t1";
+  let held: Any[] = [];
+  routes[`GET ${api}/apps`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "a1",
+          path: "sales",
+          title: "Sales",
+          description: null,
+          url: "https://vx.example/apps/acme/main/sales/",
+          domains: [],
+          files: 0,
+          bytes: 0,
+          access: [],
+        },
+      ],
+    },
+  ];
+  routes[`GET ${api}/resources`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "a1",
+          kind: "app",
+          path: "sales",
+          body: { title: "Sales", interface: "screens/sales" },
+        },
+        { id: "i1", kind: "interface", path: "screens/sales", body: body() },
+        { id: "t1", kind: "table", path: "customers", body: {} },
+        { id: "t2", kind: "table", path: "orders", body: {} },
+        { id: "t3", kind: "table", path: "unrelated", body: {} },
+      ],
+    },
+  ];
+  routes[`GET ${tenant}/bindings`] = () => [200, { items: held }];
+  routes[`GET ${tenant}/groups`] = () => [200, { items: [] }];
+  routes[`GET ${tenant}/end-user-groups`] = () => [200, { items: [{ id: "g1", name: "finance" }] }];
+  routes[`GET ${tenant}/roles`] = () => [
+    200,
+    {
+      items: [
+        { id: "r1", name: "portal_reader" },
+        { id: "r2", name: "portal_user" },
+      ],
+    },
+  ];
+  routes[`POST ${tenant}/bindings`] = (sentBody) => {
+    const made = sentBody as Any;
+    held = [
+      ...held,
+      {
+        id: `b${held.length + 1}`,
+        scopeType: "resource",
+        resourceId: made.resourceId,
+        principalType: made.principalType,
+        principalId: made.principalId ?? null,
+        principalLabel: "finance",
+        roleName: "portal_reader",
+        managedByResource: false,
+      },
+    ];
+    return [201, { id: `b${held.length}` }];
+  };
+  for (const id of ["b1", "b2", "b3"]) {
+    routes[`DELETE ${tenant}/bindings/${id}`] = () => {
+      held = held.filter((binding) => binding.id !== id);
+      return [204, null];
+    };
+  }
+  const { Apps } = await import("./screens/Apps.tsx");
+  show(<Apps root={root} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await dialog.findByText("Nobody else yet.");
+  // It says what comes with the app, so nobody is surprised by it.
+  await dialog.findByText(/its tables customers, orders/);
+  fireEvent.change(dialog.getByLabelText("Share with"), { target: { value: "end_user_group:g1" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Share" }));
+  await dialog.findByText("may read");
+  expect(sent("POST", "/bindings").map((call) => call.body)).toEqual(
+    ["a1", "t1", "t2"].map((resourceId) => ({
+      workspaceId: "w1",
+      resourceId,
+      principalType: "end_user_group",
+      principalId: "g1",
+      roleId: "r1",
+    })),
+  );
+  fireEvent.click(dialog.getByRole("button", { name: "Stop sharing with finance" }));
+  await dialog.findByText("Nobody else yet.");
+  expect(sent("DELETE", "/bindings/").map((call) => call.url.split("/").pop())).toEqual([
+    "b1",
+    "b2",
+    "b3",
+  ]);
+});
+
 // biome-ignore lint/suspicious/noExplicitAny: what was sent is inspected freely
 type Any = any;

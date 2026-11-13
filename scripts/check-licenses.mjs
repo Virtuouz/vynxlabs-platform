@@ -15,6 +15,9 @@ const SHIPPED = new Set([
   "CC0-1.0",
   "Unlicense",
   "Python-2.0",
+  // Permissive: keep the notice, and mark altered copies as altered. The port of zlib
+  // that the git library depends on carries it. Added by the owner in phase 7.
+  "Zlib",
 ]);
 
 /**

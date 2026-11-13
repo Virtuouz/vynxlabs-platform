@@ -37,6 +37,7 @@ Not in this phase: SSH deploy keys, a GitHub App, merging inside a file, npm pac
 | Generated screens | Members build them in the console. End users make personal dashboards |
 | Extensions | Connectors, trigger sources and nodes can all be written in the console |
 | Code authoring | A new permission, `code:write`, held by `tenant_admin` and `developer` only, and a switch per tenant that an operator can turn off |
+| Licences | Zlib joins the allowlist, for the port of zlib that the git library depends on |
 
 ## Design in brief
 
@@ -97,7 +98,7 @@ Passed against a local remote served over HTTP by `git http-backend`. Not run ag
 | Push with a token | Accepted. A wrong token is a 401 |
 | Push after the remote moved | Refused, with an error the server can tell apart |
 | Reading one file at the remote's tip | Works with no working tree |
-| Licences | **Fails the licence check.** isomorphic-git is MIT, and it depends on pako, a port of zlib, whose licence is "MIT AND Zlib". Zlib is permissive and not on the allowlist. The spike's first reading missed it. The owner decides: add Zlib to the allowlist, or replace the library |
+| Licences | isomorphic-git is MIT. It depends on pako, a port of zlib, whose licence is "MIT AND Zlib". Zlib is permissive and was not on the allowlist, so the licence check failed from the commit that added git sync until the owner added Zlib to the list. The spike's first reading missed it |
 
 ### YAML that round-trips
 
@@ -258,10 +259,6 @@ Migrations 0019 to 0022. Bundle format 3. Version 0.5.0 is not yet set.
 | A flow chosen by data, and starting one flow and no other | `apps/control-plane/src/flows.test.ts` |
 | Webhook bodies, the whole request, signatures | `apps/control-plane/src/webhooks.test.ts` |
 | The app client's flow calls | `packages/app/src/app.test.tsx` |
-
-## Open, for the owner
-
-- **`pnpm check:licenses` fails on this branch**, since git sync was added. isomorphic-git depends on pako, licensed "MIT AND Zlib", and Zlib is not on the allowlist in `scripts/check-licenses.mjs`. The plan says to stop and ask when a library fails the check. Nothing else is flagged.
 
 ## Proposed deviations
 

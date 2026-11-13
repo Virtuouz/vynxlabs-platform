@@ -159,10 +159,13 @@ describe("a connection group", () => {
     // Nothing has to be bound first: members come and go without a deploy.
     const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
-    expect((await alice.get(`${ws()}/connection-groups`)).body.items).toEqual([
+    const groups = (await alice.get(`${ws()}/connection-groups`)).body.items;
+    expect(groups).toMatchObject([
       { path: "erps", description: "", connector: "http", members: [] },
       { path: "shops", description: "Each customer's shop.", connector: "http", members: [] },
     ]);
+    // Each says what a member's configuration must look like, so a form can be drawn for it.
+    expect(groups[0].configSchema.required).toEqual(["baseUrl"]);
   });
 
   test("members are added in the workspace, and their credentials are never shown", async () => {

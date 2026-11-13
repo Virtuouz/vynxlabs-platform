@@ -27,12 +27,14 @@ const KIND: Record<string, string> = {
   delay: "Delay",
   approval: "Approval",
   subflow: "Sub-flow",
+  respond: "Answer",
   fail: "Fail",
 };
 
 export function describe(node: GraphNode): string {
   if (node.type === "trigger") {
-    const trigger = node.trigger as { type: string; cron?: string; event?: string };
+    const trigger = node.trigger as { type: string; cron?: string; event?: string; title?: string };
+    if (trigger.type === "form") return `Form: ${trigger.title ?? ""}`;
     return (
       trigger.cron ?? trigger.event ?? `${trigger.type[0]?.toUpperCase()}${trigger.type.slice(1)}`
     );
@@ -42,6 +44,7 @@ export function describe(node: GraphNode): string {
   if (Array.isArray(node.allow)) return `One of ${node.allow.length}, chosen by the data`;
   if (node.type === "delay") return `${node.seconds} s`;
   if (node.type === "approval") return String(node.title);
+  if (node.type === "respond") return `Answers ${node.status ?? 200}`;
   return "";
 }
 

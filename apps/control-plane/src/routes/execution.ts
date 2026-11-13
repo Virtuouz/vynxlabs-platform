@@ -232,6 +232,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
      * which is what a connection is unless it says otherwise. A deploy checks
      * every binding again against the bundle it activates.
      */
+    /** The workspace's own connectors, as deployed. */
+    const deployedConnectors = (workspaceId: string) =>
+      db
+        .selectFrom("resource")
+        .select(["path", "body"])
+        .where("workspace_id", "=", workspaceId)
+        .where("kind", "=", "connector")
+        .execute();
+
     const configSchemaOf = async (
       workspaceId: string,
       kind: "connection" | "connection_group",
@@ -568,6 +577,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   description: Type.String(),
                   timeoutSeconds: Type.Integer(),
                   inputSchema: AnyObject,
+                  node: Type.Union([
+                    Type.Object(
+                      {
+                        label: Type.String(),
+                        icon: Type.Optional(Type.String()),
+                        category: Type.Optional(Type.String()),
+                        takes: Type.Optional(Type.Array(Type.String())),
+                      },
+                      {
+                        description:
+                          "Set when the script is a step people can pick in the flow editor.",
+                      },
+                    ),
+                    Type.Null(),
+                  ]),
                   lastRun: Type.Union([
                     Type.Object({ id: Id, status: RunStatus, createdAt: Time }),
                     Type.Null(),
@@ -606,6 +630,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               description: body.description ?? "",
               timeoutSeconds: body.timeoutSeconds,
               inputSchema: body.input as Record<string, unknown>,
+              node: (body as { node?: { label: string } }).node ?? null,
               lastRun: last
                 ? { id: last.id, status: last.status, createdAt: iso(last.created_at) }
                 : null,
@@ -983,6 +1008,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       }),
       bound: Type.Boolean(),
       config: Type.Union([AnyObject, Type.Null()]),
+      configSchema: Type.Object(
+        {},
+        {
+          additionalProperties: true,
+          description:
+            "The JSON Schema the connector gives for `config`. A form can be drawn from it.",
+        },
+      ),
       hasCredential: Type.Boolean(),
       updatedAt: NullableTime,
     });
@@ -1012,6 +1045,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .execute();
         const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
+        const connectors = await deployedConnectors(params.w);
         return {
           items: paths.map((path) => {
             const definition = definitions.find((row) => row.path === path)?.body as
@@ -1025,6 +1059,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               defined: definition !== undefined,
               bound: binding !== undefined,
               config: binding?.config ?? null,
+              configSchema: (connectorSchema(definition?.connector ?? "http", connectors) ??
+                BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
               hasCredential: Boolean(binding?.credential),
               updatedAt: isoOrNull(binding?.updated_at ?? null),
             };
@@ -1054,6 +1090,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   path: Type.String(),
                   description: Type.String(),
                   connector: Type.String(),
+                  configSchema: AnyObject,
                   members: Type.Array(
                     Type.Object({
                       key: Type.String(),
@@ -1083,6 +1120,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .orderBy("key")
           .execute();
+        const connectors = await deployedConnectors(params.w);
         return {
           items: groups.map((group) => {
             const body = group.body as { description?: string; connector?: string };
@@ -1090,6 +1128,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               path: group.path,
               description: body.description ?? "",
               connector: body.connector ?? "http",
+              configSchema: (connectorSchema(body.connector ?? "http", connectors) ??
+                BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
               members: members
                 .filter((member) => member.group_path === group.path)
                 .map((member) => ({

@@ -146,7 +146,7 @@ export function RowRulesEditor({
               // biome-ignore lint/suspicious/noArrayIndexKey: a rule has no identity but its place while it is being written
               <fieldset key={index} className="m-0 rounded-control border border-line p-3">
                 <legend className="px-1 text-[12.5px] text-ink-muted">{ruleText(rule)}</legend>
-                <div className="grid items-end gap-2 md:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">
+                <div className="grid items-end gap-2 md:grid-cols-[2fr_1fr_1fr_1fr_auto]">
                   <SelectField
                     name={`who-${index}`}
                     label="Who"

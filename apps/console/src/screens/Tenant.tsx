@@ -40,6 +40,7 @@ import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups, Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
+import { SingleSignOn } from "./SingleSignOn.tsx";
 
 interface Workspace {
   id: string;
@@ -218,6 +219,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <OperatorAccess base={base} />
       ) : section === "repository" ? (
         <RepositorySettings base={base} />
+      ) : section === "single-sign-on" ? (
+        <SingleSignOn base={base} />
       ) : section === "export" ? (
         <ExportSection base={base} />
       ) : section === "audit" ? (

@@ -7,6 +7,7 @@ import { Account } from "./screens/Account.tsx";
 import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
+import { SingleSignOn } from "./screens/SingleSignOn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 import { Tenants } from "./screens/Tenants.tsx";
 import { useTenantTheme } from "./theme.ts";
@@ -60,6 +61,7 @@ export function App() {
   else if (path === "/account/api-keys") screen = <Account />;
   else if (path === "/instance/members") screen = <InstanceMembers />;
   else if (path === "/instance/operators") screen = <Operators />;
+  else if (path === "/instance/single-sign-on") screen = <SingleSignOn base="/instance" />;
   else if (path === "/instance/audit") screen = <InstanceAudit />;
   else if (path === "/instance/databases") screen = <DatabaseLocations />;
   else if (path === "/instance/import") screen = <TenantImport />;

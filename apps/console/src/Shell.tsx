@@ -11,6 +11,7 @@ import {
   Database,
   Download,
   FileCode2,
+  Fingerprint,
   GitBranch,
   GitCompareArrows,
   Globe,
@@ -77,6 +78,7 @@ export const TENANT_GROUPS: readonly SectionGroup[] = [
   [
     "Settings",
     [
+      ["single-sign-on", "Single sign-on", Fingerprint],
       ["repository", "Repository", GitBranch],
       ["branding", "Branding", Palette],
       ["domains", "Domains", Globe],
@@ -133,6 +135,7 @@ const WORKSPACE_SECTIONS = WORKSPACE_GROUPS.flatMap(([, sections]) => sections);
 const INSTANCE_SECTIONS: readonly Section[] = [
   ["members", "All members", UsersRound],
   ["operators", "Operators", ShieldCheck],
+  ["single-sign-on", "Single sign-on", Fingerprint],
   ["databases", "Database locations", Server],
   ["import", "Import a tenant", Upload],
   ["audit", "Instance audit log", ScrollText],

@@ -62,7 +62,10 @@ test("signing in: a wrong password explains itself, the right one shows the memb
   show(<App />);
   await screen.findByRole("heading", { name: "Sign in" });
   fireEvent.input(screen.getByLabelText("Email"), { target: { value: "alice@acme.example" } });
-  fireEvent.input(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+  // The password is asked for once it is known that this email may use one.
+  expect(screen.queryByLabelText("Password")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.input(await screen.findByLabelText("Password"), { target: { value: "wrong" } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
     "That email and password do not match an account.",
@@ -97,7 +100,10 @@ test("after signing in, a member an app sent here goes back to the app", async (
   await screen.findByRole("heading", { name: "Sign in" });
   expect(assign).not.toHaveBeenCalled();
   fireEvent.input(screen.getByLabelText("Email"), { target: { value: "alice@acme.example" } });
-  fireEvent.input(screen.getByLabelText("Password"), { target: { value: "right-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.input(await screen.findByLabelText("Password"), {
+    target: { value: "right-password" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(assign).toHaveBeenCalledWith("/apps/acme/main/orders/?tab=open"));
   // The console itself is not shown on the way.

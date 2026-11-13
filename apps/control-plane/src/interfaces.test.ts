@@ -363,9 +363,174 @@ describe("an app that serves an interface", () => {
   });
 });
 
+describe("someone who maintains apps made in the console, and is not a developer", () => {
+  let mona: Client;
+  let dev: string;
+  const devWs = () => `/tenants/${tenant}/workspaces/${dev}`;
+  const page = (widgets: object[] = []) => ({
+    title: "Stock",
+    pages: [{ id: "main", title: "Stock", widgets }],
+  });
+  const draft = (who: Client, path: string, kind: string, body: object, more: object = {}) =>
+    who.put(`${devWs()}/drafts/${path}`, { kind, schemaVersion: 1, body, ...more });
+
+  test("they hold a role that builds interfaces and deploys no code", async () => {
+    dev = (
+      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "dev", name: "Dev", type: "dev" })
+    ).body.id;
+    const member = await alice.post(`/tenants/${tenant}/members`, {
+      email: "mona@acme.example",
+      name: "Mona",
+      password: PASSWORD,
+    });
+    expect(member.status, JSON.stringify(member.body)).toBe(201);
+    const bound = await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: member.body.id,
+      roleId: roles.app_maintainer,
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    mona = await t.signIn("mona@acme.example", PASSWORD);
+    // Things in the workspace that are not hers: a variable in draft, and one deployed.
+    expect(
+      (await draft(alice, "limits/batch", "variable", { description: "A limit." })).status,
+    ).toBe(200);
+    expect(
+      (
+        await alice.put(`${devWs()}/resources/stock`, {
+          kind: "table",
+          schemaVersion: 1,
+          ownership: "ui",
+          body: { columns: { item: { type: "text" }, held: { type: "integer" } } },
+        })
+      ).status,
+    ).toBe(201);
+  });
+
+  test("they save an interface, and an app that serves it, and nothing else", async () => {
+    const widgets = [
+      { id: "list", type: "table", table: "stock", fields: [{ column: "item" }], at },
+    ];
+    const saved = await draft(mona, "screens/stock", "interface", page(widgets));
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(
+      (await draft(mona, "stock-app", "app", { title: "Stock", interface: "screens/stock" }))
+        .status,
+    ).toBe(200);
+    // Saved again, with the revision she holds.
+    expect(
+      (
+        await draft(mona, "screens/stock", "interface", page(widgets), {
+          revision: saved.body.revision,
+        })
+      ).status,
+    ).toBe(200);
+
+    // Not a script, a variable, or an app with files of its own.
+    const script = await draft(mona, "jobs/sync", "script", {
+      source: { language: "typescript", code: "" },
+    });
+    expect(script.status).toBe(403);
+    expect(
+      (await draft(mona, "limits/other", "variable", { description: "A limit." })).status,
+    ).toBe(403);
+    expect((await draft(mona, "site", "app", { title: "Site", entry: "index.html" })).status).toBe(
+      403,
+    );
+    // Not over something that is there and is not hers to change, deployed or in draft.
+    expect((await draft(mona, "stock", "interface", page())).status).toBe(403);
+    expect((await draft(mona, "limits/batch", "interface", page())).status).toBe(403);
+    expect((await mona.delete(`${devWs()}/drafts/limits/batch`)).status).toBe(403);
+    // A draft of her own she can throw away.
+    expect((await draft(mona, "screens/scrap", "interface", page())).status).toBe(200);
+    expect((await mona.delete(`${devWs()}/drafts/screens/scrap`)).status).toBe(204);
+    // A body that is not an interface is refused as anyone's would be.
+    expect((await draft(mona, "screens/bad", "interface", { title: "Bad" })).status).toBe(400);
+
+    // She sees her drafts and not the rest.
+    const listed = (await mona.get(`${devWs()}/drafts`)).body.items.map((item: Any) => item.path);
+    expect(listed).toEqual(["screens/stock", "stock-app"]);
+    expect((await mona.get(`${devWs()}/drafts/screens/stock`)).body.body.title).toBe("Stock");
+    expect((await mona.get(`${devWs()}/drafts/limits/batch`)).status).toBe(404);
+    expect((await alice.get(`${devWs()}/drafts`)).body.items).toHaveLength(3);
+    expect((await mona.get(`${devWs()}/interfaces`)).body.items).toEqual([
+      {
+        path: "screens/stock",
+        title: "Stock",
+        deployed: false,
+        draft: true,
+        removing: false,
+        app: "stock-app",
+      },
+    ]);
+  });
+
+  test("they deploy what they made by name, and cannot deploy everything", async () => {
+    const everything = await mona.post(`${devWs()}/changes/deploy`, {});
+    expect(everything.status).toBe(403);
+    expect(everything.body.detail).toContain("Say which interfaces to deploy");
+    expect(
+      (await mona.post(`${devWs()}/changes/deploy`, { paths: ["screens/stock", "limits/batch"] }))
+        .status,
+    ).toBe(403);
+    expect(
+      (await mona.post(`${devWs()}/changes/deploy`, { paths: ["screens/never"] })).status,
+    ).toBe(403);
+
+    const deployed = await mona.post(`${devWs()}/changes/deploy`, {
+      paths: ["screens/stock", "stock-app"],
+      message: "A screen for the stock room",
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.applied.sort()).toEqual(["screens/stock", "stock-app"]);
+    // The other draft is still a draft, and was not deployed.
+    expect((await alice.get(`${devWs()}/drafts`)).body.items.map((item: Any) => item.path)).toEqual(
+      ["limits/batch"],
+    );
+    expect((await mona.get(`${devWs()}/interfaces`)).body.items).toEqual([
+      {
+        path: "screens/stock",
+        title: "Stock",
+        deployed: true,
+        draft: false,
+        removing: false,
+        app: "stock-app",
+      },
+    ]);
+    // The app is there for her to open.
+    const view = await mona.get(`${devWs()}/interfaces/screens/stock`);
+    expect(view.status, JSON.stringify(view.body)).toBe(200);
+    expect(view.body.tables.stock).toMatchObject({ found: true, canRead: true, canWrite: true });
+  });
+
+  test("they can take down what they made, and only that", async () => {
+    expect((await draft(mona, "stock", "table", {}, { deleted: true })).status).toBe(403);
+    expect((await draft(mona, "stock-app", "app", {}, { deleted: true })).status).toBe(200);
+    expect((await draft(mona, "screens/stock", "interface", {}, { deleted: true })).status).toBe(
+      200,
+    );
+    expect((await mona.get(`${devWs()}/interfaces`)).body.items[0]).toMatchObject({
+      deployed: true,
+      draft: true,
+      removing: true,
+    });
+    const removed = await mona.post(`${devWs()}/changes/deploy`, {
+      paths: ["screens/stock", "stock-app"],
+    });
+    expect(removed.status, JSON.stringify(removed.body)).toBe(201);
+    expect((await mona.get(`${devWs()}/interfaces`)).body.items).toEqual([]);
+    // A viewer of the tenant holds no way to write an interface.
+    expect((await mona.get(`${devWs()}/resources`)).status).toBe(403);
+  });
+});
+
 describe("the write path", () => {
   test("every successful change left an audit entry", () => {
     // A row written is an event of its own, not an audit entry.
     expect(t.unaudited.filter((route) => !/\/rows?\//.test(route))).toEqual([]);
+  });
+
+  test("the routes a maintainer is held to were all exercised", () => {
+    expect(t.unexercised((route) => /\/(drafts|changes\/deploy)(\/|$)/.test(route))).toEqual([]);
   });
 });

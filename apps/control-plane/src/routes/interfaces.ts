@@ -27,6 +27,91 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const { db } = kernel;
 
     app.get(
+      "/tenants/:t/workspaces/:w/interfaces",
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "The interfaces of a workspace, deployed and in draft",
+          description:
+            "For the console's builder. Each is listed once, with whether it is deployed, " +
+            "whether a draft of it is waiting, and the app that serves it. Needs " +
+            "`interface:read` or `resource:read`.",
+          tags: ["apps"],
+          params: Type.Object({ t: Id, w: Id }),
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  title: Type.String(),
+                  deployed: Type.Boolean(),
+                  draft: Type.Boolean({ description: "A change is saved and not yet deployed." }),
+                  removing: Type.Boolean({ description: "The draft removes it." }),
+                  app: Type.Union([Type.String(), Type.Null()], {
+                    description: "The path of an app that serves it, deployed or in draft.",
+                  }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        const workspace = await findWorkspace(kernel, params.t, params.w);
+        const at = { tenantId: params.t, workspaceId: params.w };
+        if (!(await ctx.allowed("resource:read", at))) await ctx.authorize("interface:read", at);
+        const [live, drafts] = await Promise.all([
+          db
+            .selectFrom("resource")
+            .select(["path", "kind", "body"])
+            .where("workspace_id", "=", workspace.id)
+            .where("kind", "in", ["interface", "app"])
+            .execute(),
+          db
+            .selectFrom("resource_draft")
+            .select(["path", "kind", "body", "deleted"])
+            .where("workspace_id", "=", workspace.id)
+            .where("kind", "in", ["interface", "app"])
+            .execute(),
+        ]);
+        const servedBy = new Map<string, string>();
+        const removed = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
+        for (const row of [...live.filter((row) => !removed.has(row.path)), ...drafts]) {
+          const served = (row.body as { interface?: unknown } | null)?.interface;
+          if (row.kind === "app" && typeof served === "string") servedBy.set(served, row.path);
+        }
+        const found = new Map<
+          string,
+          { title: string; deployed: boolean; draft: boolean; removing: boolean }
+        >();
+        for (const row of live.filter((row) => row.kind === "interface")) {
+          found.set(row.path, {
+            title: String((row.body as { title?: unknown }).title ?? row.path),
+            deployed: true,
+            draft: false,
+            removing: false,
+          });
+        }
+        for (const draft of drafts.filter((draft) => draft.kind === "interface")) {
+          const known = found.get(draft.path);
+          found.set(draft.path, {
+            title: draft.deleted
+              ? (known?.title ?? draft.path)
+              : String((draft.body as { title?: unknown }).title ?? draft.path),
+            deployed: known?.deployed ?? false,
+            draft: true,
+            removing: draft.deleted,
+          });
+        }
+        return {
+          items: [...found.entries()]
+            .sort(([a], [b]) => (a < b ? -1 : 1))
+            .map(([path, entry]) => ({ path, ...entry, app: servedBy.get(path) ?? null })),
+        };
+      },
+    );
+
+    app.get(
       "/tenants/:t/workspaces/:w/interfaces/*",
       {
         config: { access: access.custom, rateLimit: guestLimit },

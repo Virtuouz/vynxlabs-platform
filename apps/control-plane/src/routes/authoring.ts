@@ -9,11 +9,11 @@ import {
   isCodeKind,
   saveDraft,
 } from "../kernel/authoring.js";
-import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { storeBundle } from "../kernel/execution/bundles.js";
 import { startRun } from "../kernel/execution/runs.js";
 import { markAhead } from "../kernel/git.js";
-import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
+import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
 
@@ -142,10 +142,61 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       }
     };
 
+    /**
+     * What someone who maintains interfaces, and holds nothing wider, may write
+     * and deploy: an interface, and an app that serves one. Never code.
+     */
+    const isScreen = (kind: string, body: unknown) =>
+      kind === "interface" ||
+      (kind === "app" && typeof (body as { interface?: unknown } | null)?.interface === "string");
+
+    /**
+     * Enters a workspace for someone who holds `needs`, or who only maintains
+     * interfaces. `full` says which: without it the caller is held to interfaces.
+     */
+    async function enter(
+      ctx: RequestContext,
+      params: { t: string; w: string },
+      needs: "resource:read" | "resource:write" | "deployment:write",
+    ): Promise<{ workspace: WorkspaceRef; full: boolean }> {
+      const workspace = await findWorkspace(kernel, params.t, params.w);
+      ctx.workspace = workspace;
+      const at = { tenantId: workspace.tenantId, workspaceId: workspace.id };
+      if (await ctx.allowed(needs, at)) return { workspace, full: true };
+      const verb = needs.endsWith(":read") ? "read" : "write";
+      if (await ctx.allowed(`interface:${verb}`, at)) return { workspace, full: false };
+      // Refuses, in the words every other route uses.
+      await ctx.authorize(needs, at);
+      return { workspace, full: true };
+    }
+
+    /** Whether what is at a path now, deployed or drafted, is an interface or an app that serves one. */
+    async function screenAt(workspace: WorkspaceRef, path: string): Promise<boolean | null> {
+      const [live, draft] = await Promise.all([
+        db
+          .selectFrom("resource")
+          .select(["kind", "body"])
+          .where("workspace_id", "=", workspace.id)
+          .where("path", "=", path)
+          .executeTakeFirst(),
+        db
+          .selectFrom("resource_draft")
+          .select(["kind", "body", "deleted"])
+          .where("workspace_id", "=", workspace.id)
+          .where("path", "=", path)
+          .executeTakeFirst(),
+      ]);
+      if (!live && !draft) return null;
+      const liveOk = !live || isScreen(live.kind, live.body);
+      // A draft that removes something says nothing of what it is. What it removes does.
+      const draftOk = !draft || (draft.deleted ? liveOk : isScreen(draft.kind, draft.body));
+      return liveOk && draftOk;
+    }
+
     app.get(
       `${base}/drafts`,
       {
-        config: { access: access.workspace("resource:read") },
+        config: { access: access.custom },
         schema: {
           summary: "The drafts of a workspace",
           description:
@@ -156,14 +207,18 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: Type.Object({ items: Type.Array(DraftSummary) }) },
         },
       },
-      async ({ ctx }) => {
-        const workspace = ctx.workspace as WorkspaceRef;
-        const rows = await db
+      async ({ ctx, params }) => {
+        const { workspace, full } = await enter(ctx, params, "resource:read");
+        const all = await db
           .selectFrom("resource_draft")
           .selectAll()
           .where("workspace_id", "=", workspace.id)
           .orderBy("path")
           .execute();
+        const rows = [];
+        for (const row of all) {
+          if (full || (await screenAt(workspace, row.path))) rows.push(row);
+        }
         const owned = await ownership(
           workspace.id,
           rows.map((row) => row.path),
@@ -175,7 +230,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/drafts/*`,
       {
-        config: { access: access.workspace("resource:read") },
+        config: { access: access.custom },
         schema: {
           summary: "One draft, with its body",
           tags: ["authoring"],
@@ -184,7 +239,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }) => {
-        const workspace = ctx.workspace as WorkspaceRef;
+        const { workspace, full } = await enter(ctx, params, "resource:read");
         const path = pathOf(params);
         const row = await db
           .selectFrom("resource_draft")
@@ -192,7 +247,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", workspace.id)
           .where("path", "=", path)
           .executeTakeFirst();
-        if (!row) throw notFound(`A draft at ${path}`);
+        if (!row || (!full && !(await screenAt(workspace, path)))) {
+          throw notFound(`A draft at ${path}`);
+        }
         const owned = await ownership(workspace.id, [path]);
         return { ...summarize(row, owned.get(path)), body: row.body };
       },
@@ -201,14 +258,16 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.put(
       `${base}/drafts/*`,
       {
-        config: { access: access.workspace("resource:write") },
+        config: { access: access.custom },
         schema: {
           summary: "Save a draft of the resource at a path",
           description:
             "Only in a dev workspace. The body is checked against the kind's schema. A script, " +
             "connector or trigger source carries its TypeScript in `body.source`, and saving one " +
             "also needs `code:write`. A draft at the path of a resource from the repository " +
-            "takes it over when deployed. `deleted` makes a draft that removes the resource.",
+            "takes it over when deployed. `deleted` makes a draft that removes the resource. " +
+            "Needs `resource:write`. `interface:write` is enough for an interface, and for an " +
+            "app that serves one, at a path that holds nothing else.",
           tags: ["authoring"],
           params: PathParams,
           body: Type.Object({
@@ -222,8 +281,13 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }) => {
-        const workspace = ctx.workspace as WorkspaceRef;
+        const { workspace, full } = await enter(ctx, params, "resource:write");
         const path = pathOf(params);
+        if (!full) {
+          const there = await screenAt(workspace, path);
+          const fits = body.deleted ? there === true : isScreen(body.kind, body.body);
+          if (!fits || there === false) throw forbidden("resource:write");
+        }
         if (isCodeKind(body.kind)) await mayWriteCode(ctx, workspace);
         const saved = await ctx.mutate((trx, audit) =>
           saveDraft(kernel, trx, audit, workspace, ctx.principal, { ...body, path }),
@@ -236,7 +300,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       `${base}/drafts/*`,
       {
-        config: { access: access.workspace("resource:write") },
+        config: { access: access.custom },
         schema: {
           summary: "Discard a draft",
           description: "The resource stays as it was last deployed.",
@@ -246,7 +310,10 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }, reply) => {
-        const workspace = ctx.workspace as WorkspaceRef;
+        const { workspace, full } = await enter(ctx, params, "resource:write");
+        if (!full && (await screenAt(workspace, pathOf(params))) === false) {
+          throw forbidden("resource:write");
+        }
         await ctx.mutate((trx, audit) => discardDraft(trx, audit, workspace, pathOf(params)));
         return reply.code(204).send(null);
       },
@@ -319,13 +386,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/changes/deploy`,
       {
-        config: { access: access.workspace("deployment:write") },
+        config: { access: access.custom },
         schema: {
           summary: "Deploy the drafts",
           description:
             "Composes the drafts with the workspace's bundle into a new bundle and activates " +
             "it, atomically. The drafts it carried are cleared. Deploying a draft with code in " +
-            "it also needs `code:write`.",
+            "it also needs `code:write`. Needs `deployment:write`. `interface:write` is enough " +
+            "to deploy interfaces and the apps that serve them, named in `paths`: with it alone " +
+            "nothing else is deployed, and a deploy of everything is refused.",
           tags: ["authoring"],
           params: WorkspaceParams,
           body: Type.Object({
@@ -343,8 +412,21 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, body }, reply) => {
-        const workspace = ctx.workspace as WorkspaceRef;
+      async ({ ctx, params, body }, reply) => {
+        const { workspace, full } = await enter(ctx, params, "deployment:write");
+        if (!full) {
+          // Without paths a deploy carries every draft, and so other people's code.
+          if (!body.paths?.length) {
+            throw new HttpError(
+              403,
+              "forbidden",
+              "Say which interfaces to deploy. Deploying every draft needs the deployment:write permission.",
+            );
+          }
+          for (const path of body.paths) {
+            if ((await screenAt(workspace, path)) !== true) throw forbidden("deployment:write");
+          }
+        }
         let pending = db
           .selectFrom("resource_draft")
           .select("kind")

@@ -350,6 +350,7 @@ describe("permissions", () => {
       (r: { name: string }) => r.name,
     );
     expect(listed).toEqual([
+      "app_maintainer",
       "deployer",
       "developer",
       "portal_user",

@@ -73,6 +73,14 @@ End users belong to the tenant, so they travel as platform rows: `platform/end_u
 
 A bundle in format 2 lists the files of its apps by SHA-256. `platform/bundle_asset.NNNN.jsonl` has one row per file the tenant holds, and the bytes are under `objects/assets/<tenant id>/<sha256>`. A file is stored once however many bundles and workspaces list it.
 
+## Drafts and the repository
+
+`platform/resource_draft.NNNN.jsonl` carries what was saved in the console and not yet deployed. `platform/git_repository.NNNN.jsonl` carries the tenant's repository with its access token, encrypted under the tenant's key like a secret, and `platform/workspace_git.NNNN.jsonl` the branch each dev workspace follows. `platform/git_operation.NNNN.jsonl` is history, and is included only when history is asked for.
+
+An import sets `paused` on the repository. The instance the tenant came from may still push to the same branches, so the importing instance pushes nothing until someone saves the repository's settings there.
+
+A bundle in format 3 carries console-managed resources beside the repository's. Nothing else about bundles in an export changes.
+
 ## The list of contents
 
 `manifest.json`:

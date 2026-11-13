@@ -2,6 +2,32 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## 0.5.0, in progress
+
+Authoring in the console (phase 7). This entry grows as the phase is built.
+
+### For operators
+
+- **Database change.** Migrations 0019 to 0021 run on start.
+- **Code can be written in the console.** Whoever holds `code:write` in a dev workspace can write a script there and deploy it, and workers run it as it is. `tenant_admin` and `developer` hold it. Set `console_code` to false on a tenant to turn it off there.
+- **The control plane compiles TypeScript.** It never runs what it compiles. The image now carries esbuild.
+- **A tenant can connect a git repository** over HTTPS with an access token. The control plane makes outbound requests to it.
+- **Exporting a tenant** is now the permission `export:write`. Roles that held `tenant:*` are given it.
+- The console is a React application. Nothing changes for an operator.
+
+### For tenant developers
+
+- **Apps are built with React.** Replace `preact` with `react` and `react-dom`, `@preact/preset-vite` with `@vitejs/plugin-react`, `preact/hooks` imports with `react`, and `class=` with `className=`. The kit's text, number and date fields report through `onChange`.
+- **A `platform/` folder in the repository** holds resources managed in the console, one `<path>.<kind>.yaml` each, with source beside it as `<path>.<kind>.ts`. `platform build` includes them. A path defined in the code and in a file is an error.
+- Code written in the console may import `@vynxlabs/sdk` and `node:` modules only.
+- A bundle from an older CLI still deploys, and keeps the workspace's console-managed resources.
+
+### Changed
+
+- Bundle format 3: a manifest's `ownership` may be `ui`. A script's body may carry `source` and `node`.
+- `GET /permissions` lists every permission. The audit routes take `area`, `actorId`, `target`, `from` and `to`, and entries carry `actorLabel`.
+- A flow run's steps carry `pickedUpAt`.
+
 ## 0.4.0, not yet released
 
 Apps (phase 6): interfaces built from a tenant's repository and served by the instance, end users, the addresses apps are served at, and branding.

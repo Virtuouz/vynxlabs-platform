@@ -1,6 +1,6 @@
 # Phase 7: authoring in the console
 
-Status: in progress. Built so far: the move to React, six spikes, and most of the console's polish (milestone 1). Milestones 2 to 10 are not started
+Status: in progress. Built and tested locally: the move to React, six spikes, most of the console's polish (milestone 1), console-managed resources with drafts and deploys (milestone 2, scripts only in the console), and git sync (milestone 3). Milestones 4 to 10 are not started. Nothing has run in CI yet
 Last updated: 2026-11-13
 
 Phase 7 makes the console the place where work is done. Scripts, flows and other resources are edited there and synced to the tenant's git repository. Flows are drawn on a canvas from a generic core node pack. Connectors, trigger sources and nodes can be written in the repository or in the console. Members and end users can sign in through their identity provider. Members build screens over tables without code.
@@ -115,6 +115,9 @@ A webhook answered through a worker, single sign-on against Keycloak, and MCP in
 
 - **The example's bundle is 778 kB,** most of it the SDK's schema library. A console-managed section adds little to that.
 - **The control plane lists the console's files once, at start.** A rebuilt console is not served until the process restarts. That is right for an image and surprising in development.
+- **A deploy from the console and a test run can build the same bundle.** Bundles are stored once per digest, so a bundle first made to try a draft out is the one later deployed. Its origin is corrected when that happens.
+- **A draft's source must not reach the audit log.** The entry for a saved draft records the kind and revision only.
+- **Monaco's plain API module is not enough.** Its features look for services that only the whole editor registers. The console loads the whole editor, on demand.
 - **The console is served with no compression of its own.** Monaco makes that matter. The self-hosting guide says to put a proxy in front; the image should compress by itself.
 
 ## The console (milestone 1)
@@ -134,13 +137,76 @@ Kit additions: `DialogsProvider`, `ComboboxField`, `MultiSelectField`, `JsonView
 
 Still open in milestone 1: screens loaded on demand, a data cache in place of `useLoad`, group membership, resource-scoped bindings, renaming a tenant, forms for nested schemas, the triggers and deployments screens, and a suite of browser tests in CI.
 
+## Console-managed resources (milestone 2)
+
+**Files.** `packages/manifest/src/files.ts` writes a resource as `<path>.<kind>.yaml`, with source beside it as `<path>.<kind>.ts`, and reads them back. The path and kind come from the file name. Keys follow the kind's schema, so the same resources give the same bytes. The export a console script has in a bundle is worked out from its path and never stored in a file.
+
+**Bundles.** Format 3 lets a manifest be console-managed. A script's manifest may carry its source, and a label, icon and category that make it a step in the flow editor. Both are optional, so older bundles stay valid.
+
+**Composing.** `packages/compose` is used by the CLI and by the control plane, so both build the same thing. It compiles console source and appends it to the bundle's module after a marker line. `platform build` reads the `platform/` folder; a path defined both in the code and in a file is an error; a repository without the folder builds as before.
+
+**Drafts and deploys.** A save is a row in `resource_draft`. Deploying composes the drafts with the workspace's active bundle, stores the result as a bundle of origin `compose`, and calls the same deploy as the CLI.
+
+| Route, under a dev workspace | What it does |
+| --- | --- |
+| `GET /drafts`, `GET /drafts/*` | The drafts, and one with its body |
+| `PUT /drafts/*` | Saves a draft. Checked against its kind. Code needs `code:write` |
+| `DELETE /drafts/*` | Discards one |
+| `GET /changes/preview` | What a deploy would do, found by doing it and taking it back |
+| `POST /changes/deploy` | Deploys the drafts, with a message |
+| `POST /test-runs` | Runs a script from a bundle made for the purpose and never deployed |
+
+**What a deploy now means.**
+- A bundle speaks for the code-managed resources, and for the console-managed ones the bundle before it carried. A console-managed resource that no bundle carried, such as a table made in the console, is left alone by every deploy.
+- A deploy is the one thing that may move a resource between the repository and the console. A draft at the path of a repository's resource takes it over. A repository that defines the path again takes it back.
+- A bundle in format 1 or 2 says nothing about console-managed resources. The workspace's are composed onto it before it is deployed, so an older CLI cannot remove them.
+- Rollback and promotion needed no change: the composite is one bundle.
+
+**Permissions.** `code:write` is held by `tenant_admin` and `developer`. A workspace admin may change resources and may not write code. `tenant.console_code` turns code authoring off for a tenant.
+
+**In the console.** A script opens in Monaco, fetched on first use, with the SDK's types and the theme's colours. Beside it are its settings, with the connections, secrets and variables it may use chosen from what the workspace has, and a panel that runs the draft and shows the run. A Changes screen lists drafts, says what a deploy would do or why it cannot be done, and deploys.
+
+Checked in a browser: a script written in the editor ran on a worker and was deployed. Compiling console code was checked inside the image as the `node` user.
+
+Still open in milestone 2: console editors for kinds other than scripts, version history with a diff, "duplicate as console-managed", `platform pull` and `platform fmt`, and a sweep of preview bundles.
+
+## Git sync (milestone 3)
+
+- **Connecting.** A tenant gives an HTTPS address and an access token. The repository is reached before anything is saved. The token is encrypted under the tenant's key, never returned and never in the audit log.
+- **Branches.** A dev workspace follows a branch of its own. It cannot follow the default branch, and a production workspace follows none.
+- **Push.** One commit of what the workspace has deployed, as files in one folder, authored by whoever asked, on top of whatever else is on the branch. The first push starts the branch from the default branch.
+- **Pull.** Deploys what changed in the folder on the branch, as a deployment whose message names the commit.
+- **No clone.** Each operation fetches the tip into a scratch directory, works on git's objects, and removes it. A lease on the workspace's row keeps two from overlapping. No database connection is held while the remote is being talked to.
+
+| Situation | What happens |
+| --- | --- |
+| The branch changed outside the folder | The push commits on top of it |
+| The branch changed inside the folder | The push is refused, the workspace is "behind", and nothing is written |
+| A resource changed on the branch only | A pull takes it |
+| A resource changed on both sides | A conflict. Nothing is deployed until each is given to "mine" or "theirs" |
+| "Mine" | Nothing is deployed, and the next push puts the workspace's version on the branch |
+| Files on the branch that cannot be deployed | The pull fails, says why, and leaves the workspace as it was |
+| A tenant that was imported | Sync is paused until its repository is saved again |
+
+Routes: `GET|PUT|DELETE /tenants/:t/git-repository`; `GET|PUT …/git`, `POST …/git/push`, `POST …/git/pull`, `GET …/git/operations`. A new permission kind, `git`. Pulling also needs `code:write`, since a pull brings code into what workers run.
+
+Checked in a browser against a git server on this machine: a wrong token was refused, and a change deployed in the console arrived as a commit on the branch, authored by the member who pushed it.
+
 ## Schemas
 
-Migration 0019. Version 0.5.0 is not yet set.
+Migrations 0019 to 0021. Bundle format 3. Version 0.5.0 is not yet set.
 
 | Change | Purpose |
 | --- | --- |
 | `export:write` added to roles that hold `tenant:*` | Exporting a tenant was checked as `tenant:export`, which no role could list |
+| `resource_draft` | A resource as last saved in the console, with a revision that goes up on each save |
+| `bundle.origin` | Uploaded, composed by the control plane, or composed to try a draft out |
+| `deployment.message` | What whoever deployed said about it |
+| `tenant.console_code` | Whether code may be written in the console for the tenant |
+| `code:write` added to `developer` | Writing code in the console is given on purpose |
+| `git_repository` | A tenant's repository and its encrypted token |
+| `workspace_git` | The branch a dev workspace follows, what it last agreed with it at, and a lease |
+| `git_operation` | Each push and pull, with its outcome |
 
 ## Tests
 
@@ -153,6 +219,12 @@ Migration 0019. Version 0.5.0 is not yet set.
 | The audit screen | `apps/console/src/Audit.test.tsx` |
 | Every route's permission is listed | `apps/control-plane/src/app.test.ts` |
 | Audit filters and actor names | `apps/control-plane/src/kernel.test.ts` |
+| Resources as files | `packages/manifest/src/files.test.ts` |
+| Composing, and what console source cannot read | `packages/compose/src/compose.test.ts` |
+| Building a repository with a `platform/` folder | `packages/cli/src/build.test.ts` |
+| Drafts, test runs, deploys, takeover, rollback, promotion | `apps/control-plane/src/authoring.test.ts`, with a real worker |
+| Git sync | `apps/control-plane/src/git.test.ts`, against git's own HTTP backend and a developer's clone |
+| The changes screen and the repository screens | `apps/console/src/Authoring.test.tsx`, `apps/console/src/Git.test.tsx` |
 
 ## Proposed deviations
 
@@ -164,3 +236,7 @@ Migration 0019. Version 0.5.0 is not yet set.
 | React as milestone 1, after the spikes | The move was the spike, and is committed | Proving it meant doing it |
 | Migration 0019 is `authoring` | 0019 is `permissions`. Authoring takes 0020 | The permission rename was needed first |
 | TanStack Query and a route table in milestone 1 | Not yet done | The visible work came first. They change no behaviour |
+| The preview of a deploy is a `POST` | It is a `GET` | It changes nothing, and every `POST` that succeeds must leave an audit entry |
+| Git operations run as queued jobs | They run inside the request, under a lease, holding no database connection | Simpler, and the person asking sees the outcome. A queue is still the right place for a slow remote |
+| A push follows every deploy by itself | A deploy marks the workspace "ahead", and a person pushes | A push that fails after a deploy needs somewhere to be seen and retried, which the panel is |
+| `git:write` to pull | Pulling needs `deployment:write` and `code:write` | A pull deploys, and can bring code in |

@@ -62,6 +62,7 @@ export const TENANT_GROUPS: readonly SectionGroup[] = [
       ["members", "Members", UserRound],
       ["groups", "Groups", UsersRound],
       ["end-users", "End users", Globe],
+      ["end-user-groups", "End-user groups", UsersRound],
       ["service-accounts", "Service accounts", Bot],
     ],
   ],

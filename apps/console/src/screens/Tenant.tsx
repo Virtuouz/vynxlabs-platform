@@ -38,6 +38,7 @@ const FlowEditor = lazy(() =>
 
 import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
+import { EndUserGroups, Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 
 interface Workspace {
@@ -205,6 +206,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <Domains base={base} />
       ) : section === "groups" ? (
         <Groups base={base} />
+      ) : section === "end-user-groups" ? (
+        <EndUserGroups base={base} />
       ) : section === "service-accounts" ? (
         <ServiceAccounts base={base} path={path} />
       ) : section === "roles" ? (
@@ -568,38 +571,6 @@ function Members({ base }: { base: string }) {
   );
 }
 
-function Groups({ base }: { base: string }) {
-  return (
-    <ListScreen<{ id: string; name: string; createdAt: string }>
-      title="Groups"
-      description="A group is a set of members that can be given access together."
-      path={`${base}/groups`}
-      rowKey={(row) => row.id}
-      columns={[
-        { header: "Name", cell: (row) => row.name },
-        { header: "Created", cell: (row) => when(row.createdAt) },
-      ]}
-      empty={{
-        title: "No groups yet",
-        text: "Create a group when several people need the same access.",
-      }}
-      create={{
-        action: "Create group",
-        fields: [{ name: "name", label: "Name", placeholder: "Finance team" }],
-        submit: (values) => api.post(`${base}/groups`, values),
-      }}
-      rowActions={(row, reload) => (
-        <RemoveButton
-          label="Delete"
-          confirm={`Delete the group ${row.name}? Access given to it is removed.`}
-          run={() => api.delete(`${base}/groups/${row.id}`)}
-          onDone={reload}
-        />
-      )}
-    />
-  );
-}
-
 function ServiceAccounts({ base, path }: { base: string; path: string }) {
   const selected = match("/t/:t/service-accounts/:id", path)?.id;
   if (selected) {
@@ -685,6 +656,9 @@ function Access({ base }: { base: string }) {
   const members = useLoad<{ items: { id: string; email: string }[] }>(`${base}/members?limit=200`);
   const groups = useLoad<{ items: { id: string; name: string }[] }>(`${base}/groups`);
   const accounts = useLoad<{ items: { id: string; name: string }[] }>(`${base}/service-accounts`);
+  const endUserGroups = useLoad<{ items: { id: string; name: string }[] }>(
+    `${base}/end-user-groups`,
+  );
   const endUsers = useLoad<{ items: { id: string; email: string }[] }>(
     `${base}/end-users?limit=200`,
   );
@@ -703,6 +677,10 @@ function Access({ base }: { base: string }) {
     })),
     // Every end user is one principal with no ID: whoever has signed in to this tenant's portal.
     { value: "end_users:", label: "Every end user" },
+    ...(endUserGroups.data?.items ?? []).map((g) => ({
+      value: `end_user_group:${g.id}`,
+      label: `End-user group: ${g.name}`,
+    })),
     ...(endUsers.data?.items ?? []).map((u) => ({
       value: `end_user:${u.id}`,
       label: `End user: ${u.email}`,

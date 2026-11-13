@@ -13,12 +13,15 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
 import { CopyButton, CreateDialog, Page, when } from "../ListScreen.tsx";
+import { AttributesDialog } from "./Groups.tsx";
 
 interface EndUser {
   id: string;
   email: string;
   name: string;
   hasPassword: boolean;
+  attributes: Record<string, string>;
+  groups: string[];
   disabled: boolean;
   lastSignedInAt: string | null;
   createdAt: string;
@@ -99,6 +102,7 @@ export function EndUsers({ base }: { base: string }) {
   const [trail, setTrail] = useState<(string | null)[]>([null]);
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<ShownLink>();
+  const [attributesOf, setAttributesOf] = useState<EndUser>();
   const [problem, setProblem] = useState<string>();
 
   const query = new URLSearchParams({ limit: String(PAGE) });
@@ -125,6 +129,10 @@ export function EndUsers({ base }: { base: string }) {
       setLink({ ...made, email: user.email, purpose });
     });
   const actions = (user: EndUser) => [
+    {
+      label: "Attributes",
+      onSelect: () => setAttributesOf({ ...user, attributes: user.attributes ?? {} }),
+    },
     // A disabled account cannot be sent a link: enable it first.
     ...(user.disabled
       ? []
@@ -194,6 +202,16 @@ export function EndUsers({ base }: { base: string }) {
             { header: "Email", cell: (row) => <span className="font-medium">{row.email}</span> },
             { header: "Name", cell: (row) => row.name },
             { header: "Status", cell: (row) => <Status user={row} /> },
+            {
+              header: "Groups",
+              cell: (row) => (
+                <span className="flex flex-wrap gap-1">
+                  {(row.groups ?? []).map((group) => (
+                    <Badge key={group}>{group}</Badge>
+                  ))}
+                </span>
+              ),
+            },
             {
               header: "Last signed in",
               cell: (row) =>
@@ -265,6 +283,18 @@ export function EndUsers({ base }: { base: string }) {
         }}
       />
       <LinkDialog link={link} onClose={() => setLink(undefined)} />
+      {attributesOf ? (
+        <AttributesDialog
+          key={attributesOf.id}
+          base={base}
+          user={attributesOf}
+          onClose={() => setAttributesOf(undefined)}
+          onSaved={() => {
+            setAttributesOf(undefined);
+            page.reload();
+          }}
+        />
+      ) : null}
     </Page>
   );
 }

@@ -45,6 +45,7 @@ describe("building the example repository", () => {
       "connection erp",
       "connection shop",
       "variable orders/batch-size",
+      "table invoices",
       "table notices",
       "table orders",
       "event orders/received",

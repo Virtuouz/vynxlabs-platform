@@ -273,6 +273,31 @@ export const notices = defineTable({
 });
 
 /**
+ * Invoices, which two kinds of people see differently. Someone in the
+ * `finance` group of end users sees every invoice marked for that group. A
+ * customer sees the invoices of their own company: the rows whose
+ * `customer_id` equals the `customer_id` attribute on their account. Groups
+ * and attributes are set under End users in the console, or by the identity
+ * provider people sign in through.
+ */
+export const invoices = defineTable({
+  path: "invoices",
+  description: "Invoices, seen by the finance group and by each customer for their own company.",
+  columns: {
+    number: column.text({ required: true, unique: true }),
+    total: column.number({ required: true }),
+    customer_id: column.text({ required: true }),
+    visible_to: column.text({ default: "finance" }),
+  },
+  policy: {
+    rules: [
+      { allow: "all", when: { column: "visible_to", in: "groups" } },
+      { allow: "read", when: { column: "customer_id", equals: { attribute: "customer_id" } } },
+    ],
+  },
+});
+
+/**
  * A customer asks for an order from the portal. The script runs as the
  * workspace, and writes the row as the person who started it, so the row is
  * theirs and the table's policy holds.

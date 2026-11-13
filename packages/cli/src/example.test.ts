@@ -150,7 +150,7 @@ describe("the example integration", () => {
     expect(built.out).toContain("schedule   orders/sync-every-five-minutes");
     expect(
       JSON.parse(await readFile(join(example, ".platform", "bundle.json"), "utf8")).manifests,
-    ).toHaveLength(28);
+    ).toHaveLength(29);
   });
 
   test("deploy says exactly what the workspace is missing", async () => {
@@ -205,7 +205,7 @@ describe("the example integration", () => {
     ]);
     expect(deployed.err).toBe("");
     expect(deployed.out).toContain(
-      "Deployed version 1 to main (production): 28 created, 0 updated, 0 deleted, 0 unchanged.",
+      "Deployed version 1 to main (production): 29 created, 0 updated, 0 deleted, 0 unchanged.",
     );
 
     // Deploying the same code again changes nothing.
@@ -219,7 +219,7 @@ describe("the example integration", () => {
       "main",
     ]);
     expect(again.out).toContain(
-      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 28 unchanged.",
+      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 29 unchanged.",
     );
   });
 
@@ -505,14 +505,14 @@ describe("working locally", () => {
     expect(preview.err).toBe("");
     expect(preview.out).toContain(`Bundle ${digest}, version 1 here, to main (production).`);
     expect(preview.out).toContain(
-      "Promoting would leave main (production) with: 0 created, 0 updated, 0 deleted, 28 unchanged.",
+      "Promoting would leave main (production) with: 0 created, 0 updated, 0 deleted, 29 unchanged.",
     );
     expect(preview.out).toContain("Nothing was changed.");
 
     const promoted = await promote();
     expect(promoted.err).toBe("");
     expect(promoted.out).toContain(
-      "Promoted to main (production) as version 1: 0 created, 0 updated, 0 deleted, 28 unchanged.",
+      "Promoted to main (production) as version 1: 0 created, 0 updated, 0 deleted, 29 unchanged.",
     );
     const latest = (await alice.get(`${base}/deployments`)).body.items[0];
     expect(latest.promotedFromWorkspaceId).toBe(dev);

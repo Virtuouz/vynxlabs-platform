@@ -8,7 +8,12 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 
 ### For operators
 
-- **Database change.** Migrations 0019 to 0023 run on start.
+- **Database change.** Migrations 0019 to 0025 run on start.
+- **Single sign-on.** A tenant can connect an identity provider over OIDC or SAML, for its members or its end users, and operators can connect one for themselves under Instance. The control plane makes outbound requests to the provider. Nothing new has to run. See "Single sign-on" in the self-hosting guide.
+- **The console's sign-in asks for the email first,** then for a password or the organisation's sign-in.
+- **A tenant can require single sign-on.** Passwords are then refused for the people a provider covers. Members bound at the instance keep theirs: keep one such account.
+- **An imported tenant's identity providers arrive paused,** with their domains to be proved again.
+- **End users have groups and attributes,** and a table's rows can be ruled by them. New permissions: `end_user_group` and `sso`, both held by `tenant_admin`.
 - **Code can be written in the console.** Whoever holds `code:write` in a dev workspace can write a script there and deploy it, and workers run it as it is. `tenant_admin` and `developer` hold it. Set `console_code` to false on a tenant to turn it off there.
 - **The control plane compiles TypeScript.** It never runs what it compiles. The image now carries esbuild.
 - **A tenant can connect a git repository** over HTTPS with an access token. The control plane makes outbound requests to it.
@@ -24,6 +29,9 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 - `defineWebhook`, and `trigger.webhook()` in a flow, take `input: "request"` to be given headers, query, method and the raw body, and `verify` to check an HMAC signature against a workspace secret. A webhook's address also takes forms and text.
 - A sub-flow step may choose its flow when it runs: `flowFrom` with `allow`.
 - `@vynxlabs/app` gains `startFlow`, `flowRun` and `runFlow`. `flow_run:write` can be bound at one flow.
+- `defineTable` takes `policy: { rules: [...] }`: a rule allows `read`, `write` or `all` when a column holds the person's ID, names a group they are in, or equals one of their attributes. `{ owner }` works as before.
+- `defineBinding` can name a group of end users: `{ type: "end_user_group", name }`.
+- An app that draws its own sign-in screen can list the tenant's identity providers at `GET /tenants/{id}/end-user-auth/providers` and send the browser to each one's path under the tenant's sign-in pages.
 - `defineConnectionGroup` declares a set of connections of one kind. Members are added per workspace in the console with no deploy, and a script that lists the group in `connectionGroups` picks one when it runs: `await ctx.connections("shops").get(input.shop)`.
 
 ### Changed

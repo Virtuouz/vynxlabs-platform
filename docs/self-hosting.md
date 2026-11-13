@@ -216,6 +216,41 @@ A tenant's end users are its customers and portal users. They are a pool of the 
 
 Someone who is not signed in reaches only what is bound to `anonymous`, and is limited in how often they may ask. The limit is counted by address, in each replica.
 
+## Groups, attributes and row rules for end users
+
+End users have groups of their own, under **End-user groups**. Bind a role to a group once instead of to each person. An end user also has attributes, such as `customer_id`, edited from their row under **End users**.
+
+A table's rows can be ruled by both. Under a table's **Row rules**, say who may read or change a row: everyone, the person a column names, people in the group a column names, or people whose attribute equals a column. **See it as** shows the rows as one end user sees them.
+
+## Single sign-on
+
+A tenant's admin connects an identity provider under **Single sign-on**, for members or for end users, over OIDC or SAML. Operators connect one for themselves under **Instance**. The instance needs nothing new to run, and makes outbound requests to the provider: to read an OIDC provider's settings and keys, and to read SAML metadata when given an address for it.
+
+1. **Connect.** Give the OIDC issuer, client ID and client secret, or the SAML metadata as an address or pasted. The provider is created off.
+2. **Enter the addresses at the provider.** The console shows them with a button to copy each: the redirect address for OIDC; the reply address, entity ID and metadata address for SAML. They never change for a provider.
+3. **Try it.** A try-out opens the provider, signs nobody in, and shows what the provider sent and what would happen.
+4. **Prove a domain.** A provider of members signs in only people whose email is in a domain proved with a DNS TXT record, the same record a hostname uses. A provider of end users needs none.
+5. **Turn it on.** The console's sign-in asks for the email first and offers the provider by the email's domain. A tenant's sign-in page shows a button for each provider of end users.
+
+Worth knowing:
+
+- **People are found by the provider's own identifier,** never by email after the first sign-in. Send a name ID or subject that lasts.
+- **Creating people is off** until turned on for a provider. A new member can be given a default role. Without one they sign in and see nothing.
+- **Groups follow the provider.** Map a group the provider sends to a group here, and membership of mapped groups is set on every sign-in. Groups that are not mapped are left alone.
+- **Requiring single sign-on** refuses passwords for the people a provider covers. Members bound at the instance, the operators, keep their passwords, so that a broken provider locks nobody out for good. Keep one such account.
+- **SAML requests are signed** with a key made for each provider, unless that is turned off. SHA-1 signatures and sign-ins begun at the provider are refused unless turned on for a provider.
+- **Encrypted assertions** are opened when the provider wraps the key with RSA-OAEP and MGF1 (`rsa-oaep-mgf1p`) and the SHA-1 digest. Keycloak's defaults differ: set the client's key transport algorithm and digest. The certificate to encrypt to is in the metadata only when **Ask the provider to encrypt assertions** is on.
+- **An imported tenant's providers are paused.** Give the provider's administrator this instance's addresses, prove the domains again, and save the provider.
+- **Not built:** SCIM, single logout, and one provider shared by several tenants.
+
+To try it locally, the development stack has Keycloak behind a profile, with a realm of two people, `ada` and `ben`, and an OIDC client `vynxlabs-platform` whose secret is `dev-only-oidc-secret`:
+
+```
+docker compose -f deploy/compose/compose.dev.yaml --profile sso up -d keycloak
+```
+
+The issuer is `http://localhost:8180/realms/acme`. For SAML, give `http://localhost:8180/realms/acme/protocol/saml/descriptor` as the metadata address, then in Keycloak import a client from the provider's metadata address shown in the console.
+
 ## Branding
 
 A tenant sets its colours, corner radii, fonts and logo under **Branding**. They apply to its apps, its sign-in pages and the console while that tenant is open. A workspace can override them with a theme in its repository. Values are plain colours, lengths and font lists: nothing that could load a file from elsewhere.

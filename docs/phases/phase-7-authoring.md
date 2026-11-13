@@ -1,6 +1,6 @@
 # Phase 7: authoring in the console
 
-Status: in progress. Built and tested locally: milestones 1 to 3, the flow editor and flows chosen by data (milestone 4), webhook intake (milestone 5), and flow starts from apps, connection groups and the MCP server (milestone 7). Not started: custom connectors, trigger sources and nodes, the core node pack, the form trigger, single sign-on, groups of end users, wider row policies, and generated screens. Nothing has run in CI or on a second instance yet
+Status: in progress. Built and tested locally: milestones 1 to 3, the flow editor and flows chosen by data (milestone 4), webhook intake (milestone 5), flow starts from apps, connection groups and the MCP server (milestone 7), and identity: groups of end users, row rules, and single sign-on over OIDC and SAML for members and end users. Single sign-on was also driven through a browser against Keycloak. Not started: custom connectors, trigger sources and nodes, the core node pack, the form trigger, and generated screens. Nothing has run in CI or on a second instance yet
 Last updated: 2026-11-13
 
 Phase 7 makes the console the place where work is done. Scripts, flows and other resources are edited there and synced to the tenant's git repository. Flows are drawn on a canvas from a generic core node pack. Connectors, trigger sources and nodes can be written in the repository or in the console. Members and end users can sign in through their identity provider. Members build screens over tables without code.
@@ -164,6 +164,10 @@ A webhook answered through a worker and MCP inside Fastify were each small enoug
 - **jsonb reorders an object's keys.** A flow saved as a draft lost the order of its steps, and its file in the repository would have changed for no reason. Drafts are stored as `json`. A resource is still `jsonb`, so the API returns a flow's steps in the database's order; the bundle and the repository keep the author's.
 - **Two builds of one repository shared an output folder.** `platform build` compiled each app into `.platform/apps/<app>`. Two builds at once could give different digests. Each build now has a folder of its own. It showed as one test failing once in the full suite.
 - **The test suite is close to the development database's connection limit.** 52 suites run side by side against a server that allows 100 connections. With another instance running on the same server, a suite failed to start once. CI is unaffected, and locally the answer is not to leave an instance running.
+- **The OIDC library does not check an ID token's signature by itself.** A token that comes straight from the provider's token address over TLS may be trusted without it, and the library does that. A test that signed a token with a stranger's key found it accepted. The check is now turned on for every provider.
+- **A provider set up from this side's SAML metadata expects what the metadata offers.** Keycloak, reading the metadata, required signed requests and turned on encryption. Requests were unsigned and were refused. Requests are now signed unless that is turned off, and the certificate for encryption is published only when asked for.
+- **Encrypted assertions are opened for one way of wrapping the key.** The decryption library that node-saml 5.2 pins opens a key wrapped with RSA-OAEP and MGF1 with SHA-1 (`rsa-oaep-mgf1p`, SHA-1 digest). Keycloak 26 wraps with `xmlenc11#rsa-oaep` and SHA-256 unless told otherwise, and that is refused with a message that says what to set. A newer version of the library opens it, and also refuses AES-CBC, which other providers use. Replacing a security library that another pins was not done here.
+- **A check on routes by name caught a new route it did not mean.** The apps suite claims every route with `domains` in it. A provider's email domains are tested in the single sign-on suite, and are named as an exception there.
 - **The console is served with no compression of its own.** Monaco makes that matter. The self-hosting guide says to put a proxy in front; the image should compress by itself.
 
 ## The console (milestone 1)
@@ -271,9 +275,68 @@ The spike for MCP is this build: it passed with the protocol's own client librar
 
 Still open in milestone 7: the form trigger, and an "Agent access" tab on a service account.
 
+## Groups of end users (identity, milestone 1)
+
+End users are a pool of each tenant's own, so they have groups of their own, apart from groups of members. A binding may name one as `end_user_group`, by ID or, in the repository, by name. The authorization check counts a group's bindings for the end users in it. An end user also has attributes: short named facts such as `customer_id`, set by staff or by the identity provider.
+
+In the console, **End-user groups** lists the groups, and a group's people are added and removed with a picker. The same was missing for groups of members and was added. A person's attributes are edited from their row under **End users**.
+
+## Row rules (identity, milestone 2)
+
+A table's policy is `open`, `owner`, or a list of rules. A rule allows reading, writing or both when a condition holds: for everyone, when a column holds the person's ID, when a column names a group the person is in, or when a column equals one of the person's attributes. A person sees a row when any rule lets them, and changes it when a rule for writing does.
+
+Rules compile to Postgres row-level security, as the owner policy does. The person's groups and attributes reach the database as two settings, set for each request beside the two there were. A group column holds the group's ID when it is `uuid` and its name when it is `text`. A script that acts as a person is held to the same rules as that person.
+
+In the console a table's rules are built from menus, each shown as a sentence. **See it as** reads the table's rows as a chosen end user, for whoever may read every row.
+
+## Single sign-on (identity, milestone 3)
+
+A tenant connects an identity provider for its members or for its end users, over OIDC or SAML. The instance may have providers of its own, for the people who run it. The flows are the platform's own, in `kernel/sso/`, on `openid-client` 6 and `@node-saml/node-saml` 5.
+
+**One sign-in, three steps.** It begins at the address the person is at, which sets a cookie and sends them to the provider. The provider answers at one fixed address, where the answer is checked and turned into a code that works once, within two minutes. The browser is then sent back to where it began, where the code and the cookie together make the session. An end user may begin at a hostname the tenant registered: the provider is still given one address, whatever the number of hostnames. A member's session is made by the authentication library, through an endpoint added to it, so the cookie and the record of the sign-in are the same as a password's.
+
+**Who a person is.** A person is tied to a provider by the provider's subject, and found by it from then on. Email is used once, for the first tie:
+
+| Who | An existing account is tied when | A new account is made when |
+| --- | --- | --- |
+| A member | The email's domain is one the provider has proved | The same, and the provider creates people |
+| An end user | The domain is proved, or the tenant has said to take the provider's word and the provider says the email is verified | The provider creates people, and does not say the email is unverified |
+
+A member is one person on the whole instance, so nothing less than a proved domain will do, and one proved domain belongs to one provider of members. A domain is proved with the same DNS record a hostname is. The instance's own providers need no proof: whoever runs the instance answers for them.
+
+**On every sign-in** a person is put in exactly the mapped groups the provider names for them and taken out of the mapped groups it does not. A group nobody mapped is left alone. An end user's mapped attributes are set the same way. A new member is given the provider's default role, once.
+
+**Requiring it.** A provider that is required refuses passwords: for members, those with an email in its proved domains; for end users, those in its proved domains, or everyone when it has none. Members bound at the instance keep their passwords. That is the break-glass account: a broken provider locks no operator out.
+
+**Trying it.** A try-out goes to the provider and back and signs nobody in. It records what the provider sent, who that would be, and what would happen, worked out for real and then undone. It works while the provider is off.
+
+### How the bar was met
+
+| Area | How | Where it is tested |
+| --- | --- | --- |
+| SAML, what is trusted | The library requires a valid signature on the assertion or on the response that holds it. Issuer, audience and validity are its checks. Recipient and destination are checked here, since the library only warns | Eleven altered answers, each refused for its own reason |
+| SAML, replay | The library is given a store in the database. A request is answered once, and an assertion's ID is kept until it would have run out | The same form posted twice. An answer to no request. One person's answer in another's sign-in |
+| SAML, algorithms | A document is read for SHA-1 in its signatures before it is checked, and the opened assertion again | SHA-1 refused, then allowed for a provider that turns it on, which is audited |
+| SAML, who starts it | An answer must name a request unless the provider is allowed to begin | An unasked answer refused, then accepted when turned on, and its replay refused |
+| SAML, options | Signed requests, on unless turned off. Encrypted assertions, opened when they come. Several certificates. Metadata read from an address or pasted. A document type in any XML is refused | Each in the suite. Keycloak set itself up from this side's metadata |
+| OIDC | Authorization code with PKCE, a state and a nonce. Signature, issuer, audience, expiry and nonce of the ID token | A token bent five ways, each refused. The provider in the test refuses an exchange without the PKCE verifier |
+| Who a person is | The table above | A stranger claiming the operator's email. An unverified email. A second subject for one account |
+| Domains | The DNS record a hostname uses. One proved domain of members per instance | A second tenant refused the same domain, record or not |
+| Provisioning, groups, attributes | Above | A new member with a role and groups. Groups that follow the provider. A group mapped by nobody left alone |
+| Enforcing it | Above | A password refused in the console, the portal and the API. The operator's still works |
+| Secrets | A client secret and this side's private key are sealed with the tenant's key, or the instance's. Neither is returned. What is in flight is sealed or hashed | The stored bytes and the API's answers are read for the secret |
+| The record | Every sign-in, refusal with its reason, password refused, provider change, and each lowering of the bar | Read in each test |
+| For the provider's administrator | The addresses to copy, metadata to load, and the try-out | The console suite, and a browser against Keycloak |
+
+**Where it falls short of the bar as written.** The bar said an email is trusted only when the provider says it is verified and its domain is proved. Two things differ, both on purpose. A provider that says nothing about verification is not refused, because Microsoft's does not say, and the proved domain is what carries the trust. And an end-user provider may be told to take the provider's word without a proved domain, because a tenant's customers sign in with addresses at domains the tenant can never prove. That is off unless turned on, and applies to the tenant's own pool only. Encrypted assertions are limited as the finding above says.
+
+**Tried against Keycloak.** A member signed in to the console over OIDC, set up entirely from the console, with a try-out first. An end user signed in to a tenant's portal over SAML, with Keycloak configured by loading this side's metadata, and arrived in the mapped group with the mapped attribute. An encrypted assertion was opened once Keycloak was set to the supported key wrapping. Keycloak is in the development stack behind a profile, with a realm to import.
+
+**Not built, and said so:** SCIM, single logout, step-up, and a provider shared by several tenants.
+
 ## Schemas
 
-Migrations 0019 to 0023. Bundle format 3. Version 0.5.0 is not yet set.
+Migrations 0019 to 0025. Bundle format 3. Version 0.5.0 is not yet set.
 
 | Change | Purpose |
 | --- | --- |
@@ -288,6 +351,16 @@ Migrations 0019 to 0023. Bundle format 3. Version 0.5.0 is not yet set.
 | `git_operation` | Each push and pull, with its outcome |
 | `resource_draft.body` becomes `json` | A draft is kept as written, so a flow's steps keep their author's order |
 | `connection_group_member` | A member of a connection group in one workspace, with its encrypted credential |
+| `end_user_group`, `end_user_group_member` | Groups of a tenant's end users |
+| `end_user.attributes` | Facts about an end user that a row rule can match |
+| `binding.principal_type` gains `end_user_group` | A role given to a group of end users |
+| A table's policy gains `rules` | Rules by person, group and attribute. In the manifest, not a migration |
+| `identity_provider` | A provider, its settings, and its sealed secrets |
+| `identity_domain` | An email domain a provider signs in, and whether it is proved |
+| `identity_link` | Who a provider's subject is here |
+| `identity_group_map` | A group at the provider and the group here |
+| `sso_state` | One sign-in on its way to a provider and back, as hashes |
+| `sso_assertion` | Each SAML assertion accepted, until it would have run out |
 
 ## Tests
 
@@ -312,6 +385,11 @@ Migrations 0019 to 0023. Bundle format 3. Version 0.5.0 is not yet set.
 | The app client's flow calls | `packages/app/src/app.test.tsx` |
 | Connection groups, with a worker and a stand-in for the outside system | `apps/control-plane/src/runtime.test.ts`, `apps/console/src/ConnectionGroups.test.tsx` |
 | The MCP server, with the protocol's own client | `apps/control-plane/src/mcp.test.ts` |
+| Groups of end users, and bindings to them | `apps/control-plane/src/apps.test.ts`, `apps/console/src/Groups.test.tsx` |
+| Row rules: each condition, read against write, a script acting as a person | `apps/control-plane/src/data-access.test.ts`, `apps/console/src/RowRules.test.tsx` |
+| Single sign-on, against an OIDC and a SAML provider made for the test, so that answers can be bent | `apps/control-plane/src/sso.test.ts` |
+| A tenant with providers, exported and imported into a second instance | `apps/control-plane/src/sso.test.ts` |
+| The single sign-on screen and the console's sign-in | `apps/console/src/SingleSignOn.test.tsx` |
 
 ## Proposed deviations
 
@@ -329,3 +407,9 @@ Migrations 0019 to 0023. Bundle format 3. Version 0.5.0 is not yet set.
 | `git:write` to pull | Pulling needs `deployment:write` and `code:write` | A pull deploys, and can bring code in |
 | A connection group's member is read at `/connection-groups/{path}/members/{key}` | `/connection-group-members/{key}/{path}` | A path has slashes in it, so it has to come last |
 | The webhook, single sign-on and MCP spikes run before their milestones | Webhooks and MCP were built and tested directly | Each was small enough that building it was the spike |
+| Single sign-on is tested against Keycloak in the development stack | The suite uses providers made for the test. Keycloak was driven by hand, through a browser | A tampered or replayed answer has to be made, and Keycloak will not make one. CI also stays without a 700 MB image |
+| Group maps name a group by type and ID in one column | Two columns, one per kind of group | Each can then refer to its table, and a deleted group takes its mapping with it |
+| A member's sign-in starts at `/auth/sso/start` | It starts at `/sso/:id/start`. Only the last step is in the authentication library | Only making the session needs the library |
+| A provider's SAML metadata is read by a route of its own | It is read when the provider is saved | A route that changes nothing cannot be a `POST` here, and the metadata is only wanted on a save |
+| The identity provider answers at the address the person began at | It answers at one address, and the person is sent back with a one-time code | A provider is then given one address, and a SAML answer, which a browser posts from another site, needs no cookie |
+| An end user's email is trusted on the same terms as a member's | A tenant may take the provider's word for its own end users | See "Where it falls short of the bar as written" |

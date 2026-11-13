@@ -13,7 +13,7 @@ import { Link, match } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
-import { Changes, ScriptEditor } from "./Authoring.tsx";
+import { Changes, type CodeKind, Extensions, ScriptEditor } from "./Authoring.tsx";
 import { Branding } from "./Branding.tsx";
 import { Dashboards, DashboardView } from "./Dashboards.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
@@ -443,6 +443,23 @@ function WorkspaceDetail({
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           path={rest === "new" ? undefined : rest.slice("edit/".length)}
+          editable={workspace.data.type === "dev"}
+        />
+      ) : tab === "extensions" && /^(connector|trigger_source)\/(new$|edit\/)/.test(rest) ? (
+        <ScriptEditor
+          key={rest}
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          kind={rest.split("/")[0] as CodeKind}
+          path={
+            rest.endsWith("/new") ? undefined : rest.slice(rest.indexOf("/edit/") + "/edit/".length)
+          }
+          editable={workspace.data.type === "dev"}
+        />
+      ) : tab === "extensions" ? (
+        <Extensions
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
           editable={workspace.data.type === "dev"}
         />
       ) : tab === "changes" ? (

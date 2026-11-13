@@ -2,6 +2,7 @@ import { Badge, Menu } from "@vynxlabs/ui";
 import {
   AppWindow,
   ArrowLeft,
+  Blocks,
   Bot,
   Boxes,
   Building2,
@@ -102,6 +103,7 @@ export const WORKSPACE_GROUPS: readonly SectionGroup[] = [
       ["apps", "Apps", AppWindow],
       ["screens", "Apps made here", LayoutDashboard],
       ["triggers", "Triggers", Zap],
+      ["extensions", "Extensions", Blocks],
       ["changes", "Changes", GitCompareArrows],
     ],
   ],

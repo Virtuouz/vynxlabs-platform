@@ -20,7 +20,7 @@ export interface FormProperty {
   default?: string | number | boolean;
   /** The values to choose from. The field becomes a select. */
   enum?: readonly (string | number)[];
-  /** `date`, `date-time` and `email` change the control. Any other format is plain text. */
+  /** `date`, `date-time`, `email` and `password` change the control. Any other format is plain text. */
   format?: string;
   minLength?: number;
   maxLength?: number;
@@ -268,7 +268,13 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
             key={name}
             {...common}
             {...limits}
-            type={property.format === "email" ? "email" : "text"}
+            type={
+              property.format === "email"
+                ? "email"
+                : property.format === "password"
+                  ? "password"
+                  : "text"
+            }
             value={text}
             onChange={(next) => set(name, next)}
           />

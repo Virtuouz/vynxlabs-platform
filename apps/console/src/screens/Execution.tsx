@@ -2,7 +2,10 @@ import {
   Badge,
   type BadgeTone,
   Button,
+  Dialog,
   Facts,
+  Form,
+  type FormProperty,
   JsonView,
   type LogLine,
   LogViewer,
@@ -510,27 +513,116 @@ export function Deployments({ root }: { root: string }) {
   );
 }
 
+interface ConnectionRow {
+  path: string;
+  connector: string;
+  description: string;
+  defined: boolean;
+  bound: boolean;
+  config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
+  configSchema: { properties?: Record<string, { type?: unknown }>; required?: string[] };
+  hasCredential: boolean;
+}
+
+const CONNECTOR_NAMES: Record<string, string> = { http: "HTTP", smtp: "Mail (SMTP)" };
+const SIMPLE = new Set(["string", "number", "integer", "boolean"]);
+
+/** The part of a connector's schema a form can be drawn from, and what it leaves out. */
+export function connectionForm(row: Pick<ConnectionRow, "configSchema" | "hasCredential">) {
+  const properties: Record<string, FormProperty> = {};
+  const left: string[] = [];
+  for (const [name, property] of Object.entries(row.configSchema.properties ?? {})) {
+    if (SIMPLE.has(String(property.type))) properties[name] = property as FormProperty;
+    else left.push(name);
+  }
+  const secret = "secret" in properties ? "connection_secret" : "secret";
+  properties[secret] = {
+    type: "string",
+    title: "Secret",
+    format: "password",
+    description: row.hasCredential
+      ? "Leave empty to keep the stored one."
+      : "The password or key, when the system asks for one. It is stored encrypted and never shown.",
+  };
+  return {
+    secret,
+    left,
+    schema: {
+      type: "object" as const,
+      properties,
+      required: (row.configSchema.required ?? []).filter((name) => name in properties),
+    },
+  };
+}
+
+/** Sets up a connection of a kind other than HTTP, with a form drawn from its connector's schema. */
+function SetUpConnection({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: ConnectionRow;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const form = connectionForm(row);
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        {row.bound ? "Change" : "Set up"}
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Set up ${row.path}`}
+        description={`A ${CONNECTOR_NAMES[row.connector] ?? row.connector} connection. What is set here applies to this workspace only.`}
+      >
+        {form.left.length > 0 ? (
+          <Notice tone="attention">
+            This connector also takes {form.left.join(", ")}, which cannot be set here. Set them
+            through the API.
+          </Notice>
+        ) : null}
+        <Form
+          key={String(open)}
+          schema={form.schema}
+          value={row.config ?? {}}
+          submitLabel="Save"
+          onSubmit={async (values) => {
+            const { [form.secret]: secret, ...config } = values;
+            await api.put(`${root}/connection-bindings/${row.path}`, {
+              config,
+              ...(secret ? { credential: secret } : {}),
+            });
+            setOpen(false);
+            onDone();
+          }}
+        />
+      </Dialog>
+    </>
+  );
+}
+
 export function Connections({ root }: { root: string }) {
   return (
-    <ListScreen<{
-      path: string;
-      description: string;
-      defined: boolean;
-      bound: boolean;
-      config: { baseUrl?: string } | null;
-      hasCredential: boolean;
-    }>
+    <ListScreen<ConnectionRow>
       title="Connections"
       description="Where each connection points in this workspace. Addresses and credentials are set here, never in the repository, so dev and production can differ."
       path={`${root}/connection-bindings`}
       rowKey={(row) => row.path}
       columns={[
         { header: "Connection", cell: (row) => code(row.path) },
+        { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
         { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Points to",
           cell: (row) =>
-            row.bound ? (row.config?.baseUrl ?? "") : <Badge tone="attention">Not bound</Badge>,
+            row.bound ? (
+              (row.config?.baseUrl ?? row.config?.host ?? "")
+            ) : (
+              <Badge tone="attention">Not bound</Badge>
+            ),
         },
         {
           header: "Credential",
@@ -542,22 +634,31 @@ export function Connections({ root }: { root: string }) {
         text: "A connection is an external system a script talks to. Bind one here before deploying the bundle that uses it.",
       }}
       create={{
-        action: "Bind connection",
+        action: "Bind an HTTP connection",
         description:
-          "Binding a path that is already bound replaces it. Leave the credential empty to keep the stored one.",
+          "Binding a path that is already bound replaces it. Leave the credential empty to keep the stored one. A connection of another kind is set up from its row.",
         fields: [
           {
             name: "path",
             label: "Connection",
-            hint: "The connections this workspace's resources declare.",
+            hint: "The HTTP connections this workspace's resources declare.",
             choose: {
               path: `${root}/connection-bindings`,
-              option: (item: { path: string; description: string; bound: boolean }) => ({
+              option: (item: {
+                path: string;
+                connector: string;
+                description: string;
+                bound: boolean;
+              }) => ({
                 value: item.path,
                 label: item.path,
-                hint: item.bound
-                  ? `${item.description} Bound: this replaces it.`
-                  : item.description,
+                hint:
+                  item.connector !== "http"
+                    ? "Not an HTTP connection. Set it up from its row."
+                    : item.bound
+                      ? `${item.description} Bound: this replaces it.`
+                      : item.description,
+                ...(item.connector !== "http" ? { disabled: true } : {}),
               }),
             },
           },
@@ -591,16 +692,21 @@ export function Connections({ root }: { root: string }) {
             ...(credential ? { credential } : {}),
           }),
       }}
-      rowActions={(row, reload) =>
-        row.bound ? (
-          <RemoveButton
-            label="Unbind"
-            confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
-            run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
-            onDone={reload}
-          />
-        ) : null
-      }
+      rowActions={(row, reload) => (
+        <span className="flex justify-end gap-2">
+          {row.connector !== "http" ? (
+            <SetUpConnection root={root} row={row} onDone={reload} />
+          ) : null}
+          {row.bound ? (
+            <RemoveButton
+              label="Unbind"
+              confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
+              run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
+              onDone={reload}
+            />
+          ) : null}
+        </span>
+      )}
     />
   );
 }

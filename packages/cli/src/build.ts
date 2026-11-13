@@ -144,7 +144,13 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   if (manifests.length === 0) {
     throw new BuildError([`${entry} exports no resources. Export what you define with the SDK.`]);
   }
-  const problems = check(manifests);
+  // The core nodes the flows use are added when the bundle is composed. They are checked with
+  // the rest here, so that a step that names one is not told it does not exist.
+  const present = new Set(manifests.map((manifest) => manifest.path));
+  const problems = check([
+    ...manifests,
+    ...coreNodesFor(manifests).filter((node) => !present.has(node.path)),
+  ]);
   if (problems.length > 0) throw new BuildError(problems);
 
   const apps = definitions

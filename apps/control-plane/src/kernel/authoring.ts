@@ -330,6 +330,10 @@ export async function deployDrafts(
  * repository without their folder. Deployed as it is, it would remove them.
  * So the workspace's console-managed resources are composed onto it first,
  * and the composite is what is deployed.
+ *
+ * The same holds for a bundle that is format 3 only because its flows use
+ * core nodes, which the build adds: the nodes are the platform's, and say
+ * nothing of what the workspace made in the console.
  */
 export async function keepConsoleManaged(
   kernel: Kernel,
@@ -347,9 +351,15 @@ export async function keepConsoleManaged(
     .executeTakeFirst();
   if (!row) return bundleId;
   const { digest: _digest, ...uploaded } = await loadBundle(kernel, row);
-  if (uploaded.formatVersion >= 3) return bundleId;
+  const saysWhatIsManaged = uploaded.manifests.some(
+    (manifest) => manifest.ownership === "ui" && !manifest.path.startsWith(CORE_PREFIX),
+  );
+  if (uploaded.formatVersion >= 3 && saysWhatIsManaged) return bundleId;
   const active = await activeBundle(kernel, trx, workspace.id);
-  const managed = active?.content.manifests.filter((manifest) => manifest.ownership === "ui") ?? [];
+  const managed =
+    active?.content.manifests.filter(
+      (manifest) => manifest.ownership === "ui" && !manifest.path.startsWith(CORE_PREFIX),
+    ) ?? [];
   if (managed.length === 0) return bundleId;
   // What the repository now defines itself is the repository's again.
   const defined = new Set(uploaded.manifests.map((manifest) => manifest.path));

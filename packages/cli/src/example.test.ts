@@ -150,7 +150,7 @@ describe("the example integration", () => {
     expect(built.out).toContain("schedule   orders/sync-every-five-minutes");
     expect(
       JSON.parse(await readFile(join(example, ".platform", "bundle.json"), "utf8")).manifests,
-    ).toHaveLength(31);
+    ).toHaveLength(36);
   });
 
   test("deploy says exactly what the workspace is missing", async () => {
@@ -205,7 +205,7 @@ describe("the example integration", () => {
     ]);
     expect(deployed.err).toBe("");
     expect(deployed.out).toContain(
-      "Deployed version 1 to main (production): 31 created, 0 updated, 0 deleted, 0 unchanged.",
+      "Deployed version 1 to main (production): 36 created, 0 updated, 0 deleted, 0 unchanged.",
     );
 
     // Deploying the same code again changes nothing.
@@ -219,7 +219,7 @@ describe("the example integration", () => {
       "main",
     ]);
     expect(again.out).toContain(
-      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 31 unchanged.",
+      "Deployed version 1 to main (production): 0 created, 0 updated, 0 deleted, 36 unchanged.",
     );
   });
 
@@ -377,6 +377,45 @@ describe("the example integration", () => {
     ]);
     expect(filtered.out.split("\n")).toHaveLength(1);
   });
+  test("the contact form is a page anyone can send, and its flow of core nodes keeps the message", async () => {
+    const listed = (await alice.get(`${base}/triggers`)).body.items.find(
+      (item: { path: string }) => item.path === "contact",
+    );
+    expect(listed.type).toBe("form");
+    const address = `${url}${new URL(listed.url).pathname}`;
+    const page = await (await fetch(address)).text();
+    expect(page).toContain("<h1>Get in touch</h1>");
+    expect(page).toContain("We answer within two working days.");
+    const key = /name="key" value="([0-9a-f-]{36})"/.exec(page)?.[1] ?? "";
+    const sent = await fetch(address, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: url },
+      body: new URLSearchParams({
+        key,
+        name: "Pat",
+        about: "An order",
+        message: "Where is order 1001?",
+      }).toString(),
+    });
+    expect(sent.status).toBe(200);
+    expect(await sent.text()).toContain("Thank you. Your message has reached us.");
+    // The worker runs the two steps. The row and the event are what they leave.
+    let rows: { name: string; about: string; message: string; email: string | null }[] = [];
+    for (let i = 0; i < 100 && rows.length === 0; i++) {
+      rows = (await alice.get(`${base}/rows/messages`)).body.items ?? [];
+      if (rows.length === 0) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(rows).toMatchObject([
+      { name: "Pat", about: "An order", message: "Where is order 1001?", email: null },
+    ]);
+    let events: unknown[] = [];
+    for (let i = 0; i < 50 && events.length === 0; i++) {
+      events = (await alice.get(`${base}/events?name=messages/received`)).body.items ?? [];
+      if (events.length === 0) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(events).toHaveLength(1);
+  });
+
   test("the portal serves staff and customers, each with their own orders, and anyone the notices", async () => {
     const host = new URL(url).host;
     /** A browser: it keeps the cookies it is given. */
@@ -505,14 +544,14 @@ describe("working locally", () => {
     expect(preview.err).toBe("");
     expect(preview.out).toContain(`Bundle ${digest}, version 1 here, to main (production).`);
     expect(preview.out).toContain(
-      "Promoting would leave main (production) with: 0 created, 0 updated, 0 deleted, 31 unchanged.",
+      "Promoting would leave main (production) with: 0 created, 0 updated, 0 deleted, 36 unchanged.",
     );
     expect(preview.out).toContain("Nothing was changed.");
 
     const promoted = await promote();
     expect(promoted.err).toBe("");
     expect(promoted.out).toContain(
-      "Promoted to main (production) as version 1: 0 created, 0 updated, 0 deleted, 31 unchanged.",
+      "Promoted to main (production) as version 1: 0 created, 0 updated, 0 deleted, 36 unchanged.",
     );
     const latest = (await alice.get(`${base}/deployments`)).body.items[0];
     expect(latest.promotedFromWorkspaceId).toBe(dev);

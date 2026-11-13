@@ -728,7 +728,7 @@ describe("the core nodes, and nodes of a tenant's own", () => {
     });
     expect(delivered[0]?.data).toContain("Subject: Note: Call the bank");
     expect(delivered[0]?.data).toContain("The service answered 200.");
-    const events = await alice.get(`${ws(dev)}/events?event=notes/added`);
+    const events = await alice.get(`${ws(dev)}/events?name=notes/added`);
     expect(events.body.items).toHaveLength(1);
   });
 
@@ -1278,6 +1278,74 @@ describe("a trigger that is a form", () => {
       "a select needs options",
     );
     expect((await alice.delete(`${ws(dev)}/drafts/badly`)).status).toBeLessThan(300);
+  });
+});
+
+describe("a repository whose flows use core nodes", () => {
+  test("deploys beside what was made in the console, and removes none of it", async () => {
+    // What the CLI builds for such a repository: its own resources, and the nodes its flows use.
+    const { composeBundle } = await import("@vynxlabs/compose");
+    const { fileURLToPath } = await import("node:url");
+    const built = await composeBundle(
+      {
+        formatVersion: 1,
+        sdkVersion: "0.4.0",
+        core: { min: "0.0.0", below: "99.0.0" },
+        manifests: [
+          resource("event", "repo/pinged", { payload: { type: "object" } }),
+          resource("flow", "repo/ping", {
+            nodes: {
+              start: { type: "trigger", trigger: { type: "manual" } },
+              tell: {
+                type: "script",
+                script: "core/publish-event",
+                inputs: { event: "'repo/pinged'", payload: "{'by': 'the repository'}" },
+                with: { events: ["repo/pinged"] },
+              },
+            },
+            edges: [{ from: "start", to: "tell" }],
+          }),
+        ],
+        code: "",
+      },
+      [],
+      { sdkEntry: fileURLToPath(import.meta.resolve("@vynxlabs/sdk")) },
+    );
+    // The nodes make it a bundle of the newest format, though the repository has no console folder.
+    expect(built.formatVersion).toBe(3);
+    expect(built.manifests.filter((m) => m.ownership === "ui").map((m) => m.path)).toEqual([
+      "core/publish-event",
+    ]);
+
+    const made = async () =>
+      (await alice.get(`${ws(dev)}/resources`)).body.items
+        .filter((item: Any) => item.ownership === "ui" && !item.path.startsWith("core/"))
+        .map((item: Any) => item.path)
+        .sort();
+    const before = await made();
+    expect(before).toContain("note");
+    expect(before).toContain("feedback");
+    const deployed = await deploy(built, dev);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    // Everything made in the console is still there, and still console-managed.
+    expect(await made()).toEqual(before);
+    const all = (await alice.get(`${ws(dev)}/resources`)).body.items;
+    expect(all.find((item: Any) => item.path === "repo/ping")).toMatchObject({ ownership: "code" });
+    // The workspace has the nodes both sides use, each once.
+    expect(
+      all.filter((item: Any) => item.path === "core/publish-event").map((item: Any) => item.kind),
+    ).toEqual(["script"]);
+    expect(all.some((item: Any) => item.path === "core/send-email")).toBe(true);
+
+    const started = await alice.post(`${ws(dev)}/flow-runs`, { flow: "repo/ping", input: {} });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    let run: Any;
+    for (let i = 0; i < 200; i++) {
+      run = (await alice.get(`${ws(dev)}/flow-runs/${started.body.id}`)).body;
+      if (run.status !== "running") break;
+      await sleep(100);
+    }
+    expect(run.status, JSON.stringify(run.steps)).toBe("succeeded");
   });
 });
 

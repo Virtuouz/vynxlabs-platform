@@ -49,7 +49,8 @@ export async function runLocally(args: string[], io: Io) {
   );
   if (!manifest) {
     const known = bundle.manifests
-      .filter((candidate) => candidate.kind === "script")
+      // The steps that come with the platform are not the repository's to list.
+      .filter((candidate) => candidate.kind === "script" && !candidate.path.startsWith("core/"))
       .map((candidate) => candidate.path);
     throw new CliError(`There is no script "${path}". This repository has: ${known.join(", ")}`);
   }

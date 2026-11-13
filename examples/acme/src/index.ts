@@ -261,6 +261,79 @@ export const handleOrder = defineFlow({
   ],
 });
 
+// ----- A form anyone can send, handled with no code of the repository's -----
+
+/** What people write to the company through the form below. */
+export const messages = defineTable({
+  path: "messages",
+  description: "Messages sent through the contact form.",
+  columns: {
+    name: column.text({ required: true }),
+    email: column.text(),
+    about: column.text(),
+    message: column.text({ required: true }),
+  },
+});
+
+/** Published for each message, for anything that wants to act on one. */
+export const messageReceived = defineEvent({
+  path: "messages/received",
+  description: "Someone sent the contact form.",
+  payload: z.object({ id: z.string(), about: z.string().optional() }),
+});
+
+/**
+ * The contact form. The platform serves it as a page under the tenant's
+ * portal, at an address shown with the workspace's triggers. Its two steps
+ * are core nodes, which come with the platform: each is handed the one table
+ * or event it works on, and reaches nothing else. A mail step would be
+ * `core/send-email`, handed an `smtp` connection.
+ */
+export const contact = defineFlow({
+  path: "contact",
+  description: "Takes a message from the contact form, keeps it, and says that it arrived.",
+  nodes: {
+    form: trigger.form({
+      title: "Get in touch",
+      description: "We answer within two working days.",
+      fields: [
+        { name: "name", label: "Your name", type: "text", required: true },
+        { name: "email", label: "Email", type: "email", help: "If you would like an answer." },
+        {
+          name: "about",
+          label: "What is it about?",
+          type: "select",
+          options: ["An order", "An invoice", "Something else"],
+        },
+        { name: "message", label: "Your message", type: "textarea", required: true },
+      ],
+      submitLabel: "Send",
+      success: "Thank you. Your message has reached us.",
+    }),
+    keep: step.script("core/table-write", {
+      inputs: {
+        table: "'messages'",
+        values:
+          "{'name': trigger.name, 'message': trigger.message, " +
+          "'email': has(trigger.email) ? trigger.email : null, " +
+          "'about': has(trigger.about) ? trigger.about : null}",
+      },
+      with: { tables: [messages] },
+    }),
+    tell: step.script("core/publish-event", {
+      inputs: {
+        event: "'messages/received'",
+        payload: "{'id': steps.keep.output.row.id}",
+      },
+      with: { events: [messageReceived] },
+    }),
+  },
+  edges: [
+    ["form", "keep"],
+    ["keep", "tell"],
+  ],
+});
+
 // ----- The portal: one app for staff and for customers -----
 
 /** Things customers should know, written by staff. Anyone may read them. */

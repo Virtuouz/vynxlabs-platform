@@ -46,11 +46,15 @@ describe("building the example repository", () => {
       "connection shop",
       "variable orders/batch-size",
       "table invoices",
+      "table messages",
       "table notices",
       "table orders",
+      "event messages/received",
       "event orders/received",
       "event orders/synced",
       "script alerts/run-failed",
+      "script core/publish-event",
+      "script core/table-write",
       "script orders/check",
       "script orders/receive",
       "script orders/record",
@@ -59,6 +63,7 @@ describe("building the example repository", () => {
       "script orders/sync",
       "schedule orders/sync-every-five-minutes",
       "trigger orders/placed",
+      "flow contact",
       "flow orders/handle",
       "theme theme",
       "interface screens/invoices",
@@ -71,9 +76,14 @@ describe("building the example repository", () => {
       "binding access/public-notices",
       "binding access/public-page",
     ]);
-    // It has apps, so it lists their files and is written as format 2.
+    // Its contact flow is made of core nodes, which the build adds as the platform has them. They
+    // are the only resources in it that the repository's own code does not define.
+    expect(
+      bundle.manifests.filter((manifest) => manifest.ownership === "ui").map((m) => m.path),
+    ).toEqual(["core/publish-event", "core/table-write"]);
+    // A bundle that carries them is written as format 3.
     expect(bundle).toMatchObject({
-      formatVersion: 2,
+      formatVersion: 3,
       sdkVersion: "0.4.0",
       core: { min: "0.4.0", below: "0.5.0" },
     });

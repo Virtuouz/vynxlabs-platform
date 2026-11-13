@@ -39,6 +39,7 @@ const FlowEditor = lazy(() =>
 import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups, Groups } from "./Groups.tsx";
+import { InterfaceBuilder, Interfaces } from "./Interfaces.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 import { SingleSignOn } from "./SingleSignOn.tsx";
 
@@ -389,6 +390,19 @@ function WorkspaceDetail({
           root={root}
           id={rest}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "screens" && rest ? (
+        <InterfaceBuilder
+          key={rest}
+          root={root}
+          path={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "screens" ? (
+        <Interfaces
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
         />
       ) : tab === "events" ? (
         <Events root={root} />

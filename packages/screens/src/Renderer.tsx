@@ -374,6 +374,9 @@ function WidgetView({
 
   if (widget.type === "chart") {
     const options = widget.options ?? {};
+    /** What a value is called: the name its field was given, or its own made readable. */
+    const titleOf = (name: string) =>
+      fields.find((field) => field.column === name)?.label ?? heading(name);
     return (
       <Widget
         name="chart"
@@ -384,6 +387,9 @@ function WidgetView({
           y: options.y,
           ...(options.series ? { series: options.series } : {}),
           xType: typeOf(widget, info, options.x ?? ""),
+          ...(options.x ? { xTitle: titleOf(options.x) } : {}),
+          ...(options.y ? { yTitle: titleOf(options.y) } : {}),
+          ...(options.series ? { seriesTitle: titleOf(options.series) } : {}),
           height: 220,
         }}
         context={{ rows: data.rows }}

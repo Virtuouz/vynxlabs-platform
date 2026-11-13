@@ -129,6 +129,14 @@ function singleSignOn(db: Db, config: Pick<Config, "publicUrl">) {
   };
 }
 
+/**
+ * The last few things the authentication library said, whatever the log level.
+ * It refuses a sign-in with one answer for three different reasons, and says
+ * which only here. Tests read it when a sign-in that should work does not.
+ */
+const recent: string[] = [];
+export const recentAuthLog = (): readonly string[] => recent;
+
 export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
   const actorFor = (
     memberId: string,
@@ -168,6 +176,8 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
     },
     logger: {
       log: (level, message, ...args) => {
+        recent.push(`${new Date().toISOString()} ${level} ${message}`);
+        if (recent.length > 20) recent.shift();
         log[level]({ source: "auth", args }, message);
       },
     },

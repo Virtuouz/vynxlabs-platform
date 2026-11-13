@@ -417,6 +417,27 @@ describe("someone who maintains apps made in the console, and is not a developer
       (await draft(mona, "stock-app", "app", { title: "Stock", interface: "screens/stock" }))
         .status,
     ).toBe(200);
+    expect(saved.body.problems).toEqual([]);
+    // A draft that is not right yet is saved, and says what is wrong as the workspace stands:
+    // against a table made in the console, which no bundle carries.
+    const unfinished = await draft(
+      mona,
+      "screens/scrap",
+      "interface",
+      page([
+        { id: "a", type: "table", table: "stock", fields: [{ column: "nope" }], at },
+        { id: "b", type: "table", table: "no-such-table", at },
+        { id: "c", type: "chart", table: "stock", at },
+      ]),
+    );
+    expect(unfinished.status).toBe(200);
+    expect(unfinished.body.problems.map((problem: Any) => problem.message)).toEqual([
+      'there is no column "nope" in the table "stock"',
+      "a chart needs a shape",
+      "a chart needs what to draw along x",
+      "a chart needs what to draw along y",
+      'there is no table "no-such-table" in this workspace',
+    ]);
     // Saved again, with the revision she holds.
     expect(
       (

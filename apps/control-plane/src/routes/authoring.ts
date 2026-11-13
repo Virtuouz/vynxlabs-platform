@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { PATH_PATTERN } from "@vynxlabs/manifest";
+import { type InterfaceBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { mutate } from "../kernel/audit.js";
 import {
@@ -15,6 +15,7 @@ import { startRun } from "../kernel/execution/runs.js";
 import { markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { interfaceProblems } from "./interfaces.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
 
 const PathParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
@@ -51,7 +52,17 @@ const DraftSummary = Type.Object({
   updatedById: NullableId,
   updatedAt: Time,
 });
-const Draft = Type.Object({ ...DraftSummary.properties, body: AnyObject });
+const Draft = Type.Object({
+  ...DraftSummary.properties,
+  body: AnyObject,
+  problems: Type.Optional(
+    Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
+      description:
+        "For an interface: what is wrong with it as the workspace stands, such as a column " +
+        "its table does not have. A draft with problems is saved all the same.",
+    }),
+  ),
+});
 const Paths = Type.Optional(
   Type.Array(Type.String({ pattern: PATH_PATTERN, maxLength: 255 }), {
     minItems: 1,
@@ -293,7 +304,19 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           saveDraft(kernel, trx, audit, workspace, ctx.principal, { ...body, path }),
         );
         const owned = await ownership(workspace.id, [path]);
-        return { ...summarize(saved.draft, owned.get(path)), body: saved.draft.body };
+        return {
+          ...summarize(saved.draft, owned.get(path)),
+          body: saved.draft.body,
+          ...(body.kind === "interface" && !body.deleted
+            ? {
+                problems: await interfaceProblems(
+                  kernel,
+                  workspace,
+                  saved.draft.body as unknown as InterfaceBody,
+                ),
+              }
+            : {}),
+        };
       },
     );
 

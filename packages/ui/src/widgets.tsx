@@ -119,6 +119,10 @@ export interface ChartWidgetConfig {
   series?: string;
   /** What `x` holds. A timestamp or a date is drawn along a time axis. */
   xType?: string;
+  /** What to call each of the three on the chart. Their names, when left out. */
+  xTitle?: string;
+  yTitle?: string;
+  seriesTitle?: string;
   /** Names the chart for screen readers. */
   title: string;
   description?: string;
@@ -298,7 +302,7 @@ export function chartSpecFor(config: ChartWidgetConfig): object {
       mark: { type: "arc", tooltip: true },
       encoding: {
         theta: { field: y, type: "quantitative", stack: true },
-        color: { field: x, type: "nominal", title: x },
+        color: { field: x, type: "nominal", title: config.xTitle ?? x },
       },
     };
   }
@@ -312,12 +316,19 @@ export function chartSpecFor(config: ChartWidgetConfig): object {
       x: {
         field: x,
         type: temporal ? "temporal" : "nominal",
-        title: x,
-        ...(temporal ? {} : { sort: null }),
+        title: config.xTitle ?? x,
+        // In the order the rows came, with the names level when there is room for them.
+        ...(temporal ? {} : { sort: null, axis: { labelAngle: 0, labelOverlap: true } }),
       },
-      y: { field: y, type: "quantitative", title: y },
+      y: { field: y, type: "quantitative", title: config.yTitle ?? y },
       ...(config.series
-        ? { color: { field: config.series, type: "nominal", title: config.series } }
+        ? {
+            color: {
+              field: config.series,
+              type: "nominal",
+              title: config.seriesTitle ?? config.series,
+            },
+          }
         : {}),
     },
   };
@@ -338,6 +349,9 @@ registerWidget<ChartWidgetConfig>({
         type: "string",
         description: "What x holds. A timestamp or a date gets a time axis.",
       },
+      xTitle: { type: "string", description: "What to call x on the chart." },
+      yTitle: { type: "string", description: "What to call y on the chart." },
+      seriesTitle: { type: "string", description: "What to call the series on the chart." },
       title: { type: "string", description: "Names the chart for screen readers." },
       description: { type: "string", description: "Says what the chart shows." },
       height: { type: "number", description: "In pixels." },

@@ -1,5 +1,10 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { type InterfaceBody, interfaceTables } from "@vynxlabs/manifest";
+import {
+  checkInterface,
+  type InterfaceBody,
+  interfaceTables,
+  type TableBody,
+} from "@vynxlabs/manifest";
 import { type Static, Type } from "typebox";
 import { notFound } from "../kernel/errors.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
@@ -20,6 +25,66 @@ const TableView = Type.Object({
     }),
   ),
 });
+
+/**
+ * What is wrong with an interface as the workspace stands now: everything its
+ * shape cannot show, checked against the tables that are really there, those
+ * made in the console included. A draft with problems is still saved, because
+ * a screen is built a step at a time. It cannot be shown properly until they
+ * are gone, and the builder says so.
+ */
+export async function interfaceProblems(
+  kernel: Kernel,
+  workspace: { id: string; tenantId: string },
+  body: InterfaceBody,
+): Promise<{ path: string; message: string }[]> {
+  const data = (await kernel.data.forTenant(workspace.tenantId)).owner;
+  const rows = await data
+    .selectFrom("data_table")
+    .innerJoin("data_column", "data_column.table_id", "data_table.id")
+    .select([
+      "data_table.name as table",
+      "data_column.name as column",
+      "data_column.type",
+      "data_column.reference_table",
+    ])
+    .where("data_table.workspace_id", "=", workspace.id)
+    .where("data_table.tenant_id", "=", workspace.tenantId)
+    .where("data_table.status", "=", "active")
+    .where("data_column.status", "=", "active")
+    .execute();
+  const tables = new Map<string, TableBody>();
+  for (const row of rows) {
+    const table = tables.get(row.table) ?? { columns: {} };
+    table.columns[row.column] = {
+      type: row.type as TableBody["columns"][string]["type"],
+      ...(row.reference_table ? { references: row.reference_table } : {}),
+    };
+    tables.set(row.table, table);
+  }
+  // A table with no columns of its own yet is still a table.
+  const empty = await data
+    .selectFrom("data_table")
+    .select("name")
+    .where("workspace_id", "=", workspace.id)
+    .where("tenant_id", "=", workspace.tenantId)
+    .where("status", "=", "active")
+    .execute();
+  for (const table of empty) if (!tables.has(table.name)) tables.set(table.name, { columns: {} });
+
+  const problems = checkInterface(body, (path) => tables.get(path));
+  body.pages.forEach((page, pageIndex) => {
+    page.widgets.forEach((widget, index) => {
+      if (widget.table !== undefined && !tables.has(widget.table)) {
+        problems.push({
+          path: `/body/pages/${pageIndex}/widgets/${index}/table`,
+          message: `there is no table "${widget.table}" in this workspace`,
+        });
+      }
+    });
+  });
+  return problems;
+}
 
 /** What the app that draws an interface reads before it reads any rows. */
 export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {

@@ -4,6 +4,7 @@ import { createTestDatabase } from "@vynxlabs/db/testing";
 import type { RouteOptions } from "fastify";
 import { buildApp } from "./app.js";
 import type { Config } from "./config.js";
+import { recentAuthLog } from "./kernel/auth.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
 import { MemoryObjectStore, type ObjectStore } from "./storage.js";
 
@@ -189,7 +190,9 @@ export async function startTestApp(
       payload: { email, password },
     });
     if (response.statusCode !== 200) {
-      throw new Error(`Sign-in failed for ${email}: ${response.statusCode} ${response.body}`);
+      throw new Error(
+        `Sign-in failed for ${email}: ${response.statusCode} ${response.body}. The authentication library said: ${recentAuthLog().join(" | ") || "nothing"}`,
+      );
     }
     const cookies = ([] as string[]).concat(response.headers["set-cookie"] ?? []);
     return client({ cookie: cookies.map((cookie) => cookie.split(";")[0]).join("; ") });

@@ -1,5 +1,6 @@
 import type { Bundle, BundleManifest } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowReferences } from "./flow.js";
+import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
 import { isThemeValue, registerPlatformKinds } from "./kinds.js";
 import { KindRegistry } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
@@ -51,7 +52,7 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (kind === "event" && path.startsWith(PLATFORM_EVENT_PREFIX)) return;
     if (byPath.get(path)?.kind !== kind) {
       problems.push(
-        `${from.path} (${from.kind}): ${field} refers to "${path}", which is not ${kind === "event" ? "an" : "a"} ${kind} in this repository.`,
+        `${from.path} (${from.kind}): ${field} refers to "${path}", which is not ${kind === "event" || kind === "interface" ? "an" : "a"} ${kind} in this repository.`,
       );
     }
   };
@@ -97,6 +98,34 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
           `${manifest.path} (table): /body/renamedFrom "${table.renamedFrom}" is still declared, so it cannot also be this table's old path.`,
         );
       }
+    }
+    if (manifest.kind === "interface") {
+      const body = manifest.body as unknown as InterfaceBody;
+      // A table made in the console is in no bundle, so a table that is not here is not
+      // an error. A path that is here and is something else is.
+      for (const table of interfaceTables(body)) {
+        const found = byPath.get(table);
+        if (found && found.kind !== "table") {
+          problems.push(
+            `${manifest.path} (interface): shows "${table}", which is ${/^[aeiou]/.test(found.kind) ? "an" : "a"} ${found.kind}, not a table.`,
+          );
+        }
+      }
+      const tableOf = (path: string) => {
+        const found = byPath.get(path);
+        return found?.kind === "table" ? (found.body as unknown as TableBody) : undefined;
+      };
+      for (const issue of checkInterface(body, tableOf)) {
+        problems.push(`${manifest.path} (interface): ${issue.path} ${issue.message}`);
+      }
+    }
+    if (manifest.kind === "app") {
+      expect(
+        manifest,
+        "interface",
+        (manifest.body as { interface?: unknown }).interface,
+        "interface",
+      );
     }
     if (manifest.kind === "flow") {
       const flow = manifest.body as unknown as FlowBody;

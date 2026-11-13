@@ -80,6 +80,7 @@ const KIND_ORDER = [
   "trigger",
   "flow",
   "theme",
+  "interface",
   "app",
   "binding",
 ];
@@ -99,13 +100,17 @@ export async function buildBundle(options: BuildOptions): Promise<Bundle> {
 /** The apps a repository defines, with where each one's source is. */
 export async function appSources(options: BuildOptions): Promise<AppSource[]> {
   const { definitions } = await loadDefinitions(options);
-  return definitions
-    .map(([, definition]) => definition)
-    .filter((definition) => definition.kind === "app")
-    .map((definition) => ({
-      path: definition.path,
-      source: (definition as unknown as { source: string }).source,
-    }));
+  return (
+    definitions
+      .map(([, definition]) => definition)
+      .filter((definition) => definition.kind === "app")
+      // An app that serves an interface has no files of its own to build.
+      .filter((definition) => typeof (definition as { source?: unknown }).source === "string")
+      .map((definition) => ({
+        path: definition.path,
+        source: (definition as unknown as { source: string }).source,
+      }))
+  );
 }
 
 /** Compiles a tenant repository: its manifests, its code, and its apps. */
@@ -143,6 +148,8 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   const apps = definitions
     .map(([, definition]) => definition)
     .filter((definition) => definition.kind === "app")
+    // An app that serves an interface has no files of its own to build.
+    .filter((definition) => typeof (definition as { source?: unknown }).source === "string")
     .map((definition) => ({
       path: definition.path,
       source: (definition as unknown as { source: string }).source,
@@ -157,10 +164,9 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   };
   // A repository without apps is still written as format 1, so that it keeps deploying
   // to an instance that has not been upgraded yet.
-  const unsigned =
-    apps.length === 0
-      ? { formatVersion: 1 as const, ...common }
-      : { formatVersion: 2 as const, ...common, assets: built.assets };
+  const unsigned = !manifests.some((manifest) => manifest.kind === "app")
+    ? { formatVersion: 1 as const, ...common }
+    : { formatVersion: 2 as const, ...common, assets: built.assets };
   const assetProblems = checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
   if (fromFiles.manifests.length === 0) {

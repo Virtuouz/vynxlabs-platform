@@ -685,6 +685,7 @@ describe("resource registry", () => {
       "data_source",
       "event",
       "flow",
+      "interface",
       "role",
       "schedule",
       "script",

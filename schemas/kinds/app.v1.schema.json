@@ -18,14 +18,31 @@
       "maxLength": 500,
       "description": "The file, among the app's files in the bundle, that is the page itself."
     },
+    "interface": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255,
+      "description": "An interface of the workspace to serve as this app, in place of files of its own. An app has an entry or an interface, never both."
+    },
     "fallback": {
       "type": "boolean",
       "description": "Whether an address under the app that names no file answers with the entry page, for apps that route in the browser. Default true."
     }
   },
   "required": [
-    "title",
-    "entry"
+    "title"
+  ],
+  "oneOf": [
+    {
+      "required": [
+        "entry"
+      ]
+    },
+    {
+      "required": [
+        "interface"
+      ]
+    }
   ],
   "additionalProperties": false
 }

@@ -592,8 +592,14 @@ export interface AppOptions {
   /**
    * The app's own directory in the repository, holding its `index.html`. The build
    * compiles it with Vite. Relative to the repository root, for example `apps/orders`.
+   * Leave it out for an app that serves an interface.
    */
-  source: string;
+  source?: string;
+  /**
+   * The path of an interface to serve as this app, in place of code of its own.
+   * An app has a `source` or an `interface`, never both.
+   */
+  interface?: string;
   /** The page inside the built app. Default `index.html`. */
   entry?: string;
   /**
@@ -605,8 +611,8 @@ export interface AppOptions {
 
 export interface AppDefinition extends ResourceDefinition {
   readonly kind: "app";
-  /** Read by the build. Not part of the manifest. */
-  readonly source: string;
+  /** Read by the build. Not part of the manifest. Absent for an app that serves an interface. */
+  readonly source?: string;
 }
 
 /**
@@ -615,15 +621,51 @@ export interface AppDefinition extends ResourceDefinition {
  * holding `app:read` to members, to `end_users`, or to `anonymous` for a public app.
  */
 export function defineApp(options: AppOptions): AppDefinition {
+  if ((options.source === undefined) === (options.interface === undefined)) {
+    throw new Error(`The app "${options.path}" needs a source or an interface, and not both.`);
+  }
   const definition = resource("app", options.path, () =>
-    compact({
-      title: options.title,
-      description: options.description,
-      entry: options.entry ?? "index.html",
-      fallback: options.fallback,
-    }),
+    options.interface !== undefined
+      ? compact({
+          title: options.title,
+          description: options.description,
+          interface: options.interface,
+        })
+      : compact({
+          title: options.title,
+          description: options.description,
+          entry: options.entry ?? "index.html",
+          fallback: options.fallback,
+        }),
   );
-  return { ...definition, kind: "app", source: options.source };
+  return {
+    ...definition,
+    kind: "app",
+    ...(options.source !== undefined ? { source: options.source } : {}),
+  };
+}
+
+export interface InterfaceOptions {
+  /** Unique within the workspace, for example `screens/invoices`. */
+  path: string;
+  title: string;
+  description?: string;
+  /**
+   * The pages, each a set of widgets over the workspace's tables. Most
+   * interfaces are made in the console, which writes this for you: see the
+   * `interface` schema for every field.
+   */
+  pages: Record<string, unknown>[];
+}
+
+/**
+ * Declares an interface: pages of tables, cards, charts and forms over the
+ * workspace's tables, with no code. Serve it with `defineApp({ interface })`.
+ */
+export function defineInterface(options: InterfaceOptions): ResourceDefinition {
+  return resource("interface", options.path, () =>
+    compact({ title: options.title, description: options.description, pages: options.pages }),
+  );
 }
 
 export interface RoleOptions {

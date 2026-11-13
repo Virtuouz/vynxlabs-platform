@@ -343,6 +343,7 @@ const KIND_ORDER = [
   "trigger",
   "flow",
   "theme",
+  "interface",
   "app",
   "binding",
 ];

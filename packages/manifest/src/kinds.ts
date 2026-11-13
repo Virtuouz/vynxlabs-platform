@@ -1,4 +1,5 @@
 import { PATH_PATTERN } from "./envelope.js";
+import { interfaceBodySchema } from "./interface.js";
 import type { KindDefinition, KindRegistry } from "./registry.js";
 
 export const PERMISSION_PATTERN = "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$";
@@ -791,6 +792,12 @@ export const themeKind: KindDefinition = {
   },
 };
 
+export const interfaceKind: KindDefinition = {
+  kind: "interface",
+  schemaVersion: 1,
+  body: interfaceBodySchema,
+};
+
 export const appKind: KindDefinition = {
   kind: "app",
   schemaVersion: 1,
@@ -804,6 +811,14 @@ export const appKind: KindDefinition = {
         maxLength: 500,
         description: "The file, among the app's files in the bundle, that is the page itself.",
       },
+      interface: {
+        type: "string",
+        pattern: PATH_PATTERN,
+        maxLength: 255,
+        description:
+          "An interface of the workspace to serve as this app, in place of files of its own. " +
+          "An app has an entry or an interface, never both.",
+      },
       fallback: {
         type: "boolean",
         description:
@@ -811,7 +826,8 @@ export const appKind: KindDefinition = {
           "for apps that route in the browser. Default true.",
       },
     },
-    required: ["title", "entry"],
+    required: ["title"],
+    oneOf: [{ required: ["entry"] }, { required: ["interface"] }],
     additionalProperties: false,
   },
 };
@@ -830,6 +846,7 @@ export const platformKinds: KindDefinition[] = [
   triggerKind,
   flowKind,
   themeKind,
+  interfaceKind,
   appKind,
   bindingKind,
 ];

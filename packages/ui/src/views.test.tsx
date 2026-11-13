@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
-import { Facts, JsonView, type LogLine, LogViewer } from "./index.ts";
+import { duration, Facts, JsonView, type LogLine, LogViewer, Timeline } from "./index.ts";
 
 afterEach(cleanup);
 
@@ -70,4 +70,55 @@ test("facts leave out what has no value", () => {
     />,
   );
   expect(screen.getAllByRole("term").map((term) => term.textContent)).toEqual(["By", "Run ID"]);
+});
+
+test("a timeline puts rows on one axis, cuts them into parts, and says how long each took", () => {
+  const chosen: string[] = [];
+  render(
+    <Timeline
+      now={61_000}
+      onSelect={(id) => chosen.push(id)}
+      selected="load"
+      rows={[
+        {
+          id: "extract",
+          label: "extract",
+          start: 1000,
+          end: 22_000,
+          segments: [
+            { kind: "wait", until: 4200 },
+            { kind: "run", until: 22_000 },
+          ],
+        },
+        {
+          id: "approve",
+          label: "approve",
+          start: 22_000,
+          end: 41_000,
+          segments: [{ kind: "hold", until: 41_000 }],
+        },
+        { id: "load", label: "load", start: 41_000, tone: "danger" },
+      ]}
+    />,
+  );
+  const rows = screen.getAllByRole("button");
+  expect(rows.map((row) => row.textContent)).toEqual([
+    "extract21.0 s",
+    "approve19.0 s",
+    "load20.0 s…",
+  ]);
+  expect(rows[2]?.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(rows[0] as HTMLElement);
+  expect(chosen).toEqual(["extract"]);
+  // Only the kinds of part that appear are explained, and the whole span is given.
+  expect(screen.getByText("Waiting")).toBeTruthy();
+  expect(screen.getByText("On hold")).toBeTruthy();
+  expect(screen.getAllByText("1 m 0 s").length).toBeGreaterThan(0);
+});
+
+test("lengths of time read as a person would say them", () => {
+  expect(duration(400)).toBe("400 ms");
+  expect(duration(13_800)).toBe("13.8 s");
+  expect(duration(125_000)).toBe("2 m 5 s");
+  expect(duration(3_900_000)).toBe("1 h 5 m");
 });

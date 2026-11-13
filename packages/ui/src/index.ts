@@ -37,6 +37,13 @@ export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.ts
 export { Pagination, type PaginationProps } from "./Pagination.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
+export {
+  duration,
+  Timeline,
+  type TimelineProps,
+  type TimelineRow,
+  type TimelineSegmentKind,
+} from "./Timeline.tsx";
 export { ToastProvider, type Toasts, type ToastTone, useToast } from "./Toast.tsx";
 export {
   type ChartWidgetConfig,

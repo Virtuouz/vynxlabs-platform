@@ -1,4 +1,17 @@
-import { Badge, type BadgeTone, Button, EmptyState, Notice, Table } from "@vynxlabs/ui";
+import {
+  Badge,
+  type BadgeTone,
+  Button,
+  duration,
+  EmptyState,
+  Facts,
+  JsonView,
+  Notice,
+  Table,
+  Tabs,
+  Timeline,
+  type TimelineRow,
+} from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -231,7 +244,7 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
   );
 }
 
-interface StepRow {
+export interface StepRow {
   node: string;
   item: string;
   status: string;
@@ -243,6 +256,9 @@ interface StepRow {
   childFlowRunId: string | null;
   wakeAt: string | null;
   detail: { title?: string; detail?: unknown };
+  startedAt: string;
+  pickedUpAt: string | null;
+  finishedAt: string | null;
 }
 interface FlowRunDetail extends FlowRunRow {
   flow: string;
@@ -254,7 +270,36 @@ interface FlowRunDetail extends FlowRunRow {
   steps: StepRow[];
 }
 
-/** One flow run, drawn on the flow's graph and refreshed while it is in progress. */
+/**
+ * A step as a row of the timeline. A step that runs a script waits for a worker
+ * first. An approval or a delay is held on purpose for its whole length.
+ */
+export function timelineRow(step: StepRow): TimelineRow {
+  const start = Date.parse(step.startedAt);
+  const end = step.finishedAt ? Date.parse(step.finishedAt) : undefined;
+  const held = step.detail.title !== undefined || step.wakeAt !== null;
+  const picked = step.pickedUpAt ? Date.parse(step.pickedUpAt) : undefined;
+  const last = end ?? Date.now();
+  return {
+    id: step.node,
+    label: step.node,
+    start,
+    end,
+    tone: step.status === "failed" ? "danger" : step.status === "skipped" ? "muted" : "plain",
+    segments: held
+      ? [{ kind: "hold", until: last }]
+      : step.runId
+        ? picked
+          ? [
+              { kind: "wait", until: picked },
+              { kind: "run", until: last },
+            ]
+          : [{ kind: "wait", until: last }]
+        : [{ kind: "run", until: last }],
+  };
+}
+
+/** One flow run, on a time axis and on the flow's graph, refreshed while it is in progress. */
 export function FlowRunView({ root, id, link }: { root: string; id: string; link: string }) {
   const [run, setRun] = useState<FlowRunDetail>();
   const [error, setError] = useState<string>();
@@ -372,16 +417,49 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
           ) : null}
         </Notice>
       ))}
-      {flow.data ? (
-        <FlowGraph
-          nodes={flow.data.nodes}
-          edges={flow.data.edges}
-          layout={flow.data.layout}
-          statuses={statuses}
-          selected={selected}
-          onSelect={setSelected}
-        />
-      ) : null}
+      <Tabs
+        label="Views of this run"
+        tabs={[
+          {
+            id: "timeline",
+            label: "Timeline",
+            content: (
+              <div className="rounded-panel border border-line bg-surface p-4">
+                {steps.length === 0 ? (
+                  <p className="m-0 text-ink-muted">No step has started yet.</p>
+                ) : (
+                  <Timeline
+                    rows={steps.map((step) => timelineRow(step))}
+                    selected={selected}
+                    onSelect={setSelected}
+                    legend={{
+                      wait: "Waiting for a worker",
+                      run: "Running",
+                      hold: "Waiting on purpose",
+                    }}
+                  />
+                )}
+              </div>
+            ),
+          },
+          {
+            id: "graph",
+            label: "Graph",
+            content: flow.data ? (
+              <FlowGraph
+                nodes={flow.data.nodes}
+                edges={flow.data.edges}
+                layout={flow.data.layout}
+                statuses={statuses}
+                selected={selected}
+                onSelect={setSelected}
+              />
+            ) : (
+              <p className="m-0 text-ink-muted">Loading…</p>
+            ),
+          },
+        ]}
+      />
       {chosen ? (
         <section className="rounded-panel border border-line bg-surface p-4">
           <h2 className="mt-0 mb-2 flex items-center gap-2 text-base font-semibold">
@@ -390,6 +468,28 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
               <span className="font-normal text-ink-muted">took the case {chosen.outputName}</span>
             ) : null}
           </h2>
+          <div className="mb-3">
+            <Facts
+              facts={[
+                { label: "Started", value: when(chosen.startedAt) },
+                {
+                  label: "Waited",
+                  value:
+                    chosen.pickedUpAt &&
+                    Date.parse(chosen.pickedUpAt) - Date.parse(chosen.startedAt) >= 100
+                      ? duration(Date.parse(chosen.pickedUpAt) - Date.parse(chosen.startedAt))
+                      : "",
+                },
+                {
+                  label: "Took",
+                  value: chosen.finishedAt
+                    ? duration(Date.parse(chosen.finishedAt) - Date.parse(chosen.startedAt))
+                    : "In progress",
+                },
+                { label: "Run ID", value: chosen.runId ?? "", code: true },
+              ]}
+            />
+          </div>
           {chosen.error ? (
             <p className="mt-0 text-danger">
               {chosen.error.message}
@@ -422,9 +522,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
             </p>
           ) : null}
           {chosen.status === "succeeded" ? (
-            <pre className="m-0 max-h-64 overflow-auto rounded-control bg-canvas p-3 font-mono text-[13px]">
-              {JSON.stringify(chosen.output, null, 2)}
-            </pre>
+            <JsonView label={`Output of ${chosen.node}`} value={chosen.output} />
           ) : null}
         </section>
       ) : (

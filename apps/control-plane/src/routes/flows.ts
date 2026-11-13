@@ -99,6 +99,10 @@ const Step = Type.Object({
   wakeAt: NullableTime,
   detail: AnyObject,
   startedAt: Time,
+  pickedUpAt: Type.Union([Time, Type.Null()], {
+    description:
+      "For a step that runs a script: when a worker took it. The time before that was spent waiting for a worker.",
+  }),
   finishedAt: NullableTime,
 });
 
@@ -431,7 +435,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectFrom("step_run")
           .leftJoin("run", "run.id", "step_run.run_id")
           .selectAll("step_run")
-          .select(["run.output as run_output", "run.output_ref as run_output_ref"])
+          .select([
+            "run.output as run_output",
+            "run.output_ref as run_output_ref",
+            "run.started_at as run_started_at",
+          ])
           .where("step_run.flow_run_id", "=", params.id)
           .orderBy("step_run.started_at")
           .orderBy("step_run.node_id")
@@ -463,6 +471,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Object.entries(step.detail).filter(([name]) => name !== "items"),
             ),
             startedAt: iso(step.started_at),
+            pickedUpAt: isoOrNull(step.run_started_at),
             finishedAt: isoOrNull(step.finished_at),
           })),
         };

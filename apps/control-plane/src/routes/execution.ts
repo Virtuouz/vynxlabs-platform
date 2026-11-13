@@ -1,4 +1,7 @@
-import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
+import type {
+  FastifyPluginAsyncTypebox,
+  TypeBoxTypeProvider,
+} from "@fastify/type-provider-typebox";
 import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
 import { httpConnector } from "@vynxlabs/sdk";
@@ -1341,44 +1344,80 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Webhooks -----
 
-    app.post(
-      "/hooks/:token",
-      {
-        config: {
-          access: access.public,
-          rateLimit: { max: 120, timeWindow: "1 minute" },
+    // A webhook's body is taken as it was sent, whatever its type: a signature is over
+    // those exact bytes. Only this address is read this way.
+    await app.register(async (plain) => {
+      const hooks = plain.withTypeProvider<TypeBoxTypeProvider>();
+      hooks.removeAllContentTypeParsers();
+      hooks.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body, done) =>
+        done(null, body),
+      );
+      hooks.post(
+        "/hooks/:token",
+        {
+          config: {
+            access: access.public,
+            rateLimit: { max: 120, timeWindow: "1 minute" },
+          },
+          schema: {
+            summary: "Start a run from a webhook",
+            description:
+              "The token in the address is the credential. The body may be JSON, a form " +
+              "(`application/x-www-form-urlencoded`) or text, and becomes the script's input. " +
+              "A trigger whose `input` is `request` is given the headers, the query, the method " +
+              "and the raw body as well. A trigger with `verify` checks the request's signature " +
+              "first and answers 401 when it does not match. Send an `idempotency-key` header " +
+              "to make a repeated delivery harmless.",
+            tags: ["runs"],
+            params: Type.Object({ token: Type.String({ maxLength: 200 }) }),
+            response: { 202: Type.Object({ runId: Id }) },
+          },
         },
-        schema: {
-          summary: "Start a run from a webhook",
-          description:
-            "The token in the address is the credential. The JSON body becomes the script's " +
-            "input. Send an `idempotency-key` header to make a repeated delivery harmless.",
-          tags: ["runs"],
-          params: Type.Object({ token: Type.String({ maxLength: 200 }) }),
-          body: Type.Optional(Type.Unknown()),
-          response: { 202: Type.Object({ runId: Id }) },
-        },
-      },
-      async ({ params, body, headers }, reply) => {
-        const key = headers["idempotency-key"];
-        const started = await fireWebhook(
-          kernel,
-          params.token,
-          body,
-          typeof key === "string" && key.length > 0 && key.length <= 200 ? key : undefined,
-        );
-        if (!started) throw notFound("The webhook");
-        if (started === "paused") {
-          // A sender that retries will get through once the workspace is resumed.
-          throw new HttpError(
-            503,
-            "workspace_paused",
-            "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+        async ({ params, body, headers, query, method }, reply) => {
+          const key = headers["idempotency-key"];
+          const flat: Record<string, string> = {};
+          for (const [name, value] of Object.entries(headers)) {
+            if (value !== undefined) flat[name] = Array.isArray(value) ? value.join(", ") : value;
+          }
+          const outcome = await fireWebhook(
+            kernel,
+            params.token,
+            {
+              method,
+              headers: flat,
+              query: Object.fromEntries(
+                Object.entries(query as Record<string, unknown>).map(([name, value]) => [
+                  name,
+                  String(value),
+                ]),
+              ),
+              raw: Buffer.isBuffer(body) ? body : Buffer.alloc(0),
+            },
+            typeof key === "string" && key.length > 0 && key.length <= 200 ? key : undefined,
           );
-        }
-        return reply.code(202).send({ runId: started.id });
-      },
-    );
+          if (!outcome) throw notFound("The webhook");
+          if ("refused" in outcome) {
+            if (outcome.refused === "paused") {
+              // A sender that retries will get through once the workspace is resumed.
+              throw new HttpError(
+                503,
+                "workspace_paused",
+                "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+              );
+            }
+            if (outcome.refused === "signature") {
+              throw new HttpError(
+                401,
+                "signature_invalid",
+                outcome.problem ?? "The signature does not match.",
+              );
+            }
+            throw badRequest(outcome.problem ?? "The request could not be read.");
+          }
+          return reply.code(202).send({ runId: outcome.started.id });
+        },
+      );
+    });
 
     // ----- Operator health -----
 

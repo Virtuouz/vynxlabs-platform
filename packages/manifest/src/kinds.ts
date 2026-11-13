@@ -229,6 +229,70 @@ const expression = {
   description: "A CEL expression.",
 };
 
+/**
+ * What a webhook trigger may say about the requests it takes. Used by a
+ * trigger resource and by a webhook trigger node of a flow.
+ */
+const webhookOptions = {
+  input: {
+    enum: ["body", "request"],
+    description:
+      "What the script or flow is given. `body` is the parsed body alone, and the default. " +
+      "`request` is `{ body, headers, rawBody, query, method }`, for a sender whose headers matter.",
+  },
+  verify: {
+    type: "object",
+    description:
+      "Checks that a request was signed with a shared secret before anything starts. A request " +
+      "that fails is answered 401. Covers senders that put an HMAC of the body in a header, " +
+      "such as GitHub, Shopify and Slack.",
+    properties: {
+      scheme: { enum: ["hmac-sha256", "hmac-sha1"] },
+      header: {
+        type: "string",
+        pattern: "^[A-Za-z0-9-]+$",
+        maxLength: 100,
+        description: "The header the signature is sent in.",
+      },
+      secret: {
+        type: "string",
+        pattern: SECRET_NAME_PATTERN,
+        description: "The name of the workspace secret that holds the shared secret.",
+      },
+      encoding: {
+        enum: ["hex", "base64"],
+        description: "How the signature is written. Default hex.",
+      },
+      prefix: {
+        type: "string",
+        maxLength: 20,
+        description: "Text before the signature in the header, such as `sha256=`.",
+      },
+      signed: {
+        type: "string",
+        maxLength: 100,
+        description:
+          "What was signed, with `{body}` for the raw body and `{timestamp}` for the timestamp " +
+          "header. Default `{body}`. Slack signs `v0:{timestamp}:{body}`.",
+      },
+      timestampHeader: {
+        type: "string",
+        pattern: "^[A-Za-z0-9-]+$",
+        maxLength: 100,
+        description: "A header holding when the request was sent, in seconds since 1970.",
+      },
+      toleranceSeconds: {
+        type: "integer",
+        minimum: 1,
+        maximum: 86400,
+        description: "How old a request may be, by its timestamp header. Default 300.",
+      },
+    },
+    required: ["scheme", "header", "secret"],
+    additionalProperties: false,
+  },
+};
+
 export const triggerKind: KindDefinition = {
   kind: "trigger",
   schemaVersion: 1,
@@ -236,7 +300,12 @@ export const triggerKind: KindDefinition = {
     oneOf: [
       {
         type: "object",
-        properties: { type: { const: "webhook" }, script: path, enabled: { type: "boolean" } },
+        properties: {
+          type: { const: "webhook" },
+          script: path,
+          enabled: { type: "boolean" },
+          ...webhookOptions,
+        },
         required: ["type", "script"],
         additionalProperties: false,
       },
@@ -317,7 +386,7 @@ export const flowKind: KindDefinition = {
                 trigger: {
                   oneOf: [
                     node("manual", {}),
-                    node("webhook", {}),
+                    node("webhook", webhookOptions),
                     node(
                       "schedule",
                       {

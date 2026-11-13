@@ -203,16 +203,60 @@ export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
   );
 }
 
+/** How a webhook checks that a request was signed with a secret shared with its sender. */
+export interface WebhookVerify {
+  scheme: "hmac-sha256" | "hmac-sha1";
+  /** The header the signature is sent in: `X-Hub-Signature-256`. */
+  header: string;
+  /** The name of the workspace secret that holds the shared secret. */
+  secret: string;
+  /** How the signature is written. Default `hex`. */
+  encoding?: "hex" | "base64";
+  /** Text before the signature in the header, such as `sha256=`. */
+  prefix?: string;
+  /** What was signed. `{body}` is the raw body, `{timestamp}` the timestamp header. Default `{body}`. */
+  signed?: string;
+  /** A header holding when the request was sent, in seconds since 1970. */
+  timestampHeader?: string;
+  /** How old a request may be, by its timestamp header. Default 300. */
+  toleranceSeconds?: number;
+}
+
+/** What a webhook's script is given when `input` is `request`. */
+export interface WebhookRequest<Body = unknown> {
+  method: string;
+  /** Lower-case names. The sender's own `authorization` and `cookie` are left out. */
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  /** JSON, a form's fields, or text, by the request's content type. */
+  body: Body;
+  /** The body exactly as it was sent. */
+  rawBody: string;
+}
+
 export interface WebhookOptions {
   path: string;
-  /** The script that receives the request body as its input. */
+  /** The script that receives the request. */
   script: string | { path: string };
   enabled?: boolean;
+  /**
+   * What the script is given: the parsed body alone, which is the default, or
+   * the whole request as a `WebhookRequest`.
+   */
+  input?: "body" | "request";
+  /** Checks each request's signature before anything starts. A request that fails is answered 401. */
+  verify?: WebhookVerify;
 }
 
 export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   return resource("trigger", options.path, () =>
-    compact({ type: "webhook", script: pathOf(options.script), enabled: options.enabled }),
+    compact({
+      type: "webhook",
+      script: pathOf(options.script),
+      enabled: options.enabled,
+      input: options.input,
+      verify: options.verify,
+    }),
   );
 }
 
@@ -303,7 +347,10 @@ export const trigger = {
     trigger: compact({ type: "schedule", cron, timezone: options.timezone }),
   }),
   /** Started by a request to the flow's webhook address. */
-  webhook: (): FlowNode => ({ type: "trigger", trigger: { type: "webhook" } }),
+  webhook: (options: { input?: "body" | "request"; verify?: WebhookVerify } = {}): FlowNode => ({
+    type: "trigger",
+    trigger: compact({ type: "webhook", input: options.input, verify: options.verify }),
+  }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
   event: (event: Target, options: { filter?: string } = {}): FlowNode => ({
     type: "trigger",

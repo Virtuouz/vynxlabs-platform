@@ -41,6 +41,7 @@ export {
   flowReferences,
   OTHERWISE,
   reachableFrom,
+  type WebhookVerify,
 } from "./flow.js";
 export {
   appKind,

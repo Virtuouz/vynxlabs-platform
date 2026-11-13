@@ -1,11 +1,12 @@
-import { createHash, randomBytes } from "node:crypto";
-import type { FlowBody, FlowTrigger } from "@vynxlabs/manifest";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import type { FlowBody, FlowTrigger, WebhookVerify } from "@vynxlabs/manifest";
 import type { TriggerSource } from "@vynxlabs/sdk";
 import { CronExpressionParser } from "cron-parser";
 import type { Trx } from "../audit.js";
 import { badRequest, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
+import { revealSecret } from "../secrets.js";
 import { decryptFor, encryptFor } from "./bindings.js";
 import { startRun } from "./runs.js";
 
@@ -19,7 +20,13 @@ interface ScheduleBody extends ScheduleConfig {
   enabled?: boolean;
 }
 type TriggerBody =
-  | { type: "webhook"; script: string; enabled?: boolean }
+  | {
+      type: "webhook";
+      script: string;
+      enabled?: boolean;
+      input?: "body" | "request";
+      verify?: WebhookVerify;
+    }
   | { type: "event"; script: string; event: string; filter?: string; enabled?: boolean };
 
 /** The built-in trigger sources, written against the SDK's extension interface. */
@@ -60,6 +67,87 @@ interface Registration {
   enabled: boolean;
   schedule?: ScheduleConfig;
   event?: { name: string; filter?: string | undefined };
+  webhook?: WebhookConfig;
+}
+
+/** What a webhook does with a request, as its trigger said. Kept with the registered trigger. */
+export interface WebhookConfig {
+  input?: "body" | "request" | undefined;
+  verify?: WebhookVerify | undefined;
+}
+
+/** A request to a webhook's address, as it arrived. */
+export interface WebhookRequest {
+  method: string;
+  /** Lower-case names. A header sent twice is joined with a comma. */
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  /** The body exactly as it was sent. A signature is over these bytes. */
+  raw: Buffer;
+}
+
+/** Headers that carry a credential of the sender's own, and are not handed to a script or stored. */
+const NOT_PASSED_ON = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+/**
+ * Checks a request's signature. The comparison takes the same time whatever
+ * differs, and a request with a timestamp too old is refused, so a captured
+ * request cannot be sent again later.
+ */
+export function signatureProblem(
+  verify: WebhookVerify,
+  secret: string,
+  request: WebhookRequest,
+  now = Date.now(),
+): string | undefined {
+  const sent = request.headers[verify.header.toLowerCase()];
+  if (!sent) return `The ${verify.header} header is missing.`;
+  let timestamp = "";
+  if (verify.timestampHeader) {
+    timestamp = request.headers[verify.timestampHeader.toLowerCase()] ?? "";
+    const seconds = Number(timestamp);
+    if (!timestamp || !Number.isFinite(seconds)) {
+      return `The ${verify.timestampHeader} header is missing or is not a time.`;
+    }
+    if (Math.abs(now / 1000 - seconds) > (verify.toleranceSeconds ?? 300)) {
+      return "The request's timestamp is too far from now.";
+    }
+  }
+  const prefix = verify.prefix ?? "";
+  if (!sent.startsWith(prefix)) return "The signature does not match.";
+  const signed = Buffer.concat(
+    (verify.signed ?? "{body}")
+      .split(/(\{body\}|\{timestamp\})/)
+      .map((part) =>
+        part === "{body}" ? request.raw : Buffer.from(part === "{timestamp}" ? timestamp : part),
+      ),
+  );
+  const expected = createHmac(verify.scheme === "hmac-sha1" ? "sha1" : "sha256", secret)
+    .update(signed)
+    .digest();
+  const given = Buffer.from(sent.slice(prefix.length), verify.encoding ?? "hex");
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    return "The signature does not match.";
+  }
+  return undefined;
+}
+
+/** A request's body as a value: JSON, a form's fields, or text. Throws on JSON that does not parse. */
+export function parseWebhookBody(request: WebhookRequest): unknown {
+  const type = (request.headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  if (request.raw.length === 0) return {};
+  const text = request.raw.toString("utf8");
+  if (type === "application/x-www-form-urlencoded") {
+    const fields: Record<string, string | string[]> = {};
+    for (const [name, value] of new URLSearchParams(text)) {
+      const before = fields[name];
+      fields[name] =
+        before === undefined ? value : Array.isArray(before) ? [...before, value] : [before, value];
+    }
+    return fields;
+  }
+  if (type === "application/json" || type.endsWith("+json") || type === "") return JSON.parse(text);
+  return text;
 }
 
 function firstFire(schedule: ScheduleConfig, field: string): Date | null {
@@ -114,7 +202,7 @@ async function register(
       next_fire_at: registration.schedule ? firstFire(registration.schedule, field) : null,
       event_name: registration.event?.name ?? null,
       filter: registration.event?.filter ?? null,
-      config: JSON.stringify(registration.schedule ?? {}),
+      config: JSON.stringify(registration.schedule ?? registration.webhook ?? {}),
     };
     const current = existing.find(
       (row) => row.node_id === registration.node && row.type === registration.type,
@@ -205,6 +293,9 @@ export function registerExecutionHooks(kernel: Kernel) {
             target: { kind: "script", path: body.script },
             enabled: body.enabled ?? true,
             ...(body.type === "event" ? { event: { name: body.event, filter: body.filter } } : {}),
+            ...(body.type === "webhook"
+              ? { webhook: { input: body.input, verify: body.verify } }
+              : {}),
           },
         ]);
       },
@@ -232,6 +323,9 @@ export function registerExecutionHooks(kernel: Kernel) {
               : {}),
             ...(trigger.type === "event"
               ? { event: { name: trigger.event, filter: trigger.filter } }
+              : {}),
+            ...(trigger.type === "webhook"
+              ? { webhook: { input: trigger.input, verify: trigger.verify } }
               : {}),
           });
         }
@@ -384,11 +478,15 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
   }
 }
 
-/** Starts the run for an incoming webhook request. Returns undefined for an unknown token. */
+/**
+ * Starts the run for an incoming webhook request. Returns undefined for an
+ * unknown token, and says so when the workspace is paused, the signature does
+ * not check, or the body cannot be read.
+ */
 export async function fireWebhook(
   kernel: Kernel,
   token: string,
-  payload: unknown,
+  request: WebhookRequest,
   idempotencyKey?: string,
 ) {
   if (!token.startsWith(WEBHOOK_TOKEN_PREFIX)) return undefined;
@@ -402,11 +500,44 @@ export async function fireWebhook(
     .where("trigger_state.type", "=", "webhook")
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
-  if (state.triggers_paused) return "paused" as const;
+  if (state.triggers_paused) return { refused: "paused" as const };
+  const config = state.config as WebhookConfig;
+  if (config.verify) {
+    const secret = await revealSecret(kernel.db, kernel.vault, {
+      tenantId: state.tenant_id,
+      workspaceId: state.workspace_id,
+      name: config.verify.secret,
+    });
+    // With no secret to check against, nothing can be let through.
+    const problem =
+      secret === undefined
+        ? "The signature does not match."
+        : signatureProblem(config.verify, secret, request);
+    if (problem) return { refused: "signature" as const, problem };
+  }
+  let body: unknown;
+  try {
+    body = parseWebhookBody(request);
+  } catch {
+    return { refused: "body" as const, problem: "The body is not valid JSON." };
+  }
+  const headers = Object.fromEntries(
+    Object.entries(request.headers).filter(([name]) => !NOT_PASSED_ON.has(name)),
+  );
+  const input =
+    config.input === "request"
+      ? {
+          method: request.method,
+          headers,
+          query: request.query,
+          body,
+          rawBody: request.raw.toString("utf8"),
+        }
+      : webhookSource.toInput?.(undefined, { headers, body });
   // Not audited: the run itself records the webhook that started it.
   const started = await kernel.db.transaction().execute((trx) =>
     startTarget(kernel, trx, state, {
-      input: webhookSource.toInput?.(undefined, { headers: {}, body: payload }),
+      input,
       trigger: {
         type: "webhook",
         detail: { trigger: state.node_id ? `${state.path}#${state.node_id}` : state.path },
@@ -415,5 +546,5 @@ export async function fireWebhook(
     }),
   );
   await kickStarted(kernel, [started]);
-  return started;
+  return { started };
 }

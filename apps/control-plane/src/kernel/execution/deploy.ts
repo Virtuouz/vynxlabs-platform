@@ -31,6 +31,21 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
     for (const path of body.uses.sources ?? []) need.sources.add(path);
     if (body.onFailure?.notify) need.connections.add(body.onFailure.notify);
   }
+  // A webhook that checks signatures needs the secret it checks them against.
+  for (const manifest of manifests) {
+    if (manifest.kind === "trigger") {
+      const verify = (manifest.body as { verify?: { secret?: string } }).verify;
+      if (verify?.secret) need.secrets.add(verify.secret);
+    }
+    if (manifest.kind === "flow") {
+      const nodes = (
+        manifest.body as { nodes?: Record<string, { trigger?: { verify?: { secret?: string } } }> }
+      ).nodes;
+      for (const node of Object.values(nodes ?? {})) {
+        if (node.trigger?.verify?.secret) need.secrets.add(node.trigger.verify.secret);
+      }
+    }
+  }
   const names = async (
     table: "connection_binding" | "variable_value" | "secret",
     column: "path" | "name",

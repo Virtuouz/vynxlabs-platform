@@ -18,10 +18,24 @@ export interface FlowEdge {
   error?: boolean;
 }
 
+/** How a webhook checks that a request was signed with a shared secret. */
+export interface WebhookVerify {
+  scheme: "hmac-sha256" | "hmac-sha1";
+  header: string;
+  /** The name of the workspace secret that holds the shared secret. */
+  secret: string;
+  encoding?: "hex" | "base64";
+  prefix?: string;
+  /** What was signed: `{body}` and `{timestamp}` stand for the raw body and the timestamp header. */
+  signed?: string;
+  timestampHeader?: string;
+  toleranceSeconds?: number;
+}
+
 export type FlowTrigger =
   | { type: "manual" }
   | { type: "schedule"; cron: string; timezone?: string }
-  | { type: "webhook" }
+  | { type: "webhook"; input?: "body" | "request"; verify?: WebhookVerify }
   | { type: "event"; event: string; filter?: string };
 
 export type FlowNode =

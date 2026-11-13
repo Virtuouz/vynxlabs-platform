@@ -8,7 +8,6 @@
     "lib": ["es2024", "dom", "dom.iterable"],
     "types": [],
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
     "allowImportingTsExtensions": true
   },
   "include": ["src"]

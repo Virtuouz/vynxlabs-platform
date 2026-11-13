@@ -1,8 +1,10 @@
-import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import type { ReactNode } from "react";
+import { useId, useState } from "react";
 
 export interface GridColumn {
   name: string;
+  /** What the heading says. The name, when left out. */
+  label?: string | undefined;
   /** What the column holds: text, integer, number, boolean, timestamp, date, json and so on. */
   type: string;
   /** Lets a cell be changed in place. */
@@ -31,10 +33,14 @@ export interface GridProps<Row extends Record<string, unknown>> {
   /** Saves one changed cell. A rejection's message is shown in the cell. */
   onEdit?: (row: Row, column: string, value: unknown) => Promise<unknown>;
   /** Replaces how a cell is shown. Return undefined to keep the grid's own rendering. */
-  cell?: (row: Row, column: GridColumn) => ComponentChildren | undefined;
-  rowActions?: (row: Row) => ComponentChildren;
+  cell?: (row: Row, column: GridColumn) => ReactNode | undefined;
+  rowActions?: (row: Row) => ReactNode;
+  /** The key of the row that is chosen. */
+  selectedKey?: string | undefined;
+  /** Lets one row be chosen, and is called with it. Each row gets a button to choose it by. */
+  onSelect?: ((row: Row) => void) | undefined;
   /** Shown in place of the rows when there are none. */
-  empty: ComponentChildren;
+  empty: ReactNode;
 }
 
 const NUMERIC = new Set(["integer", "number"]);
@@ -96,7 +102,7 @@ function EditableCell<Row extends Record<string, unknown>>({
 }: {
   row: Row;
   column: GridColumn;
-  shown: ComponentChildren;
+  shown: ReactNode;
   onEdit: NonNullable<GridProps<Row>["onEdit"]>;
 }) {
   const [text, setText] = useState<string>();
@@ -119,17 +125,17 @@ function EditableCell<Row extends Record<string, unknown>>({
 
   if (column.type === "boolean") {
     return (
-      <span class="flex flex-col gap-0.5">
+      <span className="flex flex-col gap-0.5">
         <input
           type="checkbox"
-          class="size-4 accent-(--vx-action)"
+          className="size-4 accent-(--vx-action)"
           checked={value === true}
           disabled={busy}
           aria-label={column.name}
           onChange={(event) => save(event.currentTarget.checked)}
         />
         {error ? (
-          <span role="alert" class="text-xs text-danger">
+          <span role="alert" className="text-xs text-danger">
             {error}
           </span>
         ) : null}
@@ -142,7 +148,7 @@ function EditableCell<Row extends Record<string, unknown>>({
       <button
         type="button"
         title="Change this value"
-        class={`-mx-1.5 block min-h-6 w-[calc(100%+0.75rem)] cursor-text rounded-[4px] px-1.5 text-inherit hover:bg-sunken ${
+        className={`-mx-1.5 block min-h-6 w-[calc(100%+0.75rem)] cursor-text rounded-[4px] px-1.5 text-inherit hover:bg-sunken ${
           NUMERIC.has(column.type) ? "text-right" : "text-left"
         }`}
         onClick={() => setText(editText(column.type, value))}
@@ -161,7 +167,7 @@ function EditableCell<Row extends Record<string, unknown>>({
     }
   };
   return (
-    <span class="flex flex-col gap-0.5">
+    <span className="flex flex-col gap-0.5">
       <input
         // biome-ignore lint/a11y/noAutofocus: the person just asked to edit this cell
         autoFocus
@@ -169,8 +175,8 @@ function EditableCell<Row extends Record<string, unknown>>({
         aria-invalid={error !== undefined}
         value={text}
         disabled={busy}
-        class="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-24 rounded-[4px] border border-action bg-surface px-1.5 text-ink"
-        onInput={(event) => setText(event.currentTarget.value)}
+        className="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-24 rounded-[4px] border border-action bg-surface px-1.5 text-ink"
+        onChange={(event) => setText(event.currentTarget.value)}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
@@ -181,7 +187,7 @@ function EditableCell<Row extends Record<string, unknown>>({
         }}
       />
       {error ? (
-        <span role="alert" class="text-xs text-danger">
+        <span role="alert" className="text-xs text-danger">
           {error}
         </span>
       ) : null}
@@ -193,14 +199,17 @@ function EditableCell<Row extends Record<string, unknown>>({
 export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
   const { columns, rows, sort, filters, onFilter, onEdit } = props;
   const filterable = onFilter !== undefined && columns.some((column) => column.filterable);
-  const width = columns.length + (props.rowActions ? 1 : 0);
+  const choosing = props.onSelect !== undefined;
+  const group = useId();
+  const width = columns.length + (props.rowActions ? 1 : 0) + (choosing ? 1 : 0);
   const head = "border-b border-line bg-sunken/50 px-3 text-[13px] font-medium text-ink-muted";
 
   return (
-    <div class="overflow-x-auto rounded-panel border border-line bg-surface">
-      <table class="w-full border-collapse text-left" aria-label={props.label}>
+    <div className="overflow-x-auto rounded-panel border border-line bg-surface">
+      <table className="w-full border-collapse text-left" aria-label={props.label}>
         <thead>
           <tr>
+            {choosing ? <th className={`${head} w-8 py-2`} /> : null}
             {columns.map((column) => {
               const sorted = sort?.column === column.name ? sort : undefined;
               const end = NUMERIC.has(column.type) ? "text-right" : "";
@@ -209,37 +218,38 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
                   key={column.name}
                   scope="col"
                   aria-sort={sorted ? (sorted.descending ? "descending" : "ascending") : undefined}
-                  class={`${head} py-2 whitespace-nowrap ${end}`}
+                  className={`${head} py-2 whitespace-nowrap ${end}`}
                 >
                   {column.sortable && props.onSort ? (
                     <button
                       type="button"
-                      class="inline-flex items-center gap-1 font-medium text-inherit hover:text-ink"
+                      className="inline-flex items-center gap-1 font-medium text-inherit hover:text-ink"
                       onClick={() => props.onSort?.(column.name)}
                     >
-                      {column.name}
-                      <span aria-hidden="true" class={sorted ? "text-action" : "opacity-0"}>
+                      {column.label ?? column.name}
+                      <span aria-hidden="true" className={sorted ? "text-action" : "opacity-0"}>
                         {sorted?.descending ? "▼" : "▲"}
                       </span>
                     </button>
                   ) : (
-                    column.name
+                    (column.label ?? column.name)
                   )}
                 </th>
               );
             })}
-            {props.rowActions ? <th class={`${head} py-2`} /> : null}
+            {props.rowActions ? <th className={`${head} py-2`} /> : null}
           </tr>
           {filterable ? (
             <tr>
+              {choosing ? <th className={`${head} pb-2`} /> : null}
               {columns.map((column) => (
-                <th key={column.name} class={`${head} pb-2 font-normal`}>
+                <th key={column.name} className={`${head} pb-2 font-normal`}>
                   {column.filterable ? (
                     <input
-                      aria-label={`Filter by ${column.name}`}
+                      aria-label={`Filter by ${column.label ?? column.name}`}
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
-                      class="h-7 w-full min-w-20 rounded-[4px] border border-line bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
+                      className="h-7 w-full min-w-20 rounded-[4px] border border-line bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") event.currentTarget.blur();
@@ -248,53 +258,83 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
                   ) : null}
                 </th>
               ))}
-              {props.rowActions ? <th class={`${head} pb-2`} /> : null}
+              {props.rowActions ? <th className={`${head} pb-2`} /> : null}
             </tr>
           ) : null}
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={width} class="px-3 py-6 text-ink-muted">
+              <td colSpan={width} className="px-3 py-6 text-ink-muted">
                 {props.empty}
               </td>
             </tr>
           ) : (
-            rows.map((row) => (
-              <tr key={props.rowKey(row)} class="border-b border-line last:border-b-0">
-                {columns.map((column) => {
-                  const value = row[column.name];
-                  const custom = props.cell?.(row, column);
-                  const shown =
-                    custom !== undefined ? (
-                      custom
-                    ) : value === null || value === undefined ? (
-                      <span class="text-ink-muted/60">empty</span>
-                    ) : (
-                      showValue(column.type, value)
-                    );
-                  return (
-                    <td
-                      key={column.name}
-                      class={`max-w-80 truncate px-3 py-1.5 align-middle ${
-                        NUMERIC.has(column.type) ? "text-right tabular-nums" : ""
-                      }`}
-                    >
-                      {column.editable && onEdit && custom === undefined ? (
-                        <EditableCell row={row} column={column} shown={shown} onEdit={onEdit} />
-                      ) : (
-                        shown
-                      )}
+            rows.map((row) => {
+              const key = props.rowKey(row);
+              const chosen = choosing && props.selectedKey === key;
+              return (
+                <tr
+                  key={key}
+                  aria-selected={choosing ? chosen : undefined}
+                  className={`border-b border-line last:border-b-0 ${chosen ? "bg-action-soft/50" : ""} ${
+                    choosing ? "cursor-pointer" : ""
+                  }`}
+                  onClick={(event) => {
+                    // A press on something in the row that does its own thing is not a choice of the row.
+                    if (
+                      (event.target as HTMLElement).closest("button, input, a, select, textarea")
+                    ) {
+                      return;
+                    }
+                    props.onSelect?.(row);
+                  }}
+                >
+                  {choosing ? (
+                    <td className="w-8 px-3 py-1.5 align-middle">
+                      <input
+                        type="radio"
+                        name={group}
+                        aria-label="Choose this row"
+                        checked={chosen}
+                        onChange={() => props.onSelect?.(row)}
+                      />
                     </td>
-                  );
-                })}
-                {props.rowActions ? (
-                  <td class="px-3 py-1.5 text-right align-middle whitespace-nowrap">
-                    {props.rowActions(row)}
-                  </td>
-                ) : null}
-              </tr>
-            ))
+                  ) : null}
+                  {columns.map((column) => {
+                    const value = row[column.name];
+                    const custom = props.cell?.(row, column);
+                    const shown =
+                      custom !== undefined ? (
+                        custom
+                      ) : value === null || value === undefined ? (
+                        <span className="text-ink-muted/60">empty</span>
+                      ) : (
+                        showValue(column.type, value)
+                      );
+                    return (
+                      <td
+                        key={column.name}
+                        className={`max-w-80 truncate px-3 py-1.5 align-middle ${
+                          NUMERIC.has(column.type) ? "text-right tabular-nums" : ""
+                        }`}
+                      >
+                        {column.editable && onEdit && custom === undefined ? (
+                          <EditableCell row={row} column={column} shown={shown} onEdit={onEdit} />
+                        ) : (
+                          shown
+                        )}
+                      </td>
+                    );
+                  })}
+                  {props.rowActions ? (
+                    <td className="px-3 py-1.5 text-right align-middle whitespace-nowrap">
+                      {props.rowActions(row)}
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

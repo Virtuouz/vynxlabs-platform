@@ -17,6 +17,12 @@
     },
     {
       "path": "../../packages/worker"
+    },
+    {
+      "path": "../../packages/compose"
+    },
+    {
+      "path": "../../packages/nodes"
     }
   ]
 }

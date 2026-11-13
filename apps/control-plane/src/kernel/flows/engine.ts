@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { newId, type StepStatus, sql } from "@vynxlabs/db";
 import {
   type FlowBody,
   type FlowEdge,
+  type FlowGrants,
   type FlowNode,
   OTHERWISE,
   reachableFrom,
@@ -222,6 +224,44 @@ async function afterFlowRun(kernel: Kernel, finished: Finished) {
       (error) =>
         kernel.log.error({ err: error, flowRunId: flowRun.id }, "failure alert could not be sent"),
     );
+  }
+}
+
+/** The longest answer a respond step may give, as JSON. */
+export const MAX_RESPONSE_LENGTH = 256 * 1024;
+
+/** How long a webhook waits for its flow to answer before it says only that the flow started. */
+export const RESPONSE_WAIT_MS = 25_000;
+
+export interface FlowResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+/**
+ * Waits for a flow run to answer the request that started it. Gives
+ * undefined when the run ended with no answer, when the wait ran out, or when
+ * whoever asked has gone.
+ */
+export async function awaitResponse(
+  kernel: Kernel,
+  flowRunId: string,
+  gone: () => boolean,
+  waitMs = RESPONSE_WAIT_MS,
+): Promise<FlowResponse | undefined> {
+  const deadline = Date.now() + waitMs;
+  for (let pause = 25; ; pause = Math.min(pause * 2, 250)) {
+    const row = await kernel.db
+      .selectFrom("flow_run")
+      .select(["status", "response"])
+      .where("id", "=", flowRunId)
+      .executeTakeFirst();
+    if (row?.response) return row.response as FlowResponse;
+    if (row?.status !== "running" || gone() || Date.now() + pause > deadline) {
+      return undefined;
+    }
+    await sleep(pause);
   }
 }
 
@@ -478,8 +518,16 @@ class Advance {
     try {
       switch (node.type) {
         case "script": {
-          const input = node.input ? await this.#evaluate("input", node.input) : {};
-          await this.#startScript(step, node.script, input);
+          let input: unknown = {};
+          if (node.input) input = await this.#evaluate("input", node.input);
+          else if (node.inputs) {
+            const fields: Record<string, unknown> = {};
+            for (const [name, expression] of Object.entries(node.inputs)) {
+              fields[name] = await this.#evaluate(`input ${name}`, expression);
+            }
+            input = fields;
+          }
+          await this.#startScript(step, node.script, input, node.with);
           break;
         }
         case "set": {
@@ -527,7 +575,7 @@ class Advance {
         }
         case "subflow": {
           const input = node.input ? await this.#evaluate("input", node.input) : {};
-          await this.#startChildFlow(step, node.flow, input);
+          await this.#startChildFlow(step, await this.#flowOf(node), input);
           break;
         }
         case "foreach": {
@@ -546,6 +594,35 @@ class Advance {
           await this.#settleForeach(waiting);
           break;
         }
+        case "respond": {
+          const body = node.body ? await this.#evaluate("body", node.body) : null;
+          const headers: Record<string, string> = {};
+          for (const [name, expression] of Object.entries(node.headers ?? {})) {
+            const value = await this.#evaluate(`header ${name}`, expression);
+            if (typeof value !== "string" || /[\r\n]/.test(value)) {
+              throw new StepFailure(`The header "${name}" must be one line of text.`);
+            }
+            headers[name.toLowerCase()] = value;
+          }
+          const answer = JSON.stringify({ status: node.status ?? 200, headers, body });
+          if (answer.length > MAX_RESPONSE_LENGTH) {
+            throw new StepFailure(
+              `The answer is longer than ${MAX_RESPONSE_LENGTH} characters. Answer with less, and let the caller fetch the rest.`,
+            );
+          }
+          // The first answer is the answer. Whoever holds the request open finds it here.
+          const first = await this.#trx
+            .updateTable("flow_run")
+            .set({ response: answer })
+            .where("id", "=", this.#flowRun.id)
+            .where("response", "is", null)
+            .executeTakeFirst();
+          await this.#succeed(step, {
+            status: node.status ?? 200,
+            answered: Number(first.numUpdatedRows) > 0,
+          });
+          break;
+        }
         case "fail": {
           const message = await this.#evaluate("message", node.message);
           await this.#fail(step, typeof message === "string" ? message : JSON.stringify(message));
@@ -561,7 +638,7 @@ class Advance {
     }
   }
 
-  async #startScript(step: StepRow, script: string, input: unknown) {
+  async #startScript(step: StepRow, script: string, input: unknown, grants?: FlowGrants) {
     try {
       const started = await startRun(this.#kernel, this.#trx, {
         tenantId: this.#flowRun.tenant_id,
@@ -575,6 +652,8 @@ class Advance {
             flow: this.#flowRun.flow_path,
             node: step.node_id,
             depth: Number(this.#flowRun.trigger_detail.depth ?? 0),
+            // What the step hands the script. The worker's routes honour it for this run alone.
+            ...(grants ? { grants } : {}),
           },
         },
         startedBy: { type: "flow", id: null },
@@ -594,7 +673,33 @@ class Advance {
     }
   }
 
+  /**
+   * The flow a step starts: the one it names, or the one its expression chooses
+   * from the list written beside it. The list is what makes a flow chosen by
+   * data safe to allow: everything on it was checked when the bundle was built.
+   */
+  async #flowOf(
+    node: { flow?: string; flowFrom?: string; allow?: string[] },
+    extra?: Record<string, unknown>,
+  ): Promise<string> {
+    if (node.flow !== undefined) return node.flow;
+    const chosen = await this.#evaluate("flowFrom", node.flowFrom as string, extra);
+    const allowed = node.allow ?? [];
+    if (typeof chosen !== "string" || !allowed.includes(chosen)) {
+      throw new StepFailure(
+        `"flowFrom" gave ${JSON.stringify(chosen)?.slice(0, 80)}, which is not a flow this step may start. It may start: ${allowed.join(", ")}.`,
+      );
+    }
+    return chosen;
+  }
+
   async #startChildFlow(step: StepRow, flow: string, input: unknown) {
+    const depth = Number(this.#flowRun.trigger_detail.depth ?? 0) + 1;
+    if (depth > MAX_FLOW_DEPTH) {
+      throw new StepFailure(
+        `Flows started by flows are ${MAX_FLOW_DEPTH} deep here, which is the limit. A flow may be starting itself through another.`,
+      );
+    }
     try {
       const started = await startFlowRun(this.#kernel, this.#trx, {
         tenantId: this.#flowRun.tenant_id,
@@ -606,7 +711,7 @@ class Advance {
           detail: {
             flowRunId: this.#flowRun.id,
             node: step.node_id,
-            depth: Number(this.#flowRun.trigger_detail.depth ?? 0),
+            depth,
           },
         },
         startedBy: { type: "flow", id: null },
@@ -705,8 +810,8 @@ class Advance {
       try {
         const scope = { item: items[index], index };
         const input = node.input ? await this.#evaluate("input", node.input, scope) : items[index];
-        if (node.script) await this.#startScript(item, node.script, input);
-        else await this.#startChildFlow(item, node.flow as string, input);
+        if (node.script) await this.#startScript(item, node.script, input, node.with);
+        else await this.#startChildFlow(item, await this.#flowOf(node, scope), input);
       } catch (error) {
         if (!(error instanceof StepFailure)) throw error;
         await this.#fail(item, error.message);
@@ -786,6 +891,9 @@ class Advance {
 }
 
 /** A step that failed for a reason its author can fix. It fails the step, not the engine. */
+/** How deep flows may start flows. The same number as for events that start runs that publish events. */
+const MAX_FLOW_DEPTH = 10;
+
 class StepFailure extends Error {}
 
 /** Cancels a flow run and everything it started, in the caller's transaction. */

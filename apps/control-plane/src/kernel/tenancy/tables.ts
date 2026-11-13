@@ -76,11 +76,41 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["resource_id", "version"],
     export: "always",
   },
+  {
+    table: "resource_draft",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id", "path"],
+    export: "always",
+  },
+  // The token is encrypted under the tenant's key, which travels with the export.
+  { table: "git_repository", ofTenant: own, key: ["tenant_id"], export: "always" },
+  {
+    table: "workspace_git",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id"],
+    export: "always",
+  },
+  {
+    table: "git_operation",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "history",
+  },
   { table: "role", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },
   { table: "binding", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },
   { table: "deployment", ofTenant: own, ofWorkspace: inWorkspace, key: ["id"], export: "always" },
   {
     table: "connection_binding",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "always",
+  },
+  {
+    table: "connection_group_member",
     ofTenant: own,
     ofWorkspace: inWorkspace,
     key: ["id"],
@@ -182,6 +212,13 @@ export const OWNED_TABLES: OwnedTable[] = [
   },
   // The end-user pool travels, with the hash each person signs in with.
   { table: "end_user", ofTenant: own, key: ["id"], export: "always" },
+  { table: "end_user_group", ofTenant: own, key: ["id"], export: "always" },
+  {
+    table: "end_user_group_member",
+    ofTenant: (id) => sql`t.group_id in (select id from end_user_group where tenant_id = ${id})`,
+    key: ["group_id", "end_user_id"],
+    export: "always",
+  },
   // Links and sign-ins are made again where the tenant arrives.
   { table: "end_user_token", ofTenant: own, key: ["id"], export: "never" },
   { table: "app_session", ofTenant: own, key: ["id"], export: "never" },
@@ -200,6 +237,37 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["tenant_id"],
     export: "always",
     stored: ["logo_key"],
+  },
+  // A provider's secrets are sealed with the tenant's key, which travels with the export.
+  { table: "identity_provider", ofTenant: own, key: ["id"], export: "always" },
+  { table: "identity_domain", ofTenant: own, key: ["id"], export: "always" },
+  { table: "identity_link", ofTenant: own, key: ["id"], export: "always" },
+  { table: "identity_group_map", ofTenant: own, key: ["id"], export: "always" },
+  // What a provider pushed travels, so that it finds the same people when it is pointed at the
+  // tenant's new home. Its tokens do not: they are made again there.
+  { table: "scim_token", ofTenant: own, key: ["id"], export: "never" },
+  { table: "scim_user", ofTenant: own, key: ["id"], export: "always" },
+  { table: "scim_group", ofTenant: own, key: ["id"], export: "always" },
+  {
+    table: "scim_group_member",
+    ofTenant: (id) => sql`t.group_id in (select id from scim_group where tenant_id = ${id})`,
+    key: ["group_id", "user_id"],
+    export: "always",
+  },
+  { table: "sso_state", ofTenant: own, key: ["id"], export: "never" },
+  {
+    table: "sso_assertion",
+    ofTenant: own,
+    key: ["provider_id", "assertion_key"],
+    export: "never",
+  },
+  // A member's own. An import rewrites the member it names, as it does everywhere.
+  {
+    table: "member_dashboard",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "always",
   },
   // The record of what was done is never removed, even when what it describes is.
   { table: "audit_entry", ofTenant: own, key: ["id"], export: "always", keep: true },

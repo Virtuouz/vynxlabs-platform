@@ -254,7 +254,13 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         let select = db
           .selectFrom("member")
           .innerJoin("tenant_member", "tenant_member.member_id", "member.id")
-          .select(["member.id", "member.name", "member.email", "member.created_at"])
+          .select([
+            "member.id",
+            "member.name",
+            "member.email",
+            "member.created_at",
+            "tenant_member.suspended_at",
+          ])
           .where("tenant_member.tenant_id", "=", params.t);
         if (args.after) select = select.where("member.id", ">", args.after);
         const rows = await select
@@ -321,6 +327,60 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.patch(
+      "/tenants/:t/members/:memberId",
+      {
+        config: { access: access.tenant("member:write") },
+        schema: {
+          summary: "Suspend or resume a member in a tenant",
+          description:
+            "A suspended member holds nothing in the tenant: no role, by any binding or group, " +
+            "counts until they are resumed. What they were given is kept, and so is whatever " +
+            "they hold in other tenants. The tenant's identity provider does this when it says " +
+            "someone has left. Nobody suspends themselves.",
+          tags: ["identity"],
+          params: Type.Object({ t: Id, memberId: Id }),
+          body: Type.Object({ suspended: Type.Boolean() }),
+          response: { 200: Member },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        if (body.suspended && ctx.principal.id === params.memberId) {
+          throw badRequest("You cannot suspend yourself.");
+        }
+        return ctx.mutate(async (trx, audit) => {
+          const changed = await trx
+            .updateTable("tenant_member")
+            .set({ suspended_at: body.suspended ? new Date() : null })
+            .where("tenant_id", "=", params.t)
+            .where("member_id", "=", params.memberId)
+            .returning("suspended_at")
+            .executeTakeFirst();
+          if (!changed) throw notFound("The member");
+          if (body.suspended) {
+            await trx
+              .deleteFrom("app_session")
+              .where("tenant_id", "=", params.t)
+              .where("principal_type", "=", "member")
+              .where("principal_id", "=", params.memberId)
+              .execute();
+          }
+          await audit({
+            action: body.suspended ? "tenant_member.suspended" : "tenant_member.resumed",
+            targetType: "member",
+            targetId: params.memberId,
+            tenantId: params.t,
+          });
+          const member = await trx
+            .selectFrom("member")
+            .select(["id", "name", "email", "created_at"])
+            .where("id", "=", params.memberId)
+            .executeTakeFirstOrThrow();
+          return toMember({ ...member, suspended_at: changed.suspended_at });
+        });
+      },
+    );
+
     app.delete(
       "/tenants/:t/members/:memberId",
       {
@@ -355,6 +415,19 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("group_id", "in", (eb) =>
               eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
             )
+            .execute();
+          // What the tenant's providers knew of the person goes with them.
+          await trx
+            .deleteFrom("identity_link")
+            .where("tenant_id", "=", params.t)
+            .where("principal_type", "=", "member")
+            .where("principal_id", "=", params.memberId)
+            .execute();
+          await trx
+            .deleteFrom("scim_user")
+            .where("tenant_id", "=", params.t)
+            .where("principal_type", "=", "member")
+            .where("principal_id", "=", params.memberId)
             .execute();
           await audit({
             action: "tenant_member.removed",

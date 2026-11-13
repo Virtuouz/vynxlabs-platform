@@ -16,7 +16,8 @@ export type PrincipalType =
   | "service_account"
   | "anonymous"
   | "end_user"
-  | "end_users";
+  | "end_users"
+  | "end_user_group";
 
 export interface PlatformMigrationTable {
   version: number;
@@ -31,6 +32,7 @@ export interface TenantTable {
   name: string;
   data_location: ColumnType<DataLocation, string | undefined, string>;
   managed_workers: Generated<boolean>;
+  console_code: Generated<boolean>;
   created_at: Generated<Date>;
 }
 
@@ -40,6 +42,8 @@ export interface MemberTable {
   email: string;
   email_verified: Generated<boolean>;
   image: string | null;
+  /** Set when the instance's own identity provider said the person has left. */
+  disabled_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -72,7 +76,55 @@ export interface WorkspaceTable {
 export interface TenantMemberTable {
   tenant_id: string;
   member_id: string;
+  /** Set when the member may not act in this tenant for now. */
+  suspended_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   created_at: Generated<Date>;
+}
+
+export interface ScimTokenTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  name: string;
+  prefix: string;
+  token_hash: string;
+  expires_at: Date | null;
+  revoked_at: Date | null;
+  last_used_at: Date | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface ScimUserTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  external_id: string | null;
+  user_name: string;
+  email: string;
+  display_name: string | null;
+  given_name: string | null;
+  family_name: string | null;
+  active: Generated<boolean>;
+  principal_type: "member" | "end_user";
+  principal_id: string;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ScimGroupTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  external_id: string | null;
+  display_name: string;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ScimGroupMemberTable {
+  group_id: string;
+  user_id: string;
 }
 
 export interface PrincipalGroupTable {
@@ -227,6 +279,61 @@ export interface BundleTable {
   storage_key: string;
   size_bytes: number;
   manifest_count: number;
+  origin: Generated<"upload" | "compose" | "preview">;
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface ResourceDraftTable {
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  kind: string;
+  schema_version: number;
+  body: Json<Record<string, unknown>>;
+  deleted: Generated<boolean>;
+  revision: Generated<number>;
+  updated_by_type: string;
+  updated_by_id: string | null;
+  updated_at: Generated<Date>;
+}
+
+export interface GitRepositoryTable {
+  tenant_id: string;
+  url: string;
+  default_branch: Generated<string>;
+  folder: Generated<string>;
+  username: Generated<string>;
+  credential: Buffer;
+  paused: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type GitState = "never" | "synced" | "ahead" | "behind" | "conflict" | "error";
+
+export interface WorkspaceGitTable {
+  workspace_id: string;
+  tenant_id: string;
+  branch: string;
+  synced_commit: Generated<string | null>;
+  synced_files: ColumnType<Record<string, string>, string | undefined, string>;
+  state: Generated<GitState>;
+  last_error: Generated<string | null>;
+  lease_until: Generated<Date | null>;
+  updated_at: Generated<Date>;
+}
+
+export interface GitOperationTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  kind: "push" | "pull";
+  status: "done" | "nothing" | "refused" | "failed";
+  commit_id: string | null;
+  message: string | null;
+  detail: Json<Record<string, unknown>>;
   created_by_type: string;
   created_by_id: string | null;
   created_at: Generated<Date>;
@@ -240,9 +347,23 @@ export interface DeploymentTable {
   previous_bundle_id: string | null;
   promoted_from_workspace_id: Generated<string | null>;
   summary: Json<Record<string, unknown>>;
+  message: Generated<string | null>;
   created_by_type: string;
   created_by_id: string | null;
   created_at: Generated<Date>;
+}
+
+export interface ConnectionGroupMemberTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  group_path: string;
+  key: string;
+  label: Generated<string>;
+  config: Json<Record<string, unknown>>;
+  credential: Buffer | null;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
 }
 
 export interface ConnectionBindingTable {
@@ -324,7 +445,7 @@ export interface TriggerStateTable {
   node_id: Generated<string>;
   tenant_id: string;
   workspace_id: string;
-  type: "schedule" | "webhook" | "event";
+  type: "schedule" | "webhook" | "event" | "form";
   target_kind: Generated<"script" | "flow">;
   /** The path of the script or flow the trigger starts. */
   target_path: string;
@@ -336,6 +457,8 @@ export interface TriggerStateTable {
   event_name: string | null;
   filter: string | null;
   config: ColumnType<Record<string, unknown>, string | undefined, string>;
+  /** Where a polling trigger source had got to. */
+  cursor: Json<unknown> | null;
 }
 
 export interface EventTable {
@@ -376,6 +499,8 @@ export interface FlowRunTable {
   started_by_type: string;
   started_by_id: string | null;
   idempotency_key: string;
+  /** What a respond step answered the request that started the run. */
+  response: NullableJson;
   created_at: Generated<Date>;
   finished_at: Date | null;
 }
@@ -528,10 +653,25 @@ export interface EndUserTable {
   email: string;
   name: Generated<string>;
   password_hash: string | null;
+  attributes: ColumnType<Record<string, string>, string | undefined, string>;
   disabled_at: Date | null;
   last_signed_in_at: Date | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+export interface EndUserGroupTable {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: Generated<string>;
+  created_at: Generated<Date>;
+}
+
+export interface EndUserGroupMemberTable {
+  group_id: string;
+  end_user_id: string;
+  created_at: Generated<Date>;
 }
 
 export interface EndUserTokenTable {
@@ -599,6 +739,100 @@ export interface TenantPortalTable {
   updated_at: Generated<Date>;
 }
 
+export interface MemberDashboardTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  member_id: string;
+  title: string;
+  body: Json<Record<string, unknown>>;
+  shared: Generated<boolean>;
+  revision: Generated<number>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface IdentityProviderTable {
+  id: string;
+  tenant_id: string | null;
+  audience: "members" | "end_users";
+  protocol: "oidc" | "saml";
+  name: string;
+  config: Json<Record<string, unknown>>;
+  secrets: Buffer | null;
+  enabled: Generated<boolean>;
+  enforce: Generated<boolean>;
+  provision: Generated<boolean>;
+  default_role_id: string | null;
+  last_test: Json<Record<string, unknown>> | null;
+  paused: Generated<boolean>;
+  /** How pushes over SCIM are taken. */
+  scim: ColumnType<Record<string, unknown>, string | undefined, string>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface IdentityDomainTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  audience: "members" | "end_users";
+  domain: string;
+  verified_at: Timestamp | null;
+  checked_at: Timestamp | null;
+  check_error: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface IdentityLinkTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  subject: string;
+  principal_type: "member" | "end_user";
+  principal_id: string;
+  email: string | null;
+  created_at: Generated<Date>;
+  last_signed_in_at: Timestamp | null;
+}
+
+export interface IdentityGroupMapTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string;
+  claim_value: string;
+  member_group_id: string | null;
+  end_user_group_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface SsoStateTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  purpose: "sign_in" | "test";
+  state_hash: string;
+  browser_hash: string;
+  secrets: Buffer | null;
+  request_id: string | null;
+  origin: string;
+  return_to: string | null;
+  started_by: string | null;
+  answered_at: Timestamp | null;
+  finish_hash: string | null;
+  principal_id: string | null;
+  finished_at: Timestamp | null;
+  expires_at: Timestamp;
+  created_at: Generated<Date>;
+}
+
+export interface SsoAssertionTable {
+  provider_id: string;
+  tenant_id: string | null;
+  assertion_key: string;
+  expires_at: Timestamp;
+}
+
 export interface PlatformSchema {
   platform_migration: PlatformMigrationTable;
   tenant: TenantTable;
@@ -620,7 +854,12 @@ export interface PlatformSchema {
   audit_entry: AuditEntryTable;
   bundle: BundleTable;
   deployment: DeploymentTable;
+  resource_draft: ResourceDraftTable;
+  git_repository: GitRepositoryTable;
+  workspace_git: WorkspaceGitTable;
+  git_operation: GitOperationTable;
   connection_binding: ConnectionBindingTable;
+  connection_group_member: ConnectionGroupMemberTable;
   variable_value: VariableValueTable;
   run: RunTable;
   run_log: RunLogTable;
@@ -639,9 +878,22 @@ export interface PlatformSchema {
   workspace_clone: WorkspaceCloneTable;
   bundle_asset: BundleAssetTable;
   end_user: EndUserTable;
+  end_user_group: EndUserGroupTable;
+  end_user_group_member: EndUserGroupMemberTable;
   end_user_token: EndUserTokenTable;
   app_session: AppSessionTable;
   app_handoff: AppHandoffTable;
   app_domain: AppDomainTable;
   tenant_portal: TenantPortalTable;
+  identity_provider: IdentityProviderTable;
+  identity_domain: IdentityDomainTable;
+  identity_link: IdentityLinkTable;
+  identity_group_map: IdentityGroupMapTable;
+  scim_token: ScimTokenTable;
+  scim_user: ScimUserTable;
+  scim_group: ScimGroupTable;
+  scim_group_member: ScimGroupMemberTable;
+  sso_state: SsoStateTable;
+  sso_assertion: SsoAssertionTable;
+  member_dashboard: MemberDashboardTable;
 }

@@ -58,6 +58,8 @@ export async function storeBundle(
   workspace: WorkspaceRef,
   principal: Principal,
   input: unknown,
+  /** `compose` and `preview` are bundles the control plane made itself. */
+  origin: "upload" | "compose" | "preview" = "upload",
 ) {
   const issues = validateJson(Bundle, input, "/body");
   if (issues.length > 0) throw badRequest("That is not a bundle.", issues);
@@ -105,6 +107,11 @@ export async function storeBundle(
     .where("digest", "=", bundle.digest)
     .executeTakeFirst();
   if (existing) {
+    // A bundle first made to try a draft out, and now deployed or uploaded, is no longer a preview.
+    if (existing.origin === "preview" && origin !== "preview") {
+      await trx.updateTable("bundle").set({ origin }).where("id", "=", existing.id).execute();
+      existing.origin = origin;
+    }
     await audit({
       action: "bundle.uploaded",
       targetType: "bundle",
@@ -146,6 +153,7 @@ export async function storeBundle(
       storage_key: storageKey,
       size_bytes: Buffer.byteLength(text),
       manifest_count: bundle.manifests.length,
+      origin,
       created_by_type: principal.type,
       created_by_id: principal.id,
     })
@@ -153,12 +161,76 @@ export async function storeBundle(
     .executeTakeFirstOrThrow();
   loaded.set(id, bundle);
   await audit({
-    action: "bundle.uploaded",
+    action: origin === "upload" ? "bundle.uploaded" : "bundle.composed",
     targetType: "bundle",
     targetId: id,
     tenantId: workspace.tenantId,
     workspaceId: workspace.id,
-    details: { version: row.version, digest: bundle.digest, manifests: bundle.manifests.length },
+    details: {
+      version: row.version,
+      digest: bundle.digest,
+      manifests: bundle.manifests.length,
+      ...(origin === "upload" ? {} : { origin }),
+    },
   });
   return { created: true, bundle: row };
+}
+
+/** A bundle made to try a draft out is kept this long after it was made. */
+export const PREVIEW_DAYS = 7;
+
+/**
+ * Removes the bundles that were made only to try a draft out, once they are
+ * old, with the test runs that ran on them. A bundle that was since deployed
+ * or uploaded is no longer a preview and is left. One with a run still in
+ * progress waits for the next sweep.
+ */
+export async function removeOldPreviews(kernel: Kernel, olderThanDays = PREVIEW_DAYS) {
+  const before = new Date(Date.now() - olderThanDays * 86_400_000);
+  const old = await kernel.db
+    .selectFrom("bundle")
+    .select(["id", "storage_key"])
+    .where("origin", "=", "preview")
+    .where("created_at", "<", before)
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom("run")
+            .select("run.id")
+            .whereRef("run.bundle_id", "=", "bundle.id")
+            .where("run.status", "in", ["queued", "running"]),
+        ),
+      ),
+    )
+    .limit(50)
+    .execute();
+  let removed = 0;
+  for (const bundle of old) {
+    try {
+      const stored = await kernel.db.transaction().execute(async (trx) => {
+        const runs = await trx
+          .deleteFrom("run")
+          .where("bundle_id", "=", bundle.id)
+          .returning(["input_ref", "output_ref"])
+          .execute();
+        await trx
+          .deleteFrom("bundle")
+          .where("id", "=", bundle.id)
+          .where("origin", "=", "preview")
+          .execute();
+        return runs.flatMap((run) => [run.input_ref, run.output_ref]);
+      });
+      // What was kept in the object store goes last: a row that names a missing object is worse
+      // than an object nothing names.
+      for (const key of [bundle.storage_key, ...stored]) {
+        if (key) await kernel.storage.remove(key).catch(() => {});
+      }
+      removed += 1;
+    } catch (error) {
+      // Something else came to refer to it, such as a flow run. It is left for a person to see.
+      kernel.log.debug({ err: error, bundle: bundle.id }, "a preview bundle could not be removed");
+    }
+  }
+  return removed;
 }

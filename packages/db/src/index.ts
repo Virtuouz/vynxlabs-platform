@@ -30,6 +30,7 @@ export type {
   DataLocation,
   FailureAlert,
   FlowRunStatus,
+  GitState,
   Ownership,
   PlatformSchema,
   PrincipalType,

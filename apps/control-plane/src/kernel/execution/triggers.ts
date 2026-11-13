@@ -1,26 +1,38 @@
-import { createHash, randomBytes } from "node:crypto";
-import type { FlowBody, FlowTrigger } from "@vynxlabs/manifest";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { sql } from "@vynxlabs/db";
+import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@vynxlabs/manifest";
 import type { TriggerSource } from "@vynxlabs/sdk";
 import { CronExpressionParser } from "cron-parser";
 import type { Trx } from "../audit.js";
 import { badRequest, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
+import { revealSecret } from "../secrets.js";
 import { decryptFor, encryptFor } from "./bindings.js";
-import { startRun } from "./runs.js";
+import { type Relay, startRun } from "./runs.js";
 
 interface ScheduleConfig {
   cron: string;
   timezone?: string;
   input?: Record<string, unknown>;
+  /** A trigger source that is run on each tick, and gives back what is new. */
+  source?: string | undefined;
 }
 interface ScheduleBody extends ScheduleConfig {
   script: string;
   enabled?: boolean;
 }
 type TriggerBody =
-  | { type: "webhook"; script: string; enabled?: boolean }
-  | { type: "event"; script: string; event: string; filter?: string; enabled?: boolean };
+  | {
+      type: "webhook";
+      script: string;
+      enabled?: boolean;
+      input?: "body" | "request";
+      verify?: WebhookVerify;
+      source?: string;
+    }
+  | { type: "event"; script: string; event: string; filter?: string; enabled?: boolean }
+  | ({ type: "form"; script: string; enabled?: boolean } & FormTrigger);
 
 /** The built-in trigger sources, written against the SDK's extension interface. */
 export const scheduleSource: TriggerSource<ScheduleConfig> = {
@@ -50,16 +62,104 @@ export const eventSource: TriggerSource<unknown> = {
 export const manualSource: TriggerSource<unknown> = { type: "manual", script: () => "" };
 
 export const WEBHOOK_TOKEN_PREFIX = "vxh_";
+/** A form's address ends in a token of its own kind, so that neither opens the other. */
+export const FORM_TOKEN_PREFIX = "vxf_";
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 /** One trigger as it should be registered: a trigger resource, or a trigger node of a flow. */
 interface Registration {
   node: string;
-  type: "schedule" | "webhook" | "event";
+  type: "schedule" | "webhook" | "event" | "form";
   target: { kind: "script" | "flow"; path: string };
   enabled: boolean;
   schedule?: ScheduleConfig;
   event?: { name: string; filter?: string | undefined };
+  webhook?: WebhookConfig;
+  form?: FormTrigger;
+}
+
+/** What a webhook does with a request, as its trigger said. Kept with the registered trigger. */
+export interface WebhookConfig {
+  input?: "body" | "request" | undefined;
+  verify?: WebhookVerify | undefined;
+  /** A trigger source that is handed each request first. */
+  source?: string | undefined;
+  /** `flow` holds the request open for the flow to answer. */
+  respond?: "now" | "flow" | undefined;
+}
+
+/** A request to a webhook's address, as it arrived. */
+export interface WebhookRequest {
+  method: string;
+  /** Lower-case names. A header sent twice is joined with a comma. */
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  /** The body exactly as it was sent. A signature is over these bytes. */
+  raw: Buffer;
+}
+
+/** Headers that carry a credential of the sender's own, and are not handed to a script or stored. */
+const NOT_PASSED_ON = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+/**
+ * Checks a request's signature. The comparison takes the same time whatever
+ * differs, and a request with a timestamp too old is refused, so a captured
+ * request cannot be sent again later.
+ */
+export function signatureProblem(
+  verify: WebhookVerify,
+  secret: string,
+  request: WebhookRequest,
+  now = Date.now(),
+): string | undefined {
+  const sent = request.headers[verify.header.toLowerCase()];
+  if (!sent) return `The ${verify.header} header is missing.`;
+  let timestamp = "";
+  if (verify.timestampHeader) {
+    timestamp = request.headers[verify.timestampHeader.toLowerCase()] ?? "";
+    const seconds = Number(timestamp);
+    if (!timestamp || !Number.isFinite(seconds)) {
+      return `The ${verify.timestampHeader} header is missing or is not a time.`;
+    }
+    if (Math.abs(now / 1000 - seconds) > (verify.toleranceSeconds ?? 300)) {
+      return "The request's timestamp is too far from now.";
+    }
+  }
+  const prefix = verify.prefix ?? "";
+  if (!sent.startsWith(prefix)) return "The signature does not match.";
+  const signed = Buffer.concat(
+    (verify.signed ?? "{body}")
+      .split(/(\{body\}|\{timestamp\})/)
+      .map((part) =>
+        part === "{body}" ? request.raw : Buffer.from(part === "{timestamp}" ? timestamp : part),
+      ),
+  );
+  const expected = createHmac(verify.scheme === "hmac-sha1" ? "sha1" : "sha256", secret)
+    .update(signed)
+    .digest();
+  const given = Buffer.from(sent.slice(prefix.length), verify.encoding ?? "hex");
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    return "The signature does not match.";
+  }
+  return undefined;
+}
+
+/** A request's body as a value: JSON, a form's fields, or text. Throws on JSON that does not parse. */
+export function parseWebhookBody(request: WebhookRequest): unknown {
+  const type = (request.headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  if (request.raw.length === 0) return {};
+  const text = request.raw.toString("utf8");
+  if (type === "application/x-www-form-urlencoded") {
+    const fields: Record<string, string | string[]> = {};
+    for (const [name, value] of new URLSearchParams(text)) {
+      const before = fields[name];
+      fields[name] =
+        before === undefined ? value : Array.isArray(before) ? [...before, value] : [before, value];
+    }
+    return fields;
+  }
+  if (type === "application/json" || type.endsWith("+json") || type === "") return JSON.parse(text);
+  return text;
 }
 
 function firstFire(schedule: ScheduleConfig, field: string): Date | null {
@@ -114,7 +214,9 @@ async function register(
       next_fire_at: registration.schedule ? firstFire(registration.schedule, field) : null,
       event_name: registration.event?.name ?? null,
       filter: registration.event?.filter ?? null,
-      config: JSON.stringify(registration.schedule ?? {}),
+      config: JSON.stringify(
+        registration.schedule ?? registration.webhook ?? registration.form ?? {},
+      ),
     };
     const current = existing.find(
       (row) => row.node_id === registration.node && row.type === registration.type,
@@ -131,6 +233,9 @@ async function register(
     let token: string | undefined;
     if (registration.type === "webhook") {
       token = `${WEBHOOK_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
+    }
+    if (registration.type === "form") {
+      token = `${FORM_TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`;
     }
     await trx
       .insertInto("trigger_state")
@@ -156,6 +261,18 @@ async function register(
       })
       .execute();
   }
+}
+
+/** The form alone, without what says where it sits and what it starts. */
+function formOf(body: FormTrigger): FormTrigger {
+  return {
+    title: body.title,
+    fields: body.fields,
+    ...(body.description ? { description: body.description } : {}),
+    ...(body.submitLabel ? { submitLabel: body.submitLabel } : {}),
+    ...(body.success ? { success: body.success } : {}),
+    ...(body.access ? { access: body.access } : {}),
+  };
 }
 
 async function needScript(trx: Trx, resource: AppliedResource, script: string) {
@@ -189,6 +306,7 @@ export function registerExecutionHooks(kernel: Kernel) {
               cron: body.cron,
               ...(body.timezone ? { timezone: body.timezone } : {}),
               ...(body.input ? { input: body.input } : {}),
+              ...(body.source ? { source: body.source } : {}),
             },
           },
         ]);
@@ -205,6 +323,10 @@ export function registerExecutionHooks(kernel: Kernel) {
             target: { kind: "script", path: body.script },
             enabled: body.enabled ?? true,
             ...(body.type === "event" ? { event: { name: body.event, filter: body.filter } } : {}),
+            ...(body.type === "webhook"
+              ? { webhook: { input: body.input, verify: body.verify, source: body.source } }
+              : {}),
+            ...(body.type === "form" ? { form: formOf(body) } : {}),
           },
         ]);
       },
@@ -227,11 +349,23 @@ export function registerExecutionHooks(kernel: Kernel) {
                   schedule: {
                     cron: trigger.cron,
                     ...(trigger.timezone ? { timezone: trigger.timezone } : {}),
+                    ...(trigger.source ? { source: trigger.source } : {}),
                   },
                 }
               : {}),
             ...(trigger.type === "event"
               ? { event: { name: trigger.event, filter: trigger.filter } }
+              : {}),
+            ...(trigger.type === "form" ? { form: formOf(trigger) } : {}),
+            ...(trigger.type === "webhook"
+              ? {
+                  webhook: {
+                    input: trigger.input,
+                    verify: trigger.verify,
+                    source: trigger.source,
+                    respond: trigger.respond,
+                  },
+                }
               : {}),
           });
         }
@@ -278,6 +412,90 @@ export async function startTarget(kernel: Kernel, trx: Trx, state: TriggerRow, f
   }
   const started = await startRun(kernel, trx, { ...common, script: state.target_path });
   return { kind: "script" as const, id: started.run.id };
+}
+
+/** The most runs one answer of a trigger source may start. */
+export const MAX_RELAYED = 100;
+
+/**
+ * Passes on what a trigger source gave back: starts the trigger's script or
+ * flow once for each input, and keeps a polling source's place.
+ *
+ * A webhook source answers `{ accept: false }` to start nothing, `{ input }`
+ * to start one run, or `{ inputs: [...] }` to start several. A polling source
+ * answers `{ items: [...], cursor }`.
+ */
+export async function relaySource(
+  kernel: Kernel,
+  run: { id: string; script_path: string; trigger_detail: Record<string, unknown> },
+  output: unknown,
+): Promise<void> {
+  const relay = run.trigger_detail.relay as Relay;
+  const state = await kernel.db
+    .selectFrom("trigger_state")
+    .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+    .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
+    .selectAll("trigger_state")
+    .select(["resource.path", "workspace.triggers_paused"])
+    .where("trigger_state.resource_id", "=", relay.resourceId)
+    .where("trigger_state.node_id", "=", relay.node)
+    .executeTakeFirst();
+  // The trigger was removed or turned off while its source was running.
+  if (!state?.enabled || state.triggers_paused) return;
+  const answer = (typeof output === "object" && output !== null ? output : {}) as {
+    accept?: unknown;
+    input?: unknown;
+    inputs?: unknown;
+    items?: unknown;
+    cursor?: unknown;
+  };
+  let inputs: unknown[] = [];
+  if (relay.mode === "poll") inputs = Array.isArray(answer.items) ? answer.items : [];
+  else if (answer.accept === false) inputs = [];
+  else if (Array.isArray(answer.inputs)) inputs = answer.inputs;
+  else if ("input" in answer) inputs = [answer.input];
+  if (inputs.length > MAX_RELAYED) {
+    kernel.log.warn(
+      { source: run.script_path, given: inputs.length },
+      `a trigger source gave more than ${MAX_RELAYED} things to start, and the rest were dropped`,
+    );
+    inputs = inputs.slice(0, MAX_RELAYED);
+  }
+  const label = state.node_id ? `${state.path}#${state.node_id}` : state.path;
+  const started = await kernel.db.transaction().execute(async (trx) => {
+    if (relay.mode === "poll" && "cursor" in answer) {
+      await trx
+        .updateTable("trigger_state")
+        .set({ cursor: JSON.stringify(answer.cursor ?? null) })
+        .where("resource_id", "=", relay.resourceId)
+        .where("node_id", "=", relay.node)
+        .execute();
+    }
+    const made: { kind: string; id: string }[] = [];
+    for (const [index, input] of inputs.entries()) {
+      try {
+        made.push(
+          await startTarget(kernel, trx, state, {
+            input,
+            trigger: {
+              type: relay.mode === "poll" ? "schedule" : "webhook",
+              detail: { trigger: label, source: run.script_path, sourceRun: run.id },
+            },
+            idempotencyKey: `source:${run.id}:${index}`,
+          }),
+        );
+      } catch (error) {
+        // One input that does not fit what it starts must not stop the others.
+        if (!(error instanceof HttpError)) throw error;
+        kernel.log.warn(
+          { source: run.script_path, trigger: label, reason: error.message },
+          "something a trigger source gave could not start a run",
+        );
+      }
+    }
+    return made;
+  });
+  await kickStarted(kernel, started);
 }
 
 /** Lets the flow runs a trigger just started take their first step. Call after the transaction commits. */
@@ -357,6 +575,36 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         .where("node_id", "=", due.node_id)
         .execute();
       try {
+        if (config.source) {
+          // One at a time: a tick that comes while the last is still looking is passed over,
+          // so that two never start from the same place.
+          const busy = await sql<{ id: string }>`
+            select id from run
+            where workspace_id = ${due.workspace_id}
+              and status in ('queued', 'running')
+              and trigger_detail->'relay'->>'resourceId' = ${due.resource_id}
+              and trigger_detail->'relay'->>'node' = ${due.node_id}
+            limit 1
+          `.execute(trx);
+          if (busy.rows.length > 0) return { kind: "none" as const, id: "" };
+          const made = await startRun(kernel, trx, {
+            tenantId: due.tenant_id,
+            workspaceId: due.workspace_id,
+            script: config.source,
+            input: { cursor: due.cursor ?? null, scheduledFor: fireTime.toISOString() },
+            trigger: {
+              type: "schedule",
+              detail: {
+                schedule: due.node_id ? `${due.path}#${due.node_id}` : due.path,
+                scheduledFor: fireTime.toISOString(),
+              },
+            },
+            startedBy: { type: "trigger", id: null },
+            idempotencyKey: `poll:${due.resource_id}:${due.node_id}:${fireTime.toISOString()}`,
+            relay: { resourceId: due.resource_id, node: due.node_id, mode: "poll" },
+          });
+          return { kind: "script" as const, id: made.run.id };
+        }
         return await startTarget(kernel, trx, due, {
           input: config.input ?? {},
           trigger: {
@@ -384,11 +632,62 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
   }
 }
 
-/** Starts the run for an incoming webhook request. Returns undefined for an unknown token. */
+/** A form trigger as its page needs it. Undefined for an address that is no form of this tenant's. */
+export async function findForm(kernel: Kernel, tenantId: string, token: string) {
+  if (!token.startsWith(FORM_TOKEN_PREFIX)) return undefined;
+  const state = await kernel.db
+    .selectFrom("trigger_state")
+    .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+    .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
+    .selectAll("trigger_state")
+    .select(["resource.path", "workspace.triggers_paused"])
+    .where("trigger_state.token_hash", "=", hashToken(token))
+    .where("trigger_state.type", "=", "form")
+    .where("trigger_state.tenant_id", "=", tenantId)
+    .executeTakeFirst();
+  if (!state?.enabled) return undefined;
+  return { state, form: state.config as unknown as FormTrigger, paused: state.triggers_paused };
+}
+
+/**
+ * Starts what a form starts, with what was sent to it. `key` was made with
+ * the page, so sending the same page twice starts one run.
+ */
+export async function submitForm(
+  kernel: Kernel,
+  found: NonNullable<Awaited<ReturnType<typeof findForm>>>,
+  input: Record<string, unknown>,
+  by: { type: string; id: string } | undefined,
+  key: string | undefined,
+) {
+  const { state } = found;
+  const label = state.node_id ? `${state.path}#${state.node_id}` : state.path;
+  const started = await kernel.db.transaction().execute((trx) =>
+    startTarget(kernel, trx, state, {
+      input,
+      trigger: { type: "form", detail: { trigger: label, ...(by ? { submittedBy: by } : {}) } },
+      idempotencyKey: key ? `form:${state.resource_id}:${state.node_id}:${key}` : undefined,
+    }),
+  );
+  await kernel.db
+    .updateTable("trigger_state")
+    .set({ last_fired_at: new Date() })
+    .where("resource_id", "=", state.resource_id)
+    .where("node_id", "=", state.node_id)
+    .execute();
+  await kickStarted(kernel, [started]);
+  return started;
+}
+
+/**
+ * Starts the run for an incoming webhook request. Returns undefined for an
+ * unknown token, and says so when the workspace is paused, the signature does
+ * not check, or the body cannot be read.
+ */
 export async function fireWebhook(
   kernel: Kernel,
   token: string,
-  payload: unknown,
+  request: WebhookRequest,
   idempotencyKey?: string,
 ) {
   if (!token.startsWith(WEBHOOK_TOKEN_PREFIX)) return undefined;
@@ -402,11 +701,69 @@ export async function fireWebhook(
     .where("trigger_state.type", "=", "webhook")
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
-  if (state.triggers_paused) return "paused" as const;
+  if (state.triggers_paused) return { refused: "paused" as const };
+  const config = state.config as WebhookConfig;
+  if (config.verify) {
+    const secret = await revealSecret(kernel.db, kernel.vault, {
+      tenantId: state.tenant_id,
+      workspaceId: state.workspace_id,
+      name: config.verify.secret,
+    });
+    // With no secret to check against, nothing can be let through.
+    const problem =
+      secret === undefined
+        ? "The signature does not match."
+        : signatureProblem(config.verify, secret, request);
+    if (problem) return { refused: "signature" as const, problem };
+  }
+  let body: unknown;
+  try {
+    body = parseWebhookBody(request);
+  } catch {
+    return { refused: "body" as const, problem: "The body is not valid JSON." };
+  }
+  const headers = Object.fromEntries(
+    Object.entries(request.headers).filter(([name]) => !NOT_PASSED_ON.has(name)),
+  );
+  const label = state.node_id ? `${state.path}#${state.node_id}` : state.path;
+  if (config.source) {
+    // The source decides, on a worker, whether this request starts anything and with what.
+    const source = config.source;
+    const started = await kernel.db.transaction().execute(async (trx) => {
+      const made = await startRun(kernel, trx, {
+        tenantId: state.tenant_id,
+        workspaceId: state.workspace_id,
+        script: source,
+        input: {
+          method: request.method,
+          headers,
+          query: request.query,
+          body,
+          rawBody: request.raw.toString("utf8"),
+        },
+        trigger: { type: "webhook", detail: { trigger: label } },
+        startedBy: { type: "trigger", id: null },
+        idempotencyKey,
+        relay: { resourceId: state.resource_id, node: state.node_id, mode: "webhook" },
+      });
+      return { kind: "script" as const, id: made.run.id };
+    });
+    return { started };
+  }
+  const input =
+    config.input === "request"
+      ? {
+          method: request.method,
+          headers,
+          query: request.query,
+          body,
+          rawBody: request.raw.toString("utf8"),
+        }
+      : webhookSource.toInput?.(undefined, { headers, body });
   // Not audited: the run itself records the webhook that started it.
   const started = await kernel.db.transaction().execute((trx) =>
     startTarget(kernel, trx, state, {
-      input: webhookSource.toInput?.(undefined, { headers: {}, body: payload }),
+      input,
       trigger: {
         type: "webhook",
         detail: { trigger: state.node_id ? `${state.path}#${state.node_id}` : state.path },
@@ -415,5 +772,5 @@ export async function fireWebhook(
     }),
   );
   await kickStarted(kernel, [started]);
-  return started;
+  return { started, awaits: config.respond === "flow" && started.kind === "flow" };
 }

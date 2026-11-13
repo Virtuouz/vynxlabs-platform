@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useState } from "react";
 
 /** A failed API call, carrying the problem document the server sent. */
 export class ApiError extends Error {
@@ -70,6 +70,7 @@ export function useLoad<T>(path: string | null): Loaded<T> {
     loading: true,
   });
   const [version, setVersion] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` is what `reload` changes to ask again
   useEffect(() => {
     if (path === null) return;
     let current = true;

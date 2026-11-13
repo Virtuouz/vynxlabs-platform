@@ -13,6 +13,11 @@ export interface ResourceInput {
   body: Record<string, unknown>;
   /** Move the resource at this path to `path`, keeping its ID. */
   renameFrom?: string | undefined;
+  /**
+   * Lets the resource change between code-managed and console-managed. Only a
+   * deploy passes it: a bundle is the one thing that may say who manages what.
+   */
+  switchOwnership?: boolean;
 }
 
 export function findResource(db: Db | Trx, workspaceId: string, path: string) {
@@ -58,7 +63,7 @@ export async function putResource(
   if (existing && existing.kind !== input.kind) {
     throw conflict(`${lookupPath} is a ${existing.kind}. A resource cannot change kind.`);
   }
-  if (existing && existing.ownership !== input.ownership) {
+  if (existing && existing.ownership !== input.ownership && !input.switchOwnership) {
     throw conflict(
       `${lookupPath} is ${existing.ownership}-managed. A resource is code-managed or UI-managed, never both.`,
     );

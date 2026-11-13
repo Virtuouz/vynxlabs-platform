@@ -12,7 +12,10 @@ export {
   type HttpResponse,
   httpConnector,
 } from "./http.js";
+export { type MailMessage, type SmtpClient, type SmtpConfig, smtpConfigSchema } from "./smtp.js";
 export {
+  type Aggregated,
+  type AggregateOptions,
   type ColumnOptions,
   type ColumnSpec,
   column,
@@ -26,8 +29,8 @@ export {
 export { z };
 
 /** The version of the SDK, and the core versions a bundle built with it works on. */
-export const SDK_VERSION = "0.4.0";
-export const CORE_RANGE = { min: "0.4.0", below: "0.5.0" };
+export const SDK_VERSION = "0.5.0";
+export const CORE_RANGE = { min: "0.5.0", below: "0.6.0" };
 
 /** An authored manifest, before the control plane assigns a workspace, ID and version. */
 export interface AuthoredManifest {
@@ -88,6 +91,8 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   output: Output;
   /** Connections the script reads, by path or by definition. */
   connections?: (string | { path: string })[];
+  /** Connection groups the script may pick a member of when it runs. */
+  connectionGroups?: (string | { path: string })[];
   /** Names of the secrets the script reads. */
   secrets?: string[];
   /** Variables the script reads, by path or by definition. */
@@ -115,6 +120,17 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   worker?: string;
   /** What happens when a run fails for the last time. */
   onFailure?: { script?: string | { path: string }; notify?: string | { path: string } };
+  /**
+   * Makes the script a step people can pick in the flow editor. Its input
+   * schema becomes the step's form. `takes` says what a step may hand it with
+   * `with`: a connection, a table or an event the script does not name itself.
+   */
+  node?: {
+    label: string;
+    icon?: string;
+    category?: string;
+    takes?: ("connection" | "table" | "event")[];
+  };
   run(input: z.output<Input>, ctx: ScriptContext): Promise<z.input<Output>> | z.input<Output>;
 }
 
@@ -151,6 +167,9 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
       worker: options.worker,
       uses: {
         connections: (options.connections ?? []).map(pathOf),
+        ...(options.connectionGroups
+          ? { connectionGroups: options.connectionGroups.map(pathOf) }
+          : {}),
         secrets: options.secrets ?? [],
         variables: (options.variables ?? []).map(pathOf),
         ...(options.events ? { events: options.events.map(pathOf) } : {}),
@@ -163,6 +182,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
             notify: options.onFailure.notify ? pathOf(options.onFailure.notify) : undefined,
           })
         : undefined,
+      node: options.node,
     }),
   );
   return {
@@ -189,6 +209,11 @@ export interface ScheduleOptions {
   /** The input each scheduled run receives. */
   input?: Record<string, unknown>;
   enabled?: boolean;
+  /**
+   * A polling trigger source to run on each tick. The script then starts once
+   * for each thing the source finds, with that thing as its input.
+   */
+  source?: string | { path: string };
 }
 
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
@@ -199,34 +224,268 @@ export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
       timezone: options.timezone,
       input: options.input,
       enabled: options.enabled,
+      source: options.source ? pathOf(options.source) : undefined,
     }),
   );
 }
 
+/** How a webhook checks that a request was signed with a secret shared with its sender. */
+export interface WebhookVerify {
+  scheme: "hmac-sha256" | "hmac-sha1";
+  /** The header the signature is sent in: `X-Hub-Signature-256`. */
+  header: string;
+  /** The name of the workspace secret that holds the shared secret. */
+  secret: string;
+  /** How the signature is written. Default `hex`. */
+  encoding?: "hex" | "base64";
+  /** Text before the signature in the header, such as `sha256=`. */
+  prefix?: string;
+  /** What was signed. `{body}` is the raw body, `{timestamp}` the timestamp header. Default `{body}`. */
+  signed?: string;
+  /** A header holding when the request was sent, in seconds since 1970. */
+  timestampHeader?: string;
+  /** How old a request may be, by its timestamp header. Default 300. */
+  toleranceSeconds?: number;
+}
+
+/** What a webhook's script is given when `input` is `request`. */
+export interface WebhookRequest<Body = unknown> {
+  method: string;
+  /** Lower-case names. The sender's own `authorization` and `cookie` are left out. */
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  /** JSON, a form's fields, or text, by the request's content type. */
+  body: Body;
+  /** The body exactly as it was sent. */
+  rawBody: string;
+}
+
 export interface WebhookOptions {
   path: string;
-  /** The script that receives the request body as its input. */
+  /** The script that receives the request. */
   script: string | { path: string };
   enabled?: boolean;
+  /**
+   * What the script is given: the parsed body alone, which is the default, or
+   * the whole request as a `WebhookRequest`.
+   */
+  input?: "body" | "request";
+  /** Checks each request's signature before anything starts. A request that fails is answered 401. */
+  verify?: WebhookVerify;
+  /** A trigger source to hand each request to first. What it returns is what the script is given. */
+  source?: string | { path: string };
+}
+
+/** What a trigger source for webhooks answers. */
+export type WebhookSourceResult =
+  /** Start nothing. `reason` is kept on the source's run, for whoever looks into it. */
+  | { accept: false; reason?: string }
+  /** Start the trigger's script or flow once, with this input. */
+  | { accept?: true; input: unknown }
+  /** Start it once for each of these, up to a hundred. */
+  | { accept?: true; inputs: unknown[] };
+
+/** What a polling trigger source is handed on each tick. */
+export interface PollTick<Cursor = unknown> {
+  /** What the source gave back as `cursor` last time. Null the first time. */
+  cursor: Cursor | null;
+  /** When this tick was due. */
+  scheduledFor: string;
+}
+
+/** What a polling trigger source answers. */
+export interface PollResult<Cursor = unknown> {
+  /** Each starts the trigger's script or flow, up to a hundred. */
+  items: unknown[];
+  /** Where to pick up from next time. Left out, the place it had is kept. */
+  cursor?: Cursor;
+}
+
+interface TriggerSourceCommon {
+  /** Unique within the workspace, for example `sources/payments`. Triggers name it by this. */
+  path: string;
+  description?: string;
+  /** Connections the source reads, by path or by definition. */
+  connections?: (string | { path: string })[];
+  /** Names of the secrets the source reads, such as the one a signature is checked against. */
+  secrets?: string[];
+  variables?: (string | { path: string })[];
+  /** How long one run may take. Default 30, at most 300. */
+  timeoutSeconds?: number;
+  /** The worker pool it runs on. */
+  worker?: string;
+}
+
+export type TriggerSourceOptions =
+  | (TriggerSourceCommon & {
+      mode: "webhook";
+      run(
+        request: WebhookRequest,
+        ctx: ScriptContext,
+      ): Promise<WebhookSourceResult> | WebhookSourceResult;
+    })
+  | (TriggerSourceCommon & {
+      mode: "poll";
+      run(tick: PollTick, ctx: ScriptContext): Promise<PollResult> | PollResult;
+    });
+
+export interface TriggerSourceDefinition extends ResourceDefinition {
+  readonly kind: "trigger_source";
+  execute(input: unknown, ctx: ScriptContext): Promise<unknown>;
+}
+
+/**
+ * Declares a trigger source: code that stands between the outside and what a
+ * trigger starts. It runs on a worker, like a script, and reads only the
+ * connections, secrets and variables it lists.
+ *
+ * A `webhook` source is handed each request to a webhook that names it, and
+ * says whether to start anything and with what: this is where a signature in
+ * a sender's own format is checked, or one request is split into several. A
+ * `poll` source is run on a schedule that names it, with where it had got to,
+ * and gives back what is new.
+ */
+export function defineTriggerSource(options: TriggerSourceOptions): TriggerSourceDefinition {
+  const definition = resource("trigger_source", options.path, (entry) =>
+    compact({
+      entry,
+      description: options.description,
+      mode: options.mode,
+      timeoutSeconds: options.timeoutSeconds,
+      worker: options.worker,
+      uses: compact({
+        connections: options.connections?.map(pathOf),
+        secrets: options.secrets,
+        variables: options.variables?.map(pathOf),
+      }),
+    }),
+  );
+  const run = options.run as (input: unknown, ctx: ScriptContext) => unknown;
+  return {
+    ...definition,
+    kind: "trigger_source",
+    execute: async (input, ctx) => run(input, ctx),
+  };
 }
 
 export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   return resource("trigger", options.path, () =>
-    compact({ type: "webhook", script: pathOf(options.script), enabled: options.enabled }),
+    compact({
+      type: "webhook",
+      script: pathOf(options.script),
+      enabled: options.enabled,
+      input: options.input,
+      verify: options.verify,
+      source: options.source ? pathOf(options.source) : undefined,
+    }),
   );
+}
+
+/** One field of a form. Its value is in the input under `name`. */
+export interface FormField {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "email" | "number" | "date" | "select" | "checkbox";
+  required?: boolean;
+  help?: string;
+  /** What a `select` offers. */
+  options?: string[];
+}
+
+/** A form the platform serves as a page. What is sent starts the script or the flow. */
+export interface FormOptions {
+  title: string;
+  description?: string;
+  fields: FormField[];
+  /** What the button says. Default "Send". */
+  submitLabel?: string;
+  /** What is shown once the form was sent. */
+  success?: string;
+  /** `signed_in` asks for a sign-in to the tenant's portal first. Default `anyone`. */
+  access?: "anyone" | "signed_in";
+}
+
+/**
+ * Declares a form that starts a script. The platform serves it at an address
+ * of its own under the tenant's portal, with no code of yours.
+ */
+export function defineForm(
+  options: FormOptions & { path: string; script: string | { path: string }; enabled?: boolean },
+): ResourceDefinition {
+  const { path, script, ...form } = options;
+  return resource("trigger", path, () =>
+    compact({ type: "form", script: pathOf(script), ...form }),
+  );
+}
+
+export interface ConnectorOptions<Config, Client> {
+  /** Unique within the workspace, for example `connectors/shop`. Connections name it by this. */
+  path: string;
+  description?: string;
+  /** A JSON Schema for a connection's configuration. The console draws its form from it. */
+  configSchema: object;
+  /**
+   * Builds the client a script is given for a connection. `credential` is the
+   * connection's secret, when it has one. `signal` aborts when the run is cancelled.
+   */
+  create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
+}
+
+export interface ConnectorDefinition<Config, Client> extends ResourceDefinition {
+  readonly kind: "connector";
+  create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
+}
+
+/**
+ * Declares a connector: an adapter for one kind of outside system, which
+ * turns a connection's configuration and credential into the client a script
+ * uses. A connection uses it by naming it: `defineConnection({ connector: shop })`.
+ */
+export function defineConnector<Config, Client>(
+  options: ConnectorOptions<Config, Client>,
+): ConnectorDefinition<Config, Client> {
+  const definition = resource("connector", options.path, (entry) =>
+    compact({ entry, description: options.description, configSchema: options.configSchema }),
+  );
+  return { ...definition, kind: "connector", create: options.create };
 }
 
 export interface ConnectionOptions {
   path: string;
-  /** The connector to use. `http` is built in. */
-  connector?: string;
+  /** The connector to use: `http` or `smtp`, which are built in, or one of your own. */
+  connector?: string | { path: string };
   description?: string;
+}
+
+export interface ConnectionGroupOptions {
+  path: string;
+  /** The connector every member uses: `http` or `smtp`, which are built in, or one of your own. */
+  connector?: string | { path: string };
+  description?: string;
+}
+
+/**
+ * Declares a group of connections of one kind, such as every customer's
+ * account with the same service. Members are added per workspace in the
+ * console, with no deploy. A script that lists the group picks a member when
+ * it runs: `await ctx.connections("shops").get(input.shop)`.
+ */
+export function defineConnectionGroup(options: ConnectionGroupOptions): ResourceDefinition {
+  return resource("connection_group", options.path, () =>
+    compact({
+      connector: options.connector ? pathOf(options.connector) : "http",
+      description: options.description,
+    }),
+  );
 }
 
 /** Declares a connection. Its address and credentials are set per workspace, not here. */
 export function defineConnection(options: ConnectionOptions): ResourceDefinition {
   return resource("connection", options.path, () =>
-    compact({ connector: options.connector ?? "http", description: options.description }),
+    compact({
+      connector: options.connector ? pathOf(options.connector) : "http",
+      description: options.description,
+    }),
   );
 }
 
@@ -297,13 +556,46 @@ export type FlowNode = Record<string, unknown> & { type: string };
 export const trigger = {
   /** Started by hand, from the API, or as a sub-flow. */
   manual: (): FlowNode => ({ type: "trigger", trigger: { type: "manual" } }),
-  /** Started on a five-field cron schedule. */
-  schedule: (cron: string, options: { timezone?: string } = {}): FlowNode => ({
+  /**
+   * Started on a five-field cron schedule. With `source`, each tick runs that
+   * trigger source, and the flow starts once for each thing it finds.
+   */
+  schedule: (cron: string, options: { timezone?: string; source?: Target } = {}): FlowNode => ({
     type: "trigger",
-    trigger: compact({ type: "schedule", cron, timezone: options.timezone }),
+    trigger: compact({
+      type: "schedule",
+      cron,
+      timezone: options.timezone,
+      source: options.source ? pathOf(options.source) : undefined,
+    }),
   }),
-  /** Started by a request to the flow's webhook address. */
-  webhook: (): FlowNode => ({ type: "trigger", trigger: { type: "webhook" } }),
+  /**
+   * Started by a request to the flow's webhook address. With `source`, each
+   * request is handed to that trigger source, which decides what starts.
+   */
+  webhook: (
+    options: {
+      input?: "body" | "request";
+      verify?: WebhookVerify;
+      source?: Target;
+      /** `flow` holds the request open, for up to 25 seconds, for a respond step to answer. */
+      respond?: "now" | "flow";
+    } = {},
+  ): FlowNode => ({
+    type: "trigger",
+    trigger: compact({
+      type: "webhook",
+      input: options.input,
+      verify: options.verify,
+      source: options.source ? pathOf(options.source) : undefined,
+      respond: options.respond,
+    }),
+  }),
+  /** Started when someone sends the form, which the platform serves as a page. The input is the fields. */
+  form: (options: FormOptions): FlowNode => ({
+    type: "trigger",
+    trigger: compact({ type: "form", ...options }),
+  }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
   event: (event: Target, options: { filter?: string } = {}): FlowNode => ({
     type: "trigger",
@@ -311,14 +603,43 @@ export const trigger = {
   }),
 };
 
+/** What a step hands the script it runs, by path or by definition. */
+export interface StepGrants {
+  connections?: Target[];
+  tables?: Target[];
+  events?: Target[];
+}
+
+const grantsOf = (grants: StepGrants | undefined) =>
+  grants
+    ? compact({
+        connections: grants.connections?.map(pathOf),
+        tables: grants.tables?.map(pathOf),
+        events: grants.events?.map(pathOf),
+      })
+    : undefined;
+
 /**
  * The steps of a flow. Where a step takes an expression, it is CEL, and can
  * read `trigger`, `steps.<node>.output`, and inside a foreach, `item` and `index`.
  */
 export const step = {
-  /** Runs a script. `input` is an expression giving the script's input. */
-  script: (script: Target, options: { input?: string } = {}): FlowNode =>
-    compact({ type: "script", script: pathOf(script), input: options.input }) as FlowNode,
+  /**
+   * Runs a script. `input` is one expression giving the script's input, or
+   * `inputs` gives an expression for each field. `with` hands the script
+   * connections, tables or events for this step, when the script takes them.
+   */
+  script: (
+    script: Target,
+    options: { input?: string; inputs?: Record<string, string>; with?: StepGrants } = {},
+  ): FlowNode =>
+    compact({
+      type: "script",
+      script: pathOf(script),
+      input: options.input,
+      inputs: options.inputs,
+      with: grantsOf(options.with),
+    }) as FlowNode,
   /** Computes named values. Its output is an object of the results. */
   set: (values: Record<string, string>): FlowNode => ({ type: "set", values }),
   /** Follows the first case whose condition is true, or the edge marked `otherwise`. */
@@ -329,7 +650,13 @@ export const step = {
   /** Runs a script or a flow once per item. Its output is the list of results, in order. */
   foreach: (
     items: string,
-    options: { script?: Target; flow?: Target; input?: string; concurrency?: number },
+    options: {
+      script?: Target;
+      flow?: Target;
+      input?: string;
+      concurrency?: number;
+      with?: StepGrants;
+    },
   ): FlowNode =>
     compact({
       type: "foreach",
@@ -338,6 +665,7 @@ export const step = {
       flow: options.flow ? pathOf(options.flow) : undefined,
       input: options.input,
       concurrency: options.concurrency,
+      with: grantsOf(options.with),
     }) as FlowNode,
   /** Waits for every path that leads into it. */
   join: (): FlowNode => ({ type: "join" }),
@@ -354,6 +682,14 @@ export const step = {
   /** Runs another flow from its manual trigger and waits for it. */
   subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>
     compact({ type: "subflow", flow: pathOf(flow), input: options.input }) as FlowNode,
+  /**
+   * Answers the request that started the flow, for a webhook trigger with
+   * `respond: "flow"`. `body` and each header are expressions. The first
+   * respond step to run is the answer, and the flow carries on after it.
+   */
+  respond: (
+    options: { status?: number; headers?: Record<string, string>; body?: string } = {},
+  ): FlowNode => compact({ type: "respond", ...options }) as FlowNode,
   /** Fails on purpose, with a message. */
   fail: (message: string): FlowNode => ({ type: "fail", message }),
 };
@@ -398,7 +734,26 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
    * Who may see which rows. With `owner`, a person sees and changes only the
    * rows whose owner column holds their ID. Without a policy, permissions alone decide.
    */
-  policy?: { owner: Extract<keyof C, string> };
+  policy?:
+    | { owner: Extract<keyof C, string> }
+    | {
+        /**
+         * Rules that match a row's columns against the person asking. A person
+         * sees a row when any rule lets them, and changes it when a `write` or
+         * `all` rule does.
+         */
+        rules: {
+          allow: "read" | "write" | "all";
+          when:
+            | { everyone: true }
+            /** The column holds the person's own ID. */
+            | { column: Extract<keyof C, string>; is: "principal" }
+            /** The column names a group the person is in: its ID, or its name in a text column. */
+            | { column: Extract<keyof C, string>; in: "groups" }
+            /** The column equals one of the person's attributes. */
+            | { column: Extract<keyof C, string>; equals: { attribute: string } };
+        }[];
+      };
   /** Columns to index, each entry one index. */
   indexes?: Extract<keyof C, string>[][];
   /** The table's previous path. Its rows are kept. */
@@ -426,7 +781,11 @@ export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean
       columns: Object.fromEntries(
         Object.entries(options.columns).map(([name, spec]) => [name, spec.manifest]),
       ),
-      policy: options.policy ? { type: "owner", column: options.policy.owner } : undefined,
+      policy: !options.policy
+        ? undefined
+        : "rules" in options.policy
+          ? { type: "rules", rules: options.policy.rules }
+          : { type: "owner", column: options.policy.owner },
       indexes: options.indexes,
       renamedFrom: options.renamedFrom,
     }),
@@ -496,8 +855,14 @@ export interface AppOptions {
   /**
    * The app's own directory in the repository, holding its `index.html`. The build
    * compiles it with Vite. Relative to the repository root, for example `apps/orders`.
+   * Leave it out for an app that serves an interface.
    */
-  source: string;
+  source?: string;
+  /**
+   * The path of an interface to serve as this app, in place of code of its own.
+   * An app has a `source` or an `interface`, never both.
+   */
+  interface?: string;
   /** The page inside the built app. Default `index.html`. */
   entry?: string;
   /**
@@ -509,8 +874,8 @@ export interface AppOptions {
 
 export interface AppDefinition extends ResourceDefinition {
   readonly kind: "app";
-  /** Read by the build. Not part of the manifest. */
-  readonly source: string;
+  /** Read by the build. Not part of the manifest. Absent for an app that serves an interface. */
+  readonly source?: string;
 }
 
 /**
@@ -519,15 +884,51 @@ export interface AppDefinition extends ResourceDefinition {
  * holding `app:read` to members, to `end_users`, or to `anonymous` for a public app.
  */
 export function defineApp(options: AppOptions): AppDefinition {
+  if ((options.source === undefined) === (options.interface === undefined)) {
+    throw new Error(`The app "${options.path}" needs a source or an interface, and not both.`);
+  }
   const definition = resource("app", options.path, () =>
-    compact({
-      title: options.title,
-      description: options.description,
-      entry: options.entry ?? "index.html",
-      fallback: options.fallback,
-    }),
+    options.interface !== undefined
+      ? compact({
+          title: options.title,
+          description: options.description,
+          interface: options.interface,
+        })
+      : compact({
+          title: options.title,
+          description: options.description,
+          entry: options.entry ?? "index.html",
+          fallback: options.fallback,
+        }),
   );
-  return { ...definition, kind: "app", source: options.source };
+  return {
+    ...definition,
+    kind: "app",
+    ...(options.source !== undefined ? { source: options.source } : {}),
+  };
+}
+
+export interface InterfaceOptions {
+  /** Unique within the workspace, for example `screens/invoices`. */
+  path: string;
+  title: string;
+  description?: string;
+  /**
+   * The pages, each a set of widgets over the workspace's tables. Most
+   * interfaces are made in the console, which writes this for you: see the
+   * `interface` schema for every field.
+   */
+  pages: Record<string, unknown>[];
+}
+
+/**
+ * Declares an interface: pages of tables, cards, charts and forms over the
+ * workspace's tables, with no code. Serve it with `defineApp({ interface })`.
+ */
+export function defineInterface(options: InterfaceOptions): ResourceDefinition {
+  return resource("interface", options.path, () =>
+    compact({ title: options.title, description: options.description, pages: options.pages }),
+  );
 }
 
 export interface RoleOptions {
@@ -558,6 +959,8 @@ export type BindingPrincipal =
   | { type: "service_account"; name: string }
   /** One person in the tenant's end-user pool. */
   | { type: "end_user"; email: string }
+  /** A group of end users, by its name. */
+  | { type: "end_user_group"; name: string }
   /** Every signed-in end user of the tenant. */
   | { type: "end_users" }
   /** Anyone, signed in or not. This is what makes something public. */

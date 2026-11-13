@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App, returnTarget } from "./App.tsx";
 import { match } from "./router.tsx";
+import { show } from "./testing.tsx";
 
 type Handler = (body: unknown) => [number, unknown];
 let routes: Record<string, Handler>;
@@ -58,10 +59,13 @@ afterEach(() => {
 });
 
 test("signing in: a wrong password explains itself, the right one shows the member's tenants", async () => {
-  render(<App />);
+  show(<App />);
   await screen.findByRole("heading", { name: "Sign in" });
   fireEvent.input(screen.getByLabelText("Email"), { target: { value: "alice@acme.example" } });
-  fireEvent.input(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+  // The password is asked for once it is known that this email may use one.
+  expect(screen.queryByLabelText("Password")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.input(await screen.findByLabelText("Password"), { target: { value: "wrong" } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
     "That email and password do not match an account.",
@@ -92,11 +96,14 @@ test("route matching", () => {
 test("after signing in, a member an app sent here goes back to the app", async () => {
   const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
   history.replaceState(null, "", "/?return=%2Fapps%2Facme%2Fmain%2Forders%2F%3Ftab%3Dopen");
-  render(<App />);
+  show(<App />);
   await screen.findByRole("heading", { name: "Sign in" });
   expect(assign).not.toHaveBeenCalled();
   fireEvent.input(screen.getByLabelText("Email"), { target: { value: "alice@acme.example" } });
-  fireEvent.input(screen.getByLabelText("Password"), { target: { value: "right-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.input(await screen.findByLabelText("Password"), {
+    target: { value: "right-password" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(assign).toHaveBeenCalledWith("/apps/acme/main/orders/?tab=open"));
   // The console itself is not shown on the way.
@@ -107,7 +114,7 @@ test("a member who is already signed in is sent back at once", async () => {
   signedIn = true;
   const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
   history.replaceState(null, "", "/?return=%2Fapi%2Fv1%2Fapp-handoffs%2Fstart%3Fto%3Dx");
-  render(<App />);
+  show(<App />);
   await waitFor(() => expect(assign).toHaveBeenCalledWith("/api/v1/app-handoffs/start?to=x"));
 });
 
@@ -115,7 +122,7 @@ test("a return address that is not an app's is ignored", async () => {
   signedIn = true;
   const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
   history.replaceState(null, "", "/?return=https%3A%2F%2Fevil.example%2Fapps%2F");
-  render(<App />);
+  show(<App />);
   await screen.findByRole("heading", { name: "Tenants" });
   expect(assign).not.toHaveBeenCalled();
 

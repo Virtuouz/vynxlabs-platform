@@ -15,6 +15,7 @@ import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
 import type { Kernel } from "./kernel.js";
 import { resolvePrincipal } from "./principal.js";
+import { resolveScimCaller, type ScimCaller } from "./sso/scim.js";
 
 type Scope = "instance" | "tenant" | "tenant-or-instance" | "workspace";
 
@@ -26,6 +27,8 @@ export type Access =
   | { kind: "custom" }
   /** Called by a worker with a worker credential, under the worker protocol. */
   | { kind: "worker" }
+  /** Called by an identity provider with a token made for it, under SCIM. */
+  | { kind: "scim" }
   | { kind: "permission"; permission: string; scope: Scope };
 
 export const access = {
@@ -33,6 +36,7 @@ export const access = {
   signedIn: { kind: "signed-in" } as Access,
   custom: { kind: "custom" } as Access,
   worker: { kind: "worker" } as Access,
+  scim: { kind: "scim" } as Access,
   instance: (permission: string): Access => ({ kind: "permission", permission, scope: "instance" }),
   tenant: (permission: string): Access => ({ kind: "permission", permission, scope: "tenant" }),
   tenantOrInstance: (permission: string): Access => ({
@@ -67,6 +71,8 @@ declare module "fastify" {
     ctx: RequestContext;
     /** Set on worker protocol routes. */
     worker: WorkerScope;
+    /** Set on SCIM routes: the provider that is pushing. */
+    scim: ScimCaller;
   }
 }
 
@@ -155,6 +161,7 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
   app.decorateRequest("ctx", null as unknown as RequestContext);
   app.decorateRequest("worker", null as unknown as WorkerScope);
+  app.decorateRequest("scim", null as unknown as ScimCaller);
 
   app.addHook("preHandler", async (request) => {
     const declared = request.routeOptions.config.access;
@@ -163,6 +170,11 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
     }
     if (declared.kind === "worker") {
       request.worker = await resolveWorker(kernel, request);
+      return;
+    }
+    if (declared.kind === "scim") {
+      const { provider } = request.params as { provider: string };
+      request.scim = await resolveScimCaller(kernel, request, provider);
       return;
     }
     const params = request.params as { t?: string; w?: string };
@@ -218,6 +230,8 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       declared &&
       declared.kind !== "public" &&
       declared.kind !== "worker" &&
+      // A push that asks for what already holds changes nothing, and is still a success.
+      declared.kind !== "scim" &&
       !READ_METHODS.has(request.method) &&
       reply.statusCode < 400 &&
       !request.ctx?.mutated

@@ -41,11 +41,18 @@ async function fromApiKey(kernel: Kernel, token: string): Promise<Principal> {
   if (key.owner_type === "member") {
     const member = await kernel.db
       .selectFrom("member")
-      .select(["id", "name", "email"])
+      .select(["id", "name", "email", "disabled_at"])
       .where("id", "=", key.owner_id)
       .executeTakeFirst();
-    if (!member) throw unauthenticated("The API key is not valid.");
-    return { type: "member", ...member, apiKeyId: key.id };
+    // A key outlives a session, so a disabled member's keys are refused here.
+    if (!member || member.disabled_at) throw unauthenticated("The API key is not valid.");
+    return {
+      type: "member",
+      id: member.id,
+      name: member.name,
+      email: member.email,
+      apiKeyId: key.id,
+    };
   }
   const account = await kernel.db
     .selectFrom("service_account")
@@ -111,7 +118,18 @@ export async function resolvePrincipal(
     const session = await kernel.auth.api.getSession({
       headers: fromNodeHeaders(request.headers),
     });
-    if (session) {
+    // A member's sessions are ended when the account is disabled. One made since, by a
+    // password that still works, is no way in either.
+    const disabled =
+      session &&
+      (
+        await kernel.db
+          .selectFrom("member")
+          .select("disabled_at")
+          .where("id", "=", session.user.id)
+          .executeTakeFirst()
+      )?.disabled_at;
+    if (session && !disabled) {
       refuseCrossSite(kernel, request, place);
       return {
         type: "member",

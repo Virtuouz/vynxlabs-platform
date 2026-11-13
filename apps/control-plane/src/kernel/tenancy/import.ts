@@ -444,6 +444,27 @@ export async function importTenant(
         }
       }
 
+      // The tenant came from another instance, which may still be pushing to the same
+      // branches. Sync stays off here until someone looks at the repository's settings.
+      await trx
+        .updateTable("git_repository")
+        .set({ paused: true })
+        .where("tenant_id", "=", tenantId)
+        .execute();
+
+      // A provider was told the addresses of the instance the tenant came from, and a
+      // domain was proved to that instance. Both are confirmed again here.
+      await trx
+        .updateTable("identity_provider")
+        .set({ paused: true })
+        .where("tenant_id", "=", tenantId)
+        .execute();
+      await trx
+        .updateTable("identity_domain")
+        .set({ verified_at: null, checked_at: null, check_error: null })
+        .where("tenant_id", "=", tenantId)
+        .execute();
+
       const result: ImportReport = {
         tenant: { id: tenantId, slug, name: manifest.tenant.name, dataLocation: location },
         counts,

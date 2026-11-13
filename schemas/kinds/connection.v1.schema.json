@@ -6,8 +6,9 @@
   "properties": {
     "connector": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*$",
-      "maxLength": 63
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255,
+      "description": "The connector: `http` or `smtp`, which every worker has, or the path of a connector resource."
     },
     "description": {
       "type": "string",

@@ -1,5 +1,13 @@
-import { type ComponentChildren, createContext } from "preact";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 export type ToastTone = "plain" | "success" | "danger";
 
@@ -29,7 +37,7 @@ export function ToastProvider({
 }: {
   /** How long a message stays, in milliseconds. */
   duration?: number;
-  children: ComponentChildren;
+  children: ReactNode;
 }) {
   const [shown, setShown] = useState<{ id: number; message: string; tone: ToastTone }[]>([]);
   const next = useRef(1);
@@ -69,18 +77,18 @@ export function ToastProvider({
   return (
     <ToastContext.Provider value={toasts}>
       {children}
-      <div class="pointer-events-none fixed right-4 bottom-4 left-4 z-50 flex flex-col items-end gap-2">
+      <div className="pointer-events-none fixed right-4 bottom-4 left-4 z-50 flex flex-col items-end gap-2">
         {shown.map((toast) => (
           <div
             key={toast.id}
             role="status"
-            class={`pointer-events-auto flex max-w-full items-center gap-3 rounded-control border px-3 py-2 text-ink shadow-lg sm:max-w-96 ${tones[toast.tone]}`}
+            className={`pointer-events-auto flex max-w-full items-center gap-3 rounded-control border px-3 py-2 text-ink shadow-lg sm:max-w-96 ${tones[toast.tone]}`}
           >
             <span>{toast.message}</span>
             <button
               type="button"
               aria-label="Dismiss"
-              class="rounded-[4px] px-1 text-ink-muted hover:text-ink"
+              className="rounded-[4px] px-1 text-ink-muted hover:text-ink"
               onClick={() => dismiss(toast.id)}
             >
               <span aria-hidden="true">×</span>

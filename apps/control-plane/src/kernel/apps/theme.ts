@@ -126,6 +126,8 @@ const block = (values: Tokens) =>
 export function themeCss(theme: { tokens: Tokens; dark: Tokens }): string {
   return (
     `:root {\n${block(theme.tokens)}  color-scheme: light;\n}\n` +
-    `@media (prefers-color-scheme: dark) {\n:root {\n${block(theme.dark)}  color-scheme: dark;\n}\n}\n`
+    // Dark follows the system unless the page's root element carries a choice in `data-theme`.
+    `@media (prefers-color-scheme: dark) {\n:root:not([data-theme="light"]) {\n${block(theme.dark)}  color-scheme: dark;\n}\n}\n` +
+    `:root[data-theme="dark"] {\n${block(theme.dark)}  color-scheme: dark;\n}\n`
   );
 }

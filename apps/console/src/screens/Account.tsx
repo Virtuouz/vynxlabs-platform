@@ -16,7 +16,7 @@ export const keyColumns = [
   { header: "Name", cell: (row: KeyRow) => row.name },
   {
     header: "Key",
-    cell: (row: KeyRow) => <code class="font-mono text-[13px]">{row.prefix}…</code>,
+    cell: (row: KeyRow) => <code className="font-mono text-[13px]">{row.prefix}…</code>,
   },
   { header: "Last used", cell: (row: KeyRow) => (row.lastUsedAt ? when(row.lastUsedAt) : "Never") },
   {
@@ -35,7 +35,7 @@ export const keyColumns = [
 export const showNewKey = (result: unknown) => (
   <span>
     Copy this key now. It is not shown again:{" "}
-    <code class="font-mono break-all select-all">{(result as { token: string }).token}</code>
+    <code className="font-mono break-all select-all">{(result as { token: string }).token}</code>
   </span>
 );
 

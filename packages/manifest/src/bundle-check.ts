@@ -1,16 +1,25 @@
 import type { Bundle, BundleManifest } from "./bundle.js";
-import { checkFlow, type FlowBody, flowExpressions, flowReferences } from "./flow.js";
-import { isThemeValue, registerPlatformKinds } from "./kinds.js";
-import { KindRegistry } from "./registry.js";
+import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
+import { checkForm, type FormTrigger } from "./form.js";
+import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
+import { BUILTIN_CONNECTORS, isThemeValue, registerPlatformKinds } from "./kinds.js";
+import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
 
 /** Events the platform publishes itself. No repository declares them. */
 export const PLATFORM_EVENT_PREFIX = "platform/";
 
+/**
+ * Paths under this are the platform's own: the core nodes it adds to a bundle
+ * whose flows use them. Nothing of a tenant's may live there.
+ */
+export const CORE_PREFIX = "core/";
+
 const registry = registerPlatformKinds(new KindRegistry());
 
 interface ScriptUses {
   connections?: string[];
+  connectionGroups?: string[];
   variables?: string[];
   events?: string[];
   tables?: string[];
@@ -37,6 +46,14 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       );
     }
     byPath.set(manifest.path, manifest);
+    if (
+      manifest.path.startsWith(CORE_PREFIX) &&
+      !(manifest.kind === "script" && manifest.ownership === "ui")
+    ) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): paths under ${CORE_PREFIX} are kept for the platform's own nodes.`,
+      );
+    }
     const result = registry.validateManifest(manifest);
     if (!result.ok) {
       for (const issue of result.issues) {
@@ -50,7 +67,7 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (kind === "event" && path.startsWith(PLATFORM_EVENT_PREFIX)) return;
     if (byPath.get(path)?.kind !== kind) {
       problems.push(
-        `${from.path} (${from.kind}): ${field} refers to "${path}", which is not ${kind === "event" ? "an" : "a"} ${kind} in this repository.`,
+        `${from.path} (${from.kind}): ${field} refers to "${path}", which is not ${kind === "event" || kind === "interface" ? "an" : "a"} ${kind} in this repository.`,
       );
     }
   };
@@ -67,12 +84,51 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (manifest.kind === "schedule" || manifest.kind === "trigger") {
       expect(manifest, "script", body.script, "script");
     }
+    // A trigger hands its requests, or its ticks, to a source of the kind that takes them.
+    const sourced: [string, string | undefined, "webhook" | "poll"][] = [];
+    if (manifest.kind === "schedule") {
+      sourced.push(["source", (manifest.body as { source?: string }).source, "poll"]);
+    }
+    if (manifest.kind === "trigger" && body.type === "webhook") {
+      sourced.push(["source", (manifest.body as { source?: string }).source, "webhook"]);
+    }
+    if (manifest.kind === "flow") {
+      const nodes = (manifest.body as unknown as FlowBody).nodes ?? {};
+      for (const [id, node] of Object.entries(nodes)) {
+        if (node.type !== "trigger") continue;
+        if (node.trigger.type === "schedule" || node.trigger.type === "webhook") {
+          sourced.push([
+            `/body/nodes/${id}/trigger/source`,
+            node.trigger.source,
+            node.trigger.type === "schedule" ? "poll" : "webhook",
+          ]);
+        }
+      }
+    }
+    for (const [field, source, mode] of sourced) {
+      if (source === undefined) continue;
+      expect(manifest, field, source, "trigger_source");
+      const found = byPath.get(source);
+      const has = (found?.body as { mode?: string } | undefined)?.mode;
+      if (found?.kind === "trigger_source" && has !== mode) {
+        problems.push(
+          `${manifest.path} (${manifest.kind}): ${field} names "${source}", which is a source for ${has === "poll" ? "a schedule" : "a webhook"}, not for ${mode === "poll" ? "a schedule" : "a webhook"}.`,
+        );
+      }
+    }
+    if (manifest.kind === "trigger" && body.type === "form") {
+      for (const issue of checkForm(manifest.body as unknown as FormTrigger, "/body")) {
+        problems.push(`${manifest.path} (trigger): ${issue.path} ${issue.message}`);
+      }
+    }
     if (manifest.kind === "trigger" && body.type === "event") {
       expect(manifest, "event", body.event, "event");
     }
     if (manifest.kind === "script") {
       for (const path of body.uses?.connections ?? [])
         expect(manifest, "connections", path, "connection");
+      for (const path of body.uses?.connectionGroups ?? [])
+        expect(manifest, "connectionGroups", path, "connection_group");
       for (const path of body.uses?.variables ?? [])
         expect(manifest, "variables", path, "variable");
       for (const path of body.uses?.events ?? []) expect(manifest, "events", path, "event");
@@ -80,6 +136,27 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const path of body.uses?.sources ?? []) expect(manifest, "sources", path, "data_source");
       expect(manifest, "onFailure.script", body.onFailure?.script, "script");
       expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+    }
+    if (manifest.kind === "connection" || manifest.kind === "connection_group") {
+      const connector = (manifest.body as { connector?: string }).connector;
+      if (connector !== undefined && !BUILTIN_CONNECTORS.includes(connector)) {
+        expect(manifest, "connector", connector, "connector");
+      }
+    }
+    if (manifest.kind === "connector") {
+      // A schema that cannot be compiled would fail every binding later, with no word of why.
+      try {
+        validateJson((manifest.body as { configSchema: object }).configSchema, {});
+      } catch (error) {
+        problems.push(
+          `${manifest.path} (connector): /body/configSchema is not a JSON Schema: ${(error as Error).message}`,
+        );
+      }
+    }
+    if (manifest.kind === "connector" && BUILTIN_CONNECTORS.includes(manifest.path)) {
+      problems.push(
+        `${manifest.path} (connector): "${manifest.path}" is the name of a connector every worker has. Give this one another path.`,
+      );
     }
     if (manifest.kind === "table") {
       const table = manifest.body as unknown as TableBody;
@@ -94,6 +171,34 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
           `${manifest.path} (table): /body/renamedFrom "${table.renamedFrom}" is still declared, so it cannot also be this table's old path.`,
         );
       }
+    }
+    if (manifest.kind === "interface") {
+      const body = manifest.body as unknown as InterfaceBody;
+      // A table made in the console is in no bundle, so a table that is not here is not
+      // an error. A path that is here and is something else is.
+      for (const table of interfaceTables(body)) {
+        const found = byPath.get(table);
+        if (found && found.kind !== "table") {
+          problems.push(
+            `${manifest.path} (interface): shows "${table}", which is ${/^[aeiou]/.test(found.kind) ? "an" : "a"} ${found.kind}, not a table.`,
+          );
+        }
+      }
+      const tableOf = (path: string) => {
+        const found = byPath.get(path);
+        return found?.kind === "table" ? (found.body as unknown as TableBody) : undefined;
+      };
+      for (const issue of checkInterface(body, tableOf)) {
+        problems.push(`${manifest.path} (interface): ${issue.path} ${issue.message}`);
+      }
+    }
+    if (manifest.kind === "app") {
+      expect(
+        manifest,
+        "interface",
+        (manifest.body as { interface?: unknown }).interface,
+        "interface",
+      );
     }
     if (manifest.kind === "flow") {
       const flow = manifest.body as unknown as FlowBody;
@@ -114,6 +219,17 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
               `${manifest.path} (flow): ${reference.path} uses the flow "${reference.target}", which has no manual trigger to start it from.`,
             );
           }
+        }
+      }
+      // What a step hands a script must exist, and the script must say it takes such a thing.
+      for (const grant of flowGrants(flow)) {
+        expect(manifest, grant.path, grant.target, grant.kind);
+        const script = byPath.get(grant.script);
+        const takes = (script?.body as { node?: { takes?: string[] } } | undefined)?.node?.takes;
+        if (script?.kind === "script" && !takes?.includes(grant.kind)) {
+          problems.push(
+            `${manifest.path} (flow): ${grant.path} hands ${grant.kind === "event" ? "an" : "a"} ${grant.kind} to the script "${grant.script}", which does not take one. A script says what it takes with \`node.takes\`.`,
+          );
         }
       }
     }

@@ -15,12 +15,12 @@ export interface PaginationProps {
  */
 export function Pagination({ hasPrevious, hasNext, onPrevious, onNext, label }: PaginationProps) {
   return (
-    <nav aria-label="Pagination" class="flex items-center justify-between gap-3">
+    <nav aria-label="Pagination" className="flex items-center justify-between gap-3">
       <Button size="small" disabled={!hasPrevious} onClick={onPrevious}>
         Previous
       </Button>
       {label ? (
-        <span aria-live="polite" class="text-[13px] text-ink-muted">
+        <span aria-live="polite" className="text-[13px] text-ink-muted">
           {label}
         </span>
       ) : null}

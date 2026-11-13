@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/trigger_source.v1.schema.json",
+  "title": "trigger_source body, version 1",
+  "type": "object",
+  "properties": {
+    "entry": {
+      "type": "string",
+      "description": "The name the source is exported under in the bundle."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "mode": {
+      "enum": [
+        "webhook",
+        "poll"
+      ],
+      "description": "`webhook`: it is handed each request to a webhook's address, and says whether to start anything and with what. `poll`: it is run on a schedule with where it had got to, and gives back what is new."
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300
+    },
+    "worker": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 40,
+      "description": "The worker pool it runs on. Without it, any worker of the default pool."
+    },
+    "uses": {
+      "type": "object",
+      "description": "What the source may read when it runs, as for a script.",
+      "properties": {
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "description": "The TypeScript the resource was written as, for a resource managed in the console. Its default export is what runs.",
+      "properties": {
+        "language": {
+          "const": "typescript"
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 262144
+        }
+      },
+      "required": [
+        "language",
+        "code"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "entry",
+    "mode"
+  ],
+  "additionalProperties": false
+}

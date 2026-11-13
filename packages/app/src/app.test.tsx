@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { render, screen, waitFor } from "@testing-library/preact";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ApiError,
   type AppContext,
@@ -88,6 +88,33 @@ test("a table reads and writes rows through the public API", async () => {
     `GET ${base}/row/missing/orders`,
     `PATCH ${base}/row/2/orders`,
     `DELETE ${base}/row/2/orders`,
+  ]);
+});
+
+test("a table's totals are asked for by name, and come back one item a group", async () => {
+  answers = [
+    {
+      status: 200,
+      body: {
+        items: [{ by: { status: "open" }, values: { count: 2, "sum:total": 30 } }],
+        truncated: false,
+      },
+    },
+    { status: 200, body: { items: [{ by: {}, values: { count: 5 } }], truncated: false } },
+  ];
+  const totals = await table("orders").aggregate({
+    group: ["status", "created_at:month"],
+    measures: ["count", "sum:total"],
+    filter: { column: "total", op: "gt", value: 0 },
+    sort: ["-sum:total"],
+    limit: 20,
+  });
+  expect(totals.items[0]?.values["sum:total"]).toBe(30);
+  expect((await table("orders").aggregate()).items[0]?.values.count).toBe(5);
+  const base = "/api/v1/tenants/t1/workspaces/w1";
+  expect(calls.map((call) => call.url)).toEqual([
+    `${base}/aggregate/orders?group=status%2Ccreated_at%3Amonth&measure=count%2Csum%3Atotal&filter=${encodeURIComponent('{"column":"total","op":"gt","value":0}')}&sort=-sum%3Atotal&limit=20`,
+    `${base}/aggregate/orders`,
   ]);
 });
 
@@ -183,4 +210,39 @@ test("useQuery loads, reloads, and useSession starts from who the page was serve
   await screen.findByText("A-1");
   screen.getByText("Again").click();
   await waitFor(() => expect(screen.getByText("A-2")).toBeTruthy());
+});
+
+describe("flows", () => {
+  test("startFlow returns at once, and runFlow waits for what the flow gives", async () => {
+    const { runFlow, startFlow, flowRun, FlowRunError } = await import("./client.ts");
+    const calls: { method: string; url: string; body: unknown }[] = [];
+    let reads = 0;
+    let ending: "succeeded" | "failed" = "succeeded";
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      const method = init.method ?? "GET";
+      calls.push({ method, url, body: init.body ? JSON.parse(init.body as string) : undefined });
+      const run =
+        method === "POST" || ++reads < 2
+          ? { id: "f1", flow: "orders/handle", status: "running" }
+          : ending === "succeeded"
+            ? { id: "f1", flow: "orders/handle", status: "succeeded", output: { sent: true } }
+            : { id: "f1", flow: "orders/handle", status: "failed", error: { message: "Refused." } };
+      return new Response(JSON.stringify(run), { status: method === "POST" ? 201 : 200 });
+    });
+    const started = await startFlow("orders/handle", { id: "1" }, { idempotencyKey: "k1" });
+    expect(started).toMatchObject({ id: "f1", status: "running" });
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      body: { flow: "orders/handle", input: { id: "1" }, idempotencyKey: "k1" },
+    });
+    expect(calls[0]?.url).toMatch(/\/flow-runs$/);
+    expect((await flowRun("f1")).status).toBe("running");
+
+    expect(await runFlow("orders/handle", { id: "1" })).toEqual({ sent: true });
+    reads = 0;
+    ending = "failed";
+    await expect(runFlow("orders/handle")).rejects.toThrow(FlowRunError);
+    reads = 0;
+    await expect(runFlow("orders/handle")).rejects.toThrow("Refused.");
+  });
 });

@@ -11,6 +11,7 @@ The machine-readable form of every route below is in the API description at `/ap
 - **The worker always calls.** Every exchange is an HTTPS request from the worker to the control plane. The control plane never opens a connection to a worker, so a worker can sit inside a private network.
 - **JSON** request and response bodies. Errors are RFC 9457 problem details.
 - **Delivery is at-least-once.** A run may be attempted more than once, and two attempts can overlap for a moment after a worker is presumed lost. Code must be safe to run twice. Each run carries an idempotency key that is the same on every attempt.
+- **A run reaches what its script declared, and what its flow step handed it.** Added in 0.5.0. A step of a flow can hand its script connections, tables and events with `with`, when the script says in `node.takes` that it takes such things. Where a route below answers only for something the script declared, it answers for these too, for that run alone. A worker needs to do nothing for this.
 - **An attempt is identified by the run ID and an attempt number.** Every report names both. A report for an attempt that is no longer in progress is refused with 409 and changes nothing.
 
 ## Credentials
@@ -39,7 +40,7 @@ Response: `{"job": null}`, or a job:
 | --- | --- |
 | `runId`, `attempt` | Identify this attempt in every later request |
 | `workspaceId` | The workspace the run belongs to |
-| `script.path`, `script.entry` | The script, and the name it is exported under in the bundle's code |
+| `script.path`, `script.entry` | The script, and the name it is exported under in the bundle's code. Since 0.5.0 this may be a trigger source: it is run exactly as a script is, and what it returns is its output |
 | `input` | The script's input |
 | `bundle.id`, `bundle.digest` | The bundle this run is pinned to |
 | `timeoutSeconds` | How long this attempt may take |
@@ -76,8 +77,20 @@ Read what the running script needs. Each answers only for a name the script decl
 
 - A secret or variable returns `{"value": "..."}`.
 - A connection returns `{"connector", "config", "credential"}`. `credential` is absent when the connection has none.
+- `connector` is `http` or `smtp`, which a worker builds itself, or, since 0.5.0, the path of a `connector` resource in the run's bundle. For those the worker calls the export named by that connector's `entry` as `create(config, credential, signal)` and hands the script what it returns. A worker that does not know a connector must fail the run with a message that names it.
 
 Fetch these when the script asks, not ahead of time. Do not write the values to logs or to disk.
+
+### `GET /runs/{runId}/connection-groups/{path}?attempt=N`
+
+### `GET /runs/{runId}/connection-group-members/{key}/{path}?attempt=N`
+
+Added in 0.5.0. A connection group is a set of connections of one kind whose members are added per workspace with no deploy, so that a script can choose a credential by data. Both answer only for a group the script declared in `uses.connectionGroups`, and 403 otherwise.
+
+- The first returns `{"items": [{"key", "label"}]}`: the members the group has in the run's workspace, with no credentials.
+- The second returns one member as a connection does: `{"connector", "config", "credential"}`. It answers 404 when the group has no member with that key, and the script should fail with that message.
+
+A worker that predates these routes still runs every script that does not use a connection group. Give a script the group through its context only if the worker implements both.
 
 ### `POST /runs/{runId}/events`
 
@@ -102,8 +115,8 @@ Request:
 | `attempt` | As everywhere |
 | `table` | The table's path. For an external source, the table's name there |
 | `source` | Optional. The path of an external data source. Without it, `table` is a workspace table |
-| `op` | `find`, `get`, `insert`, `update` or `delete` |
-| `args` | For `find`: `filter`, `sort`, `limit`, `offset`. For `get` and `delete`: `id`. For `insert`: `rows`, 1 to 1,000 of them. For `update`: `id` and `patch` |
+| `op` | `find`, `get`, `insert`, `update`, `delete` or `aggregate` |
+| `args` | For `find`: `filter`, `sort`, `limit`, `offset`. For `get` and `delete`: `id`. For `insert`: `rows`, 1 to 1,000 of them. For `update`: `id` and `patch`. For `aggregate`: `group` (up to three of `column` or `column:day|week|month|year`), `measure` (up to five of `count`, `count:column`, `sum:column`, `avg:column`, `min:column`, `max:column`), `filter`, `sort`, `limit` |
 | `as` | Optional. The ID of a member or an end user of the tenant, usually the run's `startedBy.id`. The table's row policy then applies as it would to that person. An ID that is neither is refused with 400. Without it the script acts as the workspace and reaches every row. Ignored for an external source |
 
 Response: `{"result": ...}`.
@@ -115,8 +128,11 @@ Response: `{"result": ...}`.
 | `insert` | The inserted rows. Either all are inserted or none |
 | `update` | The row as it now is |
 | `delete` | `null` |
+| `aggregate` | `{"items": [{"by": {...}, "values": {...}}], "truncated": boolean}`, one item for each group, or one item when there are no groups |
 
 A filter is `{"column", "op", "value"}`, or `{"and": [...]}`, or `{"or": [...]}`. Operators: `eq` (the default), `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`. No field accepts SQL.
+
+`aggregate` was added after version 1 was published. A worker that does not offer it to scripts needs no change. A date or a time is gathered into periods that begin at midnight UTC. 422 means the totals took longer than five seconds to work out.
 
 Answers only for a table or a source the script declared in its manifest, and 403 otherwise. 400 means a value does not fit its column, with the column named. 404 means the table or the row is not there. 409 means a value that must be unique is already taken. 502 means an external source could not be reached or refused the request.
 

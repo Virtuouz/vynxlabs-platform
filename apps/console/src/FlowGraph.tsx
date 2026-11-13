@@ -1,5 +1,5 @@
 import dagre from "@dagrejs/dagre";
-import { useMemo, useRef, useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "react";
 
 export interface GraphNode {
   type: string;
@@ -27,20 +27,24 @@ const KIND: Record<string, string> = {
   delay: "Delay",
   approval: "Approval",
   subflow: "Sub-flow",
+  respond: "Answer",
   fail: "Fail",
 };
 
-function describe(node: GraphNode): string {
+export function describe(node: GraphNode): string {
   if (node.type === "trigger") {
-    const trigger = node.trigger as { type: string; cron?: string; event?: string };
+    const trigger = node.trigger as { type: string; cron?: string; event?: string; title?: string };
+    if (trigger.type === "form") return `Form: ${trigger.title ?? ""}`;
     return (
       trigger.cron ?? trigger.event ?? `${trigger.type[0]?.toUpperCase()}${trigger.type.slice(1)}`
     );
   }
   if (typeof node.script === "string") return node.script;
   if (typeof node.flow === "string") return node.flow;
+  if (Array.isArray(node.allow)) return `One of ${node.allow.length}, chosen by the data`;
   if (node.type === "delay") return `${node.seconds} s`;
   if (node.type === "approval") return String(node.title);
+  if (node.type === "respond") return `Answers ${node.status ?? 200}`;
   return "";
 }
 
@@ -105,13 +109,13 @@ export function FlowGraph({
   const width = Math.max(...ids.map((id) => (positions[id]?.x ?? 0) + WIDTH), 320) + 24;
   const height = Math.max(...ids.map((id) => (positions[id]?.y ?? 0) + HEIGHT), 120) + 24;
 
-  const point = (event: PointerEvent) => {
+  const point = (event: { clientX: number; clientY: number }) => {
     const box = svg.current?.getBoundingClientRect();
     return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) };
   };
 
   return (
-    <div class="overflow-auto rounded-panel border border-line bg-surface">
+    <div className="overflow-auto rounded-panel border border-line bg-surface">
       {/* biome-ignore lint/a11y/useSemanticElements: an SVG is grouped by role, it has no fieldset */}
       <svg
         ref={svg}
@@ -178,16 +182,16 @@ export function FlowGraph({
                 d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
                 fill="none"
                 stroke={edge.error ? "var(--vx-danger)" : "var(--vx-ink-muted)"}
-                stroke-width="1.5"
-                stroke-dasharray={edge.error ? "5 4" : undefined}
-                marker-end={edge.error ? "url(#arrow-error)" : "url(#arrow)"}
+                strokeWidth="1.5"
+                strokeDasharray={edge.error ? "5 4" : undefined}
+                markerEnd={edge.error ? "url(#arrow-error)" : "url(#arrow)"}
               />
               {label ? (
                 <text
                   x={(x1 + x2) / 2}
                   y={(y1 + y2) / 2 - 6}
-                  text-anchor="middle"
-                  font-size="12"
+                  textAnchor="middle"
+                  fontSize="12"
                   fill={edge.error ? "var(--vx-danger)" : "var(--vx-ink-muted)"}
                   style={{ paintOrder: "stroke", stroke: "var(--vx-surface)", strokeWidth: 4 }}
                 >
@@ -235,13 +239,13 @@ export function FlowGraph({
                 rx={node.type === "trigger" ? HEIGHT / 2 : 8}
                 fill={status === "skipped" ? "var(--vx-canvas)" : "var(--vx-surface)"}
                 stroke={isSelected ? "var(--vx-action)" : (look?.stroke ?? "var(--vx-line)")}
-                stroke-width={isSelected ? 3 : look ? 2.5 : 1.5}
-                stroke-dasharray={status === "skipped" ? "4 3" : undefined}
+                strokeWidth={isSelected ? 3 : look ? 2.5 : 1.5}
+                strokeDasharray={status === "skipped" ? "4 3" : undefined}
               />
-              <text x={14} y={22} font-size="13" font-weight="600" fill="var(--vx-ink)">
+              <text x={14} y={22} fontSize="13" fontWeight="600" fill="var(--vx-ink)">
                 {id.length > 20 ? `${id.slice(0, 19)}…` : id}
               </text>
-              <text x={14} y={40} font-size="12" fill="var(--vx-ink-muted)">
+              <text x={14} y={40} fontSize="12" fill="var(--vx-ink-muted)">
                 {(() => {
                   const text = [KIND[node.type] ?? node.type, describe(node)]
                     .filter(Boolean)

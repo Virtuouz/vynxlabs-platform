@@ -1,4 +1,6 @@
 export {
+  type Aggregated,
+  type AggregateOptions,
   ApiError,
   type AppContext,
   type AppTable,
@@ -6,11 +8,15 @@ export {
   appContext,
   type Filter,
   type FindOptions,
+  type FlowRun,
+  FlowRunError,
+  flowRun,
   logoUrl,
   type Page,
   type Principal,
   type Run,
   RunError,
+  runFlow,
   runScript,
   type Session,
   session,
@@ -18,6 +24,7 @@ export {
   signInUrl,
   signOut,
   staffSignInUrl,
+  startFlow,
   table,
 } from "./client.ts";
 export { type Query, useQuery, useSession } from "./hooks.ts";

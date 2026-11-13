@@ -1,4 +1,5 @@
 import { sql } from "@vynxlabs/db";
+import { APP_FACING_KINDS } from "@vynxlabs/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
 
 export { PERMISSION_PATTERN } from "@vynxlabs/manifest";
@@ -39,7 +40,7 @@ export function grants(permissions: readonly string[], permission: string): bool
  * tenant's apps only, hold nothing outside this list whatever role they are bound to:
  * a binding made too wide cannot hand a portal user the tenant's settings or secrets.
  */
-const APP_FACING = new Set(["app", "data", "data_all", "file", "run", "script", "table", "theme"]);
+const APP_FACING = new Set(APP_FACING_KINDS);
 const appFacing = (permission: string) => APP_FACING.has(permission.split(":")[0] as string);
 
 interface Held {
@@ -79,6 +80,16 @@ export async function check(
     return { allowed: false, related: false };
   }
   if (appOnly && !appFacing(permission)) return { allowed: false, related: true };
+  // A member suspended in a tenant holds nothing there, by any binding or group, until resumed.
+  // An operator's access grant is not membership, and is ended by itself.
+  let suspended = false;
+  if (principal.type === "member" && tenantId !== null) {
+    const membership = await sql<{ suspended: boolean }>`
+      select suspended_at is not null as suspended from tenant_member
+      where tenant_id = ${tenantId} and member_id = ${id}
+    `.execute(db);
+    suspended = membership.rows[0]?.suspended === true;
+  }
 
   const principalMatch =
     principal.type === "member"
@@ -97,6 +108,9 @@ export async function check(
         : principal.type === "end_user"
           ? sql`(
               (b.principal_type = 'end_user' and b.principal_id = ${id})
+              or (b.principal_type = 'end_user_group' and b.principal_id in (
+                select group_id from end_user_group_member where end_user_id = ${id}
+              ))
               or b.principal_type in ('end_users', 'anonymous')
             )`
           : sql`b.principal_type = 'anonymous'`;
@@ -128,7 +142,11 @@ export async function check(
       and g.expires_at > now()
   `.execute(db);
 
-  const granting = held.rows.filter((row) => grants(row.permissions, permission));
+  const granting = held.rows.filter(
+    (row) =>
+      grants(row.permissions, permission) &&
+      !(suspended && row.access_grant_id === null && row.scope_type !== "instance"),
+  );
   // Prefer a standing binding over a grant, so ordinary access is not logged as operator access.
   const standing = granting.find((row) => row.access_grant_id === null);
   const viaGrant = granting.find((row) => row.access_grant_id !== null);

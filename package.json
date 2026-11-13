@@ -7,8 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -b && pnpm --filter @vynxlabs/console build",
-    "typecheck": "tsc -b && tsc -p packages/ui && tsc -p packages/app && tsc -p apps/console && tsc -p examples/acme",
+    "build": "tsc -b && pnpm --filter @vynxlabs/console build && pnpm --filter @vynxlabs/screens build",
+    "typecheck": "tsc -b && tsc -p packages/ui && tsc -p packages/app && tsc -p packages/screens && tsc -p apps/console && tsc -p examples/acme",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "pnpm build && vitest run",
@@ -21,18 +21,14 @@
     "lock:migrations": "node scripts/migrations-lock.mjs --update",
     "check:migrations": "node scripts/migrations-lock.mjs",
     "check:licenses": "node scripts/check-licenses.mjs",
-    "dev:console": "pnpm --filter @vynxlabs/console dev"
+    "dev:console": "pnpm --filter @vynxlabs/console dev",
+    "e2e": "playwright test -c e2e"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.7",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^24.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "react": "npm:@preact/compat@^18.3.2",
-      "react-dom": "npm:@preact/compat@^18.3.2"
-    }
   }
 }

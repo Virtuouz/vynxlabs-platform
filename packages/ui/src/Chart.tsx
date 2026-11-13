@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "react";
 import { chartSpec, createChartView, loadChartEngine } from "./chartEngine.ts";
 import { chartConfig, readChartTokens } from "./chartTheme.ts";
 import { Notice } from "./Notice.tsx";
@@ -38,6 +38,7 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
   }, []);
 
   // `scheme` is a dependency so that the chart is drawn again with the new token values.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `scheme` is listed so the chart is drawn again with the new token values
   useEffect(() => {
     const element = container.current;
     if (!element) return;
@@ -73,7 +74,7 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
   }, [specText, data, height, scheme]);
 
   return (
-    <div class="relative w-full">
+    <div className="relative w-full">
       {failure ? <Notice tone="danger">This chart could not be drawn. {failure}</Notice> : null}
       {/* The engine labels its own element, so the chart's name goes on one around it. */}
       <div
@@ -81,12 +82,12 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
         aria-label={description ? `${title}. ${description}` : title}
         hidden={failure !== undefined}
       >
-        <div ref={container} class="w-full" style={{ minHeight: `${height}px` }} />
+        <div ref={container} className="w-full" style={{ minHeight: `${height}px` }} />
       </div>
       {drawn || failure ? null : (
         <div
           aria-hidden="true"
-          class="absolute inset-0 flex animate-pulse items-center justify-center rounded-control bg-sunken text-[13px] text-ink-muted"
+          className="absolute inset-0 flex animate-pulse items-center justify-center rounded-control bg-sunken text-[13px] text-ink-muted"
         >
           Loading chart
         </div>

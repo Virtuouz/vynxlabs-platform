@@ -27,12 +27,15 @@ export function Tenants({ me }: { me: Me }) {
         {
           header: "Name",
           cell: (row) => (
-            <Link to={`/t/${row.id}/workspaces`} class="font-medium text-action">
+            <Link to={`/t/${row.id}/workspaces`} className="font-medium text-action">
               {row.name}
             </Link>
           ),
         },
-        { header: "Slug", cell: (row) => <code class="font-mono text-[13px]">{row.slug}</code> },
+        {
+          header: "Slug",
+          cell: (row) => <code className="font-mono text-[13px]">{row.slug}</code>,
+        },
         ...(operator
           ? [
               {
@@ -65,7 +68,12 @@ export function Tenants({ me }: { me: Me }) {
                   name: "dataLocation",
                   label: "Database location",
                   required: false,
-                  hint: "Leave empty for the instance's own database. Otherwise the name of a registered location. It is chosen once.",
+                  placeholder: "The instance's own database",
+                  hint: "Leave empty for the instance's own database. It is chosen once.",
+                  choose: {
+                    path: "/instance/database-locations",
+                    option: (item: { name: string }) => ({ value: item.name, label: item.name }),
+                  },
                 },
               ],
               submit: ({ name, slug, dataLocation }) =>

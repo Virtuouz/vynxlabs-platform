@@ -1,4 +1,4 @@
-import type { ComponentChildren } from "preact";
+import type { ReactNode } from "react";
 
 export type BadgeTone = "neutral" | "action" | "attention" | "danger" | "success";
 
@@ -10,16 +10,10 @@ const tones: Record<BadgeTone, string> = {
   success: "bg-success-soft text-success",
 };
 
-export function Badge({
-  tone = "neutral",
-  children,
-}: {
-  tone?: BadgeTone;
-  children: ComponentChildren;
-}) {
+export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; children: ReactNode }) {
   return (
     <span
-      class={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
     >
       {children}
     </span>

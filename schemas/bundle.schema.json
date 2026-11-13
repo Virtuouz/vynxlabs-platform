@@ -18,9 +18,13 @@
         {
           "type": "number",
           "const": 2
+        },
+        {
+          "type": "number",
+          "const": 3
         }
       ],
-      "description": "2 adds `assets`. A bundle without apps may still be written as 1."
+      "description": "2 adds `assets`. 3 lets a manifest be console-managed, and then speaks for every console-managed resource of the workspace. A bundle with neither is still written as 1."
     },
     "sdkVersion": {
       "type": "string",
@@ -73,8 +77,16 @@
             "maxLength": 255
           },
           "ownership": {
-            "type": "string",
-            "const": "code"
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "code"
+              },
+              {
+                "type": "string",
+                "const": "ui"
+              }
+            ]
           },
           "body": {
             "type": "object",

@@ -489,7 +489,7 @@ An app's files are listed in the bundle by checksum and stored once per tenant. 
 
 ### Frontend stack
 
-The console and the component kit use Preact and Vite, with the kit built on Base UI and Tailwind. The app SDK built on that foundation is designed in the apps phase. A drag-and-drop builder is deferred.
+The console and the component kit use React and Vite, with the kit built on Base UI and Tailwind. The app SDK built on that foundation is designed in the apps phase. A drag-and-drop builder is deferred.
 
 ## Extensibility
 
@@ -617,7 +617,7 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | App addresses | By path on the instance's address. Optionally a second address for every app. A hostname a tenant registers serves one app at its root, with TLS left to the proxy in front | Locked |
 | App files | Listed in the bundle by checksum, stored once per tenant | Provisional |
 | Expression language | CEL (Common Expression Language), evaluated in a sandbox with time and memory limits | Locked |
-| Frontend framework and component kit | Preact and Vite, with a kit built on Base UI and Tailwind | Locked |
+| Frontend framework and component kit | React and Vite, with a kit built on Base UI and Tailwind | Locked |
 | Chart library | Vega-Lite, loaded only when a chart is shown, and drawn without evaluating strings as code | Locked |
 | Hosting provider | Fly.io for Vynxlabs-hosted instances, single-host Compose for VPS and on-prem. No provider is locked in | Locked |
 
@@ -707,7 +707,7 @@ Nothing below is in scope for the early phases, but no design may block the defe
 - [x] Confirm the authentication approach: Better Auth inside the control plane.
 - [ ] Confirm the remaining provisional rows in the technology decisions table.
 - [x] Choose the flow expression language: CEL.
-- [x] Choose the frontend framework and the component kit's foundation: Preact, Vite, Base UI and Tailwind.
+- [x] Choose the frontend framework and the component kit's foundation: React, Vite, Base UI and Tailwind.
 - [ ] Choose a product name and check it for trademark conflicts.
 - [ ] Get legal review of Apache 2.0 together with the contract clause that assigns the tenant repository.
 - [x] Decide whether a clone of a production workspace is always a dev workspace: yes. A clone is a dev workspace linked to the workspace it came from.

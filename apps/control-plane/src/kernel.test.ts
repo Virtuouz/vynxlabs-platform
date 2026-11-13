@@ -350,8 +350,10 @@ describe("permissions", () => {
       (r: { name: string }) => r.name,
     );
     expect(listed).toEqual([
+      "app_maintainer",
       "deployer",
       "developer",
+      "portal_reader",
       "portal_user",
       "tenant_admin",
       "viewer",
@@ -681,15 +683,19 @@ describe("resource registry", () => {
       "app",
       "binding",
       "connection",
+      "connection_group",
+      "connector",
       "data_source",
       "event",
       "flow",
+      "interface",
       "role",
       "schedule",
       "script",
       "table",
       "theme",
       "trigger",
+      "trigger_source",
       "variable",
     ]);
   });
@@ -1011,12 +1017,55 @@ describe("the write path", () => {
   test("every kernel route that changes something was exercised and audited", () => {
     // The execution, data, environment and app routes have the same check in their own test files.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-auth|bundle-assets|portal|domains)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim)(\/|$)/;
     // Deleting a workspace is exercised in environments.test.ts.
     expect(
       t.unexercised(
-        (route) => !execution.test(route) && route !== "DELETE /api/v1/tenants/:t/workspaces/:w",
+        (route) =>
+          !execution.test(route) &&
+          route !== "DELETE /api/v1/tenants/:t/workspaces/:w" &&
+          // Suspending and disabling a member are exercised in scim.test.ts.
+          route !== "PATCH /api/v1/members/:id" &&
+          route !== "PATCH /api/v1/tenants/:t/members/:memberId",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("reading the audit log", () => {
+  test("it narrows by area, actor and time, and names who acted", async () => {
+    const all = (await alice.client.get(`/tenants/${acme}/audit?limit=200`)).body.items as {
+      action: string;
+      actorId: string | null;
+      actorLabel: string | null;
+      occurredAt: string;
+    }[];
+    expect(all.length).toBeGreaterThan(5);
+    const mine = all.find((entry) => entry.actorId === alice.id);
+    expect(mine?.actorLabel).toMatch(/@/);
+
+    const area = (await alice.client.get(`/tenants/${acme}/audit?limit=200&area=workspace`)).body
+      .items as { action: string }[];
+    expect(area.length).toBeGreaterThan(0);
+    expect(area.every((entry) => entry.action.startsWith("workspace."))).toBe(true);
+    // An area is a whole word: `work` is not the start of `workspace.created`.
+    expect((await alice.client.get(`/tenants/${acme}/audit?area=work`)).body.items).toEqual([]);
+    // A wildcard is refused, not passed to the database.
+    expect((await alice.client.get(`/tenants/${acme}/audit?area=%25`)).status).toBe(400);
+
+    const byActor = (await alice.client.get(`/tenants/${acme}/audit?limit=200&actorId=${alice.id}`))
+      .body.items as { actorId: string }[];
+    expect(byActor.length).toBeGreaterThan(0);
+    expect(byActor.every((entry) => entry.actorId === alice.id)).toBe(true);
+
+    const later = new Date(Date.now() + 60_000).toISOString();
+    expect(
+      (await alice.client.get(`/tenants/${acme}/audit?from=${encodeURIComponent(later)}`)).body
+        .items,
+    ).toEqual([]);
+    expect(
+      (await alice.client.get(`/tenants/${acme}/audit?limit=200&to=${encodeURIComponent(later)}`))
+        .body.items.length,
+    ).toBe(all.length);
   });
 });

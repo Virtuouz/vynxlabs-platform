@@ -1,5 +1,7 @@
 /** The platform's own pages for a tenant's apps: signing in, setting a password, and saying no. */
 
+import { FORM_TEXT_LIMIT, type FormTrigger } from "@vynxlabs/manifest";
+
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",
   "<": "&lt;",
@@ -46,6 +48,8 @@ button, a.button {
   background: var(--vx-action); border: 0; border-radius: var(--vx-radius-control);
 }
 button.plain { color: var(--vx-ink); background: var(--vx-sunken); }
+a.button.plain { color: var(--vx-ink); background: var(--vx-sunken); margin-top: 8px; }
+.or { margin: 20px 0 0; text-align: center; font-size: 13px; }
 :focus-visible { outline: 2px solid var(--vx-action); outline-offset: 2px; }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: var(--vx-radius-control); font-size: 14px; }
 .notice.danger { background: var(--vx-danger-soft); color: var(--vx-danger); }
@@ -56,6 +60,18 @@ a { color: var(--vx-action); }
 ul.apps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 ul.apps a { display: block; padding: 12px; border: 1px solid var(--vx-line); border-radius: var(--vx-radius-control); text-decoration: none; font-weight: 600; }
 ul.apps small { display: block; font-weight: 400; color: var(--vx-ink-muted); }
+main.wide { max-width: 520px; }
+textarea, select {
+  width: 100%; padding: 9px 10px; font: inherit; color: var(--vx-ink); background: var(--vx-surface);
+  border: 1px solid var(--vx-line); border-radius: var(--vx-radius-control);
+}
+textarea { min-height: 120px; resize: vertical; }
+label.tick { display: flex; align-items: flex-start; gap: 8px; font-weight: 400; font-size: 15px; }
+label.tick input { width: auto; margin-top: 4px; }
+small.help { display: block; margin-top: 4px; color: var(--vx-ink-muted); font-size: 13px; }
+small.wrong { display: block; margin-top: 4px; color: var(--vx-danger); font-size: 13px; }
+.must { color: var(--vx-danger); }
+.trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 `;
 
 export interface PageFrame {
@@ -70,7 +86,13 @@ export interface Notice {
   text: string;
 }
 
-function page(frame: PageFrame, title: string, body: string, notice?: Notice): string {
+function page(
+  frame: PageFrame,
+  title: string,
+  body: string,
+  notice?: Notice,
+  wide = false,
+): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -82,7 +104,7 @@ function page(frame: PageFrame, title: string, body: string, notice?: Notice): s
 <link rel="stylesheet" href="/_platform/portal.css">
 </head>
 <body>
-<main>
+<main${wide ? ' class="wide"' : ""}>
 <div class="brand">${frame.logoHref ? `<img src="${escapeHtml(frame.logoHref)}" alt="">` : ""}<span>${escapeHtml(frame.tenantName)}</span></div>
 ${notice ? `<div class="notice ${notice.kind}" role="${notice.kind === "danger" ? "alert" : "status"}">${escapeHtml(notice.text)}</div>` : ""}
 ${body}
@@ -99,24 +121,47 @@ const withReturn = (href: string, back: string | undefined) =>
 
 export function signInPage(
   frame: PageFrame,
-  at: { portal: string; back: string | undefined; signUp: boolean; email?: string },
+  at: {
+    portal: string;
+    back: string | undefined;
+    signUp: boolean;
+    email?: string;
+    /** The identity providers the tenant's end users sign in through. */
+    providers?: { id: string; name: string }[];
+    /** False when single sign-on is required of everyone, so there is no password to ask for. */
+    password?: boolean;
+  },
   notice?: Notice,
 ): string {
-  return page(
-    frame,
-    "Sign in",
-    `<h1>Sign in</h1>
-<form method="post" action="${escapeHtml(at.portal)}/sign-in">
+  const providers = (at.providers ?? [])
+    .map(
+      (provider, index) =>
+        `<a class="button${at.password === false && index === 0 ? "" : " plain"}" href="${escapeHtml(
+          withReturn(`${at.portal}/sso/${provider.id}/start`, at.back),
+        )}">Sign in with ${escapeHtml(provider.name)}</a>`,
+    )
+    .join("\n");
+  const password =
+    at.password === false
+      ? ""
+      : `<form method="post" action="${escapeHtml(at.portal)}/sign-in">
 ${hidden("return", at.back)}
 <label for="email">Email</label>
 <input id="email" name="email" type="email" autocomplete="username" required value="${escapeHtml(at.email ?? "")}">
 <label for="password">Password</label>
 <input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button>
-</form>
+</form>`;
+  return page(
+    frame,
+    "Sign in",
+    `<h1>Sign in</h1>
+${password}
+${providers && password ? '<p class="or">or</p>' : ""}
+${providers}
 <nav>
-<a href="${escapeHtml(at.portal)}/forgot">Forgot your password?</a>
-${at.signUp ? `<a href="${escapeHtml(withReturn(`${at.portal}/sign-up`, at.back))}">Create an account</a>` : ""}
+${at.password === false ? "" : `<a href="${escapeHtml(at.portal)}/forgot">Forgot your password?</a>`}
+${at.signUp && at.password !== false ? `<a href="${escapeHtml(withReturn(`${at.portal}/sign-up`, at.back))}">Create an account</a>` : ""}
 <a href="${escapeHtml(withReturn(`${at.portal}/staff`, at.back))}">Staff sign-in</a>
 </nav>`,
     notice,
@@ -194,6 +239,76 @@ export function forgotPage(
 ${body}
 <nav><a href="${escapeHtml(at.portal)}/sign-in">Back to sign in</a></nav>`,
     notice,
+  );
+}
+
+/**
+ * A form trigger's page. It carries no script. `key` is made with the page,
+ * so that sending one page twice starts one run, and `website` is a field a
+ * person never sees: whatever fills it in is not a person.
+ */
+export function formPage(
+  frame: PageFrame,
+  at: {
+    action: string;
+    form: FormTrigger;
+    key: string;
+    sent?: Record<string, string | undefined>;
+    problems?: Record<string, string>;
+  },
+  notice?: Notice,
+): string {
+  const sent = at.sent ?? {};
+  const fields = at.form.fields
+    .map((field) => {
+      const id = `f-${field.name}`;
+      const value = escapeHtml(sent[field.name] ?? "");
+      const need = field.required ? " required" : "";
+      const describe = `${field.help ? `<small class="help">${escapeHtml(field.help)}</small>` : ""}${
+        at.problems?.[field.name]
+          ? `<small class="wrong">${escapeHtml(at.problems[field.name] as string)}</small>`
+          : ""
+      }`;
+      const must = field.required ? ' <span class="must" aria-hidden="true">*</span>' : "";
+      if (field.type === "checkbox") {
+        return `<label class="tick" for="${id}"><input id="${id}" name="${field.name}" type="checkbox" value="yes"${
+          sent[field.name] ? " checked" : ""
+        }${need}><span>${escapeHtml(field.label)}${must}</span></label>${describe}`;
+      }
+      const label = `<label for="${id}">${escapeHtml(field.label)}${must}</label>`;
+      if (field.type === "textarea") {
+        return `${label}<textarea id="${id}" name="${field.name}" maxlength="${FORM_TEXT_LIMIT.textarea}"${need}>${value}</textarea>${describe}`;
+      }
+      if (field.type === "select") {
+        const options = (field.options ?? [])
+          .map(
+            (option) =>
+              `<option value="${escapeHtml(option)}"${sent[field.name] === option ? " selected" : ""}>${escapeHtml(option)}</option>`,
+          )
+          .join("");
+        return `${label}<select id="${id}" name="${field.name}"${need}><option value=""></option>${options}</select>${describe}`;
+      }
+      const type = field.type === "number" ? 'type="number" step="any"' : `type="${field.type}"`;
+      const limit =
+        field.type === "text" || field.type === "email"
+          ? ` maxlength="${FORM_TEXT_LIMIT[field.type]}"`
+          : "";
+      return `${label}<input id="${id}" name="${field.name}" ${type}${limit} value="${value}"${need}>${describe}`;
+    })
+    .join("\n");
+  return page(
+    frame,
+    at.form.title,
+    `<h1>${escapeHtml(at.form.title)}</h1>
+${at.form.description ? `<p>${escapeHtml(at.form.description)}</p>` : ""}
+<form method="post" action="${escapeHtml(at.action)}">
+${hidden("key", at.key)}
+<div class="trap" aria-hidden="true"><label for="f-website">Leave this empty</label><input id="f-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+${fields}
+<button type="submit">${escapeHtml(at.form.submitLabel ?? "Send")}</button>
+</form>`,
+    notice,
+    true,
   );
 }
 

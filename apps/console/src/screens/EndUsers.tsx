@@ -9,15 +9,19 @@ import {
   Table,
   TextField,
 } from "@vynxlabs/ui";
-import { useState } from "preact/hooks";
+import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask } from "../ask.tsx";
 import { CopyButton, CreateDialog, Page, when } from "../ListScreen.tsx";
+import { AttributesDialog } from "./Groups.tsx";
 
 interface EndUser {
   id: string;
   email: string;
   name: string;
   hasPassword: boolean;
+  attributes: Record<string, string>;
+  groups: string[];
   disabled: boolean;
   lastSignedInAt: string | null;
   createdAt: string;
@@ -42,7 +46,7 @@ const failed = (error: unknown) => {
 
 function Status({ user }: { user: EndUser }) {
   return (
-    <span class="flex flex-wrap gap-1">
+    <span className="flex flex-wrap gap-1">
       {user.disabled ? <Badge tone="danger">Disabled</Badge> : null}
       {user.hasPassword ? null : <Badge tone="attention">Invited</Badge>}
       {user.hasPassword && !user.disabled ? <Badge tone="success">Active</Badge> : null}
@@ -67,21 +71,21 @@ function LinkDialog({ link, onClose }: { link: ShownLink | undefined; onClose: (
         : {})}
     >
       {link ? (
-        <div class="flex flex-col gap-3">
-          <div class="flex flex-col gap-2 rounded-control border border-line bg-sunken p-3">
-            <code class="font-mono text-[13px] break-all select-all">{link.url}</code>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 rounded-control border border-line bg-sunken p-3">
+            <code className="font-mono text-[13px] break-all select-all">{link.url}</code>
             <div>
               <CopyButton value={link.url} label="Copy link" />
             </div>
           </div>
-          <p class="m-0">
+          <p className="m-0">
             {link.emailed
               ? "It was also emailed to them."
               : "This instance sends no mail, so pass the link on yourself."}{" "}
             It works once, until {when(link.expiresAt)}. It is not shown again here: make a new one
             if it is lost.
           </p>
-          <div class="flex justify-end">
+          <div className="flex justify-end">
             <Button variant="primary" onClick={onClose}>
               Done
             </Button>
@@ -98,6 +102,7 @@ export function EndUsers({ base }: { base: string }) {
   const [trail, setTrail] = useState<(string | null)[]>([null]);
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<ShownLink>();
+  const [attributesOf, setAttributesOf] = useState<EndUser>();
   const [problem, setProblem] = useState<string>();
 
   const query = new URLSearchParams({ limit: String(PAGE) });
@@ -124,6 +129,10 @@ export function EndUsers({ base }: { base: string }) {
       setLink({ ...made, email: user.email, purpose });
     });
   const actions = (user: EndUser) => [
+    {
+      label: "Attributes",
+      onSelect: () => setAttributesOf({ ...user, attributes: user.attributes ?? {} }),
+    },
     // A disabled account cannot be sent a link: enable it first.
     ...(user.disabled
       ? []
@@ -143,13 +152,14 @@ export function EndUsers({ base }: { base: string }) {
         },
     {
       label: "Delete",
-      onSelect: () => {
-        if (
-          !window.confirm(
-            `Delete ${user.email}? They can no longer sign in, and access given to them is removed. Their rows in tables are kept.`,
-          )
-        )
-          return;
+      onSelect: async () => {
+        const sure = await ask.confirm({
+          title: `Delete ${user.email}?`,
+          text: "They can no longer sign in, and access given to them is removed. Their rows in tables are kept.",
+          action: "Delete",
+          danger: true,
+        });
+        if (!sure) return;
         return act(() => api.delete(`${base}/end-users/${user.id}`));
       },
     },
@@ -167,13 +177,13 @@ export function EndUsers({ base }: { base: string }) {
       description="The client's own customers and portal users: the people who sign in to this tenant's portal and apps. They are a pool that belongs to this tenant alone, separate from members, and they never see the console."
       action={inviteButton}
     >
-      <div class="max-w-sm">
+      <div className="max-w-sm">
         <TextField
           label="Search by email or name"
           name="search"
           value={search}
           required={false}
-          onInput={(value) => {
+          onChange={(value) => {
             setSearch(value);
             setTrail([null]);
           }}
@@ -189,27 +199,37 @@ export function EndUsers({ base }: { base: string }) {
           rows={rows}
           rowKey={(row) => row.id}
           columns={[
-            { header: "Email", cell: (row) => <span class="font-medium">{row.email}</span> },
+            { header: "Email", cell: (row) => <span className="font-medium">{row.email}</span> },
             { header: "Name", cell: (row) => row.name },
             { header: "Status", cell: (row) => <Status user={row} /> },
+            {
+              header: "Groups",
+              cell: (row) => (
+                <span className="flex flex-wrap gap-1">
+                  {(row.groups ?? []).map((group) => (
+                    <Badge key={group}>{group}</Badge>
+                  ))}
+                </span>
+              ),
+            },
             {
               header: "Last signed in",
               cell: (row) =>
                 row.lastSignedInAt ? (
-                  <span class="whitespace-nowrap">{when(row.lastSignedInAt)}</span>
+                  <span className="whitespace-nowrap">{when(row.lastSignedInAt)}</span>
                 ) : (
-                  <span class="text-ink-muted">Never</span>
+                  <span className="text-ink-muted">Never</span>
                 ),
             },
             {
               header: "",
               align: "end",
               cell: (row) => (
-                <span class="inline-block">
+                <span className="inline-block">
                   <Menu
                     label={
                       <span>
-                        Actions<span class="sr-only"> for {row.email}</span>
+                        Actions<span className="sr-only"> for {row.email}</span>
                       </span>
                     }
                     items={actions(row)}
@@ -230,7 +250,7 @@ export function EndUsers({ base }: { base: string }) {
           }
         />
       ) : (
-        <p class="text-ink-muted">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       )}
       {trail.length > 1 || page.data?.nextCursor ? (
         <Pagination
@@ -263,6 +283,18 @@ export function EndUsers({ base }: { base: string }) {
         }}
       />
       <LinkDialog link={link} onClose={() => setLink(undefined)} />
+      {attributesOf ? (
+        <AttributesDialog
+          key={attributesOf.id}
+          base={base}
+          user={attributesOf}
+          onClose={() => setAttributesOf(undefined)}
+          onSaved={() => {
+            setAttributesOf(undefined);
+            page.reload();
+          }}
+        />
+      ) : null}
     </Page>
   );
 }

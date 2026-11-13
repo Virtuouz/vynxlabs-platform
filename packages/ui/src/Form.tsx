@@ -1,4 +1,4 @@
-import { useRef, useState } from "preact/hooks";
+import { useRef, useState } from "react";
 import { Button } from "./Button.tsx";
 import {
   CheckboxField,
@@ -20,7 +20,7 @@ export interface FormProperty {
   default?: string | number | boolean;
   /** The values to choose from. The field becomes a select. */
   enum?: readonly (string | number)[];
-  /** `date`, `date-time` and `email` change the control. Any other format is plain text. */
+  /** `date`, `date-time`, `email` and `password` change the control. Any other format is plain text. */
   format?: string;
   minLength?: number;
   maxLength?: number;
@@ -158,7 +158,7 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
     setFound(({ [name]: _cleared, ...rest }) => rest);
   };
 
-  const submit = async (event: Event) => {
+  const submit = async (event: { preventDefault(): void }) => {
     event.preventDefault();
     if (off) return;
     const checked = checkForm(schema, draft);
@@ -181,9 +181,9 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
   };
 
   return (
-    <form ref={form} noValidate onSubmit={submit} class="flex max-w-xl flex-col gap-4">
-      {schema.title ? <h2 class="m-0 text-base font-semibold">{schema.title}</h2> : null}
-      {schema.description ? <p class="m-0 text-ink-muted">{schema.description}</p> : null}
+    <form ref={form} noValidate onSubmit={submit} className="flex max-w-xl flex-col gap-4">
+      {schema.title ? <h2 className="m-0 text-base font-semibold">{schema.title}</h2> : null}
+      {schema.description ? <p className="m-0 text-ink-muted">{schema.description}</p> : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {Object.entries(schema.properties).map(([name, property]) => {
         const common = {
@@ -232,7 +232,7 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
               {...(property.minimum !== undefined ? { min: property.minimum } : {})}
               {...(property.maximum !== undefined ? { max: property.maximum } : {})}
               {...(property.type === "integer" ? { step: 1 } : {})}
-              onInput={(next) => set(name, next)}
+              onChange={(next) => set(name, next)}
             />
           );
         }
@@ -244,7 +244,7 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
               {...common}
               value={text}
               withTime={property.format === "date-time"}
-              onInput={(next) => set(name, next)}
+              onChange={(next) => set(name, next)}
             />
           );
         }
@@ -259,7 +259,7 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
               {...common}
               {...limits}
               value={text}
-              onInput={(next) => set(name, next)}
+              onChange={(next) => set(name, next)}
             />
           );
         }
@@ -268,9 +268,15 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
             key={name}
             {...common}
             {...limits}
-            type={property.format === "email" ? "email" : "text"}
+            type={
+              property.format === "email"
+                ? "email"
+                : property.format === "password"
+                  ? "password"
+                  : "text"
+            }
             value={text}
-            onInput={(next) => set(name, next)}
+            onChange={(next) => set(name, next)}
           />
         );
       })}

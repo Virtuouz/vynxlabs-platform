@@ -43,6 +43,84 @@
                     "properties": {
                       "type": {
                         "const": "webhook"
+                      },
+                      "source": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                        "maxLength": 255,
+                        "description": "A trigger source to hand each request or each tick to first. What it returns is what starts the script or flow."
+                      },
+                      "input": {
+                        "enum": [
+                          "body",
+                          "request"
+                        ],
+                        "description": "What the script or flow is given. `body` is the parsed body alone, and the default. `request` is `{ body, headers, rawBody, query, method }`, for a sender whose headers matter."
+                      },
+                      "verify": {
+                        "type": "object",
+                        "description": "Checks that a request was signed with a shared secret before anything starts. A request that fails is answered 401. Covers senders that put an HMAC of the body in a header, such as GitHub, Shopify and Slack.",
+                        "properties": {
+                          "scheme": {
+                            "enum": [
+                              "hmac-sha256",
+                              "hmac-sha1"
+                            ]
+                          },
+                          "header": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9-]+$",
+                            "maxLength": 100,
+                            "description": "The header the signature is sent in."
+                          },
+                          "secret": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                            "description": "The name of the workspace secret that holds the shared secret."
+                          },
+                          "encoding": {
+                            "enum": [
+                              "hex",
+                              "base64"
+                            ],
+                            "description": "How the signature is written. Default hex."
+                          },
+                          "prefix": {
+                            "type": "string",
+                            "maxLength": 20,
+                            "description": "Text before the signature in the header, such as `sha256=`."
+                          },
+                          "signed": {
+                            "type": "string",
+                            "maxLength": 100,
+                            "description": "What was signed, with `{body}` for the raw body and `{timestamp}` for the timestamp header. Default `{body}`. Slack signs `v0:{timestamp}:{body}`."
+                          },
+                          "timestampHeader": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9-]+$",
+                            "maxLength": 100,
+                            "description": "A header holding when the request was sent, in seconds since 1970."
+                          },
+                          "toleranceSeconds": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 86400,
+                            "description": "How old a request may be, by its timestamp header. Default 300."
+                          }
+                        },
+                        "required": [
+                          "scheme",
+                          "header",
+                          "secret"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "respond": {
+                        "enum": [
+                          "now",
+                          "flow"
+                        ],
+                        "description": "`now` answers 202 as soon as the flow has started, and is the default. `flow` holds the request open for up to 25 seconds, for a respond step to answer."
                       }
                     },
                     "required": [
@@ -63,6 +141,12 @@
                       "timezone": {
                         "type": "string",
                         "maxLength": 64
+                      },
+                      "source": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                        "maxLength": 255,
+                        "description": "A trigger source to hand each request or each tick to first. What it returns is what starts the script or flow."
                       }
                     },
                     "required": [
@@ -94,6 +178,103 @@
                       "event"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "const": "form"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "fields": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 30,
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_]*$",
+                              "maxLength": 63,
+                              "description": "The key the value has in the input."
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "type": {
+                              "enum": [
+                                "text",
+                                "textarea",
+                                "email",
+                                "number",
+                                "date",
+                                "select",
+                                "checkbox"
+                              ]
+                            },
+                            "required": {
+                              "type": "boolean"
+                            },
+                            "help": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "uniqueItems": true,
+                              "description": "What a select offers."
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "label",
+                            "type"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "submitLabel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "success": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "What is shown once the form was sent."
+                      },
+                      "access": {
+                        "enum": [
+                          "anyone",
+                          "signed_in"
+                        ],
+                        "description": "Who may send the form. `signed_in` asks for a sign-in to the tenant's portal first. Default `anyone`."
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "title",
+                      "fields"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -120,6 +301,60 @@
                 "minLength": 1,
                 "maxLength": 2000,
                 "description": "A CEL expression."
+              },
+              "inputs": {
+                "type": "object",
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "maxLength": 63
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "description": "A CEL expression."
+                },
+                "maxProperties": 50,
+                "description": "An expression for each field of the script's input."
+              },
+              "with": {
+                "type": "object",
+                "properties": {
+                  "connections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Connections the script may reach in this step, beyond what it declares itself."
+                  },
+                  "tables": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Tables the script may reach in this step, beyond what it declares itself."
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Events the script may reach in this step, beyond what it declares itself."
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [
@@ -195,6 +430,44 @@
             "type": "object",
             "properties": {
               "type": {
+                "const": "respond"
+              },
+              "status": {
+                "type": "integer",
+                "minimum": 200,
+                "maximum": 599
+              },
+              "headers": {
+                "type": "object",
+                "propertyNames": {
+                  "pattern": "^[A-Za-z0-9-]+$",
+                  "maxLength": 100
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "description": "A CEL expression."
+                },
+                "maxProperties": 20,
+                "description": "An expression for each header. Each must give text."
+              },
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "An expression. An object or a list is sent as JSON, and text as it is."
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
                 "const": "foreach"
               },
               "items": {
@@ -213,6 +486,24 @@
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
                 "maxLength": 255
               },
+              "flowFrom": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "An expression that gives the path of the flow to start. It must give one of the paths in `allow`."
+              },
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                  "maxLength": 255
+                },
+                "minItems": 1,
+                "maxItems": 50,
+                "uniqueItems": true,
+                "description": "The flows `flowFrom` may choose. Each is checked like a flow named outright: it must exist, be startable, and not lead back here."
+              },
               "input": {
                 "type": "string",
                 "minLength": 1,
@@ -223,6 +514,45 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 20
+              },
+              "with": {
+                "type": "object",
+                "properties": {
+                  "connections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Connections the script may reach in this step, beyond what it declares itself."
+                  },
+                  "tables": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Tables the script may reach in this step, beyond what it declares itself."
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                      "maxLength": 255
+                    },
+                    "maxItems": 20,
+                    "uniqueItems": true,
+                    "description": "Events the script may reach in this step, beyond what it declares itself."
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [
@@ -301,6 +631,24 @@
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
                 "maxLength": 255
               },
+              "flowFrom": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "An expression that gives the path of the flow to start. It must give one of the paths in `allow`."
+              },
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                  "maxLength": 255
+                },
+                "minItems": 1,
+                "maxItems": 50,
+                "uniqueItems": true,
+                "description": "The flows `flowFrom` may choose. Each is checked like a flow named outright: it must exist, be startable, and not lead back here."
+              },
               "input": {
                 "type": "string",
                 "minLength": 1,
@@ -309,8 +657,7 @@
               }
             },
             "required": [
-              "type",
-              "flow"
+              "type"
             ],
             "additionalProperties": false
           },
@@ -361,6 +708,31 @@
         "required": [
           "from",
           "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "layout": {
+      "type": "object",
+      "description": "Where each node sits in the editor, for a flow drawn in the console. It changes nothing about how the flow runs.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 63
+      },
+      "maxProperties": 200,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "x",
+          "y"
         ],
         "additionalProperties": false
       }

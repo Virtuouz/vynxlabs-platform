@@ -1,16 +1,19 @@
 import {
   Button,
   type Column,
+  ComboboxField,
   Dialog,
   EmptyState,
   Notice,
+  type Option,
   SelectField,
   Table,
   TextField,
 } from "@vynxlabs/ui";
-import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import type { ReactNode } from "react";
+import { useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
+import { ask, notify } from "./ask.tsx";
 
 export interface FormField {
   name: string;
@@ -19,7 +22,45 @@ export interface FormField {
   hint?: string;
   required?: boolean;
   options?: { value: string; label: string }[];
+  /**
+   * A list to choose from that the API holds: a GET route returning `{ items }`,
+   * and how one item becomes a choice. The field is then a searchable list, so
+   * nobody types a name that has to match something elsewhere.
+   */
+  choose?: { path: string; option: (item: never) => Option | undefined };
+  /** Shows the field only while this holds for what has been entered so far. */
+  when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
+}
+
+function ChoiceField({
+  field,
+  value,
+  error,
+  onChange,
+}: {
+  field: FormField;
+  value: string | undefined;
+  error: string | undefined;
+  onChange: (value: string | undefined) => void;
+}) {
+  const choose = field.choose as NonNullable<FormField["choose"]>;
+  const list = useLoad<{ items: never[] }>(choose.path);
+  const options = (list.data?.items ?? [])
+    .map(choose.option)
+    .filter((option): option is Option => option !== undefined);
+  return (
+    <ComboboxField
+      label={field.label}
+      options={options}
+      value={value}
+      hint={list.error ? list.error.message : field.hint}
+      error={error}
+      placeholder={list.loading ? "Loading…" : (field.placeholder ?? "Choose")}
+      empty={list.loading ? "Loading…" : "Nothing to choose from."}
+      onChange={onChange}
+    />
+  );
 }
 
 export interface CreateConfig {
@@ -29,7 +70,7 @@ export interface CreateConfig {
   fields: FormField[];
   submit: (values: Record<string, string>) => Promise<unknown>;
   /** Something to show once after creating, such as a key that is only shown now. */
-  afterCreate?: (result: unknown) => ComponentChildren;
+  afterCreate?: (result: unknown) => ReactNode;
 }
 
 export interface ListScreenProps<Row> {
@@ -42,7 +83,9 @@ export interface ListScreenProps<Row> {
   empty: { title: string; text?: string };
   create?: CreateConfig;
   /** Adds a last column of actions per row. */
-  rowActions?: (row: Row, reload: () => void) => ComponentChildren;
+  rowActions?: (row: Row, reload: () => void) => ReactNode;
+  /** A button beside the title, for a screen whose way to add something is not a dialog. */
+  action?: ReactNode;
 }
 
 export function Page({
@@ -53,15 +96,17 @@ export function Page({
 }: {
   title: string;
   description?: string | undefined;
-  action?: ComponentChildren;
-  children: ComponentChildren;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section class="flex flex-col gap-4">
-      <header class="flex flex-wrap items-end justify-between gap-3">
+    <section className="flex flex-col gap-4">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 class="m-0 text-xl font-semibold tracking-tight">{title}</h1>
-          {description ? <p class="mt-1 mb-0 max-w-[70ch] text-ink-muted">{description}</p> : null}
+          <h1 className="m-0 text-xl font-semibold tracking-tight">{title}</h1>
+          {description ? (
+            <p className="mt-1 mb-0 max-w-[70ch] text-ink-muted">{description}</p>
+          ) : null}
         </div>
         {action}
       </header>
@@ -95,7 +140,7 @@ export function CreateDialog({
       {...(config.description ? { description: config.description } : {})}
     >
       <form
-        class="flex flex-col gap-3"
+        className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
@@ -117,7 +162,15 @@ export function CreateDialog({
         }}
       >
         {config.fields.map((field) =>
-          field.options ? (
+          field.when && !field.when(values) ? null : field.choose ? (
+            <ChoiceField
+              key={field.name}
+              field={field}
+              value={values[field.name]}
+              error={fieldError(field.name)}
+              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value ?? "" }))}
+            />
+          ) : field.options ? (
             <SelectField
               key={field.name}
               name={field.name}
@@ -139,12 +192,12 @@ export function CreateDialog({
               {...(field.placeholder ? { placeholder: field.placeholder } : {})}
               {...(field.hint ? { hint: field.hint } : {})}
               error={fieldError(field.name)}
-              onInput={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
+              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
             />
           ),
         )}
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
-        <div class="mt-1 flex justify-end gap-2">
+        <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={busy}>
             {config.action}
@@ -159,7 +212,7 @@ export function CreateDialog({
 export function ListScreen<Row>(props: ListScreenProps<Row>) {
   const list = useLoad<{ items: Row[] }>(props.path);
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState<ComponentChildren>();
+  const [created, setCreated] = useState<ReactNode>();
   const { create } = props;
 
   const columns: Column<Row>[] = props.rowActions
@@ -172,7 +225,9 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
     <Button variant="primary" onClick={() => setCreating(true)}>
       {create.action}
     </Button>
-  ) : undefined;
+  ) : (
+    props.action
+  );
 
   return (
     <Page title={props.title} description={props.description} action={createButton}>
@@ -193,7 +248,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           }
         />
       ) : (
-        <p class="text-ink-muted">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       )}
       {create ? (
         <CreateDialog
@@ -228,12 +283,15 @@ export function RemoveButton({
       variant="danger"
       size="small"
       onClick={async () => {
-        if (!window.confirm(question)) return;
+        if (
+          !(await ask.confirm({ title: `${label}?`, text: question, action: label, danger: true }))
+        )
+          return;
         try {
           await run();
           onDone();
         } catch (error) {
-          window.alert((error as Error).message);
+          notify.error(error);
         }
       }}
     >

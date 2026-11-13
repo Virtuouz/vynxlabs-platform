@@ -22,6 +22,8 @@ export interface Config {
   managedWorkers: boolean;
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
+  /** Where the built app that draws interfaces is. Without it, generated apps are not served. */
+  screensDir: string | undefined;
   /**
    * A second address for apps. When set, apps are served there and not on the
    * instance's own address, so that an app never runs where the console's sign-in is.
@@ -158,6 +160,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
         : undefined,
     managedWorkers: managed === "true",
     consoleDir: value("CONSOLE_DIR"),
+    screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),
     mail:
       smtpUrl !== undefined && mailFrom !== undefined

@@ -5,6 +5,7 @@ import {
   defineConnection,
   defineEvent,
   defineFlow,
+  defineInterface,
   defineRole,
   defineSchedule,
   defineScript,
@@ -260,6 +261,79 @@ export const handleOrder = defineFlow({
   ],
 });
 
+// ----- A form anyone can send, handled with no code of the repository's -----
+
+/** What people write to the company through the form below. */
+export const messages = defineTable({
+  path: "messages",
+  description: "Messages sent through the contact form.",
+  columns: {
+    name: column.text({ required: true }),
+    email: column.text(),
+    about: column.text(),
+    message: column.text({ required: true }),
+  },
+});
+
+/** Published for each message, for anything that wants to act on one. */
+export const messageReceived = defineEvent({
+  path: "messages/received",
+  description: "Someone sent the contact form.",
+  payload: z.object({ id: z.string(), about: z.string().optional() }),
+});
+
+/**
+ * The contact form. The platform serves it as a page under the tenant's
+ * portal, at an address shown with the workspace's triggers. Its two steps
+ * are core nodes, which come with the platform: each is handed the one table
+ * or event it works on, and reaches nothing else. A mail step would be
+ * `core/send-email`, handed an `smtp` connection.
+ */
+export const contact = defineFlow({
+  path: "contact",
+  description: "Takes a message from the contact form, keeps it, and says that it arrived.",
+  nodes: {
+    form: trigger.form({
+      title: "Get in touch",
+      description: "We answer within two working days.",
+      fields: [
+        { name: "name", label: "Your name", type: "text", required: true },
+        { name: "email", label: "Email", type: "email", help: "If you would like an answer." },
+        {
+          name: "about",
+          label: "What is it about?",
+          type: "select",
+          options: ["An order", "An invoice", "Something else"],
+        },
+        { name: "message", label: "Your message", type: "textarea", required: true },
+      ],
+      submitLabel: "Send",
+      success: "Thank you. Your message has reached us.",
+    }),
+    keep: step.script("core/table-write", {
+      inputs: {
+        table: "'messages'",
+        values:
+          "{'name': trigger.name, 'message': trigger.message, " +
+          "'email': has(trigger.email) ? trigger.email : null, " +
+          "'about': has(trigger.about) ? trigger.about : null}",
+      },
+      with: { tables: [messages] },
+    }),
+    tell: step.script("core/publish-event", {
+      inputs: {
+        event: "'messages/received'",
+        payload: "{'id': steps.keep.output.row.id}",
+      },
+      with: { events: [messageReceived] },
+    }),
+  },
+  edges: [
+    ["form", "keep"],
+    ["keep", "tell"],
+  ],
+});
+
 // ----- The portal: one app for staff and for customers -----
 
 /** Things customers should know, written by staff. Anyone may read them. */
@@ -270,6 +344,92 @@ export const notices = defineTable({
     title: column.text({ required: true }),
     body: column.text(),
   },
+});
+
+/**
+ * Invoices, which two kinds of people see differently. Someone in the
+ * `finance` group of end users sees every invoice marked for that group. A
+ * customer sees the invoices of their own company: the rows whose
+ * `customer_id` equals the `customer_id` attribute on their account. Groups
+ * and attributes are set under End users in the console, or by the identity
+ * provider people sign in through.
+ */
+export const invoices = defineTable({
+  path: "invoices",
+  description: "Invoices, seen by the finance group and by each customer for their own company.",
+  columns: {
+    number: column.text({ required: true, unique: true }),
+    total: column.number({ required: true }),
+    customer_id: column.text({ required: true }),
+    visible_to: column.text({ default: "finance" }),
+  },
+  policy: {
+    rules: [
+      { allow: "all", when: { column: "visible_to", in: "groups" } },
+      { allow: "read", when: { column: "customer_id", equals: { attribute: "customer_id" } } },
+    ],
+  },
+});
+
+/**
+ * An app with no code of its own: a screen over the invoices, as it would be
+ * made in the console under "Apps made here". It is written here to show the
+ * shape. A list of invoices, the one that is chosen beside it, and what is
+ * owed by customer. Each person who opens it is given the rows the table's
+ * rules give them, so finance and a customer see different invoices in the
+ * same app.
+ */
+export const invoiceScreen = defineInterface({
+  path: "screens/invoices",
+  title: "Invoices",
+  pages: [
+    {
+      id: "invoices",
+      title: "Invoices",
+      widgets: [
+        {
+          id: "list",
+          type: "table",
+          title: "Invoices",
+          table: "invoices",
+          fields: [
+            { column: "number" },
+            { column: "customer_id", label: "Customer" },
+            { column: "total" },
+          ],
+          sort: [{ column: "number" }],
+          at: { x: 0, y: 0, w: 8, h: 9 },
+        },
+        {
+          id: "chosen",
+          type: "card",
+          title: "The invoice chosen",
+          table: "invoices",
+          link: { from: "list", type: "same" },
+          at: { x: 8, y: 0, w: 4, h: 9 },
+        },
+        {
+          id: "owed",
+          type: "chart",
+          title: "Owed by customer",
+          table: "invoices",
+          summary: {
+            groupBy: [{ column: "customer_id" }],
+            aggregates: [{ fn: "sum", column: "total", as: "owed" }],
+          },
+          options: { mark: "bar", x: "customer_id", y: "owed" },
+          at: { x: 0, y: 9, w: 12, h: 8 },
+        },
+      ],
+    },
+  ],
+});
+
+export const invoiceApp = defineApp({
+  path: "invoice-desk",
+  title: "Invoices",
+  description: "Invoices, as each person may see them.",
+  interface: "screens/invoices",
 });
 
 /**

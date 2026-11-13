@@ -1,6 +1,7 @@
-import { Badge, Button, EmptyState, Notice } from "@vynxlabs/ui";
-import { useState } from "preact/hooks";
+import { Badge, Button, EmptyState, Menu, Notice } from "@vynxlabs/ui";
+import { lazy, Suspense, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -9,16 +10,19 @@ import {
   RemoveButton,
   when,
 } from "../ListScreen.tsx";
-import { Link, match } from "../router.tsx";
+import { Link, match, navigate } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
+import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
+import type { CodeKind } from "./Authoring.tsx";
 import { Branding } from "./Branding.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
 import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
 import { Promotion, TenantExport, WorkspaceControls } from "./Environments.tsx";
 import {
+  ConnectionGroups,
   Connections,
   Deployments,
   RunDetail,
@@ -28,17 +32,37 @@ import {
   Variables,
   Workers,
 } from "./Execution.tsx";
-import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
+import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
 
-interface Role {
-  id: string;
-  name: string;
-  description: string;
-  permissions: string[];
-  builtin: boolean;
-  workspaceId: string | null;
-  managedByResource: boolean;
-}
+// Screens that bring a library with them, or that few people open, are fetched when first
+// opened: the code editor, the screen builder with its charts, and single sign-on.
+const Changes = lazy(() => import("./Authoring.tsx").then((m) => ({ default: m.Changes })));
+const Extensions = lazy(() => import("./Authoring.tsx").then((m) => ({ default: m.Extensions })));
+const ScriptEditor = lazy(() =>
+  import("./Authoring.tsx").then((m) => ({ default: m.ScriptEditor })),
+);
+const Dashboards = lazy(() => import("./Dashboards.tsx").then((m) => ({ default: m.Dashboards })));
+const DashboardView = lazy(() =>
+  import("./Dashboards.tsx").then((m) => ({ default: m.DashboardView })),
+);
+const InterfaceBuilder = lazy(() =>
+  import("./Interfaces.tsx").then((m) => ({ default: m.InterfaceBuilder })),
+);
+const Interfaces = lazy(() => import("./Interfaces.tsx").then((m) => ({ default: m.Interfaces })));
+const SingleSignOn = lazy(() =>
+  import("./SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
+);
+
+// The flow editor brings a canvas library with it, so it is fetched when first opened.
+const FlowEditor = lazy(() =>
+  import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
+);
+
+import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
+import { RepositorySettings } from "./Git.tsx";
+import { EndUserGroups, Groups } from "./Groups.tsx";
+import { type Role, Roles } from "./Roles.tsx";
+
 interface Workspace {
   id: string;
   slug: string;
@@ -58,7 +82,7 @@ interface Grant {
   active: boolean;
 }
 
-const code = (text: string) => <code class="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 /** Production is always marked. It is the one thing nobody should have to look for. */
 export const TypeBadge = ({ type }: { type: "production" | "dev" }) =>
@@ -161,7 +185,7 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
   const runId = match("/t/:t/workspaces/:w/runs/:id", path)?.id;
   return (
-    <div class="flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
       {mine ? (
         <Notice
           tone="attention"
@@ -204,6 +228,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <Domains base={base} />
       ) : section === "groups" ? (
         <Groups base={base} />
+      ) : section === "end-user-groups" ? (
+        <EndUserGroups base={base} />
       ) : section === "service-accounts" ? (
         <ServiceAccounts base={base} path={path} />
       ) : section === "roles" ? (
@@ -212,6 +238,10 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <Access base={base} />
       ) : section === "operator-access" ? (
         <OperatorAccess base={base} />
+      ) : section === "repository" ? (
+        <RepositorySettings base={base} />
+      ) : section === "single-sign-on" ? (
+        <SingleSignOn base={base} />
       ) : section === "export" ? (
         <ExportSection base={base} />
       ) : section === "audit" ? (
@@ -244,7 +274,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           cell: (row) => (
             <Link
               to={`/t/${tenantId}/workspaces/${row.id}/scripts`}
-              class="font-medium text-action"
+              className="font-medium text-action"
             >
               {row.name}
             </Link>
@@ -328,63 +358,80 @@ function WorkspaceDetail({
   const root = `${base}/workspaces/${workspaceId}`;
   if (workspace.error) return <Notice tone="danger">{workspace.error.message}</Notice>;
   if (!workspace.data) return null;
-  const link = (slug: string, label: string) => (
-    <Link
-      to={`/t/${tenantId}/workspaces/${workspaceId}/${slug}`}
-      current={tab === slug}
-      class={`border-b-2 px-1 pb-2 no-underline ${tab === slug ? "border-action font-medium text-action" : "border-transparent text-ink-muted hover:text-ink"}`}
-    >
-      {label}
-    </Link>
-  );
   return (
-    <div class="flex flex-col gap-5">
-      <div class="flex flex-wrap items-center gap-3">
-        <Link to={`/t/${tenantId}/workspaces`} class="text-action">
-          Workspaces
-        </Link>
-        <span class="text-ink-muted">/</span>
-        <span class="font-medium">{workspace.data.name}</span>
-        <TypeBadge type={workspace.data.type} />
-        {workspace.data.triggersPaused ? <Badge tone="attention">Paused</Badge> : null}
-      </div>
-      <WorkspaceControls
-        key={workspaceId}
-        base={base}
-        tenantId={tenantId}
-        workspace={workspace.data}
-        reload={workspace.reload}
-      />
-      <nav aria-label="Workspace" class="flex flex-wrap gap-x-5 border-line border-b">
-        {link("apps", "Apps")}
-        {link("flows", "Flows")}
-        {link("scripts", "Scripts")}
-        {link("runs", "Runs")}
-        {link("triggers", "Triggers")}
-        {link("events", "Events")}
-        {link("tables", "Tables")}
-        {link("sources", "Data sources")}
-        {link("deployments", "Deployments")}
-        {link("connections", "Connections")}
-        {link("variables", "Variables")}
-        {link("secrets", "Secrets")}
-        {link("resources", "Resources")}
-      </nav>
-      {tab === "flows" && rest ? (
+    <div className="flex flex-col gap-5">
+      {tab === "settings" ? (
+        <Page
+          title="Workspace settings"
+          description="Pause what starts by itself, make a copy, or delete a dev workspace."
+        >
+          <WorkspaceControls
+            key={workspaceId}
+            base={base}
+            tenantId={tenantId}
+            workspace={workspace.data}
+            reload={workspace.reload}
+          />
+        </Page>
+      ) : null}
+      {tab === "flows" && (rest === "new" || rest.startsWith("edit/")) ? (
+        workspace.data.type === "dev" ? (
+          <Suspense fallback={<p className="text-ink-muted">Loading the editor…</p>}>
+            <FlowEditor
+              key={rest}
+              root={root}
+              link={`/t/${tenantId}/workspaces/${workspaceId}`}
+              path={rest === "new" ? undefined : rest.slice("edit/".length)}
+            />
+          </Suspense>
+        ) : (
+          <Notice tone="attention">
+            This is a production workspace. Flows are edited in a dev workspace and reach production
+            by promotion.
+          </Notice>
+        )
+      ) : tab === "flows" && rest ? (
         <FlowView
           key={rest}
           root={root}
           path={rest}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
         />
       ) : tab === "flows" ? (
-        <Flows root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <Flows
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "flow-runs" && rest ? (
         <FlowRunView
           key={rest}
           root={root}
           id={rest}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "dashboards" && rest ? (
+        <DashboardView
+          key={rest}
+          root={root}
+          id={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "dashboards" ? (
+        <Dashboards root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "screens" && rest ? (
+        <InterfaceBuilder
+          key={rest}
+          root={root}
+          path={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "screens" ? (
+        <Interfaces
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
         />
       ) : tab === "events" ? (
         <Events root={root} />
@@ -409,8 +456,43 @@ function WorkspaceDetail({
       ) : null}
       {tab === "apps" ? (
         <Apps root={root} />
+      ) : tab === "scripts" && (rest === "new" || rest.startsWith("edit/")) ? (
+        <ScriptEditor
+          key={rest}
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          path={rest === "new" ? undefined : rest.slice("edit/".length)}
+          editable={workspace.data.type === "dev"}
+        />
+      ) : tab === "extensions" && /^(connector|trigger_source)\/(new$|edit\/)/.test(rest) ? (
+        <ScriptEditor
+          key={rest}
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          kind={rest.split("/")[0] as CodeKind}
+          path={
+            rest.endsWith("/new") ? undefined : rest.slice(rest.indexOf("/edit/") + "/edit/".length)
+          }
+          editable={workspace.data.type === "dev"}
+        />
+      ) : tab === "extensions" ? (
+        <Extensions
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
+      ) : tab === "changes" ? (
+        <Changes
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "scripts" ? (
-        <Scripts root={root} runsLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />
+        <Scripts
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "runs" && runId ? (
         <RunDetail
           root={root}
@@ -422,16 +504,35 @@ function WorkspaceDetail({
       ) : tab === "triggers" ? (
         <Triggers root={root} />
       ) : tab === "deployments" ? (
-        <div class="flex flex-col gap-6">
+        <div className="flex flex-col gap-6">
           <Promotion base={base} workspace={workspace.data} reload={workspace.reload} />
           <Deployments root={root} />
         </div>
       ) : tab === "connections" ? (
-        <Connections root={root} />
+        <div className="flex flex-col gap-8">
+          <Connections root={root} />
+          <ConnectionGroups root={root} />
+        </div>
       ) : tab === "variables" ? (
         <Variables root={root} />
       ) : null}
-      {tab === "resources" ? (
+      {tab === "resources" && /^(new|edit)\//.test(rest) ? (
+        (() => {
+          const [mode, kind = "", ...at] = rest.split("/");
+          return isEditedKind(kind) ? (
+            <ResourceEditor
+              key={rest}
+              root={root}
+              link={`/t/${tenantId}/workspaces/${workspaceId}`}
+              kind={kind}
+              path={mode === "edit" ? at.join("/") : undefined}
+              editable={workspace.data.type === "dev"}
+            />
+          ) : (
+            <Notice tone="danger">There is no editor here for a {kind}.</Notice>
+          );
+        })()
+      ) : tab === "resources" ? (
         <ListScreen<{
           id: string;
           path: string;
@@ -441,11 +542,37 @@ function WorkspaceDetail({
           updatedAt: string;
         }>
           title="Resources"
-          description="Everything deployed to this workspace. Code-managed resources come from the repository and are read-only here."
+          description="Everything deployed to this workspace. Connections, variables, events, schedules and triggers can be made and changed here in a dev workspace. Scripts, flows and apps have screens of their own."
           path={`${root}/resources`}
           rowKey={(row) => row.id}
+          action={
+            workspace.data.type === "dev" ? (
+              <Menu
+                label="New"
+                align="end"
+                items={EDITED_KINDS.map((kind) => ({
+                  label: `${kind[0]?.toUpperCase()}${kind.slice(1).replace("_", " ")}`,
+                  onSelect: () =>
+                    navigate(`/t/${tenantId}/workspaces/${workspaceId}/resources/new/${kind}`),
+                }))}
+              />
+            ) : undefined
+          }
           columns={[
-            { header: "Path", cell: (row) => code(row.path) },
+            {
+              header: "Path",
+              cell: (row) =>
+                isEditedKind(row.kind) ? (
+                  <Link
+                    to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
+                    className="font-mono text-[13px] text-action"
+                  >
+                    {row.path}
+                  </Link>
+                ) : (
+                  code(row.path)
+                ),
+            },
             { header: "Kind", cell: (row) => row.kind },
             {
               header: "Managed in",
@@ -506,7 +633,7 @@ function WorkspaceDetail({
 
 function Members({ base }: { base: string }) {
   return (
-    <ListScreen<{ id: string; name: string; email: string }>
+    <ListScreen<{ id: string; name: string; email: string; suspended?: boolean }>
       title="Members"
       description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access."
       path={`${base}/members?limit=200`}
@@ -514,6 +641,10 @@ function Members({ base }: { base: string }) {
       columns={[
         { header: "Name", cell: (row) => row.name },
         { header: "Email", cell: (row) => row.email },
+        {
+          header: "",
+          cell: (row) => (row.suspended ? <Badge tone="attention">Suspended</Badge> : null),
+        },
       ]}
       empty={{ title: "No members yet" }}
       create={{
@@ -539,43 +670,32 @@ function Members({ base }: { base: string }) {
           }),
       }}
       rowActions={(row, reload) => (
-        <RemoveButton
-          confirm={`Remove ${row.email} from this tenant? Their access here is removed too.`}
-          run={() => api.delete(`${base}/members/${row.id}`)}
-          onDone={reload}
-        />
-      )}
-    />
-  );
-}
-
-function Groups({ base }: { base: string }) {
-  return (
-    <ListScreen<{ id: string; name: string; createdAt: string }>
-      title="Groups"
-      description="A group is a set of members that can be given access together."
-      path={`${base}/groups`}
-      rowKey={(row) => row.id}
-      columns={[
-        { header: "Name", cell: (row) => row.name },
-        { header: "Created", cell: (row) => when(row.createdAt) },
-      ]}
-      empty={{
-        title: "No groups yet",
-        text: "Create a group when several people need the same access.",
-      }}
-      create={{
-        action: "Create group",
-        fields: [{ name: "name", label: "Name", placeholder: "Finance team" }],
-        submit: (values) => api.post(`${base}/groups`, values),
-      }}
-      rowActions={(row, reload) => (
-        <RemoveButton
-          label="Delete"
-          confirm={`Delete the group ${row.name}? Access given to it is removed.`}
-          run={() => api.delete(`${base}/groups/${row.id}`)}
-          onDone={reload}
-        />
+        <span className="flex justify-end gap-2">
+          <Button
+            size="small"
+            onClick={async () => {
+              if (!row.suspended) {
+                const sure = await ask.confirm({
+                  title: `Suspend ${row.email}?`,
+                  text: "They hold nothing in this tenant until they are resumed. What they were given is kept, and so is whatever they hold in other tenants.",
+                  action: "Suspend",
+                  danger: true,
+                });
+                if (!sure) return;
+              }
+              await api
+                .patch(`${base}/members/${row.id}`, { suspended: !row.suspended })
+                .then(reload, notify.error);
+            }}
+          >
+            {row.suspended ? "Resume" : "Suspend"}
+          </Button>
+          <RemoveButton
+            confirm={`Remove ${row.email} from this tenant? Their access here is removed too.`}
+            run={() => api.delete(`${base}/members/${row.id}`)}
+            onDone={reload}
+          />
+        </span>
       )}
     />
   );
@@ -586,30 +706,38 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
   if (selected) {
     const keys = `${base}/service-accounts/${selected}/api-keys`;
     return (
-      <ListScreen<KeyRow>
-        title="Service account keys"
-        description="A key acts as the service account, with the access the account has been given."
-        path={keys}
-        rowKey={(row) => row.id}
-        columns={keyColumns}
-        empty={{ title: "No keys yet" }}
-        create={{
-          action: "Create API key",
-          fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
-          submit: (values) => api.post(keys, values),
-          afterCreate: showNewKey,
-        }}
-        rowActions={(row, reload) =>
-          row.revokedAt ? null : (
-            <RemoveButton
-              label="Revoke"
-              confirm={`Revoke the key "${row.name}"?`}
-              run={() => api.delete(`${keys}/${row.id}`)}
-              onDone={reload}
-            />
-          )
-        }
-      />
+      <>
+        <ListScreen<KeyRow>
+          title="Service account keys"
+          description="A key acts as the service account, with the access the account has been given."
+          path={keys}
+          rowKey={(row) => row.id}
+          columns={keyColumns}
+          empty={{ title: "No keys yet" }}
+          create={{
+            action: "Create API key",
+            fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
+            submit: (values) => api.post(keys, values),
+            afterCreate: showNewKey,
+          }}
+          rowActions={(row, reload) =>
+            row.revokedAt ? null : (
+              <RemoveButton
+                label="Revoke"
+                confirm={`Revoke the key "${row.name}"?`}
+                run={() => api.delete(`${keys}/${row.id}`)}
+                onDone={reload}
+              />
+            )
+          }
+        />
+        <Page
+          title="Agent access"
+          description="What an AI agent gets when it connects with one of these keys."
+        >
+          <AgentAccess base={base} account={selected} />
+        </Page>
+      </>
     );
   }
   const tenantId = base.split("/")[2];
@@ -623,7 +751,10 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
         {
           header: "Name",
           cell: (row) => (
-            <Link to={`/t/${tenantId}/service-accounts/${row.id}`} class="font-medium text-action">
+            <Link
+              to={`/t/${tenantId}/service-accounts/${row.id}`}
+              className="font-medium text-action"
+            >
               {row.name}
             </Link>
           ),
@@ -648,70 +779,6 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
   );
 }
 
-function Roles({ base }: { base: string }) {
-  return (
-    <ListScreen<Role>
-      title="Roles"
-      description="A role is a named set of permissions. Each permission is a kind and a verb, such as secret:write. An asterisk means any."
-      path={`${base}/roles`}
-      rowKey={(row) => row.id}
-      columns={[
-        {
-          header: "Role",
-          cell: (row) => (
-            <span class="flex flex-wrap items-center gap-2">
-              {code(row.name)}
-              {row.builtin ? <Badge>Built in</Badge> : null}
-              {row.managedByResource ? <Badge tone="action">From repository</Badge> : null}
-            </span>
-          ),
-        },
-        {
-          header: "Permissions",
-          cell: (row) => (
-            <span class="font-mono text-[13px] text-ink-muted">{row.permissions.join("  ")}</span>
-          ),
-        },
-      ]}
-      empty={{ title: "No roles" }}
-      create={{
-        action: "Create role",
-        fields: [
-          {
-            name: "name",
-            label: "Name",
-            placeholder: "secret_keeper",
-            hint: "Lowercase letters, digits and underscores.",
-          },
-          { name: "description", label: "Description", required: false },
-          {
-            name: "permissions",
-            label: "Permissions",
-            placeholder: "secret:read secret:write",
-            hint: "Separated by spaces.",
-          },
-        ],
-        submit: (values) =>
-          api.post(`${base}/roles`, {
-            name: values.name,
-            description: values.description ?? "",
-            permissions: (values.permissions ?? "").split(/[\s,]+/).filter(Boolean),
-          }),
-      }}
-      rowActions={(row, reload) =>
-        row.builtin || row.managedByResource ? null : (
-          <RemoveButton
-            label="Delete"
-            confirm={`Delete the role ${row.name}?`}
-            run={() => api.delete(`${base}/roles/${row.id}`)}
-            onDone={reload}
-          />
-        )
-      }
-    />
-  );
-}
-
 interface Binding {
   id: string;
   scopeType: string;
@@ -727,6 +794,9 @@ function Access({ base }: { base: string }) {
   const members = useLoad<{ items: { id: string; email: string }[] }>(`${base}/members?limit=200`);
   const groups = useLoad<{ items: { id: string; name: string }[] }>(`${base}/groups`);
   const accounts = useLoad<{ items: { id: string; name: string }[] }>(`${base}/service-accounts`);
+  const endUserGroups = useLoad<{ items: { id: string; name: string }[] }>(
+    `${base}/end-user-groups`,
+  );
   const endUsers = useLoad<{ items: { id: string; email: string }[] }>(
     `${base}/end-users?limit=200`,
   );
@@ -745,6 +815,10 @@ function Access({ base }: { base: string }) {
     })),
     // Every end user is one principal with no ID: whoever has signed in to this tenant's portal.
     { value: "end_users:", label: "Every end user" },
+    ...(endUserGroups.data?.items ?? []).map((g) => ({
+      value: `end_user_group:${g.id}`,
+      label: `End-user group: ${g.name}`,
+    })),
     ...(endUsers.data?.items ?? []).map((u) => ({
       value: `end_user:${u.id}`,
       label: `End user: ${u.email}`,

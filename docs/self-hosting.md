@@ -216,6 +216,72 @@ A tenant's end users are its customers and portal users. They are a pool of the 
 
 Someone who is not signed in reaches only what is bound to `anonymous`, and is limited in how often they may ask. The limit is counted by address, in each replica.
 
+## Groups, attributes and row rules for end users
+
+End users have groups of their own, under **End-user groups**. Bind a role to a group once instead of to each person. An end user also has attributes, such as `customer_id`, edited from their row under **End users**.
+
+A table's rows can be ruled by both. Under a table's **Row rules**, say who may read or change a row: everyone, the person a column names, people in the group a column names, or people whose attribute equals a column. **See it as** shows the rows as one end user sees them.
+
+## Apps made in the console
+
+A member can build an app over a workspace's tables with no code, under **Apps made here** in a dev workspace: tables, cards, charts, totals and forms, where choosing a row in one decides what another shows. It is published by deploying, promoted to production like anything else, and then shared from **Apps** with a group or with every end user.
+
+- **Who may build.** Give the built-in role `app_maintainer`. Its holder builds and deploys these apps and nothing else: no script and no flow.
+- **Who sees what.** Sharing gives the app and its tables. Which rows each person sees is decided by each table's row rules, so one app can show two groups different rows. Leaving a value off a screen does not keep it from someone who may read the row.
+- **Dashboards** are a member's own pages, under **Dashboards** in any workspace: saved without a deploy, private unless shared read-only with the workspace.
+- **The image carries the app that draws them.** `SCREENS_DIR` says where it is, and is set in the image. An instance run from source finds it after `pnpm build`. Without it, such an app says it cannot be shown.
+
+## Mail, forms and webhooks that tenants run
+
+A tenant sends mail through its own mail server. It sets up an `smtp` connection in a workspace, with the server's name, port, security and the address mail is sent from, and the password as the connection's secret. A worker makes the connection, so the mail server must be reachable from where workers run. The instance's own `SMTP_URL` is not used for this.
+
+A flow or a script can be started by a form. The platform serves the form at `/portal/<tenant>/forms/<token>`, or under `/_/forms/` at a hostname of the tenant's own. Anyone with the address can send it unless the form asks for a sign-in, so it is limited like the portal's other forms: twenty a minute for each visitor and tenant. The address is shown with the workspace's triggers to whoever holds `trigger:write`.
+
+A flow can answer the webhook that started it. Such a request is held open for up to 25 seconds, so a proxy in front of the instance must not cut requests to `/api/v1/hooks/` shorter than that. If the flow has said nothing by then the caller is answered 202, and the flow carries on.
+
+Code that tenants write, connectors and trigger sources included, runs on workers and never in the control plane.
+
+## Single sign-on
+
+A tenant's admin connects an identity provider under **Single sign-on**, for members or for end users, over OIDC or SAML. Operators connect one for themselves under **Instance**. The instance needs nothing new to run, and makes outbound requests to the provider: to read an OIDC provider's settings and keys, and to read SAML metadata when given an address for it.
+
+1. **Connect.** Give the OIDC issuer, client ID and client secret, or the SAML metadata as an address or pasted. The provider is created off.
+2. **Enter the addresses at the provider.** The console shows them with a button to copy each: the redirect address for OIDC; the reply address, entity ID and metadata address for SAML. They never change for a provider.
+3. **Try it.** A try-out opens the provider, signs nobody in, and shows what the provider sent and what would happen.
+4. **Prove a domain.** A provider of members signs in only people whose email is in a domain proved with a DNS TXT record, the same record a hostname uses. A provider of end users needs none.
+5. **Turn it on.** The console's sign-in asks for the email first and offers the provider by the email's domain. A tenant's sign-in page shows a button for each provider of end users.
+
+Worth knowing:
+
+- **People are found by the provider's own identifier,** never by email after the first sign-in. Send a name ID or subject that lasts.
+- **Creating people is off** until turned on for a provider. A new member can be given a default role. Without one they sign in and see nothing.
+- **Groups follow the provider.** Map a group the provider sends to a group here, and membership of mapped groups is set on every sign-in. Groups that are not mapped are left alone.
+- **Requiring single sign-on** refuses passwords for the people a provider covers. Members bound at the instance, the operators, keep their passwords, so that a broken provider locks nobody out for good. Keep one such account.
+- **SAML requests are signed** with a key made for each provider, unless that is turned off. SHA-1 signatures and sign-ins begun at the provider are refused unless turned on for a provider.
+- **Encrypted assertions** are opened when the provider wraps the key with RSA-OAEP and MGF1 (`rsa-oaep-mgf1p`) and the SHA-1 digest. Keycloak's defaults differ: set the client's key transport algorithm and digest. The certificate to encrypt to is in the metadata only when **Ask the provider to encrypt assertions** is on.
+- **An imported tenant's providers are paused.** Give the provider's administrator this instance's addresses, prove the domains again, and save the provider.
+- **Not built:** single logout, and one provider shared by several tenants.
+
+### Provisioning (SCIM)
+
+A provider can also push the people and groups it holds, and say when someone has left, without waiting for them to sign in. Under a provider's **Provisioning** tab, copy the address, make a token, and give both to the provider as its SCIM 2.0 base address and bearer token. The address is `/api/v1/scim/v2/<provider>` on the instance's own address, so the provider must be able to reach the instance.
+
+- **What a push does.** A pushed person is found by email or made: a member of the tenant with the provider's default role, or an end user. A member's email must be in a domain the provider has proved. An end user who already exists is taken over only on a proved domain, or when the provider's word on emails is taken.
+- **When someone leaves.** The provider turns them off, or deletes them. An end user is disabled. A member is suspended in that tenant: they keep their account and whatever they hold in other tenants, and what they held here is kept for if they come back. For the instance's own provider the account is disabled everywhere, its sessions end at once and its API keys stop working. An account is never deleted by a push.
+- **Tying a pushed person to their sign-in.** Say which pushed field holds the name the provider signs the person in by: `externalId` or `userName`. For Entra with OIDC that is usually `externalId` mapped to the object ID. With none chosen, a person's first sign-in ties them, under the rules for any first sign-in.
+- **Groups.** By default groups come from what a sign-in says. A provider can instead be told that pushed groups decide, and to make a group here for each pushed group that nothing maps yet. The group map still says which pushed group is which group here, by name.
+- **By hand.** A tenant admin can suspend and resume a member under **Members**, and an operator can disable and enable an account under **Instance**.
+- **Limits.** Users and groups, with `userName`, `externalId`, `displayName` and `members` filters, and PATCH. No bulk, no password sync, no sorting, and no attributes for end users from a push. A member's email here does not change when the provider changes it.
+- **Tested against** the request shapes Entra ID and Okta send, as recorded. It has not been run against a live tenant of either.
+
+To try it locally, the development stack has Keycloak behind a profile, with a realm of two people, `ada` and `ben`, and an OIDC client `vynxlabs-platform` whose secret is `dev-only-oidc-secret`:
+
+```
+docker compose -f deploy/compose/compose.dev.yaml --profile sso up -d keycloak
+```
+
+The issuer is `http://localhost:8180/realms/acme`. For SAML, give `http://localhost:8180/realms/acme/protocol/saml/descriptor` as the metadata address, then in Keycloak import a client from the provider's metadata address shown in the console.
+
 ## Branding
 
 A tenant sets its colours, corner radii, fonts and logo under **Branding**. They apply to its apps, its sign-in pages and the console while that tenant is open. A workspace can override them with a theme in its repository. Values are plain colours, lengths and font lists: nothing that could load a file from elsewhere.

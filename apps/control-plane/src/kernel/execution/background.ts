@@ -1,6 +1,8 @@
 import { removeExpiredAppSessions } from "../apps/sessions.js";
 import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
+import { removeExpiredSso } from "../sso/flow.js";
+import { removeOldPreviews } from "./bundles.js";
 import { reapDeadRuns, requeueLostRuns } from "./runs.js";
 import type { WorkerSupervisor } from "./supervisor.js";
 import { fireDueSchedules } from "./triggers.js";
@@ -19,6 +21,8 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     if (Date.now() - swept < 60_000) return;
     swept = Date.now();
     await removeExpiredAppSessions(kernel.db);
+    await removeExpiredSso(kernel.db);
+    await removeOldPreviews(kernel);
   };
   const steps: [string, () => Promise<unknown>][] = [
     ["schedules", () => fireDueSchedules(kernel)],

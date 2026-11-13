@@ -18,6 +18,36 @@ export interface FindOptions {
   offset?: number;
 }
 
+export interface AggregateOptions {
+  /**
+   * Columns to group by, up to three. A date or a time can be gathered into
+   * periods: `"created_at:month"`, with `day`, `week`, `month` or `year`.
+   */
+  group?: string[];
+  /**
+   * Totals to work out, up to five: `"count"`, `"count:column"`, `"sum:column"`,
+   * `"avg:column"`, `"min:column"`, `"max:column"`. Without any, rows are counted.
+   */
+  measures?: string[];
+  filter?: Filter;
+  /** Names as they come back, a group's or a total's. A leading minus sorts downwards. */
+  sort?: string[];
+  /** The most groups to return. At most 1,000. Default 200. */
+  limit?: number;
+}
+
+/** Totals, one item for each group. With no groups there is one item. */
+export interface Aggregated {
+  items: {
+    /** The group's values, under the names in `group`. */
+    by: Record<string, unknown>;
+    /** The totals, under the names in `measures`. */
+    values: Record<string, number | string | null>;
+  }[];
+  /** True when there were more groups than `limit`. */
+  truncated: boolean;
+}
+
 /** What every row of a custom table has, whatever its definition. */
 export interface SystemColumns {
   id: string;
@@ -35,6 +65,8 @@ export interface TableClient<Row, Insert = Partial<Row>> {
   insertMany(rows: Insert[]): Promise<Row[]>;
   update(id: string, changes: Partial<Insert>): Promise<Row>;
   delete(id: string): Promise<void>;
+  /** Counts, sums, averages, the least and the most, over the rows or over groups of them. */
+  aggregate(options?: AggregateOptions): Promise<Aggregated>;
   /**
    * The same table as one person sees it: its row policy applies as it would
    * to them. Without this, a script acts as the workspace and reaches every row.

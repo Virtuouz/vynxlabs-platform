@@ -2,6 +2,71 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## 0.5.0, not yet released
+
+Authoring in the console (phase 7).
+
+### For operators
+
+- **Database change.** Migrations 0019 to 0032 run on start.
+- **The console is sent compressed.** The image carries Brotli and gzip copies of the console's files and sends them itself. A proxy in front no longer needs to compress them.
+- **Old try-out bundles are removed.** A bundle made only to try a draft out is removed a week later, with the test runs that ran on it.
+- **A pull from a repository has a size limit:** 2000 files and 8 MB in the repository's folder.
+- **Provisioning over SCIM.** An identity provider can push people and groups to `/api/v1/scim/v2/<provider>` with a token made under the provider's Provisioning tab. The provider must be able to reach the instance. It was tested against the request shapes Entra ID and Okta send, not against a live tenant of either. See "Provisioning (SCIM)" in the self-hosting guide.
+- **Members can be suspended in a tenant, and accounts disabled.** A suspended member holds nothing in that tenant until resumed. A disabled account can sign in nowhere, and its API keys are refused. A provider does both by push; an admin and an operator can by hand.
+- **Removing a member from a tenant, or an end user,** now also removes their ties to the tenant's identity providers.
+- **Tenants can send mail through their own mail server,** with an `smtp` connection. Workers make the outbound connection to it. The instance's `SMTP_URL` stays for the platform's own invitations and is not lent to tenants.
+- **Forms are served under a tenant's portal,** at `/portal/<tenant>/forms/<token>`, to anyone given the address unless the form asks for a sign-in. They are held to the portal's rate limit for forms.
+- **A webhook can be held open for up to 25 seconds** while a flow answers it. A proxy in front of the instance must allow a request that long. The answer is the tenant's own, and is sent with a sandboxing content security policy.
+- **Workers run connectors and trigger sources of a tenant's own.** They are code from the tenant's bundle, like scripts, and need `code:write` to be written in the console.
+- **Apps can be made in the console,** with no code, over a workspace's tables. The image carries the app that draws them, under `SCREENS_DIR`. An instance run from source needs `pnpm build`, which builds it.
+- **Three new built-in roles' worth of access:** `app_maintainer` builds and deploys apps made in the console and no code; `portal_reader` opens apps and reads rows; `developer`, `workspace_admin` and `app_maintainer` may keep dashboards.
+- **Sharing an app with `viewer` shows every row.** That role reads everything, a table's every row included. Share with `portal_reader` or `portal_user`, which the Share button does.
+- **Single sign-on.** A tenant can connect an identity provider over OIDC or SAML, for its members or its end users, and operators can connect one for themselves under Instance. The control plane makes outbound requests to the provider. Nothing new has to run. See "Single sign-on" in the self-hosting guide.
+- **The console's sign-in asks for the email first,** then for a password or the organisation's sign-in.
+- **A tenant can require single sign-on.** Passwords are then refused for the people a provider covers. Members bound at the instance keep theirs: keep one such account.
+- **An imported tenant's identity providers arrive paused,** with their domains to be proved again.
+- **End users have groups and attributes,** and a table's rows can be ruled by them. New permissions: `end_user_group` and `sso`, both held by `tenant_admin`.
+- **Code can be written in the console.** Whoever holds `code:write` in a dev workspace can write a script there and deploy it, and workers run it as it is. `tenant_admin` and `developer` hold it. Set `console_code` to false on a tenant to turn it off there.
+- **The control plane compiles TypeScript.** It never runs what it compiles. The image now carries esbuild.
+- **A tenant can connect a git repository** over HTTPS with an access token. The control plane makes outbound requests to it.
+- **Exporting a tenant** is now the permission `export:write`. Roles that held `tenant:*` are given it.
+- The console is a React application. Nothing changes for an operator.
+
+### For tenant developers
+
+- **Apps are built with React.** Replace `preact` with `react` and `react-dom`, `@preact/preset-vite` with `@vitejs/plugin-react`, `preact/hooks` imports with `react`, and `class=` with `className=`. The kit's text, number and date fields report through `onChange`.
+- **A `platform/` folder in the repository** holds resources managed in the console, one `<path>.<kind>.yaml` each, with source beside it as `<path>.<kind>.ts`. `platform build` includes them. A path defined in the code and in a file is an error.
+- Code written in the console may import `@vynxlabs/sdk` and `node:` modules only.
+- A bundle from an older CLI still deploys, and keeps the workspace's console-managed resources.
+- `defineWebhook`, and `trigger.webhook()` in a flow, take `input: "request"` to be given headers, query, method and the raw body, and `verify` to check an HMAC signature against a workspace secret. A webhook's address also takes forms and text.
+- A sub-flow step may choose its flow when it runs: `flowFrom` with `allow`.
+- `@vynxlabs/app` gains `startFlow`, `flowRun` and `runFlow`. `flow_run:write` can be bound at one flow.
+- **Totals.** `table().aggregate({ group, measures, filter })` in apps and `ctx.table().aggregate(...)` in scripts give counts, sums, averages, the least and the most, over rows or groups of them, under the table's row policy. `GET …/aggregate/{table}` over HTTP.
+- **Settings can be made in the console.** Connections, connection groups, variables, events, schedules and triggers are made and changed under Resources in a dev workspace, and deployed like any draft.
+- **A repository that uses a core node builds as bundle format 3.** Deploying it keeps what was made in the console, as a bundle of an older format does.
+- **Build with the 0.5.0 SDK** to deploy to a 0.5.0 instance with new features. A bundle built with an earlier SDK, back to 0.2.0, keeps deploying.
+- **Connectors.** `defineConnector({ path, configSchema, create })` says how a kind of connection reaches an outside system, and a connection names it with `connector`. `smtp` is built in beside `http`: a script is given `send({ to, subject, text })`.
+- **Trigger sources.** `defineTriggerSource({ mode: "webhook" | "poll", run })` decides what a webhook's request or a schedule's tick starts. `defineWebhook`, `defineSchedule` and a flow's triggers take `source`.
+- **Nodes.** `defineScript({ node: { label, category, takes } })` puts a script in the flow editor's palette, with a form made from its input schema. A step can hand it a connection, a table or an event with `with`, and give an expression per field with `inputs`.
+- **Core nodes.** `core/http-request`, `core/send-email`, `core/table-read`, `core/table-write` and `core/publish-event` can be named in any flow. The build adds them. Paths under `core/` are the platform's.
+- **A flow can answer its webhook.** `trigger.webhook({ respond: "flow" })` and `step.respond({ status, headers, body })`.
+- **Forms.** `trigger.form({ title, fields })` in a flow, or `defineForm` for a script, makes a page the platform serves. What is sent is the input.
+- `defineInterface` declares pages of widgets over tables, and `defineApp({ interface })` serves one as an app with no code. Most are made in the console instead.
+- The widget interface grew: a widget can be handed the chosen row, more rows to ask for, and ways to edit and delete. `card` and `cards` are new, and `chart` takes `mark`, `x` and `y` in place of a spec. An app's own widgets keep working.
+- `defineTable` takes `policy: { rules: [...] }`: a rule allows `read`, `write` or `all` when a column holds the person's ID, names a group they are in, or equals one of their attributes. `{ owner }` works as before.
+- `defineBinding` can name a group of end users: `{ type: "end_user_group", name }`.
+- An app that draws its own sign-in screen can list the tenant's identity providers at `GET /tenants/{id}/end-user-auth/providers` and send the browser to each one's path under the tenant's sign-in pages.
+- `defineConnectionGroup` declares a set of connections of one kind. Members are added per workspace in the console with no deploy, and a script that lists the group in `connectionGroups` picks one when it runs: `await ctx.connections("shops").get(input.shop)`.
+
+### Changed
+
+- Bundle format 3: a manifest's `ownership` may be `ui`. A script's body may carry `source` and `node`.
+- `GET /permissions` lists every permission. The audit routes take `area`, `actorId`, `target`, `from` and `to`, and entries carry `actorLabel`.
+- A flow run's steps carry `pickedUpAt`.
+- The worker protocol gains two routes for connection groups. A tenant's own worker must be upgraded before it runs a script that uses one.
+- `POST /tenants/:t/workspaces/:w/mcp` is a Model Context Protocol server over the API: the scripts and flows a caller may start, as tools.
+
 ## 0.4.0, not yet released
 
 Apps (phase 6): interfaces built from a tenant's repository and served by the instance, end users, the addresses apps are served at, and branding.

@@ -4,6 +4,8 @@ import { PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
 import {
+  aggregateQueryFrom,
+  aggregateRows,
   type DataScope,
   deleteRow,
   describeTable,
@@ -11,10 +13,11 @@ import {
   getRow,
   insertRows,
   type Row,
+  scopeFor,
   updateRow,
   withData,
 } from "../kernel/data/rows.js";
-import { badRequest } from "../kernel/errors.js";
+import { badRequest, forbidden } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -73,6 +76,37 @@ export function parseRowsQuery(query: {
     offset,
   };
 }
+const list = (text: string | undefined) =>
+  (text ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+/** Reads `group=status,created_at:month` and `measure=count,sum:total` into a request for totals. */
+export function parseAggregateQuery(query: {
+  group?: string;
+  measure?: string;
+  filter?: string;
+  sort?: string;
+  limit?: number;
+}) {
+  let filter: unknown;
+  if (query.filter !== undefined) {
+    try {
+      filter = JSON.parse(query.filter);
+    } catch {
+      throw badRequest("The filter must be JSON.");
+    }
+  }
+  return aggregateQueryFrom({
+    group: list(query.group),
+    measure: list(query.measure),
+    filter,
+    sort: list(query.sort),
+    limit: query.limit,
+  });
+}
+
 export const toRowsPage = (found: { items: Row[]; nextOffset: number | null }) => ({
   items: found.items,
   nextCursor:
@@ -145,11 +179,28 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       };
       await ctx.authorize(`data:${verb}`, at);
       const target = await describeTable(data, params.w, table);
-      const scope: DataScope = {
-        principalId: ctx.principal.id,
-        all: await ctx.allowed(`data_all:${verb}`, at),
-      };
+      const scope: DataScope = await scopeFor(
+        kernel,
+        params.t,
+        ctx.principal,
+        await ctx.allowed(`data_all:${verb}`, at),
+      );
       return { target, scope };
+    }
+
+    /** The scope to read with when the caller asks to look through an end user's eyes. */
+    async function seenAs(tenantId: string, scope: DataScope, as: string | undefined) {
+      if (as === undefined) return scope;
+      // Only someone who may see every row may look through another person's eyes.
+      if (!scope.all) throw forbidden("the permission to read every row of this table");
+      const person = await db
+        .selectFrom("end_user")
+        .select("id")
+        .where("id", "=", as)
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirst();
+      if (!person) throw badRequest("`as` is not an end user of this tenant.");
+      return scopeFor(kernel, tenantId, { type: "end_user", id: person.id }, false);
     }
 
     // ----- Definitions -----
@@ -334,15 +385,77 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The table's policy decides which rows the caller sees. Needs `data:read` at the workspace or at the table.",
           tags: ["data"],
           params: WildParams,
-          querystring: RowsQuery,
+          querystring: Type.Object({
+            ...RowsQuery.properties,
+            as: Type.Optional(
+              Type.String({
+                format: "uuid",
+                description:
+                  "Read as this end user would: the rows the table's policy gives them. For checking a policy. Needs `data_all:read`.",
+              }),
+            ),
+          }),
           response: { 200: RowsPage },
         },
       },
       async ({ ctx, params, query }) => {
-        const { target, scope } = await enter(ctx, params, wildPath(params), "read");
+        const entered = await enter(ctx, params, wildPath(params), "read");
+        const scope = await seenAs(params.t, entered.scope, query.as);
         const asked = parseRowsQuery(query);
         return toRowsPage(
-          await withData(kernel, params.t, scope, (data) => findRows(data, target, asked)),
+          await withData(kernel, params.t, scope, (data) => findRows(data, entered.target, asked)),
+        );
+      },
+    );
+
+    app.get(
+      `${base}/aggregate/*`,
+      {
+        config: { access: access.custom, rateLimit: guestLimit },
+        schema: {
+          summary: "Totals over a table's rows",
+          description:
+            "Counts, sums, averages, the least and the most, over the rows the caller may see: " +
+            "the table's policy applies as it does to rows, so two people get the totals of " +
+            "their own rows. `group` is up to three columns separated by commas; a date or a " +
+            "time can be gathered as `created_at:month` (day, week, month or year, beginning " +
+            "at midnight UTC). `measure` is up to five of `count`, `count:column`, " +
+            "`sum:column`, `avg:column`, `min:column` and `max:column`; left out, rows are " +
+            "counted. `sort` takes the same names, with a leading minus to sort downwards. " +
+            "With no `group` the answer is one item. Needs `data:read` at the workspace or at " +
+            "the table. A request that runs longer than five seconds is refused.",
+          tags: ["data"],
+          params: WildParams,
+          querystring: Type.Object({
+            group: Type.Optional(Type.String({ maxLength: 500 })),
+            measure: Type.Optional(Type.String({ maxLength: 500 })),
+            filter: RowsQuery.properties.filter,
+            sort: Type.Optional(Type.String({ maxLength: 500 })),
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000, default: 200 })),
+            as: Type.Optional(
+              Type.String({
+                format: "uuid",
+                description:
+                  "Work the totals out as this end user would see them. Needs `data_all:read`.",
+              }),
+            ),
+          }),
+          response: {
+            200: Type.Object({
+              items: Type.Array(Type.Object({ by: AnyObject, values: AnyObject })),
+              truncated: Type.Boolean({
+                description: "True when there were more groups than `limit`.",
+              }),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const entered = await enter(ctx, params, wildPath(params), "read");
+        const scope = await seenAs(params.t, entered.scope, query.as);
+        const asked = parseAggregateQuery(query);
+        return withData(kernel, params.t, scope, (data) =>
+          aggregateRows(data, entered.target, asked),
         );
       },
     );

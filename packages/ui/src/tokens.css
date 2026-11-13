@@ -29,8 +29,12 @@
   color-scheme: light;
 }
 
+/*
+ * Dark follows the system unless the page says otherwise: `data-theme` on the
+ * root element is "light" or "dark" when a person has chosen one.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --vx-canvas: #10161f;
     --vx-surface: #18212d;
     --vx-sunken: #0c1118;
@@ -48,6 +52,25 @@
     --vx-success-soft: #153326;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --vx-canvas: #10161f;
+  --vx-surface: #18212d;
+  --vx-sunken: #0c1118;
+  --vx-line: #2b3746;
+  --vx-ink: #e6ebf1;
+  --vx-ink-muted: #9aa7b6;
+  --vx-action: #5cb8d6;
+  --vx-action-ink: #06222c;
+  --vx-action-soft: #17323d;
+  --vx-attention: #f0a94b;
+  --vx-attention-soft: #3a2a12;
+  --vx-danger: #f2857d;
+  --vx-danger-soft: #3d1b18;
+  --vx-success: #6fcf9a;
+  --vx-success-soft: #153326;
+  color-scheme: dark;
 }
 
 @theme inline {

@@ -1,5 +1,5 @@
-import type { ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 const listeners = new Set<() => void>();
 
@@ -41,18 +41,18 @@ export function match(pattern: string, path: string): Record<string, string> | n
 export function Link({
   to,
   children,
-  class: className,
+  className,
   current,
 }: {
   to: string;
-  children: ComponentChildren;
-  class?: string;
+  children: ReactNode;
+  className?: string;
   current?: boolean;
 }) {
   return (
     <a
       href={to}
-      class={className}
+      className={className}
       aria-current={current ? "page" : undefined}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;

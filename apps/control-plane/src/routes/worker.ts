@@ -4,6 +4,8 @@ import { HEARTBEAT_SECONDS } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MAX_FILE_BYTES, readFile, storeFile } from "../kernel/data/files.js";
 import {
+  aggregateQueryFrom,
+  aggregateRows,
   type DataScope,
   deleteRow,
   describeTable,
@@ -11,14 +13,15 @@ import {
   getRow,
   insertRows,
   type RowTarget,
+  scopeFor,
   translate,
   updateRow,
   withData,
 } from "../kernel/data/rows.js";
 import { openSource, sourceFailure, sourceTable } from "../kernel/data/sources.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
-import { readConnection } from "../kernel/execution/bindings.js";
-import { bundleManifest, loadBundle } from "../kernel/execution/bundles.js";
+import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
+import { loadBundle } from "../kernel/execution/bundles.js";
 import {
   activeRun,
   claimRun,
@@ -26,7 +29,7 @@ import {
   failRun,
   queueName,
   readPayload,
-  type ScriptBody,
+  runnable,
 } from "../kernel/execution/runs.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
 import { seeWorker } from "../kernel/execution/workers.js";
@@ -75,21 +78,24 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     /** The script manifest a run is pinned to, from the bundle it started on. */
     /** Whether an ID is someone a script may act for: a member or an end user of the tenant. */
-    async function isPerson(tenantId: string, id: string): Promise<boolean> {
+    async function personType(
+      tenantId: string,
+      id: string,
+    ): Promise<"member" | "end_user" | undefined> {
       const member = await db
         .selectFrom("tenant_member")
         .select("member_id")
         .where("tenant_id", "=", tenantId)
         .where("member_id", "=", id)
         .executeTakeFirst();
-      if (member) return true;
+      if (member) return "member";
       const user = await db
         .selectFrom("end_user")
         .select("id")
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
         .executeTakeFirst();
-      return user !== undefined;
+      return user ? "end_user" : undefined;
     }
 
     async function pinned(scope: Parameters<typeof activeRun>[1], runId: string, attempt: number) {
@@ -99,9 +105,21 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .select(["id", "storage_key"])
         .where("id", "=", run.bundle_id)
         .executeTakeFirstOrThrow();
-      const manifest = await bundleManifest(kernel, bundle, "script", run.script_path);
-      if (!manifest) throw notFound("The script");
-      return { run, body: manifest.body as unknown as ScriptBody };
+      const body = await runnable(kernel, bundle, run.script_path);
+      if (!body) throw notFound("The script");
+      // A step of a flow may hand its script things the script does not name itself.
+      const handed = (run.trigger_type === "flow" ? run.trigger_detail.grants : undefined) as
+        | { connections?: string[]; tables?: string[]; events?: string[] }
+        | undefined;
+      const may = {
+        connection: (path: string) =>
+          body.uses.connections.includes(path) || (handed?.connections ?? []).includes(path),
+        table: (path: string) =>
+          (body.uses.tables ?? []).includes(path) || (handed?.tables ?? []).includes(path),
+        event: (path: string) =>
+          (body.uses.events ?? []).includes(path) || (handed?.events ?? []).includes(path),
+      };
+      return { run, body, may };
     }
 
     app.post(
@@ -137,7 +155,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .select(["id", "digest", "storage_key"])
               .where("id", "=", run.bundle_id)
               .executeTakeFirstOrThrow();
-            const manifest = await bundleManifest(kernel, bundle, "script", run.script_path);
+            const manifest = await runnable(kernel, bundle, run.script_path);
             return {
               job: {
                 runId: run.id,
@@ -145,14 +163,14 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 workspaceId: run.workspace_id,
                 script: {
                   path: run.script_path,
-                  entry: (manifest?.body as unknown as ScriptBody | undefined)?.entry ?? "",
+                  entry: manifest?.entry ?? "",
                 },
                 input: await readPayload(kernel, run.input, run.input_ref),
                 bundle: { id: bundle.id, digest: bundle.digest },
                 timeoutSeconds: claimed.timeoutSeconds,
                 heartbeatSeconds: Math.floor(HEARTBEAT_SECONDS / 3),
                 idempotencyKey: run.idempotency_key,
-                trigger: { type: run.trigger_type, ...run.trigger_detail },
+                trigger: { type: run.trigger_type, ...run.trigger_detail, grants: undefined },
                 startedBy: { type: run.started_by_type, id: run.started_by_id },
               },
             };
@@ -369,8 +387,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ worker, params, query }) => {
         const path = params["*"];
-        const { run, body } = await pinned(worker, params.id, query.attempt);
-        if (!body.uses.connections.includes(path)) {
+        const { run, may } = await pinned(worker, params.id, query.attempt);
+        if (!may.connection(path)) {
           throw forbidden(`a declared use of the connection "${path}"`);
         }
         const bound = await readConnection(kernel, db, {
@@ -394,6 +412,101 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    /** The connector a group's members use, after checking that the running script declared the group. */
+    const declaredGroup = async (
+      worker: Parameters<typeof pinned>[0],
+      runId: string,
+      attempt: number,
+      path: string,
+    ) => {
+      const { run, body } = await pinned(worker, runId, attempt);
+      if (!(body.uses.connectionGroups ?? []).includes(path)) {
+        throw forbidden(`a declared use of the connection group "${path}"`);
+      }
+      const definition = await db
+        .selectFrom("resource")
+        .select("body")
+        .where("workspace_id", "=", run.workspace_id)
+        .where("kind", "=", "connection_group")
+        .where("path", "=", path)
+        .executeTakeFirst();
+      if (!definition) throw notFound(`The connection group ${path}`);
+      return {
+        run,
+        connector: (definition.body as { connector?: string }).connector ?? "http",
+      };
+    };
+
+    app.get(
+      "/worker/runs/:id/connection-groups/*",
+      {
+        config,
+        schema: {
+          summary: "List the members of a connection group the running script declared",
+          description: "Keys and labels only. A member's credential is read one at a time.",
+          tags: ["worker protocol"],
+          params: Type.Object({ id: Id, "*": Type.String() }),
+          querystring: AttemptQuery,
+          response: {
+            200: Type.Object({
+              items: Type.Array(Type.Object({ key: Type.String(), label: Type.String() })),
+            }),
+          },
+        },
+      },
+      async ({ worker, params, query }) => {
+        const path = params["*"];
+        const { run } = await declaredGroup(worker, params.id, query.attempt, path);
+        const rows = await db
+          .selectFrom("connection_group_member")
+          .select(["key", "label"])
+          .where("workspace_id", "=", run.workspace_id)
+          .where("group_path", "=", path)
+          .orderBy("key")
+          .limit(1000)
+          .execute();
+        return { items: rows };
+      },
+    );
+
+    app.get(
+      "/worker/runs/:id/connection-group-members/:key/*",
+      {
+        config,
+        schema: {
+          summary: "Read one member of a connection group the running script declared",
+          tags: ["worker protocol"],
+          params: Type.Object({ id: Id, key: Type.String({ maxLength: 100 }), "*": Type.String() }),
+          querystring: AttemptQuery,
+          response: {
+            200: Type.Object({
+              connector: Type.String(),
+              config: AnyObject,
+              credential: Type.Optional(Type.String()),
+            }),
+          },
+        },
+      },
+      async ({ worker, params, query }) => {
+        const path = params["*"];
+        const { run, connector } = await declaredGroup(worker, params.id, query.attempt, path);
+        const member = await readGroupMember(kernel, db, {
+          tenantId: run.tenant_id,
+          workspaceId: run.workspace_id,
+          group: path,
+          key: params.key,
+        });
+        if (!member) {
+          throw notFound(`The member "${params.key}" of the connection group ${path}`);
+        }
+        return {
+          connector,
+          config: member.config,
+          ...(member.credential !== undefined ? { credential: member.credential } : {}),
+        };
+      },
+    );
+
     app.post(
       "/worker/runs/:id/events",
       {
@@ -408,8 +521,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, params, body }) => {
-        const { run, body: script } = await pinned(worker, params.id, body.attempt);
-        if (!(script.uses.events ?? []).includes(body.event)) {
+        const { run, may } = await pinned(worker, params.id, body.attempt);
+        if (!may.event(body.event)) {
           throw forbidden(`a declared use of the event "${body.event}"`);
         }
         const published = await db.transaction().execute((trx) =>
@@ -453,6 +566,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Type.Literal("insert"),
               Type.Literal("update"),
               Type.Literal("delete"),
+              Type.Literal("aggregate"),
             ]),
             args: Type.Optional(AnyObject),
             as: Type.Optional(Id),
@@ -461,7 +575,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, params, body }) => {
-        const { run, body: script } = await pinned(worker, params.id, body.attempt);
+        const { run, body: script, may } = await pinned(worker, params.id, body.attempt);
         const args = (body.args ?? {}) as {
           filter?: unknown;
           sort?: string[];
@@ -470,6 +584,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           id?: string;
           rows?: unknown[];
           patch?: unknown;
+          group?: string[];
+          measure?: string[];
         };
         const perform = async (
           data: Parameters<typeof findRows>[0],
@@ -495,6 +611,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             case "delete":
               await deleteRow(data, target, String(args.id));
               return null;
+            case "aggregate":
+              return aggregateRows(data, target, aggregateQueryFrom(args));
           }
         };
 
@@ -512,7 +630,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
 
-        if (!(script.uses.tables ?? []).includes(body.table)) {
+        if (!may.table(body.table)) {
           throw forbidden(`a declared use of the table "${body.table}"`);
         }
         const target = await describeTable(
@@ -521,12 +639,15 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body.table,
         );
         // A script is the workspace's own code. Acting for a person, it is held to what they may see.
-        if (body.as && !(await isPerson(run.tenant_id, body.as))) {
+        const person = body.as ? await personType(run.tenant_id, body.as) : undefined;
+        if (body.as && !person) {
           throw badRequest("`as` is not a member or an end user of this tenant.");
         }
-        const scope: DataScope = body.as
-          ? { principalId: body.as, all: false }
-          : { principalId: null, all: true };
+        // Acting for a person means being them to the table's rules: their groups and attributes too.
+        const scope: DataScope =
+          body.as && person
+            ? await scopeFor(kernel, run.tenant_id, { type: person, id: body.as }, false)
+            : { principalId: null, all: true };
         const result = await withData(kernel, run.tenant_id, scope, (data) =>
           perform(data, target, scope),
         );

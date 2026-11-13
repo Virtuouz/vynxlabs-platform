@@ -1,0 +1,57 @@
+{
+  "realm": "acme",
+  "enabled": true,
+  "sslRequired": "none",
+  "groups": [{ "name": "finance" }, { "name": "support" }],
+  "users": [
+    {
+      "username": "ada",
+      "email": "ada@acme.example",
+      "emailVerified": true,
+      "firstName": "Ada",
+      "lastName": "Lovelace",
+      "enabled": true,
+      "groups": ["/finance"],
+      "attributes": { "customerId": ["C-1001"] },
+      "credentials": [{ "type": "password", "value": "ada-password", "temporary": false }]
+    },
+    {
+      "username": "ben",
+      "email": "ben@acme.example",
+      "emailVerified": true,
+      "firstName": "Ben",
+      "lastName": "Okafor",
+      "enabled": true,
+      "groups": ["/support"],
+      "attributes": { "customerId": ["C-2002"] },
+      "credentials": [{ "type": "password", "value": "ben-password", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "vynxlabs-platform",
+      "name": "Vynxlabs platform, over OIDC",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-only-oidc-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:8080/*", "http://localhost:8090/*"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "access.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

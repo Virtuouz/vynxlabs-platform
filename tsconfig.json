@@ -11,6 +11,12 @@
       "path": "packages/sdk"
     },
     {
+      "path": "packages/nodes"
+    },
+    {
+      "path": "packages/compose"
+    },
+    {
       "path": "packages/worker"
     },
     {

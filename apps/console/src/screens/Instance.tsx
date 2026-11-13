@@ -1,4 +1,6 @@
+import { Badge, Button } from "@vynxlabs/ui";
 import { api } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
 import { ListScreen, RemoveButton, when } from "../ListScreen.tsx";
 import { AuditTable } from "./Audit.tsx";
 
@@ -6,7 +8,13 @@ const OPERATOR_ROLE = "00000000-0000-7000-8000-000000000001";
 
 export function InstanceMembers() {
   return (
-    <ListScreen<{ id: string; name: string; email: string; createdAt: string }>
+    <ListScreen<{
+      id: string;
+      name: string;
+      email: string;
+      createdAt: string;
+      disabled?: boolean;
+    }>
       title="All members"
       description="Every person with an identity on this instance, across all tenants."
       path="/members?limit=200"
@@ -14,10 +22,14 @@ export function InstanceMembers() {
       columns={[
         { header: "Name", cell: (row) => row.name },
         { header: "Email", cell: (row) => row.email },
+        {
+          header: "",
+          cell: (row) => (row.disabled ? <Badge tone="danger">Disabled</Badge> : null),
+        },
         { header: "Created", cell: (row) => when(row.createdAt) },
         {
           header: "ID",
-          cell: (row) => <code class="font-mono text-[13px] text-ink-muted">{row.id}</code>,
+          cell: (row) => <code className="font-mono text-[13px] text-ink-muted">{row.id}</code>,
         },
       ]}
       empty={{ title: "No members" }}
@@ -36,6 +48,27 @@ export function InstanceMembers() {
         ],
         submit: (values) => api.post("/members", values),
       }}
+      rowActions={(row, reload) => (
+        <Button
+          size="small"
+          onClick={async () => {
+            if (!row.disabled) {
+              const sure = await ask.confirm({
+                title: `Disable ${row.email}?`,
+                text: "They can sign in nowhere, in any tenant: their sessions end now and their API keys stop working. The account and what it holds are kept.",
+                action: "Disable",
+                danger: true,
+              });
+              if (!sure) return;
+            }
+            await api
+              .patch(`/members/${row.id}`, { disabled: !row.disabled })
+              .then(reload, notify.error);
+          }}
+        >
+          {row.disabled ? "Enable" : "Disable"}
+        </Button>
+      )}
     />
   );
 }
@@ -55,7 +88,21 @@ export function Operators() {
       empty={{ title: "No operators" }}
       create={{
         action: "Add operator",
-        fields: [{ name: "memberId", label: "Member ID", hint: "Copy it from All members." }],
+        fields: [
+          {
+            name: "memberId",
+            label: "Member",
+            placeholder: "Find a member by email",
+            choose: {
+              path: "/members?limit=200",
+              option: (item: { id: string; email: string; name?: string }) => ({
+                value: item.id,
+                label: item.email,
+                ...(item.name ? { hint: item.name } : {}),
+              }),
+            },
+          },
+        ],
         submit: (values) =>
           api.post("/bindings", { memberId: values.memberId, roleId: OPERATOR_ROLE }),
       }}

@@ -494,6 +494,115 @@ describe("the data API", () => {
   });
 });
 
+describe("totals", () => {
+  const totals = (query: string) => alice.get(`${ws()}/aggregate/lab/samples?${query}`);
+  const mine = `filter=${encodeURIComponent(JSON.stringify({ column: "label", op: "contains", value: "tot-" }))}`;
+  let made: string[] = [];
+
+  test("counts, sums, averages, the least and the most, over the rows a filter keeps", async () => {
+    const inserted = await alice.post(`${ws()}/rows/lab/samples`, {
+      rows: [
+        { label: "tot-a", count: 1, ratio: 0.5, at: "2026-01-15T10:00:00Z", day: "2026-01-15" },
+        { label: "tot-b", count: 2, ratio: 1.5, at: "2026-01-20T23:59:59Z", day: "2026-01-31" },
+        { label: "tot-c", count: 3, at: "2026-02-03T00:00:00Z", day: "2026-02-01" },
+        { label: "tot-d", count: 4, ok: false },
+      ],
+    });
+    expect(inserted.status, JSON.stringify(inserted.body)).toBe(201);
+    made = inserted.body.items.map((row: Any) => row.id);
+
+    // With nothing asked for, the rows are counted.
+    expect((await totals(mine)).body).toEqual({
+      items: [{ by: {}, values: { count: 4 } }],
+      truncated: false,
+    });
+    const all = await totals(
+      `${mine}&measure=count,sum:count,avg:count,min:at,max:day,count:ratio,max:label`.slice(
+        0,
+        500,
+      ),
+    );
+    // Five at most.
+    expect(all.status).toBe(400);
+    const some = await totals(`${mine}&measure=sum:count,avg:count,min:at,max:day,count:ratio`);
+    expect(some.status, JSON.stringify(some.body)).toBe(200);
+    expect(some.body.items).toEqual([
+      {
+        by: {},
+        values: {
+          "sum:count": 10,
+          "avg:count": 2.5,
+          "min:at": "2026-01-15T10:00:00.000Z",
+          "max:day": "2026-02-01",
+          // Counting a column counts the rows that have a value in it.
+          "count:ratio": 2,
+        },
+      },
+    ]);
+    // Over no rows a count is nothing and a sum is not a number.
+    const none = encodeURIComponent(JSON.stringify({ column: "label", op: "eq", value: "nobody" }));
+    expect((await totals(`filter=${none}&measure=count,sum:count`)).body.items).toEqual([
+      { by: {}, values: { count: 0, "sum:count": null } },
+    ]);
+  });
+
+  test("rows are grouped by a column, and a time or a date by day, week, month or year", async () => {
+    const byMonth = await totals(`${mine}&group=at:month&measure=count,sum:count`);
+    expect(byMonth.status, JSON.stringify(byMonth.body)).toBe(200);
+    expect(byMonth.body.items).toEqual([
+      { by: { "at:month": "2026-01-01T00:00:00.000Z" }, values: { count: 2, "sum:count": 3 } },
+      { by: { "at:month": "2026-02-01T00:00:00.000Z" }, values: { count: 1, "sum:count": 3 } },
+      // A row with no time is in a group of its own, last.
+      { by: { "at:month": null }, values: { count: 1, "sum:count": 4 } },
+    ]);
+    const byDay = await totals(`${mine}&group=day:month&sort=-count`);
+    expect(byDay.body.items.map((item: Any) => [item.by["day:month"], item.values.count])).toEqual([
+      ["2026-01-01", 2],
+      ["2026-02-01", 1],
+      [null, 1],
+    ]);
+    expect(
+      (await totals(`${mine}&group=at:year`)).body.items.map((item: Any) => item.by["at:year"]),
+    ).toEqual(["2026-01-01T00:00:00.000Z", null]);
+    // Two columns, sorted by a total, and cut short.
+    const two = await totals(`${mine}&group=ok,day:month&measure=sum:count&sort=-sum:count`);
+    expect(two.body.items[0]).toEqual({
+      by: { ok: false, "day:month": null },
+      values: { "sum:count": 4 },
+    });
+    const cut = await totals(`${mine}&group=label&limit=3`);
+    expect(cut.body.items.map((item: Any) => item.by.label)).toEqual(["tot-a", "tot-b", "tot-c"]);
+    expect(cut.body.truncated).toBe(true);
+  });
+
+  test("a total that makes no sense is refused, with what is wrong", async () => {
+    const refused = async (query: string, why: string) => {
+      const answer = await totals(query);
+      expect(answer.status, query).toBe(400);
+      const said = (answer.body.errors as Any[]).map((issue) => issue.message).join(" ");
+      expect(said, query).toContain(why);
+    };
+    await refused("measure=sum:label", '"sum" does not work on "label"');
+    await refused("measure=avg:day", '"avg" does not work on "day"');
+    await refused("measure=sum", '"sum" needs a column');
+    await refused("measure=median:count", 'there is no total "median"');
+    await refused("measure=sum:nope", 'there is no column "nope"');
+    await refused("group=extra", "rows cannot be grouped by");
+    await refused("group=label:month", "is not a date or a time");
+    await refused("group=at:decade", 'there is no bucket "decade"');
+    await refused("group=label,count,ok,day", "at most 3 columns");
+    await refused("group=label,label", "grouped by twice");
+    await refused("group=label&sort=ratio", "totals can be sorted by label, count");
+    // What a caller writes never reaches the statement as a name.
+    await refused('group=label";drop table x;--', "there is no column");
+    await refused("measure=count(*);select:label", "there is no total");
+    expect((await totals("filter=nonsense")).status).toBe(400);
+    expect((await alice.get(`${ws()}/aggregate/no-such-table`)).status).toBe(404);
+
+    for (const id of made) await alice.delete(`${ws()}/row/${id}/lab/samples`);
+  });
+});
+
 describe("row policies", () => {
   let carols: Any;
   let daves: Any;
@@ -528,7 +637,9 @@ describe("row policies", () => {
       owner_id: dave.id,
     });
     expect(forged.status).toBe(403);
-    expect(forged.body.detail).toBe("This table's policy only lets you write rows you own.");
+    expect(forged.body.detail).toBe(
+      "This table's policy only lets you write rows you own, or rows its rules give you.",
+    );
     // Nor can she give her own row away.
     expect(
       (await carol.client.patch(`${ws()}/row/${carols.id}/orders`, { owner_id: dave.id })).status,
@@ -549,6 +660,21 @@ describe("row policies", () => {
     expect(await rows(viewer, "orders")).toHaveLength(3);
     expect((await viewer.post(`${ws()}/rows/orders`, { number: "V-1" })).status).toBe(403);
     expect((await rows(carol.client, "customers")).map((row) => row.name)).toEqual(["Ada"]);
+  });
+
+  test("a total is of the rows the caller may see, and of no others", async () => {
+    const sum = async (client: Client, query = "") =>
+      (await client.get(`${ws()}/aggregate/orders?measure=count,sum:total${query}`)).body.items[0]
+        .values;
+    expect(await sum(carol.client)).toEqual({ count: 1, "sum:total": 10 });
+    expect(await sum(dave.client)).toEqual({ count: 1, "sum:total": 20 });
+    expect((await sum(alice)).count).toBe(3);
+    // Grouping by the owner shows a person one group: their own.
+    const groups = await carol.client.get(`${ws()}/aggregate/orders?group=owner_id`);
+    expect(groups.body.items).toEqual([{ by: { owner_id: carol.id }, values: { count: 1 } }]);
+    // A filter cannot reach past the policy here either.
+    const everything = encodeURIComponent(JSON.stringify({ column: "total", op: "gte", value: 0 }));
+    expect(await sum(dave.client, `&filter=${everything}`)).toEqual({ count: 1, "sum:total": 20 });
   });
 
   test("a query written wrongly on purpose still returns only the caller's rows", async () => {

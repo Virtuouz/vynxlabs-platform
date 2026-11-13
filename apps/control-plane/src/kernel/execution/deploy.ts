@@ -1,5 +1,10 @@
 import { newId } from "@vynxlabs/db";
-import { type BundleManifest, bundleCompatibility } from "@vynxlabs/manifest";
+import {
+  type BundleManifest,
+  bundleCompatibility,
+  type FlowBody,
+  flowGrants,
+} from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";
@@ -8,6 +13,7 @@ import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { deleteResource, putResource } from "../resources.js";
 import { loadBundle } from "./bundles.js";
+import { unfitBindings } from "./connectors.js";
 
 interface ScriptBody {
   uses: { connections: string[]; secrets: string[]; variables: string[]; sources?: string[] };
@@ -30,6 +36,25 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
     for (const path of body.uses.variables) need.variables.add(path);
     for (const path of body.uses.sources ?? []) need.sources.add(path);
     if (body.onFailure?.notify) need.connections.add(body.onFailure.notify);
+  }
+  // A webhook that checks signatures needs the secret it checks them against.
+  for (const manifest of manifests) {
+    if (manifest.kind === "trigger") {
+      const verify = (manifest.body as { verify?: { secret?: string } }).verify;
+      if (verify?.secret) need.secrets.add(verify.secret);
+    }
+    if (manifest.kind === "flow") {
+      const nodes = (
+        manifest.body as { nodes?: Record<string, { trigger?: { verify?: { secret?: string } } }> }
+      ).nodes;
+      for (const node of Object.values(nodes ?? {})) {
+        if (node.trigger?.verify?.secret) need.secrets.add(node.trigger.verify.secret);
+      }
+      // A connection a step hands its script is needed like one a script names.
+      for (const grant of flowGrants(manifest.body as unknown as FlowBody)) {
+        if (grant.kind === "connection") need.connections.add(grant.target);
+      }
+    }
   }
   const names = async (
     table: "connection_binding" | "variable_value" | "secret",
@@ -143,6 +168,8 @@ export async function deployBundle(
     promotedFrom?: string;
     /** For a clone made with safety on, which is left unbound on purpose. */
     allowMissingBindings?: boolean;
+    /** What whoever deployed said about it. */
+    message?: string;
   } = {},
 ) {
   const current = await trx
@@ -191,6 +218,28 @@ export async function deployBundle(
     );
   }
 
+  const unfit = unfitBindings(
+    content.manifests,
+    await trx
+      .selectFrom("connection_binding")
+      .select(["path", "config"])
+      .where("workspace_id", "=", workspace.id)
+      .execute(),
+    await trx
+      .selectFrom("connection_group_member")
+      .select(["group_path as group", "key", "config"])
+      .where("workspace_id", "=", workspace.id)
+      .execute(),
+  );
+  if (unfit.length > 0) {
+    throw new HttpError(
+      409,
+      "bindings_invalid",
+      "Something bound in this workspace does not fit the connector this bundle gives it. Bind it again, then deploy again.",
+      unfit,
+    );
+  }
+
   const existing = await trx
     .selectFrom("resource")
     .select(["id", "path", "kind", "schema_version", "body", "ownership"])
@@ -212,10 +261,26 @@ export async function deployBundle(
   const data = (await kernel.data.within(trx, workspace.tenantId)).db;
   const dataBefore = await loadCatalog(data, workspace.id);
 
+  // A bundle speaks for the code-managed resources, and for the console-managed ones
+  // the bundle before it carried. A console-managed resource that no bundle carried,
+  // such as a table made in the console, is left alone by every deploy.
+  const carried = new Set<string>();
+  if (current.active_bundle_id) {
+    const before = await trx
+      .selectFrom("bundle")
+      .select(["id", "storage_key"])
+      .where("id", "=", current.active_bundle_id)
+      .executeTakeFirst();
+    if (before) {
+      for (const manifest of (await loadBundle(kernel, before)).manifests) {
+        if (manifest.ownership === "ui") carried.add(manifest.path);
+      }
+    }
+  }
   // Resources the bundle no longer has go first, so a path can be reused by another kind.
   const wanted = new Set(content.manifests.map((manifest) => manifest.path));
   const removed = existing
-    .filter((row) => row.ownership === "code" && !wanted.has(row.path))
+    .filter((row) => (row.ownership === "code" || carried.has(row.path)) && !wanted.has(row.path))
     // Bindings and triggers before the roles and scripts they refer to.
     .sort((a, b) => order(b.kind) - order(a.kind));
   for (const row of removed) {
@@ -230,6 +295,7 @@ export async function deployBundle(
       stored &&
       stored.kind === manifest.kind &&
       stored.schema_version === manifest.schemaVersion &&
+      stored.ownership === manifest.ownership &&
       same(stored.body, manifest.body)
     ) {
       summary.unchanged += 1;
@@ -239,8 +305,10 @@ export async function deployBundle(
       path: manifest.path,
       kind: manifest.kind,
       schemaVersion: manifest.schemaVersion,
-      ownership: "code",
+      ownership: manifest.ownership,
       body: manifest.body,
+      // A resource taken over in the console, or handed back to the repository.
+      switchOwnership: true,
     });
     if (result.created) summary.created += 1;
     else summary.updated += 1;
@@ -267,6 +335,7 @@ export async function deployBundle(
       previous_bundle_id: current.active_bundle_id,
       promoted_from_workspace_id: options.promotedFrom ?? null,
       summary: JSON.stringify(summary),
+      message: options.message ?? null,
       created_by_type: principal.type,
       created_by_id: principal.id,
     })
@@ -295,16 +364,20 @@ export async function deployBundle(
 
 const KIND_ORDER = [
   "role",
+  "connector",
   "connection",
+  "connection_group",
   "variable",
   "table",
   "data_source",
   "event",
   "script",
+  "trigger_source",
   "schedule",
   "trigger",
   "flow",
   "theme",
+  "interface",
   "app",
   "binding",
 ];

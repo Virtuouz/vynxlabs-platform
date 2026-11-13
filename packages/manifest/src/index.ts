@@ -11,6 +11,7 @@ export {
 } from "./bundle.js";
 export {
   bundleExpressions,
+  CORE_PREFIX,
   checkBundleAssets,
   checkBundleManifests,
   PLATFORM_EVENT_PREFIX,
@@ -24,26 +25,77 @@ export {
   StoredResource,
 } from "./envelope.js";
 export {
+  entryFor,
+  type ParsedResources,
+  parseResourceFiles,
+  RESOURCE_FOLDER,
+  type ResourceFile,
+  renderResourceFiles,
+} from "./files.js";
+export {
   checkFlow,
   type FlowBody,
   type FlowEdge,
+  type FlowGrants,
   type FlowNode,
   type FlowTrigger,
   flowExpressions,
+  flowGrants,
   flowReferences,
   OTHERWISE,
+  RESPONSE_HEADERS_REFUSED,
   reachableFrom,
+  type WebhookVerify,
 } from "./flow.js";
 export {
+  checkForm,
+  FORM_FIELD_TYPES,
+  FORM_RESERVED_NAMES,
+  FORM_TEXT_LIMIT,
+  type FormField,
+  type FormTrigger,
+  readFormAnswer,
+} from "./form.js";
+export {
+  CHART_MARKS,
+  checkInterface,
+  checkPage,
+  type InterfaceBody,
+  type InterfacePage,
+  interfaceBodySchema,
+  interfacePageSchema,
+  interfaceTables,
+  LINK_TYPES,
+  type LinkType,
+  MAX_FILTER_CONDITIONS,
+  MAX_PAGES,
+  MAX_WIDGETS,
+  type PageWidget,
+  SUMMARY_BUCKETS,
+  SUMMARY_FUNCTIONS,
+  summaryNames,
+  WIDGET_TYPES,
+  type WidgetField,
+  type WidgetLink,
+  type WidgetOptions,
+  type WidgetSummary,
+  type WidgetType,
+} from "./interface.js";
+export {
   appKind,
+  BUILTIN_CONNECTORS,
   bindingKind,
   COLUMN_TYPES,
   type ColumnType,
+  connectionGroupKind,
   connectionKind,
+  connectorKind,
   dataSourceKind,
   eventKind,
   flowKind,
+  interfaceKind,
   isThemeValue,
+  MAX_SOURCE_LENGTH,
   PERMISSION_PATTERN,
   platformKinds,
   registerPlatformKinds,
@@ -54,11 +106,22 @@ export {
   scriptKind,
   THEME_TOKENS,
   THEME_VALUE_PATTERN,
+  TRIGGER_SOURCE_MODES,
   tableKind,
   themeKind,
   triggerKind,
+  triggerSourceKind,
   variableKind,
 } from "./kinds.js";
+export {
+  APP_FACING_KINDS,
+  isGrantablePermission,
+  isKnownPermission,
+  PERMISSION_KINDS,
+  type PermissionKind,
+  type PermissionScope,
+  type PermissionVerb,
+} from "./permissions.js";
 export {
   type KindDefinition,
   KindRegistry,
@@ -66,4 +129,13 @@ export {
   type ValidationResult,
   validateJson,
 } from "./registry.js";
-export { checkTable, type TableBody, type TableColumn, type TablePolicy } from "./table.js";
+export {
+  checkTable,
+  conditionColumn,
+  MAX_ROW_RULES,
+  type RowCondition,
+  type RowRule,
+  type TableBody,
+  type TableColumn,
+  type TablePolicy,
+} from "./table.js";

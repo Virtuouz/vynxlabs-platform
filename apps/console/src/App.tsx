@@ -1,5 +1,5 @@
 import { Notice } from "@vynxlabs/ui";
-import { useEffect } from "preact/hooks";
+import { lazy, Suspense, useEffect } from "react";
 import { api, type Me, useLoad } from "./api.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
@@ -8,6 +8,11 @@ import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
+
+const SingleSignOn = lazy(() =>
+  import("./screens/SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
+);
+
 import { Tenants } from "./screens/Tenants.tsx";
 import { useTenantTheme } from "./theme.ts";
 
@@ -38,7 +43,7 @@ export function App() {
   if (me.error?.status === 401 || !me.data) {
     if (me.error && me.error.status !== 401) {
       return (
-        <main class="mx-auto mt-24 max-w-md px-4">
+        <main className="mx-auto mt-24 max-w-md px-4">
           <Notice tone="danger">The instance could not be reached. {me.error.message}</Notice>
         </main>
       );
@@ -60,13 +65,15 @@ export function App() {
   else if (path === "/account/api-keys") screen = <Account />;
   else if (path === "/instance/members") screen = <InstanceMembers />;
   else if (path === "/instance/operators") screen = <Operators />;
+  else if (path === "/instance/single-sign-on") screen = <SingleSignOn base="/instance" />;
   else if (path === "/instance/audit") screen = <InstanceAudit />;
   else if (path === "/instance/databases") screen = <DatabaseLocations />;
   else if (path === "/instance/import") screen = <TenantImport />;
 
   return (
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>
-      {screen}
+      {/* Some screens are fetched when first opened. */}
+      <Suspense fallback={<p className="text-ink-muted">Loading…</p>}>{screen}</Suspense>
     </Shell>
   );
 }

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
-import { useState } from "preact/hooks";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   Badge,
@@ -25,7 +25,7 @@ import {
 
 afterEach(cleanup);
 
-describe("kit components under Preact", () => {
+describe("kit components under React", () => {
   test("button", () => {
     const onClick = vi.fn();
     render(<Button onClick={onClick}>Create tenant</Button>);
@@ -36,7 +36,7 @@ describe("kit components under Preact", () => {
   test("text field is labelled, reports input and shows its error", () => {
     const onInput = vi.fn();
     const { rerender } = render(
-      <TextField label="Slug" name="slug" hint="Lowercase letters" onInput={onInput} />,
+      <TextField label="Slug" name="slug" hint="Lowercase letters" onChange={onInput} />,
     );
     const input = screen.getByLabelText("Slug") as HTMLInputElement;
     fireEvent.input(input, { target: { value: "acme" } });
@@ -145,7 +145,7 @@ describe("kit components under Preact", () => {
   test("number field reports numbers, and nothing for an empty box", () => {
     const onInput = vi.fn();
     const { rerender } = render(
-      <NumberField label="Quantity" name="quantity" value={2} min={1} onInput={onInput} />,
+      <NumberField label="Quantity" name="quantity" value={2} min={1} onChange={onInput} />,
     );
     const input = screen.getByLabelText("Quantity") as HTMLInputElement;
     expect(input.value).toBe("2");
@@ -155,12 +155,12 @@ describe("kit components under Preact", () => {
     fireEvent.input(input, { target: { value: "" } });
     expect(onInput).toHaveBeenLastCalledWith(undefined);
     // A value set from outside replaces what was typed.
-    rerender(<NumberField label="Quantity" name="quantity" value={7} onInput={onInput} />);
+    rerender(<NumberField label="Quantity" name="quantity" value={7} onChange={onInput} />);
     expect(input.value).toBe("7");
 
     // Without a value it keeps what is typed itself.
     cleanup();
-    render(<NumberField label="Weight" name="weight" onInput={onInput} />);
+    render(<NumberField label="Weight" name="weight" onChange={onInput} />);
     const free = screen.getByLabelText("Weight") as HTMLInputElement;
     fireEvent.input(free, { target: { value: "4" } });
     expect(onInput).toHaveBeenLastCalledWith(4);
@@ -170,7 +170,7 @@ describe("kit components under Preact", () => {
   test("date field asks for a date, or a date and a time", () => {
     const onInput = vi.fn();
     const { rerender } = render(
-      <DateField label="Due" name="due" value="2026-03-09" onInput={onInput} />,
+      <DateField label="Due" name="due" value="2026-03-09" onChange={onInput} />,
     );
     const input = screen.getByLabelText("Due") as HTMLInputElement;
     expect(input.type).toBe("date");
@@ -183,7 +183,7 @@ describe("kit components under Preact", () => {
 
   test("text area field", () => {
     const onInput = vi.fn();
-    render(<TextAreaField label="Notes" name="notes" hint="Anything else" onInput={onInput} />);
+    render(<TextAreaField label="Notes" name="notes" hint="Anything else" onChange={onInput} />);
     const area = screen.getByLabelText("Notes") as HTMLTextAreaElement;
     expect(area.tagName).toBe("TEXTAREA");
     fireEvent.input(area, { target: { value: "Leave at the door" } });

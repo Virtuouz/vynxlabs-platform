@@ -74,6 +74,16 @@
           },
           "uniqueItems": true
         },
+        "connectionGroups": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true,
+          "description": "Connection groups the script may pick a member of at run time. Nothing has to be bound before a deploy."
+        },
         "secrets": {
           "type": "array",
           "items": {
@@ -146,6 +156,62 @@
           "description": "An HTTP connection to POST a summary to."
         }
       },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "description": "Makes the script a step that can be picked in the flow editor, under this label.",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "icon": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 40,
+          "description": "The name of an icon from the interface's set."
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "takes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "connection",
+              "table",
+              "event"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "What a flow step may hand the script with `with`: a connection, a table or an event the script does not name itself."
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "description": "The TypeScript the resource was written as, for a resource managed in the console. Its default export is what runs.",
+      "properties": {
+        "language": {
+          "const": "typescript"
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 262144
+        }
+      },
+      "required": [
+        "language",
+        "code"
+      ],
       "additionalProperties": false
     }
   },

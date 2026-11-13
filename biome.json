@@ -15,6 +15,9 @@
   "linter": {
     "rules": {
       "preset": "recommended",
+      "suspicious": {
+        "noAlert": "error"
+      },
       "style": {
         "noRestrictedImports": {
           "level": "error",
@@ -35,6 +38,16 @@
         "rules": {
           "style": {
             "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noComponentHookFactories": "off"
           }
         }
       }

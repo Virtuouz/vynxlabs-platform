@@ -98,7 +98,7 @@ function bundle(change: (manifests: BundleManifest[]) => BundleManifest[] = (m) 
   ]);
   const unsigned = {
     formatVersion: 2 as const,
-    sdkVersion: "0.4.0",
+    sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests,
     code: "export const placeOrder = { execute: async () => ({}) };",
@@ -824,6 +824,371 @@ describe("end users", () => {
   });
 });
 
+describe("groups of end users", () => {
+  let gil: Awaited<ReturnType<typeof endUser>>;
+  let hana: Awaited<ReturnType<typeof endUser>>;
+  let finance: string;
+  const groups = () => `/tenants/${tenant}/end-user-groups`;
+  /** Whether someone may start flows in the workspace: 404 for a flow that is not there, 403 for no. */
+  const mayStartFlows = async (who: { browser: ReturnType<typeof browser> }) =>
+    (
+      await who.browser.post(`/api/v1/tenants/${tenant}/workspaces/${prod}/flow-runs`, {
+        flow: "no-such-flow",
+      })
+    ).status === 404;
+
+  test("a group is made, named once, and people of the tenant are put in it", async () => {
+    gil = await endUser(t, alice, tenant, "acme", "gil@customer.example");
+    hana = await endUser(t, alice, tenant, "acme", "hana@customer.example");
+    const created = await alice.post(groups(), { name: "finance", description: "Sees invoices." });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    finance = created.body.id;
+    expect((await alice.post(groups(), { name: "finance" })).status).toBe(409);
+    expect((await alice.post(groups(), { name: "Not A Name" })).status).toBe(400);
+
+    expect((await alice.put(`${groups()}/${finance}/members/${gil.id}`)).status).toBe(204);
+    // Twice changes nothing.
+    expect((await alice.put(`${groups()}/${finance}/members/${gil.id}`)).status).toBe(204);
+    expect((await alice.get(`${groups()}/${finance}`)).body.members).toEqual([
+      { id: gil.id, email: "gil@customer.example", name: "gil" },
+    ]);
+    expect((await alice.get(groups())).body.items).toEqual([
+      expect.objectContaining({ name: "finance", description: "Sees invoices.", memberCount: 1 }),
+    ]);
+    // Someone of another tenant cannot be put in it, and another tenant cannot see it.
+    const gina = await t.signIn("gina@globex.example", PASSWORD);
+    const outsider = (await gina.post(`/tenants/${other}/end-users`, { email: "o@else.example" }))
+      .body.endUser.id;
+    expect((await alice.put(`${groups()}/${finance}/members/${outsider}`)).status).toBe(404);
+    expect((await gina.get(`/tenants/${other}/end-user-groups/${finance}`)).status).toBe(404);
+
+    const listed = (await alice.get(`/tenants/${tenant}/end-users?search=gil`)).body.items;
+    expect(listed[0].groups).toEqual(["finance"]);
+  });
+
+  test("a role given to the group reaches the people in it, and nobody else", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "flow_starter",
+      description: "Starts flows.",
+      permissions: ["flow_run:write"],
+    });
+    expect(await mayStartFlows(gil)).toBe(false);
+    const bound = await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: prod,
+      principalType: "end_user_group",
+      principalId: finance,
+      roleId: role.body.id,
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    expect(await mayStartFlows(gil)).toBe(true);
+    expect(await mayStartFlows(hana)).toBe(false);
+    const listed = (await alice.get(`/tenants/${tenant}/bindings`)).body.items.find(
+      (binding: Any) => binding.principalType === "end_user_group",
+    );
+    expect(listed.principalLabel).toBe("finance");
+    // A group of another tenant, or a group of members, is not a group of end users here.
+    expect(
+      (
+        await alice.post(`/tenants/${tenant}/bindings`, {
+          workspaceId: prod,
+          principalType: "end_user_group",
+          principalId: gil.id,
+          roleId: role.body.id,
+        })
+      ).status,
+    ).toBe(400);
+
+    // Joining and leaving take effect on the next request.
+    await alice.put(`${groups()}/${finance}/members/${hana.id}`);
+    expect(await mayStartFlows(hana)).toBe(true);
+    expect((await alice.delete(`${groups()}/${finance}/members/${hana.id}`)).status).toBe(204);
+    expect(await mayStartFlows(hana)).toBe(false);
+    expect((await alice.delete(`${groups()}/${finance}/members/${hana.id}`)).status).toBe(404);
+  });
+
+  test("a group still gives an end user nothing outside what apps use", async () => {
+    const wide = await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "end_user_group",
+      principalId: finance,
+      roleId: roles.tenant_admin,
+    });
+    expect(wide.status).toBe(201);
+    expect(
+      (await gil.browser.get(`/api/v1/tenants/${tenant}/workspaces/${prod}/secrets`)).status,
+    ).toBe(403);
+    expect((await gil.browser.get(`/api/v1/tenants/${tenant}/end-user-groups`)).status).toBe(403);
+    await alice.delete(`/tenants/${tenant}/bindings/${wide.body.id}`);
+  });
+
+  test("attributes are facts about a person, kept as short named values", async () => {
+    const set = await alice.patch(`/tenants/${tenant}/end-users/${gil.id}`, {
+      attributes: { customer_id: "C-100", region: "north" },
+    });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect(set.body.attributes).toEqual({ customer_id: "C-100", region: "north" });
+    expect(set.body.groups).toEqual(["finance"]);
+    expect(
+      (
+        await alice.patch(`/tenants/${tenant}/end-users/${gil.id}`, {
+          attributes: { "Bad Name": "x" },
+        })
+      ).status,
+    ).toBe(400);
+    // Renaming someone leaves their attributes alone.
+    const renamed = await alice.patch(`/tenants/${tenant}/end-users/${gil.id}`, { name: "Gil" });
+    expect(renamed.body.attributes).toEqual({ customer_id: "C-100", region: "north" });
+  });
+
+  test("deleting a person or a group takes the memberships and what the group was given with it", async () => {
+    await alice.put(`${groups()}/${finance}/members/${hana.id}`);
+    expect((await alice.delete(`/tenants/${tenant}/end-users/${hana.id}`)).status).toBe(204);
+    expect((await alice.get(`${groups()}/${finance}`)).body.members).toHaveLength(1);
+
+    expect((await alice.delete(`${groups()}/${finance}`)).status).toBe(204);
+    expect(await mayStartFlows(gil)).toBe(false);
+    expect(
+      (await alice.get(`/tenants/${tenant}/bindings`)).body.items.filter(
+        (binding: Any) => binding.principalType === "end_user_group",
+      ),
+    ).toEqual([]);
+    expect((await alice.delete(`${groups()}/${finance}`)).status).toBe(404);
+  });
+});
+
+describe("rows ruled by group and by attribute", () => {
+  let ivy: Awaited<ReturnType<typeof endUser>>;
+  let jon: Awaited<ReturnType<typeof endUser>>;
+  let kay: Awaited<ReturnType<typeof endUser>>;
+  let financeGroup: string;
+  const table = (body: Record<string, unknown>) =>
+    alice.put(`${ws()}/resources/invoices`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body,
+    });
+  const columns = {
+    number: { type: "text", required: true },
+    team: { type: "text" },
+    customer: { type: "text" },
+    assignee: { type: "uuid" },
+    paid: { type: "boolean" },
+  };
+  const rules = [
+    { allow: "read", when: { column: "team", in: "groups" } },
+    { allow: "all", when: { column: "customer", equals: { attribute: "customer_id" } } },
+    { allow: "write", when: { column: "assignee", is: "principal" } },
+  ];
+  const numbers = async (who: { browser: ReturnType<typeof browser> }) =>
+    ((await who.browser.get(`${rowsOf()}/rows/invoices`)).body.items as Any[])
+      .map((row) => row.number)
+      .sort();
+  const rowsOf = () => `/api/v1/tenants/${tenant}/workspaces/${prod}`;
+  const byNumber: Record<string, string> = {};
+
+  test("a rule must name a column the table has, of a kind it can compare", async () => {
+    const missing = await table({
+      columns,
+      policy: { type: "rules", rules: [{ allow: "read", when: { column: "nope", in: "groups" } }] },
+    });
+    expect(missing.status).toBe(400);
+    expect(JSON.stringify(missing.body.errors)).toContain('there is no column \\"nope\\"');
+    const wrongKind = await table({
+      columns,
+      policy: {
+        type: "rules",
+        rules: [{ allow: "read", when: { column: "paid", is: "principal" } }],
+      },
+    });
+    expect(wrongKind.status).toBe(400);
+    expect(JSON.stringify(wrongKind.body.errors)).toContain(
+      "a rule cannot compare the boolean column",
+    );
+    expect((await table({ columns, policy: { type: "rules", rules: [] } })).status).toBe(400);
+  });
+
+  test("three people, one table: each sees the rows the rules give them", async () => {
+    const made = await table({ columns, policy: { type: "rules", rules } });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect((await alice.get(`${ws()}/tables/invoices`)).body.policy).toEqual({
+      type: "rules",
+      rules,
+    });
+    // Every end user may use the table. Which rows is the rules' business.
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: prod,
+      resourceId: made.body.id,
+      principalType: "end_users",
+      roleId: roles.portal_user,
+    });
+
+    ivy = await endUser(t, alice, tenant, "acme", "ivy@customer.example");
+    jon = await endUser(t, alice, tenant, "acme", "jon@customer.example");
+    kay = await endUser(t, alice, tenant, "acme", "kay@customer.example");
+    const group = async (name: string, ...people: string[]) => {
+      const id = (await alice.post(`/tenants/${tenant}/end-user-groups`, { name })).body
+        .id as string;
+      for (const person of people)
+        await alice.put(`/tenants/${tenant}/end-user-groups/${id}/members/${person}`);
+      return id;
+    };
+    financeGroup = await group("finance", ivy.id);
+    await group("sales", jon.id);
+    await alice.patch(`/tenants/${tenant}/end-users/${ivy.id}`, {
+      attributes: { customer_id: "C-200" },
+    });
+    await alice.patch(`/tenants/${tenant}/end-users/${kay.id}`, {
+      attributes: { customer_id: "C-100" },
+    });
+
+    // Staff, who may see every row, write the rows the rest of this is about.
+    const seeded = await alice.post(`${ws()}/rows/invoices`, {
+      rows: [
+        { number: "INV-1", team: "finance", customer: "C-100" },
+        { number: "INV-2", team: "sales", customer: "C-200" },
+        { number: "INV-3", team: "ops", customer: "C-300", assignee: ivy.id },
+        { number: "INV-4", team: "ops", customer: "C-300" },
+      ],
+    });
+    expect(seeded.status, JSON.stringify(seeded.body)).toBe(201);
+    for (const row of seeded.body.items as Any[]) byNumber[row.number] = row.id;
+
+    // Ivy: her group's row, her customer's row, and the row assigned to her.
+    expect(await numbers(ivy)).toEqual(["INV-1", "INV-2", "INV-3"]);
+    // Jon: his group's row. Kay: her customer's row. Nobody: the row no rule gives anyone.
+    expect(await numbers(jon)).toEqual(["INV-2"]);
+    expect(await numbers(kay)).toEqual(["INV-1"]);
+    expect((await alice.get(`${ws()}/rows/invoices`)).body.items).toHaveLength(4);
+    // A row the rules hide is not there at all, by its ID either.
+    expect((await jon.browser.get(`${rowsOf()}/row/${byNumber["INV-1"]}/invoices`)).status).toBe(
+      404,
+    );
+  });
+
+  test("totals follow the rules too: each person's are of their own rows", async () => {
+    const count = async (who: { browser: ReturnType<typeof browser> }, query = "") =>
+      (await who.browser.get(`${rowsOf()}/aggregate/invoices${query}`)).body.items;
+    expect(await count(ivy)).toEqual([{ by: {}, values: { count: 3 } }]);
+    expect(await count(jon)).toEqual([{ by: {}, values: { count: 1 } }]);
+    expect(await count(kay, "?group=team")).toEqual([
+      { by: { team: "finance" }, values: { count: 1 } },
+    ]);
+    const staff = await alice.get(`${ws()}/aggregate/invoices?group=team&sort=-count`);
+    expect(staff.body.items[0]).toEqual({ by: { team: "ops" }, values: { count: 2 } });
+    // Staff who may see every row can ask for a person's totals. A person held to the rules cannot.
+    expect(
+      (await alice.get(`${ws()}/aggregate/invoices?as=${jon.id}`)).body.items[0].values.count,
+    ).toBe(1);
+    expect((await ivy.browser.get(`${rowsOf()}/aggregate/invoices?as=${jon.id}`)).status).toBe(403);
+  });
+
+  test("seeing a row is not being able to change it: only a write rule lets someone write", async () => {
+    const patch = (who: typeof ivy, number: string, change: object) =>
+      who.browser.post === undefined
+        ? Promise.reject(new Error("no browser"))
+        : t.app
+            .inject({
+              method: "PATCH",
+              url: `${rowsOf()}/row/${byNumber[number]}/invoices`,
+              headers: {
+                host: MAIN,
+                origin: `http://${MAIN}`,
+                cookie: [...who.browser.jar].map(([name, value]) => `${name}=${value}`).join("; "),
+              },
+              payload: change,
+            })
+            .then((response) => response.statusCode);
+    // Read through her group only: she sees INV-1 and cannot change it.
+    expect(await patch(ivy, "INV-1", { paid: true })).not.toBe(200);
+    // Hers by her customer, with a rule that allows everything.
+    expect(await patch(ivy, "INV-2", { paid: true })).toBe(200);
+    // Assigned to her, with a rule that allows writing.
+    expect(await patch(ivy, "INV-3", { paid: true })).toBe(200);
+    const after = Object.fromEntries(
+      ((await alice.get(`${ws()}/rows/invoices`)).body.items as Any[]).map((row) => [
+        row.number,
+        row.paid,
+      ]),
+    );
+    expect(after).toMatchObject({ "INV-1": null, "INV-2": true, "INV-3": true });
+
+    // Adding a row: only one that a write rule would give back to whoever adds it.
+    expect(
+      (
+        await jon.browser.post(`${rowsOf()}/rows/invoices`, {
+          number: "J-1",
+          team: "sales",
+          assignee: null,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await kay.browser.post(`${rowsOf()}/rows/invoices`, { number: "K-1", customer: "C-100" }))
+        .status,
+    ).toBe(201);
+    expect(
+      (
+        await kay.browser.post(`${rowsOf()}/rows/invoices`, {
+          number: "K-2",
+          customer: "C-999",
+          assignee: null,
+        })
+      ).status,
+    ).toBe(403);
+    // A row added with nobody named is assigned to whoever added it.
+    const own = await jon.browser.post(`${rowsOf()}/rows/invoices`, { number: "J-2" });
+    expect(own.status, JSON.stringify(own.body)).toBe(201);
+    expect(own.body.items[0].assignee).toBe(jon.id);
+    expect(await numbers(jon)).toEqual(["INV-2", "J-2"]);
+  });
+
+  test("staff who may see every row can read the table as one of its users would", async () => {
+    const as = async (client: Client, id: string) =>
+      client.get(`${ws()}/rows/invoices?sort=number&as=${id}`);
+    expect((await as(alice, jon.id)).body.items.map((row: Any) => row.number)).toEqual([
+      "INV-2",
+      "J-2",
+    ]);
+    expect((await as(alice, kay.id)).body.items.map((row: Any) => row.number)).toEqual([
+      "INV-1",
+      "K-1",
+    ]);
+    // Not someone of another tenant, and not by someone who is held to the rules themselves.
+    expect((await as(alice, "00000000-0000-7000-8000-00000000dead")).status).toBe(400);
+    const peek = await ivy.browser.get(`${rowsOf()}/rows/invoices?as=${jon.id}`);
+    expect(peek.status).toBe(403);
+  });
+
+  test("leaving a group, or losing an attribute, takes the rows away at once", async () => {
+    await alice.delete(`/tenants/${tenant}/end-user-groups/${financeGroup}/members/${ivy.id}`);
+    expect(await numbers(ivy)).toEqual(["INV-2", "INV-3"]);
+    await alice.patch(`/tenants/${tenant}/end-users/${ivy.id}`, { attributes: {} });
+    expect(await numbers(ivy)).toEqual(["INV-3"]);
+    // Someone with no attribute does not match rows that have no customer either.
+    expect(await numbers(jon)).not.toContain("INV-4");
+  });
+
+  test("the policy can be changed, and going back to open shows every row to all who may use the table", async () => {
+    const opened = await table({ columns, policy: { type: "open" } });
+    expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+    // The four that staff wrote, and the two that the rules let people add.
+    expect((await numbers(jon)).length).toBe(6);
+    const owned = await table({ columns, policy: { type: "owner", column: "assignee" } });
+    expect(owned.status).toBe(200);
+    expect(await numbers(jon)).toEqual(["J-2"]);
+    const ruled = await table({
+      columns,
+      policy: { type: "rules", rules: [{ allow: "read", when: { everyone: true } }] },
+    });
+    expect(ruled.status).toBe(200);
+    expect((await numbers(kay)).length).toBe(6);
+    // Everyone reads, and nobody but staff writes.
+    expect((await kay.browser.post(`${rowsOf()}/rows/invoices`, { number: "K-9" })).status).toBe(
+      403,
+    );
+  });
+});
+
 describe("branding", () => {
   test("the kit's values here are the ones in its stylesheet", async () => {
     const css = await readFile(
@@ -1283,13 +1648,17 @@ describe("guards", () => {
       t.unaudited.filter((route) => !/\/rows?\//.test(route)),
       JSON.stringify(t.unaudited),
     ).toEqual([]);
-    const apps = /\/(end-users|end-user-auth|bundle-assets|portal|domains)(\/|$)/;
+    const apps = /\/(end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains)(\/|$)/;
     // Signing in, signing up and using a link are public routes, which record what they do
     // themselves. The logo is sent as an image, which this client cannot do: its entry is read here.
     const own = /end-user-auth\/(sign-in|sign-up|password-links|passwords)$|portal\/logo$/;
     expect(
       t.unexercised(
-        (route) => apps.test(route) && !(own.test(route) && !route.startsWith("DELETE")),
+        (route) =>
+          apps.test(route) &&
+          // A provider's email domains are exercised in sso.test.ts.
+          !route.includes("/identity-providers/") &&
+          !(own.test(route) && !route.startsWith("DELETE")),
       ),
     ).toEqual([]);
   });

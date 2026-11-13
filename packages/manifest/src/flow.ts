@@ -1,3 +1,4 @@
+import { checkForm, type FormTrigger } from "./form.js";
 import type { ManifestIssue } from "./registry.js";
 
 /** The body of a `flow` manifest, version 1. */
@@ -5,6 +6,8 @@ export interface FlowBody {
   description?: string;
   nodes: Record<string, FlowNode>;
   edges: FlowEdge[];
+  /** Where each node sits in the editor. Nothing about how the flow runs. */
+  layout?: Record<string, { x: number; y: number }>;
 }
 
 export interface FlowEdge {
@@ -16,15 +19,59 @@ export interface FlowEdge {
   error?: boolean;
 }
 
+/** How a webhook checks that a request was signed with a shared secret. */
+export interface WebhookVerify {
+  scheme: "hmac-sha256" | "hmac-sha1";
+  header: string;
+  /** The name of the workspace secret that holds the shared secret. */
+  secret: string;
+  encoding?: "hex" | "base64";
+  prefix?: string;
+  /** What was signed: `{body}` and `{timestamp}` stand for the raw body and the timestamp header. */
+  signed?: string;
+  timestampHeader?: string;
+  toleranceSeconds?: number;
+}
+
 export type FlowTrigger =
   | { type: "manual" }
-  | { type: "schedule"; cron: string; timezone?: string }
-  | { type: "webhook" }
-  | { type: "event"; event: string; filter?: string };
+  | { type: "schedule"; cron: string; timezone?: string; source?: string }
+  | {
+      type: "webhook";
+      input?: "body" | "request";
+      verify?: WebhookVerify;
+      source?: string;
+      /** `flow` holds the request open for a respond step to answer. Default `now`. */
+      respond?: "now" | "flow";
+    }
+  | { type: "event"; event: string; filter?: string }
+  | ({ type: "form" } & FormTrigger);
+
+/**
+ * What a step hands the script it runs, beyond what the script declares for
+ * itself. A generic step such as "send email" declares nothing: the flow says
+ * which connection it sends through, and the run may reach that one.
+ */
+export interface FlowGrants {
+  connections?: string[];
+  tables?: string[];
+  events?: string[];
+}
+
+/** The kinds of thing a step can hand a script, as a script's `node.takes` names them. */
+export const GRANT_KINDS = { connections: "connection", tables: "table", events: "event" } as const;
 
 export type FlowNode =
   | { type: "trigger"; trigger: FlowTrigger }
-  | { type: "script"; script: string; input?: string }
+  | {
+      type: "script";
+      script: string;
+      /** One expression for the whole input. */
+      input?: string;
+      /** An expression per field of the input. Use this or `input`. */
+      inputs?: Record<string, string>;
+      with?: FlowGrants;
+    }
   | { type: "set"; values: Record<string, string> }
   | { type: "branch"; cases: { name: string; when: string }[] }
   | {
@@ -32,14 +79,44 @@ export type FlowNode =
       items: string;
       script?: string;
       flow?: string;
+      flowFrom?: string;
+      allow?: string[];
       input?: string;
       concurrency?: number;
+      /** For a foreach that runs a script. */
+      with?: FlowGrants;
     }
   | { type: "join" }
   | { type: "delay"; seconds: number }
   | { type: "approval"; title: string; detail?: string; timeoutSeconds?: number }
-  | { type: "subflow"; flow: string; input?: string }
+  | { type: "subflow"; flow?: string; flowFrom?: string; allow?: string[]; input?: string }
+  | {
+      type: "respond";
+      status?: number;
+      /** An expression for each header. Each must give text. */
+      headers?: Record<string, string>;
+      /** An expression. An object or a list is sent as JSON, and text as it is. */
+      body?: string;
+    }
   | { type: "fail"; message: string };
+
+/**
+ * Headers a respond step may not set. A cookie would be set on the platform's
+ * own address, and the others are the server's to decide.
+ */
+export const RESPONSE_HEADERS_REFUSED: readonly string[] = [
+  "set-cookie",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "keep-alive",
+  "upgrade",
+  "content-security-policy",
+  "x-content-type-options",
+  "strict-transport-security",
+  "access-control-allow-origin",
+  "access-control-allow-credentials",
+];
 
 export const OTHERWISE = "otherwise";
 
@@ -55,7 +132,12 @@ export function flowExpressions(body: FlowBody): { path: string; expression: str
         if (node.trigger.type === "event") at("trigger/filter", node.trigger.filter);
         break;
       case "script":
+        at("input", node.input);
+        for (const [name, expression] of Object.entries(node.inputs ?? {}))
+          at(`inputs/${name}`, expression);
+        break;
       case "subflow":
+        at("flowFrom", node.flowFrom);
         at("input", node.input);
         break;
       case "set":
@@ -67,10 +149,16 @@ export function flowExpressions(body: FlowBody): { path: string; expression: str
         break;
       case "foreach":
         at("items", node.items);
+        at("flowFrom", node.flowFrom);
         at("input", node.input);
         break;
       case "approval":
         at("detail", node.detail);
+        break;
+      case "respond":
+        at("body", node.body);
+        for (const [name, expression] of Object.entries(node.headers ?? {}))
+          at(`headers/${name}`, expression);
         break;
       case "fail":
         at("message", node.message);
@@ -95,8 +183,35 @@ export function flowReferences(
       at("script", "script", node.script);
       at("flow", "flow", node.flow);
     }
+    // A flow chosen when the step runs can be any of these, so each is a reference like one named outright.
+    if (node.type === "subflow" || node.type === "foreach") {
+      for (const [index, allowed] of (node.allow ?? []).entries()) {
+        at(`allow/${index}`, "flow", allowed);
+      }
+    }
     if (node.type === "trigger" && node.trigger.type === "event")
       at("trigger/event", "event", node.trigger.event);
+  }
+  return found;
+}
+
+/** What the steps of a flow hand their scripts, with the place each is written and the script it goes to. */
+export function flowGrants(
+  body: FlowBody,
+): { path: string; kind: "connection" | "table" | "event"; target: string; script: string }[] {
+  const found: ReturnType<typeof flowGrants> = [];
+  for (const [id, node] of Object.entries(body.nodes)) {
+    if ((node.type !== "script" && node.type !== "foreach") || !node.with || !node.script) continue;
+    for (const [field, kind] of Object.entries(GRANT_KINDS)) {
+      for (const [index, target] of (node.with[field as keyof FlowGrants] ?? []).entries()) {
+        found.push({
+          path: `/body/nodes/${id}/with/${field}/${index}`,
+          kind,
+          target,
+          script: node.script,
+        });
+      }
+    }
   }
   return found;
 }
@@ -180,11 +295,81 @@ export function checkFlow(body: FlowBody): ManifestIssue[] {
         message: "a join waits for several paths, so it needs at least two incoming edges",
       });
     }
-    if (node.type === "foreach" && (node.script === undefined) === (node.flow === undefined)) {
+    if (node.type === "subflow" || node.type === "foreach") {
+      if (node.flow !== undefined && node.flowFrom !== undefined) {
+        issues.push({
+          path: `${at}/flowFrom`,
+          message: "name the flow with `flow`, or choose it with `flowFrom`: not both",
+        });
+      }
+      if ((node.flowFrom === undefined) !== (node.allow === undefined)) {
+        issues.push({
+          path: `${at}/allow`,
+          message:
+            "`flowFrom` and `allow` go together: the expression chooses, and the list says what it may choose",
+        });
+      }
+    }
+    if (node.type === "subflow" && node.flow === undefined && node.flowFrom === undefined) {
+      issues.push({
+        path: `${at}/flow`,
+        message: "a subflow names a flow, or chooses one with `flowFrom`",
+      });
+    }
+    if (
+      node.type === "foreach" &&
+      (node.script === undefined) === (node.flow === undefined && node.flowFrom === undefined)
+    ) {
       issues.push({
         path: at,
         message: "a foreach runs either a script or a flow: give exactly one",
       });
+    }
+    if (node.type === "script" && node.input !== undefined && node.inputs !== undefined) {
+      issues.push({
+        path: `${at}/inputs`,
+        message:
+          "give the input as one expression with `input`, or field by field with `inputs`: not both",
+      });
+    }
+    if (node.type === "foreach" && node.with !== undefined && node.script === undefined) {
+      issues.push({
+        path: `${at}/with`,
+        message: "`with` hands something to a script, and this foreach runs a flow",
+      });
+    }
+    if (node.type === "trigger" && node.trigger.type === "form") {
+      issues.push(...checkForm(node.trigger, `${at}/trigger`));
+    }
+    if (node.type === "respond") {
+      for (const name of Object.keys(node.headers ?? {})) {
+        if (RESPONSE_HEADERS_REFUSED.includes(name.toLowerCase())) {
+          issues.push({
+            path: `${at}/headers/${name}`,
+            message: `a flow may not set the header "${name}"`,
+          });
+        }
+      }
+    }
+    if (
+      node.type === "trigger" &&
+      node.trigger.type === "webhook" &&
+      node.trigger.respond === "flow"
+    ) {
+      if (node.trigger.source !== undefined) {
+        issues.push({
+          path: `${at}/trigger/respond`,
+          message:
+            "a webhook that goes through a trigger source is answered at once: the flow starts later, when the source has run",
+        });
+      }
+      const reached = reachableFrom(body, id);
+      if (![...reached].some((other) => body.nodes[other]?.type === "respond")) {
+        issues.push({
+          path: `${at}/trigger/respond`,
+          message: "the webhook waits for the flow to answer, and no respond step follows it",
+        });
+      }
     }
     if (node.type === "branch") {
       const names = node.cases.map((item) => item.name);

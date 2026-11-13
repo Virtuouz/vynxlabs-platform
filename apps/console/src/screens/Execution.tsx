@@ -1,10 +1,25 @@
-import { Badge, type BadgeTone, Button, Notice } from "@vynxlabs/ui";
-import { useEffect, useState } from "preact/hooks";
-import { type ApiError, api, useLoad } from "../api.ts";
-import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import {
+  Badge,
+  type BadgeTone,
+  Button,
+  Dialog,
+  Facts,
+  Form,
+  type FormProperty,
+  JsonView,
+  type LogLine,
+  LogViewer,
+  Notice,
+} from "@vynxlabs/ui";
+import { Ban, Check, Clock, LoaderCircle, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api, useLoad } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
+import { InputDialog } from "../InputDialog.tsx";
+import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
-const code = (text: string) => <code class="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 const STATUS: Record<Status, [BadgeTone, string]> = {
@@ -45,22 +60,57 @@ const TRIGGER: Record<string, string> = {
   alert: "Failure handler",
 };
 
-export function Scripts({ root, runsLink }: { root: string; runsLink: string }) {
+export function Scripts({
+  root,
+  link,
+  editable,
+}: {
+  root: string;
+  link: string;
+  /** Whether scripts can be written here: true in a dev workspace. */
+  editable: boolean;
+}) {
+  const runsLink = `${link}/runs`;
   return (
     <ListScreen<{
       path: string;
       description: string;
+      inputSchema: Record<string, unknown>;
       lastRun: { id: string; status: Status; createdAt: string } | null;
     }>
       title="Scripts"
-      description="The scripts in the bundle this workspace is running."
+      description="The scripts this workspace is running. Open one to read it, or to change it in a dev workspace."
+      action={
+        editable ? (
+          <Button variant="primary" onClick={() => navigate(`${link}/scripts/new`)}>
+            New script
+          </Button>
+        ) : undefined
+      }
       path={`${root}/scripts`}
       rowKey={(row) => row.path}
       columns={[
-        { header: "Script", cell: (row) => code(row.path) },
+        {
+          header: "Script",
+          cell: (row) => (
+            <span>
+              <Link
+                to={`${link}/scripts/edit/${row.path}`}
+                className="font-mono text-[13px] text-action"
+              >
+                {row.path}
+              </Link>
+              {row.path.startsWith("core/") ? (
+                <span className="ml-2">
+                  <Badge>Comes with the platform</Badge>
+                </span>
+              ) : null}
+            </span>
+          ),
+        },
         {
           header: "What it does",
-          cell: (row) => <span class="text-ink-muted">{row.description}</span>,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
         },
         {
           header: "Last run",
@@ -68,13 +118,13 @@ export function Scripts({ root, runsLink }: { root: string; runsLink: string }) 
             row.lastRun ? (
               <Link
                 to={`${runsLink}/${row.lastRun.id}`}
-                class="inline-flex items-center gap-2 no-underline"
+                className="inline-flex items-center gap-2 no-underline"
               >
                 <StatusBadge status={row.lastRun.status} />
-                <span class="text-ink-muted">{when(row.lastRun.createdAt)}</span>
+                <span className="text-ink-muted">{when(row.lastRun.createdAt)}</span>
               </Link>
             ) : (
-              <span class="text-ink-muted">Never</span>
+              <span className="text-ink-muted">Never</span>
             ),
         },
       ]}
@@ -82,36 +132,42 @@ export function Scripts({ root, runsLink }: { root: string; runsLink: string }) 
         title: "No scripts yet",
         text: "Scripts arrive with a deploy. From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
       }}
-      rowActions={(row) => <RunButton root={root} script={row.path} runsLink={runsLink} />}
+      rowActions={(row) => (
+        <RunButton root={root} script={row.path} schema={row.inputSchema} runsLink={runsLink} />
+      )}
     />
   );
 }
 
-function RunButton({ root, script, runsLink }: { root: string; script: string; runsLink: string }) {
+function RunButton({
+  root,
+  script,
+  schema,
+  runsLink,
+}: {
+  root: string;
+  script: string;
+  schema: Record<string, unknown>;
+  runsLink: string;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <Button
-      size="small"
-      onClick={async () => {
-        const text = window.prompt(`Input for ${script}, as JSON`, "{}");
-        if (text === null) return;
-        try {
-          const run = await api.post<Run>(`${root}/runs`, { script, input: JSON.parse(text) });
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        Run
+      </Button>
+      <InputDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Run ${script}`}
+        action="Run"
+        schema={schema}
+        onSubmit={async (input) => {
+          const run = await api.post<Run>(`${root}/runs`, { script, input });
           navigate(`${runsLink}/${run.id}`);
-        } catch (error) {
-          const failure = error as ApiError;
-          const fields = (failure.fields ?? [])
-            .map((field) => `\n${field.path} ${field.message}`)
-            .join("");
-          window.alert(
-            error instanceof SyntaxError
-              ? "That is not valid JSON."
-              : `${failure.message}${fields}`,
-          );
-        }
-      }}
-    >
-      Run
-    </Button>
+        }}
+      />
+    </>
   );
 }
 
@@ -126,7 +182,7 @@ export function Runs({ root, link }: { root: string; link: string }) {
         {
           header: "Started",
           cell: (row) => (
-            <Link to={`${link}/${row.id}`} class="whitespace-nowrap text-action">
+            <Link to={`${link}/${row.id}`} className="whitespace-nowrap text-action">
               {when(row.createdAt)}
             </Link>
           ),
@@ -144,21 +200,6 @@ export function Runs({ root, link }: { root: string; link: string }) {
   );
 }
 
-interface LogLine {
-  seq: number;
-  attempt: number;
-  time: string;
-  level: string;
-  message: string;
-  fields: Record<string, unknown>;
-}
-
-const LEVEL: Record<string, string> = {
-  error: "text-danger",
-  warn: "text-attention",
-  debug: "text-ink-muted",
-};
-
 /** One run, refreshed while it is in progress, with its log lines as they arrive. */
 export function RunDetail({
   root,
@@ -170,7 +211,13 @@ export function RunDetail({
   backLink: string;
 }) {
   const [run, setRun] = useState<
-    Run & { input: unknown; output: unknown; alert: Record<string, unknown> | null }
+    Run & {
+      input: unknown;
+      output: unknown;
+      alert: Record<string, unknown> | null;
+      pool: string | null;
+      waitingFor: string | null;
+    }
   >();
   const [lines, setLines] = useState<LogLine[]>([]);
   const [error, setError] = useState<string>();
@@ -205,95 +252,156 @@ export function RunDetail({
   }, [root, runId]);
 
   if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p class="text-ink-muted">Loading…</p>;
+  if (!run) return <p className="text-ink-muted">Loading…</p>;
   const active = run.status === "queued" || run.status === "running";
-  const fact = (label: string, value: preact.ComponentChildren) => (
-    <div>
-      <dt class="text-[13px] text-ink-muted">{label}</dt>
-      <dd class="m-0">{value}</dd>
-    </div>
-  );
+  const duration = took(run);
+  const waited =
+    run.startedAt && Date.parse(run.startedAt) - Date.parse(run.createdAt) >= 1000
+      ? `${((Date.parse(run.startedAt) - Date.parse(run.createdAt)) / 1000).toFixed(1)} s`
+      : "";
+  const outcome =
+    run.status === "succeeded"
+      ? `Succeeded${duration ? ` in ${duration}` : ""}`
+      : run.status === "failed"
+        ? `Failed${duration ? ` after ${duration}` : ""}`
+        : run.status === "cancelled"
+          ? "Cancelled"
+          : run.status === "running"
+            ? "Running"
+            : "Waiting for a worker";
+  const Mark =
+    run.status === "succeeded"
+      ? Check
+      : run.status === "failed"
+        ? X
+        : run.status === "cancelled"
+          ? Ban
+          : run.status === "running"
+            ? LoaderCircle
+            : Clock;
+  const tone = STATUS[run.status][0];
+  const markTone: Record<BadgeTone, string> = {
+    success: "bg-success-soft text-success",
+    danger: "bg-danger-soft text-danger",
+    action: "bg-action-soft text-action",
+    attention: "bg-attention-soft text-attention",
+    neutral: "bg-sunken text-ink-muted",
+  };
+  const failed = run.status === "failed";
+
   return (
-    <Page
-      title={run.script}
-      action={
-        active ? (
-          <Button
-            variant="danger"
-            onClick={async () => {
-              if (!window.confirm("Cancel this run?")) return;
-              await api
-                .post(`${root}/runs/${runId}/cancel`)
-                .catch((caught) => window.alert((caught as Error).message));
-            }}
-          >
-            Cancel run
-          </Button>
-        ) : undefined
-      }
-    >
-      <Link to={backLink} class="text-action">
+    <section className="flex flex-col gap-4">
+      <Link to={backLink} className="text-[13px] text-action">
         All runs
       </Link>
-      <dl class="m-0 grid grid-cols-2 gap-4 rounded-panel border border-line bg-surface p-4 md:grid-cols-4">
-        {fact("Status", <StatusBadge status={run.status} />)}
-        {fact("Started by", TRIGGER[run.trigger.type] ?? run.trigger.type)}
-        {fact("Attempt", `${Math.max(run.attempt, 1)} of ${run.maxAttempts}`)}
-        {fact("Bundle version", run.bundleVersion)}
-        {fact("Created", when(run.createdAt))}
-        {fact("Took", took(run) || (active ? "In progress" : ""))}
-      </dl>
-      {run.error ? (
-        <Notice tone="danger">
-          <strong>The run failed.</strong> {run.error.message}
-        </Notice>
-      ) : null}
-      {run.alert?.handlerRunId ? (
-        <p class="m-0 text-ink-muted">
-          A failure handler was started:{" "}
-          <Link to={`${backLink}/${run.alert.handlerRunId}`} class="text-action">
-            see its run
-          </Link>
-        </p>
-      ) : null}
-      <div class="grid gap-4 md:grid-cols-2">
-        <Payload title="Input" value={run.input} />
-        <Payload title="Output" value={run.status === "succeeded" ? run.output : undefined} />
-      </div>
-      <section>
-        <h2 class="mt-0 mb-2 text-base font-semibold">Log</h2>
-        {lines.length === 0 ? (
-          <p class="m-0 text-ink-muted">
-            {active ? "Waiting for the first line…" : "The script logged nothing."}
+      <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-4">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className={`flex size-7 shrink-0 items-center justify-center rounded-control ${markTone[tone]}`}
+            >
+              <Mark
+                aria-hidden="true"
+                size={16}
+                strokeWidth={2.25}
+                className={run.status === "running" ? "animate-spin" : ""}
+              />
+            </span>
+            <h1 className="m-0 truncate font-mono text-base font-semibold">{run.script}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge tone={tone}>{outcome}</Badge>
+            {active ? (
+              <Button
+                size="small"
+                variant="danger"
+                onClick={async () => {
+                  const sure = await ask.confirm({
+                    title: "Cancel this run?",
+                    action: "Cancel run",
+                    cancel: "Keep running",
+                    danger: true,
+                  });
+                  if (!sure) return;
+                  await api.post(`${root}/runs/${runId}/cancel`).catch(notify.error);
+                }}
+              >
+                Cancel run
+              </Button>
+            ) : null}
+          </div>
+        </header>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge>{run.id.slice(-12)}</Badge>
+          <Badge>Version {run.bundleVersion}</Badge>
+          {run.pool ? <Badge tone="action">Pool: {run.pool}</Badge> : null}
+          {run.maxAttempts > 1 ? (
+            <Badge>
+              Attempt {Math.max(run.attempt, 1)} of {run.maxAttempts}
+            </Badge>
+          ) : null}
+        </div>
+        {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
+        <Facts
+          facts={[
+            { label: "Received", value: stamp(run.createdAt) },
+            { label: "Started", value: run.startedAt ? stamp(run.startedAt) : "" },
+            { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "" },
+            { label: "By", value: TRIGGER[run.trigger.type] ?? run.trigger.type },
+            { label: "Waited", value: waited },
+            { label: "Ran", value: duration || (run.status === "running" ? "In progress" : "") },
+            { label: "Run ID", value: run.id, code: true },
+            {
+              label: "Trigger",
+              value: typeof run.trigger.trigger === "string" ? run.trigger.trigger : "",
+              code: true,
+            },
+          ]}
+        />
+        {run.alert?.handlerRunId ? (
+          <p className="m-0 text-ink-muted">
+            A failure handler was started:{" "}
+            <Link to={`${backLink}/${run.alert.handlerRunId}`} className="text-action">
+              see its run
+            </Link>
           </p>
-        ) : (
-          <ol class="m-0 list-none overflow-x-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
-            {lines.map((line) => (
-              <li key={line.seq} class={`whitespace-pre-wrap ${LEVEL[line.level] ?? ""}`}>
-                <span class="text-ink-muted">{new Date(line.time).toLocaleTimeString()}</span>{" "}
-                {line.level.padEnd(5)} {line.message}
-                {Object.keys(line.fields).length > 0 ? (
-                  <span class="text-ink-muted"> {JSON.stringify(line.fields)}</span>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-    </Page>
-  );
-}
-
-function Payload({ title, value }: { title: string; value: unknown }) {
-  return (
-    <section>
-      <h2 class="mt-0 mb-2 text-base font-semibold">{title}</h2>
-      <pre class="m-0 max-h-64 overflow-auto rounded-panel border border-line bg-surface p-3 font-mono text-[13px]">
-        {value === undefined ? "—" : JSON.stringify(value, null, 2)}
-      </pre>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Input</h2>
+            <JsonView label="Input" value={run.input} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Result</h2>
+            <JsonView
+              label="Result"
+              tone={failed ? "danger" : "plain"}
+              value={
+                failed ? { error: run.error } : run.status === "succeeded" ? run.output : undefined
+              }
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          <h2 className="m-0 w-fit border-action border-b-2 pb-1 text-[13px] font-medium">Logs</h2>
+          <LogViewer
+            lines={lines}
+            live={active}
+            fileName={`${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`}
+            empty={active ? "Waiting for the first line…" : "The script logged nothing."}
+          />
+        </div>
+      </div>
     </section>
   );
 }
+
+/** A date and time to the second, in the same shape on every line so that they compare by eye. */
+const stamp = (iso: string) => {
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
 
 export function Triggers({ root }: { root: string }) {
   return (
@@ -320,12 +428,12 @@ export function Triggers({ root }: { root: string }) {
           cell: (row) =>
             row.type === "schedule" ? (
               <span>
-                {code(row.cron ?? "")} <span class="text-ink-muted">{row.timezone}</span>
+                {code(row.cron ?? "")} <span className="text-ink-muted">{row.timezone}</span>
               </span>
             ) : row.url ? (
-              <span class="font-mono text-[13px] break-all select-all">POST {row.url}</span>
+              <span className="font-mono text-[13px] break-all select-all">POST {row.url}</span>
             ) : (
-              <span class="text-ink-muted">
+              <span className="text-ink-muted">
                 A webhook. Its address is shown to those who manage triggers.
               </span>
             ),
@@ -371,7 +479,7 @@ export function Deployments({ root }: { root: string }) {
         {
           header: "Version",
           cell: (row) => (
-            <span class="flex items-center gap-2">
+            <span className="flex items-center gap-2">
               {row.version}
               {row.active ? <Badge tone="success">Running</Badge> : null}
             </span>
@@ -390,20 +498,17 @@ export function Deployments({ root }: { root: string }) {
           <Button
             size="small"
             onClick={async () => {
-              if (
-                !window.confirm(
-                  `Activate version ${row.version}? This replaces what the workspace is running.`,
-                )
-              )
-                return;
+              const sure = await ask.confirm({
+                title: `Activate version ${row.version}?`,
+                text: "This replaces what the workspace is running.",
+                action: "Activate",
+              });
+              if (!sure) return;
               try {
                 await api.post(`${root}/deployments`, { bundleId: row.id });
                 reload();
               } catch (error) {
-                const failure = error as ApiError;
-                window.alert(
-                  [failure.message, ...failure.fields.map((field) => field.message)].join("\n"),
-                );
+                notify.error(error);
               }
             }}
           >
@@ -415,27 +520,137 @@ export function Deployments({ root }: { root: string }) {
   );
 }
 
+interface ConnectionRow {
+  path: string;
+  connector: string;
+  description: string;
+  defined: boolean;
+  bound: boolean;
+  config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
+  configSchema: {
+    properties?: Record<
+      string,
+      { type?: unknown; enum?: unknown[]; maxLength?: number; [more: string]: unknown }
+    >;
+    required?: string[];
+  };
+  hasCredential: boolean;
+}
+
+const CONNECTOR_NAMES: Record<string, string> = { http: "HTTP", smtp: "Mail (SMTP)" };
+const SIMPLE = new Set(["string", "number", "integer", "boolean"]);
+
+/** The part of a connector's schema a form can be drawn from, and what it leaves out. */
+export function connectionForm(row: Pick<ConnectionRow, "configSchema" | "hasCredential">) {
+  const properties: Record<string, FormProperty> = {};
+  const left: string[] = [];
+  for (const [name, property] of Object.entries(row.configSchema.properties ?? {})) {
+    // A list of values to choose from says what it is without naming a type.
+    const type =
+      property.type ??
+      (property.enum?.every((value) => typeof value === "string") ? "string" : undefined);
+    if (!SIMPLE.has(String(type))) {
+      left.push(name);
+      continue;
+    }
+    // An address or a name is one line, however long the connector lets it be. The server holds the limit.
+    const { maxLength, ...rest } = property;
+    properties[name] = {
+      ...rest,
+      type,
+      ...(maxLength !== undefined && maxLength > 1000 ? { maxLength } : {}),
+    } as unknown as FormProperty;
+  }
+  const secret = "secret" in properties ? "connection_secret" : "secret";
+  properties[secret] = {
+    type: "string",
+    title: "Secret",
+    format: "password",
+    description: row.hasCredential
+      ? "Leave empty to keep the stored one."
+      : "The password or key, when the system asks for one. It is stored encrypted and never shown.",
+  };
+  return {
+    secret,
+    left,
+    schema: {
+      type: "object" as const,
+      properties,
+      required: (row.configSchema.required ?? []).filter((name) => name in properties),
+    },
+  };
+}
+
+/** Sets up a connection of a kind other than HTTP, with a form drawn from its connector's schema. */
+function SetUpConnection({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: ConnectionRow;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const form = connectionForm(row);
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        {row.bound ? "Change" : "Set up"}
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Set up ${row.path}`}
+        description={`A ${CONNECTOR_NAMES[row.connector] ?? row.connector} connection. What is set here applies to this workspace only.`}
+      >
+        {form.left.length > 0 ? (
+          <div className="mb-3">
+            <Notice tone="attention">
+              This connector also takes {form.left.join(", ")}, which cannot be set here. Set them
+              through the API.
+            </Notice>
+          </div>
+        ) : null}
+        <Form
+          key={String(open)}
+          schema={form.schema}
+          value={row.config ?? {}}
+          submitLabel="Save"
+          onSubmit={async (values) => {
+            const { [form.secret]: secret, ...config } = values;
+            await api.put(`${root}/connection-bindings/${row.path}`, {
+              config,
+              ...(secret ? { credential: secret } : {}),
+            });
+            setOpen(false);
+            onDone();
+          }}
+        />
+      </Dialog>
+    </>
+  );
+}
+
 export function Connections({ root }: { root: string }) {
   return (
-    <ListScreen<{
-      path: string;
-      description: string;
-      defined: boolean;
-      bound: boolean;
-      config: { baseUrl?: string } | null;
-      hasCredential: boolean;
-    }>
+    <ListScreen<ConnectionRow>
       title="Connections"
       description="Where each connection points in this workspace. Addresses and credentials are set here, never in the repository, so dev and production can differ."
       path={`${root}/connection-bindings`}
       rowKey={(row) => row.path}
       columns={[
         { header: "Connection", cell: (row) => code(row.path) },
-        { header: "For", cell: (row) => <span class="text-ink-muted">{row.description}</span> },
+        { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
+        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Points to",
           cell: (row) =>
-            row.bound ? (row.config?.baseUrl ?? "") : <Badge tone="attention">Not bound</Badge>,
+            row.bound ? (
+              (row.config?.baseUrl ?? row.config?.host ?? "")
+            ) : (
+              <Badge tone="attention">Not bound</Badge>
+            ),
         },
         {
           header: "Credential",
@@ -447,15 +662,33 @@ export function Connections({ root }: { root: string }) {
         text: "A connection is an external system a script talks to. Bind one here before deploying the bundle that uses it.",
       }}
       create={{
-        action: "Bind connection",
+        action: "Bind an HTTP connection",
         description:
-          "Binding a path that is already bound replaces it. Leave the credential empty to keep the stored one.",
+          "Binding a path that is already bound replaces it. Leave the credential empty to keep the stored one. A connection of another kind is set up from its row.",
         fields: [
           {
             name: "path",
             label: "Connection",
-            placeholder: "shop",
-            hint: "The path the repository gives it.",
+            hint: "The HTTP connections this workspace's resources declare.",
+            choose: {
+              path: `${root}/connection-bindings`,
+              option: (item: {
+                path: string;
+                connector: string;
+                description: string;
+                bound: boolean;
+              }) => ({
+                value: item.path,
+                label: item.path,
+                hint:
+                  item.connector !== "http"
+                    ? "Not an HTTP connection. Set it up from its row."
+                    : item.bound
+                      ? `${item.description} Bound: this replaces it.`
+                      : item.description,
+                ...(item.connector !== "http" ? { disabled: true } : {}),
+              }),
+            },
           },
           { name: "baseUrl", label: "Address", placeholder: "https://api.example.com" },
           {
@@ -464,31 +697,44 @@ export function Connections({ root }: { root: string }) {
             options: [
               { value: "none", label: "No credential" },
               { value: "bearer", label: "Authorization: Bearer" },
-              { value: "header", label: "In an X-API-Key header" },
+              { value: "header", label: "In a header of your choice" },
             ],
+          },
+          {
+            name: "header",
+            label: "Header name",
+            placeholder: "x-api-key",
+            when: (values) => values.auth === "header",
           },
           { name: "credential", label: "Credential", type: "password", required: false },
         ],
-        submit: ({ path = "", baseUrl, auth, credential }) =>
+        submit: ({ path = "", baseUrl, auth, header, credential }) =>
           api.put(`${root}/connection-bindings/${path}`, {
             config: {
               baseUrl,
               ...(auth === "bearer" ? { auth: { type: "bearer" } } : {}),
-              ...(auth === "header" ? { auth: { type: "header", name: "x-api-key" } } : {}),
+              ...(auth === "header"
+                ? { auth: { type: "header", name: header || "x-api-key" } }
+                : {}),
             },
             ...(credential ? { credential } : {}),
           }),
       }}
-      rowActions={(row, reload) =>
-        row.bound ? (
-          <RemoveButton
-            label="Unbind"
-            confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
-            run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
-            onDone={reload}
-          />
-        ) : null
-      }
+      rowActions={(row, reload) => (
+        <span className="flex justify-end gap-2">
+          {row.connector !== "http" ? (
+            <SetUpConnection root={root} row={row} onDone={reload} />
+          ) : null}
+          {row.bound ? (
+            <RemoveButton
+              label="Unbind"
+              confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
+              run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
+              onDone={reload}
+            />
+          ) : null}
+        </span>
+      )}
     />
   );
 }
@@ -502,14 +748,14 @@ export function Variables({ root }: { root: string }) {
       rowKey={(row) => row.path}
       columns={[
         { header: "Variable", cell: (row) => code(row.path) },
-        { header: "For", cell: (row) => <span class="text-ink-muted">{row.description}</span> },
+        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Value here",
           cell: (row) =>
             row.value !== null ? (
               code(row.value)
             ) : (
-              <span class="text-ink-muted">Default: {row.default ?? "none"}</span>
+              <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
             ),
         },
       ]}
@@ -517,7 +763,18 @@ export function Variables({ root }: { root: string }) {
       create={{
         action: "Set variable",
         fields: [
-          { name: "path", label: "Variable", placeholder: "orders/batch-size" },
+          {
+            name: "path",
+            label: "Variable",
+            choose: {
+              path: `${root}/variable-values`,
+              option: (item: { path: string; description?: string }) => ({
+                value: item.path,
+                label: item.path,
+                ...(item.description ? { hint: item.description } : {}),
+              }),
+            },
+          },
           { name: "value", label: "Value" },
         ],
         submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),
@@ -542,25 +799,25 @@ export function Workers({ base }: { base: string }) {
   }>(`${base}/workers`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
   return (
-    <div class="flex flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <Page
         title="Workers"
         description="Workers run this tenant's scripts. The instance starts one when there is work and stops it when there is none. A standalone worker is one you run yourself, for example inside your own network."
       >
         {live.data && live.data.items.length > 0 ? (
-          <ul class="m-0 flex list-none flex-col gap-1 p-0">
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {live.data.items.map((worker) => (
-              <li key={worker.id} class="flex items-center gap-2">
+              <li key={worker.id} className="flex items-center gap-2">
                 <Badge tone="success">Running</Badge>
                 {worker.managed
                   ? "Started by the instance"
                   : `Standalone, using "${worker.credentialName}"`}
-                <span class="text-ink-muted">last heard from {when(worker.lastSeenAt)}</span>
+                <span className="text-ink-muted">last heard from {when(worker.lastSeenAt)}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p class="m-0 text-ink-muted">
+          <p className="m-0 text-ink-muted">
             No worker is running right now.
             {tenant.data?.managedWorkers === false
               ? " This tenant runs on its own workers: start one with a credential from below."
@@ -568,7 +825,7 @@ export function Workers({ base }: { base: string }) {
           </p>
         )}
         {tenant.data ? (
-          <div class="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span>
               {tenant.data.managedWorkers
                 ? "The instance starts workers for this tenant."
@@ -641,7 +898,7 @@ export function Workers({ base }: { base: string }) {
           afterCreate: (result) => (
             <span>
               Copy this credential now. It is not shown again:{" "}
-              <code class="font-mono break-all select-all">
+              <code className="font-mono break-all select-all">
                 {(result as { token: string }).token}
               </code>
             </span>
@@ -659,5 +916,145 @@ export function Workers({ base }: { base: string }) {
         }
       />
     </div>
+  );
+}
+
+interface GroupMember {
+  key: string;
+  label: string;
+  config: { baseUrl?: string };
+  hasCredential: boolean;
+}
+interface ConnectionGroup {
+  path: string;
+  description: string;
+  connector: string;
+  members: GroupMember[];
+}
+
+/**
+ * Connection groups: sets of connections of one kind, such as every customer's
+ * account. Members are added here and take effect on the next run, with no deploy.
+ */
+export function ConnectionGroups({ root }: { root: string }) {
+  const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
+  const [adding, setAdding] = useState<string>();
+  if (groups.error) return <Notice tone="danger">{groups.error.message}</Notice>;
+  if (!groups.data || groups.data.items.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-4">
+      <header>
+        <h2 className="m-0 text-lg font-semibold">Connection groups</h2>
+        <p className="mt-1 mb-0 max-w-[70ch] text-ink-muted">
+          A group holds many connections of one kind, and a script picks one by its key when it
+          runs. Add a member for each customer or account. It is used from the next run, with no
+          deploy.
+        </p>
+      </header>
+      {groups.data.items.map((group) => (
+        <div key={group.path} className="rounded-panel border border-line bg-surface">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">
+            <div className="min-w-0">
+              <code className="font-mono text-[13px] font-semibold">{group.path}</code>
+              {group.description ? (
+                <span className="ml-3 text-ink-muted">{group.description}</span>
+              ) : null}
+            </div>
+            <Button size="small" variant="primary" onClick={() => setAdding(group.path)}>
+              Add a member
+            </Button>
+          </div>
+          {group.members.length === 0 ? (
+            <p className="m-0 px-4 py-3 text-ink-muted">
+              No members yet. A script that asks this group for a key will fail until one is added.
+            </p>
+          ) : (
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="text-[12.5px] text-ink-muted">
+                  {["Key", "Name", "Points to", "Credential", ""].map((header, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: fixed headers, one of them empty
+                    <th key={index} scope="col" className="px-4 py-2 font-medium">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {group.members.map((member) => (
+                  <tr key={member.key} className="border-line border-t">
+                    <td className="px-4 py-2">{code(member.key)}</td>
+                    <td className="px-4 py-2 text-ink-muted">{member.label}</td>
+                    <td className="px-4 py-2">{member.config.baseUrl ?? ""}</td>
+                    <td className="px-4 py-2">{member.hasCredential ? "Set" : "None"}</td>
+                    <td className="px-4 py-2 text-right">
+                      <RemoveButton
+                        confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
+                        run={() =>
+                          api.delete(`${root}/connection-group-members/${member.key}/${group.path}`)
+                        }
+                        onDone={groups.reload}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
+      <CreateDialog
+        key={adding}
+        open={adding !== undefined}
+        onClose={() => setAdding(undefined)}
+        onCreated={() => {
+          setAdding(undefined);
+          groups.reload();
+        }}
+        config={{
+          action: "Add a member",
+          description: `To ${adding ?? ""}. A key that is already there is replaced. Leave the credential empty to keep the stored one.`,
+          fields: [
+            {
+              name: "key",
+              label: "Key",
+              placeholder: "acme-north",
+              hint: "What a script asks for: a customer's ID, a region, a shop's name.",
+            },
+            { name: "label", label: "Name", required: false, placeholder: "Acme, northern shop" },
+            { name: "baseUrl", label: "Address", placeholder: "https://api.example.com" },
+            {
+              name: "auth",
+              label: "How the credential is sent",
+              options: [
+                { value: "none", label: "No credential" },
+                { value: "bearer", label: "Authorization: Bearer" },
+                { value: "header", label: "In a header of your choice" },
+              ],
+            },
+            {
+              name: "header",
+              label: "Header name",
+              placeholder: "x-api-key",
+              when: (values) => values.auth === "header",
+            },
+            { name: "credential", label: "Credential", type: "password", required: false },
+          ],
+          submit: ({ key = "", label, baseUrl, auth, header, credential }) =>
+            api.put(`${root}/connection-group-members/${encodeURIComponent(key)}/${adding}`, {
+              ...(label ? { label } : {}),
+              config: {
+                baseUrl,
+                ...(auth === "bearer" ? { auth: { type: "bearer" } } : {}),
+                ...(auth === "header"
+                  ? { auth: { type: "header", name: header || "x-api-key" } }
+                  : {}),
+              },
+              ...(credential ? { credential } : {}),
+            }),
+        }}
+      />
+    </section>
   );
 }

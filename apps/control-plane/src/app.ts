@@ -15,18 +15,25 @@ import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
+import { authoringRoutes } from "./routes/authoring.js";
+import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
 import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionRoutes } from "./routes/execution.js";
 import { flowRoutes } from "./routes/flows.js";
+import { gitRoutes } from "./routes/git.js";
 import { healthRoutes } from "./routes/health.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
+import { interfaceRoutes } from "./routes/interfaces.js";
 import { locationRoutes } from "./routes/locations.js";
+import { mcpRoutes } from "./routes/mcp.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { portabilityRoutes } from "./routes/portability.js";
+import { scimRoutes } from "./routes/scim.js";
 import { sourceRoutes } from "./routes/sources.js";
+import { ssoRoutes } from "./routes/sso.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -145,6 +152,9 @@ export async function buildApp(options: AppOptions) {
       await api.register(permissionRoutes(kernel));
       await api.register(workspaceRoutes(kernel));
       await api.register(executionRoutes(kernel));
+      await api.register(authoringRoutes(kernel));
+      await api.register(gitRoutes(kernel));
+      await api.register(mcpRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
       await api.register(sourceRoutes(kernel));
@@ -152,6 +162,10 @@ export async function buildApp(options: AppOptions) {
       await api.register(environmentRoutes(kernel));
       await api.register(portabilityRoutes(kernel));
       await api.register(endUserRoutes(kernel));
+      await api.register(ssoRoutes(kernel));
+      await api.register(scimRoutes(kernel));
+      await api.register(interfaceRoutes(kernel));
+      await api.register(dashboardRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
       api.get(
@@ -172,7 +186,21 @@ export async function buildApp(options: AppOptions) {
 
   const consoleDir = consoleDirectory(options.config);
   if (consoleDir) {
-    await app.register(fastifyStatic, { root: consoleDir, wildcard: false });
+    await app.register(fastifyStatic, {
+      root: consoleDir,
+      wildcard: false,
+      // The build leaves a Brotli and a gzip copy beside each file. One of them is sent when
+      // the browser takes it, and nothing is compressed while a request waits.
+      preCompressed: true,
+      cacheControl: false,
+      setHeaders(response, path) {
+        // A file under assets has a hash of its content in its name, so it never changes.
+        response.header(
+          "cache-control",
+          /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "no-cache",
+        );
+      },
+    });
   }
   app.setNotFoundHandler((request, reply) => {
     const isApi = request.url === "/api" || request.url.startsWith("/api/");

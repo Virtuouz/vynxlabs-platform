@@ -52,7 +52,8 @@ export const writer = { execute: async (input, ctx) => {
   const changed = await tasks.update(many[0].id, { done: true });
   await tasks.delete(many[1].id);
   const found = await tasks.find({ filter: { column: "title", op: "contains", value: input.title }, sort: ["title"] });
-  return { id: made.id, titles: found.map((row) => row.title), done: changed.done, gone: await tasks.get(many[1].id) };
+  const totals = await tasks.aggregate({ group: ["done"], measures: ["count"], sort: ["-count"] });
+  return { id: made.id, titles: found.map((row) => row.title), done: changed.done, gone: await tasks.get(many[1].id), totals: totals.items };
 } };
 export const asPerson = { execute: async (input, ctx) => {
   const mine = ctx.table("tasks").as(input.person);
@@ -61,6 +62,13 @@ export const asPerson = { execute: async (input, ctx) => {
   try { await mine.insert({ title: "not mine", owner_id: input.someoneElse }); } catch (error) { forged = error.message; }
   const own = await mine.insert({ title: "written for them" });
   return { titles, forged, ownOwner: own.owner_id, all: (await ctx.table("tasks").find()).length };
+} };
+export const asGroup = { execute: async (input, ctx) => {
+  const notes = ctx.table("notes");
+  const theirs = (await notes.as(input.person).find({ sort: ["title"] })).map((row) => row.title);
+  let wrote = "allowed";
+  try { await notes.as(input.person).insert({ title: "by them", team: "ops" }); } catch (error) { wrote = error.message; }
+  return { theirs, wrote, all: (await notes.find()).length };
 } };
 export const undeclared = { execute: async (input, ctx) => ({ rows: await ctx.table("tasks").find() }) };
 export const erpSync = { execute: async (input, ctx) => {
@@ -94,9 +102,17 @@ function bundle(extra: BundleManifest[] = []): Bundle {
         },
         policy: { type: "owner", column: "owner_id" },
       }),
+      manifest("table", "notes", {
+        columns: { title: { type: "text", required: true }, team: { type: "text" } },
+        policy: {
+          type: "rules",
+          rules: [{ allow: "read", when: { column: "team", in: "groups" } }],
+        },
+      }),
       manifest("data_source", "erp", { connector: "postgres" }),
       script("writer", "writer", { tables: ["tasks"] }),
       script("as-person", "asPerson", { tables: ["tasks"] }),
+      script("as-group", "asGroup", { tables: ["notes"] }),
       script("undeclared", "undeclared"),
       script("erp-sync", "erpSync", { sources: ["erp"] }),
       script("filer", "filer", { tables: ["tasks"] }),
@@ -349,6 +365,9 @@ describe("scripts and data", () => {
       done: true,
       gone: null,
     });
+    // A script counts and sums through the same call an app does.
+    expect(done.output.totals).toHaveLength(2);
+    expect(done.output.totals.map((item: Any) => item.values.count)).toEqual([1, 1]);
     // The rows are there for the API too.
     expect(
       (await alice.get(`${ws()}/rows/tasks?sort=title`)).body.items.map((row: Any) => [
@@ -382,6 +401,28 @@ describe("scripts and data", () => {
         (row: Any) => row.title,
       ),
     ).toEqual(["Call the client", "written for them"]);
+  });
+
+  test("acting for a person, a script is held to a table's rules through that person's groups", async () => {
+    await alice.post(`${ws()}/rows/notes`, {
+      rows: [
+        { title: "For ops", team: "ops" },
+        { title: "For sales", team: "sales" },
+      ],
+    });
+    const group = await alice.post(`/tenants/${tenant}/groups`, { name: "ops" });
+    const asBob = () => ran("as-group", { person: bob.id });
+    // Before he is in the group, the rules give him nothing.
+    expect((await asBob()).output.theirs).toEqual([]);
+    await alice.put(`/tenants/${tenant}/groups/${group.body.id}/members/${bob.id}`);
+    const done = await asBob();
+    expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
+    expect(done.output.theirs).toEqual(["For ops"]);
+    // The rule lets his group read. Nothing lets it write.
+    expect(done.output.wrote).toContain(
+      "only lets you write rows you own, or rows its rules give you",
+    );
+    expect(done.output.all).toBe(2);
   });
 
   test("a script reads and writes an external source it declared", async () => {

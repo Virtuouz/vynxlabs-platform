@@ -1,6 +1,7 @@
 import { Badge, Button, CheckboxField, Notice, TextField } from "@vynxlabs/ui";
-import { useState } from "preact/hooks";
+import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask } from "../ask.tsx";
 import { Page, RemoveButton } from "../ListScreen.tsx";
 import { refreshTenantTheme } from "../theme.ts";
 import { size } from "./Apps.tsx";
@@ -114,46 +115,46 @@ function TokenRows({
   values,
   effective,
   error,
-  onInput,
+  onChange,
 }: {
   mode: "tokens" | "dark";
   values: Tokens;
   /** What each token comes to with nothing typed here. */
   effective: Tokens;
   error: ApiError | undefined;
-  onInput: (token: string, value: string) => void;
+  onChange: (token: string, value: string) => void;
 }) {
   const scheme = mode === "tokens" ? "light" : "dark";
   return (
-    <fieldset class="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-      <legend class="mb-2 p-0 font-medium">{mode === "tokens" ? "Light" : "Dark"}</legend>
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="mb-2 p-0 font-medium">{mode === "tokens" ? "Light" : "Dark"}</legend>
       {THEME_TOKENS.map((token) => {
         const problem = error?.fields.find((field) =>
           field.path.endsWith(`/${mode}/${token}`),
         )?.message;
         const value = values[token] ?? "";
         return (
-          <div key={token} class="flex flex-col gap-1">
-            <div class="grid grid-cols-[7.5rem_minmax(0,1fr)_1.5rem] items-center gap-2">
-              <code class="font-mono text-[13px]">{token}</code>
+          <div key={token} className="flex flex-col gap-1">
+            <div className="grid grid-cols-[7.5rem_minmax(0,1fr)_1.5rem] items-center gap-2">
+              <code className="font-mono text-[13px]">{token}</code>
               <input
                 type="text"
                 name={`${mode}-${token}`}
                 aria-label={`${token}, ${scheme}`}
                 aria-invalid={problem !== undefined}
-                class={control}
+                className={control}
                 value={value}
                 // A length or font not set for dark stays as it is in light.
                 placeholder={mode === "dark" && !isColour(token) ? "same as light" : "kit default"}
-                spellcheck={false}
-                autocomplete="off"
-                onInput={(event) => onInput(token, event.currentTarget.value)}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(event) => onChange(token, event.currentTarget.value)}
               />
               {isColour(token) ? (
                 <span
                   aria-hidden="true"
                   data-swatch={`${mode}-${token}`}
-                  class="size-6 rounded-control border border-line"
+                  className="size-6 rounded-control border border-line"
                   style={{ background: value.trim() || effective[token] }}
                 />
               ) : (
@@ -161,7 +162,7 @@ function TokenRows({
               )}
             </div>
             {problem ? (
-              <p role="alert" class="m-0 text-[13px] text-danger">
+              <p role="alert" className="m-0 text-[13px] text-danger">
                 {token} {problem}
               </p>
             ) : null}
@@ -177,14 +178,14 @@ function Preview({ scheme, values }: { scheme: "light" | "dark"; values: Tokens 
   return (
     <div
       data-preview={scheme}
-      class="flex min-w-0 flex-col gap-3 rounded-panel border border-line bg-canvas p-4 font-sans text-ink"
-      style={variables(values, scheme)}
+      className="flex min-w-0 flex-col gap-3 rounded-panel border border-line bg-canvas p-4 font-sans text-ink"
+      style={variables(values, scheme) as CSSProperties}
     >
-      <p class="m-0 flex flex-wrap items-center gap-2 font-medium">
+      <p className="m-0 flex flex-wrap items-center gap-2 font-medium">
         {scheme === "light" ? "Light" : "Dark"} <Badge tone="action">Active</Badge>
         <Badge tone="success">Paid</Badge>
       </p>
-      <div class="flex flex-col gap-3 rounded-panel border border-line bg-surface p-3">
+      <div className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-3">
         <TextField
           label="Email"
           name={`preview-${scheme}-email`}
@@ -193,11 +194,11 @@ function Preview({ scheme, values }: { scheme: "light" | "dark"; values: Tokens 
           required={false}
         />
         <Notice tone="attention">A notice that needs to be seen.</Notice>
-        <div class="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="primary">Save</Button>
           <Button>Cancel</Button>
         </div>
-        <code class="font-mono text-[13px] text-ink-muted">orders/record</code>
+        <code className="font-mono text-[13px] text-ink-muted">orders/record</code>
       </div>
     </div>
   );
@@ -241,28 +242,28 @@ function ThemeEditor({
 
   return (
     <>
-      <section class={panel}>
-        <h2 class="m-0 text-base font-semibold">Theme</h2>
-        <p class="m-0 max-w-[75ch] text-ink-muted">
+      <section className={panel}>
+        <h2 className="m-0 text-base font-semibold">Theme</h2>
+        <p className="m-0 max-w-[75ch] text-ink-muted">
           The colours, corners and fonts of this tenant's portal, sign-in pages and apps, and of the
           console while it shows this tenant. Set a token to a plain colour, length or font list, or
           leave it empty to keep the component kit's value. A workspace can override these with a
           theme resource in its repository.
         </p>
         <form
-          class="flex flex-col gap-4"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             save({ tokens: set(light), dark: set(dark) }, "Saved.");
           }}
         >
-          <div class="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-6 lg:grid-cols-2">
             <TokenRows
               mode="tokens"
               values={light}
               effective={KIT.tokens}
               error={error}
-              onInput={(token, value) => {
+              onChange={(token, value) => {
                 setSaved(undefined);
                 setLight((current) => ({ ...current, [token]: value }));
               }}
@@ -272,45 +273,46 @@ function ThemeEditor({
               values={dark}
               effective={darkBase}
               error={error}
-              onInput={(token, value) => {
+              onChange={(token, value) => {
                 setSaved(undefined);
                 setDark((current) => ({ ...current, [token]: value }));
               }}
             />
           </div>
           {error ? <Notice tone="danger">{error.message}</Notice> : null}
-          <div class="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" variant="primary" disabled={busy}>
               Save theme
             </Button>
             <Button
               disabled={busy}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    "Remove every value set here, for light and for dark? The portal and apps go back to the kit's values.",
-                  )
-                )
-                  return;
+              onClick={async () => {
+                const sure = await ask.confirm({
+                  title: "Reset to the kit's values?",
+                  text: "Every value set here is removed, for light and for dark. The portal and apps go back to the kit's values.",
+                  action: "Reset",
+                  danger: true,
+                });
+                if (!sure) return;
                 save({ tokens: {}, dark: {} }, "Reset to the kit's values.");
               }}
             >
               Reset to the kit's values
             </Button>
             {saved ? (
-              <span role="status" class="text-ink-muted">
+              <span role="status" className="text-ink-muted">
                 {saved}
               </span>
             ) : null}
           </div>
         </form>
       </section>
-      <section class={panel}>
-        <h2 class="m-0 text-base font-semibold">Preview</h2>
-        <p class="m-0 text-ink-muted">
+      <section className={panel}>
+        <h2 className="m-0 text-base font-semibold">Preview</h2>
+        <p className="m-0 text-ink-muted">
           Kit components under the values in the fields above, saved or not.
         </p>
-        <div class="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <Preview scheme="light" values={lightValues} />
           <Preview scheme="dark" values={darkValues} />
         </div>
@@ -344,17 +346,17 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
   };
 
   return (
-    <section class={panel}>
-      <h2 class="m-0 text-base font-semibold">Logo</h2>
-      <p class="m-0 max-w-[75ch] text-ink-muted">
+    <section className={panel}>
+      <h2 className="m-0 text-base font-semibold">Logo</h2>
+      <p className="m-0 max-w-[75ch] text-ink-muted">
         Shown on the sign-in pages, and there for apps to use.
       </p>
       {has ? (
-        <div class="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <img
             src={`/api/v1${base}/portal/logo?v=${version}`}
             alt="The tenant's logo"
-            class="max-h-16 max-w-48 rounded-control border border-line bg-canvas p-2"
+            className="max-h-16 max-w-48 rounded-control border border-line bg-canvas p-2"
           />
           <RemoveButton
             label="Remove logo"
@@ -364,21 +366,21 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
           />
         </div>
       ) : (
-        <p class="m-0">No logo yet.</p>
+        <p className="m-0">No logo yet.</p>
       )}
-      <label class="flex flex-col gap-1 text-[13px] font-medium">
+      <label className="flex flex-col gap-1 text-[13px] font-medium">
         {has ? "Replace the logo" : "Upload a logo"}
         <input
           type="file"
           accept={LOGO_TYPES.join(",")}
-          class="font-normal"
+          className="font-normal"
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             event.currentTarget.value = "";
             if (file) upload(file);
           }}
         />
-        <span class="font-normal text-ink-muted">PNG, JPEG or WebP, up to 512 KB.</span>
+        <span className="font-normal text-ink-muted">PNG, JPEG or WebP, up to 512 KB.</span>
       </label>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
     </section>
@@ -407,14 +409,19 @@ export function Branding({ base, tenantId }: { base: string; tenantId: string })
       title="Branding"
       description="How this tenant's portal and apps look to its end users, and whether people may create their own account there."
     >
-      <section class={panel}>
-        <h2 class="m-0 text-base font-semibold">Portal</h2>
-        <p class="m-0 max-w-[75ch]">
-          <a href={data.portalUrl} target="_blank" rel="noreferrer" class="break-all text-action">
+      <section className={panel}>
+        <h2 className="m-0 text-base font-semibold">Portal</h2>
+        <p className="m-0 max-w-[75ch]">
+          <a
+            href={data.portalUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="break-all text-action"
+          >
             {data.portalUrl}
           </a>
         </p>
-        <p class="m-0 max-w-[75ch] text-ink-muted">
+        <p className="m-0 max-w-[75ch] text-ink-muted">
           The portal is where this tenant's end users sign in, choose or reset their password, and
           find the apps that are open to them.{" "}
           {data.mail

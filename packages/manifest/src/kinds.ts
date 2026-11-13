@@ -1,4 +1,5 @@
 import { PATH_PATTERN } from "./envelope.js";
+import { interfaceBodySchema } from "./interface.js";
 import type { KindDefinition, KindRegistry } from "./registry.js";
 
 export const PERMISSION_PATTERN = "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$";
@@ -45,7 +46,10 @@ export const bindingKind: KindDefinition = {
           {
             type: "object",
             properties: {
-              type: { enum: ["group", "service_account"] },
+              type: {
+                enum: ["group", "service_account", "end_user_group"],
+                description: "group is a group of members. end_user_group is a group of end users.",
+              },
               name: { type: "string" },
             },
             required: ["type", "name"],
@@ -79,6 +83,26 @@ export const bindingKind: KindDefinition = {
     required: ["role", "principal"],
     additionalProperties: false,
   },
+};
+
+/** The most source one resource may carry, in characters. */
+export const MAX_SOURCE_LENGTH = 256 * 1024;
+
+/**
+ * The source of a resource written in the console. It travels in the manifest,
+ * so versions, bundles, promotion, clones and exports all carry it. Resources
+ * from a repository have none: their code is in the bundle only.
+ */
+const sourceCode = {
+  type: "object",
+  description:
+    "The TypeScript the resource was written as, for a resource managed in the console. Its default export is what runs.",
+  properties: {
+    language: { const: "typescript" },
+    code: { type: "string", maxLength: MAX_SOURCE_LENGTH },
+  },
+  required: ["language", "code"],
+  additionalProperties: false,
 };
 
 export const scriptKind: KindDefinition = {
@@ -124,6 +148,13 @@ export const scriptKind: KindDefinition = {
           "Everything the script may read at run time. Each must be bound before a deploy.",
         properties: {
           connections: { type: "array", items: path, uniqueItems: true },
+          connectionGroups: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description:
+              "Connection groups the script may pick a member of at run time. Nothing has to be bound before a deploy.",
+          },
           secrets: {
             type: "array",
             items: { type: "string", pattern: SECRET_NAME_PATTERN },
@@ -161,10 +192,41 @@ export const scriptKind: KindDefinition = {
         },
         additionalProperties: false,
       },
+      node: {
+        type: "object",
+        description:
+          "Makes the script a step that can be picked in the flow editor, under this label.",
+        properties: {
+          label: { type: "string", minLength: 1, maxLength: 60 },
+          icon: {
+            type: "string",
+            pattern: "^[a-z][a-z0-9-]*$",
+            maxLength: 40,
+            description: "The name of an icon from the interface's set.",
+          },
+          category: { type: "string", minLength: 1, maxLength: 40 },
+          takes: {
+            type: "array",
+            items: { enum: ["connection", "table", "event"] },
+            uniqueItems: true,
+            description:
+              "What a flow step may hand the script with `with`: a connection, a table or an event the script does not name itself.",
+          },
+        },
+        required: ["label"],
+        additionalProperties: false,
+      },
+      source: sourceCode,
     },
     required: ["entry", "input", "output", "timeoutSeconds", "retries", "uses"],
     additionalProperties: false,
   },
+};
+
+const triggerSourceRef = {
+  ...path,
+  description:
+    "A trigger source to hand each request or each tick to first. What it returns is what starts the script or flow.",
 };
 
 export const scheduleKind: KindDefinition = {
@@ -178,6 +240,7 @@ export const scheduleKind: KindDefinition = {
       timezone: { type: "string", maxLength: 64, description: "IANA time zone. Default UTC." },
       input: { type: "object" },
       enabled: { type: "boolean" },
+      source: triggerSourceRef,
     },
     required: ["script", "cron"],
     additionalProperties: false,
@@ -191,6 +254,119 @@ const expression = {
   description: "A CEL expression.",
 };
 
+/**
+ * What a webhook trigger may say about the requests it takes. Used by a
+ * trigger resource and by a webhook trigger node of a flow.
+ */
+
+const webhookOptions = {
+  source: triggerSourceRef,
+  input: {
+    enum: ["body", "request"],
+    description:
+      "What the script or flow is given. `body` is the parsed body alone, and the default. " +
+      "`request` is `{ body, headers, rawBody, query, method }`, for a sender whose headers matter.",
+  },
+  verify: {
+    type: "object",
+    description:
+      "Checks that a request was signed with a shared secret before anything starts. A request " +
+      "that fails is answered 401. Covers senders that put an HMAC of the body in a header, " +
+      "such as GitHub, Shopify and Slack.",
+    properties: {
+      scheme: { enum: ["hmac-sha256", "hmac-sha1"] },
+      header: {
+        type: "string",
+        pattern: "^[A-Za-z0-9-]+$",
+        maxLength: 100,
+        description: "The header the signature is sent in.",
+      },
+      secret: {
+        type: "string",
+        pattern: SECRET_NAME_PATTERN,
+        description: "The name of the workspace secret that holds the shared secret.",
+      },
+      encoding: {
+        enum: ["hex", "base64"],
+        description: "How the signature is written. Default hex.",
+      },
+      prefix: {
+        type: "string",
+        maxLength: 20,
+        description: "Text before the signature in the header, such as `sha256=`.",
+      },
+      signed: {
+        type: "string",
+        maxLength: 100,
+        description:
+          "What was signed, with `{body}` for the raw body and `{timestamp}` for the timestamp " +
+          "header. Default `{body}`. Slack signs `v0:{timestamp}:{body}`.",
+      },
+      timestampHeader: {
+        type: "string",
+        pattern: "^[A-Za-z0-9-]+$",
+        maxLength: 100,
+        description: "A header holding when the request was sent, in seconds since 1970.",
+      },
+      toleranceSeconds: {
+        type: "integer",
+        minimum: 1,
+        maximum: 86400,
+        description: "How old a request may be, by its timestamp header. Default 300.",
+      },
+    },
+    required: ["scheme", "header", "secret"],
+    additionalProperties: false,
+  },
+};
+
+/** A form that starts something: a page the platform serves, with these fields. */
+const formOptions = {
+  title: { type: "string", minLength: 1, maxLength: 120 },
+  description: { type: "string", maxLength: 1000 },
+  fields: {
+    type: "array",
+    minItems: 1,
+    maxItems: 30,
+    items: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          pattern: "^[a-z][a-z0-9_]*$",
+          maxLength: 63,
+          description: "The key the value has in the input.",
+        },
+        label: { type: "string", minLength: 1, maxLength: 120 },
+        type: { enum: ["text", "textarea", "email", "number", "date", "select", "checkbox"] },
+        required: { type: "boolean" },
+        help: { type: "string", maxLength: 300 },
+        options: {
+          type: "array",
+          items: { type: "string", minLength: 1, maxLength: 120 },
+          minItems: 1,
+          maxItems: 100,
+          uniqueItems: true,
+          description: "What a select offers.",
+        },
+      },
+      required: ["name", "label", "type"],
+      additionalProperties: false,
+    },
+  },
+  submitLabel: { type: "string", minLength: 1, maxLength: 40 },
+  success: {
+    type: "string",
+    maxLength: 500,
+    description: "What is shown once the form was sent.",
+  },
+  access: {
+    enum: ["anyone", "signed_in"],
+    description:
+      "Who may send the form. `signed_in` asks for a sign-in to the tenant's portal first. Default `anyone`.",
+  },
+};
+
 export const triggerKind: KindDefinition = {
   kind: "trigger",
   schemaVersion: 1,
@@ -198,7 +374,12 @@ export const triggerKind: KindDefinition = {
     oneOf: [
       {
         type: "object",
-        properties: { type: { const: "webhook" }, script: path, enabled: { type: "boolean" } },
+        properties: {
+          type: { const: "webhook" },
+          script: path,
+          enabled: { type: "boolean" },
+          ...webhookOptions,
+        },
         required: ["type", "script"],
         additionalProperties: false,
       },
@@ -215,6 +396,17 @@ export const triggerKind: KindDefinition = {
           enabled: { type: "boolean" },
         },
         required: ["type", "script", "event"],
+        additionalProperties: false,
+      },
+      {
+        type: "object",
+        properties: {
+          type: { const: "form" },
+          script: path,
+          enabled: { type: "boolean" },
+          ...formOptions,
+        },
+        required: ["type", "script", "title", "fields"],
         additionalProperties: false,
       },
     ],
@@ -243,6 +435,40 @@ const node = (type: string, properties: Record<string, object>, required: string
   additionalProperties: false,
 });
 
+const granted = (what: string) => ({
+  type: "array",
+  items: path,
+  maxItems: 20,
+  uniqueItems: true,
+  description: `${what} the script may reach in this step, beyond what it declares itself.`,
+});
+/** What a step hands the script it runs. The script must say it takes that kind of thing. */
+const grants = {
+  type: "object",
+  properties: {
+    connections: granted("Connections"),
+    tables: granted("Tables"),
+    events: granted("Events"),
+  },
+  additionalProperties: false,
+};
+
+/** A flow chosen when the step runs, from a list written down beforehand. */
+const flowFrom = {
+  ...expression,
+  description:
+    "An expression that gives the path of the flow to start. It must give one of the paths in `allow`.",
+};
+const allowedFlows = {
+  type: "array",
+  items: path,
+  minItems: 1,
+  maxItems: 50,
+  uniqueItems: true,
+  description:
+    "The flows `flowFrom` may choose. Each is checked like a flow named outright: it must exist, be startable, and not lead back here.",
+};
+
 export const flowKind: KindDefinition = {
   kind: "flow",
   schemaVersion: 1,
@@ -263,22 +489,47 @@ export const flowKind: KindDefinition = {
                 trigger: {
                   oneOf: [
                     node("manual", {}),
-                    node("webhook", {}),
+                    node("webhook", {
+                      ...webhookOptions,
+                      respond: {
+                        enum: ["now", "flow"],
+                        description:
+                          "`now` answers 202 as soon as the flow has started, and is the default. " +
+                          "`flow` holds the request open for up to 25 seconds, for a respond step to answer.",
+                      },
+                    }),
                     node(
                       "schedule",
                       {
                         cron: { type: "string", maxLength: 120 },
                         timezone: { type: "string", maxLength: 64 },
+                        source: triggerSourceRef,
                       },
                       ["cron"],
                     ),
                     node("event", { event: path, filter: expression }, ["event"]),
+                    node("form", formOptions, ["title", "fields"]),
                   ],
                 },
               },
               ["trigger"],
             ),
-            node("script", { script: path, input: expression }, ["script"]),
+            node(
+              "script",
+              {
+                script: path,
+                input: expression,
+                inputs: {
+                  type: "object",
+                  propertyNames: { pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 63 },
+                  additionalProperties: expression,
+                  maxProperties: 50,
+                  description: "An expression for each field of the script's input.",
+                },
+                with: grants,
+              },
+              ["script"],
+            ),
             node(
               "set",
               {
@@ -311,14 +562,32 @@ export const flowKind: KindDefinition = {
               },
               ["cases"],
             ),
+            node("respond", {
+              status: { type: "integer", minimum: 200, maximum: 599 },
+              headers: {
+                type: "object",
+                propertyNames: { pattern: "^[A-Za-z0-9-]+$", maxLength: 100 },
+                additionalProperties: expression,
+                maxProperties: 20,
+                description: "An expression for each header. Each must give text.",
+              },
+              body: {
+                ...expression,
+                description:
+                  "An expression. An object or a list is sent as JSON, and text as it is.",
+              },
+            }),
             node(
               "foreach",
               {
                 items: expression,
                 script: path,
                 flow: path,
+                flowFrom,
+                allow: allowedFlows,
                 input: expression,
                 concurrency: { type: "integer", minimum: 1, maximum: 20 },
+                with: grants,
               },
               ["items"],
             ),
@@ -335,7 +604,7 @@ export const flowKind: KindDefinition = {
               },
               ["title"],
             ),
-            node("subflow", { flow: path, input: expression }, ["flow"]),
+            node("subflow", { flow: path, flowFrom, allow: allowedFlows, input: expression }),
             node("fail", { message: expression }, ["message"]),
           ],
         },
@@ -355,8 +624,103 @@ export const flowKind: KindDefinition = {
           additionalProperties: false,
         },
       },
+      // Last, so that in a file the logic comes first and where things sit on the canvas after it.
+      layout: {
+        type: "object",
+        description:
+          "Where each node sits in the editor, for a flow drawn in the console. It changes nothing about how the flow runs.",
+        propertyNames: { pattern: nodeId, maxLength: 63 },
+        maxProperties: 200,
+        additionalProperties: {
+          type: "object",
+          properties: { x: { type: "integer" }, y: { type: "integer" } },
+          required: ["x", "y"],
+          additionalProperties: false,
+        },
+      },
     },
     required: ["nodes", "edges"],
+    additionalProperties: false,
+  },
+};
+
+/** The connectors every worker has. A connection names one of these, or a connector resource. */
+export const BUILTIN_CONNECTORS: readonly string[] = ["http", "smtp"];
+
+const connectorName = {
+  type: "string",
+  pattern: PATH_PATTERN,
+  maxLength: 255,
+  description:
+    "The connector: `http` or `smtp`, which every worker has, or the path of a connector resource.",
+};
+
+export const connectorKind: KindDefinition = {
+  kind: "connector",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      entry: {
+        type: "string",
+        description: "The name the connector is exported under in the bundle.",
+      },
+      description: { type: "string", maxLength: 500 },
+      configSchema: {
+        ...jsonSchema,
+        description:
+          "A JSON Schema for a connection's configuration. A connection that uses this connector is checked against it when it is bound, and the console draws its form from it.",
+      },
+      source: sourceCode,
+    },
+    required: ["entry", "configSchema"],
+    additionalProperties: false,
+  },
+};
+
+export const TRIGGER_SOURCE_MODES = ["webhook", "poll"] as const;
+
+export const triggerSourceKind: KindDefinition = {
+  kind: "trigger_source",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      entry: {
+        type: "string",
+        description: "The name the source is exported under in the bundle.",
+      },
+      description: { type: "string", maxLength: 500 },
+      mode: {
+        enum: [...TRIGGER_SOURCE_MODES],
+        description:
+          "`webhook`: it is handed each request to a webhook's address, and says whether to start anything and with what. " +
+          "`poll`: it is run on a schedule with where it had got to, and gives back what is new.",
+      },
+      timeoutSeconds: { type: "integer", minimum: 1, maximum: 300 },
+      worker: {
+        type: "string",
+        pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
+        maxLength: 40,
+        description: "The worker pool it runs on. Without it, any worker of the default pool.",
+      },
+      uses: {
+        type: "object",
+        description: "What the source may read when it runs, as for a script.",
+        properties: {
+          connections: { type: "array", items: path, uniqueItems: true },
+          secrets: {
+            type: "array",
+            items: { type: "string", pattern: SECRET_NAME_PATTERN },
+            uniqueItems: true,
+          },
+          variables: { type: "array", items: path, uniqueItems: true },
+        },
+        additionalProperties: false,
+      },
+      source: sourceCode,
+    },
+    required: ["entry", "mode"],
     additionalProperties: false,
   },
 };
@@ -367,7 +731,23 @@ export const connectionKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      connector: { type: "string", pattern: "^[a-z][a-z0-9_]*$", maxLength: 63 },
+      connector: connectorName,
+      description: { type: "string", maxLength: 500 },
+    },
+    required: ["connector"],
+    additionalProperties: false,
+  },
+};
+
+export const connectionGroupKind: KindDefinition = {
+  kind: "connection_group",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    description:
+      "A set of connections of one kind, whose members are added per workspace in the console with no deploy. A script picks a member by key when it runs.",
+    properties: {
+      connector: connectorName,
       description: { type: "string", maxLength: 500 },
     },
     required: ["connector"],
@@ -459,6 +839,73 @@ export const tableKind: KindDefinition = {
               },
             },
             required: ["type", "column"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            description:
+              "Rules that match a row's columns against the person asking. A person sees a row when any rule lets them, and changes it when a `write` or `all` rule does.",
+            properties: {
+              type: { const: "rules" },
+              rules: {
+                type: "array",
+                minItems: 1,
+                maxItems: 20,
+                items: {
+                  type: "object",
+                  properties: {
+                    allow: { enum: ["read", "write", "all"] },
+                    when: {
+                      oneOf: [
+                        {
+                          type: "object",
+                          properties: { everyone: { const: true } },
+                          required: ["everyone"],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            column: { type: "string", pattern: columnName },
+                            is: { const: "principal" },
+                          },
+                          required: ["column", "is"],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            column: { type: "string", pattern: columnName },
+                            in: { const: "groups" },
+                          },
+                          required: ["column", "in"],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            column: { type: "string", pattern: columnName },
+                            equals: {
+                              type: "object",
+                              properties: {
+                                attribute: { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" },
+                              },
+                              required: ["attribute"],
+                              additionalProperties: false,
+                            },
+                          },
+                          required: ["column", "equals"],
+                          additionalProperties: false,
+                        },
+                      ],
+                    },
+                  },
+                  required: ["allow", "when"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["type", "rules"],
             additionalProperties: false,
           },
         ],
@@ -559,6 +1006,12 @@ export const themeKind: KindDefinition = {
   },
 };
 
+export const interfaceKind: KindDefinition = {
+  kind: "interface",
+  schemaVersion: 1,
+  body: interfaceBodySchema,
+};
+
 export const appKind: KindDefinition = {
   kind: "app",
   schemaVersion: 1,
@@ -572,6 +1025,14 @@ export const appKind: KindDefinition = {
         maxLength: 500,
         description: "The file, among the app's files in the bundle, that is the page itself.",
       },
+      interface: {
+        type: "string",
+        pattern: PATH_PATTERN,
+        maxLength: 255,
+        description:
+          "An interface of the workspace to serve as this app, in place of files of its own. " +
+          "An app has an entry or an interface, never both.",
+      },
       fallback: {
         type: "boolean",
         description:
@@ -579,7 +1040,8 @@ export const appKind: KindDefinition = {
           "for apps that route in the browser. Default true.",
       },
     },
-    required: ["title", "entry"],
+    required: ["title"],
+    oneOf: [{ required: ["entry"] }, { required: ["interface"] }],
     additionalProperties: false,
   },
 };
@@ -587,16 +1049,20 @@ export const appKind: KindDefinition = {
 /** Every kind the platform ships, in the order a deploy applies them. */
 export const platformKinds: KindDefinition[] = [
   roleKind,
+  connectorKind,
   connectionKind,
+  connectionGroupKind,
   variableKind,
   tableKind,
   dataSourceKind,
   eventKind,
   scriptKind,
+  triggerSourceKind,
   scheduleKind,
   triggerKind,
   flowKind,
   themeKind,
+  interfaceKind,
   appKind,
   bindingKind,
 ];

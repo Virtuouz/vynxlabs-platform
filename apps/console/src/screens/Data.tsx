@@ -12,12 +12,21 @@ import {
   Table,
   TextField,
 } from "@vynxlabs/ui";
-import { useState } from "preact/hooks";
+import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask } from "../ask.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import {
+  type Policy,
+  policyText,
+  RowRulesEditor,
+  type Rule,
+  ruleText,
+  SeeItAs,
+} from "./RowRules.tsx";
 
-const code = (text: string) => <code class="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 const PAGE = 50;
 
 const TYPES: { value: string; label: string }[] = [
@@ -117,9 +126,9 @@ function RowsBrowser(props: RowsBrowserProps) {
   }));
 
   return (
-    <div class="flex flex-col gap-3">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <p class="m-0 text-[13px] text-ink-muted">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="m-0 text-[13px] text-ink-muted">
           {props.readOnlyNote ??
             "Select a value to change it. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
         </p>
@@ -175,13 +184,13 @@ function RowsBrowser(props: RowsBrowserProps) {
           const value = row[column.name];
           if (column.type === "file" && typeof value === "string" && props.filesPath) {
             return (
-              <a class="text-action" href={`/api/v1${props.filesPath}/${value}/content`}>
+              <a className="text-action" href={`/api/v1${props.filesPath}/${value}/content`}>
                 Download
               </a>
             );
           }
           if (column.name === keyColumn && column.type === "uuid") {
-            return <span class="font-mono text-[12px] text-ink-muted">{String(value)}</span>;
+            return <span className="font-mono text-[12px] text-ink-muted">{String(value)}</span>;
           }
           return undefined;
         }}
@@ -193,13 +202,13 @@ function RowsBrowser(props: RowsBrowserProps) {
               : "This table has no rows yet."
         }
       />
-      <div class="flex items-center justify-between gap-3 text-[13px] text-ink-muted">
+      <div className="flex items-center justify-between gap-3 text-[13px] text-ink-muted">
         <span>
           {rows.length === 0
             ? ""
             : `Rows ${(trail.length - 1) * PAGE + 1} to ${(trail.length - 1) * PAGE + rows.length}`}
         </span>
-        <span class="flex gap-2">
+        <span className="flex gap-2">
           <Button
             size="small"
             disabled={trail.length === 1}
@@ -298,7 +307,7 @@ function AddRow({
   return (
     <Dialog open={open} onClose={onClose} title="Add row">
       <form
-        class="flex max-h-[70vh] flex-col gap-3 overflow-y-auto"
+        className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -320,11 +329,11 @@ function AddRow({
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
           ) : column.type === "file" ? (
-            <label key={column.name} class="flex flex-col gap-1 text-[13px] font-medium">
+            <label key={column.name} className="flex flex-col gap-1 text-[13px] font-medium">
               {column.name}
               <input
                 type="file"
-                class="font-normal"
+                className="font-normal"
                 onChange={(event) => {
                   const file = event.currentTarget.files?.[0];
                   setFiles((current) => {
@@ -343,12 +352,12 @@ function AddRow({
               required={false}
               hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}`}
               error={errors[column.name]}
-              onInput={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
           ),
         )}
         {failure ? <Notice tone="danger">{failure}</Notice> : null}
-        <div class="mt-1 flex justify-end gap-2">
+        <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={busy}>
             Add row
@@ -371,11 +380,6 @@ interface TableSummary {
   policy: { type: string; column?: string };
 }
 
-const policyText = (policy: { type: string; column?: string }) =>
-  policy.type === "owner"
-    ? `Each person sees their own rows (${policy.column})`
-    : "Everyone with access";
-
 export function Tables({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<TableSummary>
@@ -387,8 +391,8 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "Table",
           cell: (row) => (
-            <span class="inline-flex items-center gap-2">
-              <Link to={`${link}/tables/${row.name}`} class="font-medium text-action">
+            <span className="inline-flex items-center gap-2">
+              <Link to={`${link}/tables/${row.name}`} className="font-medium text-action">
                 {row.name}
               </Link>
               {row.status === "retired" ? <Badge tone="attention">Retired</Badge> : null}
@@ -397,7 +401,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
         },
         {
           header: "What it holds",
-          cell: (row) => <span class="text-ink-muted">{row.description}</span>,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
         },
         {
           header: "Managed in",
@@ -458,7 +462,7 @@ interface TableDetail {
   name: string;
   status: "active" | "retired";
   managedIn: "code" | "ui";
-  policy: { type: string; column?: string };
+  policy: { type: string; column?: string; rules?: Rule[] };
   rowCount: number;
   stored: { schema: string; table: string };
   columns: TableColumn[];
@@ -474,7 +478,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
   const table = useLoad<TableDetail>(`${root}/tables/${name}`);
   const [view, setView] = useState<"rows" | "definition">("rows");
   if (table.error) return <Notice tone="danger">{table.error.message}</Notice>;
-  if (!table.data) return <p class="text-ink-muted">Loading…</p>;
+  if (!table.data) return <p className="text-ink-muted">Loading…</p>;
   const data = table.data;
   const retired = data.status === "retired";
   const active = data.columns.filter((column) => column.status === "active");
@@ -482,7 +486,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
     <button
       type="button"
       aria-pressed={view === value}
-      class={`h-8 rounded-control px-3 font-medium ${view === value ? "bg-action-soft text-action" : "text-ink-muted hover:text-ink"}`}
+      className={`h-8 rounded-control px-3 font-medium ${view === value ? "bg-action-soft text-action" : "text-ink-muted hover:text-ink"}`}
       onClick={() => setView(value)}
     >
       {label}
@@ -494,7 +498,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       title={data.name}
       description={`${data.rowCount.toLocaleString()} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
       action={
-        <Link to={`${link}/tables`} class="text-action">
+        <Link to={`${link}/tables`} className="text-action">
           All tables
         </Link>
       }
@@ -511,7 +515,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           brings it back.
         </Notice>
       ) : (
-        <div class="flex gap-1">
+        <div className="flex gap-1">
           {tab("rows", "Rows")}
           {tab("definition", "Definition")}
         </div>
@@ -567,7 +571,7 @@ function PurgeButton({
 interface TableBody {
   description?: string;
   columns: Record<string, Record<string, unknown>>;
-  policy?: { type: string; column?: string };
+  policy?: { type: string; column?: string; rules?: Rule[] };
   [key: string]: unknown;
 }
 
@@ -583,6 +587,8 @@ function Definition({
   reload: () => void;
 }) {
   const editable = table.managedIn === "ui" && table.status === "active";
+  // `/tenants/<id>`, the part of the workspace's address the tenant's people are listed under.
+  const tenantBase = root.split("/workspaces/")[0];
   const [adding, setAdding] = useState(false);
   const [failure, setFailure] = useState<string>();
   const active = table.columns.filter((column) => column.status === "active");
@@ -612,7 +618,7 @@ function Definition({
   const quietly = (run: Promise<unknown>) => run.catch(() => undefined);
 
   return (
-    <div class="flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
       {table.status === "active" && !editable ? (
         <Notice tone="attention">
           This table is defined in the tenant's repository. To change it, change{" "}
@@ -620,15 +626,15 @@ function Definition({
         </Notice>
       ) : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
-      <section class="flex flex-col gap-2">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="m-0 text-base font-semibold">Columns</h2>
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="m-0 text-base font-semibold">Columns</h2>
           {editable ? <Button onClick={() => setAdding(true)}>Add column</Button> : null}
         </div>
         <Table<TableColumn>
           rows={active}
           rowKey={(row) => row.name}
-          empty={<p class="m-0 text-ink-muted">No columns.</p>}
+          empty={<p className="m-0 text-ink-muted">No columns.</p>}
           columns={[
             { header: "Column", cell: (row) => code(row.name) },
             {
@@ -655,12 +661,17 @@ function Definition({
                     header: "",
                     align: "end" as const,
                     cell: (row: TableColumn) => (
-                      <span class="inline-flex gap-1">
+                      <span className="inline-flex gap-1">
                         <Button
                           size="small"
                           variant="quiet"
-                          onClick={() => {
-                            const next = window.prompt(`New name for "${row.name}"`, row.name);
+                          onClick={async () => {
+                            const next = await ask.prompt({
+                              title: `Rename ${row.name}`,
+                              label: "New name",
+                              initial: row.name,
+                              action: "Rename",
+                            });
                             if (!next || next === row.name) return;
                             void quietly(
                               change((body) => {
@@ -668,6 +679,12 @@ function Definition({
                                 delete body.columns[row.name];
                                 body.columns[next] = { ...kept, renamedFrom: row.name };
                                 if (body.policy?.column === row.name) body.policy.column = next;
+                                // A rule that looks at the column follows it to its new name.
+                                for (const rule of body.policy?.rules ?? []) {
+                                  if ("column" in rule.when && rule.when.column === row.name) {
+                                    rule.when.column = next;
+                                  }
+                                }
                               }),
                             );
                           }}
@@ -678,13 +695,14 @@ function Definition({
                           size="small"
                           variant="danger"
                           disabled={active.length === 1}
-                          onClick={() => {
-                            if (
-                              !window.confirm(
-                                `Retire "${row.name}"? It is hidden and its data kept. You can bring it back.`,
-                              )
-                            )
-                              return;
+                          onClick={async () => {
+                            const sure = await ask.confirm({
+                              title: `Retire ${row.name}?`,
+                              text: "It is hidden and its data kept. You can bring it back.",
+                              action: "Retire",
+                              danger: true,
+                            });
+                            if (!sure) return;
                             void quietly(change((body) => delete body.columns[row.name]));
                           }}
                         >
@@ -697,16 +715,16 @@ function Definition({
               : []),
           ]}
         />
-        <p class="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-[13px] text-ink-muted">
           Every table also has {code("id")}, {code("created_at")} and {code("updated_at")}, which
           the platform fills in.
         </p>
       </section>
 
       {retired.length > 0 ? (
-        <section class="flex flex-col gap-2">
-          <h2 class="m-0 text-base font-semibold">Retired columns</h2>
-          <p class="m-0 max-w-[70ch] text-ink-muted">
+        <section className="flex flex-col gap-2">
+          <h2 className="m-0 text-base font-semibold">Retired columns</h2>
+          <p className="m-0 max-w-[70ch] text-ink-muted">
             These left the definition. They are hidden from rows, and what they held is kept until
             someone deletes it here.
           </p>
@@ -726,7 +744,7 @@ function Definition({
                 header: "",
                 align: "end",
                 cell: (row) => (
-                  <span class="inline-flex gap-1">
+                  <span className="inline-flex gap-1">
                     {editable ? (
                       <Button
                         size="small"
@@ -754,55 +772,48 @@ function Definition({
         </section>
       ) : null}
 
-      <section class="flex flex-col gap-2">
-        <h2 class="m-0 text-base font-semibold">Who sees rows</h2>
-        <p class="m-0 max-w-[70ch]">
-          {table.policy.type === "owner" ? (
-            <>
-              Each person sees and changes only the rows where {code(table.policy.column ?? "")} is
-              their own ID. People who hold the "all rows" permission see every row.
-            </>
-          ) : (
-            "Everyone with permission to read this table's data sees every row."
-          )}
-        </p>
+      <section className="flex flex-col gap-3">
+        <h2 className="m-0 text-base font-semibold">Who sees rows</h2>
         {editable ? (
-          <div class="max-w-xs">
-            <SelectField
-              name="policy"
-              label="Rule"
-              value={table.policy.type === "owner" ? (table.policy.column ?? "") : ""}
-              options={[
-                { value: "", label: "Everyone with access" },
-                ...active
-                  .filter((column) => column.type === "uuid")
-                  .map((column) => ({ value: column.name, label: `Owner is in ${column.name}` })),
-              ]}
-              hint="An owner column holds IDs."
-              onChange={(column) =>
-                void quietly(
-                  change((body) => {
-                    body.policy = column ? { type: "owner", column } : { type: "open" };
-                  }),
-                )
-              }
-            />
+          <RowRulesEditor
+            key={JSON.stringify(table.policy)}
+            policy={table.policy as Policy}
+            columns={active}
+            onSave={(policy) =>
+              change((body) => {
+                body.policy = policy;
+              })
+            }
+          />
+        ) : (
+          <div className="max-w-[70ch]">
+            <p className="m-0">{policyText(table.policy)}.</p>
+            {table.policy.type === "rules" ? (
+              <ul className="mt-2 mb-0 pl-5">
+                {(table.policy.rules ?? []).map((rule) => (
+                  <li key={ruleText(rule)}>{ruleText(rule)}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
+        )}
+        {table.policy.type !== "open" && tenantBase ? (
+          <SeeItAs root={root} table={table.name} usersPath={`${tenantBase}/end-users?limit=200`} />
         ) : null}
       </section>
 
-      <section class="flex flex-col gap-2">
-        <h2 class="m-0 text-base font-semibold">Where it is stored</h2>
-        <p class="m-0 max-w-[70ch] text-ink-muted">
+      <section className="flex flex-col gap-2">
+        <h2 className="m-0 text-base font-semibold">Where it is stored</h2>
+        <p className="m-0 max-w-[70ch] text-ink-muted">
           In Postgres, as {code(`${table.stored.schema}.${table.stored.table}`)}. It is your data:
           you can read it there directly at any time.
         </p>
       </section>
 
       {editable ? (
-        <section class="flex flex-col items-start gap-2">
-          <h2 class="m-0 text-base font-semibold">Retire this table</h2>
-          <p class="m-0 max-w-[70ch] text-ink-muted">
+        <section className="flex flex-col items-start gap-2">
+          <h2 className="m-0 text-base font-semibold">Retire this table</h2>
+          <p className="m-0 max-w-[70ch] text-ink-muted">
             The table is hidden and its rows kept. Deleting them for good is a separate step.
           </p>
           <RemoveButton
@@ -829,7 +840,11 @@ function Definition({
               name: "references",
               label: "Which table",
               required: false,
-              hint: "Only for a row of another table.",
+              when: (values) => values.type === "reference",
+              choose: {
+                path: `${root}/tables`,
+                option: (item: { name: string }) => ({ value: item.name, label: item.name }),
+              },
             },
             {
               name: "required",
@@ -890,14 +905,14 @@ export function Sources({ root, link }: { root: string; link: string }) {
           header: "Source",
           cell: (row) =>
             row.bound ? (
-              <Link to={`${link}/sources/${row.path}`} class="font-medium text-action">
+              <Link to={`${link}/sources/${row.path}`} className="font-medium text-action">
                 {row.path}
               </Link>
             ) : (
               code(row.path)
             ),
         },
-        { header: "For", cell: (row) => <span class="text-ink-muted">{row.description}</span> },
+        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Points to",
           cell: (row) =>
@@ -931,8 +946,15 @@ export function Sources({ root, link }: { root: string; link: string }) {
           {
             name: "path",
             label: "Source",
-            placeholder: "erp",
-            hint: "The name scripts use for it.",
+            hint: "The data sources this workspace's resources declare.",
+            choose: {
+              path: `${root}/data-source-bindings`,
+              option: (item: { path: string; description?: string }) => ({
+                value: item.path,
+                label: item.path,
+                ...(item.description ? { hint: item.description } : {}),
+              }),
+            },
           },
           { name: "host", label: "Host", placeholder: "db.example.com" },
           { name: "port", label: "Port", type: "number", placeholder: "5432", required: false },
@@ -989,7 +1011,7 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
       title={path}
       description="An external database. Rows are read and written there directly. The platform does not change its structure, and its own access rules apply."
       action={
-        <Link to={`${link}/sources`} class="text-action">
+        <Link to={`${link}/sources`} className="text-action">
           All data sources
         </Link>
       }
@@ -999,20 +1021,20 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
           {tables.error.message}
         </Notice>
       ) : !tables.data ? (
-        <p class="text-ink-muted">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       ) : !table ? (
         <EmptyState title="No tables found">
           The database was reached, but the schema it is connected to has no tables.
         </EmptyState>
       ) : (
-        <div class="grid gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
-          <nav aria-label="Tables of this source" class="flex flex-col gap-0.5">
+        <div className="grid gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
+          <nav aria-label="Tables of this source" className="flex flex-col gap-0.5">
             {items.map((item) => (
               <button
                 type="button"
                 key={item.name}
                 aria-current={item.name === table.name ? "true" : undefined}
-                class={`truncate rounded-control px-2.5 py-1.5 text-left ${
+                className={`truncate rounded-control px-2.5 py-1.5 text-left ${
                   item.name === table.name
                     ? "bg-action-soft font-medium text-action"
                     : "text-ink-muted hover:text-ink"

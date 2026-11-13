@@ -6,7 +6,7 @@ import { badRequest, notFound } from "../kernel/errors.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
 import { cancelFlowRun, decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { publishEvent } from "../kernel/flows/events.js";
-import { access } from "../kernel/http.js";
+import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
@@ -99,6 +99,10 @@ const Step = Type.Object({
   wakeAt: NullableTime,
   detail: AnyObject,
   startedAt: Time,
+  pickedUpAt: Type.Union([Time, Type.Null()], {
+    description:
+      "For a step that runs a script: when a worker took it. The time before that was spent waiting for a worker.",
+  }),
   finishedAt: NullableTime,
 });
 
@@ -247,7 +251,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: body.description ?? "",
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
-          layout: layout?.positions ?? {},
+          // A flow drawn in the console carries its layout in its body. Others keep it apart.
+          layout: {
+            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
+            ...(layout?.positions ?? {}),
+          },
           triggers: await Promise.all(
             states.map(async (state) => {
               const token =
@@ -362,9 +370,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/flow-runs`,
       {
-        config: { access: access.workspace("flow_run:write") },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "Start a flow from its manual trigger",
+          description:
+            "Needs `flow_run:write` at the workspace or at the flow itself, which is how an " +
+            "app's users are let start one flow and no other.",
           tags: ["flows"],
           params: WorkspaceParams,
           body: Type.Object({
@@ -376,6 +387,19 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const target = await db
+          .selectFrom("resource")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "flow")
+          .where("path", "=", body.flow)
+          .executeTakeFirst();
+        await ctx.authorize("flow_run:write", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          resourceId: target?.id,
+        });
         const started = await ctx.mutate(async (trx, audit) => {
           const result = await startFlowRun(kernel, trx, {
             tenantId: params.t,
@@ -407,9 +431,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs/:id`,
       {
-        config: { access: access.workspace("flow_run:read") },
+        config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "One flow run, with every step",
+          description:
+            "Needs `flow_run:read` in the workspace. Whoever started a flow run may always " +
+            "read how it ended and what it gave, without its steps: what each step produced " +
+            "is the flow's own business.",
           tags: ["flows"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: {
@@ -422,16 +450,42 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const mayReadAll = await ctx.allowed("flow_run:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+        });
         const row = await flowRuns(params.w)
           .where("flow_run.id", "=", params.id)
           .executeTakeFirst();
+        const own =
+          row !== undefined &&
+          ctx.principal.id !== null &&
+          row.started_by_id === ctx.principal.id &&
+          row.started_by_type === ctx.principal.type;
+        // To someone who may not read flow runs, one that is not theirs does not exist.
+        if (!mayReadAll && !own) {
+          await ctx.authorize("flow_run:read", { tenantId: params.t, workspaceId: params.w });
+        }
         if (!row) throw notFound("The flow run");
+        if (!mayReadAll) {
+          return {
+            ...toFlowRun(row),
+            input: row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
+            output: row.output ?? null,
+            steps: [],
+          };
+        }
         const steps = await db
           .selectFrom("step_run")
           .leftJoin("run", "run.id", "step_run.run_id")
           .selectAll("step_run")
-          .select(["run.output as run_output", "run.output_ref as run_output_ref"])
+          .select([
+            "run.output as run_output",
+            "run.output_ref as run_output_ref",
+            "run.started_at as run_started_at",
+          ])
           .where("step_run.flow_run_id", "=", params.id)
           .orderBy("step_run.started_at")
           .orderBy("step_run.node_id")
@@ -463,6 +517,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Object.entries(step.detail).filter(([name]) => name !== "items"),
             ),
             startedAt: iso(step.started_at),
+            pickedUpAt: isoOrNull(step.run_started_at),
             finishedAt: isoOrNull(step.finished_at),
           })),
         };

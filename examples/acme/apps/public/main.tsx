@@ -1,6 +1,6 @@
 import { appContext, signInUrl, table, useQuery, useSession } from "@vynxlabs/app";
 import { EmptyState, Notice, PageShell } from "@vynxlabs/ui";
-import { render } from "preact";
+import { createRoot } from "react-dom/client";
 import type { notices } from "../../src/index.ts";
 import "./styles.css";
 
@@ -26,12 +26,12 @@ function App() {
       {found.data?.items.length === 0 ? (
         <EmptyState title="Nothing to report">Deliveries are running as usual.</EmptyState>
       ) : null}
-      <div class="grid max-w-2xl gap-3">
+      <div className="grid max-w-2xl gap-3">
         {found.data?.items.map((notice) => (
-          <article key={notice.id} class="rounded-panel border border-line bg-surface p-4">
-            <h2 class="m-0 text-base">{notice.title}</h2>
-            {notice.body ? <p class="mt-1 mb-0 text-ink-muted">{notice.body}</p> : null}
-            <p class="mt-2 mb-0 text-xs text-ink-muted">
+          <article key={notice.id} className="rounded-panel border border-line bg-surface p-4">
+            <h2 className="m-0 text-base">{notice.title}</h2>
+            {notice.body ? <p className="mt-1 mb-0 text-ink-muted">{notice.body}</p> : null}
+            <p className="mt-2 mb-0 text-xs text-ink-muted">
               {new Date(notice.created_at).toLocaleString()}
             </p>
           </article>
@@ -41,4 +41,4 @@ function App() {
   );
 }
 
-render(<App />, document.getElementById("app") as HTMLElement);
+createRoot(document.getElementById("app") as HTMLElement).render(<App />);

@@ -175,3 +175,62 @@ export async function storeBundle(
   });
   return { created: true, bundle: row };
 }
+
+/** A bundle made to try a draft out is kept this long after it was made. */
+export const PREVIEW_DAYS = 7;
+
+/**
+ * Removes the bundles that were made only to try a draft out, once they are
+ * old, with the test runs that ran on them. A bundle that was since deployed
+ * or uploaded is no longer a preview and is left. One with a run still in
+ * progress waits for the next sweep.
+ */
+export async function removeOldPreviews(kernel: Kernel, olderThanDays = PREVIEW_DAYS) {
+  const before = new Date(Date.now() - olderThanDays * 86_400_000);
+  const old = await kernel.db
+    .selectFrom("bundle")
+    .select(["id", "storage_key"])
+    .where("origin", "=", "preview")
+    .where("created_at", "<", before)
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom("run")
+            .select("run.id")
+            .whereRef("run.bundle_id", "=", "bundle.id")
+            .where("run.status", "in", ["queued", "running"]),
+        ),
+      ),
+    )
+    .limit(50)
+    .execute();
+  let removed = 0;
+  for (const bundle of old) {
+    try {
+      const stored = await kernel.db.transaction().execute(async (trx) => {
+        const runs = await trx
+          .deleteFrom("run")
+          .where("bundle_id", "=", bundle.id)
+          .returning(["input_ref", "output_ref"])
+          .execute();
+        await trx
+          .deleteFrom("bundle")
+          .where("id", "=", bundle.id)
+          .where("origin", "=", "preview")
+          .execute();
+        return runs.flatMap((run) => [run.input_ref, run.output_ref]);
+      });
+      // What was kept in the object store goes last: a row that names a missing object is worse
+      // than an object nothing names.
+      for (const key of [bundle.storage_key, ...stored]) {
+        if (key) await kernel.storage.remove(key).catch(() => {});
+      }
+      removed += 1;
+    } catch (error) {
+      // Something else came to refer to it, such as a flow run. It is left for a person to see.
+      kernel.log.debug({ err: error, bundle: bundle.id }, "a preview bundle could not be removed");
+    }
+  }
+  return removed;
+}

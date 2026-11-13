@@ -93,12 +93,19 @@ export function Scripts({
         {
           header: "Script",
           cell: (row) => (
-            <Link
-              to={`${link}/scripts/edit/${row.path}`}
-              className="font-mono text-[13px] text-action"
-            >
-              {row.path}
-            </Link>
+            <span>
+              <Link
+                to={`${link}/scripts/edit/${row.path}`}
+                className="font-mono text-[13px] text-action"
+              >
+                {row.path}
+              </Link>
+              {row.path.startsWith("core/") ? (
+                <span className="ml-2">
+                  <Badge>Comes with the platform</Badge>
+                </span>
+              ) : null}
+            </span>
           ),
         },
         {

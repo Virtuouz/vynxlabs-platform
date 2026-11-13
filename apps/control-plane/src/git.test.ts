@@ -407,6 +407,29 @@ describe("pulling", () => {
     expect((await alice.post(`${ws()}/git/pull`, {})).body.status).toBe("done");
     expect(await sourceOf("orders/hello")).toContain("fixed");
   });
+
+  test("a folder holding far more than resources is not read in", async () => {
+    const { PULL_LIMITS } = await import("./kernel/git.js");
+    const before = { ...PULL_LIMITS };
+    commitOnBranch(
+      {
+        "platform/notes/long.script.ts": `// ${"x".repeat(5000)}\nexport default async () => 1;\n`,
+      },
+      "A long file",
+    );
+    try {
+      PULL_LIMITS.bytes = 2000;
+      const pulled = await alice.post(`${ws()}/git/pull`, {});
+      expect(pulled.body.status).toBe("failed");
+      expect(pulled.body.problem).toContain("holds more than a pull takes in");
+      expect((await alice.get(`${ws()}/git`)).body).toMatchObject({ state: "error" });
+    } finally {
+      Object.assign(PULL_LIMITS, before);
+    }
+    // Within the limit, the same branch is taken in.
+    commitOnBranch({ "platform/notes/long.script.ts": null }, "Remove it");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).toMatch(/done|nothing/);
+  });
 });
 
 describe("safety", () => {

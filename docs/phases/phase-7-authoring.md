@@ -46,6 +46,7 @@ Not in this phase: SSH deploy keys, a GitHub App, merging inside a file, npm pac
 | Dashboards | Private to the member, with optional read-only sharing with the workspace |
 | Send email | The tenant's own SMTP connection |
 | SCIM and members | A tenant's provider suspends the member in that tenant. The instance's provider disables the account |
+| The HTTP request node | Left able to call an address given in full, with no connection. Whoever may deploy a flow can therefore make requests from the worker's network without `code:write`. To be looked at again: the other choice is to require a connection |
 
 ## Design in brief
 

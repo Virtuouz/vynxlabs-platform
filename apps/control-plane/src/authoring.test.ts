@@ -254,6 +254,21 @@ describe("trying a draft out", () => {
     expect(done.trigger).toMatchObject({ type: "manual", draft: true });
     expect(Object.keys(await resources())).toEqual(["orders/size"]);
     expect((await alice.get(`${ws()}/drafts/orders/hello`)).status).toBe(200);
+
+    // The bundle made for it is kept a while and then removed, with the run that ran on it.
+    const { removeOldPreviews } = await import("./kernel/execution/bundles.js");
+    const previews = () =>
+      t.db.selectFrom("bundle").select("id").where("origin", "=", "preview").execute();
+    expect(await previews()).toHaveLength(1);
+    const others = (await t.db.selectFrom("bundle").select("id").execute()).length - 1;
+    expect(await removeOldPreviews(t.kernel)).toBe(0);
+    expect(await previews()).toHaveLength(1);
+    expect(await removeOldPreviews(t.kernel, 0)).toBe(1);
+    expect(await previews()).toEqual([]);
+    expect((await alice.get(`${ws()}/runs/${started.body.runId}`)).status).toBe(404);
+    // Nothing that was deployed or uploaded is touched.
+    expect(await t.db.selectFrom("bundle").select("id").execute()).toHaveLength(others);
+    expect(await removeOldPreviews(t.kernel, 0)).toBe(0);
   });
 
   test("code that does not build says where", async () => {

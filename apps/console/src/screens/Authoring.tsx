@@ -283,7 +283,9 @@ export function ScriptEditor({
   if (!body) return <p className="text-ink-muted">Loading…</p>;
 
   const fromRepository = state === "repository" && !body.source;
-  const readOnly = !editable || fromRepository;
+  /** A step that comes with the platform. It is the platform's to change. */
+  const core = (opened ?? "").startsWith("core/");
+  const readOnly = !editable || fromRepository || core;
   const change = (next: Partial<ScriptBody>) => {
     setBody({ ...body, ...next });
     setDirty(true);
@@ -569,7 +571,13 @@ export function ScriptEditor({
           </div>
         )}
       </header>
-      {!editable ? (
+      {core ? (
+        <Notice tone="plain">
+          This step comes with the platform, and is added to the workspace because a flow uses it.
+          It can be read here and not changed. To do something else, write a script of your own and
+          give it a label, and it joins the flow editor's steps.
+        </Notice>
+      ) : !editable ? (
         <Notice tone="attention">
           This is a production workspace. Code is edited in a dev workspace and reaches production
           by promotion.

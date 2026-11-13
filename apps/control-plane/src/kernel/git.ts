@@ -152,9 +152,26 @@ async function fetchTip(remote: Remote, branch: string): Promise<Tip> {
   }
 }
 
-/** The YAML and TypeScript files under the folder at a commit. */
-async function readFolder(gitdir: string, commit: string, folder: string): Promise<ResourceFile[]> {
+/**
+ * The most a pull takes in from the folder. A workspace's resources are small
+ * text files: far more than this is a mistake, or something pointed at the
+ * wrong folder, and reading it all would hold a request open for nothing.
+ * Tests lower these.
+ */
+export const PULL_LIMITS = { bytes: 8 * 1024 * 1024, files: 2000 };
+
+/** The folder on the branch holds more than a pull takes in. */
+class FolderTooLarge extends Error {}
+
+/** The YAML and TypeScript files under the folder at a commit. With `limited`, up to the limits of a pull. */
+async function readFolder(
+  gitdir: string,
+  commit: string,
+  folder: string,
+  limited = false,
+): Promise<ResourceFile[]> {
   const files: ResourceFile[] = [];
+  let bytes = 0;
   const { tree: root } = await git.readTree({ fs, gitdir, oid: commit });
   let entries = root;
   for (const segment of folder.split("/")) {
@@ -169,6 +186,12 @@ async function readFolder(gitdir: string, commit: string, folder: string): Promi
         await walk((await git.readTree({ fs, gitdir, oid: entry.oid })).tree, path);
       } else if (entry.type === "blob" && /\.(yaml|ts)$/.test(entry.path)) {
         const { blob } = await git.readBlob({ fs, gitdir, oid: entry.oid });
+        bytes += blob.byteLength;
+        if (limited && (bytes > PULL_LIMITS.bytes || files.length >= PULL_LIMITS.files)) {
+          throw new FolderTooLarge(
+            `The folder ${folder} on the branch holds more than a pull takes in: ${PULL_LIMITS.files} files, or ${Math.round(PULL_LIMITS.bytes / 1024 / 1024)} MB in all. Check that the repository's folder is the right one.`,
+          );
+        }
         files.push({ path, content: Buffer.from(blob).toString("utf8") });
       }
     }
@@ -705,7 +728,17 @@ export async function pull(
           applied: [],
         };
       }
-      const remoteFiles = await readFolder(tip.gitdir, tip.commit, remote.folder);
+      let remoteFiles: ResourceFile[];
+      try {
+        remoteFiles = await readFolder(tip.gitdir, tip.commit, remote.folder, true);
+      } catch (error) {
+        if (!(error instanceof FolderTooLarge)) throw error;
+        return {
+          ...(await failed(db, workspace, actor, "pull", error.message)),
+          conflicts: [],
+          applied: [],
+        };
+      }
       const theirs = await checksums(remoteFiles);
       const mineFiles = await localFiles(kernel, db, workspace);
       const mine = await checksums(mineFiles);

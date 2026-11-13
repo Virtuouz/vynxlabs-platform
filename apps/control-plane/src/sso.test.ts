@@ -1022,6 +1022,7 @@ describe("a tenant's end users signing in over SAML", () => {
       entryPoint: saml.entryPoint,
       idpIssuer: saml.entityId,
       signed: "either",
+      signRequests: true,
       allowSha1: false,
       allowIdpInitiated: false,
     });
@@ -1035,6 +1036,11 @@ describe("a tenant's end users signing in over SAML", () => {
     expect(metadata.body).toContain(`entityID="${entityId}"`);
     expect(metadata.body).toContain(`Location="${acs}"`);
     expect(metadata.body).toContain("<ds:X509Certificate>");
+    // Requests are signed unless that is turned off, and the metadata says so.
+    expect(metadata.body).toContain('AuthnRequestsSigned="true"');
+    // No key to encrypt to is published unless asked for: a provider that reads one
+    // turns encryption on by itself.
+    expect(metadata.body).not.toContain('use="encryption"');
 
     // Bad settings are said as they are saved.
     const bad = await alice.post(providers(), {
@@ -1260,6 +1266,13 @@ describe("a tenant's end users signing in over SAML", () => {
     expect((await signIn(browser(), { sign: "response", nameId: "cust-77" })).status).toBe(403);
     await alice.patch(`${providers()}/${provider}`, { config: { signed: "either" } });
 
+    const asked = await alice.patch(`${providers()}/${provider}`, {
+      config: { encryptAssertions: true },
+    });
+    expect(asked.body.config.encryptAssertions).toBe(true);
+    expect((await browser().get(`${portal}/sso/${provider}/metadata`)).body).toContain(
+      'use="encryption"',
+    );
     const sealed = browser();
     const opened = await signIn(sealed, {
       nameId: "cust-77",
@@ -1503,7 +1516,7 @@ describe("a tenant's members signing in over SAML", () => {
       audience: "members",
       protocol: "saml",
       name: "Acme SAML",
-      config: { metadataXml: saml.metadata, signRequests: true },
+      config: { metadataXml: saml.metadata },
     });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const id = created.body.id as string;

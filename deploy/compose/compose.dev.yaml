@@ -36,6 +36,22 @@ services:
       timeout: 5s
       retries: 30
 
+  # An identity provider to try single sign-on against. Not started unless asked for:
+  #   docker compose -f deploy/compose/compose.dev.yaml --profile sso up -d keycloak
+  # The realm "acme" has two people, ada and ben, and an OIDC client. See
+  # docs/self-hosting.md, "Single sign-on", for the SAML side.
+  keycloak:
+    profiles: ["sso"]
+    image: quay.io/keycloak/keycloak:26.4
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+
 volumes:
   postgres:
   objectstore:

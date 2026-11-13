@@ -20,6 +20,8 @@ function samlFor(
   secrets: ProviderSecrets,
   addresses: SamlAddresses,
   cache: CacheProvider,
+  /** Whether this side's key for opening assertions is in play. Metadata may leave it out. */
+  opens = true,
 ): SAML {
   const config = provider.config;
   return new SAML({
@@ -52,7 +54,7 @@ function samlFor(
           digestAlgorithm: "sha256",
         }
       : {}),
-    ...(secrets.privateKey ? { decryptionPvk: secrets.privateKey } : {}),
+    ...(secrets.privateKey && opens ? { decryptionPvk: secrets.privateKey } : {}),
   });
 }
 
@@ -72,8 +74,15 @@ export function samlMetadata(
   addresses: SamlAddresses,
 ): string {
   const certificate = provider.config.spCertificate || null;
-  return samlFor(provider, secrets, addresses, NOTHING).generateServiceProviderMetadata(
-    certificate,
+  return samlFor(
+    provider,
+    secrets,
+    addresses,
+    NOTHING,
+    provider.config.encryptAssertions,
+  ).generateServiceProviderMetadata(
+    // A provider that reads an encryption key here turns encryption on by itself.
+    provider.config.encryptAssertions ? certificate : null,
     provider.config.signRequests ? certificate : null,
   );
 }
@@ -170,7 +179,10 @@ export async function samlFinish(
     throw new SsoRefusal(
       /already been received/i.test(message) ? "replayed" : "invalid_answer",
       "The identity provider's answer could not be accepted.",
-      message,
+      // The one failure an administrator cannot guess the cure for.
+      /key encryption algorithm .* not supported|oaep decoding error/i.test(message)
+        ? `The provider encrypted the assertion in a way that cannot be opened here: ${message}. Set the provider's key transport algorithm to RSA-OAEP with MGF1 (rsa-oaep-mgf1p) and its digest to SHA-1, or turn assertion encryption off at the provider.`
+        : message,
     );
   }
   if (!profile) {

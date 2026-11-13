@@ -49,7 +49,13 @@ export interface SamlConfig extends Common {
   certificates: string[];
   /** What must carry a signature. With `either`, one of the two always does. */
   signed: SamlSigned;
+  /** Sign the requests sent to the provider. On unless turned off. */
   signRequests: boolean;
+  /**
+   * Publish this side's certificate for encrypting assertions, so that a provider set up
+   * from the metadata encrypts them. An encrypted assertion is opened whether or not this is on.
+   */
+  encryptAssertions: boolean;
   /** Accept SHA-1 in signatures. Off unless a provider can do no better. */
   allowSha1: boolean;
   /** Accept an answer nobody here asked for. */
@@ -371,7 +377,10 @@ async function cleanConfig(
     idpIssuer,
     certificates,
     signed,
-    signRequests: merged.signRequests === true,
+    // On unless turned off: a provider set up from this side's metadata expects it, and one
+    // that does not check signatures is not troubled by one.
+    signRequests: merged.signRequests !== false,
+    encryptAssertions: merged.encryptAssertions === true,
     allowSha1: merged.allowSha1 === true,
     allowIdpInitiated: merged.allowIdpInitiated === true,
     nameIdFormat: (nameIdFormat as string | null | undefined) ?? null,

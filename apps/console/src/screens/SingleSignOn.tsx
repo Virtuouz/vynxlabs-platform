@@ -44,6 +44,7 @@ interface Config {
   certificates?: string[];
   signed?: string;
   signRequests?: boolean;
+  encryptAssertions?: boolean;
   allowSha1?: boolean;
   allowIdpInitiated?: boolean;
   nameIdFormat?: string | null;
@@ -416,7 +417,7 @@ function SetUp({
         <h2 className="m-0 text-base font-semibold">3. Turn it on</h2>
         <p className="m-0 text-ink-muted">
           {provider.audience === "members"
-            ? "A provider of members needs a proved email domain first: see Domains. Then use Turn on, above."
+            ? "A provider of members needs an email domain first: see Domains. Then use Turn on, above."
             : "Use Turn on, above. A sign-in button appears on the tenant's sign-in page."}
         </p>
       </section>
@@ -745,8 +746,15 @@ function Settings({
           <CheckboxField
             label="Sign the requests sent to the provider"
             name="signRequests"
-            checked={config.signRequests ?? false}
+            checked={config.signRequests ?? true}
             onChange={(signRequests) => set({ signRequests })}
+          />
+          <CheckboxField
+            label="Ask the provider to encrypt assertions"
+            name="encryptAssertions"
+            checked={config.encryptAssertions ?? false}
+            hint="Publishes this side's certificate in the metadata for the provider to encrypt to. The provider must wrap the key with RSA-OAEP with MGF1 (rsa-oaep-mgf1p) and the SHA-1 digest. Keycloak's defaults differ: set both on its client."
+            onChange={(encryptAssertions) => set({ encryptAssertions })}
           />
           <CheckboxField
             label="Accept SHA-1 signatures"

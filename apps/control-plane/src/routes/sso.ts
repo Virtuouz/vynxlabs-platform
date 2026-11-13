@@ -119,7 +119,7 @@ const CONFIG_DOC =
   "`config` for OIDC: `issuer`, `clientId`, `scopes`, `userinfo`. For SAML: `entryPoint`, " +
   "`idpIssuer`, `certificates`, or `metadataXml` or `metadataUrl` to read those three from the " +
   "provider's own metadata; and `signed` (`either`, `assertion`, `response`, `both`), " +
-  "`signRequests`, `allowSha1`, `allowIdpInitiated`, `nameIdFormat`. For both: `claims` " +
+  "`signRequests`, `encryptAssertions`, `allowSha1`, `allowIdpInitiated`, `nameIdFormat`. For both: `claims` " +
   "(`subject`, `email`, `name`, `groups`), and for end users `attributes` and `trustEmail`.";
 
 const SSO_LIMIT = { max: 60, timeWindow: "1 minute" };

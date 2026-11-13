@@ -42,7 +42,7 @@ const script = (
 function bundle(): Bundle {
   const unsigned = {
     formatVersion: 1 as const,
-    sdkVersion: "0.4.0",
+    sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests: [
       script("orders/greet", "greet", {
@@ -102,7 +102,7 @@ async function connect(key: string): Promise<McpClient> {
 const answer = (result: any) => JSON.parse(result.content[0].text);
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.4.0" });
+  t = await startTestApp({ version: "0.5.0" });
   url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   const roles = Object.fromEntries(
     (

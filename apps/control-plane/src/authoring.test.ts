@@ -47,7 +47,7 @@ function fromRepository(version: number): Bundle {
   };
   const unsigned = {
     formatVersion: 1 as const,
-    sdkVersion: "0.4.0",
+    sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests: [manifest],
     code: `export const greet = { execute: async () => ({ from: "repository", version: ${version} }) };\n`,
@@ -80,7 +80,7 @@ const resources = async (base = ws()) =>
   );
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.4.0" });
+  t = await startTestApp({ version: "0.5.0" });
   const url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   const roles = Object.fromEntries(
     (

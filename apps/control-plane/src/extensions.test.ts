@@ -47,7 +47,7 @@ const greeterSchema = {
 function bundle(change: (manifests: BundleManifest[]) => BundleManifest[] = (m) => m): Bundle {
   const unsigned = {
     formatVersion: 1 as const,
-    sdkVersion: "0.4.0",
+    sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests: change([
       resource("connector", "connectors/greeter", {
@@ -140,7 +140,7 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => mail.listen(0, "127.0.0.1", resolve));
   mailPort = (mail.address() as AddressInfo).port;
 
-  t = await startTestApp({ version: "0.4.0" });
+  t = await startTestApp({ version: "0.5.0" });
   const url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   const roles = Object.fromEntries(
     (
@@ -421,7 +421,7 @@ describe("a trigger source", () => {
   function sourced(): Bundle {
     const unsigned = {
       formatVersion: 1 as const,
-      sdkVersion: "0.4.0",
+      sdkVersion: "0.5.0",
       core: { min: "0.0.0", below: "99.0.0" },
       manifests: [
         // A sender that signs "<timestamp>.<body>" and sends both in one header, as Stripe does.
@@ -1289,7 +1289,7 @@ describe("a repository whose flows use core nodes", () => {
     const built = await composeBundle(
       {
         formatVersion: 1,
-        sdkVersion: "0.4.0",
+        sdkVersion: "0.5.0",
         core: { min: "0.0.0", below: "99.0.0" },
         manifests: [
           resource("event", "repo/pinged", { payload: { type: "object" } }),

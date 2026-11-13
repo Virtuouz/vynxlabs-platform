@@ -1,6 +1,6 @@
 {
   "name": "@vynxlabs/compose",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Compiles code written in the console and joins it to a bundle. Used by the CLI and by the control plane, so that both build the same thing.",

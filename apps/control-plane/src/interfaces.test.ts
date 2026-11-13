@@ -47,7 +47,7 @@ const screen = {
 function bundle(): Bundle {
   const unsigned = {
     formatVersion: 3 as const,
-    sdkVersion: "0.4.0",
+    sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests: [
       manifest("table", "invoices", {

@@ -149,7 +149,7 @@ const STARTER: Record<string, string> = {
       name: "tenant-repository",
       private: true,
       type: "module",
-      dependencies: { "@vynxlabs/sdk": "^0.4.0" },
+      dependencies: { "@vynxlabs/sdk": "^0.5.0" },
     },
     null,
     2,

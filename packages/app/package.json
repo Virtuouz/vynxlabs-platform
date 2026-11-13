@@ -1,6 +1,6 @@
 {
   "name": "@vynxlabs/app",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "The browser client for apps served by the platform: rows, scripts and who is signed in, over the public API.",
   "exports": {

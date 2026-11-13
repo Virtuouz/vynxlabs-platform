@@ -134,7 +134,7 @@ beforeAll(async () => {
   clone = join(scratch, "clone");
   sh(["clone", "-q", bare(), "clone"], scratch);
 
-  t = await startTestApp({ version: "0.4.0" });
+  t = await startTestApp({ version: "0.5.0" });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()

@@ -29,8 +29,8 @@ export {
 export { z };
 
 /** The version of the SDK, and the core versions a bundle built with it works on. */
-export const SDK_VERSION = "0.4.0";
-export const CORE_RANGE = { min: "0.4.0", below: "0.5.0" };
+export const SDK_VERSION = "0.5.0";
+export const CORE_RANGE = { min: "0.5.0", below: "0.6.0" };
 
 /** An authored manifest, before the control plane assigns a workspace, ID and version. */
 export interface AuthoredManifest {

@@ -55,8 +55,8 @@ const baseCode =
   "export { check };\n";
 const base: UnsignedBundle = {
   formatVersion: 1,
-  sdkVersion: "0.4.0",
-  core: { min: "0.4.0", below: "0.5.0" },
+  sdkVersion: "0.5.0",
+  core: { min: "0.5.0", below: "0.6.0" },
   manifests: [fromRepo],
   code: baseCode,
 };

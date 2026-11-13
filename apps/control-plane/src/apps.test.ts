@@ -98,7 +98,7 @@ function bundle(change: (manifests: BundleManifest[]) => BundleManifest[] = (m) 
   ]);
   const unsigned = {
     formatVersion: 2 as const,
-    sdkVersion: "0.4.0",
+    sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests,
     code: "export const placeOrder = { execute: async () => ({}) };",

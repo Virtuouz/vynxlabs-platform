@@ -40,7 +40,7 @@ Response: `{"job": null}`, or a job:
 | --- | --- |
 | `runId`, `attempt` | Identify this attempt in every later request |
 | `workspaceId` | The workspace the run belongs to |
-| `script.path`, `script.entry` | The script, and the name it is exported under in the bundle's code |
+| `script.path`, `script.entry` | The script, and the name it is exported under in the bundle's code. Since 0.5.0 this may be a trigger source: it is run exactly as a script is, and what it returns is its output |
 | `input` | The script's input |
 | `bundle.id`, `bundle.digest` | The bundle this run is pinned to |
 | `timeoutSeconds` | How long this attempt may take |
@@ -77,6 +77,7 @@ Read what the running script needs. Each answers only for a name the script decl
 
 - A secret or variable returns `{"value": "..."}`.
 - A connection returns `{"connector", "config", "credential"}`. `credential` is absent when the connection has none.
+- `connector` is `http` or `smtp`, which a worker builds itself, or, since 0.5.0, the path of a `connector` resource in the run's bundle. For those the worker calls the export named by that connector's `entry` as `create(config, credential, signal)` and hands the script what it returns. A worker that does not know a connector must fail the run with a message that names it.
 
 Fetch these when the script asks, not ahead of time. Do not write the values to logs or to disk.
 

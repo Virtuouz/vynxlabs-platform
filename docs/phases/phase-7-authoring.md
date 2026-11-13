@@ -372,9 +372,35 @@ Tried in a browser against a running instance: an app with a table of customers,
 
 Not built: a button that starts a flow, formulas and computed columns, sorting or filtering by what a reference shows, choosing a row by pressing a chart, filters each viewer keeps for themselves, custom widgets inside a generated screen, refreshing by itself when rows change, periods in a time zone other than UTC, and keeping a column from someone who may read the row.
 
+## Extensions and nodes (unit B)
+
+A tenant reaches outside systems the platform does not know, and people who write no code draw flows from steps that are ready made.
+
+**A connector is a resource.** The kind `connector` carries a schema for a connection's configuration and code that builds what a script is given for one. A connection names its connector by path, or `http` or `smtp` for the two every worker has. A worker takes a tenant's connector from the bundle the run is pinned to, so a run keeps the connector it was deployed with. A connection's configuration is checked against its connector's schema when it is bound, against the connector as deployed, as drafted, or as last uploaded, and again at deploy.
+
+**Mail goes through the tenant's own server.** The built-in `smtp` connector sends through a mail server the tenant names, with the tenant's credential. The platform's own mail settings are for its own invitations and are not lent to tenants.
+
+**A trigger source stands between the outside and what a trigger starts.** The kind `trigger_source` is code that runs on a worker, like a script, and is named by a webhook or a schedule. A webhook's source is handed each request and says whether anything starts, once or several times, and with what: this is where a signature in a sender's own format is checked. A schedule's source is run on each tick with where it had got to, and gives back what is new and a new place. The control plane still runs no tenant code. Nobody starts a source by hand.
+
+**The core nodes are scripts.** Five come with the platform, in `packages/nodes`: an HTTP request, send email, read rows, write a row, publish an event. They live under the reserved path prefix `core/`. When a bundle is composed, by the control plane or by the CLI, the nodes its flows use are compiled in with it, and any it carried are replaced by the platform's current ones. Bundle format 3 did not change.
+
+**A step hands its script what it works on.** A generic node declares no connection of its own. A step gives it one with `with`, for that run alone, and the worker's routes answer for what a script declared or what its step handed it. The script must say in `node.takes` that it takes such a thing, and what is handed over must exist: both are checked when the bundle is. A core node started by hand reaches nothing. A step can also give an expression per field with `inputs`.
+
+**A tenant's own script becomes a node** by carrying a label. Its input schema becomes the step's form.
+
+**A flow can answer the request that started it.** A webhook trigger of a flow may say `respond: flow`. The request is held open for up to 25 seconds and a `respond` step answers it. The answer is kept on the flow run, because the flow may run on another process than the one holding the request. It is a tenant's answer sent from the platform's address, so it carries a sandboxing content security policy and may not set a cookie.
+
+**A trigger can be a form.** A title, up to thirty fields of seven plain types, and who may send it. The platform serves it as a page of the tenant's portal with no script on it. It reuses the portal's own defences, adds a field that only machines fill in, and a key that makes sending one page twice start one run.
+
+**In the console.** The flow editor's palette lists the core nodes and the workspace's own. A step's form is drawn from the script's input schema, and choosing a connection, a table or an event in it hands that thing to the step. A webhook has its settings, a form trigger a designer, and an Answer step its status, body and headers. The code editor writes connectors and trigger sources as it writes scripts, from a new Extensions screen. A connection of a kind other than HTTP is set up with a form drawn from its connector's schema.
+
+Tried in a browser against a running instance, with a mail server standing in: a mail connection set up from its form; a flow drawn in the editor from a form trigger, "Write a row" and "Send email", joined by dragging; the form filled in by someone with only its address; the row written and the mail delivered; a webhook answered by a flow in 0.4 seconds with a count read from the table; and a connector saved from the console's editor. The walk found three faults, all mended: a setting left out of the mail form, short fields drawn as tall boxes, and a core node shown with an empty script box.
+
+Not built: a core node as the step of a for-each with a form of its own (a for-each takes `with` and one expression); an answer from a flow started by another flow; a file upload in a form; a form's answers checked by anything beyond each field's type; custom nodes offered across workspaces; and a form for a connector whose configuration is nested, which the HTTP connector's own form still covers by hand.
+
 ## Schemas
 
-Migrations 0019 to 0028. Bundle format 3. Version 0.5.0 is not yet set.
+Migrations 0019 to 0031. Bundle format 3. Version 0.5.0 is not yet set.
 
 | Change | Purpose |
 | --- | --- |
@@ -404,6 +430,12 @@ Migrations 0019 to 0028. Bundle format 3. Version 0.5.0 is not yet set.
 | The role `portal_reader` | Opens apps and reads rows, held to each table's policy |
 | `member_dashboard` | A member's own pages in a workspace |
 | Permissions `interface` and `dashboard` | Building apps in the console, and keeping dashboards |
+| The kinds `connector` and `trigger_source` | A tenant's own way to reach an outside system, and to decide what a trigger starts. In the manifest |
+| `trigger_state.cursor` | Where a polling trigger source had got to |
+| A script's `node.takes`, a step's `inputs` and `with` | What a step may hand a script, and an expression per field. In the manifest |
+| The step `respond`, and `respond` on a flow's webhook trigger | A flow answers the request that started it. In the manifest |
+| `flow_run.response` | What a flow answered, for the process holding the request to find |
+| The trigger type `form`, and `trigger_state.type` widened | A form the platform serves, which starts a script or a flow |
 
 ## Tests
 
@@ -440,6 +472,9 @@ Migrations 0019 to 0028. Bundle format 3. Version 0.5.0 is not yet set.
 | A page drawn against a stand-in client: linked widgets, forms, editing, missing tables, reference lookups, dragging | `packages/screens/src/Renderer.test.tsx` |
 | The widgets' new abilities | `packages/ui/src/widgets.test.tsx` |
 | The builder, sharing an app, and dashboards in the console | `apps/console/src/Interfaces.test.tsx`, `Dashboards.test.tsx` |
+| Connectors, mail against a stand-in server, trigger sources, the core nodes, what a step hands over, a flow's answer, the form trigger | `apps/control-plane/src/extensions.test.ts`, with a real worker |
+| The step forms: a node's inputs, a webhook's settings, the form designer | `apps/console/src/FlowSteps.test.tsx` |
+| The Extensions screen and a connection's form | `apps/console/src/Extensions.test.tsx` |
 
 ## Proposed deviations
 
@@ -457,6 +492,9 @@ Migrations 0019 to 0028. Bundle format 3. Version 0.5.0 is not yet set.
 | `git:write` to pull | Pulling needs `deployment:write` and `code:write` | A pull deploys, and can bring code in |
 | A connection group's member is read at `/connection-groups/{path}/members/{key}` | `/connection-group-members/{key}/{path}` | A path has slashes in it, so it has to come last |
 | The webhook, single sign-on and MCP spikes run before their milestones | Webhooks and MCP were built and tested directly | Each was small enough that building it was the spike |
+| Extensions are tested in `runtime.test.ts`, `webhooks.test.ts` and `flows.test.ts` | They have a suite of their own, `extensions.test.ts` | They share a worker and a stand-in mail server |
+| `connector` and `trigger_source` carry a `configSchema` each | Only a connector does. A trigger source lists what it reads, as a script does | A source is configured by the trigger that names it, which already has settings |
+| The core pack is added by `packages/compose` and `packages/cli` | By `composeBundle` alone, which both call | One place, so both build the same thing |
 | Single sign-on is tested against Keycloak in the development stack | The suite uses providers made for the test. Keycloak was driven by hand, through a browser | A tampered or replayed answer has to be made, and Keycloak will not make one. CI also stays without a 700 MB image |
 | Group maps name a group by type and ID in one column | Two columns, one per kind of group | Each can then refer to its table, and a deleted group takes its mapping with it |
 | A member's sign-in starts at `/auth/sso/start` | It starts at `/sso/:id/start`. Only the last step is in the authentication library | Only making the session needs the library |

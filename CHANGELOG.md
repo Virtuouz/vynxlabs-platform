@@ -8,7 +8,11 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 
 ### For operators
 
-- **Database change.** Migrations 0019 to 0028 run on start.
+- **Database change.** Migrations 0019 to 0031 run on start.
+- **Tenants can send mail through their own mail server,** with an `smtp` connection. Workers make the outbound connection to it. The instance's `SMTP_URL` stays for the platform's own invitations and is not lent to tenants.
+- **Forms are served under a tenant's portal,** at `/portal/<tenant>/forms/<token>`, to anyone given the address unless the form asks for a sign-in. They are held to the portal's rate limit for forms.
+- **A webhook can be held open for up to 25 seconds** while a flow answers it. A proxy in front of the instance must allow a request that long. The answer is the tenant's own, and is sent with a sandboxing content security policy.
+- **Workers run connectors and trigger sources of a tenant's own.** They are code from the tenant's bundle, like scripts, and need `code:write` to be written in the console.
 - **Apps can be made in the console,** with no code, over a workspace's tables. The image carries the app that draws them, under `SCREENS_DIR`. An instance run from source needs `pnpm build`, which builds it.
 - **Three new built-in roles' worth of access:** `app_maintainer` builds and deploys apps made in the console and no code; `portal_reader` opens apps and reads rows; `developer`, `workspace_admin` and `app_maintainer` may keep dashboards.
 - **Sharing an app with `viewer` shows every row.** That role reads everything, a table's every row included. Share with `portal_reader` or `portal_user`, which the Share button does.
@@ -33,6 +37,12 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 - A sub-flow step may choose its flow when it runs: `flowFrom` with `allow`.
 - `@vynxlabs/app` gains `startFlow`, `flowRun` and `runFlow`. `flow_run:write` can be bound at one flow.
 - **Totals.** `table().aggregate({ group, measures, filter })` in apps and `ctx.table().aggregate(...)` in scripts give counts, sums, averages, the least and the most, over rows or groups of them, under the table's row policy. `GET …/aggregate/{table}` over HTTP.
+- **Connectors.** `defineConnector({ path, configSchema, create })` says how a kind of connection reaches an outside system, and a connection names it with `connector`. `smtp` is built in beside `http`: a script is given `send({ to, subject, text })`.
+- **Trigger sources.** `defineTriggerSource({ mode: "webhook" | "poll", run })` decides what a webhook's request or a schedule's tick starts. `defineWebhook`, `defineSchedule` and a flow's triggers take `source`.
+- **Nodes.** `defineScript({ node: { label, category, takes } })` puts a script in the flow editor's palette, with a form made from its input schema. A step can hand it a connection, a table or an event with `with`, and give an expression per field with `inputs`.
+- **Core nodes.** `core/http-request`, `core/send-email`, `core/table-read`, `core/table-write` and `core/publish-event` can be named in any flow. The build adds them. Paths under `core/` are the platform's.
+- **A flow can answer its webhook.** `trigger.webhook({ respond: "flow" })` and `step.respond({ status, headers, body })`.
+- **Forms.** `trigger.form({ title, fields })` in a flow, or `defineForm` for a script, makes a page the platform serves. What is sent is the input.
 - `defineInterface` declares pages of widgets over tables, and `defineApp({ interface })` serves one as an app with no code. Most are made in the console instead.
 - The widget interface grew: a widget can be handed the chosen row, more rows to ask for, and ways to edit and delete. `card` and `cards` are new, and `chart` takes `mark`, `x` and `y` in place of a spec. An app's own widgets keep working.
 - `defineTable` takes `policy: { rules: [...] }`: a rule allows `read`, `write` or `all` when a column holds the person's ID, names a group they are in, or equals one of their attributes. `{ owner }` works as before.

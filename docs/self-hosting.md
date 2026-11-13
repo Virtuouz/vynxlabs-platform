@@ -231,6 +231,16 @@ A member can build an app over a workspace's tables with no code, under **Apps m
 - **Dashboards** are a member's own pages, under **Dashboards** in any workspace: saved without a deploy, private unless shared read-only with the workspace.
 - **The image carries the app that draws them.** `SCREENS_DIR` says where it is, and is set in the image. An instance run from source finds it after `pnpm build`. Without it, such an app says it cannot be shown.
 
+## Mail, forms and webhooks that tenants run
+
+A tenant sends mail through its own mail server. It sets up an `smtp` connection in a workspace, with the server's name, port, security and the address mail is sent from, and the password as the connection's secret. A worker makes the connection, so the mail server must be reachable from where workers run. The instance's own `SMTP_URL` is not used for this.
+
+A flow or a script can be started by a form. The platform serves the form at `/portal/<tenant>/forms/<token>`, or under `/_/forms/` at a hostname of the tenant's own. Anyone with the address can send it unless the form asks for a sign-in, so it is limited like the portal's other forms: twenty a minute for each visitor and tenant. The address is shown with the workspace's triggers to whoever holds `trigger:write`.
+
+A flow can answer the webhook that started it. Such a request is held open for up to 25 seconds, so a proxy in front of the instance must not cut requests to `/api/v1/hooks/` shorter than that. If the flow has said nothing by then the caller is answered 202, and the flow carries on.
+
+Code that tenants write, connectors and trigger sources included, runs on workers and never in the control plane.
+
 ## Single sign-on
 
 A tenant's admin connects an identity provider under **Single sign-on**, for members or for end users, over OIDC or SAML. Operators connect one for themselves under **Instance**. The instance needs nothing new to run, and makes outbound requests to the provider: to read an OIDC provider's settings and keys, and to read SAML metadata when given an address for it.

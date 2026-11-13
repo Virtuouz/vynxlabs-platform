@@ -4,6 +4,14 @@ export { Chart, type ChartProps } from "./Chart.tsx";
 export { type ChartTokens, chartConfig, readChartTokens } from "./chartTheme.ts";
 export { Dialog } from "./Dialog.tsx";
 export {
+  type ConfirmOptions,
+  type Dialogs,
+  DialogsProvider,
+  type PromptOptions,
+  type TypeToConfirmOptions,
+  useDialogs,
+} from "./Dialogs.tsx";
+export {
   CheckboxField,
   DateField,
   NumberField,

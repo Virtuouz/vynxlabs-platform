@@ -14,6 +14,7 @@ import {
 } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask } from "../ask.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
@@ -659,8 +660,13 @@ function Definition({
                         <Button
                           size="small"
                           variant="quiet"
-                          onClick={() => {
-                            const next = window.prompt(`New name for "${row.name}"`, row.name);
+                          onClick={async () => {
+                            const next = await ask.prompt({
+                              title: `Rename ${row.name}`,
+                              label: "New name",
+                              initial: row.name,
+                              action: "Rename",
+                            });
                             if (!next || next === row.name) return;
                             void quietly(
                               change((body) => {
@@ -678,13 +684,14 @@ function Definition({
                           size="small"
                           variant="danger"
                           disabled={active.length === 1}
-                          onClick={() => {
-                            if (
-                              !window.confirm(
-                                `Retire "${row.name}"? It is hidden and its data kept. You can bring it back.`,
-                              )
-                            )
-                              return;
+                          onClick={async () => {
+                            const sure = await ask.confirm({
+                              title: `Retire ${row.name}?`,
+                              text: "It is hidden and its data kept. You can bring it back.",
+                              action: "Retire",
+                              danger: true,
+                            });
+                            if (!sure) return;
                             void quietly(change((body) => delete body.columns[row.name]));
                           }}
                         >

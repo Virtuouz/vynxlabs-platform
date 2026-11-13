@@ -1,7 +1,9 @@
 import { Badge, type BadgeTone, Button, EmptyState, Notice, Table } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
+import { InputDialog } from "../InputDialog.tsx";
 import { ListScreen, Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
@@ -116,6 +118,7 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
     `${root}/flow-runs?flow=${encodeURIComponent(path)}&limit=20`,
   );
   const [saved, setSaved] = useState<"saving" | "saved" | string>();
+  const [starting, setStarting] = useState(false);
   if (flow.error) return <Notice tone="danger">{flow.error.message}</Notice>;
   if (!flow.data) return <p className="text-ink-muted">Loading…</p>;
   const data = flow.data;
@@ -129,31 +132,25 @@ export function FlowView({ root, path, link }: { root: string; path: string; lin
       description={data.description}
       action={
         manual ? (
-          <Button
-            variant="primary"
-            onClick={async () => {
-              const text = window.prompt(`Input for ${data.path}, as JSON`, "{}");
-              if (text === null) return;
-              try {
-                const started = await api.post<{ id: string }>(`${root}/flow-runs`, {
-                  flow: data.path,
-                  input: JSON.parse(text),
-                });
-                navigate(`${link}/flow-runs/${started.id}`);
-              } catch (error) {
-                window.alert(
-                  error instanceof SyntaxError
-                    ? "That is not valid JSON."
-                    : (error as Error).message,
-                );
-              }
-            }}
-          >
+          <Button variant="primary" onClick={() => setStarting(true)}>
             Start flow
           </Button>
         ) : undefined
       }
     >
+      <InputDialog
+        open={starting}
+        onClose={() => setStarting(false)}
+        title={`Start ${data.path}`}
+        action="Start flow"
+        onSubmit={async (input) => {
+          const started = await api.post<{ id: string }>(`${root}/flow-runs`, {
+            flow: data.path,
+            input,
+          });
+          navigate(`${link}/flow-runs/${started.id}`);
+        }}
+      />
       <Link to={`${link}/flows`} className="text-action">
         All flows
       </Link>
@@ -294,10 +291,14 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
   const waitingApprovals = steps.filter((step) => step.status === "waiting" && step.detail.title);
 
   const decide = async (node: string, decision: "approve" | "reject") => {
-    const comment = window.prompt(
-      decision === "approve" ? "Add a note (optional)" : "Why is it rejected?",
-      "",
-    );
+    const comment = await ask.prompt({
+      title: decision === "approve" ? "Approve" : "Reject",
+      label: decision === "approve" ? "Note (optional)" : "Why is it rejected?",
+      required: decision === "reject",
+      multiline: true,
+      action: decision === "approve" ? "Approve" : "Reject",
+      danger: decision === "reject",
+    });
     if (comment === null) return;
     try {
       await api.post(`${root}/flow-runs/${id}/approvals/${node}`, {
@@ -306,7 +307,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
       });
       setTick((value) => value + 1);
     } catch (caught) {
-      window.alert((caught as Error).message);
+      notify.error(caught);
     }
   };
 
@@ -318,11 +319,15 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
           <Button
             variant="danger"
             onClick={async () => {
-              if (!window.confirm("Cancel this flow run? Steps in progress are cancelled too."))
-                return;
-              await api
-                .post(`${root}/flow-runs/${id}/cancel`)
-                .catch((caught) => window.alert((caught as Error).message));
+              const sure = await ask.confirm({
+                title: "Cancel this flow run?",
+                text: "Steps in progress are cancelled too.",
+                action: "Cancel flow run",
+                cancel: "Keep running",
+                danger: true,
+              });
+              if (!sure) return;
+              await api.post(`${root}/flow-runs/${id}/cancel`).catch(notify.error);
               setTick((value) => value + 1);
             }}
           >
@@ -476,10 +481,14 @@ export function Approvals({ base, tenantId }: { base: string; tenantId: string }
       }}
       rowActions={(row, reload) => {
         const decide = async (decision: "approve" | "reject") => {
-          const comment = window.prompt(
-            decision === "approve" ? "Add a note (optional)" : "Why is it rejected?",
-            "",
-          );
+          const comment = await ask.prompt({
+            title: decision === "approve" ? "Approve" : "Reject",
+            label: decision === "approve" ? "Note (optional)" : "Why is it rejected?",
+            required: decision === "reject",
+            multiline: true,
+            action: decision === "approve" ? "Approve" : "Reject",
+            danger: decision === "reject",
+          });
           if (comment === null) return;
           try {
             await api.post(
@@ -491,7 +500,7 @@ export function Approvals({ base, tenantId }: { base: string; tenantId: string }
             );
             reload();
           } catch (error) {
-            window.alert((error as Error).message);
+            notify.error(error);
           }
         };
         return (

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SourceView, TableView, toFilter } from "./screens/Data.tsx";
+import { answer, show } from "./testing.tsx";
 
 // The whole suite runs in parallel with tests that use a database, so waits are generous.
 configure({ asyncUtilTimeout: 5000 });
@@ -107,7 +108,7 @@ const lastRows = () =>
   asked(calls.findLastIndex((call) => call.method === "GET" && call.url.includes("/rows/orders")));
 
 test("a table's rows are browsed with sorting, filters and paging", async () => {
-  render(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText("A-1");
   expect(
     screen.getByText(
@@ -160,8 +161,7 @@ test("a value is changed in place, and a row is added and deleted", async () => 
           },
         ];
   routes[`DELETE /api/v1${root}/row/r2/orders`] = () => [204, null];
-  vi.stubGlobal("confirm", () => true);
-  render(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
 
   // Each element that appears after an action is waited for: under a loaded machine the
   // screen may not have caught up by the next line.
@@ -197,6 +197,7 @@ test("a value is changed in place, and a row is added and deleted", async () => 
 
   await waitFor(() => expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2));
   fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1] as HTMLElement);
+  await answer("Delete");
   await waitFor(() =>
     expect(
       calls.some((call) => call.method === "DELETE" && call.url.endsWith("/row/r2/orders")),
@@ -206,8 +207,7 @@ test("a value is changed in place, and a row is added and deleted", async () => 
 
 test("a table from the repository is read-only in its definition, and shows what retired columns hold", async () => {
   routes[`POST /api/v1${root}/table-purges`] = () => [200, { dropped: "orders.notes" }];
-  vi.stubGlobal("confirm", () => true);
-  render(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
   expect(screen.getByText(/defined in the tenant's repository/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Add column" })).toBeNull();
@@ -215,6 +215,7 @@ test("a table from the repository is read-only in its definition, and shows what
   expect(screen.getByText("2 values")).toBeTruthy();
   expect(screen.getByText("ws_abc.orders")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Delete for good" }));
+  await answer("Delete for good");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({
       table: "orders",
@@ -235,9 +236,7 @@ test("a table made in the console is changed by saving its definition", async ()
   routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
   routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body }];
   routes[`PUT /api/v1${root}/resources/orders`] = () => [200, {}];
-  vi.stubGlobal("prompt", () => "amount");
-  vi.stubGlobal("confirm", () => true);
-  render(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
   const saved = () =>
     calls.filter((call) => call.method === "PUT").at(-1)?.body as {
@@ -246,6 +245,7 @@ test("a table made in the console is changed by saving its definition", async ()
     };
 
   fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[1] as HTMLElement);
+  await answer("Rename", "amount");
   await waitFor(() =>
     expect(saved()?.body.columns).toEqual({
       number: body.columns.number,
@@ -256,6 +256,7 @@ test("a table made in the console is changed by saving its definition", async ()
   expect(saved().ownership).toBe("ui");
 
   fireEvent.click(screen.getAllByRole("button", { name: "Retire" })[1] as HTMLElement);
+  await answer("Retire");
   await waitFor(() => expect(Object.keys(saved().body.columns)).toEqual(["number", "owner_id"]));
 
   fireEvent.click(screen.getByRole("button", { name: "Bring back" }));
@@ -305,7 +306,7 @@ test("an external source's tables are browsed, and one without a key cannot be c
     200,
     { id: 1, ...(body as object) },
   ];
-  render(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
+  show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
   fireEvent.click(await screen.findByText("Ada"));
   fireEvent.input(screen.getByLabelText("name"), { target: { value: "Ada L." } });
   fireEvent.focusOut(screen.getByLabelText("name"));

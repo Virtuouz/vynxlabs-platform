@@ -10,6 +10,7 @@ import {
 } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask } from "../ask.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import type { AppSummary } from "./Apps.tsx";
 
@@ -230,13 +231,14 @@ function DetailsDialog({
             <Button
               variant="danger"
               disabled={busy}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Remove ${domain.hostname}? The app is no longer served there, and sign-ins made at that hostname end.`,
-                  )
-                )
-                  return;
+              onClick={async () => {
+                const sure = await ask.confirm({
+                  title: `Remove ${domain.hostname}?`,
+                  text: "The app is no longer served there, and sign-ins made at that hostname end.",
+                  action: "Remove",
+                  danger: true,
+                });
+                if (!sure) return;
                 return run(async () => {
                   await api.delete(`${base}/domains/${domain.id}`);
                   onRemoved();

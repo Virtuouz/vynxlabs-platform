@@ -1,6 +1,7 @@
 import { Badge, Button, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
 import { ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { navigate } from "../router.tsx";
 
@@ -84,12 +85,16 @@ export function WorkspaceControls({
             size="small"
             variant="danger"
             onClick={async () => {
-              const typed = window.prompt(
-                `This deletes "${workspace.name}" with its resources, secrets, run history, tables and files. It cannot be undone. Type the workspace's slug, ${workspace.slug}, to delete it.`,
-              );
-              if (typed === null) return;
+              const sure = await ask.typeToConfirm({
+                title: `Delete ${workspace.name}?`,
+                text: "This deletes the workspace with its resources, secrets, run history, tables and files. It cannot be undone.",
+                expected: workspace.slug,
+                action: "Delete workspace",
+                danger: true,
+              });
+              if (!sure) return;
               try {
-                await api.delete(`${root}?confirm=${encodeURIComponent(typed)}`);
+                await api.delete(`${root}?confirm=${encodeURIComponent(workspace.slug)}`);
                 navigate(`/t/${tenantId}/workspaces`);
               } catch (error) {
                 setProblem(failed(error));
@@ -807,15 +812,19 @@ export function DeleteTenantButton({
       size="small"
       variant="danger"
       onClick={async () => {
-        const typed = window.prompt(
-          `This deletes ${tenant.name} from this instance: every workspace, secret, table and file. Export it first if anything should be kept. It cannot be undone. Type the tenant's slug, ${tenant.slug}, to delete it.`,
-        );
-        if (typed === null) return;
+        const sure = await ask.typeToConfirm({
+          title: `Delete ${tenant.name}?`,
+          text: "This deletes the tenant from this instance: every workspace, secret, table and file. Export it first if anything should be kept. It cannot be undone.",
+          expected: tenant.slug,
+          action: "Delete tenant",
+          danger: true,
+        });
+        if (!sure) return;
         try {
-          await api.post(`/tenants/${tenant.id}/deletion`, { confirm: typed });
+          await api.post(`/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
           onDone();
         } catch (error) {
-          window.alert(failed(error));
+          notify.error(error);
         }
       }}
     >

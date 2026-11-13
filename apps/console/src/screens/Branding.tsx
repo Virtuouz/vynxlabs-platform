@@ -1,6 +1,7 @@
 import { Badge, Button, CheckboxField, Notice, TextField } from "@vynxlabs/ui";
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask } from "../ask.tsx";
 import { Page, RemoveButton } from "../ListScreen.tsx";
 import { refreshTenantTheme } from "../theme.ts";
 import { size } from "./Apps.tsx";
@@ -285,13 +286,14 @@ function ThemeEditor({
             </Button>
             <Button
               disabled={busy}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    "Remove every value set here, for light and for dark? The portal and apps go back to the kit's values.",
-                  )
-                )
-                  return;
+              onClick={async () => {
+                const sure = await ask.confirm({
+                  title: "Reset to the kit's values?",
+                  text: "Every value set here is removed, for light and for dark. The portal and apps go back to the kit's values.",
+                  action: "Reset",
+                  danger: true,
+                });
+                if (!sure) return;
                 save({ tokens: {}, dark: {} }, "Reset to the kit's values.");
               }}
             >

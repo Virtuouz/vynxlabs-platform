@@ -5,6 +5,7 @@ const styles = {
   secondary: "bg-surface text-ink border border-line hover:bg-sunken",
   quiet: "text-action hover:bg-action-soft",
   danger: "text-danger hover:bg-danger-soft",
+  "danger-solid": "bg-danger text-surface hover:brightness-110",
 };
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "size"> {

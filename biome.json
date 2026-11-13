@@ -15,6 +15,9 @@
   "linter": {
     "rules": {
       "preset": "recommended",
+      "suspicious": {
+        "noAlert": "error"
+      },
       "style": {
         "noRestrictedImports": {
           "level": "error",

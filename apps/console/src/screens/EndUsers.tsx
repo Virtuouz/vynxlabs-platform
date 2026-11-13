@@ -11,6 +11,7 @@ import {
 } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { ask } from "../ask.tsx";
 import { CopyButton, CreateDialog, Page, when } from "../ListScreen.tsx";
 
 interface EndUser {
@@ -143,13 +144,14 @@ export function EndUsers({ base }: { base: string }) {
         },
     {
       label: "Delete",
-      onSelect: () => {
-        if (
-          !window.confirm(
-            `Delete ${user.email}? They can no longer sign in, and access given to them is removed. Their rows in tables are kept.`,
-          )
-        )
-          return;
+      onSelect: async () => {
+        const sure = await ask.confirm({
+          title: `Delete ${user.email}?`,
+          text: "They can no longer sign in, and access given to them is removed. Their rows in tables are kept.",
+          action: "Delete",
+          danger: true,
+        });
+        if (!sure) return;
         return act(() => api.delete(`${base}/end-users/${user.id}`));
       },
     },

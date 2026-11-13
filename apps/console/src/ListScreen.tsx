@@ -11,6 +11,7 @@ import {
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
+import { ask, notify } from "./ask.tsx";
 
 export interface FormField {
   name: string;
@@ -230,12 +231,15 @@ export function RemoveButton({
       variant="danger"
       size="small"
       onClick={async () => {
-        if (!window.confirm(question)) return;
+        if (
+          !(await ask.confirm({ title: `${label}?`, text: question, action: label, danger: true }))
+        )
+          return;
         try {
           await run();
           onDone();
         } catch (error) {
-          window.alert((error as Error).message);
+          notify.error(error);
         }
       }}
     >

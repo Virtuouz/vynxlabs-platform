@@ -2,12 +2,13 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Apps } from "./screens/Apps.tsx";
 import { Branding, KIT, THEME_TOKENS } from "./screens/Branding.tsx";
 import { Domains } from "./screens/Domains.tsx";
 import { EndUsers } from "./screens/EndUsers.tsx";
+import { answer, show } from "./testing.tsx";
 import { refreshTenantTheme, useTenantTheme } from "./theme.ts";
 
 configure({ asyncUtilTimeout: 5000 });
@@ -78,7 +79,7 @@ test("the apps of a workspace are listed with their addresses and who they are o
       ],
     },
   ];
-  render(<Apps root={`${base}/workspaces/w1`} />);
+  show(<Apps root={`${base}/workspaces/w1`} />);
   const address = await screen.findByRole("link", {
     name: "https://apps.example.test/apps/acme/main/portal/orders/",
   });
@@ -98,7 +99,7 @@ test("the apps of a workspace are listed with their addresses and who they are o
 
 test("a workspace with no apps says where apps come from", async () => {
   routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [200, { items: [] }];
-  render(<Apps root={`${base}/workspaces/w1`} />);
+  show(<Apps root={`${base}/workspaces/w1`} />);
   await screen.findByText("No apps yet");
   expect(document.body.textContent).toContain("defineApp");
 });
@@ -134,7 +135,7 @@ test("inviting an end user shows the link once, and says to pass it on when no m
       },
     ];
   };
-  render(<EndUsers base={base} />);
+  show(<EndUsers base={base} />);
   await screen.findByText("ada@customer.example");
   expect(screen.getByText("Active")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Invite an end user" }));
@@ -165,7 +166,7 @@ test("a link that was emailed says so, and the search is sent to the server", as
       emailed: true,
     },
   ];
-  render(<EndUsers base={base} />);
+  show(<EndUsers base={base} />);
   fireEvent.click(await screen.findByText("Actions"));
   // Ada has a password, so she is offered a reset and not a new invitation.
   expect(screen.queryByText("New invitation link")).toBeNull();
@@ -192,9 +193,7 @@ test("an end user is disabled and deleted through their own routes, and deleting
     users = [];
     return [204, null];
   };
-  const confirm = vi.fn((_question: string) => false);
-  vi.stubGlobal("confirm", confirm);
-  render(<EndUsers base={base} />);
+  show(<EndUsers base={base} />);
   fireEvent.click(await screen.findByText("Actions"));
   fireEvent.click(await screen.findByText("Disable"));
   await screen.findByText("Disabled");
@@ -207,12 +206,12 @@ test("an end user is disabled and deleted through their own routes, and deleting
   expect(screen.queryByText("Password reset link")).toBeNull();
 
   fireEvent.click(screen.getByText("Delete"));
-  expect(confirm.mock.calls[0]?.[0]).toContain("Their rows in tables are kept.");
+  expect(await answer("Cancel")).toContain("Their rows in tables are kept.");
   expect(sent("DELETE")).toHaveLength(0);
 
-  confirm.mockReturnValue(true);
   fireEvent.click(screen.getByText("Actions"));
   fireEvent.click(await screen.findByText("Delete"));
+  await answer("Delete");
   await screen.findByText("No end users yet");
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
 });
@@ -263,7 +262,7 @@ test("branding saves only the tokens that are set, and shows the server's error 
         ]
       : [200, { ...portal, theme }];
   };
-  render(<Branding base={base} tenantId="t1" />);
+  show(<Branding base={base} tenantId="t1" />);
   const action = (await screen.findByLabelText("action, light")) as HTMLInputElement;
   expect(action.value).toBe("#7c3aed");
   expect(action.placeholder).toBe("kit default");
@@ -302,8 +301,8 @@ test("branding saves only the tokens that are set, and shows the server's error 
   });
   expect(screen.queryByText("surface must be a plain colour, length or font list")).toBeNull();
 
-  vi.stubGlobal("confirm", () => true);
   fireEvent.click(screen.getByRole("button", { name: "Reset to the kit's values" }));
+  await answer("Reset");
   await screen.findByText("Reset to the kit's values.");
   expect(sent("PUT")[2]?.body).toEqual({ theme: { tokens: {}, dark: {} } });
   expect((screen.getByLabelText("action, light") as HTMLInputElement).value).toBe("");
@@ -317,7 +316,7 @@ test("self sign-up is saved when it is switched, and a logo is checked before it
     current = { ...portal, logo: true };
     return [204, null];
   };
-  render(<Branding base={base} tenantId="t1" />);
+  show(<Branding base={base} tenantId="t1" />);
   fireEvent.click(await screen.findByLabelText("People may create their own account"));
   await waitFor(() => expect(sent("PUT")[0]?.body).toEqual({ signUp: true }));
 
@@ -400,7 +399,7 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
     return [204, null];
   };
 
-  render(<Domains base={base} />);
+  show(<Domains base={base} />);
   await screen.findByText("No hostnames yet");
   expect(document.body.textContent).toContain("the platform issues none");
   fireEvent.click(screen.getAllByRole("button", { name: "Add a hostname" })[0] as HTMLElement);
@@ -450,11 +449,9 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   expect(row?.textContent).toContain("Not verified");
   expect(row?.textContent).toContain(missing);
 
-  const confirm = vi.fn((_question: string) => true);
-  vi.stubGlobal("confirm", confirm);
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  expect(await answer("Remove")).toContain("sign-ins made at that hostname end");
   await screen.findByText("No hostnames yet");
-  expect(confirm.mock.calls[0]?.[0]).toContain("sign-ins made at that hostname end");
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/domains/d1`);
 });
 
@@ -474,7 +471,7 @@ test("the tenant's stylesheet is in the page while the tenant is shown, and is l
     [...document.head.querySelectorAll('link[rel="stylesheet"]')].map((link) =>
       link.getAttribute("href"),
     );
-  const { rerender, unmount } = render(<Shown tenantId="t1" />);
+  const { rerender, unmount } = show(<Shown tenantId="t1" />);
   expect(links()).toEqual(["/api/v1/tenants/t1/theme.css"]);
   refreshTenantTheme("t1");
   expect(links()[0]).toMatch(/^\/api\/v1\/tenants\/t1\/theme\.css\?saved=\d+$/);

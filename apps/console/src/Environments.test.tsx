@@ -8,6 +8,7 @@ import {
   WorkspaceControls,
   type WorkspaceSummary,
 } from "./screens/Environments.tsx";
+import { show } from "./testing.tsx";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -80,7 +81,7 @@ test("promotion shows what would change before anything does, then promotes", as
     },
   ];
   routes[`POST /api/v1${base}/workspaces/w-dev/promotions`] = () => [201, { bundleVersion: 7 }];
-  render(<Promotion base={base} workspace={dev} reload={() => {}} />);
+  show(<Promotion base={base} workspace={dev} reload={() => {}} />);
   fireEvent.click(await screen.findByRole("button", { name: "Review and promote" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog.textContent).toContain("Promote to Main");
@@ -114,7 +115,7 @@ test("a promotion that would be refused says why, and offers nothing to press", 
       summary: null,
     },
   ];
-  render(<Promotion base={base} workspace={dev} reload={() => {}} />);
+  show(<Promotion base={base} workspace={dev} reload={() => {}} />);
   fireEvent.click(await screen.findByRole("button", { name: "Review and promote" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog.textContent).toContain("It cannot be promoted yet.");
@@ -132,7 +133,7 @@ test("a workspace that is not linked offers no promotion, and a production works
   fireEvent.change(screen.getByLabelText("Promotes to"), { target: { value: "w-main" } });
   await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ linkedWorkspaceId: "w-main" }));
   unmount();
-  const { container } = render(<Promotion base={base} workspace={main} reload={() => {}} />);
+  const { container } = show(<Promotion base={base} workspace={main} reload={() => {}} />);
   expect(container.textContent).toBe("");
 });
 
@@ -178,7 +179,7 @@ test("cloning asks about data and safety, and says what the copy can reach", asy
       report: { resources: 12, rows: 340, tables: 3, files: 1, connections: 0, secrets: 0 },
     },
   ];
-  render(<WorkspaceControls base={base} tenantId="t1" workspace={main} reload={() => {}} />);
+  show(<WorkspaceControls base={base} tenantId="t1" workspace={main} reload={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Clone workspace" }));
   const dialog = await screen.findByRole("dialog");
   // Safety is on unless someone turns it off.
@@ -211,7 +212,7 @@ test("cloning asks about data and safety, and says what the copy can reach", asy
 });
 
 test("an export needs the passphrase typed twice the same", async () => {
-  render(<TenantExport base={base} slug="acme" />);
+  show(<TenantExport base={base} slug="acme" />);
   fireEvent.input(screen.getByLabelText("Passphrase"), { target: { value: "a long passphrase" } });
   fireEvent.input(screen.getByLabelText("Passphrase again"), {
     target: { value: "a long passphrasf" },
@@ -240,7 +241,7 @@ test("an import sends the file with its passphrase in a header, and reports what
       notCarried: ["API keys: create new ones on the instance the tenant moves to."],
     },
   ];
-  render(<TenantImport />);
+  show(<TenantImport />);
   await screen.findByText(/acme-db: acme on db.internal/);
   const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
   fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });

@@ -1,6 +1,8 @@
 import { Badge, type BadgeTone, Button, Notice } from "@vynxlabs/ui";
 import { type ReactNode, useEffect, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { api, useLoad } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
+import { InputDialog } from "../InputDialog.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
@@ -50,6 +52,7 @@ export function Scripts({ root, runsLink }: { root: string; runsLink: string }) 
     <ListScreen<{
       path: string;
       description: string;
+      inputSchema: Record<string, unknown>;
       lastRun: { id: string; status: Status; createdAt: string } | null;
     }>
       title="Scripts"
@@ -82,36 +85,42 @@ export function Scripts({ root, runsLink }: { root: string; runsLink: string }) 
         title: "No scripts yet",
         text: "Scripts arrive with a deploy. From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
       }}
-      rowActions={(row) => <RunButton root={root} script={row.path} runsLink={runsLink} />}
+      rowActions={(row) => (
+        <RunButton root={root} script={row.path} schema={row.inputSchema} runsLink={runsLink} />
+      )}
     />
   );
 }
 
-function RunButton({ root, script, runsLink }: { root: string; script: string; runsLink: string }) {
+function RunButton({
+  root,
+  script,
+  schema,
+  runsLink,
+}: {
+  root: string;
+  script: string;
+  schema: Record<string, unknown>;
+  runsLink: string;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <Button
-      size="small"
-      onClick={async () => {
-        const text = window.prompt(`Input for ${script}, as JSON`, "{}");
-        if (text === null) return;
-        try {
-          const run = await api.post<Run>(`${root}/runs`, { script, input: JSON.parse(text) });
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        Run
+      </Button>
+      <InputDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Run ${script}`}
+        action="Run"
+        schema={schema}
+        onSubmit={async (input) => {
+          const run = await api.post<Run>(`${root}/runs`, { script, input });
           navigate(`${runsLink}/${run.id}`);
-        } catch (error) {
-          const failure = error as ApiError;
-          const fields = (failure.fields ?? [])
-            .map((field) => `\n${field.path} ${field.message}`)
-            .join("");
-          window.alert(
-            error instanceof SyntaxError
-              ? "That is not valid JSON."
-              : `${failure.message}${fields}`,
-          );
-        }
-      }}
-    >
-      Run
-    </Button>
+        }}
+      />
+    </>
   );
 }
 
@@ -221,10 +230,14 @@ export function RunDetail({
           <Button
             variant="danger"
             onClick={async () => {
-              if (!window.confirm("Cancel this run?")) return;
-              await api
-                .post(`${root}/runs/${runId}/cancel`)
-                .catch((caught) => window.alert((caught as Error).message));
+              const sure = await ask.confirm({
+                title: "Cancel this run?",
+                action: "Cancel run",
+                cancel: "Keep running",
+                danger: true,
+              });
+              if (!sure) return;
+              await api.post(`${root}/runs/${runId}/cancel`).catch(notify.error);
             }}
           >
             Cancel run
@@ -390,20 +403,17 @@ export function Deployments({ root }: { root: string }) {
           <Button
             size="small"
             onClick={async () => {
-              if (
-                !window.confirm(
-                  `Activate version ${row.version}? This replaces what the workspace is running.`,
-                )
-              )
-                return;
+              const sure = await ask.confirm({
+                title: `Activate version ${row.version}?`,
+                text: "This replaces what the workspace is running.",
+                action: "Activate",
+              });
+              if (!sure) return;
               try {
                 await api.post(`${root}/deployments`, { bundleId: row.id });
                 reload();
               } catch (error) {
-                const failure = error as ApiError;
-                window.alert(
-                  [failure.message, ...failure.fields.map((field) => field.message)].join("\n"),
-                );
+                notify.error(error);
               }
             }}
           >

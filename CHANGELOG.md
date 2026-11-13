@@ -8,7 +8,10 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 
 ### For operators
 
-- **Database change.** Migrations 0019 to 0031 run on start.
+- **Database change.** Migrations 0019 to 0032 run on start.
+- **Provisioning over SCIM.** An identity provider can push people and groups to `/api/v1/scim/v2/<provider>` with a token made under the provider's Provisioning tab. The provider must be able to reach the instance. It was tested against the request shapes Entra ID and Okta send, not against a live tenant of either. See "Provisioning (SCIM)" in the self-hosting guide.
+- **Members can be suspended in a tenant, and accounts disabled.** A suspended member holds nothing in that tenant until resumed. A disabled account can sign in nowhere, and its API keys are refused. A provider does both by push; an admin and an operator can by hand.
+- **Removing a member from a tenant, or an end user,** now also removes their ties to the tenant's identity providers.
 - **Tenants can send mail through their own mail server,** with an `smtp` connection. Workers make the outbound connection to it. The instance's `SMTP_URL` stays for the platform's own invitations and is not lent to tenants.
 - **Forms are served under a tenant's portal,** at `/portal/<tenant>/forms/<token>`, to anyone given the address unless the form asks for a sign-in. They are held to the portal's rate limit for forms.
 - **A webhook can be held open for up to 25 seconds** while a flow answers it. A proxy in front of the instance must allow a request that long. The answer is the tenant's own, and is sent with a sandboxing content security policy.

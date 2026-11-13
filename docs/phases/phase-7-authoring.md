@@ -398,9 +398,33 @@ Tried in a browser against a running instance, with a mail server standing in: a
 
 Not built: a core node as the step of a for-each with a form of its own (a for-each takes `with` and one expression); an answer from a flow started by another flow; a file upload in a form; a form's answers checked by anything beyond each field's type; custom nodes offered across workspaces; and a form for a connector whose configuration is nested, which the HTTP connector's own form still covers by hand.
 
+## Provisioning over SCIM (unit C)
+
+An identity provider pushes the people and groups it holds, and says when someone has left, without waiting for them to sign in.
+
+**A provider has an address and tokens.** `/api/v1/scim/v2/<provider>` speaks SCIM 2.0: users and groups, the three lookups a provider reads first, filters by one attribute, paging, and PATCH. A token is made for one provider, opens that provider's address and nothing else, is kept as a hash, and can expire and be revoked. Refusals are said in SCIM's own shape. There is no bulk, no sorting and no password sync.
+
+**A push follows the rules of a first sign-in.** A pushed person is found by email or made. A member is made only for an email in a domain the provider has proved, and joins the tenant with the provider's default role. An end user who already exists is taken over only on a proved domain or when the tenant has said the provider's word on emails is taken. What was pushed is kept as sent, in tables of its own, beside who it stands for here.
+
+**Tying a pushed person to their sign-in.** A setting names the pushed field that holds the subject the provider signs people in by. With it, a person is tied when pushed and their first sign-in finds them by subject. Without it, the first sign-in ties them by email as before.
+
+**Leaving.** `active: false`, and a delete, turn the person off here. An end user is disabled and their sessions end. A member is suspended in the provider's tenant: a new state, in which no binding or group of theirs counts there, while their account, what they hold elsewhere and what they held here are kept. For the instance's own provider the account is disabled, also new: its sessions end, its API keys are refused and its password is no way in, in the words a wrong password gets. A delete also removes the tie. A push never deletes an account. An admin can suspend, and an operator disable, by hand.
+
+**Groups.** By default a person's groups still come from what a sign-in says. A provider can be told that pushed groups decide. The provider's group map then reads pushed group names, a pushed group can make its own group here, a renamed group keeps its mapping, and turning the setting on takes in what was pushed before.
+
+**Read as Entra ID and Okta send it.** Operations in any case, true and false as text, a work email named in a path, a group member named in a path, attributes sent as one object with no path, a whole user sent with PUT, and attributes that are not kept passed over without complaint. A change that asks for what already holds is a success and writes nothing.
+
+**In the console.** A provider has a Provisioning tab: the address, tokens, how pushes are taken, and what has been pushed. Members can be suspended and resumed, and accounts disabled and enabled.
+
+Tried against a running instance with `curl` standing in for a directory and Keycloak as the provider: a token made in the console; a person pushed who had never been here; that person signing in through Keycloak and being found by the pushed subject; turned off in Entra's form, with their open session ending at once and a fresh sign-in through Keycloak refused; turned on again and signing in; and deleted. A push for an email outside the proved domain, and one with no token, were refused.
+
+**Not tried against a live Entra ID or Okta tenant.** The suite replays the request shapes each is documented to send. Their own validators have not been run against this.
+
+Not built: bulk operations, sorting, ETags, password sync, attributes for end users from a push, a change of a member's email from a push, and groups for the instance's own provider.
+
 ## Schemas
 
-Migrations 0019 to 0031. Bundle format 3. Version 0.5.0 is not yet set.
+Migrations 0019 to 0032. Bundle format 3. Version 0.5.0 is not yet set.
 
 | Change | Purpose |
 | --- | --- |
@@ -436,6 +460,11 @@ Migrations 0019 to 0031. Bundle format 3. Version 0.5.0 is not yet set.
 | The step `respond`, and `respond` on a flow's webhook trigger | A flow answers the request that started it. In the manifest |
 | `flow_run.response` | What a flow answered, for the process holding the request to find |
 | The trigger type `form`, and `trigger_state.type` widened | A form the platform serves, which starts a script or a flow |
+| `scim_token` | A token a provider pushes with, as a hash |
+| `scim_user`, `scim_group`, `scim_group_member` | What a provider pushed, as it sent it, and who each person is here |
+| `identity_provider.scim` | How a provider's pushes are taken |
+| `tenant_member.suspended_at` | A member who may not act in the tenant for now |
+| `member.disabled_at` | An account that can sign in nowhere |
 
 ## Tests
 
@@ -475,6 +504,8 @@ Migrations 0019 to 0031. Bundle format 3. Version 0.5.0 is not yet set.
 | Connectors, mail against a stand-in server, trigger sources, the core nodes, what a step hands over, a flow's answer, the form trigger | `apps/control-plane/src/extensions.test.ts`, with a real worker |
 | The step forms: a node's inputs, a webhook's settings, the form designer | `apps/console/src/FlowSteps.test.tsx` |
 | The Extensions screen and a connection's form | `apps/console/src/Extensions.test.tsx` |
+| SCIM: tokens, people and groups as Entra ID and Okta send them, suspension and disabling, and that a suspended member holds nothing | `apps/control-plane/src/scim.test.ts` |
+| The Provisioning tab | `apps/console/src/Provisioning.test.tsx` |
 
 ## Proposed deviations
 
@@ -495,6 +526,8 @@ Migrations 0019 to 0031. Bundle format 3. Version 0.5.0 is not yet set.
 | Extensions are tested in `runtime.test.ts`, `webhooks.test.ts` and `flows.test.ts` | They have a suite of their own, `extensions.test.ts` | They share a worker and a stand-in mail server |
 | `connector` and `trigger_source` carry a `configSchema` each | Only a connector does. A trigger source lists what it reads, as a script does | A source is configured by the trigger that names it, which already has settings |
 | The core pack is added by `packages/compose` and `packages/cli` | By `composeBundle` alone, which both call | One place, so both build the same thing |
+| SCIM tokens are API keys bound to one purpose | They are a table of their own, on the pattern of worker credentials | A token belongs to a provider, not to a person, and must open nothing else |
+| The console's provisioning routes sit under `/identity-providers` | They are under `/provisioning/<provider>` | So that each suite's check of its own routes stays whole |
 | Single sign-on is tested against Keycloak in the development stack | The suite uses providers made for the test. Keycloak was driven by hand, through a browser | A tampered or replayed answer has to be made, and Keycloak will not make one. CI also stays without a 700 MB image |
 | Group maps name a group by type and ID in one column | Two columns, one per kind of group | Each can then refer to its table, and a deleted group takes its mapping with it |
 | A member's sign-in starts at `/auth/sso/start` | It starts at `/sso/:id/start`. Only the last step is in the authentication library | Only making the session needs the library |

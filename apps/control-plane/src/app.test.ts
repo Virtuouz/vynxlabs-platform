@@ -1,5 +1,6 @@
 import { Database } from "@vynxlabs/db";
 import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
+import { isGrantablePermission, isKnownPermission, PERMISSION_KINDS } from "@vynxlabs/manifest";
 import type { RouteOptions } from "fastify";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { buildApp } from "./app.js";
@@ -131,6 +132,27 @@ describe("API description", () => {
       .filter((route) => !(route.config as { access?: unknown } | undefined)?.access)
       .map((route) => `${route.method} ${route.url}`);
     expect(undeclared).toEqual([]);
+  });
+});
+
+describe("permissions", () => {
+  test("every permission a route asks for is in the list that roles are built from", () => {
+    const asked = routes
+      .map((route) => (route.config as { access?: { permission?: string } } | undefined)?.access)
+      .map((access) => access?.permission)
+      .filter((permission): permission is string => permission !== undefined);
+    expect(asked.length).toBeGreaterThan(50);
+    expect(asked.filter((permission) => !isKnownPermission(permission))).toEqual([]);
+  });
+
+  test("the list is served to anyone signed in, with what each permission allows", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/v1/permissions" });
+    expect(response.statusCode).toBe(401);
+    expect(PERMISSION_KINDS.every((entry) => Object.keys(entry.verbs).length > 0)).toBe(true);
+    expect(isGrantablePermission("secret:*")).toBe(true);
+    expect(isGrantablePermission("*:read")).toBe(true);
+    expect(isGrantablePermission("tenant:export")).toBe(false);
+    expect(isGrantablePermission("nothing:read")).toBe(false);
   });
 });
 

@@ -68,7 +68,12 @@ export function Tenants({ me }: { me: Me }) {
                   name: "dataLocation",
                   label: "Database location",
                   required: false,
-                  hint: "Leave empty for the instance's own database. Otherwise the name of a registered location. It is chosen once.",
+                  placeholder: "The instance's own database",
+                  hint: "Leave empty for the instance's own database. It is chosen once.",
+                  choose: {
+                    path: "/instance/database-locations",
+                    option: (item: { name: string }) => ({ value: item.name, label: item.name }),
+                  },
                 },
               ],
               submit: ({ name, slug, dataLocation }) =>

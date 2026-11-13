@@ -1,9 +1,11 @@
 import {
   Button,
   type Column,
+  ComboboxField,
   Dialog,
   EmptyState,
   Notice,
+  type Option,
   SelectField,
   Table,
   TextField,
@@ -20,7 +22,45 @@ export interface FormField {
   hint?: string;
   required?: boolean;
   options?: { value: string; label: string }[];
+  /**
+   * A list to choose from that the API holds: a GET route returning `{ items }`,
+   * and how one item becomes a choice. The field is then a searchable list, so
+   * nobody types a name that has to match something elsewhere.
+   */
+  choose?: { path: string; option: (item: never) => Option | undefined };
+  /** Shows the field only while this holds for what has been entered so far. */
+  when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
+}
+
+function ChoiceField({
+  field,
+  value,
+  error,
+  onChange,
+}: {
+  field: FormField;
+  value: string | undefined;
+  error: string | undefined;
+  onChange: (value: string | undefined) => void;
+}) {
+  const choose = field.choose as NonNullable<FormField["choose"]>;
+  const list = useLoad<{ items: never[] }>(choose.path);
+  const options = (list.data?.items ?? [])
+    .map(choose.option)
+    .filter((option): option is Option => option !== undefined);
+  return (
+    <ComboboxField
+      label={field.label}
+      options={options}
+      value={value}
+      hint={list.error ? list.error.message : field.hint}
+      error={error}
+      placeholder={list.loading ? "Loading…" : (field.placeholder ?? "Choose")}
+      empty={list.loading ? "Loading…" : "Nothing to choose from."}
+      onChange={onChange}
+    />
+  );
 }
 
 export interface CreateConfig {
@@ -120,7 +160,15 @@ export function CreateDialog({
         }}
       >
         {config.fields.map((field) =>
-          field.options ? (
+          field.when && !field.when(values) ? null : field.choose ? (
+            <ChoiceField
+              key={field.name}
+              field={field}
+              value={values[field.name]}
+              error={fieldError(field.name)}
+              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value ?? "" }))}
+            />
+          ) : field.options ? (
             <SelectField
               key={field.name}
               name={field.name}

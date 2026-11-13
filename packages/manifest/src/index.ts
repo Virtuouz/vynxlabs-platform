@@ -60,6 +60,15 @@ export {
   variableKind,
 } from "./kinds.js";
 export {
+  APP_FACING_KINDS,
+  isGrantablePermission,
+  isKnownPermission,
+  PERMISSION_KINDS,
+  type PermissionKind,
+  type PermissionScope,
+  type PermissionVerb,
+} from "./permissions.js";
+export {
   type KindDefinition,
   KindRegistry,
   type ManifestIssue,

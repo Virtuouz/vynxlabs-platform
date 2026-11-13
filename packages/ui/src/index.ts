@@ -1,6 +1,13 @@
 export { Badge, type BadgeTone } from "./Badge.tsx";
 export { Button } from "./Button.tsx";
 export { Chart, type ChartProps } from "./Chart.tsx";
+export {
+  ComboboxField,
+  type ComboboxFieldProps,
+  MultiSelectField,
+  type MultiSelectFieldProps,
+  type Option,
+} from "./Combobox.tsx";
 export { type ChartTokens, chartConfig, readChartTokens } from "./chartTheme.ts";
 export { Dialog } from "./Dialog.tsx";
 export {

@@ -29,16 +29,8 @@ import {
   Workers,
 } from "./Execution.tsx";
 import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
+import { type Role, Roles } from "./Roles.tsx";
 
-interface Role {
-  id: string;
-  name: string;
-  description: string;
-  permissions: string[];
-  builtin: boolean;
-  workspaceId: string | null;
-  managedByResource: boolean;
-}
 interface Workspace {
   id: string;
   slug: string;
@@ -647,72 +639,6 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
           onDone={reload}
         />
       )}
-    />
-  );
-}
-
-function Roles({ base }: { base: string }) {
-  return (
-    <ListScreen<Role>
-      title="Roles"
-      description="A role is a named set of permissions. Each permission is a kind and a verb, such as secret:write. An asterisk means any."
-      path={`${base}/roles`}
-      rowKey={(row) => row.id}
-      columns={[
-        {
-          header: "Role",
-          cell: (row) => (
-            <span className="flex flex-wrap items-center gap-2">
-              {code(row.name)}
-              {row.builtin ? <Badge>Built in</Badge> : null}
-              {row.managedByResource ? <Badge tone="action">From repository</Badge> : null}
-            </span>
-          ),
-        },
-        {
-          header: "Permissions",
-          cell: (row) => (
-            <span className="font-mono text-[13px] text-ink-muted">
-              {row.permissions.join("  ")}
-            </span>
-          ),
-        },
-      ]}
-      empty={{ title: "No roles" }}
-      create={{
-        action: "Create role",
-        fields: [
-          {
-            name: "name",
-            label: "Name",
-            placeholder: "secret_keeper",
-            hint: "Lowercase letters, digits and underscores.",
-          },
-          { name: "description", label: "Description", required: false },
-          {
-            name: "permissions",
-            label: "Permissions",
-            placeholder: "secret:read secret:write",
-            hint: "Separated by spaces.",
-          },
-        ],
-        submit: (values) =>
-          api.post(`${base}/roles`, {
-            name: values.name,
-            description: values.description ?? "",
-            permissions: (values.permissions ?? "").split(/[\s,]+/).filter(Boolean),
-          }),
-      }}
-      rowActions={(row, reload) =>
-        row.builtin || row.managedByResource ? null : (
-          <RemoveButton
-            label="Delete"
-            confirm={`Delete the role ${row.name}?`}
-            run={() => api.delete(`${base}/roles/${row.id}`)}
-            onDone={reload}
-          />
-        )
-      }
     />
   );
 }

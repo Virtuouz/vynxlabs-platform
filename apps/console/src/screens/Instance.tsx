@@ -55,7 +55,21 @@ export function Operators() {
       empty={{ title: "No operators" }}
       create={{
         action: "Add operator",
-        fields: [{ name: "memberId", label: "Member ID", hint: "Copy it from All members." }],
+        fields: [
+          {
+            name: "memberId",
+            label: "Member",
+            placeholder: "Find a member by email",
+            choose: {
+              path: "/members?limit=200",
+              option: (item: { id: string; email: string; name?: string }) => ({
+                value: item.id,
+                label: item.email,
+                ...(item.name ? { hint: item.name } : {}),
+              }),
+            },
+          },
+        ],
         submit: (values) =>
           api.post("/bindings", { memberId: values.memberId, roleId: OPERATOR_ROLE }),
       }}

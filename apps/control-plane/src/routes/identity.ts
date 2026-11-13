@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId } from "@vynxlabs/db";
+import { PERMISSION_KINDS } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Trx } from "../kernel/audit.js";
@@ -262,6 +263,61 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async () => ({ items: kernel.kinds.kinds() }),
+    );
+
+    app.get(
+      "/permissions",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Every permission a role can list",
+          description:
+            "A permission is `kind:verb`. A role may also use `*` for either half. " +
+            "`scope` is the narrowest place the permission is checked at, and `appFacing` " +
+            "marks the kinds an end user can hold.",
+          tags: ["permissions"],
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  kind: Type.String(),
+                  label: Type.String(),
+                  group: Type.String(),
+                  scope: Type.Union([
+                    Type.Literal("instance"),
+                    Type.Literal("tenant"),
+                    Type.Literal("workspace"),
+                  ]),
+                  appFacing: Type.Boolean(),
+                  verbs: Type.Array(
+                    Type.Object({
+                      verb: Type.Union([Type.Literal("read"), Type.Literal("write")]),
+                      permission: Type.String(),
+                      description: Type.String(),
+                    }),
+                  ),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async () => ({
+        items: PERMISSION_KINDS.map((entry) => ({
+          kind: entry.kind,
+          label: entry.label,
+          group: entry.group,
+          scope: entry.scope,
+          appFacing: entry.appFacing === true,
+          verbs: (["read", "write"] as const)
+            .filter((verb) => entry.verbs[verb] !== undefined)
+            .map((verb) => ({
+              verb,
+              permission: `${entry.kind}:${verb}`,
+              description: entry.verbs[verb] as string,
+            })),
+        })),
+      }),
     );
 
     app.get(

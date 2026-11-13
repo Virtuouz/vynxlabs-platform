@@ -22,9 +22,10 @@ export function Table<Row>({ columns, rows, rowKey, empty }: TableProps<Row>) {
       <table className="w-full border-collapse text-left">
         <thead>
           <tr>
-            {columns.map((column) => (
+            {columns.map((column, index) => (
               <th
-                key={column.header}
+                // biome-ignore lint/suspicious/noArrayIndexKey: columns have no identity but their place, and two may share an empty header
+                key={index}
                 scope="col"
                 className={`border-b border-line px-3 py-2 text-[13px] font-medium text-ink-muted ${
                   column.align === "end" ? "text-right" : ""
@@ -38,9 +39,10 @@ export function Table<Row>({ columns, rows, rowKey, empty }: TableProps<Row>) {
         <tbody>
           {rows.map((row) => (
             <tr key={rowKey(row)} className="border-b border-line last:border-b-0">
-              {columns.map((column) => (
+              {columns.map((column, index) => (
                 <td
-                  key={column.header}
+                  // biome-ignore lint/suspicious/noArrayIndexKey: as for the headers
+                  key={index}
                   className={`px-3 py-2 align-middle ${column.align === "end" ? "text-right" : ""}`}
                 >
                   {column.cell(row)}

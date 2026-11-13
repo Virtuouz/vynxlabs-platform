@@ -464,8 +464,17 @@ export function Connections({ root }: { root: string }) {
           {
             name: "path",
             label: "Connection",
-            placeholder: "shop",
-            hint: "The path the repository gives it.",
+            hint: "The connections this workspace's resources declare.",
+            choose: {
+              path: `${root}/connection-bindings`,
+              option: (item: { path: string; description: string; bound: boolean }) => ({
+                value: item.path,
+                label: item.path,
+                hint: item.bound
+                  ? `${item.description} Bound: this replaces it.`
+                  : item.description,
+              }),
+            },
           },
           { name: "baseUrl", label: "Address", placeholder: "https://api.example.com" },
           {
@@ -474,17 +483,25 @@ export function Connections({ root }: { root: string }) {
             options: [
               { value: "none", label: "No credential" },
               { value: "bearer", label: "Authorization: Bearer" },
-              { value: "header", label: "In an X-API-Key header" },
+              { value: "header", label: "In a header of your choice" },
             ],
+          },
+          {
+            name: "header",
+            label: "Header name",
+            placeholder: "x-api-key",
+            when: (values) => values.auth === "header",
           },
           { name: "credential", label: "Credential", type: "password", required: false },
         ],
-        submit: ({ path = "", baseUrl, auth, credential }) =>
+        submit: ({ path = "", baseUrl, auth, header, credential }) =>
           api.put(`${root}/connection-bindings/${path}`, {
             config: {
               baseUrl,
               ...(auth === "bearer" ? { auth: { type: "bearer" } } : {}),
-              ...(auth === "header" ? { auth: { type: "header", name: "x-api-key" } } : {}),
+              ...(auth === "header"
+                ? { auth: { type: "header", name: header || "x-api-key" } }
+                : {}),
             },
             ...(credential ? { credential } : {}),
           }),
@@ -527,7 +544,18 @@ export function Variables({ root }: { root: string }) {
       create={{
         action: "Set variable",
         fields: [
-          { name: "path", label: "Variable", placeholder: "orders/batch-size" },
+          {
+            name: "path",
+            label: "Variable",
+            choose: {
+              path: `${root}/variable-values`,
+              option: (item: { path: string; description?: string }) => ({
+                value: item.path,
+                label: item.path,
+                ...(item.description ? { hint: item.description } : {}),
+              }),
+            },
+          },
           { name: "value", label: "Value" },
         ],
         submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),

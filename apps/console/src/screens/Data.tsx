@@ -836,7 +836,11 @@ function Definition({
               name: "references",
               label: "Which table",
               required: false,
-              hint: "Only for a row of another table.",
+              when: (values) => values.type === "reference",
+              choose: {
+                path: `${root}/tables`,
+                option: (item: { name: string }) => ({ value: item.name, label: item.name }),
+              },
             },
             {
               name: "required",
@@ -938,8 +942,15 @@ export function Sources({ root, link }: { root: string; link: string }) {
           {
             name: "path",
             label: "Source",
-            placeholder: "erp",
-            hint: "The name scripts use for it.",
+            hint: "The data sources this workspace's resources declare.",
+            choose: {
+              path: `${root}/data-source-bindings`,
+              option: (item: { path: string; description?: string }) => ({
+                value: item.path,
+                label: item.path,
+                ...(item.description ? { hint: item.description } : {}),
+              }),
+            },
           },
           { name: "host", label: "Host", placeholder: "db.example.com" },
           { name: "port", label: "Port", type: "number", placeholder: "5432", required: false },

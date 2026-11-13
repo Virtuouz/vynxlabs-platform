@@ -1,4 +1,5 @@
 import { sql } from "@vynxlabs/db";
+import { APP_FACING_KINDS } from "@vynxlabs/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
 
 export { PERMISSION_PATTERN } from "@vynxlabs/manifest";
@@ -39,7 +40,7 @@ export function grants(permissions: readonly string[], permission: string): bool
  * tenant's apps only, hold nothing outside this list whatever role they are bound to:
  * a binding made too wide cannot hand a portal user the tenant's settings or secrets.
  */
-const APP_FACING = new Set(["app", "data", "data_all", "file", "run", "script", "table", "theme"]);
+const APP_FACING = new Set(APP_FACING_KINDS);
 const appFacing = (permission: string) => APP_FACING.has(permission.split(":")[0] as string);
 
 interface Held {

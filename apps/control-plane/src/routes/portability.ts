@@ -31,7 +31,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/exports",
       {
-        config: { access: access.tenant("tenant:export") },
+        config: { access: access.tenant("export:write") },
         schema: {
           summary: "Export a tenant as one file",
           description:

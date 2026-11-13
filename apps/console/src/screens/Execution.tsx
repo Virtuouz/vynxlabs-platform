@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
-import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
@@ -782,5 +782,145 @@ export function Workers({ base }: { base: string }) {
         }
       />
     </div>
+  );
+}
+
+interface GroupMember {
+  key: string;
+  label: string;
+  config: { baseUrl?: string };
+  hasCredential: boolean;
+}
+interface ConnectionGroup {
+  path: string;
+  description: string;
+  connector: string;
+  members: GroupMember[];
+}
+
+/**
+ * Connection groups: sets of connections of one kind, such as every customer's
+ * account. Members are added here and take effect on the next run, with no deploy.
+ */
+export function ConnectionGroups({ root }: { root: string }) {
+  const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
+  const [adding, setAdding] = useState<string>();
+  if (groups.error) return <Notice tone="danger">{groups.error.message}</Notice>;
+  if (!groups.data || groups.data.items.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-4">
+      <header>
+        <h2 className="m-0 text-lg font-semibold">Connection groups</h2>
+        <p className="mt-1 mb-0 max-w-[70ch] text-ink-muted">
+          A group holds many connections of one kind, and a script picks one by its key when it
+          runs. Add a member for each customer or account. It is used from the next run, with no
+          deploy.
+        </p>
+      </header>
+      {groups.data.items.map((group) => (
+        <div key={group.path} className="rounded-panel border border-line bg-surface">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">
+            <div className="min-w-0">
+              <code className="font-mono text-[13px] font-semibold">{group.path}</code>
+              {group.description ? (
+                <span className="ml-3 text-ink-muted">{group.description}</span>
+              ) : null}
+            </div>
+            <Button size="small" variant="primary" onClick={() => setAdding(group.path)}>
+              Add a member
+            </Button>
+          </div>
+          {group.members.length === 0 ? (
+            <p className="m-0 px-4 py-3 text-ink-muted">
+              No members yet. A script that asks this group for a key will fail until one is added.
+            </p>
+          ) : (
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="text-[12.5px] text-ink-muted">
+                  {["Key", "Name", "Points to", "Credential", ""].map((header, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: fixed headers, one of them empty
+                    <th key={index} scope="col" className="px-4 py-2 font-medium">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {group.members.map((member) => (
+                  <tr key={member.key} className="border-line border-t">
+                    <td className="px-4 py-2">{code(member.key)}</td>
+                    <td className="px-4 py-2 text-ink-muted">{member.label}</td>
+                    <td className="px-4 py-2">{member.config.baseUrl ?? ""}</td>
+                    <td className="px-4 py-2">{member.hasCredential ? "Set" : "None"}</td>
+                    <td className="px-4 py-2 text-right">
+                      <RemoveButton
+                        confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
+                        run={() =>
+                          api.delete(`${root}/connection-group-members/${member.key}/${group.path}`)
+                        }
+                        onDone={groups.reload}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
+      <CreateDialog
+        key={adding}
+        open={adding !== undefined}
+        onClose={() => setAdding(undefined)}
+        onCreated={() => {
+          setAdding(undefined);
+          groups.reload();
+        }}
+        config={{
+          action: "Add a member",
+          description: `To ${adding ?? ""}. A key that is already there is replaced. Leave the credential empty to keep the stored one.`,
+          fields: [
+            {
+              name: "key",
+              label: "Key",
+              placeholder: "acme-north",
+              hint: "What a script asks for: a customer's ID, a region, a shop's name.",
+            },
+            { name: "label", label: "Name", required: false, placeholder: "Acme, northern shop" },
+            { name: "baseUrl", label: "Address", placeholder: "https://api.example.com" },
+            {
+              name: "auth",
+              label: "How the credential is sent",
+              options: [
+                { value: "none", label: "No credential" },
+                { value: "bearer", label: "Authorization: Bearer" },
+                { value: "header", label: "In a header of your choice" },
+              ],
+            },
+            {
+              name: "header",
+              label: "Header name",
+              placeholder: "x-api-key",
+              when: (values) => values.auth === "header",
+            },
+            { name: "credential", label: "Credential", type: "password", required: false },
+          ],
+          submit: ({ key = "", label, baseUrl, auth, header, credential }) =>
+            api.put(`${root}/connection-group-members/${encodeURIComponent(key)}/${adding}`, {
+              ...(label ? { label } : {}),
+              config: {
+                baseUrl,
+                ...(auth === "bearer" ? { auth: { type: "bearer" } } : {}),
+                ...(auth === "header"
+                  ? { auth: { type: "header", name: header || "x-api-key" } }
+                  : {}),
+              },
+              ...(credential ? { credential } : {}),
+            }),
+        }}
+      />
+    </section>
   );
 }

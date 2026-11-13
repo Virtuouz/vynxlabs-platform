@@ -20,6 +20,7 @@ import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
 import { Promotion, TenantExport, WorkspaceControls } from "./Environments.tsx";
 import {
+  ConnectionGroups,
   Connections,
   Deployments,
   RunDetail,
@@ -442,7 +443,10 @@ function WorkspaceDetail({
           <Deployments root={root} />
         </div>
       ) : tab === "connections" ? (
-        <Connections root={root} />
+        <div className="flex flex-col gap-8">
+          <Connections root={root} />
+          <ConnectionGroups root={root} />
+        </div>
       ) : tab === "variables" ? (
         <Variables root={root} />
       ) : null}

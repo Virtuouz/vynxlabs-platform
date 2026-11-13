@@ -69,6 +69,38 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (manifest.kind === "schedule" || manifest.kind === "trigger") {
       expect(manifest, "script", body.script, "script");
     }
+    // A trigger hands its requests, or its ticks, to a source of the kind that takes them.
+    const sourced: [string, string | undefined, "webhook" | "poll"][] = [];
+    if (manifest.kind === "schedule") {
+      sourced.push(["source", (manifest.body as { source?: string }).source, "poll"]);
+    }
+    if (manifest.kind === "trigger" && body.type === "webhook") {
+      sourced.push(["source", (manifest.body as { source?: string }).source, "webhook"]);
+    }
+    if (manifest.kind === "flow") {
+      const nodes = (manifest.body as unknown as FlowBody).nodes ?? {};
+      for (const [id, node] of Object.entries(nodes)) {
+        if (node.type !== "trigger") continue;
+        if (node.trigger.type === "schedule" || node.trigger.type === "webhook") {
+          sourced.push([
+            `/body/nodes/${id}/trigger/source`,
+            node.trigger.source,
+            node.trigger.type === "schedule" ? "poll" : "webhook",
+          ]);
+        }
+      }
+    }
+    for (const [field, source, mode] of sourced) {
+      if (source === undefined) continue;
+      expect(manifest, field, source, "trigger_source");
+      const found = byPath.get(source);
+      const has = (found?.body as { mode?: string } | undefined)?.mode;
+      if (found?.kind === "trigger_source" && has !== mode) {
+        problems.push(
+          `${manifest.path} (${manifest.kind}): ${field} names "${source}", which is a source for ${has === "poll" ? "a schedule" : "a webhook"}, not for ${mode === "poll" ? "a schedule" : "a webhook"}.`,
+        );
+      }
+    }
     if (manifest.kind === "trigger" && body.type === "event") {
       expect(manifest, "event", body.event, "event");
     }

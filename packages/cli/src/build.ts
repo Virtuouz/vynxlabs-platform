@@ -77,6 +77,7 @@ const KIND_ORDER = [
   "data_source",
   "event",
   "script",
+  "trigger_source",
   "schedule",
   "trigger",
   "flow",

@@ -407,6 +407,8 @@ export interface TriggerStateTable {
   event_name: string | null;
   filter: string | null;
   config: ColumnType<Record<string, unknown>, string | undefined, string>;
+  /** Where a polling trigger source had got to. */
+  cursor: Json<unknown> | null;
 }
 
 export interface EventTable {

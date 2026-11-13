@@ -695,6 +695,7 @@ describe("resource registry", () => {
       "table",
       "theme",
       "trigger",
+      "trigger_source",
       "variable",
     ]);
   });

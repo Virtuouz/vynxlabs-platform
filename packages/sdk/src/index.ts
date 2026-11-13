@@ -197,6 +197,11 @@ export interface ScheduleOptions {
   /** The input each scheduled run receives. */
   input?: Record<string, unknown>;
   enabled?: boolean;
+  /**
+   * A polling trigger source to run on each tick. The script then starts once
+   * for each thing the source finds, with that thing as its input.
+   */
+  source?: string | { path: string };
 }
 
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
@@ -207,6 +212,7 @@ export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
       timezone: options.timezone,
       input: options.input,
       enabled: options.enabled,
+      source: options.source ? pathOf(options.source) : undefined,
     }),
   );
 }
@@ -254,6 +260,100 @@ export interface WebhookOptions {
   input?: "body" | "request";
   /** Checks each request's signature before anything starts. A request that fails is answered 401. */
   verify?: WebhookVerify;
+  /** A trigger source to hand each request to first. What it returns is what the script is given. */
+  source?: string | { path: string };
+}
+
+/** What a trigger source for webhooks answers. */
+export type WebhookSourceResult =
+  /** Start nothing. `reason` is kept on the source's run, for whoever looks into it. */
+  | { accept: false; reason?: string }
+  /** Start the trigger's script or flow once, with this input. */
+  | { accept?: true; input: unknown }
+  /** Start it once for each of these, up to a hundred. */
+  | { accept?: true; inputs: unknown[] };
+
+/** What a polling trigger source is handed on each tick. */
+export interface PollTick<Cursor = unknown> {
+  /** What the source gave back as `cursor` last time. Null the first time. */
+  cursor: Cursor | null;
+  /** When this tick was due. */
+  scheduledFor: string;
+}
+
+/** What a polling trigger source answers. */
+export interface PollResult<Cursor = unknown> {
+  /** Each starts the trigger's script or flow, up to a hundred. */
+  items: unknown[];
+  /** Where to pick up from next time. Left out, the place it had is kept. */
+  cursor?: Cursor;
+}
+
+interface TriggerSourceCommon {
+  /** Unique within the workspace, for example `sources/payments`. Triggers name it by this. */
+  path: string;
+  description?: string;
+  /** Connections the source reads, by path or by definition. */
+  connections?: (string | { path: string })[];
+  /** Names of the secrets the source reads, such as the one a signature is checked against. */
+  secrets?: string[];
+  variables?: (string | { path: string })[];
+  /** How long one run may take. Default 30, at most 300. */
+  timeoutSeconds?: number;
+  /** The worker pool it runs on. */
+  worker?: string;
+}
+
+export type TriggerSourceOptions =
+  | (TriggerSourceCommon & {
+      mode: "webhook";
+      run(
+        request: WebhookRequest,
+        ctx: ScriptContext,
+      ): Promise<WebhookSourceResult> | WebhookSourceResult;
+    })
+  | (TriggerSourceCommon & {
+      mode: "poll";
+      run(tick: PollTick, ctx: ScriptContext): Promise<PollResult> | PollResult;
+    });
+
+export interface TriggerSourceDefinition extends ResourceDefinition {
+  readonly kind: "trigger_source";
+  execute(input: unknown, ctx: ScriptContext): Promise<unknown>;
+}
+
+/**
+ * Declares a trigger source: code that stands between the outside and what a
+ * trigger starts. It runs on a worker, like a script, and reads only the
+ * connections, secrets and variables it lists.
+ *
+ * A `webhook` source is handed each request to a webhook that names it, and
+ * says whether to start anything and with what: this is where a signature in
+ * a sender's own format is checked, or one request is split into several. A
+ * `poll` source is run on a schedule that names it, with where it had got to,
+ * and gives back what is new.
+ */
+export function defineTriggerSource(options: TriggerSourceOptions): TriggerSourceDefinition {
+  const definition = resource("trigger_source", options.path, (entry) =>
+    compact({
+      entry,
+      description: options.description,
+      mode: options.mode,
+      timeoutSeconds: options.timeoutSeconds,
+      worker: options.worker,
+      uses: compact({
+        connections: options.connections?.map(pathOf),
+        secrets: options.secrets,
+        variables: options.variables?.map(pathOf),
+      }),
+    }),
+  );
+  const run = options.run as (input: unknown, ctx: ScriptContext) => unknown;
+  return {
+    ...definition,
+    kind: "trigger_source",
+    execute: async (input, ctx) => run(input, ctx),
+  };
 }
 
 export function defineWebhook(options: WebhookOptions): ResourceDefinition {
@@ -264,6 +364,7 @@ export function defineWebhook(options: WebhookOptions): ResourceDefinition {
       enabled: options.enabled,
       input: options.input,
       verify: options.verify,
+      source: options.source ? pathOf(options.source) : undefined,
     }),
   );
 }
@@ -406,15 +507,33 @@ export type FlowNode = Record<string, unknown> & { type: string };
 export const trigger = {
   /** Started by hand, from the API, or as a sub-flow. */
   manual: (): FlowNode => ({ type: "trigger", trigger: { type: "manual" } }),
-  /** Started on a five-field cron schedule. */
-  schedule: (cron: string, options: { timezone?: string } = {}): FlowNode => ({
+  /**
+   * Started on a five-field cron schedule. With `source`, each tick runs that
+   * trigger source, and the flow starts once for each thing it finds.
+   */
+  schedule: (cron: string, options: { timezone?: string; source?: Target } = {}): FlowNode => ({
     type: "trigger",
-    trigger: compact({ type: "schedule", cron, timezone: options.timezone }),
+    trigger: compact({
+      type: "schedule",
+      cron,
+      timezone: options.timezone,
+      source: options.source ? pathOf(options.source) : undefined,
+    }),
   }),
-  /** Started by a request to the flow's webhook address. */
-  webhook: (options: { input?: "body" | "request"; verify?: WebhookVerify } = {}): FlowNode => ({
+  /**
+   * Started by a request to the flow's webhook address. With `source`, each
+   * request is handed to that trigger source, which decides what starts.
+   */
+  webhook: (
+    options: { input?: "body" | "request"; verify?: WebhookVerify; source?: Target } = {},
+  ): FlowNode => ({
     type: "trigger",
-    trigger: compact({ type: "webhook", input: options.input, verify: options.verify }),
+    trigger: compact({
+      type: "webhook",
+      input: options.input,
+      verify: options.verify,
+      source: options.source ? pathOf(options.source) : undefined,
+    }),
   }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
   event: (event: Target, options: { filter?: string } = {}): FlowNode => ({

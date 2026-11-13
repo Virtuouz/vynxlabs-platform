@@ -34,8 +34,8 @@ export interface WebhookVerify {
 
 export type FlowTrigger =
   | { type: "manual" }
-  | { type: "schedule"; cron: string; timezone?: string }
-  | { type: "webhook"; input?: "body" | "request"; verify?: WebhookVerify }
+  | { type: "schedule"; cron: string; timezone?: string; source?: string }
+  | { type: "webhook"; input?: "body" | "request"; verify?: WebhookVerify; source?: string }
   | { type: "event"; event: string; filter?: string };
 
 export type FlowNode =

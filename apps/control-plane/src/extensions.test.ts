@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -395,6 +396,179 @@ describe("a connector of the tenant's own", () => {
     const done = await run("say", { text: "hello" }, dev);
     expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
     expect(done.output).toEqual({ said: "HELLO! (no key)" });
+  });
+});
+
+describe("a trigger source", () => {
+  const sign = (body: string, secret: string, at = Math.floor(Date.now() / 1000)) =>
+    `t=${at},v1=${createHmac("sha256", secret).update(`${at}.${body}`).digest("hex")}`;
+  let hook: string;
+
+  /** The runs of one script, oldest first, once there are `count` of them and none is still going. */
+  async function runsOf(path: string, count: number, workspace = prod): Promise<Any[]> {
+    let items: Any[] = [];
+    for (let i = 0; i < 100; i++) {
+      items = ((await alice.get(`${ws(workspace)}/runs?limit=100`)).body.items as Any[])
+        .filter((item) => item.script === path)
+        .reverse();
+      const settled = items.every((item) => !["queued", "running"].includes(item.status));
+      if (items.length >= count && settled) return items;
+      await sleep(100);
+    }
+    throw new Error(`Expected ${count} finished runs of ${path}, and found ${items.length}.`);
+  }
+
+  function sourced(): Bundle {
+    const unsigned = {
+      formatVersion: 1 as const,
+      sdkVersion: "0.4.0",
+      core: { min: "0.0.0", below: "99.0.0" },
+      manifests: [
+        // A sender that signs "<timestamp>.<body>" and sends both in one header, as Stripe does.
+        resource("trigger_source", "sources/payments", {
+          entry: "payments",
+          mode: "webhook",
+          uses: { secrets: ["PAYMENTS_SIGNING"] },
+        }),
+        resource("trigger_source", "sources/inbox", { entry: "inbox", mode: "poll" }),
+        script("on-payment", "onPayment", {}),
+        script("on-letter", "onLetter", {}),
+        resource("trigger", "hooks/payments", {
+          type: "webhook",
+          script: "on-payment",
+          source: "sources/payments",
+        }),
+        resource("schedule", "every-minute", {
+          script: "on-letter",
+          cron: "* * * * *",
+          source: "sources/inbox",
+        }),
+      ],
+      code: `
+import { createHmac, timingSafeEqual } from "node:crypto";
+export const payments = { execute: async (request, ctx) => {
+  const header = request.headers["payments-signature"] ?? "";
+  const parts = Object.fromEntries(header.split(",").map((part) => part.split("=")));
+  const expected = createHmac("sha256", await ctx.secret("PAYMENTS_SIGNING"))
+    .update(parts.t + "." + request.rawBody).digest("hex");
+  const given = Buffer.from(parts.v1 ?? "", "utf8");
+  if (given.length !== expected.length || !timingSafeEqual(given, Buffer.from(expected))) {
+    return { accept: false, reason: "The signature does not match." };
+  }
+  // One request carries several events. Each starts a run of its own.
+  return { inputs: request.body.events.map((event) => ({ id: event.id, amount: event.amount })) };
+} };
+export const inbox = { execute: async (tick) => {
+  const from = tick.cursor ?? 0;
+  const letters = [from + 1, from + 2].map((number) => ({ letter: number }));
+  return { items: letters, cursor: from + 2 };
+} };
+export const onPayment = { execute: async (input, ctx) => ({ got: input, by: ctx.run.trigger }) };
+export const onLetter = { execute: async (input) => ({ read: input.letter }) };
+`,
+    };
+    return { ...unsigned, digest: bundleDigest(unsigned) };
+  }
+
+  test("a trigger names a source of the kind that fits it", async () => {
+    const mismatched = sourced();
+    const wrong = {
+      ...mismatched,
+      manifests: mismatched.manifests.map((manifest) =>
+        manifest.path === "every-minute"
+          ? resource("schedule", "every-minute", {
+              script: "on-letter",
+              cron: "* * * * *",
+              source: "sources/payments",
+            })
+          : manifest,
+      ),
+    };
+    const refused = await alice.post(`${ws()}/bundles`, {
+      ...wrong,
+      digest: bundleDigest({ ...wrong, digest: undefined } as never),
+    });
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body.errors)).toContain(
+      "which is a source for a webhook, not for a schedule",
+    );
+  });
+
+  test("a webhook's request goes to its source, which decides what starts", async () => {
+    await alice.put(`${ws()}/secrets/PAYMENTS_SIGNING`, { value: "whsec_test_1" });
+    // The connections of the earlier bundle are no longer declared, and what was bound to them stays.
+    const deployed = await deploy(sourced());
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const listed = (await alice.get(`${ws()}/triggers`)).body.items.find(
+      (item: Any) => item.path === "hooks/payments",
+    );
+    hook = new URL(listed.url).pathname.replace("/api/v1", "");
+    const body = JSON.stringify({
+      events: [
+        { id: "evt_1", amount: 500 },
+        { id: "evt_2", amount: 70 },
+      ],
+    });
+    const send = (signature: string) =>
+      t.anonymous.upload(hook, body, "application/json", { "payments-signature": signature });
+
+    const accepted = await send(sign(body, "whsec_test_1"));
+    expect(accepted.status).toBe(202);
+    const started = await runsOf("on-payment", 2);
+    expect(started.map((item) => item.status)).toEqual(["succeeded", "succeeded"]);
+    const first = (await alice.get(`${ws()}/runs/${started[0].id}`)).body;
+    expect(first.output.got).toEqual({ id: "evt_1", amount: 500 });
+    // The run knows the webhook that started it, and the source it came through.
+    expect(first.output.by).toMatchObject({
+      type: "webhook",
+      trigger: "hooks/payments",
+      source: "sources/payments",
+    });
+
+    // A request signed with another secret runs the source and starts nothing.
+    expect((await send(sign(body, "not-the-secret"))).status).toBe(202);
+    const sourceRuns = await runsOf("sources/payments", 2);
+    expect(sourceRuns).toHaveLength(2);
+    expect((await alice.get(`${ws()}/runs/${sourceRuns[1].id}`)).body.output).toEqual({
+      accept: false,
+      reason: "The signature does not match.",
+    });
+    expect(await runsOf("on-payment", 2)).toHaveLength(2);
+    // The secret reached the source and no one else: it is in no run's input or output.
+    const everything = JSON.stringify(
+      await Promise.all(
+        [...sourceRuns, ...started].map(
+          async (item) => (await alice.get(`${ws()}/runs/${item.id}`)).body,
+        ),
+      ),
+    );
+    expect(everything).not.toContain("whsec_test_1");
+  });
+
+  test("nobody starts a trigger source by hand", async () => {
+    const byHand = await alice.post(`${ws()}/runs`, { script: "sources/payments", input: {} });
+    expect(byHand.status).toBe(404);
+  });
+
+  test("a schedule's tick runs its source, which finds what is new and keeps its place", async () => {
+    const { fireDueSchedules } = await import("./kernel/execution/triggers.js");
+    const later = (minutes: number) => new Date(Date.now() + minutes * 60_000);
+    expect(await fireDueSchedules(t.kernel, later(2))).toBe(1);
+    expect(await runsOf("on-letter", 2)).toHaveLength(2);
+    // The next tick picks up where the last left off.
+    expect(await fireDueSchedules(t.kernel, later(4))).toBe(1);
+    const read = await Promise.all(
+      (await runsOf("on-letter", 4)).map(
+        async (item) => (await alice.get(`${ws()}/runs/${item.id}`)).body.output.read,
+      ),
+    );
+    expect(read.sort()).toEqual([1, 2, 3, 4]);
+    const state = await t.db
+      .selectFrom("trigger_state")
+      .select("cursor")
+      .where("type", "=", "schedule")
+      .executeTakeFirstOrThrow();
+    expect(state.cursor).toBe(4);
   });
 });
 

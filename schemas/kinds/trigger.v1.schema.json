@@ -17,6 +17,12 @@
         "enabled": {
           "type": "boolean"
         },
+        "source": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "A trigger source to hand each request or each tick to first. What it returns is what starts the script or flow."
+        },
         "input": {
           "enum": [
             "body",

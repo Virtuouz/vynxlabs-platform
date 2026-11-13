@@ -21,7 +21,7 @@ import {
 import { openSource, sourceFailure, sourceTable } from "../kernel/data/sources.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
-import { bundleManifest, loadBundle } from "../kernel/execution/bundles.js";
+import { loadBundle } from "../kernel/execution/bundles.js";
 import {
   activeRun,
   claimRun,
@@ -29,7 +29,7 @@ import {
   failRun,
   queueName,
   readPayload,
-  type ScriptBody,
+  runnable,
 } from "../kernel/execution/runs.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
 import { seeWorker } from "../kernel/execution/workers.js";
@@ -105,9 +105,9 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .select(["id", "storage_key"])
         .where("id", "=", run.bundle_id)
         .executeTakeFirstOrThrow();
-      const manifest = await bundleManifest(kernel, bundle, "script", run.script_path);
-      if (!manifest) throw notFound("The script");
-      return { run, body: manifest.body as unknown as ScriptBody };
+      const body = await runnable(kernel, bundle, run.script_path);
+      if (!body) throw notFound("The script");
+      return { run, body };
     }
 
     app.post(
@@ -143,7 +143,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .select(["id", "digest", "storage_key"])
               .where("id", "=", run.bundle_id)
               .executeTakeFirstOrThrow();
-            const manifest = await bundleManifest(kernel, bundle, "script", run.script_path);
+            const manifest = await runnable(kernel, bundle, run.script_path);
             return {
               job: {
                 runId: run.id,
@@ -151,7 +151,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 workspaceId: run.workspace_id,
                 script: {
                   path: run.script_path,
-                  entry: (manifest?.body as unknown as ScriptBody | undefined)?.entry ?? "",
+                  entry: manifest?.entry ?? "",
                 },
                 input: await readPayload(kernel, run.input, run.input_ref),
                 bundle: { id: bundle.id, digest: bundle.digest },

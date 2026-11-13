@@ -93,9 +93,11 @@ export {
   scriptKind,
   THEME_TOKENS,
   THEME_VALUE_PATTERN,
+  TRIGGER_SOURCE_MODES,
   tableKind,
   themeKind,
   triggerKind,
+  triggerSourceKind,
   variableKind,
 } from "./kinds.js";
 export {

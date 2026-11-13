@@ -34,6 +34,54 @@ export interface ScriptBody {
   onFailure?: { script?: string; notify?: string };
 }
 
+/**
+ * A trigger source runs on a worker as a script does: queued, claimed, held to
+ * a time limit, and given only what it declared. This is its manifest in a
+ * script's shape. It takes any input and is never retried: what it is handed
+ * is a request or a tick, and the sender or the next tick is the retry.
+ */
+export function asScript(manifest: { kind: string; body: unknown }): ScriptBody {
+  if (manifest.kind !== "trigger_source") return manifest.body as ScriptBody;
+  const body = manifest.body as {
+    entry: string;
+    timeoutSeconds?: number;
+    worker?: string;
+    uses?: { connections?: string[]; secrets?: string[]; variables?: string[] };
+  };
+  return {
+    entry: body.entry,
+    input: {},
+    output: {},
+    timeoutSeconds: body.timeoutSeconds ?? 30,
+    retries: { limit: 0, delaySeconds: 0, backoff: false },
+    ...(body.worker ? { worker: body.worker } : {}),
+    uses: {
+      connections: body.uses?.connections ?? [],
+      secrets: body.uses?.secrets ?? [],
+      variables: body.uses?.variables ?? [],
+    },
+  };
+}
+
+/** What a run executes, from a stored bundle: a script, or a trigger source in a script's shape. */
+export async function runnable(
+  kernel: Kernel,
+  bundle: { id: string; storage_key: string },
+  path: string,
+): Promise<ScriptBody | undefined> {
+  const found =
+    (await bundleManifest(kernel, bundle, "script", path)) ??
+    (await bundleManifest(kernel, bundle, "trigger_source", path));
+  return found ? asScript(found) : undefined;
+}
+
+/** Which trigger a run of a trigger source was started for, and so where its answer goes. */
+export interface Relay {
+  resourceId: string;
+  node: string;
+  mode: "webhook" | "poll";
+}
+
 export interface StartRun {
   tenantId: string;
   workspaceId: string;
@@ -49,6 +97,11 @@ export interface StartRun {
   bundleId?: string | undefined;
   /** The flow step this run belongs to. */
   step?: { flowRunId: string; node: string; item: string } | undefined;
+  /**
+   * Set when the run is of a trigger source, for a trigger. Only then may a
+   * trigger source be run: nobody starts one by hand.
+   */
+  relay?: Relay | undefined;
 }
 
 /** Keeps a small payload for the row, and puts a large one in file storage. */
@@ -93,10 +146,12 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     .selectFrom("resource")
     .select(["id", "body"])
     .where("workspace_id", "=", request.workspaceId)
-    .where("kind", "=", "script")
+    .where("kind", "=", request.relay ? "trigger_source" : "script")
     .where("path", "=", request.script)
     .executeTakeFirst();
-  let body = script?.body as unknown as ScriptBody | undefined;
+  let body = script
+    ? asScript({ kind: request.relay ? "trigger_source" : "script", body: script.body })
+    : undefined;
   if (request.bundleId) {
     // A step of a flow run uses the script as it was in the flow run's own bundle.
     const bundle = await trx
@@ -164,7 +219,10 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       queue_job_id: jobId,
       priority: request.priority ?? 0,
       trigger_type: request.trigger.type,
-      trigger_detail: JSON.stringify(request.trigger.detail ?? {}),
+      trigger_detail: JSON.stringify({
+        ...(request.trigger.detail ?? {}),
+        ...(request.relay ? { relay: request.relay } : {}),
+      }),
       started_by_type: request.startedBy.type,
       started_by_id: request.startedBy.id,
       idempotency_key: key,
@@ -342,6 +400,16 @@ async function afterRun(
   const { kickFlow } = await import("../flows/engine.js");
   const { publishPlatformEvent } = await import("../flows/events.js");
   if (run.flow_run_id) kickFlow(kernel, run.flow_run_id);
+  // What a trigger source gave back is what starts the trigger's script or flow.
+  if (status === "succeeded" && run.trigger_detail?.relay) {
+    const { relaySource } = await import("./triggers.js");
+    await relaySource(kernel, run, detail).catch((error: Error) =>
+      kernel.log.warn(
+        { run: run.id, reason: error.message },
+        "a trigger source's answer could not be passed on",
+      ),
+    );
+  }
   await publishPlatformEvent(kernel, {
     tenantId: run.tenant_id,
     workspaceId: run.workspace_id,

@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { sql } from "@vynxlabs/db";
 import type { FlowBody, FlowTrigger, WebhookVerify } from "@vynxlabs/manifest";
 import type { TriggerSource } from "@vynxlabs/sdk";
 import { CronExpressionParser } from "cron-parser";
@@ -8,12 +9,14 @@ import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
 import { revealSecret } from "../secrets.js";
 import { decryptFor, encryptFor } from "./bindings.js";
-import { startRun } from "./runs.js";
+import { type Relay, startRun } from "./runs.js";
 
 interface ScheduleConfig {
   cron: string;
   timezone?: string;
   input?: Record<string, unknown>;
+  /** A trigger source that is run on each tick, and gives back what is new. */
+  source?: string | undefined;
 }
 interface ScheduleBody extends ScheduleConfig {
   script: string;
@@ -26,6 +29,7 @@ type TriggerBody =
       enabled?: boolean;
       input?: "body" | "request";
       verify?: WebhookVerify;
+      source?: string;
     }
   | { type: "event"; script: string; event: string; filter?: string; enabled?: boolean };
 
@@ -74,6 +78,8 @@ interface Registration {
 export interface WebhookConfig {
   input?: "body" | "request" | undefined;
   verify?: WebhookVerify | undefined;
+  /** A trigger source that is handed each request first. */
+  source?: string | undefined;
 }
 
 /** A request to a webhook's address, as it arrived. */
@@ -277,6 +283,7 @@ export function registerExecutionHooks(kernel: Kernel) {
               cron: body.cron,
               ...(body.timezone ? { timezone: body.timezone } : {}),
               ...(body.input ? { input: body.input } : {}),
+              ...(body.source ? { source: body.source } : {}),
             },
           },
         ]);
@@ -294,7 +301,7 @@ export function registerExecutionHooks(kernel: Kernel) {
             enabled: body.enabled ?? true,
             ...(body.type === "event" ? { event: { name: body.event, filter: body.filter } } : {}),
             ...(body.type === "webhook"
-              ? { webhook: { input: body.input, verify: body.verify } }
+              ? { webhook: { input: body.input, verify: body.verify, source: body.source } }
               : {}),
           },
         ]);
@@ -318,6 +325,7 @@ export function registerExecutionHooks(kernel: Kernel) {
                   schedule: {
                     cron: trigger.cron,
                     ...(trigger.timezone ? { timezone: trigger.timezone } : {}),
+                    ...(trigger.source ? { source: trigger.source } : {}),
                   },
                 }
               : {}),
@@ -325,7 +333,13 @@ export function registerExecutionHooks(kernel: Kernel) {
               ? { event: { name: trigger.event, filter: trigger.filter } }
               : {}),
             ...(trigger.type === "webhook"
-              ? { webhook: { input: trigger.input, verify: trigger.verify } }
+              ? {
+                  webhook: {
+                    input: trigger.input,
+                    verify: trigger.verify,
+                    source: trigger.source,
+                  },
+                }
               : {}),
           });
         }
@@ -372,6 +386,90 @@ export async function startTarget(kernel: Kernel, trx: Trx, state: TriggerRow, f
   }
   const started = await startRun(kernel, trx, { ...common, script: state.target_path });
   return { kind: "script" as const, id: started.run.id };
+}
+
+/** The most runs one answer of a trigger source may start. */
+export const MAX_RELAYED = 100;
+
+/**
+ * Passes on what a trigger source gave back: starts the trigger's script or
+ * flow once for each input, and keeps a polling source's place.
+ *
+ * A webhook source answers `{ accept: false }` to start nothing, `{ input }`
+ * to start one run, or `{ inputs: [...] }` to start several. A polling source
+ * answers `{ items: [...], cursor }`.
+ */
+export async function relaySource(
+  kernel: Kernel,
+  run: { id: string; script_path: string; trigger_detail: Record<string, unknown> },
+  output: unknown,
+): Promise<void> {
+  const relay = run.trigger_detail.relay as Relay;
+  const state = await kernel.db
+    .selectFrom("trigger_state")
+    .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+    .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
+    .selectAll("trigger_state")
+    .select(["resource.path", "workspace.triggers_paused"])
+    .where("trigger_state.resource_id", "=", relay.resourceId)
+    .where("trigger_state.node_id", "=", relay.node)
+    .executeTakeFirst();
+  // The trigger was removed or turned off while its source was running.
+  if (!state?.enabled || state.triggers_paused) return;
+  const answer = (typeof output === "object" && output !== null ? output : {}) as {
+    accept?: unknown;
+    input?: unknown;
+    inputs?: unknown;
+    items?: unknown;
+    cursor?: unknown;
+  };
+  let inputs: unknown[] = [];
+  if (relay.mode === "poll") inputs = Array.isArray(answer.items) ? answer.items : [];
+  else if (answer.accept === false) inputs = [];
+  else if (Array.isArray(answer.inputs)) inputs = answer.inputs;
+  else if ("input" in answer) inputs = [answer.input];
+  if (inputs.length > MAX_RELAYED) {
+    kernel.log.warn(
+      { source: run.script_path, given: inputs.length },
+      `a trigger source gave more than ${MAX_RELAYED} things to start, and the rest were dropped`,
+    );
+    inputs = inputs.slice(0, MAX_RELAYED);
+  }
+  const label = state.node_id ? `${state.path}#${state.node_id}` : state.path;
+  const started = await kernel.db.transaction().execute(async (trx) => {
+    if (relay.mode === "poll" && "cursor" in answer) {
+      await trx
+        .updateTable("trigger_state")
+        .set({ cursor: JSON.stringify(answer.cursor ?? null) })
+        .where("resource_id", "=", relay.resourceId)
+        .where("node_id", "=", relay.node)
+        .execute();
+    }
+    const made: { kind: string; id: string }[] = [];
+    for (const [index, input] of inputs.entries()) {
+      try {
+        made.push(
+          await startTarget(kernel, trx, state, {
+            input,
+            trigger: {
+              type: relay.mode === "poll" ? "schedule" : "webhook",
+              detail: { trigger: label, source: run.script_path, sourceRun: run.id },
+            },
+            idempotencyKey: `source:${run.id}:${index}`,
+          }),
+        );
+      } catch (error) {
+        // One input that does not fit what it starts must not stop the others.
+        if (!(error instanceof HttpError)) throw error;
+        kernel.log.warn(
+          { source: run.script_path, trigger: label, reason: error.message },
+          "something a trigger source gave could not start a run",
+        );
+      }
+    }
+    return made;
+  });
+  await kickStarted(kernel, started);
 }
 
 /** Lets the flow runs a trigger just started take their first step. Call after the transaction commits. */
@@ -451,6 +549,36 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         .where("node_id", "=", due.node_id)
         .execute();
       try {
+        if (config.source) {
+          // One at a time: a tick that comes while the last is still looking is passed over,
+          // so that two never start from the same place.
+          const busy = await sql<{ id: string }>`
+            select id from run
+            where workspace_id = ${due.workspace_id}
+              and status in ('queued', 'running')
+              and trigger_detail->'relay'->>'resourceId' = ${due.resource_id}
+              and trigger_detail->'relay'->>'node' = ${due.node_id}
+            limit 1
+          `.execute(trx);
+          if (busy.rows.length > 0) return { kind: "none" as const, id: "" };
+          const made = await startRun(kernel, trx, {
+            tenantId: due.tenant_id,
+            workspaceId: due.workspace_id,
+            script: config.source,
+            input: { cursor: due.cursor ?? null, scheduledFor: fireTime.toISOString() },
+            trigger: {
+              type: "schedule",
+              detail: {
+                schedule: due.node_id ? `${due.path}#${due.node_id}` : due.path,
+                scheduledFor: fireTime.toISOString(),
+              },
+            },
+            startedBy: { type: "trigger", id: null },
+            idempotencyKey: `poll:${due.resource_id}:${due.node_id}:${fireTime.toISOString()}`,
+            relay: { resourceId: due.resource_id, node: due.node_id, mode: "poll" },
+          });
+          return { kind: "script" as const, id: made.run.id };
+        }
         return await startTarget(kernel, trx, due, {
           input: config.input ?? {},
           trigger: {
@@ -524,6 +652,31 @@ export async function fireWebhook(
   const headers = Object.fromEntries(
     Object.entries(request.headers).filter(([name]) => !NOT_PASSED_ON.has(name)),
   );
+  const label = state.node_id ? `${state.path}#${state.node_id}` : state.path;
+  if (config.source) {
+    // The source decides, on a worker, whether this request starts anything and with what.
+    const source = config.source;
+    const started = await kernel.db.transaction().execute(async (trx) => {
+      const made = await startRun(kernel, trx, {
+        tenantId: state.tenant_id,
+        workspaceId: state.workspace_id,
+        script: source,
+        input: {
+          method: request.method,
+          headers,
+          query: request.query,
+          body,
+          rawBody: request.raw.toString("utf8"),
+        },
+        trigger: { type: "webhook", detail: { trigger: label } },
+        startedBy: { type: "trigger", id: null },
+        idempotencyKey,
+        relay: { resourceId: state.resource_id, node: state.node_id, mode: "webhook" },
+      });
+      return { kind: "script" as const, id: made.run.id };
+    });
+    return { started };
+  }
   const input =
     config.input === "request"
       ? {

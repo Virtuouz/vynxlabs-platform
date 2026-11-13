@@ -216,6 +216,12 @@ export const scriptKind: KindDefinition = {
   },
 };
 
+const triggerSourceRef = {
+  ...path,
+  description:
+    "A trigger source to hand each request or each tick to first. What it returns is what starts the script or flow.",
+};
+
 export const scheduleKind: KindDefinition = {
   kind: "schedule",
   schemaVersion: 1,
@@ -227,6 +233,7 @@ export const scheduleKind: KindDefinition = {
       timezone: { type: "string", maxLength: 64, description: "IANA time zone. Default UTC." },
       input: { type: "object" },
       enabled: { type: "boolean" },
+      source: triggerSourceRef,
     },
     required: ["script", "cron"],
     additionalProperties: false,
@@ -244,7 +251,9 @@ const expression = {
  * What a webhook trigger may say about the requests it takes. Used by a
  * trigger resource and by a webhook trigger node of a flow.
  */
+
 const webhookOptions = {
+  source: triggerSourceRef,
   input: {
     enum: ["body", "request"],
     description:
@@ -403,6 +412,7 @@ export const flowKind: KindDefinition = {
                       {
                         cron: { type: "string", maxLength: 120 },
                         timezone: { type: "string", maxLength: 64 },
+                        source: triggerSourceRef,
                       },
                       ["cron"],
                     ),
@@ -541,6 +551,53 @@ export const connectorKind: KindDefinition = {
       source: sourceCode,
     },
     required: ["entry", "configSchema"],
+    additionalProperties: false,
+  },
+};
+
+export const TRIGGER_SOURCE_MODES = ["webhook", "poll"] as const;
+
+export const triggerSourceKind: KindDefinition = {
+  kind: "trigger_source",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      entry: {
+        type: "string",
+        description: "The name the source is exported under in the bundle.",
+      },
+      description: { type: "string", maxLength: 500 },
+      mode: {
+        enum: [...TRIGGER_SOURCE_MODES],
+        description:
+          "`webhook`: it is handed each request to a webhook's address, and says whether to start anything and with what. " +
+          "`poll`: it is run on a schedule with where it had got to, and gives back what is new.",
+      },
+      timeoutSeconds: { type: "integer", minimum: 1, maximum: 300 },
+      worker: {
+        type: "string",
+        pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
+        maxLength: 40,
+        description: "The worker pool it runs on. Without it, any worker of the default pool.",
+      },
+      uses: {
+        type: "object",
+        description: "What the source may read when it runs, as for a script.",
+        properties: {
+          connections: { type: "array", items: path, uniqueItems: true },
+          secrets: {
+            type: "array",
+            items: { type: "string", pattern: SECRET_NAME_PATTERN },
+            uniqueItems: true,
+          },
+          variables: { type: "array", items: path, uniqueItems: true },
+        },
+        additionalProperties: false,
+      },
+      source: sourceCode,
+    },
+    required: ["entry", "mode"],
     additionalProperties: false,
   },
 };
@@ -877,6 +934,7 @@ export const platformKinds: KindDefinition[] = [
   dataSourceKind,
   eventKind,
   scriptKind,
+  triggerSourceKind,
   scheduleKind,
   triggerKind,
   flowKind,

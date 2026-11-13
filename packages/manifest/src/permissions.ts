@@ -383,6 +383,16 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "dashboard",
+    label: "Dashboards",
+    group: "Data",
+    scope: "workspace",
+    verbs: {
+      read: "See the dashboards other members have shared in a workspace.",
+      write: "Keep dashboards of your own over the workspace's tables, and share them.",
+    },
+  },
+  {
     kind: "theme",
     label: "Themes",
     group: "Apps",

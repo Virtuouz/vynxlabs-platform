@@ -545,6 +545,124 @@ describe("someone who maintains apps made in the console, and is not a developer
   });
 });
 
+describe("a member's own dashboards", () => {
+  let mona: Client;
+  let dev: string;
+  let id: string;
+  const base = () => `/tenants/${tenant}/workspaces/${dev}/dashboards`;
+  const page = (widgets: object[]) => ({ id: "main", title: "Stock", widgets });
+
+  test("a dashboard is made empty, and saved as a page of widgets with no deploy", async () => {
+    mona = await t.signIn("mona@acme.example", PASSWORD);
+    dev = (await alice.get(`/tenants/${tenant}/workspaces`)).body.items.find(
+      (workspace: Any) => workspace.slug === "dev",
+    ).id;
+    const made = await mona.post(base(), { title: " Stock at a glance " });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    id = made.body.id;
+    expect(made.body).toMatchObject({
+      title: "Stock at a glance",
+      mine: true,
+      owner: "Mona",
+      shared: false,
+      revision: 1,
+      page: { id: "main", widgets: [] },
+      problems: [],
+    });
+    const saved = await mona.put(`${base()}/${id}`, {
+      revision: 1,
+      page: page([
+        { id: "held", type: "table", table: "stock", fields: [{ column: "item" }], at },
+        { id: "bad", type: "table", table: "stock", fields: [{ column: "nope" }], at },
+      ]),
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.revision).toBe(2);
+    expect(saved.body.page.widgets).toHaveLength(2);
+    // What is wrong is said, against the tables that are there, and it is saved all the same.
+    expect(saved.body.problems.map((problem: Any) => problem.message)).toEqual([
+      'there is no column "nope" in the table "stock"',
+    ]);
+    expect((await mona.get(`${base()}/${id}`)).body.page.widgets[0].id).toBe("held");
+  });
+
+  test("a page that is not a page is refused, and so is a save over a newer one", async () => {
+    const wrong = await mona.put(`${base()}/${id}`, {
+      page: { id: "main", title: "x", widgets: [{ id: "a" }] },
+    });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.errors[0].path).toContain("/page/widgets/0");
+    const stale = await mona.put(`${base()}/${id}`, { revision: 1, title: "Late" });
+    expect(stale.status).toBe(409);
+    expect((await mona.put(`${base()}/${id}`, { title: "Stock" })).body).toMatchObject({
+      title: "Stock",
+      revision: 3,
+    });
+  });
+
+  test("it is the member's own until shared, and read-only to everyone else then", async () => {
+    expect((await alice.get(base())).body.items).toEqual([]);
+    expect((await alice.get(`${base()}/${id}`)).status).toBe(404);
+    const shared = await mona.put(`${base()}/${id}`, { shared: true });
+    expect(shared.body.shared).toBe(true);
+    expect((await alice.get(base())).body.items).toMatchObject([
+      { id, title: "Stock", mine: false, owner: "Mona", shared: true },
+    ]);
+    expect((await alice.get(`${base()}/${id}`)).body.page.widgets).toHaveLength(2);
+    expect((await alice.put(`${base()}/${id}`, { title: "Mine now" })).status).toBe(403);
+    expect((await alice.delete(`${base()}/${id}`)).status).toBe(403);
+    await mona.put(`${base()}/${id}`, { shared: false });
+    expect((await alice.get(`${base()}/${id}`)).status).toBe(404);
+    const actions = (
+      await t.db
+        .selectFrom("audit_entry")
+        .select("action")
+        .where("target_id", "=", id)
+        .orderBy("id")
+        .execute()
+    ).map((row) => row.action);
+    expect(actions).toEqual([
+      "dashboard.created",
+      "dashboard.saved",
+      "dashboard.saved",
+      "dashboard.shared",
+      "dashboard.unshared",
+    ]);
+  });
+
+  test("a dashboard belongs to a member, there is a limit to them, and deleting one touches no table", async () => {
+    // Not a key, and not an end user.
+    const account = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "robot" });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "service_account",
+      principalId: account.body.id,
+      roleId: roles.tenant_admin,
+    });
+    const key = await alice.post(
+      `/tenants/${tenant}/service-accounts/${account.body.id}/api-keys`,
+      {
+        name: "k",
+      },
+    );
+    expect((await t.withKey(key.body.token).post(base(), { title: "Robot's" })).status).toBe(403);
+    // In another workspace it is not there.
+    expect((await mona.get(`/tenants/${tenant}/workspaces/${prod}/dashboards/${id}`)).status).toBe(
+      404,
+    );
+
+    for (let count = 1; count < 20; count += 1) {
+      expect((await mona.post(base(), { title: `Board ${count}` })).status).toBe(201);
+    }
+    const tooMany = await mona.post(base(), { title: "One more" });
+    expect(tooMany.status).toBe(409);
+    expect(tooMany.body.code).toBe("limit_reached");
+    expect((await mona.get(base())).body.items).toHaveLength(20);
+    expect((await mona.delete(`${base()}/${id}`)).status).toBe(204);
+    expect((await mona.get(`${base()}/${id}`)).status).toBe(404);
+    expect((await alice.get(`/tenants/${tenant}/workspaces/${dev}/rows/stock`)).status).toBe(200);
+  });
+});
+
 describe("the write path", () => {
   test("every successful change left an audit entry", () => {
     // A row written is an event of its own, not an audit entry.
@@ -552,6 +670,8 @@ describe("the write path", () => {
   });
 
   test("the routes a maintainer is held to were all exercised", () => {
-    expect(t.unexercised((route) => /\/(drafts|changes\/deploy)(\/|$)/.test(route))).toEqual([]);
+    expect(
+      t.unexercised((route) => /\/(drafts|changes\/deploy|dashboards)(\/|$)/.test(route)),
+    ).toEqual([]);
   });
 });

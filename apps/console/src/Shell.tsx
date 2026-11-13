@@ -12,6 +12,7 @@ import {
   Download,
   FileCode2,
   Fingerprint,
+  Gauge,
   GitBranch,
   GitCompareArrows,
   Globe,
@@ -115,6 +116,7 @@ export const WORKSPACE_GROUPS: readonly SectionGroup[] = [
   [
     "Data",
     [
+      ["dashboards", "Dashboards", Gauge],
       ["tables", "Tables", Table2],
       ["sources", "Data sources", Database],
     ],

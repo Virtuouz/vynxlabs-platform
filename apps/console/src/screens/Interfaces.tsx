@@ -975,6 +975,133 @@ function WidgetSettings({
   );
 }
 
+/** A page as it is, for someone who may look and not change it. */
+export function PageView({ root, page }: { root: string; page: InterfacePage }) {
+  const client = useMemo(() => clientFor(root), [root]);
+  const [known, setKnown] = useState<Record<string, TableInfo>>({});
+  const tables = useTables(root, tablesOf({ title: "", pages: [page] }, known));
+  useEffect(() => setKnown(tables), [tables]);
+  return <PageRenderer page={page} tables={known} client={client} />;
+}
+
+// ----- One page being worked on -----
+
+/**
+ * A page drawn from the workspace's rows as the member may read them, beside
+ * the settings of the widget that is chosen. The builder of an app uses it
+ * for each of the app's pages, and a dashboard is one of these.
+ */
+export function PageEditor({
+  root,
+  page,
+  selected,
+  onSelect,
+  onChange,
+}: {
+  root: string;
+  page: InterfacePage;
+  selected: string | undefined;
+  onSelect: (widget: string | undefined) => void;
+  onChange: (apply: (page: InterfacePage) => void) => void;
+}) {
+  const tableList = useLoad<{ items: { name: string; status: string }[] }>(`${root}/tables`);
+  const client = useMemo(() => clientFor(root), [root]);
+  const [known, setKnown] = useState<Record<string, TableInfo>>({});
+  const tables = useTables(root, tablesOf({ title: "", pages: [page] }, known));
+  useEffect(() => setKnown(tables), [tables]);
+  const tableNames = (tableList.data?.items ?? [])
+    .filter((table) => table.status === "active")
+    .map((table) => table.name);
+  const widget = page.widgets.find((candidate) => candidate.id === selected);
+
+  const addWidget = (type: WidgetType) => {
+    let id: string = type;
+    for (let count = 2; page.widgets.some((one) => one.id === id); count += 1) {
+      id = `${type}_${count}`;
+    }
+    onChange((target) => {
+      const bottom = Math.max(0, ...target.widgets.map((one) => one.at.y + one.at.h));
+      const wide = type === "table" || type === "cards";
+      target.widgets.push({
+        id,
+        type,
+        title: TYPES.find((one) => one.type === type)?.label ?? type,
+        at: { x: 0, y: bottom, w: wide ? 12 : 6, h: type === "text" ? 3 : 8 },
+        ...(type === "text" ? { options: { text: "Write something here." } } : {}),
+      });
+    });
+    onSelect(id);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+      <div className="min-w-0 flex-1">
+        <PageRenderer
+          page={page}
+          tables={known}
+          client={client}
+          editing={{
+            selected,
+            onSelect,
+            onMove: (id, to) =>
+              onChange((target) => {
+                const moved = target.widgets.find((one) => one.id === id);
+                if (moved) moved.at = to;
+              }),
+          }}
+        />
+        {page.widgets.length < 12 ? (
+          <fieldset className="mt-4 rounded-panel border border-line border-dashed p-3">
+            <legend className="px-1 text-[13px] text-ink-muted">Add a widget</legend>
+            <div className="flex flex-wrap gap-2">
+              {TYPES.map((one) => (
+                <Button key={one.type} title={one.about} onClick={() => addWidget(one.type)}>
+                  <Plus size={14} aria-hidden="true" /> {one.label}
+                </Button>
+              ))}
+            </div>
+          </fieldset>
+        ) : null}
+      </div>
+      <aside
+        aria-label="Settings"
+        className="w-full shrink-0 rounded-panel border border-line bg-surface p-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:w-80 xl:overflow-auto"
+      >
+        {widget ? (
+          <WidgetSettings
+            key={widget.id}
+            widget={widget}
+            page={page}
+            tables={known}
+            tableNames={tableNames}
+            onChange={(apply) =>
+              onChange((target) => {
+                const changed = target.widgets.find((one) => one.id === widget.id);
+                if (changed) apply(changed);
+              })
+            }
+            onRemove={() => {
+              onChange((target) => {
+                target.widgets = target.widgets.filter((one) => one.id !== widget.id);
+                // Whatever followed it follows nothing now.
+                for (const one of target.widgets) {
+                  if (one.link?.from === widget.id) delete one.link;
+                }
+              });
+              onSelect(undefined);
+            }}
+          />
+        ) : (
+          <p className="m-0 text-ink-muted">
+            Press Edit on a widget to change it, or add one. What you see is drawn from this
+            workspace's rows, as you may read them.
+          </p>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 // ----- The builder -----
 
 type Saving = "saved" | "waiting" | "saving" | { failed: string };
@@ -1001,8 +1128,6 @@ export function InterfaceBuilder({
   const list = useLoad<{ items: Listed[] }>(`${root}/interfaces`);
   const drafts = useLoad<{ items: { path: string }[] }>(`${root}/drafts`);
   const apps = useLoad<{ items: { path: string; url: string }[] }>(`${root}/apps`);
-  const tableList = useLoad<{ items: { name: string; status: string }[] }>(`${root}/tables`);
-  const client = useMemo(() => clientFor(root), [root]);
 
   // What is saved and not deployed, or else what is deployed.
   useEffect(() => {
@@ -1023,10 +1148,6 @@ export function InterfaceBuilder({
       current = false;
     };
   }, [root, path]);
-
-  const [known, setKnown] = useState<Record<string, TableInfo>>({});
-  const tables = useTables(root, tablesOf(body, known));
-  useEffect(() => setKnown(tables), [tables]);
 
   const save = useCallback(
     async (next: InterfaceBody) => {
@@ -1073,37 +1194,12 @@ export function InterfaceBuilder({
   if (missing) return <Notice tone="danger">{missing}</Notice>;
   if (!body) return <p className="text-ink-muted">Loading…</p>;
   const page = body.pages.find((candidate) => candidate.id === pageId) ?? body.pages[0];
-  const widget = page?.widgets.find((candidate) => candidate.id === selected);
   const listed = list.data?.items.find((item) => item.path === path);
   const appPath = listed?.app ?? null;
   const pending = new Set(drafts.data?.items.map((draft) => draft.path));
   const hasChanges =
     pending.has(path) || (appPath !== null && pending.has(appPath)) || saving !== "saved";
   const url = apps.data?.items.find((app) => app.path === appPath)?.url;
-  const tableNames = (tableList.data?.items ?? [])
-    .filter((table) => table.status === "active")
-    .map((table) => table.name);
-
-  const addWidget = (type: WidgetType) =>
-    change((draft) => {
-      const target = draft.pages.find((candidate) => candidate.id === page?.id);
-      if (!target) return;
-      let id: string = type;
-      for (let count = 2; target.widgets.some((one) => one.id === id); count += 1) {
-        id = `${type}_${count}`;
-      }
-      const bottom = Math.max(0, ...target.widgets.map((one) => one.at.y + one.at.h));
-      const wide = type === "table" || type === "cards";
-      target.widgets.push({
-        id,
-        type,
-        title: TYPES.find((one) => one.type === type)?.label ?? type,
-        at: { x: 0, y: bottom, w: wide ? 12 : 6, h: type === "text" ? 3 : 8 },
-        ...(type === "text" ? { options: { text: "Write something here." } } : {}),
-      });
-      setSelected(id);
-    });
-
   const publish = async () => {
     setPublishing(true);
     try {
@@ -1310,78 +1406,20 @@ export function InterfaceBuilder({
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-        <div className="min-w-0 flex-1">
-          {page ? (
-            <PageRenderer
-              page={page}
-              tables={known}
-              client={client}
-              editing={{
-                selected,
-                onSelect: setSelected,
-                onMove: (id, to) =>
-                  change((draft) => {
-                    const target = draft.pages
-                      .find((one) => one.id === page.id)
-                      ?.widgets.find((one) => one.id === id);
-                    if (target) target.at = to;
-                  }),
-              }}
-            />
-          ) : null}
-          {page && page.widgets.length < 12 ? (
-            <fieldset className="mt-4 rounded-panel border border-line border-dashed p-3">
-              <legend className="px-1 text-[13px] text-ink-muted">Add a widget</legend>
-              <div className="flex flex-wrap gap-2">
-                {TYPES.map((one) => (
-                  <Button key={one.type} title={one.about} onClick={() => addWidget(one.type)}>
-                    <Plus size={14} aria-hidden="true" /> {one.label}
-                  </Button>
-                ))}
-              </div>
-            </fieldset>
-          ) : null}
-        </div>
-        <aside
-          aria-label="Settings"
-          className="w-full shrink-0 rounded-panel border border-line bg-surface p-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:w-80 xl:overflow-auto"
-        >
-          {widget && page ? (
-            <WidgetSettings
-              key={widget.id}
-              widget={widget}
-              page={page}
-              tables={known}
-              tableNames={tableNames}
-              onChange={(apply) =>
-                change((draft) => {
-                  const target = draft.pages
-                    .find((one) => one.id === page.id)
-                    ?.widgets.find((one) => one.id === widget.id);
-                  if (target) apply(target);
-                })
-              }
-              onRemove={() => {
-                change((draft) => {
-                  const target = draft.pages.find((one) => one.id === page.id);
-                  if (!target) return;
-                  target.widgets = target.widgets.filter((one) => one.id !== widget.id);
-                  // Whatever followed it follows nothing now.
-                  for (const one of target.widgets)
-                    if (one.link?.from === widget.id) delete one.link;
-                });
-                setSelected(undefined);
-              }}
-            />
-          ) : (
-            <p className="m-0 text-ink-muted">
-              Press Edit on a widget to change it, or add one. What you see is drawn from this
-              workspace's rows, as you may read them.
-            </p>
-          )}
-        </aside>
-      </div>
+      {page ? (
+        <PageEditor
+          root={root}
+          page={page}
+          selected={selected}
+          onSelect={setSelected}
+          onChange={(apply) =>
+            change((draft) => {
+              const target = draft.pages.find((one) => one.id === page.id);
+              if (target) apply(target);
+            })
+          }
+        />
+      ) : null}
     </section>
   );
 }

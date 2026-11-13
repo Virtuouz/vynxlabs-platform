@@ -16,6 +16,7 @@ import { errorHandler, notFoundHandler } from "./problem.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
 import { authoringRoutes } from "./routes/authoring.js";
+import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
 import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
@@ -162,6 +163,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(endUserRoutes(kernel));
       await api.register(ssoRoutes(kernel));
       await api.register(interfaceRoutes(kernel));
+      await api.register(dashboardRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
       api.get(

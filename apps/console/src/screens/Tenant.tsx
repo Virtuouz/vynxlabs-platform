@@ -15,6 +15,7 @@ import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
 import { Changes, ScriptEditor } from "./Authoring.tsx";
 import { Branding } from "./Branding.tsx";
+import { Dashboards, DashboardView } from "./Dashboards.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
 import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
@@ -391,6 +392,15 @@ function WorkspaceDetail({
           id={rest}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
         />
+      ) : tab === "dashboards" && rest ? (
+        <DashboardView
+          key={rest}
+          root={root}
+          id={rest}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+        />
+      ) : tab === "dashboards" ? (
+        <Dashboards root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "screens" && rest ? (
         <InterfaceBuilder
           key={rest}

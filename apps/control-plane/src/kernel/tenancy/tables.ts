@@ -250,6 +250,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["provider_id", "assertion_key"],
     export: "never",
   },
+  // A member's own. An import rewrites the member it names, as it does everywhere.
+  {
+    table: "member_dashboard",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "always",
+  },
   // The record of what was done is never removed, even when what it describes is.
   { table: "audit_entry", ofTenant: own, key: ["id"], export: "always", keep: true },
 ];

@@ -190,8 +190,30 @@ export async function startTestApp(
       payload: { email, password },
     });
     if (response.statusCode !== 200) {
+      // A correct password has been refused under load, rarely. Say all that can be known of it.
+      const stored = await sql<{ password: string | null; n: string }>`
+        select a.password, (select count(*) from member_account b where b.member_id = m.id) as n
+        from member m left join member_account a on a.member_id = m.id and a.provider_id = 'credential'
+        where m.email = ${email.toLowerCase()}
+      `.execute(db);
+      const hash = stored.rows[0]?.password ?? "";
+      const hasher = (await app.kernel.auth.$context).password;
+      const again = await Promise.all(
+        [1, 2, 3].map(() => hasher.verify({ hash, password }).catch((error) => String(error))),
+      );
+      const retry = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/sign-in/email",
+        headers: { origin: config.publicUrl },
+        payload: { email, password },
+      });
       throw new Error(
-        `Sign-in failed for ${email}: ${response.statusCode} ${response.body}. The authentication library said: ${recentAuthLog().join(" | ") || "nothing"}`,
+        `Sign-in failed for ${email}: ${response.statusCode} ${response.body}. The authentication library said: ${recentAuthLog().join(" | ") || "nothing"}. Stored hash: ${hash.length} characters, ${hash
+          .split(":")
+          .map((part) => part.length)
+          .join(
+            "+",
+          )}, accounts ${stored.rows[0]?.n}. Checked again directly: ${again.join(", ")}. Tried again over HTTP: ${retry.statusCode}. Password sent: ${password.length} characters.`,
       );
     }
     const cookies = ([] as string[]).concat(response.headers["set-cookie"] ?? []);

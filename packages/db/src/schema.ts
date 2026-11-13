@@ -685,6 +685,19 @@ export interface TenantPortalTable {
   updated_at: Generated<Date>;
 }
 
+export interface MemberDashboardTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  member_id: string;
+  title: string;
+  body: Json<Record<string, unknown>>;
+  shared: Generated<boolean>;
+  revision: Generated<number>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface IdentityProviderTable {
   id: string;
   tenant_id: string | null;
@@ -822,4 +835,5 @@ export interface PlatformSchema {
   identity_group_map: IdentityGroupMapTable;
   sso_state: SsoStateTable;
   sso_assertion: SsoAssertionTable;
+  member_dashboard: MemberDashboardTable;
 }

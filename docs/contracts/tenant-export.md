@@ -79,6 +79,10 @@ An import sets `paused` on every provider and clears `verified_at` on every doma
 
 Sign-ins that were in flight, and the record of SAML assertions already accepted, are not exported.
 
+## Dashboards
+
+`platform/member_dashboard.NNNN.jsonl` carries each member's dashboards: `id`, `workspace_id`, `member_id`, `title`, `body` (one page, in the shape of a page of an interface), `shared` and `revision`. The member it names is rewritten with the member, as everywhere.
+
 ## App files
 
 A bundle in format 2 lists the files of its apps by SHA-256. `platform/bundle_asset.NNNN.jsonl` has one row per file the tenant holds, and the bytes are under `objects/assets/<tenant id>/<sha256>`. A file is stored once however many bundles and workspaces list it.
@@ -114,7 +118,7 @@ The file is read from one snapshot of each database, so it is the tenant as it w
 
 ## What is in it, and what is not
 
-Always: workspaces, resources and their versions, bundles and deployments, the files of the bundles' apps, roles, bindings, groups and their members, groups of end users and their members, identity providers with their domains, links and group mapping, service accounts, connection and data source bindings, variable values, secrets, triggers with their webhook addresses, flow layouts, files, the custom tables, the members, the end users, the tenant's branding and its logo, and the audit log.
+Always: workspaces, resources and their versions, bundles and deployments, the files of the bundles' apps, roles, bindings, groups and their members, groups of end users and their members, identity providers with their domains, links and group mapping, service accounts, connection and data source bindings, variable values, secrets, triggers with their webhook addresses, flow layouts, files, the custom tables, the members and their dashboards, the end users, the tenant's branding and its logo, and the audit log.
 
 Only with history: runs and their logs, flow runs and their steps, events, and the payloads they point at.
 

@@ -26,6 +26,7 @@ import { healthRoutes } from "./routes/health.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { locationRoutes } from "./routes/locations.js";
+import { mcpRoutes } from "./routes/mcp.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { sourceRoutes } from "./routes/sources.js";
@@ -149,6 +150,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(executionRoutes(kernel));
       await api.register(authoringRoutes(kernel));
       await api.register(gitRoutes(kernel));
+      await api.register(mcpRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
       await api.register(sourceRoutes(kernel));

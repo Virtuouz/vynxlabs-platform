@@ -3,6 +3,7 @@ import {
   type BadgeTone,
   Button,
   ComboboxField,
+  MultiSelectField,
   Notice,
   NumberField,
   type Option,
@@ -267,7 +268,15 @@ export function problemsOf(nodes: Record<string, FlowNode>, edges: GraphEdge[]):
     const node = nodes[id] as FlowNode;
     if (node.type !== "trigger" && !reached.has(id)) problems.push(`Nothing leads to ${id}.`);
     if (node.type === "script" && !node.script) problems.push(`${id} has no script chosen.`);
-    if (node.type === "subflow" && !node.flow) problems.push(`${id} has no flow chosen.`);
+    if (node.type === "subflow" && node.flowFrom === undefined && !node.flow) {
+      problems.push(`${id} has no flow chosen.`);
+    }
+    if (node.type === "subflow" && node.flowFrom !== undefined) {
+      if (!node.flowFrom) problems.push(`${id} needs an expression that gives the flow to start.`);
+      if (((node.allow as string[] | undefined) ?? []).length === 0) {
+        problems.push(`${id} needs at least one flow it may start.`);
+      }
+    }
     if (node.type === "foreach" && !node.script && !node.flow)
       problems.push(`${id} needs a script or a flow to run for each item.`);
     if (
@@ -738,7 +747,49 @@ export function FlowEditor({
                   }
                 />
               ) : null}
-              {node.type === "subflow" || node.type === "foreach" ? (
+              {node.type === "subflow" ? (
+                <SelectField
+                  name="which"
+                  label="Which flow"
+                  value={node.flowFrom === undefined ? "named" : "chosen"}
+                  options={[
+                    { value: "named", label: "Always the same one" },
+                    { value: "chosen", label: "Chosen by the data, from a list" },
+                  ]}
+                  onChange={(which) =>
+                    update(
+                      chosen.id,
+                      which === "chosen"
+                        ? {
+                            flow: undefined,
+                            flowFrom: "trigger.flow",
+                            allow: node.flow ? [node.flow as string] : [],
+                          }
+                        : {
+                            flow: (node.allow as string[] | undefined)?.[0] ?? "",
+                            flowFrom: undefined,
+                            allow: undefined,
+                          },
+                    )
+                  }
+                />
+              ) : null}
+              {node.type === "subflow" && node.flowFrom !== undefined ? (
+                <>
+                  {expression(
+                    "Expression that gives the flow's path",
+                    "flowFrom",
+                    "It must give one of the flows below, or the step fails.",
+                  )}
+                  <MultiSelectField
+                    label="Flows it may start"
+                    options={flowOptions}
+                    value={(node.allow as string[] | undefined) ?? []}
+                    hint="Nothing outside this list is ever started, whatever the data says."
+                    onChange={(allow) => update(chosen.id, { allow })}
+                  />
+                </>
+              ) : node.type === "subflow" || node.type === "foreach" ? (
                 <ComboboxField
                   label={node.type === "foreach" ? "Or a flow" : "Flow"}
                   options={flowOptions}

@@ -250,6 +250,41 @@ function bundle(
       ],
     ),
     flow(
+      "chooser",
+      {
+        start: manual,
+        child: {
+          type: "subflow",
+          flowFrom: "trigger.which",
+          allow: ["linear", "impatient"],
+          input: "{'n': trigger.n}",
+        },
+        wrap: set({ from_child: "steps.child.output" }),
+      },
+      [
+        ["start", "child"],
+        ["child", "wrap"],
+      ],
+    ),
+    flow(
+      "fanout-chosen",
+      {
+        start: manual,
+        each: {
+          type: "foreach",
+          items: "trigger.jobs",
+          flowFrom: "item.flow",
+          allow: ["linear"],
+          input: "{'n': item.n}",
+        },
+        done: set({ results: "steps.each.output.map(o, o.c.result)" }),
+      },
+      [
+        ["start", "each"],
+        ["each", "done"],
+      ],
+    ),
+    flow(
       "fanout",
       {
         start: manual,
@@ -684,6 +719,82 @@ describe("running a flow", () => {
     const fanout = await finished(await start("fanout", { numbers: [1, 2, 3] }), 40);
     expect(fanout.output).toEqual({ done: { results: [4, 8, 12] } });
   }, 60_000);
+});
+
+describe("a flow chosen when the step runs", () => {
+  test("the expression chooses one of the flows written beside it, and that flow runs", async () => {
+    const chosen = await finished(await start("chooser", { which: "linear", n: 5 }));
+    expect(chosen.status).toBe("succeeded");
+    expect(chosen.output).toMatchObject({ wrap: { from_child: { c: { result: 20 } } } });
+    expect((await read(step(chosen, "child").childFlowRunId)).flow).toBe("linear");
+
+    // In a foreach, each item may choose.
+    const fanout = await finished(
+      await start("fanout-chosen", {
+        jobs: [
+          { flow: "linear", n: 1 },
+          { flow: "linear", n: 2 },
+        ],
+      }),
+      40,
+    );
+    expect(fanout.output).toEqual({ done: { results: [4, 8] } });
+  }, 60_000);
+
+  test("a flow that is not on the list is not started, whatever the data says", async () => {
+    const refused = await finished(await start("chooser", { which: "parent", n: 5 }));
+    expect(refused.status).toBe("failed");
+    expect(step(refused, "child").error.message).toBe(
+      '"flowFrom" gave "parent", which is not a flow this step may start. It may start: linear, impatient.',
+    );
+    expect(step(refused, "child").childFlowRunId).toBeNull();
+    const notText = await finished(await start("chooser", { which: 7, n: 5 }));
+    expect(step(notText, "child").error.message).toContain('"flowFrom" gave 7');
+  });
+
+  test("the list is checked when the bundle is built, like a flow named outright", async () => {
+    const problems = async (node: object) => {
+      const response = await alice.post(
+        `${ws()}/bundles`,
+        bundle("broken", (m) => [
+          ...m,
+          flow("bad", { start: manual, sub: node }, [["start", "sub"]]),
+        ]),
+      );
+      expect(response.status).toBe(400);
+      return (response.body.errors as { path: string; message: string }[]).map(
+        (e) => `${e.path}: ${e.message}`,
+      );
+    };
+    expect(await problems({ type: "subflow", flowFrom: "trigger.which" })).toEqual([
+      "bad (flow): /body/nodes/sub/allow `flowFrom` and `allow` go together: the expression chooses, and the list says what it may choose",
+    ]);
+    expect(
+      await problems({
+        type: "subflow",
+        flow: "linear",
+        flowFrom: "trigger.which",
+        allow: ["linear"],
+      }),
+    ).toEqual([
+      "bad (flow): /body/nodes/sub/flowFrom name the flow with `flow`, or choose it with `flowFrom`: not both",
+    ]);
+    expect(await problems({ type: "subflow" })).toEqual([
+      "bad (flow): /body/nodes/sub/flow a subflow names a flow, or chooses one with `flowFrom`",
+    ]);
+    expect(
+      (
+        await problems({
+          type: "subflow",
+          flowFrom: "trigger.which",
+          allow: ["linear", "no-such-flow"],
+        })
+      ).join("\n"),
+    ).toContain("no-such-flow");
+    expect(
+      (await problems({ type: "subflow", flowFrom: "trigger.which >", allow: ["linear"] }))[0],
+    ).toMatch(/\/body\/nodes\/sub\/flowFrom is not a valid expression/);
+  });
 });
 
 describe("waiting", () => {

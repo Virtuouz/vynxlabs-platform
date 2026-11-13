@@ -213,6 +213,24 @@
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
                 "maxLength": 255
               },
+              "flowFrom": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "An expression that gives the path of the flow to start. It must give one of the paths in `allow`."
+              },
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                  "maxLength": 255
+                },
+                "minItems": 1,
+                "maxItems": 50,
+                "uniqueItems": true,
+                "description": "The flows `flowFrom` may choose. Each is checked like a flow named outright: it must exist, be startable, and not lead back here."
+              },
               "input": {
                 "type": "string",
                 "minLength": 1,
@@ -301,6 +319,24 @@
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
                 "maxLength": 255
               },
+              "flowFrom": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "An expression that gives the path of the flow to start. It must give one of the paths in `allow`."
+              },
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                  "maxLength": 255
+                },
+                "minItems": 1,
+                "maxItems": 50,
+                "uniqueItems": true,
+                "description": "The flows `flowFrom` may choose. Each is checked like a flow named outright: it must exist, be startable, and not lead back here."
+              },
               "input": {
                 "type": "string",
                 "minLength": 1,
@@ -309,8 +345,7 @@
               }
             },
             "required": [
-              "type",
-              "flow"
+              "type"
             ],
             "additionalProperties": false
           },

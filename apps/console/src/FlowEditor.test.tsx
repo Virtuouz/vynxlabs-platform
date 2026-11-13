@@ -41,3 +41,18 @@ test("what is missing is said step by step, before the server is asked", () => {
     "Nothing leads to only.",
   ]);
 });
+
+test("a flow chosen by the data needs an expression and a list to choose from", () => {
+  const start = { type: "trigger", trigger: { type: "manual" } };
+  const edges = [{ from: "start", to: "next" }];
+  expect(
+    problemsOf(
+      { start, next: { type: "subflow", flowFrom: "trigger.flow", allow: ["a/b"] } },
+      edges,
+    ),
+  ).toEqual([]);
+  expect(problemsOf({ start, next: { type: "subflow", flowFrom: "", allow: [] } }, edges)).toEqual([
+    "next needs an expression that gives the flow to start.",
+    "next needs at least one flow it may start.",
+  ]);
+});

@@ -39,6 +39,7 @@ export function describe(node: GraphNode): string {
   }
   if (typeof node.script === "string") return node.script;
   if (typeof node.flow === "string") return node.flow;
+  if (Array.isArray(node.allow)) return `One of ${node.allow.length}, chosen by the data`;
   if (node.type === "delay") return `${node.seconds} s`;
   if (node.type === "approval") return String(node.title);
   return "";

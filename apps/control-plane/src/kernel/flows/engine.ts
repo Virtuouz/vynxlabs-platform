@@ -527,7 +527,7 @@ class Advance {
         }
         case "subflow": {
           const input = node.input ? await this.#evaluate("input", node.input) : {};
-          await this.#startChildFlow(step, node.flow, input);
+          await this.#startChildFlow(step, await this.#flowOf(node), input);
           break;
         }
         case "foreach": {
@@ -594,7 +594,33 @@ class Advance {
     }
   }
 
+  /**
+   * The flow a step starts: the one it names, or the one its expression chooses
+   * from the list written beside it. The list is what makes a flow chosen by
+   * data safe to allow: everything on it was checked when the bundle was built.
+   */
+  async #flowOf(
+    node: { flow?: string; flowFrom?: string; allow?: string[] },
+    extra?: Record<string, unknown>,
+  ): Promise<string> {
+    if (node.flow !== undefined) return node.flow;
+    const chosen = await this.#evaluate("flowFrom", node.flowFrom as string, extra);
+    const allowed = node.allow ?? [];
+    if (typeof chosen !== "string" || !allowed.includes(chosen)) {
+      throw new StepFailure(
+        `"flowFrom" gave ${JSON.stringify(chosen)?.slice(0, 80)}, which is not a flow this step may start. It may start: ${allowed.join(", ")}.`,
+      );
+    }
+    return chosen;
+  }
+
   async #startChildFlow(step: StepRow, flow: string, input: unknown) {
+    const depth = Number(this.#flowRun.trigger_detail.depth ?? 0) + 1;
+    if (depth > MAX_FLOW_DEPTH) {
+      throw new StepFailure(
+        `Flows started by flows are ${MAX_FLOW_DEPTH} deep here, which is the limit. A flow may be starting itself through another.`,
+      );
+    }
     try {
       const started = await startFlowRun(this.#kernel, this.#trx, {
         tenantId: this.#flowRun.tenant_id,
@@ -606,7 +632,7 @@ class Advance {
           detail: {
             flowRunId: this.#flowRun.id,
             node: step.node_id,
-            depth: Number(this.#flowRun.trigger_detail.depth ?? 0),
+            depth,
           },
         },
         startedBy: { type: "flow", id: null },
@@ -706,7 +732,7 @@ class Advance {
         const scope = { item: items[index], index };
         const input = node.input ? await this.#evaluate("input", node.input, scope) : items[index];
         if (node.script) await this.#startScript(item, node.script, input);
-        else await this.#startChildFlow(item, node.flow as string, input);
+        else await this.#startChildFlow(item, await this.#flowOf(node, scope), input);
       } catch (error) {
         if (!(error instanceof StepFailure)) throw error;
         await this.#fail(item, error.message);
@@ -786,6 +812,9 @@ class Advance {
 }
 
 /** A step that failed for a reason its author can fix. It fails the step, not the engine. */
+/** How deep flows may start flows. The same number as for events that start runs that publish events. */
+const MAX_FLOW_DEPTH = 10;
+
 class StepFailure extends Error {}
 
 /** Cancels a flow run and everything it started, in the caller's transaction. */

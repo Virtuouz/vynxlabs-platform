@@ -34,13 +34,15 @@ export type FlowNode =
       items: string;
       script?: string;
       flow?: string;
+      flowFrom?: string;
+      allow?: string[];
       input?: string;
       concurrency?: number;
     }
   | { type: "join" }
   | { type: "delay"; seconds: number }
   | { type: "approval"; title: string; detail?: string; timeoutSeconds?: number }
-  | { type: "subflow"; flow: string; input?: string }
+  | { type: "subflow"; flow?: string; flowFrom?: string; allow?: string[]; input?: string }
   | { type: "fail"; message: string };
 
 export const OTHERWISE = "otherwise";
@@ -57,7 +59,10 @@ export function flowExpressions(body: FlowBody): { path: string; expression: str
         if (node.trigger.type === "event") at("trigger/filter", node.trigger.filter);
         break;
       case "script":
+        at("input", node.input);
+        break;
       case "subflow":
+        at("flowFrom", node.flowFrom);
         at("input", node.input);
         break;
       case "set":
@@ -69,6 +74,7 @@ export function flowExpressions(body: FlowBody): { path: string; expression: str
         break;
       case "foreach":
         at("items", node.items);
+        at("flowFrom", node.flowFrom);
         at("input", node.input);
         break;
       case "approval":
@@ -96,6 +102,12 @@ export function flowReferences(
     if (node.type === "foreach") {
       at("script", "script", node.script);
       at("flow", "flow", node.flow);
+    }
+    // A flow chosen when the step runs can be any of these, so each is a reference like one named outright.
+    if (node.type === "subflow" || node.type === "foreach") {
+      for (const [index, allowed] of (node.allow ?? []).entries()) {
+        at(`allow/${index}`, "flow", allowed);
+      }
     }
     if (node.type === "trigger" && node.trigger.type === "event")
       at("trigger/event", "event", node.trigger.event);
@@ -182,7 +194,31 @@ export function checkFlow(body: FlowBody): ManifestIssue[] {
         message: "a join waits for several paths, so it needs at least two incoming edges",
       });
     }
-    if (node.type === "foreach" && (node.script === undefined) === (node.flow === undefined)) {
+    if (node.type === "subflow" || node.type === "foreach") {
+      if (node.flow !== undefined && node.flowFrom !== undefined) {
+        issues.push({
+          path: `${at}/flowFrom`,
+          message: "name the flow with `flow`, or choose it with `flowFrom`: not both",
+        });
+      }
+      if ((node.flowFrom === undefined) !== (node.allow === undefined)) {
+        issues.push({
+          path: `${at}/allow`,
+          message:
+            "`flowFrom` and `allow` go together: the expression chooses, and the list says what it may choose",
+        });
+      }
+    }
+    if (node.type === "subflow" && node.flow === undefined && node.flowFrom === undefined) {
+      issues.push({
+        path: `${at}/flow`,
+        message: "a subflow names a flow, or chooses one with `flowFrom`",
+      });
+    }
+    if (
+      node.type === "foreach" &&
+      (node.script === undefined) === (node.flow === undefined && node.flowFrom === undefined)
+    ) {
       issues.push({
         path: at,
         message: "a foreach runs either a script or a flow: give exactly one",

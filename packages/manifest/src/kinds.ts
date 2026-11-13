@@ -281,6 +281,22 @@ const node = (type: string, properties: Record<string, object>, required: string
   additionalProperties: false,
 });
 
+/** A flow chosen when the step runs, from a list written down beforehand. */
+const flowFrom = {
+  ...expression,
+  description:
+    "An expression that gives the path of the flow to start. It must give one of the paths in `allow`.",
+};
+const allowedFlows = {
+  type: "array",
+  items: path,
+  minItems: 1,
+  maxItems: 50,
+  uniqueItems: true,
+  description:
+    "The flows `flowFrom` may choose. Each is checked like a flow named outright: it must exist, be startable, and not lead back here.",
+};
+
 export const flowKind: KindDefinition = {
   kind: "flow",
   schemaVersion: 1,
@@ -355,6 +371,8 @@ export const flowKind: KindDefinition = {
                 items: expression,
                 script: path,
                 flow: path,
+                flowFrom,
+                allow: allowedFlows,
                 input: expression,
                 concurrency: { type: "integer", minimum: 1, maximum: 20 },
               },
@@ -373,7 +391,7 @@ export const flowKind: KindDefinition = {
               },
               ["title"],
             ),
-            node("subflow", { flow: path, input: expression }, ["flow"]),
+            node("subflow", { flow: path, flowFrom, allow: allowedFlows, input: expression }),
             node("fail", { message: expression }, ["message"]),
           ],
         },

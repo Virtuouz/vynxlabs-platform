@@ -24,6 +24,7 @@ export interface ScriptBody {
   worker?: string;
   uses: {
     connections: string[];
+    connectionGroups?: string[];
     secrets: string[];
     variables: string[];
     events?: string[];

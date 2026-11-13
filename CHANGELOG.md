@@ -8,7 +8,7 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 
 ### For operators
 
-- **Database change.** Migrations 0019 to 0021 run on start.
+- **Database change.** Migrations 0019 to 0023 run on start.
 - **Code can be written in the console.** Whoever holds `code:write` in a dev workspace can write a script there and deploy it, and workers run it as it is. `tenant_admin` and `developer` hold it. Set `console_code` to false on a tenant to turn it off there.
 - **The control plane compiles TypeScript.** It never runs what it compiles. The image now carries esbuild.
 - **A tenant can connect a git repository** over HTTPS with an access token. The control plane makes outbound requests to it.
@@ -24,12 +24,15 @@ Authoring in the console (phase 7). This entry grows as the phase is built.
 - `defineWebhook`, and `trigger.webhook()` in a flow, take `input: "request"` to be given headers, query, method and the raw body, and `verify` to check an HMAC signature against a workspace secret. A webhook's address also takes forms and text.
 - A sub-flow step may choose its flow when it runs: `flowFrom` with `allow`.
 - `@vynxlabs/app` gains `startFlow`, `flowRun` and `runFlow`. `flow_run:write` can be bound at one flow.
+- `defineConnectionGroup` declares a set of connections of one kind. Members are added per workspace in the console with no deploy, and a script that lists the group in `connectionGroups` picks one when it runs: `await ctx.connections("shops").get(input.shop)`.
 
 ### Changed
 
 - Bundle format 3: a manifest's `ownership` may be `ui`. A script's body may carry `source` and `node`.
 - `GET /permissions` lists every permission. The audit routes take `area`, `actorId`, `target`, `from` and `to`, and entries carry `actorLabel`.
 - A flow run's steps carry `pickedUpAt`.
+- The worker protocol gains two routes for connection groups. A tenant's own worker must be upgraded before it runs a script that uses one.
+- `POST /tenants/:t/workspaces/:w/mcp` is a Model Context Protocol server over the API: the scripts and flows a caller may start, as tools.
 
 ## 0.4.0, not yet released
 

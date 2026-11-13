@@ -110,6 +110,13 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "always",
   },
   {
+    table: "connection_group_member",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "always",
+  },
+  {
     table: "variable_value",
     ofTenant: own,
     ofWorkspace: inWorkspace,

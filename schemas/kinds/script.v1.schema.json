@@ -74,6 +74,16 @@
           },
           "uniqueItems": true
         },
+        "connectionGroups": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "uniqueItems": true,
+          "description": "Connection groups the script may pick a member of at run time. Nothing has to be bound before a deploy."
+        },
         "secrets": {
           "type": "array",
           "items": {

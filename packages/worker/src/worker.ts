@@ -299,6 +299,22 @@ export class Worker {
         if (!connector) throw new Error(`This worker has no "${bound.connector}" connector.`);
         return connector.create(bound.config, bound.credential, abort.signal) as Client;
       },
+      connections: <Client>(group: string | { path: string }) => {
+        const path = typeof group === "string" ? group : group.path;
+        return {
+          get: async (key: string) => {
+            const bound = await read<{ connector: string; config: unknown; credential?: string }>(
+              `/connection-group-members/${encodeURIComponent(key)}/${path}`,
+            );
+            const connector = this.#connectors.get(bound.connector);
+            if (!connector) throw new Error(`This worker has no "${bound.connector}" connector.`);
+            return connector.create(bound.config, bound.credential, abort.signal) as Client;
+          },
+          keys: async () =>
+            (await read<{ items: { key: string; label: string }[] }>(`/connection-groups/${path}`))
+              .items,
+        };
+      },
       secret: async (name) =>
         (await read<{ value: string }>(`/secrets/${encodeURIComponent(name)}`)).value,
       variable: async (path) => (await read<{ value: string }>(`/variables/${path}`)).value,

@@ -28,6 +28,19 @@ export interface RunInfo {
 export interface ScriptContext {
   /** A client for a connection the script declared. */
   connection<Client = import("./http.js").HttpClient>(path: string): Promise<Client>;
+  /**
+   * A connection group the script declared. Its members are added per
+   * workspace in the console, so which one to use is decided by data:
+   * `await ctx.connections("shops").get(input.shop)`.
+   */
+  connections<Client = import("./http.js").HttpClient>(
+    group: string | { path: string },
+  ): {
+    /** A client for the member with this key. Throws when the group has no such member. */
+    get(key: string): Promise<Client>;
+    /** The members the group has in this workspace. */
+    keys(): Promise<{ key: string; label: string }[]>;
+  };
   /** The value of a secret the script declared. */
   secret(name: string): Promise<string>;
   /** The value of a variable the script declared. */

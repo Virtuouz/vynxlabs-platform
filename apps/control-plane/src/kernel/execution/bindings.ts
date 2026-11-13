@@ -101,6 +101,93 @@ export async function bindConnection(
   return { created: true };
 }
 
+export interface MemberName {
+  tenantId: string;
+  workspaceId: string;
+  group: string;
+  key: string;
+}
+
+const memberCredentialName = (id: MemberName) => ({
+  tenantId: id.tenantId,
+  workspaceId: id.workspaceId,
+  name: `connection-group:${id.group}:${id.key}`,
+});
+
+/**
+ * Adds a member to a connection group, or changes one. Leaving `credential`
+ * undefined keeps the one already stored. Null removes it.
+ */
+export async function bindGroupMember(
+  kernel: Kernel,
+  trx: Trx,
+  id: MemberName,
+  member: { label?: string | undefined; config: Record<string, unknown> },
+  credential: string | null | undefined,
+) {
+  const existing = await trx
+    .selectFrom("connection_group_member")
+    .select(["id", "credential", "label"])
+    .where("workspace_id", "=", id.workspaceId)
+    .where("group_path", "=", id.group)
+    .where("key", "=", id.key)
+    .executeTakeFirst();
+  const name = memberCredentialName(id);
+  const encrypted =
+    credential === undefined
+      ? (existing?.credential ?? null)
+      : credential === null
+        ? null
+        : await encryptFor(kernel, trx, name.tenantId, name.workspaceId, name.name, credential);
+  const values = {
+    label: member.label ?? existing?.label ?? "",
+    config: JSON.stringify(member.config),
+    credential: encrypted,
+    updated_at: new Date(),
+  };
+  if (existing) {
+    await trx
+      .updateTable("connection_group_member")
+      .set(values)
+      .where("id", "=", existing.id)
+      .execute();
+    return { created: false };
+  }
+  await trx
+    .insertInto("connection_group_member")
+    .values({
+      id: newId(),
+      tenant_id: id.tenantId,
+      workspace_id: id.workspaceId,
+      group_path: id.group,
+      key: id.key,
+      ...values,
+    })
+    .execute();
+  return { created: true };
+}
+
+/** A group member with its credential decrypted. For workers only. */
+export async function readGroupMember(kernel: Kernel, db: Db | Trx, id: MemberName) {
+  const row = await db
+    .selectFrom("connection_group_member")
+    .select(["config", "credential", "label"])
+    .where("workspace_id", "=", id.workspaceId)
+    .where("tenant_id", "=", id.tenantId)
+    .where("group_path", "=", id.group)
+    .where("key", "=", id.key)
+    .executeTakeFirst();
+  if (!row) return undefined;
+  const name = memberCredentialName(id);
+  return {
+    label: row.label,
+    config: row.config,
+    credential: row.credential
+      ? await decryptFor(kernel, db, name.tenantId, name.workspaceId, name.name, row.credential)
+      : undefined,
+  };
+}
+
 /** A bound connection with its credential decrypted. For workers and alerts only. */
 export async function readConnection(kernel: Kernel, db: Db | Trx, id: BindingName) {
   const row = await db

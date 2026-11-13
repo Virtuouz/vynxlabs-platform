@@ -681,6 +681,7 @@ describe("resource registry", () => {
       "app",
       "binding",
       "connection",
+      "connection_group",
       "data_source",
       "event",
       "flow",
@@ -1011,7 +1012,7 @@ describe("the write path", () => {
   test("every kernel route that changes something was exercised and audited", () => {
     // The execution, data, environment and app routes have the same check in their own test files.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members)(\/|$)/;
     // Deleting a workspace is exercised in environments.test.ts.
     expect(
       t.unexercised(

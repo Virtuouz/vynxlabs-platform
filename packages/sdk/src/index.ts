@@ -88,6 +88,8 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   output: Output;
   /** Connections the script reads, by path or by definition. */
   connections?: (string | { path: string })[];
+  /** Connection groups the script may pick a member of when it runs. */
+  connectionGroups?: (string | { path: string })[];
   /** Names of the secrets the script reads. */
   secrets?: string[];
   /** Variables the script reads, by path or by definition. */
@@ -151,6 +153,9 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
       worker: options.worker,
       uses: {
         connections: (options.connections ?? []).map(pathOf),
+        ...(options.connectionGroups
+          ? { connectionGroups: options.connectionGroups.map(pathOf) }
+          : {}),
         secrets: options.secrets ?? [],
         variables: (options.variables ?? []).map(pathOf),
         ...(options.events ? { events: options.events.map(pathOf) } : {}),
@@ -265,6 +270,25 @@ export interface ConnectionOptions {
   /** The connector to use. `http` is built in. */
   connector?: string;
   description?: string;
+}
+
+export interface ConnectionGroupOptions {
+  path: string;
+  /** The connector every member uses. `http` is built in. */
+  connector?: string;
+  description?: string;
+}
+
+/**
+ * Declares a group of connections of one kind, such as every customer's
+ * account with the same service. Members are added per workspace in the
+ * console, with no deploy. A script that lists the group picks a member when
+ * it runs: `await ctx.connections("shops").get(input.shop)`.
+ */
+export function defineConnectionGroup(options: ConnectionGroupOptions): ResourceDefinition {
+  return resource("connection_group", options.path, () =>
+    compact({ connector: options.connector ?? "http", description: options.description }),
+  );
 }
 
 /** Declares a connection. Its address and credentials are set per workspace, not here. */

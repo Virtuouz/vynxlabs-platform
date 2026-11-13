@@ -8,7 +8,7 @@ import { httpConnector } from "@vynxlabs/sdk";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
-import { bindConnection } from "../kernel/execution/bindings.js";
+import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
 import { MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
@@ -951,6 +951,174 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             };
           }),
         };
+      },
+    );
+
+    // ----- Connection groups: members added per workspace, with no deploy -----
+
+    const MemberKey = Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" });
+    const MemberParams = Type.Object({ t: Id, w: Id, key: MemberKey, "*": Type.String() });
+
+    app.get(
+      `${base}/connection-groups`,
+      {
+        config: { access: access.workspace("connection:read") },
+        schema: {
+          summary: "The workspace's connection groups, each with its members",
+          description: "A member's address is shown. Its credential never is.",
+          tags: ["bindings"],
+          params: WorkspaceParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  description: Type.String(),
+                  connector: Type.String(),
+                  members: Type.Array(
+                    Type.Object({
+                      key: Type.String(),
+                      label: Type.String(),
+                      config: AnyObject,
+                      hasCredential: Type.Boolean(),
+                      updatedAt: Time,
+                    }),
+                  ),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const groups = await db
+          .selectFrom("resource")
+          .select(["path", "body"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection_group")
+          .orderBy("path")
+          .execute();
+        const members = await db
+          .selectFrom("connection_group_member")
+          .select(["group_path", "key", "label", "config", "credential", "updated_at"])
+          .where("workspace_id", "=", params.w)
+          .orderBy("key")
+          .execute();
+        return {
+          items: groups.map((group) => {
+            const body = group.body as { description?: string; connector?: string };
+            return {
+              path: group.path,
+              description: body.description ?? "",
+              connector: body.connector ?? "http",
+              members: members
+                .filter((member) => member.group_path === group.path)
+                .map((member) => ({
+                  key: member.key,
+                  label: member.label,
+                  config: member.config,
+                  hasCredential: member.credential !== null,
+                  updatedAt: iso(member.updated_at),
+                })),
+            };
+          }),
+        };
+      },
+    );
+
+    app.put(
+      `${base}/connection-group-members/:key/*`,
+      {
+        config: { access: access.workspace("connection:write") },
+        schema: {
+          summary: "Add a member to a connection group, or change one",
+          description:
+            "Takes effect at once, with no deploy: the next run that asks for this key gets " +
+            "it. Leave `credential` out to keep the stored one. Send null to remove it.",
+          tags: ["bindings"],
+          params: MemberParams,
+          body: Type.Object({
+            label: Type.Optional(Type.String({ maxLength: 200 })),
+            config: AnyObject,
+            credential: Type.Optional(
+              Type.Union([Type.String({ minLength: 1, maxLength: 65536 }), Type.Null()]),
+            ),
+          }),
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const path = wildPath(params);
+        const group = await db
+          .selectFrom("resource")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection_group")
+          .where("path", "=", path)
+          .executeTakeFirst();
+        if (!group) throw notFound(`The connection group ${path}`);
+        const issues = validateJson(httpConnector.configSchema, body.config, "/body/config");
+        if (issues.length > 0) throw badRequest("The member's configuration is not valid.", issues);
+        await ctx.mutate(async (trx, audit) => {
+          const { created } = await bindGroupMember(
+            kernel,
+            trx,
+            { tenantId: params.t, workspaceId: params.w, group: path, key: params.key },
+            { label: body.label, config: body.config },
+            body.credential,
+          );
+          await audit({
+            action: created ? "connection_group.member_added" : "connection_group.member_changed",
+            targetType: "connection_group",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+            // The address is recorded. The credential never is.
+            details: {
+              key: params.key,
+              baseUrl: body.config.baseUrl,
+              credentialChanged: body.credential !== undefined,
+            },
+          });
+        });
+        return reply.code(204).send(null);
+      },
+    );
+
+    app.delete(
+      `${base}/connection-group-members/:key/*`,
+      {
+        config: { access: access.workspace("connection:write") },
+        schema: {
+          summary: "Remove a member from a connection group",
+          description: "A run that asks for this key afterwards fails with a clear message.",
+          tags: ["bindings"],
+          params: MemberParams,
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, params }, reply) => {
+        const path = wildPath(params);
+        await ctx.mutate(async (trx, audit) => {
+          const removed = await trx
+            .deleteFrom("connection_group_member")
+            .where("workspace_id", "=", params.w)
+            .where("group_path", "=", path)
+            .where("key", "=", params.key)
+            .returning("id")
+            .executeTakeFirst();
+          if (!removed)
+            throw notFound(`The member "${params.key}" of the connection group ${path}`);
+          await audit({
+            action: "connection_group.member_removed",
+            targetType: "connection_group",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { key: params.key },
+          });
+        });
+        return reply.code(204).send(null);
       },
     );
 

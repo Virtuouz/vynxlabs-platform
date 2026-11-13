@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/connection_group.v1.schema.json",
+  "title": "connection_group body, version 1",
+  "type": "object",
+  "description": "A set of connections of one kind, whose members are added per workspace in the console with no deploy. A script picks a member by key when it runs.",
+  "properties": {
+    "connector": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 63
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "connector"
+  ],
+  "additionalProperties": false
+}

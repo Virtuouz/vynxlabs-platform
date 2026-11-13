@@ -48,6 +48,7 @@ export {
   bindingKind,
   COLUMN_TYPES,
   type ColumnType,
+  connectionGroupKind,
   connectionKind,
   dataSourceKind,
   eventKind,

@@ -17,7 +17,7 @@ import {
 } from "../kernel/data/rows.js";
 import { openSource, sourceFailure, sourceTable } from "../kernel/data/sources.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
-import { readConnection } from "../kernel/execution/bindings.js";
+import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
 import { bundleManifest, loadBundle } from "../kernel/execution/bundles.js";
 import {
   activeRun,
@@ -390,6 +390,101 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           connector: (definition?.body as { connector?: string } | undefined)?.connector ?? "http",
           config: bound.config,
           ...(bound.credential !== undefined ? { credential: bound.credential } : {}),
+        };
+      },
+    );
+
+    /** The connector a group's members use, after checking that the running script declared the group. */
+    const declaredGroup = async (
+      worker: Parameters<typeof pinned>[0],
+      runId: string,
+      attempt: number,
+      path: string,
+    ) => {
+      const { run, body } = await pinned(worker, runId, attempt);
+      if (!(body.uses.connectionGroups ?? []).includes(path)) {
+        throw forbidden(`a declared use of the connection group "${path}"`);
+      }
+      const definition = await db
+        .selectFrom("resource")
+        .select("body")
+        .where("workspace_id", "=", run.workspace_id)
+        .where("kind", "=", "connection_group")
+        .where("path", "=", path)
+        .executeTakeFirst();
+      if (!definition) throw notFound(`The connection group ${path}`);
+      return {
+        run,
+        connector: (definition.body as { connector?: string }).connector ?? "http",
+      };
+    };
+
+    app.get(
+      "/worker/runs/:id/connection-groups/*",
+      {
+        config,
+        schema: {
+          summary: "List the members of a connection group the running script declared",
+          description: "Keys and labels only. A member's credential is read one at a time.",
+          tags: ["worker protocol"],
+          params: Type.Object({ id: Id, "*": Type.String() }),
+          querystring: AttemptQuery,
+          response: {
+            200: Type.Object({
+              items: Type.Array(Type.Object({ key: Type.String(), label: Type.String() })),
+            }),
+          },
+        },
+      },
+      async ({ worker, params, query }) => {
+        const path = params["*"];
+        const { run } = await declaredGroup(worker, params.id, query.attempt, path);
+        const rows = await db
+          .selectFrom("connection_group_member")
+          .select(["key", "label"])
+          .where("workspace_id", "=", run.workspace_id)
+          .where("group_path", "=", path)
+          .orderBy("key")
+          .limit(1000)
+          .execute();
+        return { items: rows };
+      },
+    );
+
+    app.get(
+      "/worker/runs/:id/connection-group-members/:key/*",
+      {
+        config,
+        schema: {
+          summary: "Read one member of a connection group the running script declared",
+          tags: ["worker protocol"],
+          params: Type.Object({ id: Id, key: Type.String({ maxLength: 100 }), "*": Type.String() }),
+          querystring: AttemptQuery,
+          response: {
+            200: Type.Object({
+              connector: Type.String(),
+              config: AnyObject,
+              credential: Type.Optional(Type.String()),
+            }),
+          },
+        },
+      },
+      async ({ worker, params, query }) => {
+        const path = params["*"];
+        const { run, connector } = await declaredGroup(worker, params.id, query.attempt, path);
+        const member = await readGroupMember(kernel, db, {
+          tenantId: run.tenant_id,
+          workspaceId: run.workspace_id,
+          group: path,
+          key: params.key,
+        });
+        if (!member) {
+          throw notFound(`The member "${params.key}" of the connection group ${path}`);
+        }
+        return {
+          connector,
+          config: member.config,
+          ...(member.credential !== undefined ? { credential: member.credential } : {}),
         };
       },
     );

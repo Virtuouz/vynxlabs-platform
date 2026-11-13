@@ -79,6 +79,17 @@ Read what the running script needs. Each answers only for a name the script decl
 
 Fetch these when the script asks, not ahead of time. Do not write the values to logs or to disk.
 
+### `GET /runs/{runId}/connection-groups/{path}?attempt=N`
+
+### `GET /runs/{runId}/connection-group-members/{key}/{path}?attempt=N`
+
+Added in 0.5.0. A connection group is a set of connections of one kind whose members are added per workspace with no deploy, so that a script can choose a credential by data. Both answer only for a group the script declared in `uses.connectionGroups`, and 403 otherwise.
+
+- The first returns `{"items": [{"key", "label"}]}`: the members the group has in the run's workspace, with no credentials.
+- The second returns one member as a connection does: `{"connector", "config", "credential"}`. It answers 404 when the group has no member with that key, and the script should fail with that message.
+
+A worker that predates these routes still runs every script that does not use a connection group. Give a script the group through its context only if the worker implements both.
+
 ### `POST /runs/{runId}/events`
 
 Publishes an event on behalf of the running script.

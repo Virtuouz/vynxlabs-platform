@@ -333,6 +333,7 @@ export async function deployBundle(
 const KIND_ORDER = [
   "role",
   "connection",
+  "connection_group",
   "variable",
   "table",
   "data_source",

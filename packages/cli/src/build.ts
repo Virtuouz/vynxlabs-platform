@@ -70,6 +70,7 @@ async function resourceFiles(folder: string): Promise<ResourceFile[]> {
 const KIND_ORDER = [
   "role",
   "connection",
+  "connection_group",
   "variable",
   "table",
   "data_source",

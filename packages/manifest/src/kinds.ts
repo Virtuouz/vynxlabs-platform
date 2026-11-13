@@ -144,6 +144,13 @@ export const scriptKind: KindDefinition = {
           "Everything the script may read at run time. Each must be bound before a deploy.",
         properties: {
           connections: { type: "array", items: path, uniqueItems: true },
+          connectionGroups: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description:
+              "Connection groups the script may pick a member of at run time. Nothing has to be bound before a deploy.",
+          },
           secrets: {
             type: "array",
             items: { type: "string", pattern: SECRET_NAME_PATTERN },
@@ -514,6 +521,22 @@ export const connectionKind: KindDefinition = {
   },
 };
 
+export const connectionGroupKind: KindDefinition = {
+  kind: "connection_group",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    description:
+      "A set of connections of one kind, whose members are added per workspace in the console with no deploy. A script picks a member by key when it runs.",
+    properties: {
+      connector: { type: "string", pattern: "^[a-z][a-z0-9_]*$", maxLength: 63 },
+      description: { type: "string", maxLength: 500 },
+    },
+    required: ["connector"],
+    additionalProperties: false,
+  },
+};
+
 export const variableKind: KindDefinition = {
   kind: "variable",
   schemaVersion: 1,
@@ -727,6 +750,7 @@ export const appKind: KindDefinition = {
 export const platformKinds: KindDefinition[] = [
   roleKind,
   connectionKind,
+  connectionGroupKind,
   variableKind,
   tableKind,
   dataSourceKind,

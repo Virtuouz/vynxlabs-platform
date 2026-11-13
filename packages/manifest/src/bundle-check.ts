@@ -11,6 +11,7 @@ const registry = registerPlatformKinds(new KindRegistry());
 
 interface ScriptUses {
   connections?: string[];
+  connectionGroups?: string[];
   variables?: string[];
   events?: string[];
   tables?: string[];
@@ -73,6 +74,8 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (manifest.kind === "script") {
       for (const path of body.uses?.connections ?? [])
         expect(manifest, "connections", path, "connection");
+      for (const path of body.uses?.connectionGroups ?? [])
+        expect(manifest, "connectionGroups", path, "connection_group");
       for (const path of body.uses?.variables ?? [])
         expect(manifest, "variables", path, "variable");
       for (const path of body.uses?.events ?? []) expect(manifest, "events", path, "event");

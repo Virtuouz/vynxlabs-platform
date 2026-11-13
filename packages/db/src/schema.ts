@@ -302,6 +302,19 @@ export interface DeploymentTable {
   created_at: Generated<Date>;
 }
 
+export interface ConnectionGroupMemberTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  group_path: string;
+  key: string;
+  label: Generated<string>;
+  config: Json<Record<string, unknown>>;
+  credential: Buffer | null;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
+}
+
 export interface ConnectionBindingTable {
   id: string;
   tenant_id: string;
@@ -682,6 +695,7 @@ export interface PlatformSchema {
   workspace_git: WorkspaceGitTable;
   git_operation: GitOperationTable;
   connection_binding: ConnectionBindingTable;
+  connection_group_member: ConnectionGroupMemberTable;
   variable_value: VariableValueTable;
   run: RunTable;
   run_log: RunLogTable;

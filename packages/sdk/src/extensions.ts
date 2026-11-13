@@ -40,6 +40,20 @@ export interface WidgetContext {
   onSubmit?(values: Record<string, unknown>): void | Promise<void>;
   /** Called with the row a person chose. */
   onRowClick?(row: Record<string, unknown>): void;
+  /** The `id` of the row that is chosen, for a widget that lets one be chosen. */
+  selectedId?: string;
+  /** Called with the row a person chose to look at. Other widgets may follow it. */
+  onSelect?(row: Record<string, unknown>): void;
+  /** Whether there are more rows than the ones given, and how to ask for them. */
+  page?: { hasMore: boolean; onMore(): void };
+  /** Saves one changed value of a row. A rejection's message is shown where the value is. */
+  onEdit?(row: Record<string, unknown>, column: string, value: unknown): Promise<void>;
+  /** Removes a row. */
+  onDelete?(row: Record<string, unknown>): Promise<void>;
+  /** What to show in place of a value: the name of the row a reference points at. */
+  display?(column: string, value: unknown): string | undefined;
+  /** True while the rows are being fetched. */
+  loading?: boolean;
 }
 
 /** A component for apps and generated screens. */

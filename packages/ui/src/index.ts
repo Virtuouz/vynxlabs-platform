@@ -46,7 +46,10 @@ export {
 } from "./Timeline.tsx";
 export { ToastProvider, type Toasts, type ToastTone, useToast } from "./Toast.tsx";
 export {
+  type CardsWidgetConfig,
+  type CardWidgetConfig,
   type ChartWidgetConfig,
+  chartSpecFor,
   type FormWidgetConfig,
   getWidget,
   type InterfaceWidget,
@@ -55,5 +58,6 @@ export {
   type TableWidgetConfig,
   Widget,
   type WidgetContext,
+  type WidgetField,
   type WidgetProps,
 } from "./widgets.tsx";

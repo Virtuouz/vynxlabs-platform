@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 export interface GridColumn {
   name: string;
+  /** What the heading says. The name, when left out. */
+  label?: string | undefined;
   /** What the column holds: text, integer, number, boolean, timestamp, date, json and so on. */
   type: string;
   /** Lets a cell be changed in place. */
@@ -33,6 +35,10 @@ export interface GridProps<Row extends Record<string, unknown>> {
   /** Replaces how a cell is shown. Return undefined to keep the grid's own rendering. */
   cell?: (row: Row, column: GridColumn) => ReactNode | undefined;
   rowActions?: (row: Row) => ReactNode;
+  /** The key of the row that is chosen. */
+  selectedKey?: string | undefined;
+  /** Lets one row be chosen, and is called with it. Each row gets a button to choose it by. */
+  onSelect?: ((row: Row) => void) | undefined;
   /** Shown in place of the rows when there are none. */
   empty: ReactNode;
 }
@@ -193,7 +199,9 @@ function EditableCell<Row extends Record<string, unknown>>({
 export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
   const { columns, rows, sort, filters, onFilter, onEdit } = props;
   const filterable = onFilter !== undefined && columns.some((column) => column.filterable);
-  const width = columns.length + (props.rowActions ? 1 : 0);
+  const choosing = props.onSelect !== undefined;
+  const group = useId();
+  const width = columns.length + (props.rowActions ? 1 : 0) + (choosing ? 1 : 0);
   const head = "border-b border-line bg-sunken/50 px-3 text-[13px] font-medium text-ink-muted";
 
   return (
@@ -201,6 +209,7 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
       <table className="w-full border-collapse text-left" aria-label={props.label}>
         <thead>
           <tr>
+            {choosing ? <th className={`${head} w-8 py-2`} /> : null}
             {columns.map((column) => {
               const sorted = sort?.column === column.name ? sort : undefined;
               const end = NUMERIC.has(column.type) ? "text-right" : "";
@@ -217,13 +226,13 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
                       className="inline-flex items-center gap-1 font-medium text-inherit hover:text-ink"
                       onClick={() => props.onSort?.(column.name)}
                     >
-                      {column.name}
+                      {column.label ?? column.name}
                       <span aria-hidden="true" className={sorted ? "text-action" : "opacity-0"}>
                         {sorted?.descending ? "▼" : "▲"}
                       </span>
                     </button>
                   ) : (
-                    column.name
+                    (column.label ?? column.name)
                   )}
                 </th>
               );
@@ -232,11 +241,12 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
           </tr>
           {filterable ? (
             <tr>
+              {choosing ? <th className={`${head} pb-2`} /> : null}
               {columns.map((column) => (
                 <th key={column.name} className={`${head} pb-2 font-normal`}>
                   {column.filterable ? (
                     <input
-                      aria-label={`Filter by ${column.name}`}
+                      aria-label={`Filter by ${column.label ?? column.name}`}
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
                       className="h-7 w-full min-w-20 rounded-[4px] border border-line bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
@@ -260,41 +270,71 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
               </td>
             </tr>
           ) : (
-            rows.map((row) => (
-              <tr key={props.rowKey(row)} className="border-b border-line last:border-b-0">
-                {columns.map((column) => {
-                  const value = row[column.name];
-                  const custom = props.cell?.(row, column);
-                  const shown =
-                    custom !== undefined ? (
-                      custom
-                    ) : value === null || value === undefined ? (
-                      <span className="text-ink-muted/60">empty</span>
-                    ) : (
-                      showValue(column.type, value)
-                    );
-                  return (
-                    <td
-                      key={column.name}
-                      className={`max-w-80 truncate px-3 py-1.5 align-middle ${
-                        NUMERIC.has(column.type) ? "text-right tabular-nums" : ""
-                      }`}
-                    >
-                      {column.editable && onEdit && custom === undefined ? (
-                        <EditableCell row={row} column={column} shown={shown} onEdit={onEdit} />
-                      ) : (
-                        shown
-                      )}
+            rows.map((row) => {
+              const key = props.rowKey(row);
+              const chosen = choosing && props.selectedKey === key;
+              return (
+                <tr
+                  key={key}
+                  aria-selected={choosing ? chosen : undefined}
+                  className={`border-b border-line last:border-b-0 ${chosen ? "bg-action-soft/50" : ""} ${
+                    choosing ? "cursor-pointer" : ""
+                  }`}
+                  onClick={(event) => {
+                    // A press on something in the row that does its own thing is not a choice of the row.
+                    if (
+                      (event.target as HTMLElement).closest("button, input, a, select, textarea")
+                    ) {
+                      return;
+                    }
+                    props.onSelect?.(row);
+                  }}
+                >
+                  {choosing ? (
+                    <td className="w-8 px-3 py-1.5 align-middle">
+                      <input
+                        type="radio"
+                        name={group}
+                        aria-label="Choose this row"
+                        checked={chosen}
+                        onChange={() => props.onSelect?.(row)}
+                      />
                     </td>
-                  );
-                })}
-                {props.rowActions ? (
-                  <td className="px-3 py-1.5 text-right align-middle whitespace-nowrap">
-                    {props.rowActions(row)}
-                  </td>
-                ) : null}
-              </tr>
-            ))
+                  ) : null}
+                  {columns.map((column) => {
+                    const value = row[column.name];
+                    const custom = props.cell?.(row, column);
+                    const shown =
+                      custom !== undefined ? (
+                        custom
+                      ) : value === null || value === undefined ? (
+                        <span className="text-ink-muted/60">empty</span>
+                      ) : (
+                        showValue(column.type, value)
+                      );
+                    return (
+                      <td
+                        key={column.name}
+                        className={`max-w-80 truncate px-3 py-1.5 align-middle ${
+                          NUMERIC.has(column.type) ? "text-right tabular-nums" : ""
+                        }`}
+                      >
+                        {column.editable && onEdit && custom === undefined ? (
+                          <EditableCell row={row} column={column} shown={shown} onEdit={onEdit} />
+                        ) : (
+                          shown
+                        )}
+                      </td>
+                    );
+                  })}
+                  {props.rowActions ? (
+                    <td className="px-3 py-1.5 text-right align-middle whitespace-nowrap">
+                      {props.rowActions(row)}
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

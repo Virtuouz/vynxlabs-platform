@@ -108,9 +108,31 @@ Passed with the `yaml` package (ISC) at version 1.2 with no line folding. Forty 
 
 Passed for the build. Monaco 0.57 (MIT) builds under Vite as chunks that load on demand, and the console's first script does not grow. The editor is 2.7 MB and the TypeScript worker 6.9 MB before compression, in 98 files. Still to check in a browser, when the script editor is built: the SDK's types in the editor, and colours taken from the tokens.
 
-### Spikes that run when their milestone starts
+### Three ways to do single sign-on
 
-A webhook answered through a worker, single sign-on against Keycloak, and MCP inside Fastify each need most of their feature to exist before they prove anything. They run first in their own milestones and are recorded here then.
+All three passed. Each signed one person in through a Keycloak container standing in for a customer's identity provider, over OIDC and over SAML, and got the person's group out of the token or assertion.
+
+| | A. better-auth's SSO plugin | B. Keycloak as the sign-on layer | C. Our own flows |
+| --- | --- | --- | --- |
+| What it is | `@better-auth/sso` inside the control plane | A Keycloak beside the platform federates to each customer's provider. The platform speaks OIDC to Keycloak only | `openid-client` and `@node-saml/node-saml` in a module of the control plane |
+| OIDC and SAML | Both worked | Both worked | Both worked. A SAML response altered after signing was refused |
+| Providers added while running | Yes, kept in a table of the plugin's own | Yes, through the admin API, in about 40 ms | Yes, in a table of ours |
+| Members | Yes | Yes | Yes |
+| End users | **No.** End users are not in better-auth, so they need a second implementation whatever is chosen here | Possible with a realm per tenant. Not tried | Yes, the same code |
+| Groups from the provider | Through a hook | Through three mappers per provider and a realm setting | Read from the token or assertion |
+| The provider's client secret | **Stored in plain text** in the plugin's table | Held by Keycloak | Sealed as our other secrets are |
+| What a self-hoster runs | Nothing new | **A second service**: a 718 MB image that held 986 MB of memory idle, with a database of its own | Nothing new |
+| Who holds the people | better-auth, as now | Keycloak keeps a copy of every person, with rules of its own. It showed its own "Update Account Information" page until those were relaxed | The platform, as now |
+| Licences | MIT, with MIT and ISC beneath | Apache-2.0, not shipped in the image | MIT |
+| Other | Sign-in must begin with a POST from the browser. A second provider for an email that already signed in is refused as "not linked" until trust is configured. A version for better-auth 1.7.21 exists; 1.7.23 is what was run | The platform still needs the OIDC half of option C to talk to Keycloak | We own how SAML is configured and checked, and its upkeep. The libraries do the cryptography |
+
+Every option needs the auth proxy to stop turning a posted form into JSON (`routes/auth.ts`), since SAML answers with a form.
+
+In this spike the customer's provider and the broker were one Keycloak container, which cannot reach itself on its published port. Option B's token and key addresses were pointed at the container's own port and its issuer check left off to get round that. A real deployment has neither problem.
+
+### Spikes that were built instead
+
+A webhook answered through a worker and MCP inside Fastify were each small enough that building them was the spike. Both are recorded in their own sections below.
 
 ## Findings
 

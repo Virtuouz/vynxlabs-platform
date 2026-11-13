@@ -4,6 +4,7 @@ import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Audit, Db, Trx } from "./audit.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import type { Kernel } from "./kernel.js";
+import { endUserPasswordRefusedBy } from "./sso/people.js";
 
 /** How long an invitation stays good, and how long a reset does. */
 export const INVITE_DAYS = 7;
@@ -146,6 +147,22 @@ export async function setPasswordWithToken(
       410,
       "link_expired",
       "This link has been used or has run out. Ask for a new one.",
+    );
+  }
+  const invited = await trx
+    .selectFrom("end_user")
+    .select("email")
+    .where("id", "=", taken.end_user_id)
+    .executeTakeFirst();
+  // Where single sign-on is required a password would be no use, so none is set.
+  const required = invited
+    ? await endUserPasswordRefusedBy(trx, input.tenantId, invited.email)
+    : undefined;
+  if (required) {
+    throw new HttpError(
+      403,
+      "sso_required",
+      `Sign in with ${required.name}. Passwords are turned off here.`,
     );
   }
   const user = await trx

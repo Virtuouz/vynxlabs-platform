@@ -15,6 +15,17 @@ import { HttpError } from "../errors.js";
 import { loadBundle } from "../execution/bundles.js";
 import type { Kernel } from "../kernel.js";
 import { resolvePrincipal } from "../principal.js";
+import { answer, begin, finish, stateCookie } from "../sso/flow.js";
+import { endUserPasswordRefusedBy, SsoRefusal } from "../sso/people.js";
+import {
+  addressesOf,
+  findProvider,
+  isLive,
+  isSaml,
+  listProviders,
+  openSecrets,
+} from "../sso/providers.js";
+import { samlMetadata } from "../sso/saml.js";
 import { appBasePath, portalPath, portalUrl } from "./address.js";
 import { appFiles, readAsset } from "./assets.js";
 import type { Place } from "./hosts.js";
@@ -31,7 +42,7 @@ import {
   signInPage,
   signUpPage,
 } from "./pages.js";
-import { actorOf, endAppSession, signInEndUser } from "./sessions.js";
+import { actorOf, endAppSession, readCookie, signInEndUser } from "./sessions.js";
 
 interface Tenant {
   id: string;
@@ -66,14 +77,18 @@ const PAGE_POLICY = [
 /** A file whose name carries a hash of its content never changes, so a browser may keep it. */
 const HASHED_NAME = /[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
 const MAX_FORM_BYTES = 16 * 1024;
+/** A SAML answer is a signed document with certificates in it, in a form. */
+const MAX_SAML_BYTES = 512 * 1024;
 
-async function readForm(raw: IncomingMessage): Promise<Record<string, string>> {
+async function readForm(
+  raw: IncomingMessage,
+  limit = MAX_FORM_BYTES,
+): Promise<Record<string, string>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of raw) {
     size += (chunk as Buffer).length;
-    if (size > MAX_FORM_BYTES)
-      throw new HttpError(413, "payload_too_large", "The form is too large.");
+    if (size > limit) throw new HttpError(413, "payload_too_large", "The form is too large.");
     chunks.push(chunk as Buffer);
   }
   return Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString("utf8")));
@@ -168,6 +183,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const home = place.kind === "domain" ? "/" : `${base}/`;
     const look = await frame(tenant);
     const isPost = request.method === "POST";
+    const sso = /^\/sso\/([0-9a-f-]{36})\/(start|callback|acs|finish|metadata)$/.exec(sub);
+    if (sso) {
+      return singleSignOn(request, reply, place, tenant, {
+        base,
+        home,
+        look,
+        id: sso[1] as string,
+        step: sso[2] as string,
+        query,
+      });
+    }
     if (isPost) {
       if (!ownForm(request)) return plain(reply, 403, "This form was sent from another site.");
       if (!forms.allow(`${request.ip} ${tenant.id}`)) {
@@ -195,7 +221,38 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     }
 
     if (sub === "/sign-in") {
-      if (!isPost) return html(reply, 200, signInPage(look, { portal: base, back, signUp }));
+      const providers = (await listProviders(db, tenant.id)).filter(
+        (provider) => provider.audience === "end_users" && isLive(provider),
+      );
+      // Required of everyone, so there is no password to ask for.
+      const password = (await endUserPasswordRefusedBy(db, tenant.id, "")) === undefined;
+      const at = { portal: base, back, signUp, providers, password };
+      if (!isPost) return html(reply, 200, signInPage(look, at));
+      const required = await endUserPasswordRefusedBy(db, tenant.id, form.email ?? "");
+      if (required) {
+        await writeAudit(db, actorOf(request, ANONYMOUS), {
+          action: "sso.password_refused",
+          targetType: "identity_provider",
+          targetId: required.id,
+          tenantId: tenant.id,
+          details: {
+            identityProvider: required.name,
+            email: (form.email ?? "").trim().toLowerCase(),
+          },
+        });
+        return html(
+          reply,
+          403,
+          signInPage(
+            look,
+            { ...at, email: form.email ?? "" },
+            {
+              kind: "danger",
+              text: `Sign in with ${required.name}. Passwords are turned off for your account.`,
+            },
+          ),
+        );
+      }
       const user = await checkEndUserPassword(
         kernel,
         tenant.id,
@@ -208,7 +265,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           401,
           signInPage(
             look,
-            { portal: base, back, signUp, email: form.email ?? "" },
+            { ...at, email: form.email ?? "" },
             { kind: "danger", text: "The email or the password is not right." },
           ),
         );
@@ -222,6 +279,14 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       const at = { portal: base, back, minPassword: MIN_PASSWORD_LENGTH };
       if (!isPost) return html(reply, 200, signUpPage(look, at));
       try {
+        const required = await endUserPasswordRefusedBy(db, tenant.id, form.email ?? "");
+        if (required) {
+          throw new HttpError(
+            403,
+            "sso_required",
+            `Sign in with ${required.name}. Passwords are turned off for this email address.`,
+          );
+        }
         const user = await db.transaction().execute((trx) =>
           createEndUser(
             kernel,
@@ -375,6 +440,172 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     }
 
     return html(reply, 404, messagePage(look, NOT_FOUND(home)));
+  }
+
+  // ----- Single sign-on for end users -----
+
+  const starts = new Limiter(30, 60);
+  /** Many people of one organisation share an address, so this is generous. It is there to stop a flood. */
+  const answers = new Limiter(300, 60);
+
+  /**
+   * An end user's single sign-on. It begins and ends at the address the person
+   * is at, which may be a hostname the tenant registered. The provider answers
+   * at one address only, the instance's own for apps, so that a provider is
+   * given one address however many hostnames a tenant has.
+   */
+  async function singleSignOn(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    place: Place,
+    tenant: Tenant,
+    at: {
+      base: string;
+      home: string;
+      look: PageFrame;
+      id: string;
+      step: string;
+      query: URLSearchParams;
+    },
+  ) {
+    const { look } = at;
+    const isPost = request.method === "POST";
+    const missing = () => html(reply, 404, messagePage(look, NOT_FOUND(at.home)));
+    const provider = await findProvider(db, at.id, tenant.id);
+    if (provider?.audience !== "end_users") return missing();
+    const actor = actorOf(request, ANONYMOUS);
+    const here = portalUrl(
+      kernel,
+      tenant.slug,
+      place.kind === "domain" ? place.domain.hostname : undefined,
+    );
+    const canonical = portalUrl(kernel, tenant.slug);
+    const refusedPage = (refusal: SsoRefusal) =>
+      html(
+        reply,
+        403,
+        messagePage(look, {
+          title: "You could not be signed in",
+          text: refusal.message,
+          link: { href: `${at.base}/sign-in`, label: "Back to sign-in" },
+        }),
+      );
+    const cookie = (name: string, value: string, maxAge: number) =>
+      [
+        `${name}=${value}`,
+        "Path=/",
+        "HttpOnly",
+        "SameSite=Lax",
+        `Max-Age=${maxAge}`,
+        ...(request.protocol === "https" ? ["Secure"] : []),
+      ].join("; ");
+
+    if (at.step === "start" && !isPost) {
+      if (!starts.allow(`${request.ip} ${tenant.id}`)) {
+        return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
+      }
+      try {
+        const back = safeReturn(at.query.get("return"));
+        const began = await begin(kernel, provider, {
+          purpose: "sign_in",
+          base: here,
+          ...(back ? { returnTo: back } : {}),
+        });
+        reply.header("set-cookie", cookie(began.cookie.name, began.cookie.value, 600));
+        return redirect(reply, began.url, 302);
+      } catch (error) {
+        if (!(error instanceof SsoRefusal)) throw error;
+        await writeAudit(db, actor, {
+          action: "sso.refused",
+          targetType: "identity_provider",
+          targetId: provider.id,
+          tenantId: tenant.id,
+          details: {
+            identityProvider: provider.name,
+            reason: error.reason,
+            message: error.message,
+          },
+        });
+        return refusedPage(error);
+      }
+    }
+
+    if (at.step === "metadata" && !isPost) {
+      if (!isSaml(provider)) return missing();
+      return reply
+        .code(200)
+        .header("content-type", "application/samlmetadata+xml; charset=utf-8")
+        .header("x-content-type-options", "nosniff")
+        .send(
+          samlMetadata(
+            provider,
+            await openSecrets(kernel, db, provider),
+            addressesOf(kernel, provider, tenant.slug),
+          ),
+        );
+    }
+
+    if ((at.step === "callback" && !isPost) || (at.step === "acs" && isPost)) {
+      // The provider was given the instance's own address for apps, and answers nowhere else.
+      if (place.kind === "domain") return missing();
+      if (!answers.allow(`${request.ip} ${tenant.id}`)) {
+        return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
+      }
+      try {
+        const result = await answer(
+          kernel,
+          provider,
+          isPost
+            ? { protocol: "saml", body: await readForm(request.raw, MAX_SAML_BYTES) }
+            : { protocol: "oidc", query: at.query },
+          actor,
+          canonical,
+        );
+        if (result.purpose === "test") {
+          return html(
+            reply,
+            200,
+            messagePage(look, {
+              title: result.ok ? "The provider answered" : "The test did not pass",
+              text: "Close this tab and look at the result in the console.",
+            }),
+          );
+        }
+        return redirect(reply, result.finishUrl, 302);
+      } catch (error) {
+        if (!(error instanceof SsoRefusal)) throw error;
+        return refusedPage(error);
+      }
+    }
+
+    if (at.step === "finish" && !isPost) {
+      const done = await finish(
+        db,
+        {
+          code: at.query.get("code") ?? "",
+          base: here,
+          audience: "end_users",
+          cookie: (name) => readCookie(request, name),
+        },
+        actor,
+      );
+      if (!done || done.tenantId !== tenant.id) {
+        return html(
+          reply,
+          410,
+          messagePage(look, {
+            title: "This sign-in did not finish",
+            text: "It took too long, was already used, or was begun in another browser. Start again.",
+            link: { href: `${at.base}/sign-in`, label: "Back to sign-in" },
+          }),
+        );
+      }
+      await signInEndUser(kernel, request, reply, tenant.id, done.principalId);
+      reply.header("set-cookie", cookie(stateCookie(done.stateId), "", 0));
+      return redirect(reply, safeReturn(done.returnTo) ?? at.home, 302);
+    }
+
+    return missing();
   }
 
   /** The apps of a tenant's production workspaces that a principal may open, with where each is. */

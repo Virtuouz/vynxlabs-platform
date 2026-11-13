@@ -1637,7 +1637,11 @@ describe("guards", () => {
     const own = /end-user-auth\/(sign-in|sign-up|password-links|passwords)$|portal\/logo$/;
     expect(
       t.unexercised(
-        (route) => apps.test(route) && !(own.test(route) && !route.startsWith("DELETE")),
+        (route) =>
+          apps.test(route) &&
+          // A provider's email domains are exercised in sso.test.ts.
+          !route.includes("/identity-providers/") &&
+          !(own.test(route) && !route.startsWith("DELETE")),
       ),
     ).toEqual([]);
   });

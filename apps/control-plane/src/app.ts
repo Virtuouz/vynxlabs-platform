@@ -30,6 +30,7 @@ import { mcpRoutes } from "./routes/mcp.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { sourceRoutes } from "./routes/sources.js";
+import { ssoRoutes } from "./routes/sso.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -158,6 +159,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(environmentRoutes(kernel));
       await api.register(portabilityRoutes(kernel));
       await api.register(endUserRoutes(kernel));
+      await api.register(ssoRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
       api.get(

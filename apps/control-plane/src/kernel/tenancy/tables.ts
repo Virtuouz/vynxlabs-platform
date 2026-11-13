@@ -238,6 +238,18 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "always",
     stored: ["logo_key"],
   },
+  // A provider's secrets are sealed with the tenant's key, which travels with the export.
+  { table: "identity_provider", ofTenant: own, key: ["id"], export: "always" },
+  { table: "identity_domain", ofTenant: own, key: ["id"], export: "always" },
+  { table: "identity_link", ofTenant: own, key: ["id"], export: "always" },
+  { table: "identity_group_map", ofTenant: own, key: ["id"], export: "always" },
+  { table: "sso_state", ofTenant: own, key: ["id"], export: "never" },
+  {
+    table: "sso_assertion",
+    ofTenant: own,
+    key: ["provider_id", "assertion_key"],
+    export: "never",
+  },
   // The record of what was done is never removed, even when what it describes is.
   { table: "audit_entry", ofTenant: own, key: ["id"], export: "always", keep: true },
 ];

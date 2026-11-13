@@ -1,5 +1,4 @@
 import { createHmac } from "node:crypto";
-import { resolveTxt } from "node:dns/promises";
 import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
@@ -8,6 +7,7 @@ import { newId } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { appUrl, domainUrl } from "../kernel/apps/address.js";
 import { MAX_ASSET_BYTES, storeAsset } from "../kernel/apps/assets.js";
+import { challengeMet, challengeOf as domainChallenge } from "../kernel/apps/challenge.js";
 import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
@@ -548,14 +548,8 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Hostnames -----
 
-    /** The value a hostname's owner publishes in DNS to show they agree to this tenant using it. */
-    const challengeOf = (tenantId: string, hostname: string) => ({
-      name: `_vx-challenge.${hostname}`,
-      value: `vx-domain=${createHmac("sha256", kernel.config.authSecret)
-        .update(`domain:${tenantId}:${hostname}`)
-        .digest("hex")
-        .slice(0, 40)}`,
-    });
+    const challengeOf = (tenantId: string, hostname: string) =>
+      domainChallenge(kernel, tenantId, hostname);
     /** What this instance answers at its check address. The same on every replica, and no secret. */
     const instanceMark = createHmac("sha256", kernel.config.authSecret)
       .update("domain-check")
@@ -729,8 +723,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }) => {
         const domain = await findDomain(params.t, params.id);
         const challenge = challengeOf(params.t, domain.hostname);
-        const records = await resolveTxt(challenge.name).catch(() => [] as string[][]);
-        const verified = records.some((parts) => parts.join("") === challenge.value);
+        const verified = await challengeMet(kernel, params.t, domain.hostname);
         let problem: string | null = null;
         if (!verified) {
           problem = `No TXT record ${challenge.name} with the value ${challenge.value} was found.`;

@@ -22,5 +22,6 @@
   "0021_git.sql": "488bbdb1ad868c60efd71ea02a04b906bec6589d83ca66a0a9608e1b4a952377",
   "0022_draft_order.sql": "b9b15398313b761ee26cf8da7d7de92ae915044f31acb811c6fa282778b616b5",
   "0023_connection_groups.sql": "021834bca7f665ed1e033ad141de574898e028b0e8bf6e8a234568a3249bc149",
-  "0024_end_user_groups.sql": "9861cfa7ebc8cfbd0d5f3b37615f5ce4da6054c7afb0d2b6f41c3b1d99c1cdb5"
+  "0024_end_user_groups.sql": "9861cfa7ebc8cfbd0d5f3b37615f5ce4da6054c7afb0d2b6f41c3b1d99c1cdb5",
+  "0025_sso.sql": "932811313ab2c8192d07c1fc8b2b4b6063d71c3560fe2307480a1dae1139734e"
 }

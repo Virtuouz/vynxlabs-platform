@@ -452,6 +452,19 @@ export async function importTenant(
         .where("tenant_id", "=", tenantId)
         .execute();
 
+      // A provider was told the addresses of the instance the tenant came from, and a
+      // domain was proved to that instance. Both are confirmed again here.
+      await trx
+        .updateTable("identity_provider")
+        .set({ paused: true })
+        .where("tenant_id", "=", tenantId)
+        .execute();
+      await trx
+        .updateTable("identity_domain")
+        .set({ verified_at: null, checked_at: null, check_error: null })
+        .where("tenant_id", "=", tenantId)
+        .execute();
+
       const result: ImportReport = {
         tenant: { id: tenantId, slug, name: manifest.tenant.name, dataLocation: location },
         counts,

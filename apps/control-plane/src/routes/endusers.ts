@@ -3,8 +3,8 @@ import { newId, sql } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { portalUrl } from "../kernel/apps/address.js";
-import { endAppSession, signInEndUser } from "../kernel/apps/sessions.js";
-import { writeAudit } from "../kernel/audit.js";
+import { actorOf, endAppSession, signInEndUser } from "../kernel/apps/sessions.js";
+import { ANONYMOUS, writeAudit } from "../kernel/audit.js";
 import {
   changeEndUserPassword,
   checkEndUserPassword,
@@ -24,6 +24,7 @@ import {
 } from "../kernel/errors.js";
 import { access, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireEndUserPasswordAllowed } from "../kernel/sso/people.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   Id,
@@ -730,6 +731,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async (request, reply) => {
         const { params, body } = request;
+        await requireEndUserPasswordAllowed(db, params.t, body.email, actorOf(request, ANONYMOUS));
         const user = await checkEndUserPassword(kernel, params.t, body.email, body.password);
         if (!user) throw unauthenticated("The email or the password is not right.");
         await signIn(request, reply, params.t, user.id);
@@ -789,6 +791,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async (request, reply) => {
         const { params, body } = request;
         if (!(await signUpAllowed(db, params.t))) throw forbidden("end_user:write");
+        await requireEndUserPasswordAllowed(db, params.t, body.email, actorOf(request, ANONYMOUS));
         const actor = {
           principal: { type: "anonymous" as const, id: null },
           ipAddress: request.ip,

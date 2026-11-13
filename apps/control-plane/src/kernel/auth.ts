@@ -1,9 +1,13 @@
 import { newId } from "@vynxlabs/db";
 import { betterAuth } from "better-auth";
+import { APIError, createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
+import { setSessionCookie } from "better-auth/cookies";
 import { openAPI } from "better-auth/plugins/open-api";
 import type { FastifyBaseLogger } from "fastify";
 import { type Config, MIN_PASSWORD_LENGTH } from "../config.js";
-import { type Db, writeAudit } from "./audit.js";
+import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
+import { finish, stateCookie } from "./sso/flow.js";
+import { memberPasswordRefusedBy } from "./sso/people.js";
 
 const timestamps = { createdAt: "created_at", updatedAt: "updated_at" };
 
@@ -65,6 +69,66 @@ export function authOptions(db: Db, config: Pick<Config, "publicUrl" | "authSecr
   };
 }
 
+function cookieFrom(header: string | null | undefined, name: string): string | undefined {
+  for (const part of (header ?? "").split(";")) {
+    const at = part.indexOf("=");
+    if (at > 0 && part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
+  }
+  return undefined;
+}
+
+/** A place in the console to send someone back to. Only a path at this address is accepted. */
+export function consolePath(raw: string | null | undefined): string {
+  if (!raw?.startsWith("/") || raw.startsWith("//") || /[\\\r\n]/.test(raw)) return "/";
+  if (raw.startsWith("/api/") || raw.length > 2000) return "/";
+  return raw;
+}
+
+/**
+ * The last step of a member's single sign-on. The provider's answer was checked
+ * and turned into a one-time code by the platform's own routes. Here the code
+ * becomes a session, made by the authentication library as every other session
+ * is, so the cookie and the record of the sign-in are the same as a password's.
+ */
+function singleSignOn(db: Db, config: Pick<Config, "publicUrl">) {
+  const base = `${new URL(config.publicUrl).origin}/api/v1/auth`;
+  return {
+    id: "vx-single-sign-on",
+    endpoints: {
+      ssoFinish: createAuthEndpoint(
+        "/sso/finish",
+        { method: "GET", requireHeaders: true },
+        async (ctx) => {
+          const query = new URL(ctx.request?.url ?? base).searchParams;
+          const cookies = ctx.headers?.get("cookie");
+          const done = await finish(
+            db,
+            {
+              code: query.get("code") ?? "",
+              base,
+              audience: "members",
+              cookie: (name) => cookieFrom(cookies, name),
+            },
+            {
+              principal: ANONYMOUS,
+              userAgent: ctx.headers?.get("user-agent") ?? undefined,
+            },
+          );
+          const user = done
+            ? await ctx.context.internalAdapter.findUserById(done.principalId)
+            : null;
+          if (!done || !user) throw ctx.redirect("/?sso_error=expired");
+          const session = await ctx.context.internalAdapter.createSession(user.id);
+          if (!session) throw ctx.redirect("/?sso_error=expired");
+          await setSessionCookie(ctx, { session, user });
+          ctx.setCookie(stateCookie(done.stateId), "", { path: "/", maxAge: 0 });
+          throw ctx.redirect(consolePath(done.returnTo));
+        },
+      ),
+    },
+  };
+}
+
 export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
   const actorFor = (
     memberId: string,
@@ -77,7 +141,31 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
 
   return betterAuth({
     ...authOptions(db, config),
-    plugins: [openAPI({ disableDefaultReference: true })],
+    plugins: [openAPI({ disableDefaultReference: true }), singleSignOn(db, config)],
+    hooks: {
+      // Where a provider is required, a password is no way in.
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/sign-in/email") return;
+        const email = String((ctx.body as { email?: unknown } | undefined)?.email ?? "");
+        const provider = await memberPasswordRefusedBy(db, email);
+        if (!provider) return;
+        await writeAudit(
+          db,
+          { principal: ANONYMOUS, userAgent: ctx.headers?.get("user-agent") ?? undefined },
+          {
+            action: "sso.password_refused",
+            targetType: "identity_provider",
+            targetId: provider.id,
+            tenantId: provider.tenantId,
+            details: { identityProvider: provider.name, email: email.trim().toLowerCase() },
+          },
+        );
+        throw new APIError("FORBIDDEN", {
+          code: "SSO_REQUIRED",
+          message: `Sign in with ${provider.name}. Passwords are turned off for your organisation.`,
+        });
+      }),
+    },
     logger: {
       log: (level, message, ...args) => {
         log[level]({ source: "auth", args }, message);

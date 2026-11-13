@@ -685,6 +685,85 @@ export interface TenantPortalTable {
   updated_at: Generated<Date>;
 }
 
+export interface IdentityProviderTable {
+  id: string;
+  tenant_id: string | null;
+  audience: "members" | "end_users";
+  protocol: "oidc" | "saml";
+  name: string;
+  config: Json<Record<string, unknown>>;
+  secrets: Buffer | null;
+  enabled: Generated<boolean>;
+  enforce: Generated<boolean>;
+  provision: Generated<boolean>;
+  default_role_id: string | null;
+  last_test: Json<Record<string, unknown>> | null;
+  paused: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface IdentityDomainTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  audience: "members" | "end_users";
+  domain: string;
+  verified_at: Timestamp | null;
+  checked_at: Timestamp | null;
+  check_error: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface IdentityLinkTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  subject: string;
+  principal_type: "member" | "end_user";
+  principal_id: string;
+  email: string | null;
+  created_at: Generated<Date>;
+  last_signed_in_at: Timestamp | null;
+}
+
+export interface IdentityGroupMapTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string;
+  claim_value: string;
+  member_group_id: string | null;
+  end_user_group_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface SsoStateTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  purpose: "sign_in" | "test";
+  state_hash: string;
+  browser_hash: string;
+  secrets: Buffer | null;
+  request_id: string | null;
+  origin: string;
+  return_to: string | null;
+  started_by: string | null;
+  answered_at: Timestamp | null;
+  finish_hash: string | null;
+  principal_id: string | null;
+  finished_at: Timestamp | null;
+  expires_at: Timestamp;
+  created_at: Generated<Date>;
+}
+
+export interface SsoAssertionTable {
+  provider_id: string;
+  tenant_id: string | null;
+  assertion_key: string;
+  expires_at: Timestamp;
+}
+
 export interface PlatformSchema {
   platform_migration: PlatformMigrationTable;
   tenant: TenantTable;
@@ -737,4 +816,10 @@ export interface PlatformSchema {
   app_handoff: AppHandoffTable;
   app_domain: AppDomainTable;
   tenant_portal: TenantPortalTable;
+  identity_provider: IdentityProviderTable;
+  identity_domain: IdentityDomainTable;
+  identity_link: IdentityLinkTable;
+  identity_group_map: IdentityGroupMapTable;
+  sso_state: SsoStateTable;
+  sso_assertion: SsoAssertionTable;
 }

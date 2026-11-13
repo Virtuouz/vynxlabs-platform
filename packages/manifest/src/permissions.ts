@@ -160,6 +160,17 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "sso",
+    label: "Single sign-on",
+    group: "Tenant",
+    scope: "tenant",
+    verbs: {
+      read: "See the tenant's identity providers, their domains and who is linked to them.",
+      write:
+        "Connect and change identity providers, prove domains, map groups, and require single sign-on.",
+    },
+  },
+  {
     kind: "git",
     label: "Repository",
     group: "Tenant",

@@ -46,6 +46,8 @@ button, a.button {
   background: var(--vx-action); border: 0; border-radius: var(--vx-radius-control);
 }
 button.plain { color: var(--vx-ink); background: var(--vx-sunken); }
+a.button.plain { color: var(--vx-ink); background: var(--vx-sunken); margin-top: 8px; }
+.or { margin: 20px 0 0; text-align: center; font-size: 13px; }
 :focus-visible { outline: 2px solid var(--vx-action); outline-offset: 2px; }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: var(--vx-radius-control); font-size: 14px; }
 .notice.danger { background: var(--vx-danger-soft); color: var(--vx-danger); }
@@ -99,24 +101,47 @@ const withReturn = (href: string, back: string | undefined) =>
 
 export function signInPage(
   frame: PageFrame,
-  at: { portal: string; back: string | undefined; signUp: boolean; email?: string },
+  at: {
+    portal: string;
+    back: string | undefined;
+    signUp: boolean;
+    email?: string;
+    /** The identity providers the tenant's end users sign in through. */
+    providers?: { id: string; name: string }[];
+    /** False when single sign-on is required of everyone, so there is no password to ask for. */
+    password?: boolean;
+  },
   notice?: Notice,
 ): string {
-  return page(
-    frame,
-    "Sign in",
-    `<h1>Sign in</h1>
-<form method="post" action="${escapeHtml(at.portal)}/sign-in">
+  const providers = (at.providers ?? [])
+    .map(
+      (provider, index) =>
+        `<a class="button${at.password === false && index === 0 ? "" : " plain"}" href="${escapeHtml(
+          withReturn(`${at.portal}/sso/${provider.id}/start`, at.back),
+        )}">Sign in with ${escapeHtml(provider.name)}</a>`,
+    )
+    .join("\n");
+  const password =
+    at.password === false
+      ? ""
+      : `<form method="post" action="${escapeHtml(at.portal)}/sign-in">
 ${hidden("return", at.back)}
 <label for="email">Email</label>
 <input id="email" name="email" type="email" autocomplete="username" required value="${escapeHtml(at.email ?? "")}">
 <label for="password">Password</label>
 <input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button>
-</form>
+</form>`;
+  return page(
+    frame,
+    "Sign in",
+    `<h1>Sign in</h1>
+${password}
+${providers && password ? '<p class="or">or</p>' : ""}
+${providers}
 <nav>
-<a href="${escapeHtml(at.portal)}/forgot">Forgot your password?</a>
-${at.signUp ? `<a href="${escapeHtml(withReturn(`${at.portal}/sign-up`, at.back))}">Create an account</a>` : ""}
+${at.password === false ? "" : `<a href="${escapeHtml(at.portal)}/forgot">Forgot your password?</a>`}
+${at.signUp && at.password !== false ? `<a href="${escapeHtml(withReturn(`${at.portal}/sign-up`, at.back))}">Create an account</a>` : ""}
 <a href="${escapeHtml(withReturn(`${at.portal}/staff`, at.back))}">Staff sign-in</a>
 </nav>`,
     notice,

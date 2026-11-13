@@ -1,9 +1,11 @@
+import { fileURLToPath } from "node:url";
 import type { Database, JobQueue, TenantRouter } from "@vynxlabs/db";
 import { KindRegistry } from "@vynxlabs/manifest";
 import type { FastifyBaseLogger } from "fastify";
 import type { Config } from "../config.js";
 import type { ObjectStore } from "../storage.js";
 import { Hosts } from "./apps/hosts.js";
+import { RuntimeFiles } from "./apps/runtime.js";
 import type { Db } from "./audit.js";
 import { type Auth, createAuth } from "./auth.js";
 import { Vault } from "./crypto.js";
@@ -36,6 +38,8 @@ export interface Kernel {
   /** Which of the instance's addresses a request came to, and what may be reached there. */
   hosts: Hosts;
   mail: Mailer;
+  /** The files of the app that draws interfaces. */
+  screens: RuntimeFiles;
 }
 
 export function createKernel(
@@ -67,6 +71,10 @@ export function createKernel(
     log,
     hosts: new Hosts(db, config),
     mail: new Mailer(config, log),
+    screens: new RuntimeFiles(
+      config.screensDir ??
+        fileURLToPath(new URL("../../../../packages/screens/runtime/dist", import.meta.url)),
+    ),
   };
   registerDataHooks(hooks, kernel.data);
   registerExecutionHooks(kernel);

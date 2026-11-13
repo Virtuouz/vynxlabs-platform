@@ -372,6 +372,17 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     verbs: { read: "Open apps." },
   },
   {
+    kind: "interface",
+    label: "Apps made in the console",
+    group: "Apps",
+    scope: "workspace",
+    verbs: {
+      read: "See the interfaces of a workspace as their makers see them.",
+      write:
+        "Build and change interfaces in the console, and deploy them and the apps that serve them. Nothing else can be deployed with it.",
+    },
+  },
+  {
     kind: "theme",
     label: "Themes",
     group: "Apps",

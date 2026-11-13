@@ -4,7 +4,8 @@ export interface AppContext {
   api: string;
   tenant: { id: string; slug: string; name: string };
   workspace: { id: string; slug: string };
-  app: { path: string; title: string };
+  /** `interface` is set on an app made in the console: the path of the interface it shows. */
+  app: { path: string; title: string; interface?: string };
   /** The path the app is served under, ending in a slash. Give it to your router. */
   base: string;
   /** Where the tenant's sign-in pages are, as a path on this address. */

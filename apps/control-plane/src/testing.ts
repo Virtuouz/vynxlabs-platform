@@ -29,6 +29,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
     consoleDir: undefined,
+    screensDir: undefined,
     appsUrl: undefined,
     mail: undefined,
     ...overrides,

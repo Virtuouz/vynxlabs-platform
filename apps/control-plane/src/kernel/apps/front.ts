@@ -684,7 +684,15 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           : rest === candidate.path || rest.startsWith(`${candidate.path}/`),
       );
     if (!manifest) return missing();
-    const body = manifest.body as { title: string; entry: string; fallback?: boolean };
+    const body = manifest.body as {
+      title: string;
+      entry?: string;
+      /** Set on an app that serves an interface: its files are the platform's own. */
+      interface?: string;
+      fallback?: boolean;
+    };
+    const generated = typeof body.interface === "string";
+    const entry = generated ? "index.html" : (body.entry as string);
     const base = appBasePath(place, {
       tenantSlug: tenant.slug,
       workspaceSlug: workspace.slug,
@@ -725,20 +733,33 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       return html(reply, 403, messagePage(look, NOT_ALLOWED, { portal, who: who(principal) }));
     }
 
-    const files = appFiles(bundle, manifest.path);
+    const runtime = generated ? await kernel.screens.files() : undefined;
+    if (runtime && runtime.size === 0) {
+      return html(
+        reply,
+        503,
+        messagePage(look, {
+          title: "This app cannot be shown here",
+          text: "This instance was started without the files that draw apps made in the console. Whoever runs it needs to set SCREENS_DIR.",
+        }),
+      );
+    }
+    const files: Map<string, { path: string; sha256: string; contentType: string }> =
+      runtime ?? appFiles(bundle, manifest.path);
     let asset = file === "" ? undefined : files.get(file);
     // An address that names no file is a screen of the app, which the page itself draws.
     const isPage =
       !asset && (file === "" || (body.fallback !== false && !/\.[A-Za-z0-9]+$/.test(file)));
-    if (isPage) asset = files.get(body.entry);
+    if (isPage) asset = files.get(entry);
     if (!asset) return missing();
 
     reply
       .header("content-security-policy", APP_POLICY)
       .header("x-content-type-options", "nosniff")
       .header("referrer-policy", "same-origin");
-    const content = await readAsset(kernel, tenant.id, asset.sha256);
-    if (isPage || asset.path === body.entry) {
+    const content =
+      runtime?.get(asset.path)?.content ?? (await readAsset(kernel, tenant.id, asset.sha256));
+    if (isPage || asset.path === entry) {
       const page = injectContext(content.toString("utf8"), {
         base,
         themeHref: look.themeHref,
@@ -746,7 +767,11 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           api: "/api/v1",
           tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
           workspace: { id: workspace.id, slug: workspace.slug },
-          app: { path: manifest.path, title: body.title },
+          app: {
+            path: manifest.path,
+            title: body.title,
+            ...(generated ? { interface: body.interface } : {}),
+          },
           base,
           portal,
           principal: {

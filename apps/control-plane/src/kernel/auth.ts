@@ -155,6 +155,24 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== "/sign-in/email") return;
         const email = String((ctx.body as { email?: unknown } | undefined)?.email ?? "");
+        const off = await db
+          .selectFrom("member")
+          .select("id")
+          .where("email", "=", email.trim().toLowerCase())
+          .where("disabled_at", "is not", null)
+          .executeTakeFirst();
+        if (off) {
+          await writeAudit(
+            db,
+            { principal: ANONYMOUS, userAgent: ctx.headers?.get("user-agent") ?? undefined },
+            { action: "member.sign_in_refused", targetType: "member", targetId: off.id },
+          );
+          // The same words as a wrong password: whether an account exists is not given away.
+          throw new APIError("UNAUTHORIZED", {
+            code: "INVALID_EMAIL_OR_PASSWORD",
+            message: "Invalid email or password",
+          });
+        }
         const provider = await memberPasswordRefusedBy(db, email);
         if (!provider) return;
         await writeAudit(

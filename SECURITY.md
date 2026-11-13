@@ -43,6 +43,7 @@ The address to write to, and how quickly a report is answered, are to be set by 
 - It sends mail only when `SMTP_URL` is set, and then only invitations and password resets for end users.
 - Checking a registered hostname looks up one DNS record and asks that hostname for one fixed address on this instance. The answer is compared and never shown.
 - End users cannot create their own accounts until a tenant turns that on.
+- Provisioning over SCIM is off until someone makes a token for a provider. A token opens that one provider's SCIM address and nothing else, is stored as a hash, and can be given an expiry and revoked. A push never deletes an account, never sets a password, and creates a member only for an email in a domain the provider has proved.
 - Single sign-on is off until a tenant connects a provider, and a provider is created off. Creating people on first sign-in, SHA-1 signatures, sign-ins begun at the provider and requiring single sign-on are each off until turned on, and each is audited when it is.
 - The control plane reads an identity provider's settings, keys and metadata from the addresses a tenant's admin gives, as it reaches a repository a tenant connects.
 - An app's pages are served with a content security policy that allows no inline script and nothing from another site. The platform's own sign-in pages have no script at all.

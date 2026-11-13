@@ -75,6 +75,8 @@ Groups of end users travel as `platform/end_user_group.NNNN.jsonl` and `platform
 
 `platform/identity_provider.NNNN.jsonl` carries each identity provider with its settings. Its `secrets` column holds the client secret or this side's SAML private key, encrypted under the tenant's key like a secret. `platform/identity_domain.NNNN.jsonl` carries its email domains, `platform/identity_link.NNNN.jsonl` who each of the provider's subjects is, and `platform/identity_group_map.NNNN.jsonl` its group mapping. A link to a member is rewritten with the member, as everything that names a member is.
 
+`platform/scim_user.NNNN.jsonl`, `platform/scim_group.NNNN.jsonl` and `platform/scim_group_member.NNNN.jsonl` carry what each provider pushed over SCIM, with the IDs the provider knows them by, so that it finds the same people and groups when it is pointed at the tenant's new home. The tokens a provider pushes with are not exported: they are made again on the instance the tenant arrives at, as the provider's address there is new. `tenant_member` carries `suspended_at`, so a member suspended in the tenant arrives suspended. Whether a member's account is disabled belongs to the instance and does not travel.
+
 An import sets `paused` on every provider and clears `verified_at` on every domain. A provider was given the addresses of the instance the tenant came from, and a domain was proved to that instance. A paused provider signs nobody in and requires nothing. Saving it on the importing instance turns it back on, once its administrator has the new addresses, and a provider of members also needs its domain proved again.
 
 Sign-ins that were in flight, and the record of SAML assertions already accepted, are not exported.

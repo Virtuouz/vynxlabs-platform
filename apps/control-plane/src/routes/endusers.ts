@@ -417,6 +417,17 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("principal_type", "=", "end_user")
             .where("principal_id", "=", removed.id)
             .execute();
+          // Nothing of the person is left for a provider to sign in or to push to.
+          await trx
+            .deleteFrom("identity_link")
+            .where("principal_type", "=", "end_user")
+            .where("principal_id", "=", removed.id)
+            .execute();
+          await trx
+            .deleteFrom("scim_user")
+            .where("principal_type", "=", "end_user")
+            .where("principal_id", "=", removed.id)
+            .execute();
           await audit({
             action: "end_user.deleted",
             targetType: "end_user",

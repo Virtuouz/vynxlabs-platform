@@ -217,10 +217,13 @@ export async function resolvePerson(
   if (principalType === "member") {
     const member = await trx
       .selectFrom("member")
-      .select("id")
+      .select(["id", "disabled_at"])
       .where("id", "=", principalId)
       .executeTakeFirst();
     if (!member) throw noAccount(email ?? asserted.subject);
+    if (member.disabled_at) {
+      throw new SsoRefusal("disabled", "This account has been turned off.");
+    }
     if (tenantId !== null) await ensureTenantMember(trx, audit, provider, tenantId, principalId);
     else if (created) await giveRole(trx, audit, provider, null, principalId);
   } else {
@@ -240,7 +243,16 @@ export async function resolvePerson(
   const groups =
     tenantId === null
       ? { added: [], removed: [] }
-      : await syncGroups(trx, provider, principalType, principalId, asserted.groups);
+      : await syncGroups(
+          trx,
+          provider,
+          principalType,
+          principalId,
+          // Where groups are pushed, a sign-in does not say which the person is in.
+          provider.scim.groups === "scim"
+            ? await pushedGroups(trx, provider.id, principalId)
+            : asserted.groups,
+        );
   if (groups.added.length > 0 || groups.removed.length > 0) {
     await audit({
       action: "sso.groups_changed",
@@ -260,6 +272,19 @@ export async function resolvePerson(
   };
 }
 
+/** The names of the pushed groups a person is in. */
+async function pushedGroups(trx: Trx, providerId: string, principalId: string) {
+  const rows = await trx
+    .selectFrom("scim_group_member")
+    .innerJoin("scim_group", "scim_group.id", "scim_group_member.group_id")
+    .innerJoin("scim_user", "scim_user.id", "scim_group_member.user_id")
+    .select("scim_group.display_name")
+    .where("scim_user.provider_id", "=", providerId)
+    .where("scim_user.principal_id", "=", principalId)
+    .execute();
+  return rows.map((row) => row.display_name);
+}
+
 const noAccount = (who: string) =>
   new SsoRefusal(
     "no_account",
@@ -276,10 +301,17 @@ async function ensureTenantMember(
 ) {
   const belongs = await trx
     .selectFrom("tenant_member")
-    .select("member_id")
+    .select(["member_id", "suspended_at"])
     .where("tenant_id", "=", tenantId)
     .where("member_id", "=", memberId)
     .executeTakeFirst();
+  if (belongs?.suspended_at) {
+    throw new SsoRefusal(
+      "disabled",
+      "Your access here has been suspended. Ask whoever looks after this.",
+      "The member is suspended in this tenant.",
+    );
+  }
   if (belongs) return;
   if (!provider.provision) {
     throw new SsoRefusal(
@@ -303,7 +335,7 @@ async function ensureTenantMember(
 }
 
 /** Gives someone the provider's default role, where the provider is: a tenant, or the instance. */
-async function giveRole(
+export async function giveRole(
   trx: Trx,
   audit: Audit,
   provider: Provider,
@@ -355,7 +387,7 @@ async function giveRole(
  * Sets membership of every group the provider maps, and of no other. A group
  * nobody mapped is left as people here made it.
  */
-async function syncGroups(
+export async function syncGroups(
   trx: Trx,
   provider: Provider,
   principalType: "member" | "end_user",

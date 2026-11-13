@@ -243,6 +243,17 @@ export const OWNED_TABLES: OwnedTable[] = [
   { table: "identity_domain", ofTenant: own, key: ["id"], export: "always" },
   { table: "identity_link", ofTenant: own, key: ["id"], export: "always" },
   { table: "identity_group_map", ofTenant: own, key: ["id"], export: "always" },
+  // What a provider pushed travels, so that it finds the same people when it is pointed at the
+  // tenant's new home. Its tokens do not: they are made again there.
+  { table: "scim_token", ofTenant: own, key: ["id"], export: "never" },
+  { table: "scim_user", ofTenant: own, key: ["id"], export: "always" },
+  { table: "scim_group", ofTenant: own, key: ["id"], export: "always" },
+  {
+    table: "scim_group_member",
+    ofTenant: (id) => sql`t.group_id in (select id from scim_group where tenant_id = ${id})`,
+    key: ["group_id", "user_id"],
+    export: "always",
+  },
   { table: "sso_state", ofTenant: own, key: ["id"], export: "never" },
   {
     table: "sso_assertion",

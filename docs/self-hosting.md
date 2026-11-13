@@ -260,7 +260,19 @@ Worth knowing:
 - **SAML requests are signed** with a key made for each provider, unless that is turned off. SHA-1 signatures and sign-ins begun at the provider are refused unless turned on for a provider.
 - **Encrypted assertions** are opened when the provider wraps the key with RSA-OAEP and MGF1 (`rsa-oaep-mgf1p`) and the SHA-1 digest. Keycloak's defaults differ: set the client's key transport algorithm and digest. The certificate to encrypt to is in the metadata only when **Ask the provider to encrypt assertions** is on.
 - **An imported tenant's providers are paused.** Give the provider's administrator this instance's addresses, prove the domains again, and save the provider.
-- **Not built:** SCIM, single logout, and one provider shared by several tenants.
+- **Not built:** single logout, and one provider shared by several tenants.
+
+### Provisioning (SCIM)
+
+A provider can also push the people and groups it holds, and say when someone has left, without waiting for them to sign in. Under a provider's **Provisioning** tab, copy the address, make a token, and give both to the provider as its SCIM 2.0 base address and bearer token. The address is `/api/v1/scim/v2/<provider>` on the instance's own address, so the provider must be able to reach the instance.
+
+- **What a push does.** A pushed person is found by email or made: a member of the tenant with the provider's default role, or an end user. A member's email must be in a domain the provider has proved. An end user who already exists is taken over only on a proved domain, or when the provider's word on emails is taken.
+- **When someone leaves.** The provider turns them off, or deletes them. An end user is disabled. A member is suspended in that tenant: they keep their account and whatever they hold in other tenants, and what they held here is kept for if they come back. For the instance's own provider the account is disabled everywhere, its sessions end at once and its API keys stop working. An account is never deleted by a push.
+- **Tying a pushed person to their sign-in.** Say which pushed field holds the name the provider signs the person in by: `externalId` or `userName`. For Entra with OIDC that is usually `externalId` mapped to the object ID. With none chosen, a person's first sign-in ties them, under the rules for any first sign-in.
+- **Groups.** By default groups come from what a sign-in says. A provider can instead be told that pushed groups decide, and to make a group here for each pushed group that nothing maps yet. The group map still says which pushed group is which group here, by name.
+- **By hand.** A tenant admin can suspend and resume a member under **Members**, and an operator can disable and enable an account under **Instance**.
+- **Limits.** Users and groups, with `userName`, `externalId`, `displayName` and `members` filters, and PATCH. No bulk, no password sync, no sorting, and no attributes for end users from a push. A member's email here does not change when the provider changes it.
+- **Tested against** the request shapes Entra ID and Okta send, as recorded. It has not been run against a live tenant of either.
 
 To try it locally, the development stack has Keycloak behind a profile, with a realm of two people, `ada` and `ben`, and an OIDC client `vynxlabs-platform` whose secret is `dev-only-oidc-secret`:
 

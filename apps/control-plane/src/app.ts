@@ -31,6 +31,7 @@ import { locationRoutes } from "./routes/locations.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { portabilityRoutes } from "./routes/portability.js";
+import { scimRoutes } from "./routes/scim.js";
 import { sourceRoutes } from "./routes/sources.js";
 import { ssoRoutes } from "./routes/sso.js";
 import { tenantRoutes } from "./routes/tenants.js";
@@ -162,6 +163,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(portabilityRoutes(kernel));
       await api.register(endUserRoutes(kernel));
       await api.register(ssoRoutes(kernel));
+      await api.register(scimRoutes(kernel));
       await api.register(interfaceRoutes(kernel));
       await api.register(dashboardRoutes(kernel));
       await api.register(appRoutes(kernel));

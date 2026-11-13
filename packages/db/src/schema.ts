@@ -42,6 +42,8 @@ export interface MemberTable {
   email: string;
   email_verified: Generated<boolean>;
   image: string | null;
+  /** Set when the instance's own identity provider said the person has left. */
+  disabled_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -74,7 +76,55 @@ export interface WorkspaceTable {
 export interface TenantMemberTable {
   tenant_id: string;
   member_id: string;
+  /** Set when the member may not act in this tenant for now. */
+  suspended_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   created_at: Generated<Date>;
+}
+
+export interface ScimTokenTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  name: string;
+  prefix: string;
+  token_hash: string;
+  expires_at: Date | null;
+  revoked_at: Date | null;
+  last_used_at: Date | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface ScimUserTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  external_id: string | null;
+  user_name: string;
+  email: string;
+  display_name: string | null;
+  given_name: string | null;
+  family_name: string | null;
+  active: Generated<boolean>;
+  principal_type: "member" | "end_user";
+  principal_id: string;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ScimGroupTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  external_id: string | null;
+  display_name: string;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ScimGroupMemberTable {
+  group_id: string;
+  user_id: string;
 }
 
 export interface PrincipalGroupTable {
@@ -716,6 +766,8 @@ export interface IdentityProviderTable {
   default_role_id: string | null;
   last_test: Json<Record<string, unknown>> | null;
   paused: Generated<boolean>;
+  /** How pushes over SCIM are taken. */
+  scim: ColumnType<Record<string, unknown>, string | undefined, string>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -837,6 +889,10 @@ export interface PlatformSchema {
   identity_domain: IdentityDomainTable;
   identity_link: IdentityLinkTable;
   identity_group_map: IdentityGroupMapTable;
+  scim_token: ScimTokenTable;
+  scim_user: ScimUserTable;
+  scim_group: ScimGroupTable;
+  scim_group_member: ScimGroupMemberTable;
   sso_state: SsoStateTable;
   sso_assertion: SsoAssertionTable;
   member_dashboard: MemberDashboardTable;

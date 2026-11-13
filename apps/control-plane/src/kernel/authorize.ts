@@ -80,6 +80,16 @@ export async function check(
     return { allowed: false, related: false };
   }
   if (appOnly && !appFacing(permission)) return { allowed: false, related: true };
+  // A member suspended in a tenant holds nothing there, by any binding or group, until resumed.
+  // An operator's access grant is not membership, and is ended by itself.
+  let suspended = false;
+  if (principal.type === "member" && tenantId !== null) {
+    const membership = await sql<{ suspended: boolean }>`
+      select suspended_at is not null as suspended from tenant_member
+      where tenant_id = ${tenantId} and member_id = ${id}
+    `.execute(db);
+    suspended = membership.rows[0]?.suspended === true;
+  }
 
   const principalMatch =
     principal.type === "member"
@@ -132,7 +142,11 @@ export async function check(
       and g.expires_at > now()
   `.execute(db);
 
-  const granting = held.rows.filter((row) => grants(row.permissions, permission));
+  const granting = held.rows.filter(
+    (row) =>
+      grants(row.permissions, permission) &&
+      !(suspended && row.access_grant_id === null && row.scope_type !== "instance"),
+  );
   // Prefer a standing binding over a grant, so ordinary access is not logged as operator access.
   const standing = granting.find((row) => row.access_grant_id === null);
   const viaGrant = granting.find((row) => row.access_grant_id !== null);

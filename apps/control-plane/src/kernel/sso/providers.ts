@@ -79,8 +79,35 @@ export interface Provider {
   defaultRoleId: string | null;
   lastTest: Record<string, unknown> | null;
   paused: boolean;
+  scim: ScimSettings;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** How a provider's pushes over SCIM are taken. */
+export interface ScimSettings {
+  /**
+   * The pushed field that holds the name the provider signs the person in by. With one
+   * set, a pushed person is tied to the provider at once. With none, their first sign-in
+   * ties them, under the rules for any first sign-in.
+   */
+  subjectFrom: "externalId" | "userName" | null;
+  /** Whether a person's groups come from what is pushed, in place of what a sign-in says. */
+  groups: "sign_in" | "scim";
+  /** Make a group here for a pushed group that nothing maps yet. */
+  createGroups: boolean;
+}
+
+export function scimSettings(raw: unknown): ScimSettings {
+  const given = (raw ?? {}) as Partial<ScimSettings>;
+  return {
+    subjectFrom:
+      given.subjectFrom === "externalId" || given.subjectFrom === "userName"
+        ? given.subjectFrom
+        : null,
+    groups: given.groups === "scim" ? "scim" : "sign_in",
+    createGroups: given.createGroups === true,
+  };
 }
 
 export const isOidc = (
@@ -104,6 +131,7 @@ interface Row {
   default_role_id: string | null;
   last_test: Record<string, unknown> | null;
   paused: boolean;
+  scim: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
 }
@@ -122,6 +150,7 @@ const toProvider = (row: Row): Provider => ({
   defaultRoleId: row.default_role_id,
   lastTest: row.last_test,
   paused: row.paused,
+  scim: scimSettings(row.scim),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });

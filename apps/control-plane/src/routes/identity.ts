@@ -32,12 +32,31 @@ export const Member = Type.Object({
   name: Type.String(),
   email: Type.String(),
   createdAt: Time,
+  suspended: Type.Optional(
+    Type.Boolean({
+      description: "In a tenant's list: whether the member may not act in the tenant for now.",
+    }),
+  ),
+  disabled: Type.Optional(
+    Type.Boolean({
+      description: "In the instance's list: whether the account can sign in nowhere.",
+    }),
+  ),
 });
-export const toMember = (row: { id: string; name: string; email: string; created_at: Date }) => ({
+export const toMember = (row: {
+  id: string;
+  name: string;
+  email: string;
+  created_at: Date;
+  suspended_at?: Date | null;
+  disabled_at?: Date | null;
+}) => ({
   id: row.id,
   name: row.name,
   email: row.email,
   createdAt: iso(row.created_at),
+  ...(row.suspended_at !== undefined ? { suspended: row.suspended_at !== null } : {}),
+  ...(row.disabled_at !== undefined ? { disabled: row.disabled_at !== null } : {}),
 });
 
 export const NewMemberBody = Type.Object({
@@ -295,7 +314,12 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         tenants =
           principal.type === "member"
             ? tenants.where("id", "in", (eb) =>
-                eb.selectFrom("tenant_member").select("tenant_id").where("member_id", "=", id),
+                // A tenant the member is suspended in is not offered: nothing in it would open.
+                eb
+                  .selectFrom("tenant_member")
+                  .select("tenant_id")
+                  .where("member_id", "=", id)
+                  .where("suspended_at", "is", null),
               )
             : tenants.where("id", "=", principal.tenantId as string);
         return {
@@ -521,13 +545,58 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ query }) => {
         const args = pageArgs(query);
-        let select = kernel.db.selectFrom("member").select(["id", "name", "email", "created_at"]);
+        let select = kernel.db
+          .selectFrom("member")
+          .select(["id", "name", "email", "created_at", "disabled_at"]);
         if (args.after) select = select.where("id", ">", args.after);
         const rows = await select
           .orderBy("id")
           .limit(args.limit + 1)
           .execute();
         return toPage(rows, args, (row) => row.id, toMember);
+      },
+    );
+
+    app.patch(
+      "/members/:id",
+      {
+        config: { access: access.instance("member:write") },
+        schema: {
+          summary: "Disable or enable a member's account",
+          description:
+            "A disabled member can sign in nowhere, by password, single sign-on or API key, and " +
+            "every session they have ends. The account and what it holds are kept. The " +
+            "instance's identity provider does this when it says someone has left. Nobody " +
+            "disables their own account.",
+          tags: ["identity"],
+          params: Type.Object({ id: Id }),
+          body: Type.Object({ disabled: Type.Boolean() }),
+          response: { 200: Member },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        if (body.disabled && ctx.principal.id === params.id) {
+          throw badRequest("You cannot disable your own account.");
+        }
+        return ctx.mutate(async (trx, audit) => {
+          const member = await trx
+            .updateTable("member")
+            .set({ disabled_at: body.disabled ? new Date() : null })
+            .where("id", "=", params.id)
+            .returning(["id", "name", "email", "created_at", "disabled_at"])
+            .executeTakeFirst();
+          if (!member) throw notFound("The member");
+          if (body.disabled) {
+            await trx.deleteFrom("member_session").where("member_id", "=", member.id).execute();
+          }
+          await audit({
+            action: body.disabled ? "member.disabled" : "member.enabled",
+            targetType: "member",
+            targetId: member.id,
+            details: { email: member.email },
+          });
+          return toMember(member);
+        });
       },
     );
 

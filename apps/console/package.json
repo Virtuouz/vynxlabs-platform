@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node compress.mjs dist",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

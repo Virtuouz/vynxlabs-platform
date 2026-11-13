@@ -1,5 +1,5 @@
 import { Notice } from "@vynxlabs/ui";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { api, type Me, useLoad } from "./api.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
@@ -7,8 +7,12 @@ import { Account } from "./screens/Account.tsx";
 import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
-import { SingleSignOn } from "./screens/SingleSignOn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
+
+const SingleSignOn = lazy(() =>
+  import("./screens/SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
+);
+
 import { Tenants } from "./screens/Tenants.tsx";
 import { useTenantTheme } from "./theme.ts";
 
@@ -68,7 +72,8 @@ export function App() {
 
   return (
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>
-      {screen}
+      {/* Some screens are fetched when first opened. */}
+      <Suspense fallback={<p className="text-ink-muted">Loading…</p>}>{screen}</Suspense>
     </Shell>
   );
 }

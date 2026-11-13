@@ -15,9 +15,8 @@ import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
-import { Changes, type CodeKind, Extensions, ScriptEditor } from "./Authoring.tsx";
+import type { CodeKind } from "./Authoring.tsx";
 import { Branding } from "./Branding.tsx";
-import { Dashboards, DashboardView } from "./Dashboards.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
 import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
@@ -35,6 +34,25 @@ import {
 } from "./Execution.tsx";
 import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
 
+// Screens that bring a library with them, or that few people open, are fetched when first
+// opened: the code editor, the screen builder with its charts, and single sign-on.
+const Changes = lazy(() => import("./Authoring.tsx").then((m) => ({ default: m.Changes })));
+const Extensions = lazy(() => import("./Authoring.tsx").then((m) => ({ default: m.Extensions })));
+const ScriptEditor = lazy(() =>
+  import("./Authoring.tsx").then((m) => ({ default: m.ScriptEditor })),
+);
+const Dashboards = lazy(() => import("./Dashboards.tsx").then((m) => ({ default: m.Dashboards })));
+const DashboardView = lazy(() =>
+  import("./Dashboards.tsx").then((m) => ({ default: m.DashboardView })),
+);
+const InterfaceBuilder = lazy(() =>
+  import("./Interfaces.tsx").then((m) => ({ default: m.InterfaceBuilder })),
+);
+const Interfaces = lazy(() => import("./Interfaces.tsx").then((m) => ({ default: m.Interfaces })));
+const SingleSignOn = lazy(() =>
+  import("./SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
+);
+
 // The flow editor brings a canvas library with it, so it is fetched when first opened.
 const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
@@ -43,9 +61,7 @@ const FlowEditor = lazy(() =>
 import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups, Groups } from "./Groups.tsx";
-import { InterfaceBuilder, Interfaces } from "./Interfaces.tsx";
 import { type Role, Roles } from "./Roles.tsx";
-import { SingleSignOn } from "./SingleSignOn.tsx";
 
 interface Workspace {
   id: string;

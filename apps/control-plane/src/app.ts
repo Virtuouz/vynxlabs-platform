@@ -186,7 +186,21 @@ export async function buildApp(options: AppOptions) {
 
   const consoleDir = consoleDirectory(options.config);
   if (consoleDir) {
-    await app.register(fastifyStatic, { root: consoleDir, wildcard: false });
+    await app.register(fastifyStatic, {
+      root: consoleDir,
+      wildcard: false,
+      // The build leaves a Brotli and a gzip copy beside each file. One of them is sent when
+      // the browser takes it, and nothing is compressed while a request waits.
+      preCompressed: true,
+      cacheControl: false,
+      setHeaders(response, path) {
+        // A file under assets has a hash of its content in its name, so it never changes.
+        response.header(
+          "cache-control",
+          /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "no-cache",
+        );
+      },
+    });
   }
   app.setNotFoundHandler((request, reply) => {
     const isApi = request.url === "/api" || request.url.startsWith("/api/");

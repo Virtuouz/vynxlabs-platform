@@ -119,6 +119,9 @@ export const AuditEntry = Type.Object({
   workspaceId: NullableId,
   actorType: Type.String(),
   actorId: NullableId,
+  actorLabel: Type.Union([Type.String(), Type.Null()], {
+    description: "A member's email or a service account's name, when the actor is one of those.",
+  }),
   apiKeyId: NullableId,
   accessGrantId: NullableId,
   action: Type.String(),
@@ -132,13 +135,38 @@ export const AuditEntry = Type.Object({
 export const AuditQuery = Type.Object({
   ...PageQuery.properties,
   action: Type.Optional(Type.String({ description: "Only entries with exactly this action." })),
+  area: Type.Optional(
+    Type.String({
+      pattern: "^[a-z][a-z0-9_]*$",
+      maxLength: 63,
+      description:
+        "Only entries whose action starts with this word and a dot: `secret` for `secret.set`.",
+    }),
+  ),
+  actorId: Type.Optional(Type.String({ format: "uuid", description: "Only what this actor did." })),
+  target: Type.Optional(
+    Type.String({ maxLength: 255, description: "Only entries about the thing with this ID." }),
+  ),
+  from: Type.Optional(
+    Type.String({ format: "date-time", description: "Nothing older than this." }),
+  ),
+  to: Type.Optional(Type.String({ format: "date-time", description: "Nothing newer than this." })),
 });
 
 /** A page of audit entries, newest first. `tenantId` null selects instance-level entries. */
 export async function auditPage(
   kernel: Kernel,
   tenantId: string | null,
-  query: { limit?: number; cursor?: string; action?: string },
+  query: {
+    limit?: number;
+    cursor?: string;
+    action?: string;
+    area?: string;
+    actorId?: string;
+    target?: string;
+    from?: string;
+    to?: string;
+  },
 ) {
   const args = pageArgs(query);
   let select = kernel.db.selectFrom("audit_entry").selectAll();
@@ -147,11 +175,46 @@ export async function auditPage(
       ? select.where("tenant_id", "is", null)
       : select.where("tenant_id", "=", tenantId);
   if (query.action) select = select.where("action", "=", query.action);
+  // The pattern on `area` allows no wildcard character, so it is safe inside `like`.
+  if (query.area) select = select.where("action", "like", `${query.area}.%`);
+  if (query.actorId) select = select.where("actor_id", "=", query.actorId);
+  if (query.target) select = select.where("target_id", "=", query.target);
+  if (query.from) select = select.where("occurred_at", ">=", new Date(query.from));
+  if (query.to) select = select.where("occurred_at", "<=", new Date(query.to));
   if (args.after) select = select.where("id", "<", args.after);
   const rows = await select
     .orderBy("id", "desc")
     .limit(args.limit + 1)
     .execute();
+  // Who each actor is, for people to read: a member's email or a service account's name.
+  const ids = (type: string) => [
+    ...new Set(
+      rows
+        .filter((row) => row.actor_type === type && row.actor_id)
+        .map((row) => row.actor_id as string),
+    ),
+  ];
+  const members = ids("member");
+  const accounts = ids("service_account");
+  const names = new Map<string, string>();
+  if (members.length > 0) {
+    for (const member of await kernel.db
+      .selectFrom("member")
+      .select(["id", "email"])
+      .where("id", "in", members)
+      .execute()) {
+      names.set(member.id, member.email);
+    }
+  }
+  if (accounts.length > 0) {
+    for (const account of await kernel.db
+      .selectFrom("service_account")
+      .select(["id", "name"])
+      .where("id", "in", accounts)
+      .execute()) {
+      names.set(account.id, account.name);
+    }
+  }
   return toPage(
     rows,
     args,
@@ -163,6 +226,7 @@ export async function auditPage(
       workspaceId: row.workspace_id,
       actorType: row.actor_type,
       actorId: row.actor_id,
+      actorLabel: (row.actor_id && names.get(row.actor_id)) ?? null,
       apiKeyId: row.api_key_id,
       accessGrantId: row.access_grant_id,
       action: row.action,

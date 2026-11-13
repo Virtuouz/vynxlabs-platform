@@ -12,9 +12,7 @@ export function Facts({ facts, columns = 4 }: { facts: readonly Fact[]; columns?
   const shown = facts.filter(
     (fact) => fact.value !== undefined && fact.value !== null && fact.value !== "",
   );
-  const grid = { 2: "md:grid-cols-2", 3: "md:grid-cols-3", 4: "md:grid-cols-2 xl:grid-cols-4" }[
-    columns
-  ];
+  const grid = { 2: "", 3: "md:grid-cols-3", 4: "md:grid-cols-2 xl:grid-cols-4" }[columns];
   return (
     <dl
       className={`m-0 grid grid-cols-1 gap-x-6 gap-y-2 rounded-control border border-line p-3 ${grid}`}

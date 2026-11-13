@@ -1,0 +1,31 @@
+{
+  "name": "@vynxlabs/screens",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Draws an interface: pages of widgets over tables. Used by the console's builder and by the app the platform serves for interfaces.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "vite build runtime",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@vynxlabs/app": "workspace:*",
+    "@vynxlabs/manifest": "workspace:*",
+    "@vynxlabs/ui": "workspace:*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "happy-dom": "^21.0.4",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.8"
+  }
+}

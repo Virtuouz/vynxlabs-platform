@@ -7,8 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -b && pnpm --filter @vynxlabs/console build",
-    "typecheck": "tsc -b && tsc -p packages/ui && tsc -p packages/app && tsc -p apps/console && tsc -p examples/acme",
+    "build": "tsc -b && pnpm --filter @vynxlabs/console build && pnpm --filter @vynxlabs/screens build",
+    "typecheck": "tsc -b && tsc -p packages/ui && tsc -p packages/app && tsc -p packages/screens && tsc -p apps/console && tsc -p examples/acme",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "pnpm build && vitest run",

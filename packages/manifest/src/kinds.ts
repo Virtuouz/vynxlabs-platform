@@ -81,6 +81,26 @@ export const bindingKind: KindDefinition = {
   },
 };
 
+/** The most source one resource may carry, in characters. */
+export const MAX_SOURCE_LENGTH = 256 * 1024;
+
+/**
+ * The source of a resource written in the console. It travels in the manifest,
+ * so versions, bundles, promotion, clones and exports all carry it. Resources
+ * from a repository have none: their code is in the bundle only.
+ */
+const sourceCode = {
+  type: "object",
+  description:
+    "The TypeScript the resource was written as, for a resource managed in the console. Its default export is what runs.",
+  properties: {
+    language: { const: "typescript" },
+    code: { type: "string", maxLength: MAX_SOURCE_LENGTH },
+  },
+  required: ["language", "code"],
+  additionalProperties: false,
+};
+
 export const scriptKind: KindDefinition = {
   kind: "script",
   schemaVersion: 1,
@@ -161,6 +181,24 @@ export const scriptKind: KindDefinition = {
         },
         additionalProperties: false,
       },
+      node: {
+        type: "object",
+        description:
+          "Makes the script a step that can be picked in the flow editor, under this label.",
+        properties: {
+          label: { type: "string", minLength: 1, maxLength: 60 },
+          icon: {
+            type: "string",
+            pattern: "^[a-z][a-z0-9-]*$",
+            maxLength: 40,
+            description: "The name of an icon from the interface's set.",
+          },
+          category: { type: "string", minLength: 1, maxLength: 40 },
+        },
+        required: ["label"],
+        additionalProperties: false,
+      },
+      source: sourceCode,
     },
     required: ["entry", "input", "output", "timeoutSeconds", "retries", "uses"],
     additionalProperties: false,

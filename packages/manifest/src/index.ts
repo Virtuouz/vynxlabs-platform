@@ -24,6 +24,14 @@ export {
   StoredResource,
 } from "./envelope.js";
 export {
+  entryFor,
+  type ParsedResources,
+  parseResourceFiles,
+  RESOURCE_FOLDER,
+  type ResourceFile,
+  renderResourceFiles,
+} from "./files.js";
+export {
   checkFlow,
   type FlowBody,
   type FlowEdge,
@@ -44,6 +52,7 @@ export {
   eventKind,
   flowKind,
   isThemeValue,
+  MAX_SOURCE_LENGTH,
   PERMISSION_PATTERN,
   platformKinds,
   registerPlatformKinds,

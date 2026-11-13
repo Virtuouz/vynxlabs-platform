@@ -4,13 +4,17 @@ import { KIND_PATTERN, PATH_PATTERN } from "./envelope.js";
 
 const VERSION_PATTERN = "^\\d+\\.\\d+\\.\\d+$";
 
-/** A manifest as a bundle carries it: no workspace, always code-managed. */
+/**
+ * A manifest as a bundle carries it: no workspace. Up to format 2 every one is
+ * code-managed. From format 3 a bundle also carries the resources managed in
+ * the console, marked `ui`, so that one bundle is everything a workspace runs.
+ */
 export const BundleManifest = Type.Object(
   {
     kind: Type.String({ pattern: KIND_PATTERN, maxLength: 63 }),
     schemaVersion: Type.Integer({ minimum: 1 }),
     path: Type.String({ pattern: PATH_PATTERN, maxLength: 255 }),
-    ownership: Type.Literal("code"),
+    ownership: Type.Union([Type.Literal("code"), Type.Literal("ui")]),
     body: Type.Record(Type.String(), Type.Unknown()),
   },
   { additionalProperties: false },
@@ -51,8 +55,10 @@ export const MAX_BUNDLE_ASSETS = 5000;
 /** The unit of deploy: one workspace's manifests and code, immutable once built. */
 export const Bundle = Type.Object(
   {
-    formatVersion: Type.Union([Type.Literal(1), Type.Literal(2)], {
-      description: "2 adds `assets`. A bundle without apps may still be written as 1.",
+    formatVersion: Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)], {
+      description:
+        "2 adds `assets`. 3 lets a manifest be console-managed, and then speaks for every " +
+        "console-managed resource of the workspace. A bundle with neither is still written as 1.",
     }),
     sdkVersion: Type.String({ pattern: VERSION_PATTERN }),
     core: Type.Object(

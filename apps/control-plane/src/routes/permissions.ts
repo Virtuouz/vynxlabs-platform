@@ -66,6 +66,7 @@ const PrincipalType = Type.Union([
   Type.Literal("anonymous"),
   Type.Literal("end_user"),
   Type.Literal("end_users"),
+  Type.Literal("end_user_group"),
 ]);
 const Binding = Type.Object({
   id: Id,
@@ -306,6 +307,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .onRef("end_user.id", "=", "binding.principal_id")
               .on("binding.principal_type", "=", "end_user"),
           )
+          .leftJoin("end_user_group", (join) =>
+            join
+              .onRef("end_user_group.id", "=", "binding.principal_id")
+              .on("binding.principal_type", "=", "end_user_group"),
+          )
           .select([
             "binding.id",
             "binding.scope_type",
@@ -320,6 +326,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "member.email",
             "end_user.email as end_user_email",
             "principal_group.name as group_name",
+            "end_user_group.name as end_user_group_name",
             "service_account.name as account_name",
           ])
           .where("binding.tenant_id", "=", params.t);
@@ -338,6 +345,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               row.email ??
               row.end_user_email ??
               row.group_name ??
+              row.end_user_group_name ??
               row.account_name ??
               (row.principal_type === "end_users" ? "every end user" : "anyone"),
             roleId: row.role_id,
@@ -437,7 +445,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       .executeTakeFirst()
                   : await trx
                       .selectFrom(
-                        body.principalType === "group" ? "principal_group" : "service_account",
+                        body.principalType === "group"
+                          ? "principal_group"
+                          : body.principalType === "end_user_group"
+                            ? "end_user_group"
+                            : "service_account",
                       )
                       .select("id")
                       .where("tenant_id", "=", tenantId)

@@ -629,6 +629,8 @@ export type BindingPrincipal =
   | { type: "service_account"; name: string }
   /** One person in the tenant's end-user pool. */
   | { type: "end_user"; email: string }
+  /** A group of end users, by its name. */
+  | { type: "end_user_group"; name: string }
   /** Every signed-in end user of the tenant. */
   | { type: "end_users" }
   /** Anyone, signed in or not. This is what makes something public. */

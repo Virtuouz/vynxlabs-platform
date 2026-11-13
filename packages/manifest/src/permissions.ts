@@ -123,6 +123,16 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "end_user_group",
+    label: "Groups of end users",
+    group: "Tenant",
+    scope: "tenant",
+    verbs: {
+      read: "See groups of end users and who is in them.",
+      write: "Create groups of end users and change who is in them.",
+    },
+  },
+  {
     kind: "portal",
     label: "Branding and portal",
     group: "Tenant",

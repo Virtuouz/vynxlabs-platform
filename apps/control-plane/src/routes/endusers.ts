@@ -1,4 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
+import { newId, sql } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { portalUrl } from "../kernel/apps/address.js";
@@ -13,7 +14,14 @@ import {
   setPasswordWithToken,
   signUpAllowed,
 } from "../kernel/endusers.js";
-import { badRequest, forbidden, HttpError, notFound, unauthenticated } from "../kernel/errors.js";
+import {
+  badRequest,
+  conflict,
+  forbidden,
+  HttpError,
+  notFound,
+  unauthenticated,
+} from "../kernel/errors.js";
 import { access, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { PageQuery, pageOf } from "../pagination.js";
@@ -36,6 +44,11 @@ const EndUser = Type.Object({
   email: Type.String(),
   name: Type.String(),
   hasPassword: Type.Boolean({ description: "False until an invitation has been used." }),
+  attributes: Type.Record(Type.String(), Type.String(), {
+    description:
+      "Facts about the person that a table's row rules can match: which customer they belong to, which region they cover.",
+  }),
+  groups: Type.Array(Type.String(), { description: "The names of the groups the person is in." }),
   disabled: Type.Boolean(),
   lastSignedInAt: NullableTime,
   createdAt: Time,
@@ -45,6 +58,8 @@ const toEndUser = (row: {
   email: string;
   name: string;
   password_hash: string | null;
+  attributes?: Record<string, string>;
+  groups?: string[] | null;
   disabled_at: Date | null;
   last_signed_in_at: Date | null;
   created_at: Date;
@@ -53,6 +68,8 @@ const toEndUser = (row: {
   email: row.email,
   name: row.name,
   hasPassword: row.password_hash !== null,
+  attributes: row.attributes ?? {},
+  groups: row.groups ?? [],
   disabled: row.disabled_at !== null,
   lastSignedInAt: isoOrNull(row.last_signed_in_at),
   createdAt: iso(row.created_at),
@@ -157,7 +174,17 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params, query }) => {
         const args = pageArgs(query);
-        let select = db.selectFrom("end_user").selectAll().where("tenant_id", "=", params.t);
+        let select = db
+          .selectFrom("end_user")
+          .selectAll()
+          .select(
+            sql<string[]>`coalesce((
+              select array_agg(g.name order by g.name)
+              from end_user_group_member m join end_user_group g on g.id = m.group_id
+              where m.end_user_id = end_user.id
+            ), '{}')`.as("groups"),
+          )
+          .where("tenant_id", "=", params.t);
         if (query.search) {
           const term = `%${query.search.toLowerCase().replace(/[%_\\]/g, "\\$&")}%`;
           select = select.where((eb) =>
@@ -220,6 +247,22 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     );
 
     const UserParams = Type.Object({ t: Id, userId: Id });
+    /** At most 50 short facts. Names are plain, so that a rule can name one. */
+    const Attributes = Type.Record(
+      Type.String({ pattern: "^[a-z][a-z0-9_]{0,62}$" }),
+      Type.String({ maxLength: 500 }),
+      { maxProperties: 50 },
+    );
+    const groupsOf = async (from: typeof db, userId: string) =>
+      (
+        await from
+          .selectFrom("end_user_group_member")
+          .innerJoin("end_user_group", "end_user_group.id", "end_user_group_member.group_id")
+          .select("end_user_group.name")
+          .where("end_user_group_member.end_user_id", "=", userId)
+          .orderBy("end_user_group.name")
+          .execute()
+      ).map((row) => row.name);
 
     app.post(
       "/tenants/:t/end-users/:userId/links",
@@ -280,17 +323,30 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: Type.Object({
             name: Type.Optional(Type.String({ maxLength: 200 })),
             disabled: Type.Optional(Type.Boolean()),
+            attributes: Type.Optional(Attributes),
           }),
           response: { 200: EndUser },
         },
       },
       async ({ ctx, params, body }) => {
+        // The schema's pattern for names is not enforced on every key, so it is checked here.
+        const badName = Object.keys(body.attributes ?? {}).find(
+          (name) => !/^[a-z][a-z0-9_]{0,62}$/.test(name),
+        );
+        if (badName !== undefined) {
+          throw badRequest("An attribute's name is lowercase letters, digits and underscores.", [
+            { path: `/body/attributes/${badName}`, message: "is not a usable name" },
+          ]);
+        }
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
             .updateTable("end_user")
             .set({
               updated_at: new Date(),
               ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+              ...(body.attributes !== undefined
+                ? { attributes: JSON.stringify(body.attributes) }
+                : {}),
               ...(body.disabled !== undefined
                 ? { disabled_at: body.disabled ? new Date() : null }
                 : {}),
@@ -317,8 +373,11 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetType: "end_user",
             targetId: updated.id,
             tenantId: params.t,
+            ...(body.attributes !== undefined
+              ? { details: { attributes: Object.keys(body.attributes).sort() } }
+              : {}),
           });
-          return updated;
+          return { ...updated, groups: await groupsOf(trx, updated.id) };
         });
         return toEndUser(row);
       },
@@ -363,6 +422,262 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetId: removed.id,
             tenantId: params.t,
             details: { email: removed.email },
+          });
+        });
+        return reply.code(204).send(null);
+      },
+    );
+
+    // ----- Groups of end users -----
+
+    const GroupName = Type.String({ pattern: "^[a-z0-9][a-z0-9_-]{0,62}$" });
+    const Group = Type.Object({
+      id: Id,
+      name: Type.String(),
+      description: Type.String(),
+      memberCount: Type.Integer(),
+      createdAt: Time,
+    });
+    const GroupParams = Type.Object({ t: Id, g: Id });
+    const findGroup = async (from: typeof db, tenantId: string, groupId: string) => {
+      const group = await from
+        .selectFrom("end_user_group")
+        .selectAll()
+        .where("id", "=", groupId)
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirst();
+      if (!group) throw notFound("The group");
+      return group;
+    };
+
+    app.get(
+      "/tenants/:t/end-user-groups",
+      {
+        config: { access: access.tenant("end_user_group:read") },
+        schema: {
+          summary: "The tenant's groups of end users",
+          tags: ["end users"],
+          params: TenantParams,
+          response: { 200: Type.Object({ items: Type.Array(Group) }) },
+        },
+      },
+      async ({ params }) => {
+        const rows = await db
+          .selectFrom("end_user_group")
+          .selectAll("end_user_group")
+          .select((eb) =>
+            eb
+              .selectFrom("end_user_group_member")
+              .select((count) => count.fn.countAll<string>().as("n"))
+              .whereRef("end_user_group_member.group_id", "=", "end_user_group.id")
+              .as("member_count"),
+          )
+          .where("tenant_id", "=", params.t)
+          .orderBy("name")
+          .execute();
+        return {
+          items: rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            memberCount: Number(row.member_count ?? 0),
+            createdAt: iso(row.created_at),
+          })),
+        };
+      },
+    );
+
+    app.post(
+      "/tenants/:t/end-user-groups",
+      {
+        config: { access: access.tenant("end_user_group:write") },
+        schema: {
+          summary: "Create a group of end users",
+          description:
+            "Give a role to the group under Access, and rule a table's rows by it. The name is " +
+            "what a repository's binding and a row rule refer to, so it cannot be changed later.",
+          tags: ["end users"],
+          params: TenantParams,
+          body: Type.Object({
+            name: GroupName,
+            description: Type.Optional(Type.String({ maxLength: 500 })),
+          }),
+          response: { 201: Group },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const row = await ctx.mutate(async (trx, audit) => {
+          const taken = await trx
+            .selectFrom("end_user_group")
+            .select("id")
+            .where("tenant_id", "=", params.t)
+            .where("name", "=", body.name)
+            .executeTakeFirst();
+          if (taken) throw conflict(`A group of end users named ${body.name} already exists.`);
+          const created = await trx
+            .insertInto("end_user_group")
+            .values({
+              id: newId(),
+              tenant_id: params.t,
+              name: body.name,
+              description: body.description ?? "",
+            })
+            .returningAll()
+            .executeTakeFirstOrThrow();
+          await audit({
+            action: "end_user_group.created",
+            targetType: "end_user_group",
+            targetId: created.id,
+            tenantId: params.t,
+            details: { name: created.name },
+          });
+          return created;
+        });
+        return reply.code(201).send({
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          memberCount: 0,
+          createdAt: iso(row.created_at),
+        });
+      },
+    );
+
+    app.get(
+      "/tenants/:t/end-user-groups/:g",
+      {
+        config: { access: access.tenant("end_user_group:read") },
+        schema: {
+          summary: "One group of end users, with who is in it",
+          tags: ["end users"],
+          params: GroupParams,
+          response: {
+            200: Type.Object({
+              id: Id,
+              name: Type.String(),
+              description: Type.String(),
+              members: Type.Array(
+                Type.Object({ id: Id, email: Type.String(), name: Type.String() }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const group = await findGroup(db, params.t, params.g);
+        const members = await db
+          .selectFrom("end_user_group_member")
+          .innerJoin("end_user", "end_user.id", "end_user_group_member.end_user_id")
+          .select(["end_user.id", "end_user.email", "end_user.name"])
+          .where("end_user_group_member.group_id", "=", group.id)
+          .orderBy("end_user.email")
+          .execute();
+        return { id: group.id, name: group.name, description: group.description, members };
+      },
+    );
+
+    app.delete(
+      "/tenants/:t/end-user-groups/:g",
+      {
+        config: { access: access.tenant("end_user_group:write") },
+        schema: {
+          summary: "Delete a group of end users",
+          description:
+            "Its members lose what the group was given. A table ruled by the group shows its rows to nobody in it any more.",
+          tags: ["end users"],
+          params: GroupParams,
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, params }, reply) => {
+        await ctx.mutate(async (trx, audit) => {
+          const group = await findGroup(trx, params.t, params.g);
+          await trx
+            .deleteFrom("binding")
+            .where("principal_type", "=", "end_user_group")
+            .where("principal_id", "=", group.id)
+            .execute();
+          await trx.deleteFrom("end_user_group").where("id", "=", group.id).execute();
+          await audit({
+            action: "end_user_group.deleted",
+            targetType: "end_user_group",
+            targetId: group.id,
+            tenantId: params.t,
+            details: { name: group.name },
+          });
+        });
+        return reply.code(204).send(null);
+      },
+    );
+
+    const MembershipParams = Type.Object({ t: Id, g: Id, userId: Id });
+
+    app.put(
+      "/tenants/:t/end-user-groups/:g/members/:userId",
+      {
+        config: { access: access.tenant("end_user_group:write") },
+        schema: {
+          summary: "Put an end user in a group",
+          description: "Takes effect on the person's next request. Doing it twice changes nothing.",
+          tags: ["end users"],
+          params: MembershipParams,
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, params }, reply) => {
+        await ctx.mutate(async (trx, audit) => {
+          const group = await findGroup(trx, params.t, params.g);
+          const user = await trx
+            .selectFrom("end_user")
+            .select(["id", "email"])
+            .where("id", "=", params.userId)
+            .where("tenant_id", "=", params.t)
+            .executeTakeFirst();
+          if (!user) throw notFound("The end user");
+          await trx
+            .insertInto("end_user_group_member")
+            .values({ group_id: group.id, end_user_id: user.id })
+            .onConflict((oc) => oc.doNothing())
+            .execute();
+          await audit({
+            action: "end_user_group.member_added",
+            targetType: "end_user_group",
+            targetId: group.id,
+            tenantId: params.t,
+            details: { name: group.name, endUserId: user.id, email: user.email },
+          });
+        });
+        return reply.code(204).send(null);
+      },
+    );
+
+    app.delete(
+      "/tenants/:t/end-user-groups/:g/members/:userId",
+      {
+        config: { access: access.tenant("end_user_group:write") },
+        schema: {
+          summary: "Take an end user out of a group",
+          tags: ["end users"],
+          params: MembershipParams,
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, params }, reply) => {
+        await ctx.mutate(async (trx, audit) => {
+          const group = await findGroup(trx, params.t, params.g);
+          const removed = await trx
+            .deleteFrom("end_user_group_member")
+            .where("group_id", "=", group.id)
+            .where("end_user_id", "=", params.userId)
+            .returning("end_user_id")
+            .executeTakeFirst();
+          if (!removed) throw notFound("That person in the group");
+          await audit({
+            action: "end_user_group.member_removed",
+            targetType: "end_user_group",
+            targetId: group.id,
+            tenantId: params.t,
+            details: { name: group.name, endUserId: params.userId },
           });
         });
         return reply.code(204).send(null);

@@ -16,7 +16,8 @@ export type PrincipalType =
   | "service_account"
   | "anonymous"
   | "end_user"
-  | "end_users";
+  | "end_users"
+  | "end_user_group";
 
 export interface PlatformMigrationTable {
   version: number;
@@ -598,10 +599,25 @@ export interface EndUserTable {
   email: string;
   name: Generated<string>;
   password_hash: string | null;
+  attributes: ColumnType<Record<string, string>, string | undefined, string>;
   disabled_at: Date | null;
   last_signed_in_at: Date | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+export interface EndUserGroupTable {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: Generated<string>;
+  created_at: Generated<Date>;
+}
+
+export interface EndUserGroupMemberTable {
+  group_id: string;
+  end_user_id: string;
+  created_at: Generated<Date>;
 }
 
 export interface EndUserTokenTable {
@@ -714,6 +730,8 @@ export interface PlatformSchema {
   workspace_clone: WorkspaceCloneTable;
   bundle_asset: BundleAssetTable;
   end_user: EndUserTable;
+  end_user_group: EndUserGroupTable;
+  end_user_group_member: EndUserGroupMemberTable;
   end_user_token: EndUserTokenTable;
   app_session: AppSessionTable;
   app_handoff: AppHandoffTable;

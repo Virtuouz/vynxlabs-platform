@@ -809,6 +809,7 @@ describe("starting one flow and no other", () => {
       name: "Petra",
       password: PASSWORD,
     });
+    expect(member.status, JSON.stringify(member.body)).toBe(201);
     const linear = (await alice.get(`${ws()}/resources/linear`)).body;
     await alice.post(`/tenants/${tenant}/bindings`, {
       workspaceId: dev,

@@ -824,6 +824,137 @@ describe("end users", () => {
   });
 });
 
+describe("groups of end users", () => {
+  let gil: Awaited<ReturnType<typeof endUser>>;
+  let hana: Awaited<ReturnType<typeof endUser>>;
+  let finance: string;
+  const groups = () => `/tenants/${tenant}/end-user-groups`;
+  /** Whether someone may start flows in the workspace: 404 for a flow that is not there, 403 for no. */
+  const mayStartFlows = async (who: { browser: ReturnType<typeof browser> }) =>
+    (
+      await who.browser.post(`/api/v1/tenants/${tenant}/workspaces/${prod}/flow-runs`, {
+        flow: "no-such-flow",
+      })
+    ).status === 404;
+
+  test("a group is made, named once, and people of the tenant are put in it", async () => {
+    gil = await endUser(t, alice, tenant, "acme", "gil@customer.example");
+    hana = await endUser(t, alice, tenant, "acme", "hana@customer.example");
+    const created = await alice.post(groups(), { name: "finance", description: "Sees invoices." });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    finance = created.body.id;
+    expect((await alice.post(groups(), { name: "finance" })).status).toBe(409);
+    expect((await alice.post(groups(), { name: "Not A Name" })).status).toBe(400);
+
+    expect((await alice.put(`${groups()}/${finance}/members/${gil.id}`)).status).toBe(204);
+    // Twice changes nothing.
+    expect((await alice.put(`${groups()}/${finance}/members/${gil.id}`)).status).toBe(204);
+    expect((await alice.get(`${groups()}/${finance}`)).body.members).toEqual([
+      { id: gil.id, email: "gil@customer.example", name: "gil" },
+    ]);
+    expect((await alice.get(groups())).body.items).toEqual([
+      expect.objectContaining({ name: "finance", description: "Sees invoices.", memberCount: 1 }),
+    ]);
+    // Someone of another tenant cannot be put in it, and another tenant cannot see it.
+    const gina = await t.signIn("gina@globex.example", PASSWORD);
+    const outsider = (await gina.post(`/tenants/${other}/end-users`, { email: "o@else.example" }))
+      .body.endUser.id;
+    expect((await alice.put(`${groups()}/${finance}/members/${outsider}`)).status).toBe(404);
+    expect((await gina.get(`/tenants/${other}/end-user-groups/${finance}`)).status).toBe(404);
+
+    const listed = (await alice.get(`/tenants/${tenant}/end-users?search=gil`)).body.items;
+    expect(listed[0].groups).toEqual(["finance"]);
+  });
+
+  test("a role given to the group reaches the people in it, and nobody else", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "flow_starter",
+      description: "Starts flows.",
+      permissions: ["flow_run:write"],
+    });
+    expect(await mayStartFlows(gil)).toBe(false);
+    const bound = await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: prod,
+      principalType: "end_user_group",
+      principalId: finance,
+      roleId: role.body.id,
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    expect(await mayStartFlows(gil)).toBe(true);
+    expect(await mayStartFlows(hana)).toBe(false);
+    const listed = (await alice.get(`/tenants/${tenant}/bindings`)).body.items.find(
+      (binding: Any) => binding.principalType === "end_user_group",
+    );
+    expect(listed.principalLabel).toBe("finance");
+    // A group of another tenant, or a group of members, is not a group of end users here.
+    expect(
+      (
+        await alice.post(`/tenants/${tenant}/bindings`, {
+          workspaceId: prod,
+          principalType: "end_user_group",
+          principalId: gil.id,
+          roleId: role.body.id,
+        })
+      ).status,
+    ).toBe(400);
+
+    // Joining and leaving take effect on the next request.
+    await alice.put(`${groups()}/${finance}/members/${hana.id}`);
+    expect(await mayStartFlows(hana)).toBe(true);
+    expect((await alice.delete(`${groups()}/${finance}/members/${hana.id}`)).status).toBe(204);
+    expect(await mayStartFlows(hana)).toBe(false);
+    expect((await alice.delete(`${groups()}/${finance}/members/${hana.id}`)).status).toBe(404);
+  });
+
+  test("a group still gives an end user nothing outside what apps use", async () => {
+    const wide = await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "end_user_group",
+      principalId: finance,
+      roleId: roles.tenant_admin,
+    });
+    expect(wide.status).toBe(201);
+    expect(
+      (await gil.browser.get(`/api/v1/tenants/${tenant}/workspaces/${prod}/secrets`)).status,
+    ).toBe(403);
+    expect((await gil.browser.get(`/api/v1/tenants/${tenant}/end-user-groups`)).status).toBe(403);
+    await alice.delete(`/tenants/${tenant}/bindings/${wide.body.id}`);
+  });
+
+  test("attributes are facts about a person, kept as short named values", async () => {
+    const set = await alice.patch(`/tenants/${tenant}/end-users/${gil.id}`, {
+      attributes: { customer_id: "C-100", region: "north" },
+    });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect(set.body.attributes).toEqual({ customer_id: "C-100", region: "north" });
+    expect(set.body.groups).toEqual(["finance"]);
+    expect(
+      (
+        await alice.patch(`/tenants/${tenant}/end-users/${gil.id}`, {
+          attributes: { "Bad Name": "x" },
+        })
+      ).status,
+    ).toBe(400);
+    // Renaming someone leaves their attributes alone.
+    const renamed = await alice.patch(`/tenants/${tenant}/end-users/${gil.id}`, { name: "Gil" });
+    expect(renamed.body.attributes).toEqual({ customer_id: "C-100", region: "north" });
+  });
+
+  test("deleting a person or a group takes the memberships and what the group was given with it", async () => {
+    await alice.put(`${groups()}/${finance}/members/${hana.id}`);
+    expect((await alice.delete(`/tenants/${tenant}/end-users/${hana.id}`)).status).toBe(204);
+    expect((await alice.get(`${groups()}/${finance}`)).body.members).toHaveLength(1);
+
+    expect((await alice.delete(`${groups()}/${finance}`)).status).toBe(204);
+    expect(await mayStartFlows(gil)).toBe(false);
+    expect(
+      (await alice.get(`/tenants/${tenant}/bindings`)).body.items.filter(
+        (binding: Any) => binding.principalType === "end_user_group",
+      ),
+    ).toEqual([]);
+    expect((await alice.delete(`${groups()}/${finance}`)).status).toBe(404);
+  });
+});
+
 describe("branding", () => {
   test("the kit's values here are the ones in its stylesheet", async () => {
     const css = await readFile(
@@ -1283,7 +1414,7 @@ describe("guards", () => {
       t.unaudited.filter((route) => !/\/rows?\//.test(route)),
       JSON.stringify(t.unaudited),
     ).toEqual([]);
-    const apps = /\/(end-users|end-user-auth|bundle-assets|portal|domains)(\/|$)/;
+    const apps = /\/(end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains)(\/|$)/;
     // Signing in, signing up and using a link are public routes, which record what they do
     // themselves. The logo is sent as an image, which this client cannot do: its entry is read here.
     const own = /end-user-auth\/(sign-in|sign-up|password-links|passwords)$|portal\/logo$/;

@@ -45,7 +45,10 @@ export const bindingKind: KindDefinition = {
           {
             type: "object",
             properties: {
-              type: { enum: ["group", "service_account"] },
+              type: {
+                enum: ["group", "service_account", "end_user_group"],
+                description: "group is a group of members. end_user_group is a group of end users.",
+              },
               name: { type: "string" },
             },
             required: ["type", "name"],

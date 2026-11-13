@@ -98,6 +98,9 @@ export async function check(
         : principal.type === "end_user"
           ? sql`(
               (b.principal_type = 'end_user' and b.principal_id = ${id})
+              or (b.principal_type = 'end_user_group' and b.principal_id in (
+                select group_id from end_user_group_member where end_user_id = ${id}
+              ))
               or b.principal_type in ('end_users', 'anonymous')
             )`
           : sql`b.principal_type = 'anonymous'`;

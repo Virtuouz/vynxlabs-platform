@@ -212,6 +212,13 @@ export const OWNED_TABLES: OwnedTable[] = [
   },
   // The end-user pool travels, with the hash each person signs in with.
   { table: "end_user", ofTenant: own, key: ["id"], export: "always" },
+  { table: "end_user_group", ofTenant: own, key: ["id"], export: "always" },
+  {
+    table: "end_user_group_member",
+    ofTenant: (id) => sql`t.group_id in (select id from end_user_group where tenant_id = ${id})`,
+    key: ["group_id", "end_user_id"],
+    export: "always",
+  },
   // Links and sign-ins are made again where the tenant arrives.
   { table: "end_user_token", ofTenant: own, key: ["id"], export: "never" },
   { table: "app_session", ofTenant: own, key: ["id"], export: "never" },

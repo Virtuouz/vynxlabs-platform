@@ -4,12 +4,12 @@ import type {
 } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
-import { httpConnector } from "@vynxlabs/sdk";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
-import { MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
+import { loadBundle, MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
+import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
@@ -220,6 +220,68 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
     const base = "/tenants/:t/workspaces/:w";
+    /**
+     * The schema a connection's configuration must fit: its connector's.
+     *
+     * A connection is bound before the bundle that declares it is deployed, so
+     * what it is declared as is looked for where it may be: among what is
+     * deployed, then among the drafts, then in the bundles uploaded to the
+     * workspace, newest first. One that nothing declares is taken to be HTTP,
+     * which is what a connection is unless it says otherwise. A deploy checks
+     * every binding again against the bundle it activates.
+     */
+    const configSchemaOf = async (
+      workspaceId: string,
+      kind: "connection" | "connection_group",
+      path: string,
+    ): Promise<object> => {
+      const named = (body: unknown) => (body as { connector?: string } | undefined)?.connector;
+      const [deployed, drafted] = await Promise.all([
+        db
+          .selectFrom("resource")
+          .select(["kind", "path", "body"])
+          .where("workspace_id", "=", workspaceId)
+          .where("kind", "in", [kind, "connector"])
+          .execute(),
+        db
+          .selectFrom("resource_draft")
+          .select(["kind", "path", "body"])
+          .where("workspace_id", "=", workspaceId)
+          .where("kind", "in", [kind, "connector"])
+          .where("deleted", "=", false)
+          .execute(),
+      ]);
+      const from = (rows: { kind: string; path: string; body: unknown }[]) => {
+        const name = named(rows.find((row) => row.kind === kind && row.path === path)?.body);
+        return name === undefined
+          ? undefined
+          : { name, connectors: rows.filter((row) => row.kind === "connector") };
+      };
+      let found = from(deployed) ?? from([...drafted, ...deployed]);
+      if (!found) {
+        const uploaded = await db
+          .selectFrom("bundle")
+          .select(["id", "storage_key"])
+          .where("workspace_id", "=", workspaceId)
+          .orderBy("id", "desc")
+          .limit(5)
+          .execute();
+        for (const stored of uploaded) {
+          found = from((await loadBundle(kernel, stored)).manifests);
+          if (found) break;
+        }
+      }
+      if (!found) return BUILTIN_CONFIG_SCHEMAS.http as object;
+      const schema = connectorSchema(found.name, found.connectors);
+      if (!schema) {
+        throw new HttpError(
+          409,
+          "connector_missing",
+          `This uses the connector "${found.name}", which is not in this workspace.`,
+        );
+      }
+      return schema;
+    };
     const activeBundle = async (workspaceId: string) =>
       (
         await db
@@ -1057,7 +1119,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("path", "=", path)
           .executeTakeFirst();
         if (!group) throw notFound(`The connection group ${path}`);
-        const issues = validateJson(httpConnector.configSchema, body.config, "/body/config");
+        const issues = validateJson(
+          await configSchemaOf(params.w, "connection_group", path),
+          body.config,
+          "/body/config",
+        );
         if (issues.length > 0) throw badRequest("The member's configuration is not valid.", issues);
         await ctx.mutate(async (trx, audit) => {
           const { created } = await bindGroupMember(
@@ -1144,7 +1210,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         const path = wildPath(params);
-        const issues = validateJson(httpConnector.configSchema, body.config, "/body/config");
+        const issues = validateJson(
+          await configSchemaOf(params.w, "connection", path),
+          body.config,
+          "/body/config",
+        );
         if (issues.length > 0)
           throw badRequest("The connection's configuration is not valid.", issues);
         await ctx.mutate(async (trx, audit) => {
@@ -1161,9 +1231,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetId: path,
             tenantId: params.t,
             workspaceId: params.w,
-            // The address is recorded. The credential never is.
+            // Where it points is recorded, when the connector has such a thing. The credential never is.
             details: {
-              baseUrl: body.config.baseUrl,
+              ...(typeof body.config.baseUrl === "string" ? { baseUrl: body.config.baseUrl } : {}),
+              ...(typeof body.config.host === "string" ? { host: body.config.host } : {}),
               credentialChanged: body.credential !== undefined,
             },
           });

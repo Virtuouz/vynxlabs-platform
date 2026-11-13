@@ -378,6 +378,13 @@ importers:
       '@vynxlabs/sdk':
         specifier: workspace:*
         version: link:../sdk
+      nodemailer:
+        specifier: ^7
+        version: 7.0.13
+    devDependencies:
+      '@types/nodemailer':
+        specifier: ^8.0.2
+        version: 8.0.2
 
 packages:
 

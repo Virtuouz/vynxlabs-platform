@@ -684,6 +684,7 @@ describe("resource registry", () => {
       "binding",
       "connection",
       "connection_group",
+      "connector",
       "data_source",
       "event",
       "flow",

@@ -12,6 +12,7 @@ export {
   type HttpResponse,
   httpConnector,
 } from "./http.js";
+export { type MailMessage, type SmtpClient, type SmtpConfig, smtpConfigSchema } from "./smtp.js";
 export {
   type Aggregated,
   type AggregateOptions,
@@ -267,17 +268,49 @@ export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   );
 }
 
+export interface ConnectorOptions<Config, Client> {
+  /** Unique within the workspace, for example `connectors/shop`. Connections name it by this. */
+  path: string;
+  description?: string;
+  /** A JSON Schema for a connection's configuration. The console draws its form from it. */
+  configSchema: object;
+  /**
+   * Builds the client a script is given for a connection. `credential` is the
+   * connection's secret, when it has one. `signal` aborts when the run is cancelled.
+   */
+  create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
+}
+
+export interface ConnectorDefinition<Config, Client> extends ResourceDefinition {
+  readonly kind: "connector";
+  create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
+}
+
+/**
+ * Declares a connector: an adapter for one kind of outside system, which
+ * turns a connection's configuration and credential into the client a script
+ * uses. A connection uses it by naming it: `defineConnection({ connector: shop })`.
+ */
+export function defineConnector<Config, Client>(
+  options: ConnectorOptions<Config, Client>,
+): ConnectorDefinition<Config, Client> {
+  const definition = resource("connector", options.path, (entry) =>
+    compact({ entry, description: options.description, configSchema: options.configSchema }),
+  );
+  return { ...definition, kind: "connector", create: options.create };
+}
+
 export interface ConnectionOptions {
   path: string;
-  /** The connector to use. `http` is built in. */
-  connector?: string;
+  /** The connector to use: `http` or `smtp`, which are built in, or one of your own. */
+  connector?: string | { path: string };
   description?: string;
 }
 
 export interface ConnectionGroupOptions {
   path: string;
-  /** The connector every member uses. `http` is built in. */
-  connector?: string;
+  /** The connector every member uses: `http` or `smtp`, which are built in, or one of your own. */
+  connector?: string | { path: string };
   description?: string;
 }
 
@@ -289,14 +322,20 @@ export interface ConnectionGroupOptions {
  */
 export function defineConnectionGroup(options: ConnectionGroupOptions): ResourceDefinition {
   return resource("connection_group", options.path, () =>
-    compact({ connector: options.connector ?? "http", description: options.description }),
+    compact({
+      connector: options.connector ? pathOf(options.connector) : "http",
+      description: options.description,
+    }),
   );
 }
 
 /** Declares a connection. Its address and credentials are set per workspace, not here. */
 export function defineConnection(options: ConnectionOptions): ResourceDefinition {
   return resource("connection", options.path, () =>
-    compact({ connector: options.connector ?? "http", description: options.description }),
+    compact({
+      connector: options.connector ? pathOf(options.connector) : "http",
+      description: options.description,
+    }),
   );
 }
 

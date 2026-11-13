@@ -511,13 +511,47 @@ export const flowKind: KindDefinition = {
   },
 };
 
+/** The connectors every worker has. A connection names one of these, or a connector resource. */
+export const BUILTIN_CONNECTORS: readonly string[] = ["http", "smtp"];
+
+const connectorName = {
+  type: "string",
+  pattern: PATH_PATTERN,
+  maxLength: 255,
+  description:
+    "The connector: `http` or `smtp`, which every worker has, or the path of a connector resource.",
+};
+
+export const connectorKind: KindDefinition = {
+  kind: "connector",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      entry: {
+        type: "string",
+        description: "The name the connector is exported under in the bundle.",
+      },
+      description: { type: "string", maxLength: 500 },
+      configSchema: {
+        ...jsonSchema,
+        description:
+          "A JSON Schema for a connection's configuration. A connection that uses this connector is checked against it when it is bound, and the console draws its form from it.",
+      },
+      source: sourceCode,
+    },
+    required: ["entry", "configSchema"],
+    additionalProperties: false,
+  },
+};
+
 export const connectionKind: KindDefinition = {
   kind: "connection",
   schemaVersion: 1,
   body: {
     type: "object",
     properties: {
-      connector: { type: "string", pattern: "^[a-z][a-z0-9_]*$", maxLength: 63 },
+      connector: connectorName,
       description: { type: "string", maxLength: 500 },
     },
     required: ["connector"],
@@ -533,7 +567,7 @@ export const connectionGroupKind: KindDefinition = {
     description:
       "A set of connections of one kind, whose members are added per workspace in the console with no deploy. A script picks a member by key when it runs.",
     properties: {
-      connector: { type: "string", pattern: "^[a-z][a-z0-9_]*$", maxLength: 63 },
+      connector: connectorName,
       description: { type: "string", maxLength: 500 },
     },
     required: ["connector"],
@@ -835,6 +869,7 @@ export const appKind: KindDefinition = {
 /** Every kind the platform ships, in the order a deploy applies them. */
 export const platformKinds: KindDefinition[] = [
   roleKind,
+  connectorKind,
   connectionKind,
   connectionGroupKind,
   variableKind,

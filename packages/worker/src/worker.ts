@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { type Bundle, bundleDigest } from "@vynxlabs/manifest";
+import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { type Connector, httpConnector, type ScriptContext, type TableClient } from "@vynxlabs/sdk";
+import { smtpConnector } from "./smtp.js";
 
 export type WorkerLog = (
   level: "info" | "warn" | "error",
@@ -51,6 +52,12 @@ interface LogEntry {
   fields?: Record<string, unknown>;
 }
 
+/** A bundle as the worker holds it: what its code exports, and what it says it contains. */
+interface Loaded {
+  exports: Record<string, unknown>;
+  manifests: BundleManifest[];
+}
+
 /** The control plane refused the credential. There is no point in going on. */
 class CredentialRefused extends Error {}
 
@@ -70,9 +77,11 @@ export class Worker {
   readonly #url: string;
   readonly #log: WorkerLog;
   readonly #cacheDir: string;
-  readonly #modules = new Map<string, Promise<Record<string, unknown>>>();
+  readonly #modules = new Map<string, Promise<Loaded>>();
+  /** The connectors every worker has. A bundle may bring more. */
   readonly #connectors = new Map<string, Connector<unknown, unknown>>([
     ["http", httpConnector as Connector<unknown, unknown>],
+    ["smtp", smtpConnector as Connector<unknown, unknown>],
   ]);
   #stopping = false;
   #inFlight = 0;
@@ -190,7 +199,7 @@ export class Worker {
   }
 
   /** The module of a bundle, downloaded and checked once, then reused. */
-  #module(bundle: Job["bundle"]): Promise<Record<string, unknown>> {
+  #module(bundle: Job["bundle"]): Promise<Loaded> {
     let loading = this.#modules.get(bundle.digest);
     if (!loading) {
       loading = (async () => {
@@ -200,7 +209,10 @@ export class Worker {
         }
         const file = join(this.#cacheDir, `${bundle.digest}.mjs`);
         await writeFile(file, content.code);
-        return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+        return {
+          exports: (await import(pathToFileURL(file).href)) as Record<string, unknown>,
+          manifests: content.manifests,
+        };
       })();
       this.#modules.set(bundle.digest, loading);
       loading.catch(() => this.#modules.delete(bundle.digest));
@@ -298,14 +310,35 @@ export class Worker {
     });
     const read = async <T>(path: string) =>
       this.#call<T>("GET", `${runPath}${path}?attempt=${job.attempt}`);
+    /**
+     * The client for a bound connection. Its connector is one every worker
+     * has, or one the run's own bundle carries, so a run uses the connector
+     * code it was deployed with.
+     */
+    let loaded: Loaded | undefined;
+    const connect = (bound: { connector: string; config: unknown; credential?: string }) => {
+      const builtin = this.#connectors.get(bound.connector);
+      if (builtin) return builtin.create(bound.config, bound.credential, abort.signal);
+      const manifest = loaded?.manifests.find(
+        (candidate) => candidate.kind === "connector" && candidate.path === bound.connector,
+      );
+      const entry = (manifest?.body as { entry?: string } | undefined)?.entry;
+      const own = entry
+        ? (loaded?.exports[entry] as Partial<Connector<unknown, unknown>> | undefined)
+        : undefined;
+      if (typeof own?.create !== "function") {
+        throw new Error(
+          `There is no connector "${bound.connector}": it is not one every worker has, and this run's bundle does not carry it.`,
+        );
+      }
+      return own.create(bound.config, bound.credential, abort.signal);
+    };
     const context: ScriptContext = {
       connection: async <Client>(path: string) => {
         const bound = await read<{ connector: string; config: unknown; credential?: string }>(
           `/connections/${path}`,
         );
-        const connector = this.#connectors.get(bound.connector);
-        if (!connector) throw new Error(`This worker has no "${bound.connector}" connector.`);
-        return connector.create(bound.config, bound.credential, abort.signal) as Client;
+        return connect(bound) as Client;
       },
       connections: <Client>(group: string | { path: string }) => {
         const path = typeof group === "string" ? group : group.path;
@@ -314,9 +347,7 @@ export class Worker {
             const bound = await read<{ connector: string; config: unknown; credential?: string }>(
               `/connection-group-members/${encodeURIComponent(key)}/${path}`,
             );
-            const connector = this.#connectors.get(bound.connector);
-            if (!connector) throw new Error(`This worker has no "${bound.connector}" connector.`);
-            return connector.create(bound.config, bound.credential, abort.signal) as Client;
+            return connect(bound) as Client;
           },
           keys: async () =>
             (await read<{ items: { key: string; label: string }[] }>(`/connection-groups/${path}`))
@@ -385,8 +416,8 @@ export class Worker {
     };
 
     try {
-      const loaded = await this.#module(job.bundle);
-      const script = loaded[job.script.entry] as
+      loaded = await this.#module(job.bundle);
+      const script = loaded.exports[job.script.entry] as
         | { execute?: (input: unknown, ctx: ScriptContext) => Promise<unknown> }
         | undefined;
       if (typeof script?.execute !== "function") {

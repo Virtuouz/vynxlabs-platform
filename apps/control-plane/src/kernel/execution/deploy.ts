@@ -8,6 +8,7 @@ import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { deleteResource, putResource } from "../resources.js";
 import { loadBundle } from "./bundles.js";
+import { unfitBindings } from "./connectors.js";
 
 interface ScriptBody {
   uses: { connections: string[]; secrets: string[]; variables: string[]; sources?: string[] };
@@ -208,6 +209,28 @@ export async function deployBundle(
     );
   }
 
+  const unfit = unfitBindings(
+    content.manifests,
+    await trx
+      .selectFrom("connection_binding")
+      .select(["path", "config"])
+      .where("workspace_id", "=", workspace.id)
+      .execute(),
+    await trx
+      .selectFrom("connection_group_member")
+      .select(["group_path as group", "key", "config"])
+      .where("workspace_id", "=", workspace.id)
+      .execute(),
+  );
+  if (unfit.length > 0) {
+    throw new HttpError(
+      409,
+      "bindings_invalid",
+      "Something bound in this workspace does not fit the connector this bundle gives it. Bind it again, then deploy again.",
+      unfit,
+    );
+  }
+
   const existing = await trx
     .selectFrom("resource")
     .select(["id", "path", "kind", "schema_version", "body", "ownership"])
@@ -332,6 +355,7 @@ export async function deployBundle(
 
 const KIND_ORDER = [
   "role",
+  "connector",
   "connection",
   "connection_group",
   "variable",

@@ -1,8 +1,8 @@
 import type { Bundle, BundleManifest } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowReferences } from "./flow.js";
 import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
-import { isThemeValue, registerPlatformKinds } from "./kinds.js";
-import { KindRegistry } from "./registry.js";
+import { BUILTIN_CONNECTORS, isThemeValue, registerPlatformKinds } from "./kinds.js";
+import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
 
 /** Events the platform publishes itself. No repository declares them. */
@@ -84,6 +84,27 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const path of body.uses?.sources ?? []) expect(manifest, "sources", path, "data_source");
       expect(manifest, "onFailure.script", body.onFailure?.script, "script");
       expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+    }
+    if (manifest.kind === "connection" || manifest.kind === "connection_group") {
+      const connector = (manifest.body as { connector?: string }).connector;
+      if (connector !== undefined && !BUILTIN_CONNECTORS.includes(connector)) {
+        expect(manifest, "connector", connector, "connector");
+      }
+    }
+    if (manifest.kind === "connector") {
+      // A schema that cannot be compiled would fail every binding later, with no word of why.
+      try {
+        validateJson((manifest.body as { configSchema: object }).configSchema, {});
+      } catch (error) {
+        problems.push(
+          `${manifest.path} (connector): /body/configSchema is not a JSON Schema: ${(error as Error).message}`,
+        );
+      }
+    }
+    if (manifest.kind === "connector" && BUILTIN_CONNECTORS.includes(manifest.path)) {
+      problems.push(
+        `${manifest.path} (connector): "${manifest.path}" is the name of a connector every worker has. Give this one another path.`,
+      );
     }
     if (manifest.kind === "table") {
       const table = manifest.body as unknown as TableBody;

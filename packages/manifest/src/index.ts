@@ -70,11 +70,13 @@ export {
 } from "./interface.js";
 export {
   appKind,
+  BUILTIN_CONNECTORS,
   bindingKind,
   COLUMN_TYPES,
   type ColumnType,
   connectionGroupKind,
   connectionKind,
+  connectorKind,
   dataSourceKind,
   eventKind,
   flowKind,

@@ -69,6 +69,7 @@ async function resourceFiles(folder: string): Promise<ResourceFile[]> {
 /** Deploy order: what others refer to comes first. */
 const KIND_ORDER = [
   "role",
+  "connector",
   "connection",
   "connection_group",
   "variable",

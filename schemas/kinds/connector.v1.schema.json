@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/connector.v1.schema.json",
+  "title": "connector body, version 1",
+  "type": "object",
+  "properties": {
+    "entry": {
+      "type": "string",
+      "description": "The name the connector is exported under in the bundle."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "configSchema": {
+      "type": "object",
+      "description": "A JSON Schema for a connection's configuration. A connection that uses this connector is checked against it when it is bound, and the console draws its form from it."
+    },
+    "source": {
+      "type": "object",
+      "description": "The TypeScript the resource was written as, for a resource managed in the console. Its default export is what runs.",
+      "properties": {
+        "language": {
+          "const": "typescript"
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 262144
+        }
+      },
+      "required": [
+        "language",
+        "code"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "entry",
+    "configSchema"
+  ],
+  "additionalProperties": false
+}

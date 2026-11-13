@@ -17,6 +17,14 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import {
+  type Policy,
+  policyText,
+  RowRulesEditor,
+  type Rule,
+  ruleText,
+  SeeItAs,
+} from "./RowRules.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 const PAGE = 50;
@@ -372,11 +380,6 @@ interface TableSummary {
   policy: { type: string; column?: string };
 }
 
-const policyText = (policy: { type: string; column?: string }) =>
-  policy.type === "owner"
-    ? `Each person sees their own rows (${policy.column})`
-    : "Everyone with access";
-
 export function Tables({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<TableSummary>
@@ -459,7 +462,7 @@ interface TableDetail {
   name: string;
   status: "active" | "retired";
   managedIn: "code" | "ui";
-  policy: { type: string; column?: string };
+  policy: { type: string; column?: string; rules?: Rule[] };
   rowCount: number;
   stored: { schema: string; table: string };
   columns: TableColumn[];
@@ -568,7 +571,7 @@ function PurgeButton({
 interface TableBody {
   description?: string;
   columns: Record<string, Record<string, unknown>>;
-  policy?: { type: string; column?: string };
+  policy?: { type: string; column?: string; rules?: Rule[] };
   [key: string]: unknown;
 }
 
@@ -584,6 +587,8 @@ function Definition({
   reload: () => void;
 }) {
   const editable = table.managedIn === "ui" && table.status === "active";
+  // `/tenants/<id>`, the part of the workspace's address the tenant's people are listed under.
+  const tenantBase = root.split("/workspaces/")[0];
   const [adding, setAdding] = useState(false);
   const [failure, setFailure] = useState<string>();
   const active = table.columns.filter((column) => column.status === "active");
@@ -674,6 +679,12 @@ function Definition({
                                 delete body.columns[row.name];
                                 body.columns[next] = { ...kept, renamedFrom: row.name };
                                 if (body.policy?.column === row.name) body.policy.column = next;
+                                // A rule that looks at the column follows it to its new name.
+                                for (const rule of body.policy?.rules ?? []) {
+                                  if ("column" in rule.when && rule.when.column === row.name) {
+                                    rule.when.column = next;
+                                  }
+                                }
                               }),
                             );
                           }}
@@ -761,40 +772,33 @@ function Definition({
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-2">
+      <section className="flex flex-col gap-3">
         <h2 className="m-0 text-base font-semibold">Who sees rows</h2>
-        <p className="m-0 max-w-[70ch]">
-          {table.policy.type === "owner" ? (
-            <>
-              Each person sees and changes only the rows where {code(table.policy.column ?? "")} is
-              their own ID. People who hold the "all rows" permission see every row.
-            </>
-          ) : (
-            "Everyone with permission to read this table's data sees every row."
-          )}
-        </p>
         {editable ? (
-          <div className="max-w-xs">
-            <SelectField
-              name="policy"
-              label="Rule"
-              value={table.policy.type === "owner" ? (table.policy.column ?? "") : ""}
-              options={[
-                { value: "", label: "Everyone with access" },
-                ...active
-                  .filter((column) => column.type === "uuid")
-                  .map((column) => ({ value: column.name, label: `Owner is in ${column.name}` })),
-              ]}
-              hint="An owner column holds IDs."
-              onChange={(column) =>
-                void quietly(
-                  change((body) => {
-                    body.policy = column ? { type: "owner", column } : { type: "open" };
-                  }),
-                )
-              }
-            />
+          <RowRulesEditor
+            key={JSON.stringify(table.policy)}
+            policy={table.policy as Policy}
+            columns={active}
+            onSave={(policy) =>
+              change((body) => {
+                body.policy = policy;
+              })
+            }
+          />
+        ) : (
+          <div className="max-w-[70ch]">
+            <p className="m-0">{policyText(table.policy)}.</p>
+            {table.policy.type === "rules" ? (
+              <ul className="mt-2 mb-0 pl-5">
+                {(table.policy.rules ?? []).map((rule) => (
+                  <li key={ruleText(rule)}>{ruleText(rule)}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
+        )}
+        {table.policy.type !== "open" && tenantBase ? (
+          <SeeItAs root={root} table={table.name} usersPath={`${tenantBase}/end-users?limit=200`} />
         ) : null}
       </section>
 

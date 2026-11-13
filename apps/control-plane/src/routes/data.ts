@@ -15,7 +15,7 @@ import {
   updateRow,
   withData,
 } from "../kernel/data/rows.js";
-import { badRequest } from "../kernel/errors.js";
+import { badRequest, forbidden } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -337,12 +337,35 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The table's policy decides which rows the caller sees. Needs `data:read` at the workspace or at the table.",
           tags: ["data"],
           params: WildParams,
-          querystring: RowsQuery,
+          querystring: Type.Object({
+            ...RowsQuery.properties,
+            as: Type.Optional(
+              Type.String({
+                format: "uuid",
+                description:
+                  "Read as this end user would: the rows the table's policy gives them. For checking a policy. Needs `data_all:read`.",
+              }),
+            ),
+          }),
           response: { 200: RowsPage },
         },
       },
       async ({ ctx, params, query }) => {
-        const { target, scope } = await enter(ctx, params, wildPath(params), "read");
+        const entered = await enter(ctx, params, wildPath(params), "read");
+        const { target } = entered;
+        let scope = entered.scope;
+        if (query.as !== undefined) {
+          // Only someone who may see every row may look through another person's eyes.
+          if (!scope.all) throw forbidden("the permission to read every row of this table");
+          const person = await db
+            .selectFrom("end_user")
+            .select("id")
+            .where("id", "=", query.as)
+            .where("tenant_id", "=", params.t)
+            .executeTakeFirst();
+          if (!person) throw badRequest("`as` is not an end user of this tenant.");
+          scope = await scopeFor(kernel, params.t, { type: "end_user", id: person.id }, false);
+        }
         const asked = parseRowsQuery(query);
         return toRowsPage(
           await withData(kernel, params.t, scope, (data) => findRows(data, target, asked)),

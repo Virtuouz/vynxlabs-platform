@@ -1125,6 +1125,23 @@ describe("rows ruled by group and by attribute", () => {
     expect(await numbers(jon)).toEqual(["INV-2", "J-2"]);
   });
 
+  test("staff who may see every row can read the table as one of its users would", async () => {
+    const as = async (client: Client, id: string) =>
+      client.get(`${ws()}/rows/invoices?sort=number&as=${id}`);
+    expect((await as(alice, jon.id)).body.items.map((row: Any) => row.number)).toEqual([
+      "INV-2",
+      "J-2",
+    ]);
+    expect((await as(alice, kay.id)).body.items.map((row: Any) => row.number)).toEqual([
+      "INV-1",
+      "K-1",
+    ]);
+    // Not someone of another tenant, and not by someone who is held to the rules themselves.
+    expect((await as(alice, "00000000-0000-7000-8000-00000000dead")).status).toBe(400);
+    const peek = await ivy.browser.get(`${rowsOf()}/rows/invoices?as=${jon.id}`);
+    expect(peek.status).toBe(403);
+  });
+
   test("leaving a group, or losing an attribute, takes the rows away at once", async () => {
     await alice.delete(`/tenants/${tenant}/end-user-groups/${financeGroup}/members/${ivy.id}`);
     expect(await numbers(ivy)).toEqual(["INV-2", "INV-3"]);

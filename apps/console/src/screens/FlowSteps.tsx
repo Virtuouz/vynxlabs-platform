@@ -208,7 +208,7 @@ export function NodeInputs({
   );
 }
 
-interface WebhookTrigger {
+export interface WebhookTrigger {
   type: "webhook";
   input?: "body" | "request";
   respond?: "now" | "flow";
@@ -228,7 +228,10 @@ export function WebhookSettings({
   sources,
   secrets,
   onChange,
+  canRespond = true,
 }: {
+  /** False for a webhook that starts a script: only a flow can answer its request. */
+  canRespond?: boolean;
   trigger: WebhookTrigger;
   /** Trigger sources that take a webhook's requests. */
   sources: Option[];
@@ -253,24 +256,26 @@ export function WebhookSettings({
         ]}
         onChange={(input) => put({ input: input === "request" ? "request" : undefined })}
       />
-      <SelectField
-        name="webhook-respond"
-        label="The request is answered"
-        value={trigger.respond ?? "now"}
-        options={[
-          { value: "now", label: "At once, when the flow has started" },
-          { value: "flow", label: "By the flow, with an Answer step" },
-        ]}
-        {...(trigger.respond === "flow"
-          ? { hint: "The caller waits up to 25 seconds for an Answer step." }
-          : {})}
-        onChange={(respond) =>
-          put({
-            respond: respond === "flow" ? "flow" : undefined,
-            ...(respond === "flow" ? { source: undefined } : {}),
-          })
-        }
-      />
+      {canRespond ? (
+        <SelectField
+          name="webhook-respond"
+          label="The request is answered"
+          value={trigger.respond ?? "now"}
+          options={[
+            { value: "now", label: "At once, when the flow has started" },
+            { value: "flow", label: "By the flow, with an Answer step" },
+          ]}
+          {...(trigger.respond === "flow"
+            ? { hint: "The caller waits up to 25 seconds for an Answer step." }
+            : {})}
+          onChange={(respond) =>
+            put({
+              respond: respond === "flow" ? "flow" : undefined,
+              ...(respond === "flow" ? { source: undefined } : {}),
+            })
+          }
+        />
+      ) : null}
       <SelectField
         name="webhook-check"
         label="Each request is checked"
@@ -367,7 +372,7 @@ export interface FormField {
   help?: string;
   options?: string[];
 }
-interface FormTrigger {
+export interface FormTrigger {
   type: "form";
   title: string;
   description?: string;

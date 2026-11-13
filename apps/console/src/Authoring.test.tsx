@@ -64,8 +64,10 @@ test("drafts are listed with what deploying each would do, and deployed with a m
   expect((await screen.findByRole("link", { name: "orders/sync" })).getAttribute("href")).toBe(
     `${link}/scripts/edit/orders/sync`,
   );
-  // Only a script has an editor to open. Other kinds are named.
-  expect(screen.queryByRole("link", { name: "orders/size" })).toBeNull();
+  // A variable opens in the editor for settings.
+  expect(screen.getByRole("link", { name: "orders/size" }).getAttribute("href")).toBe(
+    `${link}/resources/edit/variable/orders/size`,
+  );
   expect(screen.getByText("Changed")).toBeTruthy();
   expect(screen.getByText("New")).toBeTruthy();
   await screen.findByText(/Deploying creates 1, changes 1 and removes 0\./);

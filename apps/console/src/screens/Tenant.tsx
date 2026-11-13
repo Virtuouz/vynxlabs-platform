@@ -1,4 +1,4 @@
-import { Badge, Button, EmptyState, Notice } from "@vynxlabs/ui";
+import { Badge, Button, EmptyState, Menu, Notice } from "@vynxlabs/ui";
 import { lazy, Suspense, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -10,7 +10,7 @@ import {
   RemoveButton,
   when,
 } from "../ListScreen.tsx";
-import { Link, match } from "../router.tsx";
+import { Link, match, navigate } from "../router.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
@@ -33,6 +33,7 @@ import {
   Variables,
   Workers,
 } from "./Execution.tsx";
+import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
 
 // The flow editor brings a canvas library with it, so it is fetched when first opened.
 const FlowEditor = lazy(() =>
@@ -499,7 +500,23 @@ function WorkspaceDetail({
       ) : tab === "variables" ? (
         <Variables root={root} />
       ) : null}
-      {tab === "resources" ? (
+      {tab === "resources" && /^(new|edit)\//.test(rest) ? (
+        (() => {
+          const [mode, kind = "", ...at] = rest.split("/");
+          return isEditedKind(kind) ? (
+            <ResourceEditor
+              key={rest}
+              root={root}
+              link={`/t/${tenantId}/workspaces/${workspaceId}`}
+              kind={kind}
+              path={mode === "edit" ? at.join("/") : undefined}
+              editable={workspace.data.type === "dev"}
+            />
+          ) : (
+            <Notice tone="danger">There is no editor here for a {kind}.</Notice>
+          );
+        })()
+      ) : tab === "resources" ? (
         <ListScreen<{
           id: string;
           path: string;
@@ -509,11 +526,37 @@ function WorkspaceDetail({
           updatedAt: string;
         }>
           title="Resources"
-          description="Everything deployed to this workspace. Code-managed resources come from the repository and are read-only here."
+          description="Everything deployed to this workspace. Connections, variables, events, schedules and triggers can be made and changed here in a dev workspace. Scripts, flows and apps have screens of their own."
           path={`${root}/resources`}
           rowKey={(row) => row.id}
+          action={
+            workspace.data.type === "dev" ? (
+              <Menu
+                label="New"
+                align="end"
+                items={EDITED_KINDS.map((kind) => ({
+                  label: `${kind[0]?.toUpperCase()}${kind.slice(1).replace("_", " ")}`,
+                  onSelect: () =>
+                    navigate(`/t/${tenantId}/workspaces/${workspaceId}/resources/new/${kind}`),
+                }))}
+              />
+            ) : undefined
+          }
           columns={[
-            { header: "Path", cell: (row) => code(row.path) },
+            {
+              header: "Path",
+              cell: (row) =>
+                isEditedKind(row.kind) ? (
+                  <Link
+                    to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
+                    className="font-mono text-[13px] text-action"
+                  >
+                    {row.path}
+                  </Link>
+                ) : (
+                  code(row.path)
+                ),
+            },
             { header: "Kind", cell: (row) => row.kind },
             {
               header: "Managed in",

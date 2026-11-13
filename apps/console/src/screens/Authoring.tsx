@@ -21,6 +21,7 @@ import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { RunDetail } from "./Execution.tsx";
 import { GitPanel } from "./Git.tsx";
+import { isEditedKind } from "./ResourceEditor.tsx";
 
 const STARTER = `import type { ScriptContext } from "@vynxlabs/sdk";
 
@@ -685,7 +686,9 @@ export function Changes({
         ? `${link}/${CODE_KINDS[row.kind].edit}/${row.path}`
         : row.kind === "flow"
           ? `${link}/flows/edit/${row.path}`
-          : undefined;
+          : isEditedKind(row.kind)
+            ? `${link}/resources/edit/${row.kind}/${row.path}`
+            : undefined;
 
   return (
     <Page

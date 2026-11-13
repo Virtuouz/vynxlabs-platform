@@ -136,6 +136,31 @@ export interface Page<Row> {
   nextCursor: string | null;
 }
 
+export interface AggregateOptions {
+  /**
+   * Columns to group by, up to three. A date or a time can be gathered into
+   * periods: `"created_at:month"`, with `day`, `week`, `month` or `year`.
+   */
+  group?: string[];
+  /**
+   * Totals to work out, up to five: `"count"`, `"count:column"`, `"sum:column"`,
+   * `"avg:column"`, `"min:column"`, `"max:column"`. Without any, rows are counted.
+   */
+  measures?: string[];
+  filter?: Filter;
+  /** Names as they come back, a group's or a total's. A leading minus sorts downwards. */
+  sort?: string[];
+  /** The most groups to return. At most 1,000. Default 200. */
+  limit?: number;
+}
+
+/** Totals, one item for each group. With no groups there is one item. */
+export interface Aggregated {
+  items: { by: Record<string, unknown>; values: Record<string, number | string | null> }[];
+  /** True when there were more groups than `limit`. */
+  truncated: boolean;
+}
+
 /** Anything that carries a table's row types: what `defineTable` returns. */
 interface TableTypes {
   readonly __row?: unknown;
@@ -158,6 +183,11 @@ export interface AppTable<Row, Insert> {
   insertMany(rows: Insert[]): Promise<Row[]>;
   update(id: string, changes: Partial<Insert>): Promise<Row>;
   delete(id: string): Promise<void>;
+  /**
+   * Counts, sums, averages, the least and the most, over the rows the person
+   * may see, or over groups of them.
+   */
+  aggregate(options?: AggregateOptions): Promise<Aggregated>;
 }
 
 /**
@@ -203,6 +233,16 @@ export function table<Definition extends TableTypes = TableTypes>(
     update: (id, changes) => api.patch<Row>(row(id), changes),
     async delete(id) {
       await api.delete(row(id));
+    },
+    aggregate(options = {}) {
+      const query = new URLSearchParams();
+      if (options.group?.length) query.set("group", options.group.join(","));
+      if (options.measures?.length) query.set("measure", options.measures.join(","));
+      if (options.filter) query.set("filter", JSON.stringify(options.filter));
+      if (options.sort?.length) query.set("sort", options.sort.join(","));
+      if (options.limit !== undefined) query.set("limit", String(options.limit));
+      const text = query.toString();
+      return api.get<Aggregated>(`${workspacePath()}/aggregate/${path}${text ? `?${text}` : ""}`);
     },
   };
 }

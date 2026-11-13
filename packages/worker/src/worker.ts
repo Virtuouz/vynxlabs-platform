@@ -286,6 +286,14 @@ export class Worker {
       delete: async (id) => {
         await data<null>(table, source, as, "delete", { id });
       },
+      aggregate: (options = {}) =>
+        data(table, source, as, "aggregate", {
+          group: options.group,
+          measure: options.measures,
+          filter: options.filter,
+          sort: options.sort,
+          limit: options.limit,
+        }),
       as: (principalId) => tableClient<Row, Insert>(table, source, principalId),
     });
     const read = async <T>(path: string) =>

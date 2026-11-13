@@ -1065,6 +1065,23 @@ describe("rows ruled by group and by attribute", () => {
     );
   });
 
+  test("totals follow the rules too: each person's are of their own rows", async () => {
+    const count = async (who: { browser: ReturnType<typeof browser> }, query = "") =>
+      (await who.browser.get(`${rowsOf()}/aggregate/invoices${query}`)).body.items;
+    expect(await count(ivy)).toEqual([{ by: {}, values: { count: 3 } }]);
+    expect(await count(jon)).toEqual([{ by: {}, values: { count: 1 } }]);
+    expect(await count(kay, "?group=team")).toEqual([
+      { by: { team: "finance" }, values: { count: 1 } },
+    ]);
+    const staff = await alice.get(`${ws()}/aggregate/invoices?group=team&sort=-count`);
+    expect(staff.body.items[0]).toEqual({ by: { team: "ops" }, values: { count: 2 } });
+    // Staff who may see every row can ask for a person's totals. A person held to the rules cannot.
+    expect(
+      (await alice.get(`${ws()}/aggregate/invoices?as=${jon.id}`)).body.items[0].values.count,
+    ).toBe(1);
+    expect((await ivy.browser.get(`${rowsOf()}/aggregate/invoices?as=${jon.id}`)).status).toBe(403);
+  });
+
   test("seeing a row is not being able to change it: only a write rule lets someone write", async () => {
     const patch = (who: typeof ivy, number: string, change: object) =>
       who.browser.post === undefined

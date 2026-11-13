@@ -1,4 +1,6 @@
 export {
+  type Aggregated,
+  type AggregateOptions,
   ApiError,
   type AppContext,
   type AppTable,

@@ -472,6 +472,221 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
   return { items: rows, nextOffset: result.rows.length > limit ? offset + limit : null };
 }
 
+// ----- Totals -----
+
+export const AGGREGATE_FUNCTIONS = ["count", "sum", "avg", "min", "max"] as const;
+export type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
+export const BUCKETS = ["day", "week", "month", "year"] as const;
+export type Bucket = (typeof BUCKETS)[number];
+
+export interface AggregateQuery {
+  /** What to group by. A date or a time can be gathered into days, weeks, months or years. */
+  group?: { column: string; bucket?: Bucket }[];
+  /** What to work out for each group. With none, the rows are counted. */
+  measures?: { fn: AggregateFunction; column?: string }[];
+  filter?: unknown;
+  /** Names as they come back: a group's or a measure's. A leading minus sorts downwards. */
+  sort?: string[];
+  limit?: number;
+}
+
+export const MAX_GROUPS = 3;
+export const MAX_MEASURES = 5;
+/** How long totals over a table may take. A table too big for that needs an index or a narrower filter. */
+const AGGREGATE_TIMEOUT_MS = 5000;
+
+/** The name a group comes back under: its column, and its bucket when it has one. */
+export const groupName = (group: { column: string; bucket?: string | undefined }) =>
+  group.bucket ? `${group.column}:${group.bucket}` : group.column;
+/** The name a measure comes back under: `count`, or the function and its column. */
+export const measureName = (measure: { fn: string; column?: string | undefined }) =>
+  measure.column ? `${measure.fn}:${measure.column}` : measure.fn;
+
+/** Reads groups written as `status` or `created_at:month`, and totals written as `count` or `sum:total`. */
+export function aggregateQueryFrom(asked: {
+  group?: string[] | undefined;
+  measure?: string[] | undefined;
+  filter?: unknown;
+  sort?: string[] | undefined;
+  limit?: number | undefined;
+}): AggregateQuery {
+  return {
+    group: (asked.group ?? []).map((part) => {
+      const [name = "", bucket] = String(part).split(":");
+      return { column: name, ...(bucket !== undefined ? { bucket: bucket as Bucket } : {}) };
+    }),
+    measures: (asked.measure ?? []).map((part) => {
+      const [fn = "", name] = String(part).split(":");
+      return { fn: fn as AggregateFunction, ...(name !== undefined ? { column: name } : {}) };
+    }),
+    ...(asked.filter !== undefined ? { filter: asked.filter } : {}),
+    sort: (asked.sort ?? []).map(String),
+    ...(asked.limit !== undefined ? { limit: asked.limit } : {}),
+  };
+}
+
+const NUMERIC = new Set(["integer", "number"]);
+const ORDERED = new Set(["integer", "number", "timestamp", "date", "text"]);
+
+/**
+ * Totals over the rows a person may see: counts, sums, averages, the least and
+ * the most, for the whole table or for each group of rows.
+ *
+ * It runs where rows are read, so a table's policy applies to it: two people
+ * asking for the same total get the total of their own rows. Every name that
+ * reaches the statement is a column of the table or comes from a fixed list.
+ * What the caller called things never does: results come back by position.
+ */
+export async function aggregateRows(db: AnyDb, target: RowTarget, query: AggregateQuery = {}) {
+  const groups = query.group ?? [];
+  const measures = query.measures?.length ? query.measures : [{ fn: "count" as const }];
+  const invalid = (path: string, message: string) =>
+    badRequest("The request for totals is not valid.", [{ path, message }]);
+  if (groups.length > MAX_GROUPS) {
+    throw invalid("/group", `rows can be grouped by at most ${MAX_GROUPS} columns`);
+  }
+  if (measures.length > MAX_MEASURES) {
+    throw invalid("/measure", `at most ${MAX_MEASURES} totals can be asked for at once`);
+  }
+
+  const names = new Map<string, ReturnType<typeof sql>>();
+  const grouped = groups.map((group, index) => {
+    const path = `/group/${index}`;
+    const meta = column(target, group.column, path);
+    if (meta.type === "json" || meta.type === "file" || !KNOWN.has(meta.type)) {
+      throw invalid(path, `rows cannot be grouped by "${meta.name}", which holds ${meta.type}`);
+    }
+    const reference = sql.ref(meta.physicalName);
+    let expression = reference;
+    if (group.bucket !== undefined) {
+      // Checked against the list before it is written into the statement as a word.
+      if (!BUCKETS.includes(group.bucket)) {
+        throw invalid(
+          path,
+          `there is no bucket "${String(group.bucket)}". Use ${BUCKETS.join(", ")}`,
+        );
+      }
+      if (meta.type === "timestamp") {
+        // Buckets begin at midnight UTC, so the answer does not depend on who is asking.
+        expression = sql`date_trunc(${sql.lit(group.bucket)}, ${reference}, 'UTC')`;
+      } else if (meta.type === "date") {
+        expression = sql`date_trunc(${sql.lit(group.bucket)}, ${reference}::timestamp)::date`;
+      } else {
+        throw invalid(
+          path,
+          `"${meta.name}" is not a date or a time, so it has no ${group.bucket}s`,
+        );
+      }
+    }
+    const alias = `g${index}`;
+    names.set(groupName(group), sql.ref(alias));
+    return { name: groupName(group), meta, alias, expression, isDate: meta.type === "date" };
+  });
+  if (new Set(grouped.map((group) => group.name)).size !== grouped.length) {
+    throw invalid("/group", "a column is grouped by twice");
+  }
+
+  const measured = measures.map((measure, index) => {
+    const path = `/measure/${index}`;
+    if (!AGGREGATE_FUNCTIONS.includes(measure.fn)) {
+      throw invalid(
+        path,
+        `there is no total "${String(measure.fn)}". Use ${AGGREGATE_FUNCTIONS.join(", ")}`,
+      );
+    }
+    const alias = `a${index}`;
+    const name = measureName(measure);
+    names.set(name, sql.ref(alias));
+    if (measure.column === undefined) {
+      if (measure.fn !== "count") throw invalid(path, `"${measure.fn}" needs a column`);
+      return { name, alias, expression: sql`count(*)`, meta: undefined, fn: measure.fn };
+    }
+    const meta = column(target, measure.column, path);
+    const reference = sql.ref(meta.physicalName);
+    if (measure.fn === "count") {
+      // Counting a column counts the rows that have a value in it.
+      return { name, alias, expression: sql`count(${reference})`, meta, fn: measure.fn };
+    }
+    const allowed = measure.fn === "sum" || measure.fn === "avg" ? NUMERIC : ORDERED;
+    if (!allowed.has(meta.type)) {
+      throw invalid(
+        path,
+        `"${measure.fn}" does not work on "${meta.name}", which holds ${meta.type}`,
+      );
+    }
+    // The function's name is one of five written here, never the caller's text.
+    const call = { sum: sql`sum`, avg: sql`avg`, min: sql`min`, max: sql`max` }[measure.fn];
+    const cast = meta.type === "date" ? sql`::text` : sql``;
+    return { name, alias, expression: sql`${call}(${reference})${cast}`, meta, fn: measure.fn };
+  });
+  if (new Set(measured.map((measure) => measure.name)).size !== measured.length) {
+    throw invalid("/measure", "a total is asked for twice");
+  }
+
+  const limit = Math.min(Math.max(query.limit ?? 200, 1), 1000);
+  const where = query.filter === undefined ? sql`true` : compileFilter(target, query.filter);
+  const order = (query.sort ?? []).map((entry, index) => {
+    const descending = entry.startsWith("-");
+    const by = names.get(descending ? entry.slice(1) : entry);
+    if (!by) {
+      throw invalid(
+        `/sort/${index}`,
+        `totals can be sorted by ${[...names.keys()].join(", ")}, not "${entry}"`,
+      );
+    }
+    return sql`${by} ${sql.raw(descending ? "desc" : "asc")} nulls last`;
+  });
+  // Groups in their own order after whatever was asked for, so the answer is the same every time.
+  for (const group of grouped) order.push(sql`${sql.ref(group.alias)} asc nulls last`);
+
+  const columns = [
+    ...grouped.map((group) =>
+      group.isDate
+        ? sql`${group.expression}::text as ${sql.id(group.alias)}`
+        : sql`${group.expression} as ${sql.id(group.alias)}`,
+    ),
+    ...measured.map((measure) => sql`${measure.expression} as ${sql.id(measure.alias)}`),
+  ];
+  await sql`select set_config('statement_timeout', ${String(AGGREGATE_TIMEOUT_MS)}, true)`.execute(
+    db,
+  );
+  const result = await sql<Row>`
+    select ${sql.join(columns)} from ${sql.id(target.schema, target.table)}
+    where ${where}
+    ${grouped.length > 0 ? sql`group by ${sql.join(grouped.map((_, index) => sql.raw(String(index + 1))))}` : sql``}
+    ${order.length > 0 ? sql`order by ${sql.join(order)}` : sql``}
+    limit ${limit + 1}
+  `
+    .execute(db)
+    .catch((error: { code?: string }) => {
+      if (error.code === "57014") {
+        throw new HttpError(
+          422,
+          "too_slow",
+          `Working out these totals took longer than ${AGGREGATE_TIMEOUT_MS / 1000} seconds. Narrow the filter, or index the columns it uses.`,
+        );
+      }
+      throw error;
+    });
+
+  const items = result.rows.slice(0, limit).map((row) => ({
+    by: Object.fromEntries(
+      grouped.map((group) => [group.name, fromDatabase(group.meta, row[group.alias])]),
+    ),
+    values: Object.fromEntries(
+      measured.map((measure) => {
+        const raw = row[measure.alias];
+        if (raw === null || raw === undefined) return [measure.name, null];
+        if (measure.fn === "count" || measure.fn === "sum" || measure.fn === "avg") {
+          return [measure.name, Number(raw)];
+        }
+        return [measure.name, fromDatabase(measure.meta as ColumnMeta, raw)];
+      }),
+    ),
+  }));
+  return { items, truncated: result.rows.length > limit };
+}
+
 function keyColumn(target: RowTarget): ColumnMeta {
   const key = target.columns.find((candidate) => candidate.name === target.key);
   if (!key)

@@ -13,6 +13,8 @@ export {
   httpConnector,
 } from "./http.js";
 export {
+  type Aggregated,
+  type AggregateOptions,
   type ColumnOptions,
   type ColumnSpec,
   column,

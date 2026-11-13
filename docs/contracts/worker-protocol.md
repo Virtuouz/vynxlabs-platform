@@ -113,8 +113,8 @@ Request:
 | `attempt` | As everywhere |
 | `table` | The table's path. For an external source, the table's name there |
 | `source` | Optional. The path of an external data source. Without it, `table` is a workspace table |
-| `op` | `find`, `get`, `insert`, `update` or `delete` |
-| `args` | For `find`: `filter`, `sort`, `limit`, `offset`. For `get` and `delete`: `id`. For `insert`: `rows`, 1 to 1,000 of them. For `update`: `id` and `patch` |
+| `op` | `find`, `get`, `insert`, `update`, `delete` or `aggregate` |
+| `args` | For `find`: `filter`, `sort`, `limit`, `offset`. For `get` and `delete`: `id`. For `insert`: `rows`, 1 to 1,000 of them. For `update`: `id` and `patch`. For `aggregate`: `group` (up to three of `column` or `column:day|week|month|year`), `measure` (up to five of `count`, `count:column`, `sum:column`, `avg:column`, `min:column`, `max:column`), `filter`, `sort`, `limit` |
 | `as` | Optional. The ID of a member or an end user of the tenant, usually the run's `startedBy.id`. The table's row policy then applies as it would to that person. An ID that is neither is refused with 400. Without it the script acts as the workspace and reaches every row. Ignored for an external source |
 
 Response: `{"result": ...}`.
@@ -126,8 +126,11 @@ Response: `{"result": ...}`.
 | `insert` | The inserted rows. Either all are inserted or none |
 | `update` | The row as it now is |
 | `delete` | `null` |
+| `aggregate` | `{"items": [{"by": {...}, "values": {...}}], "truncated": boolean}`, one item for each group, or one item when there are no groups |
 
 A filter is `{"column", "op", "value"}`, or `{"and": [...]}`, or `{"or": [...]}`. Operators: `eq` (the default), `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`. No field accepts SQL.
+
+`aggregate` was added after version 1 was published. A worker that does not offer it to scripts needs no change. A date or a time is gathered into periods that begin at midnight UTC. 422 means the totals took longer than five seconds to work out.
 
 Answers only for a table or a source the script declared in its manifest, and 403 otherwise. 400 means a value does not fit its column, with the column named. 404 means the table or the row is not there. 409 means a value that must be unique is already taken. 502 means an external source could not be reached or refused the request.
 

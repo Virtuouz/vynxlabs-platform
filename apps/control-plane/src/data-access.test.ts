@@ -52,7 +52,8 @@ export const writer = { execute: async (input, ctx) => {
   const changed = await tasks.update(many[0].id, { done: true });
   await tasks.delete(many[1].id);
   const found = await tasks.find({ filter: { column: "title", op: "contains", value: input.title }, sort: ["title"] });
-  return { id: made.id, titles: found.map((row) => row.title), done: changed.done, gone: await tasks.get(many[1].id) };
+  const totals = await tasks.aggregate({ group: ["done"], measures: ["count"], sort: ["-count"] });
+  return { id: made.id, titles: found.map((row) => row.title), done: changed.done, gone: await tasks.get(many[1].id), totals: totals.items };
 } };
 export const asPerson = { execute: async (input, ctx) => {
   const mine = ctx.table("tasks").as(input.person);
@@ -364,6 +365,9 @@ describe("scripts and data", () => {
       done: true,
       gone: null,
     });
+    // A script counts and sums through the same call an app does.
+    expect(done.output.totals).toHaveLength(2);
+    expect(done.output.totals.map((item: Any) => item.values.count)).toEqual([1, 1]);
     // The rows are there for the API too.
     expect(
       (await alice.get(`${ws()}/rows/tasks?sort=title`)).body.items.map((row: Any) => [

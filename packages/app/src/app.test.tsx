@@ -91,6 +91,33 @@ test("a table reads and writes rows through the public API", async () => {
   ]);
 });
 
+test("a table's totals are asked for by name, and come back one item a group", async () => {
+  answers = [
+    {
+      status: 200,
+      body: {
+        items: [{ by: { status: "open" }, values: { count: 2, "sum:total": 30 } }],
+        truncated: false,
+      },
+    },
+    { status: 200, body: { items: [{ by: {}, values: { count: 5 } }], truncated: false } },
+  ];
+  const totals = await table("orders").aggregate({
+    group: ["status", "created_at:month"],
+    measures: ["count", "sum:total"],
+    filter: { column: "total", op: "gt", value: 0 },
+    sort: ["-sum:total"],
+    limit: 20,
+  });
+  expect(totals.items[0]?.values["sum:total"]).toBe(30);
+  expect((await table("orders").aggregate()).items[0]?.values.count).toBe(5);
+  const base = "/api/v1/tenants/t1/workspaces/w1";
+  expect(calls.map((call) => call.url)).toEqual([
+    `${base}/aggregate/orders?group=status%2Ccreated_at%3Amonth&measure=count%2Csum%3Atotal&filter=${encodeURIComponent('{"column":"total","op":"gt","value":0}')}&sort=-sum%3Atotal&limit=20`,
+    `${base}/aggregate/orders`,
+  ]);
+});
+
 test("a refusal carries the server's code and its problems by field", async () => {
   answers = [
     {

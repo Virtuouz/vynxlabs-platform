@@ -4,6 +4,8 @@ import { HEARTBEAT_SECONDS } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MAX_FILE_BYTES, readFile, storeFile } from "../kernel/data/files.js";
 import {
+  aggregateQueryFrom,
+  aggregateRows,
   type DataScope,
   deleteRow,
   describeTable,
@@ -552,6 +554,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Type.Literal("insert"),
               Type.Literal("update"),
               Type.Literal("delete"),
+              Type.Literal("aggregate"),
             ]),
             args: Type.Optional(AnyObject),
             as: Type.Optional(Id),
@@ -569,6 +572,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           id?: string;
           rows?: unknown[];
           patch?: unknown;
+          group?: string[];
+          measure?: string[];
         };
         const perform = async (
           data: Parameters<typeof findRows>[0],
@@ -594,6 +599,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             case "delete":
               await deleteRow(data, target, String(args.id));
               return null;
+            case "aggregate":
+              return aggregateRows(data, target, aggregateQueryFrom(args));
           }
         };
 

@@ -11,6 +11,7 @@ import {
   getRow,
   insertRows,
   type RowTarget,
+  scopeFor,
   translate,
   updateRow,
   withData,
@@ -75,21 +76,24 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     /** The script manifest a run is pinned to, from the bundle it started on. */
     /** Whether an ID is someone a script may act for: a member or an end user of the tenant. */
-    async function isPerson(tenantId: string, id: string): Promise<boolean> {
+    async function personType(
+      tenantId: string,
+      id: string,
+    ): Promise<"member" | "end_user" | undefined> {
       const member = await db
         .selectFrom("tenant_member")
         .select("member_id")
         .where("tenant_id", "=", tenantId)
         .where("member_id", "=", id)
         .executeTakeFirst();
-      if (member) return true;
+      if (member) return "member";
       const user = await db
         .selectFrom("end_user")
         .select("id")
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
         .executeTakeFirst();
-      return user !== undefined;
+      return user ? "end_user" : undefined;
     }
 
     async function pinned(scope: Parameters<typeof activeRun>[1], runId: string, attempt: number) {
@@ -616,12 +620,15 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body.table,
         );
         // A script is the workspace's own code. Acting for a person, it is held to what they may see.
-        if (body.as && !(await isPerson(run.tenant_id, body.as))) {
+        const person = body.as ? await personType(run.tenant_id, body.as) : undefined;
+        if (body.as && !person) {
           throw badRequest("`as` is not a member or an end user of this tenant.");
         }
-        const scope: DataScope = body.as
-          ? { principalId: body.as, all: false }
-          : { principalId: null, all: true };
+        // Acting for a person means being them to the table's rules: their groups and attributes too.
+        const scope: DataScope =
+          body.as && person
+            ? await scopeFor(kernel, run.tenant_id, { type: person, id: body.as }, false)
+            : { principalId: null, all: true };
         const result = await withData(kernel, run.tenant_id, scope, (data) =>
           perform(data, target, scope),
         );

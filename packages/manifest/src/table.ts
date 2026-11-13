@@ -10,7 +10,34 @@ export interface TableColumn {
   renamedFrom?: string;
 }
 
-export type TablePolicy = { type: "open" } | { type: "owner"; column: string };
+/** When a row rule applies to a person, judged from one of the row's columns. */
+export type RowCondition =
+  /** Every row, for anyone who may use the table at all. */
+  | { everyone: true }
+  /** The column holds the person's own ID. */
+  | { column: string; is: "principal" }
+  /** The column names a group the person is in: its ID in a uuid column, its name in a text column. */
+  | { column: string; in: "groups" }
+  /** The column equals one of the person's attributes, such as the customer they belong to. */
+  | { column: string; equals: { attribute: string } };
+
+export interface RowRule {
+  /** `read` lets a person see the row. `write` and `all` also let them add, change and delete it. */
+  allow: "read" | "write" | "all";
+  when: RowCondition;
+}
+
+/** The most rules one table may have. Each is a clause in every query on the table. */
+export const MAX_ROW_RULES = 20;
+
+export type TablePolicy =
+  | { type: "open" }
+  | { type: "owner"; column: string }
+  | { type: "rules"; rules: RowRule[] };
+
+/** The column a condition looks at, or nothing for `everyone`. */
+export const conditionColumn = (when: RowCondition): string | undefined =>
+  "column" in when ? when.column : undefined;
 
 /** The body of a `table` manifest, version 1. */
 export interface TableBody {
@@ -96,6 +123,29 @@ export function checkTable(body: TableBody): ManifestIssue[] {
         message: `the owner column must be a uuid or text column, and "${body.policy.column}" is a ${owner.type}`,
       });
     }
+  }
+  if (body.policy?.type === "rules") {
+    body.policy.rules.forEach((rule, index) => {
+      const name = conditionColumn(rule.when);
+      if (name === undefined) return;
+      const at = `/body/policy/rules/${index}/when/column`;
+      const column = body.columns[name];
+      if (!column) {
+        issues.push({ path: at, message: `there is no column "${name}"` });
+        return;
+      }
+      // Each is compared as text: a person's ID, a group's ID or name, an attribute's value.
+      const fits =
+        "equals" in rule.when
+          ? ["text", "uuid", "integer"].includes(column.type)
+          : ["text", "uuid"].includes(column.type);
+      if (!fits) {
+        issues.push({
+          path: at,
+          message: `a rule cannot compare the ${column.type} column "${name}": use a text or uuid column${"equals" in rule.when ? ", or an integer one" : ""}`,
+        });
+      }
+    });
   }
   (body.indexes ?? []).forEach((columns, index) => {
     for (const column of columns) {

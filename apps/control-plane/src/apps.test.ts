@@ -955,6 +955,206 @@ describe("groups of end users", () => {
   });
 });
 
+describe("rows ruled by group and by attribute", () => {
+  let ivy: Awaited<ReturnType<typeof endUser>>;
+  let jon: Awaited<ReturnType<typeof endUser>>;
+  let kay: Awaited<ReturnType<typeof endUser>>;
+  let financeGroup: string;
+  const table = (body: Record<string, unknown>) =>
+    alice.put(`${ws()}/resources/invoices`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body,
+    });
+  const columns = {
+    number: { type: "text", required: true },
+    team: { type: "text" },
+    customer: { type: "text" },
+    assignee: { type: "uuid" },
+    paid: { type: "boolean" },
+  };
+  const rules = [
+    { allow: "read", when: { column: "team", in: "groups" } },
+    { allow: "all", when: { column: "customer", equals: { attribute: "customer_id" } } },
+    { allow: "write", when: { column: "assignee", is: "principal" } },
+  ];
+  const numbers = async (who: { browser: ReturnType<typeof browser> }) =>
+    ((await who.browser.get(`${rowsOf()}/rows/invoices`)).body.items as Any[])
+      .map((row) => row.number)
+      .sort();
+  const rowsOf = () => `/api/v1/tenants/${tenant}/workspaces/${prod}`;
+  const byNumber: Record<string, string> = {};
+
+  test("a rule must name a column the table has, of a kind it can compare", async () => {
+    const missing = await table({
+      columns,
+      policy: { type: "rules", rules: [{ allow: "read", when: { column: "nope", in: "groups" } }] },
+    });
+    expect(missing.status).toBe(400);
+    expect(JSON.stringify(missing.body.errors)).toContain('there is no column \\"nope\\"');
+    const wrongKind = await table({
+      columns,
+      policy: {
+        type: "rules",
+        rules: [{ allow: "read", when: { column: "paid", is: "principal" } }],
+      },
+    });
+    expect(wrongKind.status).toBe(400);
+    expect(JSON.stringify(wrongKind.body.errors)).toContain(
+      "a rule cannot compare the boolean column",
+    );
+    expect((await table({ columns, policy: { type: "rules", rules: [] } })).status).toBe(400);
+  });
+
+  test("three people, one table: each sees the rows the rules give them", async () => {
+    const made = await table({ columns, policy: { type: "rules", rules } });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect((await alice.get(`${ws()}/tables/invoices`)).body.policy).toEqual({
+      type: "rules",
+      rules,
+    });
+    // Every end user may use the table. Which rows is the rules' business.
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: prod,
+      resourceId: made.body.id,
+      principalType: "end_users",
+      roleId: roles.portal_user,
+    });
+
+    ivy = await endUser(t, alice, tenant, "acme", "ivy@customer.example");
+    jon = await endUser(t, alice, tenant, "acme", "jon@customer.example");
+    kay = await endUser(t, alice, tenant, "acme", "kay@customer.example");
+    const group = async (name: string, ...people: string[]) => {
+      const id = (await alice.post(`/tenants/${tenant}/end-user-groups`, { name })).body
+        .id as string;
+      for (const person of people)
+        await alice.put(`/tenants/${tenant}/end-user-groups/${id}/members/${person}`);
+      return id;
+    };
+    financeGroup = await group("finance", ivy.id);
+    await group("sales", jon.id);
+    await alice.patch(`/tenants/${tenant}/end-users/${ivy.id}`, {
+      attributes: { customer_id: "C-200" },
+    });
+    await alice.patch(`/tenants/${tenant}/end-users/${kay.id}`, {
+      attributes: { customer_id: "C-100" },
+    });
+
+    // Staff, who may see every row, write the rows the rest of this is about.
+    const seeded = await alice.post(`${ws()}/rows/invoices`, {
+      rows: [
+        { number: "INV-1", team: "finance", customer: "C-100" },
+        { number: "INV-2", team: "sales", customer: "C-200" },
+        { number: "INV-3", team: "ops", customer: "C-300", assignee: ivy.id },
+        { number: "INV-4", team: "ops", customer: "C-300" },
+      ],
+    });
+    expect(seeded.status, JSON.stringify(seeded.body)).toBe(201);
+    for (const row of seeded.body.items as Any[]) byNumber[row.number] = row.id;
+
+    // Ivy: her group's row, her customer's row, and the row assigned to her.
+    expect(await numbers(ivy)).toEqual(["INV-1", "INV-2", "INV-3"]);
+    // Jon: his group's row. Kay: her customer's row. Nobody: the row no rule gives anyone.
+    expect(await numbers(jon)).toEqual(["INV-2"]);
+    expect(await numbers(kay)).toEqual(["INV-1"]);
+    expect((await alice.get(`${ws()}/rows/invoices`)).body.items).toHaveLength(4);
+    // A row the rules hide is not there at all, by its ID either.
+    expect((await jon.browser.get(`${rowsOf()}/row/${byNumber["INV-1"]}/invoices`)).status).toBe(
+      404,
+    );
+  });
+
+  test("seeing a row is not being able to change it: only a write rule lets someone write", async () => {
+    const patch = (who: typeof ivy, number: string, change: object) =>
+      who.browser.post === undefined
+        ? Promise.reject(new Error("no browser"))
+        : t.app
+            .inject({
+              method: "PATCH",
+              url: `${rowsOf()}/row/${byNumber[number]}/invoices`,
+              headers: {
+                host: MAIN,
+                origin: `http://${MAIN}`,
+                cookie: [...who.browser.jar].map(([name, value]) => `${name}=${value}`).join("; "),
+              },
+              payload: change,
+            })
+            .then((response) => response.statusCode);
+    // Read through her group only: she sees INV-1 and cannot change it.
+    expect(await patch(ivy, "INV-1", { paid: true })).not.toBe(200);
+    // Hers by her customer, with a rule that allows everything.
+    expect(await patch(ivy, "INV-2", { paid: true })).toBe(200);
+    // Assigned to her, with a rule that allows writing.
+    expect(await patch(ivy, "INV-3", { paid: true })).toBe(200);
+    const after = Object.fromEntries(
+      ((await alice.get(`${ws()}/rows/invoices`)).body.items as Any[]).map((row) => [
+        row.number,
+        row.paid,
+      ]),
+    );
+    expect(after).toMatchObject({ "INV-1": null, "INV-2": true, "INV-3": true });
+
+    // Adding a row: only one that a write rule would give back to whoever adds it.
+    expect(
+      (
+        await jon.browser.post(`${rowsOf()}/rows/invoices`, {
+          number: "J-1",
+          team: "sales",
+          assignee: null,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await kay.browser.post(`${rowsOf()}/rows/invoices`, { number: "K-1", customer: "C-100" }))
+        .status,
+    ).toBe(201);
+    expect(
+      (
+        await kay.browser.post(`${rowsOf()}/rows/invoices`, {
+          number: "K-2",
+          customer: "C-999",
+          assignee: null,
+        })
+      ).status,
+    ).toBe(403);
+    // A row added with nobody named is assigned to whoever added it.
+    const own = await jon.browser.post(`${rowsOf()}/rows/invoices`, { number: "J-2" });
+    expect(own.status, JSON.stringify(own.body)).toBe(201);
+    expect(own.body.items[0].assignee).toBe(jon.id);
+    expect(await numbers(jon)).toEqual(["INV-2", "J-2"]);
+  });
+
+  test("leaving a group, or losing an attribute, takes the rows away at once", async () => {
+    await alice.delete(`/tenants/${tenant}/end-user-groups/${financeGroup}/members/${ivy.id}`);
+    expect(await numbers(ivy)).toEqual(["INV-2", "INV-3"]);
+    await alice.patch(`/tenants/${tenant}/end-users/${ivy.id}`, { attributes: {} });
+    expect(await numbers(ivy)).toEqual(["INV-3"]);
+    // Someone with no attribute does not match rows that have no customer either.
+    expect(await numbers(jon)).not.toContain("INV-4");
+  });
+
+  test("the policy can be changed, and going back to open shows every row to all who may use the table", async () => {
+    const opened = await table({ columns, policy: { type: "open" } });
+    expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+    // The four that staff wrote, and the two that the rules let people add.
+    expect((await numbers(jon)).length).toBe(6);
+    const owned = await table({ columns, policy: { type: "owner", column: "assignee" } });
+    expect(owned.status).toBe(200);
+    expect(await numbers(jon)).toEqual(["J-2"]);
+    const ruled = await table({
+      columns,
+      policy: { type: "rules", rules: [{ allow: "read", when: { everyone: true } }] },
+    });
+    expect(ruled.status).toBe(200);
+    expect((await numbers(kay)).length).toBe(6);
+    // Everyone reads, and nobody but staff writes.
+    expect((await kay.browser.post(`${rowsOf()}/rows/invoices`, { number: "K-9" })).status).toBe(
+      403,
+    );
+  });
+});
+
 describe("branding", () => {
   test("the kit's values here are the ones in its stylesheet", async () => {
     const css = await readFile(

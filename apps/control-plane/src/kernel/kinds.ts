@@ -1,5 +1,10 @@
 import { newId } from "@vynxlabs/db";
-import { type KindRegistry, registerPlatformKinds } from "@vynxlabs/manifest";
+import {
+  checkTable,
+  type KindRegistry,
+  registerPlatformKinds,
+  type TableBody,
+} from "@vynxlabs/manifest";
 import type { Trx } from "./audit.js";
 import { applyTable, retireTable } from "./data/apply.js";
 import type { DataStores } from "./data/stores.js";
@@ -171,6 +176,9 @@ export function registerKernelKinds(kinds: KindRegistry, hooks: Map<string, Kind
 export function registerDataHooks(hooks: Map<string, KindHook>, data: DataStores) {
   hooks.set("table", {
     async apply(trx, resource) {
+      // A bundle's tables were checked when it was built. A table saved in the console was not.
+      const issues = checkTable(resource.body as unknown as TableBody);
+      if (issues.length > 0) throw badRequest("The table's definition is not valid.", issues);
       const { db, store } = await data.within(trx, resource.tenantId);
       await applyTable(db, store.role, resource);
     },

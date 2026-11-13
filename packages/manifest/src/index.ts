@@ -86,4 +86,13 @@ export {
   type ValidationResult,
   validateJson,
 } from "./registry.js";
-export { checkTable, type TableBody, type TableColumn, type TablePolicy } from "./table.js";
+export {
+  checkTable,
+  conditionColumn,
+  MAX_ROW_RULES,
+  type RowCondition,
+  type RowRule,
+  type TableBody,
+  type TableColumn,
+  type TablePolicy,
+} from "./table.js";

@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { newId, sql } from "@vynxlabs/db";
-import type { ColumnType, TableBody, TablePolicy } from "@vynxlabs/manifest";
+import {
+  type ColumnType,
+  conditionColumn,
+  type RowRule,
+  type TableBody,
+  type TablePolicy,
+} from "@vynxlabs/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { AppliedResource } from "../kinds.js";
@@ -414,6 +420,14 @@ async function setUnique(trx: Trx, schema: string, table: string, column: string
   }
 }
 
+/** The names a table's row policies may have had. All are dropped before the wanted ones are made. */
+const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"];
+
+/** The groups and attributes of whoever is asking, as `withData` sets them for the transaction. */
+const GROUPS = sql`(select jsonb_array_elements_text(coalesce(nullif(current_setting('app.groups', true), ''), '[]')::jsonb))`;
+const attribute = (name: string) =>
+  sql`(coalesce(nullif(current_setting('app.attrs', true), ''), '{}')::jsonb ->> ${sql.lit(name)})`;
+
 /** Replaces a table's row policy with the one its definition asks for. */
 async function setPolicy(
   trx: Trx,
@@ -423,24 +437,63 @@ async function setPolicy(
   policy: TablePolicy,
 ) {
   const target = sql.id(schema, table.physical_name);
-  await sql`drop policy if exists rows on ${target}`.execute(trx);
+  for (const name of POLICY_NAMES) {
+    await sql`drop policy if exists ${sql.id(name)} on ${target}`.execute(trx);
+  }
+  const physical = async (column: string) =>
+    sql.id(
+      (
+        await trx
+          .selectFrom("data_column")
+          .select("physical_name")
+          .where("table_id", "=", table.id)
+          .where("name", "=", column)
+          .where("status", "=", "active")
+          .executeTakeFirstOrThrow()
+      ).physical_name,
+    );
+  // Whoever may see every row is past every policy.
+  const everything = sql`current_setting('app.data_all', true) = 'on'`;
   if (policy.type === "owner") {
-    const owner = await trx
-      .selectFrom("data_column")
-      .select("physical_name")
-      .where("table_id", "=", table.id)
-      .where("name", "=", policy.column)
-      .where("status", "=", "active")
-      .executeTakeFirstOrThrow();
     // A caller sees and writes a row when it is theirs, or when they may see every row.
     const allowed = sql`
-      current_setting('app.data_all', true) = 'on'
-      or ${sql.id(owner.physical_name)}::text = current_setting('app.principal', true)
+      ${everything}
+      or ${await physical(policy.column)}::text = current_setting('app.principal', true)
     `;
     await sql`
       create policy rows on ${target} for all to ${sql.id(role)}
       using (${allowed}) with check (${allowed})
     `.execute(trx);
+  } else if (policy.type === "rules") {
+    const clause = async (rule: RowRule) => {
+      const when = rule.when;
+      if ("everyone" in when) return sql`true`;
+      const column = await physical(when.column);
+      if ("is" in when) {
+        // No one is nobody's: a request from no person matches no row.
+        return sql`(current_setting('app.principal', true) <> '' and ${column}::text = current_setting('app.principal', true))`;
+      }
+      if ("in" in when) return sql`${column}::text in ${GROUPS}`;
+      return sql`${column}::text = ${attribute(when.equals.attribute)}`;
+    };
+    const any = async (rules: RowRule[]) =>
+      rules.length === 0 ? sql`false` : sql.join(await Promise.all(rules.map(clause)), sql` or `);
+    // To change a row a person must be able to see it, so every rule lets them read.
+    const read = sql`${everything} or ${await any(policy.rules)}`;
+    const write = sql`${everything} or ${await any(policy.rules.filter((rule) => rule.allow !== "read"))}`;
+    const to = sql.id(role);
+    await sql`create policy rows_read on ${target} for select to ${to} using (${read})`.execute(
+      trx,
+    );
+    await sql`create policy rows_insert on ${target} for insert to ${to} with check (${write})`.execute(
+      trx,
+    );
+    await sql`create policy rows_update on ${target} for update to ${to} using (${write}) with check (${write})`.execute(
+      trx,
+    );
+    await sql`create policy rows_delete on ${target} for delete to ${to} using (${write})`.execute(
+      trx,
+    );
   } else {
     await sql`create policy rows on ${target} for all to ${sql.id(role)} using (true) with check (true)`.execute(
       trx,
@@ -622,16 +675,22 @@ export async function restoreRules(
         }
       }
     }
-    const owner = table.policy.type === "owner" ? table.policy.column : undefined;
-    const ownerIsThere = table.columns.some(
-      (column) => column.status === "active" && column.name === owner,
+    // A policy that names a column the table no longer has cannot be made: the table is left open.
+    const named =
+      table.policy.type === "owner"
+        ? [table.policy.column]
+        : table.policy.type === "rules"
+          ? table.policy.rules.flatMap((rule) => conditionColumn(rule.when) ?? [])
+          : [];
+    const allThere = named.every((name) =>
+      table.columns.some((column) => column.status === "active" && column.name === name),
     );
     await setPolicy(
       trx,
       role,
       schema,
       { id: table.id, physical_name: table.physicalName },
-      owner === undefined || ownerIsThere ? table.policy : { type: "open" },
+      allThere ? table.policy : { type: "open" },
     );
     if (table.status === "active") {
       await reconcileIndexes(trx, workspaceId, table.name, indexes.get(table.name) ?? []);

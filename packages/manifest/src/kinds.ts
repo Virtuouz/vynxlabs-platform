@@ -626,6 +626,73 @@ export const tableKind: KindDefinition = {
             required: ["type", "column"],
             additionalProperties: false,
           },
+          {
+            type: "object",
+            description:
+              "Rules that match a row's columns against the person asking. A person sees a row when any rule lets them, and changes it when a `write` or `all` rule does.",
+            properties: {
+              type: { const: "rules" },
+              rules: {
+                type: "array",
+                minItems: 1,
+                maxItems: 20,
+                items: {
+                  type: "object",
+                  properties: {
+                    allow: { enum: ["read", "write", "all"] },
+                    when: {
+                      oneOf: [
+                        {
+                          type: "object",
+                          properties: { everyone: { const: true } },
+                          required: ["everyone"],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            column: { type: "string", pattern: columnName },
+                            is: { const: "principal" },
+                          },
+                          required: ["column", "is"],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            column: { type: "string", pattern: columnName },
+                            in: { const: "groups" },
+                          },
+                          required: ["column", "in"],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            column: { type: "string", pattern: columnName },
+                            equals: {
+                              type: "object",
+                              properties: {
+                                attribute: { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" },
+                              },
+                              required: ["attribute"],
+                              additionalProperties: false,
+                            },
+                          },
+                          required: ["column", "equals"],
+                          additionalProperties: false,
+                        },
+                      ],
+                    },
+                  },
+                  required: ["allow", "when"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["type", "rules"],
+            additionalProperties: false,
+          },
         ],
       },
       indexes: {

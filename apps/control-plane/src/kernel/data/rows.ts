@@ -109,6 +109,60 @@ export interface DataScope {
   principalId: string | null;
   /** Whether the caller may see and change every row, whatever the table's policy. */
   all: boolean;
+  /** The IDs and the names of the groups the person is in, for rules that match a row to a group. */
+  groups?: string[];
+  /** The person's attributes, for rules that match a row to one of them. */
+  attributes?: Record<string, string>;
+}
+
+/**
+ * Who a person is to a table's rules: their ID, the groups they are in, and
+ * their attributes. A member's groups are groups of members and an end user's
+ * are groups of end users. Read on each request, so that being put in a group
+ * or taken out takes effect at once.
+ */
+export async function scopeFor(
+  kernel: Kernel,
+  tenantId: string,
+  principal: { type: string; id: string | null },
+  all: boolean,
+): Promise<DataScope> {
+  if (principal.id === null) return { principalId: null, all };
+  const id = principal.id;
+  if (principal.type === "end_user") {
+    const [groups, user] = await Promise.all([
+      kernel.db
+        .selectFrom("end_user_group_member")
+        .innerJoin("end_user_group", "end_user_group.id", "end_user_group_member.group_id")
+        .select(["end_user_group.id", "end_user_group.name"])
+        .where("end_user_group_member.end_user_id", "=", id)
+        .where("end_user_group.tenant_id", "=", tenantId)
+        .execute(),
+      kernel.db
+        .selectFrom("end_user")
+        .select("attributes")
+        .where("id", "=", id)
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirst(),
+    ]);
+    return {
+      principalId: id,
+      all,
+      groups: groups.flatMap((group) => [group.id, group.name]),
+      attributes: user?.attributes ?? {},
+    };
+  }
+  if (principal.type === "member") {
+    const groups = await kernel.db
+      .selectFrom("group_member")
+      .innerJoin("principal_group", "principal_group.id", "group_member.group_id")
+      .select(["principal_group.id", "principal_group.name"])
+      .where("group_member.member_id", "=", id)
+      .where("principal_group.tenant_id", "=", tenantId)
+      .execute();
+    return { principalId: id, all, groups: groups.flatMap((group) => [group.id, group.name]) };
+  }
+  return { principalId: id, all };
 }
 
 /**
@@ -128,9 +182,11 @@ export async function withData<T>(
 ): Promise<T> {
   const store = await kernel.data.forTenant(tenantId);
   return store.rows.transaction().execute(async (trx) => {
-    await sql`select set_config('app.principal', ${scope.principalId ?? ""}, true), set_config('app.data_all', ${scope.all ? "on" : "off"}, true)`.execute(
-      trx,
-    );
+    await sql`select
+      set_config('app.principal', ${scope.principalId ?? ""}, true),
+      set_config('app.data_all', ${scope.all ? "on" : "off"}, true),
+      set_config('app.groups', ${JSON.stringify(scope.groups ?? [])}, true),
+      set_config('app.attrs', ${JSON.stringify(scope.attributes ?? {})}, true)`.execute(trx);
     try {
       return await run(trx as unknown as AnyDb);
     } catch (error) {
@@ -145,7 +201,11 @@ export function translate(error: unknown): unknown {
   const detail = (error as { detail?: string }).detail ?? "";
   const message = (error as { message?: string }).message ?? "";
   if (code === "42501" && message.includes("row-level security")) {
-    return new HttpError(403, "forbidden", "This table's policy only lets you write rows you own.");
+    return new HttpError(
+      403,
+      "forbidden",
+      "This table's policy only lets you write rows you own, or rows its rules give you.",
+    );
   }
   if (code === "23505") {
     const column = /\(([^)]+)\)=/.exec(detail)?.[1];
@@ -505,10 +565,17 @@ export async function insertRows(
   const rows = inputs.map((input, index) =>
     validate(target, input, inputs.length === 1 ? null : index, true),
   );
-  const owner =
-    target.policy.type === "owner"
-      ? target.columns.find((c) => c.name === (target.policy as { column: string }).column)
-      : undefined;
+  // The column that says whose a row is: the owner column, or one a rule compares with the person.
+  const policy = target.policy;
+  const ownerName =
+    policy.type === "owner"
+      ? policy.column
+      : policy.type === "rules"
+        ? policy.rules.flatMap((rule) =>
+            "is" in rule.when && rule.allow !== "read" ? [rule.when.column] : [],
+          )[0]
+        : undefined;
+  const owner = target.columns.find((c) => c.name === ownerName);
   const writable = target.columns.filter((meta) => meta.writable);
   const names = [
     ...(target.managed ? [sql.id("id")] : []),

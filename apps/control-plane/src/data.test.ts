@@ -528,7 +528,7 @@ describe("row policies", () => {
       owner_id: dave.id,
     });
     expect(forged.status).toBe(403);
-    expect(forged.body.detail).toBe("This table's policy only lets you write rows you own.");
+    expect(forged.body.detail).toBe("This table's policy only lets you write rows you own, or rows its rules give you.");
     // Nor can she give her own row away.
     expect(
       (await carol.client.patch(`${ws()}/row/${carols.id}/orders`, { owner_id: dave.id })).status,

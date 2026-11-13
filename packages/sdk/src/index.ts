@@ -469,7 +469,26 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
    * Who may see which rows. With `owner`, a person sees and changes only the
    * rows whose owner column holds their ID. Without a policy, permissions alone decide.
    */
-  policy?: { owner: Extract<keyof C, string> };
+  policy?:
+    | { owner: Extract<keyof C, string> }
+    | {
+        /**
+         * Rules that match a row's columns against the person asking. A person
+         * sees a row when any rule lets them, and changes it when a `write` or
+         * `all` rule does.
+         */
+        rules: {
+          allow: "read" | "write" | "all";
+          when:
+            | { everyone: true }
+            /** The column holds the person's own ID. */
+            | { column: Extract<keyof C, string>; is: "principal" }
+            /** The column names a group the person is in: its ID, or its name in a text column. */
+            | { column: Extract<keyof C, string>; in: "groups" }
+            /** The column equals one of the person's attributes. */
+            | { column: Extract<keyof C, string>; equals: { attribute: string } };
+        }[];
+      };
   /** Columns to index, each entry one index. */
   indexes?: Extract<keyof C, string>[][];
   /** The table's previous path. Its rows are kept. */
@@ -497,7 +516,11 @@ export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean
       columns: Object.fromEntries(
         Object.entries(options.columns).map(([name, spec]) => [name, spec.manifest]),
       ),
-      policy: options.policy ? { type: "owner", column: options.policy.owner } : undefined,
+      policy: !options.policy
+        ? undefined
+        : "rules" in options.policy
+          ? { type: "rules", rules: options.policy.rules }
+          : { type: "owner", column: options.policy.owner },
       indexes: options.indexes,
       renamedFrom: options.renamedFrom,
     }),

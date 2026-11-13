@@ -11,6 +11,7 @@ import {
   getRow,
   insertRows,
   type Row,
+  scopeFor,
   updateRow,
   withData,
 } from "../kernel/data/rows.js";
@@ -145,10 +146,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       };
       await ctx.authorize(`data:${verb}`, at);
       const target = await describeTable(data, params.w, table);
-      const scope: DataScope = {
-        principalId: ctx.principal.id,
-        all: await ctx.allowed(`data_all:${verb}`, at),
-      };
+      const scope: DataScope = await scopeFor(
+        kernel,
+        params.t,
+        ctx.principal,
+        await ctx.allowed(`data_all:${verb}`, at),
+      );
       return { target, scope };
     }
 

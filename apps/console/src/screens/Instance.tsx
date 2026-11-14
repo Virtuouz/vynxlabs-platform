@@ -15,6 +15,7 @@ interface MemberRow {
   email: string;
   createdAt: string;
   disabled?: boolean;
+  tenants?: { id: string; name: string }[];
 }
 
 function ToggleMember({ row, onDone }: { row: MemberRow; onDone: () => void }) {
@@ -62,6 +63,16 @@ export function InstanceMembers() {
         },
         { header: "Email", priority: 2, cell: (row) => row.email },
         {
+          header: "Tenants",
+          priority: 3,
+          cell: (row) =>
+            row.tenants && row.tenants.length > 0 ? (
+              row.tenants.map((one) => one.name).join(", ")
+            ) : (
+              <span className="text-ink-subtle">None</span>
+            ),
+        },
+        {
           header: "State",
           cell: (row) =>
             row.disabled ? (
@@ -96,6 +107,13 @@ export function InstanceMembers() {
           <KeyValues
             rows={[
               { label: "Email", value: row.email },
+              {
+                label: "Tenants",
+                value:
+                  row.tenants && row.tenants.length > 0
+                    ? row.tenants.map((one) => one.name).join(", ")
+                    : "Belongs to no tenant",
+              },
               { label: "State", value: row.disabled ? "Disabled: signs in nowhere" : "Active" },
               { label: "Created", value: when(row.createdAt) },
               { label: "ID", value: row.id, mono: true },

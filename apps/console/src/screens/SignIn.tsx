@@ -80,7 +80,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     <main className="flex min-h-full flex-col items-center justify-center bg-structure px-4 py-10">
       <div className="flex w-full max-w-[25rem] flex-col gap-6">
         <div className="flex items-center gap-2.5">
-          <BrandMark size={30} />
+          <BrandMark size={30} decorative />
           <span className="text-base font-semibold tracking-tight">{brand.productName}</span>
           <span className="text-ink-subtle">Console</span>
         </div>

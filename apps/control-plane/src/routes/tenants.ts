@@ -86,7 +86,14 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Every tenant for an operator. Otherwise the tenants the caller belongs to.",
           tags: ["tenancy"],
           querystring: PageQuery,
-          response: { 200: pageOf(Tenant) },
+          response: {
+            200: pageOf(
+              Type.Object({
+                ...Tenant.properties,
+                workspaceCount: Type.Integer({ minimum: 0 }),
+              }),
+            ),
+          },
         },
       },
       async ({ ctx, query }) => {
@@ -111,7 +118,28 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("id")
           .limit(args.limit + 1)
           .execute();
-        return toPage(rows, args, (row) => row.id, toTenant);
+        const counts =
+          rows.length === 0
+            ? []
+            : await db
+                .selectFrom("workspace")
+                .select(["tenant_id", (eb) => eb.fn.countAll<string>().as("count")])
+                .where(
+                  "tenant_id",
+                  "in",
+                  rows.map((row) => row.id),
+                )
+                .groupBy("tenant_id")
+                .execute();
+        return toPage(
+          rows,
+          args,
+          (row) => row.id,
+          (row) => ({
+            ...toTenant(row),
+            workspaceCount: Number(counts.find((one) => one.tenant_id === row.id)?.count ?? 0),
+          }),
+        );
       },
     );
 

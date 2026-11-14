@@ -146,6 +146,12 @@ describe("tenancy", () => {
     expect(
       (await alice.client.get("/tenants")).body.items.map((x: { slug: string }) => x.slug),
     ).toEqual(["acme"]);
+    // The instance's list of members says where each belongs.
+    const listed = (await t.admin.get("/members")).body.items;
+    expect(
+      listed.find((one: { email: string }) => one.email === "alice@acme.example").tenants,
+    ).toEqual([{ id: acme, name: "Acme" }]);
+    expect(listed.find((one: { email: string }) => one.email === ADMIN.email).tenants).toEqual([]);
   });
 
   test("a tenant admin creates workspaces, and the type is fixed for life", async () => {
@@ -194,6 +200,16 @@ describe("tenancy", () => {
         })
       ).status,
     ).toBe(409);
+    expect(
+      (await t.admin.get("/tenants")).body.items.map(
+        (x: { slug: string; workspaceCount: number }) => [x.slug, x.workspaceCount],
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        ["acme", 2],
+        ["globex", 0],
+      ]),
+    );
   });
 });
 

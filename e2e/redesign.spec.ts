@@ -7,13 +7,14 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
  * drawer on a phone. The instance's branding names and colours the console, and
  * a tenant's branding does not reach it.
  *
- * Screenshots are kept in `results/redesign/` to look over by eye.
+ * Screenshots are kept beside each test's results, in `e2e/results/`, to look over by eye.
  */
 
 const ADMIN = {
   email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
   password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
 };
+const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 const PRODUCT = `Northwind Console ${stamp}`;
 /** The instance's accent, and a tenant's, chosen to be told apart. */
@@ -90,16 +91,37 @@ test.beforeAll(async ({ browser }) => {
     await api("POST", "/tenants", { slug: `look-${stamp}`, name: `Look ${stamp}` }),
     "make a tenant",
   ).body;
+  // An operator sees inside a tenant through a grant, as the console asks them to.
+  ok(
+    await api("POST", `/tenants/${tenant.id}/access-grants`, {
+      reason: "Checking the console's layout",
+      roleId: TENANT_ADMIN,
+    }),
+    "open operator access",
+  );
   ok(
     await api("PUT", `/tenants/${tenant.id}/portal`, {
       theme: { tokens: { action: TENANT_ACCENT }, dark: { action: TENANT_ACCENT } },
     }),
     "brand the tenant",
   );
-  const workspaces = ok(await api("GET", `/tenants/${tenant.id}/workspaces`), "list the workspaces")
-    .body.items;
-  workspace = workspaces[0]?.id;
-  expect(workspace, "a new tenant has a workspace").toBeTruthy();
+  const prod = ok(
+    await api("POST", `/tenants/${tenant.id}/workspaces`, {
+      slug: "main",
+      name: "Main",
+      type: "production",
+    }),
+    "make production",
+  ).body.id;
+  workspace = ok(
+    await api("POST", `/tenants/${tenant.id}/workspaces`, {
+      slug: "sandbox",
+      name: "Sandbox",
+      type: "dev",
+      linkedWorkspaceId: prod,
+    }),
+    "make the dev workspace",
+  ).body.id;
 });
 
 test.afterAll(async () => {
@@ -144,8 +166,10 @@ for (const theme of THEMES) {
       for (const [name, path] of screens()) {
         await admin.goto(path);
         await admin.locator("main").first().waitFor();
-        // Let the screen's own requests answer before it is measured.
-        await admin.waitForLoadState("networkidle");
+        // Let the screen's own requests answer before it is measured. Some screens keep
+        // polling, so the network never goes quiet: wait for what they show instead.
+        await expect(admin.getByText(/^Loading/).first()).toBeHidden({ timeout: 15_000 });
+        await admin.waitForTimeout(250);
         expect(
           await admin.evaluate(() => document.documentElement.dataset.theme),
           `${name} is in ${theme}`,
@@ -155,7 +179,7 @@ for (const theme of THEMES) {
         );
         expect(overflow, `${name} scrolls sideways at ${size.width}px`).toBeLessThanOrEqual(0);
         await admin.screenshot({
-          path: `results/redesign/${theme}-${size.name}-${name}.png`,
+          path: test.info().outputPath(`${theme}-${size.name}-${name}.png`),
           fullPage: false,
         });
       }
@@ -170,33 +194,40 @@ test("on a phone the navigation is a drawer that opens and closes", async () => 
   await admin.getByRole("button", { name: "Open the menu" }).click();
   const drawer = admin.getByRole("dialog");
   await expect(drawer).toBeVisible();
-  await expect(drawer.getByRole("link", { name: "Runs" }).first()).toBeVisible();
+  await expect(drawer).toHaveAccessibleName(PRODUCT);
+  await expect(drawer.getByRole("link", { name: "Operate" })).toBeVisible();
   await admin.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
   // Choosing a screen in the drawer goes there and closes it.
   await admin.getByRole("button", { name: "Open the menu" }).click();
-  await drawer.getByRole("link", { name: "Runs" }).first().click();
+  await drawer.getByRole("link", { name: "Operate" }).click();
   await expect(drawer).toBeHidden();
   await expect(admin).toHaveURL(/\/runs$/);
 });
 
-test("the console carries the instance's name and colour, and not the tenant's", async () => {
-  await admin.setViewportSize({ width: 1440, height: 960 });
-  await admin.goto(`/t/${tenant.id}/workspaces/${workspace}/overview`);
-  await admin.locator("main").first().waitFor();
-  await expect(admin).toHaveTitle(new RegExp(PRODUCT));
-  const accent = await admin.evaluate(() =>
-    getComputedStyle(document.documentElement).getPropertyValue("--vx-action").trim(),
-  );
-  expect(accent.toLowerCase()).toBe(INSTANCE_ACCENT);
+test("the console carries the instance's name and colour, and not the tenant's", async ({
+  browser,
+}) => {
+  // A browser that has not seen the instance before, so no stylesheet is kept from
+  // before the branding was saved: the instance's is cached for a minute.
+  const fresh = await signIn(browser);
+  for (const theme of THEMES) {
+    await fresh.evaluate((choice) => localStorage.setItem("vx-theme", choice), theme);
+    await fresh.goto(`/t/${tenant.id}/workspaces/${workspace}/overview`);
+    await fresh.locator("main").first().waitFor();
+    await expect(fresh).toHaveTitle(new RegExp(PRODUCT));
+    const accent = await fresh.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--vx-action").trim(),
+    );
+    expect(accent.toLowerCase(), `the accent in ${theme}`).toBe(INSTANCE_ACCENT);
+  }
+  await fresh.context().close();
 
   // The sign-in page names the instance too.
-  const visitor = await (await admin.context().browser()?.newContext())?.newPage();
-  if (visitor) {
-    await visitor.goto("/");
-    await expect(visitor.getByText(PRODUCT).first()).toBeVisible();
-    await visitor.close();
-  }
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto("/");
+  await expect(visitor.getByText(PRODUCT).first()).toBeVisible();
+  await visitor.context().close();
 });
 
 test("no screen threw, and no browser dialog appeared", () => {

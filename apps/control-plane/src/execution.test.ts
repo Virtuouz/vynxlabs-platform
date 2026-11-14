@@ -542,7 +542,13 @@ describe("running", () => {
       204,
     );
     expect((await alice.get(`${ws()}/variable-values`)).body.items).toEqual([
-      { path: "config/size", description: "", default: "5", value: "80", updatedAt: expect.any(String) },
+      {
+        path: "config/size",
+        description: "",
+        default: "5",
+        value: "80",
+        updatedAt: expect.any(String),
+      },
     ]);
     expect((await finished(await start("use-all"))).output.size).toBe("80");
     await alice.delete(`${ws()}/variable-values/config/size`);

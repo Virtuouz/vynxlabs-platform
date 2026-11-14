@@ -908,7 +908,7 @@ export function Shell({
         size="narrow"
         title={
           <span className="flex items-center gap-2.5">
-            <BrandMark size={24} />
+            <BrandMark size={24} decorative />
             {brand.productName}
           </span>
         }

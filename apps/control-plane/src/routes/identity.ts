@@ -736,9 +736,17 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("member:read") },
         schema: {
           summary: "Every member of the instance",
+          description: "With the tenants each belongs to.",
           tags: ["identity"],
           querystring: PageQuery,
-          response: { 200: pageOf(Member) },
+          response: {
+            200: pageOf(
+              Type.Object({
+                ...Member.properties,
+                tenants: Type.Array(Type.Object({ id: Id, name: Type.String() })),
+              }),
+            ),
+          },
         },
       },
       async ({ query }) => {
@@ -751,7 +759,28 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("id")
           .limit(args.limit + 1)
           .execute();
-        return toPage(rows, args, (row) => row.id, toMember);
+        const ids = rows.map((row) => row.id);
+        const belongs =
+          ids.length === 0
+            ? []
+            : await kernel.db
+                .selectFrom("tenant_member")
+                .innerJoin("tenant", "tenant.id", "tenant_member.tenant_id")
+                .select(["tenant_member.member_id", "tenant.id", "tenant.name"])
+                .where("tenant_member.member_id", "in", ids)
+                .orderBy("tenant.name")
+                .execute();
+        return toPage(
+          rows,
+          args,
+          (row) => row.id,
+          (row) => ({
+            ...toMember(row),
+            tenants: belongs
+              .filter((one) => one.member_id === row.id)
+              .map((one) => ({ id: one.id, name: one.name })),
+          }),
+        );
       },
     );
 

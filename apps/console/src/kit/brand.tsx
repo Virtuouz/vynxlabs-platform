@@ -60,22 +60,28 @@ export function monogram(name: string): string {
  * The instance's mark: its logo when one is set, otherwise its initials on the
  * accent colour, cut at one corner like a port.
  */
-export function BrandMark({ size = 32 }: { size?: 24 | 30 | 32 }) {
+export function BrandMark({
+  size = 32,
+  decorative = false,
+}: {
+  size?: 24 | 30 | 32;
+  /** Beside the product's name in text, where reading the name twice is noise. */
+  decorative?: boolean;
+}) {
   const brand = useBrand();
   const box = size === 24 ? "size-6" : size === 30 ? "size-[30px]" : "size-8";
   if (brand.logo) {
     return (
       <img
         src={`/api/v1/instance/branding/logo?v=${brand.logoVersion}`}
-        alt={brand.productName}
+        alt={decorative ? "" : brand.productName}
         className={`${box} shrink-0 object-contain`}
       />
     );
   }
   return (
     <span
-      role="img"
-      aria-label={brand.productName}
+      {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": brand.productName })}
       className={`vx-port flex ${box} shrink-0 items-center justify-center bg-action font-mono text-label font-bold tracking-tight text-action-ink`}
     >
       {monogram(brand.productName)}

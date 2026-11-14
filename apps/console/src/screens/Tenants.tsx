@@ -12,6 +12,7 @@ interface TenantRow {
   slug: string;
   name: string;
   dataLocation: string | null;
+  workspaceCount?: number;
   createdAt: string;
 }
 
@@ -42,6 +43,12 @@ export function Tenants({ me }: { me: Me }) {
           ),
         },
         { header: "Slug", priority: 2, cell: (row) => <Mono>{row.slug}</Mono> },
+        {
+          header: "Workspaces",
+          priority: 2,
+          align: "end",
+          cell: (row) => <Mono>{row.workspaceCount ?? "—"}</Mono>,
+        },
         ...(operator
           ? [
               {
@@ -72,6 +79,7 @@ export function Tenants({ me }: { me: Me }) {
           <KeyValues
             rows={[
               { label: "Slug", value: row.slug, mono: true },
+              { label: "Workspaces", value: String(row.workspaceCount ?? "—") },
               ...(operator
                 ? [
                     {

@@ -1072,6 +1072,7 @@ export function Workers({ base }: { base: string }) {
         revokedAt: string | null;
         createdAt: string;
       }>
+        as="section"
         title="Credentials for standalone workers"
         description="Start a worker with: platform-worker --url <this instance> --token <credential>"
         path={`${base}/worker-credentials`}

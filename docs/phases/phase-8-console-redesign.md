@@ -1,6 +1,6 @@
 # Phase 8: the console redesigned
 
-Status: in progress. Built and tested locally: milestones 1 to 5 (foundations and instance branding, operate, build, release and git, data), most of 6 (references, health of data sources, variables and secrets), and the first of 7 (a service account's description, a key's last four characters, where a member was last). Not started: the rest of 6 and 7 (testing connections on a worker, the tenant overview, members and access, single sign-on and recovery codes, provisioning refusals, a portal hostname for every app, worker pools, staged import), and 8.
+Status: in progress. Built and tested locally: milestones 1 to 7, and of 8 the checks of every top-level screen at 390, 768 and 1440 pixels in light and dark (`e2e/redesign.spec.ts`), with the phase 7 exit criterion passing on the redesigned console. Open: testing a connection on a worker (waiting on the owner's choice of how), change descriptions in a promotion, and walking this phase's own exit criterion in a browser on a phone-sized screen.
 Last updated: 2026-11-13
 
 Phase 8 rebuilds the console to the "Signal Workshop" design: a quiet operational instrument panel in which each task gets the layout it needs. A rail and a section panel replace the long sidebar. Flows, scripts, apps and tables become full-width workbenches. Collections become lists with an inspector beside them. The workspace and the tenant each get an overview of what needs attention. The console is branded per instance instead of borrowing each tenant's colours, works in light and dark, and works from a phone's width up.
@@ -69,6 +69,12 @@ The design is recorded in the mock-up `Console Redesign.dc.html` with its generi
 | Instance branding | `apps/control-plane/src/instance.test.ts`, `apps/console/src/Shell.test.tsx` |
 | The shell | `apps/console/src/Shell.test.tsx` |
 | Every width and theme | `e2e/redesign.spec.ts` |
+| One hostname for everything | `apps/control-plane/src/apps.test.ts` |
+| Recovery codes | `apps/control-plane/src/sso.test.ts`, `apps/console/src/Account.test.tsx` |
+| Staged import | `apps/control-plane/src/portability.test.ts`, `apps/console/src/Environments.test.tsx` |
+| Worker pools | `apps/control-plane/src/summary.test.ts` |
+| Refused SCIM pushes | `apps/control-plane/src/scim.test.ts`, `apps/console/src/Provisioning.test.tsx` |
+| Tenant overview, members and access | `apps/console/src/TenantScreens.test.tsx` |
 
 ## Findings
 

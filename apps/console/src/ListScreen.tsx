@@ -76,6 +76,8 @@ export interface CreateConfig {
 
 export interface ListScreenProps<Row> {
   title: string;
+  /** "section" when the list is one part of a screen with its own title, under it. */
+  as?: "page" | "section";
   description?: string;
   /** A GET route returning `{ items: Row[] }`. */
   path: string;
@@ -226,7 +228,12 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
   );
 
   return (
-    <Page title={props.title} description={props.description} action={createButton}>
+    <ListFrame
+      as={props.as}
+      title={props.title}
+      description={props.description}
+      action={createButton}
+    >
       {created ? <Notice tone="attention">{created}</Notice> : null}
       {list.error ? (
         <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
@@ -258,7 +265,42 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           }}
         />
       ) : null}
-    </Page>
+    </ListFrame>
+  );
+}
+
+/** A whole screen, or a titled part of one under the screen's own title. */
+function ListFrame({
+  as,
+  title,
+  description,
+  action,
+  children,
+}: {
+  as: "page" | "section" | undefined;
+  title: string;
+  description: string | undefined;
+  action: ReactNode;
+  children: ReactNode;
+}) {
+  if (as !== "section") {
+    return (
+      <Page title={title} description={description} action={action}>
+        {children}
+      </Page>
+    );
+  }
+  return (
+    <section className="mt-8 flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="m-0 text-title">{title}</h2>
+          {description ? <p className="m-0 max-w-[70ch] text-ink-muted">{description}</p> : null}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 

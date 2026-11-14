@@ -436,8 +436,9 @@ test("she publishes an app over a table, and two groups of end users see it diff
 
   // Shared with every end user, from the apps screen.
   await ada.goto(`${link}/apps`);
+  await ada.getByRole("row", { name: /Bills desk/ }).click();
   await ada
-    .getByRole("row", { name: /Bills desk/ })
+    .getByRole("complementary", { name: "The chosen app" })
     .getByRole("button", { name: "Share" })
     .click();
   const dialog = ada.getByRole("dialog");
@@ -491,7 +492,7 @@ test("a developer edits a file and pushes, and the change is pulled into the wor
     "Keeps a small order, as a developer put it.",
   );
   // The console shows where the workspace stands against its branch.
-  await ada.goto(`${link}/changes`);
+  await ada.goto(`${link}/git`);
   await expect(ada.getByText("vx/sandbox").first()).toBeVisible();
 });
 

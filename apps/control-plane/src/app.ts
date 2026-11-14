@@ -38,6 +38,7 @@ import { portabilityRoutes } from "./routes/portability.js";
 import { scimRoutes } from "./routes/scim.js";
 import { sourceRoutes } from "./routes/sources.js";
 import { ssoRoutes } from "./routes/sso.js";
+import { streamRoutes } from "./routes/stream.js";
 import { summaryRoutes } from "./routes/summary.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { workerRoutes } from "./routes/worker.js";
@@ -91,6 +92,7 @@ export async function buildApp(options: AppOptions) {
   app.addHook("onClose", () => kernel.expressions.close());
   app.addHook("onClose", () => closeAllSources());
   app.addHook("onClose", () => kernel.data.close());
+  app.addHook("onClose", () => kernel.stream.close());
 
   app.setErrorHandler(errorHandler);
   app.addHook("onRequest", async (request, reply) => {
@@ -177,6 +179,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(workerRoutes(kernel));
       await api.register(summaryRoutes(kernel));
       await api.register(operationsRoutes(kernel));
+      await api.register(streamRoutes(kernel));
       await api.register(poolRoutes(kernel));
       api.get(
         "/openapi.json",

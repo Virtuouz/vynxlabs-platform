@@ -35,6 +35,7 @@ import {
   whereIs,
 } from "./nav.ts";
 import { Link, navigate } from "./router.tsx";
+import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
 // Kept for screens that list a tenant's sections.
@@ -467,6 +468,8 @@ export function Shell({
   const operator = isOperator(me);
   const where = whereIs(path, operator);
   const workspaceId = where.workspaceId;
+  // One stream of run events for the tenant on screen, for every screen of the tab.
+  useTenantStream(tenantId);
 
   const known = me.tenants.find((candidate) => candidate.id === tenantId);
   // An operator is not a member of most tenants, so the name comes from the tenant record.

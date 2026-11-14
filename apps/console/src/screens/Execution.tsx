@@ -12,33 +12,39 @@ import {
   Notice,
 } from "@vynxlabs/ui";
 import { Ban, Check, Clock, LoaderCircle, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { UsedBy, useReferences } from "../kit/references.tsx";
-import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
+import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-const STATUS: Record<Status, [BadgeTone, string]> = {
-  queued: ["neutral", "Waiting"],
-  running: ["action", "Running"],
-  succeeded: ["success", "Succeeded"],
-  failed: ["danger", "Failed"],
-  cancelled: ["neutral", "Canceled"],
+/** The badge tone of a run's state, for the run page's mark. */
+const TONE: Record<RunState, BadgeTone> = {
+  queued: "neutral",
+  running: "action",
+  waiting_approval: "attention",
+  waiting_time: "attention",
+  succeeded: "success",
+  failed: "danger",
+  canceled: "neutral",
+  skipped: "neutral",
 };
 
 export interface Run {
   id: string;
   script: string;
   status: Status;
+  state: RunState;
   attempt: number;
   maxAttempts: number;
   trigger: { type: string; [detail: string]: unknown };
@@ -67,7 +73,13 @@ interface ScriptRow {
   description: string;
   timeoutSeconds: number;
   inputSchema: Record<string, unknown>;
-  lastRun: { id: string; status: Status; createdAt: string; error: string | null } | null;
+  lastRun: {
+    id: string;
+    status: Status;
+    state: RunState;
+    createdAt: string;
+    error: string | null;
+  } | null;
   failedInARow: number;
   ownership: string;
   retries: number;
@@ -161,10 +173,7 @@ export function Scripts({
           cell: (row) =>
             row.lastRun ? (
               <Link to={`${runsLink}/${row.lastRun.id}`} className="flex flex-col no-underline">
-                <StatePill
-                  state={stateOf(row.lastRun.status)}
-                  detail={fromNow(row.lastRun.createdAt)}
-                />
+                <StatePill state={row.lastRun.state} detail={fromNow(row.lastRun.createdAt)} />
                 {row.failedInARow > 1 ? (
                   <span className="text-meta text-danger">{row.failedInARow} in a row</span>
                 ) : null}
@@ -324,42 +333,71 @@ export type LiveRun = Run & {
   waitingFor: string | null;
 };
 
-/** A run and its log lines, asked for again while it is in progress. */
+/**
+ * A run and its log lines, asked for again whenever the run changes or logs: on
+ * the run event stream, or every second and a half while the stream is down.
+ */
 export function useLiveRun(root: string, runId: string) {
   const [run, setRun] = useState<LiveRun>();
   const [lines, setLines] = useState<LogLine[]>([]);
   const [error, setError] = useState<string>();
+  const streaming = useStreamConnected();
+  const shown = useRef(runId);
+  const last = useRef(0);
+  const done = useRef(false);
+  const busy = useRef(false);
+  const again = useRef(false);
 
-  useEffect(() => {
-    let stopped = false;
-    let last = 0;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
+  const refresh = useCallback(async () => {
+    // One read at a time; one asked for meanwhile is made right after.
+    if (busy.current) {
+      again.current = true;
+      return;
+    }
+    busy.current = true;
+    try {
+      do {
+        again.current = false;
         const current = await api.get<LiveRun>(`${root}/runs/${runId}`);
         const logs = await api.get<{ items: LogLine[]; done: boolean }>(
-          `${root}/runs/${runId}/logs?after=${last}`,
+          `${root}/runs/${runId}/logs?after=${last.current}`,
         );
-        if (stopped) return;
+        if (shown.current !== runId) return;
         setRun(current);
         if (logs.items.length > 0) {
-          last = logs.items.at(-1)?.seq ?? last;
+          last.current = logs.items.at(-1)?.seq ?? last.current;
           setLines((existing) => [...existing, ...logs.items]);
         }
-        if (!logs.done) timer = setTimeout(poll, 1500);
-      } catch (caught) {
-        if (!stopped) setError((caught as Error).message);
-      }
-    };
+        done.current = logs.done;
+      } while (again.current);
+    } catch (caught) {
+      if (shown.current === runId) setError((caught as Error).message);
+    } finally {
+      busy.current = false;
+    }
+  }, [root, runId]);
+
+  useEffect(() => {
+    shown.current = runId;
+    last.current = 0;
+    done.current = false;
     setRun(undefined);
     setLines([]);
     setError(undefined);
-    poll();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  }, [root, runId]);
+    void refresh();
+  }, [runId, refresh]);
+
+  useStreamEvents(
+    (event) => (event.k === "run" || event.k === "log") && event.id === runId,
+    () => void refresh(),
+  );
+  useEffect(() => {
+    if (streaming) return;
+    const timer = setInterval(() => {
+      if (!done.current) void refresh();
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [streaming, refresh]);
   return { run, lines, error };
 }
 
@@ -403,7 +441,7 @@ export function RunDetail({
           : run.status === "running"
             ? LoaderCircle
             : Clock;
-  const tone = STATUS[run.status][0];
+  const tone = TONE[run.state];
   const markTone: Record<BadgeTone, string> = {
     success: "bg-success-soft text-success",
     danger: "bg-danger-soft text-danger",

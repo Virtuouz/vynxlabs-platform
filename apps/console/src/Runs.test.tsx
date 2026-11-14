@@ -25,6 +25,7 @@ beforeEach(() => {
             id: "r1",
             script: "reminders/send",
             status: "failed",
+            state: "failed",
             attempt: 1,
             maxAttempts: 1,
             trigger: { type: "schedule", trigger: "reminders/hourly" },
@@ -52,6 +53,7 @@ beforeEach(() => {
               id: "r1",
               target: "reminders/send",
               status: "succeeded",
+              state: "succeeded",
               trigger: "schedule",
               attempt: 1,
               maxAttempts: 3,
@@ -63,6 +65,7 @@ beforeEach(() => {
             },
           ],
           counts: { succeeded: 1 },
+          stateCounts: { succeeded: 1 },
         }
       : { items: [] };
     return new Response(JSON.stringify(value), {
@@ -101,11 +104,11 @@ test("the status filter is read from the address and written back to it", async 
   history.replaceState(null, "", "/t/t1/workspaces/w1/runs?status=failed");
   show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" selected={undefined} />);
   await screen.findByText("reminders/send");
-  expect(lists()[0]).toContain("status=failed");
+  expect(lists()[0]).toContain("state=failed");
   fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
   expect(location.search).toBe("");
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(lists().at(-1)).not.toContain("status=");
+  expect(lists().at(-1)).not.toContain("state=");
 });
 
 test("a run's details link to its script, the trigger that started it and its version", async () => {

@@ -1,6 +1,6 @@
 # Phase 9: maturity
 
-Status: in progress. Milestones 1 (quick wins), 2 (execution isolation) and 3 (retention) built and tested locally, milestone 2 also in the image on the dev stack. Milestones 4 to 7 not started.
+Status: in progress. Milestones 1 to 4 built and tested locally (quick wins; execution isolation, also in the image on the dev stack; retention; one state vocabulary, the console cache and the run event stream). Milestones 5 to 7 not started.
 Last updated: 2026-11-14
 
 Phase 9 builds the P0 and P1 items of the [evolution roadmap](../evolution/07-roadmap.md). It changes no part of the platform's model. It makes what already exists dependable and connected:
@@ -97,4 +97,11 @@ Each item's acceptance criteria are in the roadmap and its spec. New suites this
 - **Imports make the audit months they bring.** Without that, imported entries would sit in the default partition and never age out.
 - **The documented restore needed CSV mode.** Text-mode `COPY` reads backslashes as escapes and breaks the JSON of an entry. Checked by round-tripping entries with quotes, tabs, backslashes and newlines.
 - **Measured on 1,000,000 finished runs with 5 log lines each** (434 MB of runs, 896 MB of logs), on the dev stack: deleting a batch of 500 runs and their 2,500 lines took 8 ms at the median and 133 ms at most over 100 batches, on the new `run_retention_idx`. A run inserted every 20 ms meanwhile took 1.3 ms at the median and 137 ms at most. S2 asked for no lock held over 2 s.
+- **Database triggers announce run changes,** not the code that makes them. A status changes in a dozen places (claim, complete, fail, cancel, requeue, reap, the flow engine, approvals); a trigger on `run`, `flow_run` and `step_run` misses none, and `pg_notify` is sent only on commit. A bulk load sets `vx.quiet` to stay silent; the tenant import does.
+- **One stream per tab, at the tenant,** not one per workspace as S5 had it: the header counts and the tenant overview need every workspace. What a subscriber may read is decided per workspace when it connects, with the checks `/activity` uses: script runs with `run:read`, flow runs and steps with `flow_run:read`.
+- **Approval "events" are step changes carrying identifiers only.** The approvals a browser then reads are filtered to those who may decide, so S5's rule became: no flow or step events to someone who may not read that workspace's flows.
+- **No separate log stream.** A run's log lines are announced on the same stream, at most twice a second per run, and the run view reads them with the existing `logs?after=`.
+- **A flow whose sub-flow waits for a person shows `running`,** and the sub-flow `waiting_approval`. `waiting_time` is shown only while nothing but delays is waiting.
+- **The cache changed one test's timing, not its meaning.** A promotion test changed a select as soon as its label appeared; the options now arrive a tick later. The test waits for the option.
+- **A write outside any tenant invalidated every read,** and the console makes one itself: `PUT /me/recent`, when the member's place settles. In a browser on the dev stack it showed as one extra Runs request after each arrival. A write under `/me` now invalidates only `/me`. Checked in Chromium against the built console: a run inserted from outside appeared on an open Runs page in 92 ms, over one stream, with one list request on arrival and none in the next 12 seconds.
 

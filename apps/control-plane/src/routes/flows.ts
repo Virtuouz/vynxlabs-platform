@@ -3,6 +3,12 @@ import { sql } from "@vynxlabs/db";
 import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import {
+  flowStateSql,
+  type RunState,
+  RunStateSchema,
+  stepState,
+} from "../kernel/execution/state.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
 import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
 import { cancelFlowRun, decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
@@ -46,6 +52,7 @@ const FlowRun = Type.Object({
   id: Id,
   flow: Type.String(),
   status: FlowRunStatus,
+  state: RunStateSchema,
   trigger: AnyObject,
   triggerNode: Type.String(),
   startedBy: Type.Object({ type: Type.String(), id: NullableId }),
@@ -60,6 +67,7 @@ interface FlowRunRow {
   id: string;
   flow_path: string;
   status: "running" | "succeeded" | "failed" | "cancelled";
+  state: RunState;
   trigger_type: string;
   trigger_detail: Record<string, unknown>;
   trigger_node: string;
@@ -76,6 +84,7 @@ const toFlowRun = (row: FlowRunRow) => ({
   id: row.id,
   flow: row.flow_path,
   status: row.status,
+  state: row.state,
   trigger: { type: row.trigger_type, ...row.trigger_detail },
   triggerNode: row.trigger_node,
   startedBy: { type: row.started_by_type, id: row.started_by_id },
@@ -91,6 +100,7 @@ const Step = Type.Object({
   node: Type.String(),
   item: Type.String({ description: "Empty, or the item's index for one item of a foreach." }),
   status: Type.String(),
+  state: RunStateSchema,
   outputName: NullableString,
   output: Type.Unknown(),
   error: ErrorShape,
@@ -165,7 +175,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   nodeCount: Type.Integer(),
                   triggers: Type.Array(Type.String()),
                   lastRun: Type.Union([
-                    Type.Object({ id: Id, status: FlowRunStatus, createdAt: Time }),
+                    Type.Object({
+                      id: Id,
+                      status: FlowRunStatus,
+                      state: RunStateSchema,
+                      createdAt: Time,
+                    }),
                     Type.Null(),
                   ]),
                   version: Type.Union([Type.Integer(), Type.Null()], {
@@ -210,11 +225,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           flow_path: string;
           id: string;
           status: FlowRunRow["status"];
+          state: RunState;
           created_at: Date;
         }>`
-          select distinct on (flow_path) flow_path, id, status, created_at
-          from flow_run where workspace_id = ${params.w} and parent_flow_run_id is null
-          order by flow_path, id desc
+          select distinct on (f.flow_path) f.flow_path, f.id, f.status,
+            ${flowStateSql("f")} as state, f.created_at
+          from flow_run f where f.workspace_id = ${params.w} and f.parent_flow_run_id is null
+          order by f.flow_path, f.id desc
         `.execute(db);
         const byFlow = new Map(latest.rows.map((row) => [row.flow_path, row]));
         const versions = new Map(
@@ -261,7 +278,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .flatMap((node) => (node.type === "trigger" ? [node.trigger.type] : []))
               .sort(),
             lastRun: last
-              ? { id: last.id, status: last.status, createdAt: iso(last.created_at) }
+              ? {
+                  id: last.id,
+                  status: last.status,
+                  state: last.state,
+                  createdAt: iso(last.created_at),
+                }
               : null,
             version,
             draft: draft ? (draft.deleted ? ("removed" as const) : ("changed" as const)) : null,
@@ -431,6 +453,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .innerJoin("bundle", "bundle.id", "flow_run.bundle_id")
         .selectAll("flow_run")
         .select("bundle.version as bundle_version")
+        .select(flowStateSql("flow_run").as("state"))
         .where("flow_run.workspace_id", "=", workspaceId);
 
     app.get(
@@ -597,6 +620,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             node: step.node_id,
             item: step.item_key,
             status: step.status,
+            state: stepState(step),
             outputName: step.output_name,
             // A code step's output is its run's. Something large is named, not sent.
             output: step.run_id

@@ -932,6 +932,9 @@ describe("waiting", () => {
       (r) => step(r, "pause")?.status === "waiting",
     );
     expect(paused.status).toBe("running");
+    // It is not "running" to a person: it waits for its time.
+    expect(paused.state).toBe("waiting_time");
+    expect(step(paused, "pause").state).toBe("waiting_time");
     expect(Date.parse(step(paused, "pause").wakeAt)).toBeGreaterThan(Date.now() + 3000_000);
     // Whatever else is due on the instance, this flow is not: it stays where it is.
     await advanceDueFlows(t.kernel);
@@ -949,9 +952,26 @@ describe("waiting", () => {
 
   test("an approval waits for a person, and only someone permitted may decide", async () => {
     const id = await start("approving", { id: "1001", total: 1250 }, bob);
-    await until(
+    const waiting = await until(
       () => read(id),
       (r) => step(r, "gate")?.status === "waiting",
+    );
+    // Every list says the same: it waits for a person.
+    expect(waiting).toMatchObject({ status: "running", state: "waiting_approval" });
+    expect(step(waiting, "gate").state).toBe("waiting_approval");
+    const listed = (await alice.get(`${ws()}/activity?state=waiting_approval`)).body;
+    expect(listed.items.map((one: { id: string; state: string }) => [one.id, one.state])).toEqual([
+      [id, "waiting_approval"],
+    ]);
+    expect(listed.stateCounts.waiting_approval).toBe(1);
+    expect(
+      (await alice.get(`${ws()}/activity?state=waiting`)).body.items.map(
+        (one: { id: string }) => one.id,
+      ),
+    ).toContain(id);
+    const flows = (await alice.get(`${ws()}/flows`)).body.items;
+    expect(flows.find((one: { path: string }) => one.path === "approving").lastRun.state).toBe(
+      "waiting_approval",
     );
 
     const pending = (await alice.get(`${ws()}/approvals`)).body.items;
@@ -981,6 +1001,7 @@ describe("waiting", () => {
       ).status,
     ).toBe(204);
     const done = await finished(id);
+    expect(done.state).toBe("succeeded");
     expect(done.output).toEqual({ send: { sent: "1001" } });
     expect(step(done, "gate").output).toEqual({ approved: true, comment: "Known customer" });
     // Deciding twice is refused.

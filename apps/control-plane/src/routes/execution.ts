@@ -14,6 +14,13 @@ import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/con
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
+import {
+  flowStateSql,
+  type RunState,
+  RunStateSchema,
+  runState,
+  runStateSql,
+} from "../kernel/execution/state.js";
 import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
@@ -144,6 +151,7 @@ const Run = Type.Object({
   id: Id,
   script: Type.String(),
   status: RunStatus,
+  state: RunStateSchema,
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
   trigger: AnyObject,
@@ -189,6 +197,7 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
   id: row.id,
   script: row.script_path,
   status: row.status,
+  state: runState(row.status),
   attempt: row.attempt,
   maxAttempts: row.max_attempts,
   trigger: { type: row.trigger_type, ...row.trigger_detail },
@@ -733,6 +742,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Object({
                       id: Id,
                       status: RunStatus,
+                      state: RunStateSchema,
                       createdAt: Time,
                       error: NullableString,
                     }),
@@ -804,6 +814,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? {
                     id: last.id,
                     status: last.status,
+                    state: runState(last.status),
                     createdAt: iso(last.created_at),
                     error: last.error,
                   }
@@ -1139,6 +1150,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
                       id: Id,
                       status: Type.String(),
+                      state: RunStateSchema,
                       createdAt: Time,
                     }),
                     Type.Null(),
@@ -1200,20 +1212,29 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             kind: "script" | "flow";
             id: string;
             status: string;
+            state: RunState;
             created_at: Date;
           }>`
             select * from (
-              select 'script' as kind, id, status::text as status, created_at from run
+              select 'script' as kind, id, status::text as status,
+                ${runStateSql("status")} as state, created_at from run
               where workspace_id = ${params.w} and flow_run_id is null
                 and script_path = ${row.target_path} and ${match}
               union all
-              select 'flow' as kind, id, status::text as status, created_at from flow_run
-              where workspace_id = ${params.w} and flow_path = ${row.target_path} and ${match}
+              select 'flow' as kind, f.id, f.status::text as status,
+                ${flowStateSql("f")} as state, f.created_at from flow_run f
+              where f.workspace_id = ${params.w} and f.flow_path = ${row.target_path} and ${match}
             ) as fired order by id desc limit 1
           `.execute(db);
           const last = found.rows[0];
           return last
-            ? { kind: last.kind, id: last.id, status: last.status, createdAt: iso(last.created_at) }
+            ? {
+                kind: last.kind,
+                id: last.id,
+                status: last.status,
+                state: last.state,
+                createdAt: iso(last.created_at),
+              }
             : null;
         };
         return {

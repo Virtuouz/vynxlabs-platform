@@ -13,6 +13,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Managed workers run as a user of their own,** `vxrun` (uid 10001), where the container may switch users; Docker's defaults allow it. Where it may not, a tenant whose code is written outside the operators gets no managed worker. Set `MANAGED_WORKER_USER=same` on a development machine. See "Workers the instance starts" in the self-hosting guide.
 - **Standalone workers can read their credential from standard input,** with `--token-stdin`, which keeps it out of reach of the scripts they run.
 - **Rate limits are shared across replicas,** counted in the database, and each tenant has at most one managed worker however many replicas run.
+- **Runs update live.** The console keeps one stream of run events open per tab (`GET /api/v1/tenants/<id>/stream`, server-sent events), and each replica one more database connection to listen for them. A proxy must not buffer that path; see the self-hosting guide. Migration 0048 adds the triggers that announce changes.
+- **Runs, flow runs and steps have a `state`** beside their `status`: `queued`, `running`, `waiting_approval`, `waiting_time`, `succeeded`, `failed`, `canceled` or `skipped`. A flow waiting for a person is no longer shown as running. `status` is unchanged.
 - **Moving between workspaces is no longer audited.** It is remembered, and the console opens where the member last was.
 
 ## 0.5.0, not yet released

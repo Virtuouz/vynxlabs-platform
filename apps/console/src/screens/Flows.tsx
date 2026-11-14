@@ -1,6 +1,4 @@
 import {
-  Badge,
-  type BadgeTone,
   Button,
   duration,
   EmptyState,
@@ -20,26 +18,15 @@ import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
-import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
+import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
-const STATUS: Record<string, [BadgeTone, string]> = {
-  running: ["action", "Running"],
-  waiting: ["attention", "Waiting"],
-  succeeded: ["success", "Succeeded"],
-  failed: ["danger", "Failed"],
-  cancelled: ["neutral", "Canceled"],
-  skipped: ["neutral", "Skipped"],
-};
-const StatusBadge = ({ status }: { status: string }) => (
-  <Badge tone={STATUS[status]?.[0] ?? "neutral"}>{STATUS[status]?.[1] ?? status}</Badge>
-);
-
 /** How a run began, as the end of a sentence. */
 const STARTED: Record<string, string> = {
   manual: "by hand",
@@ -62,7 +49,7 @@ interface FlowRow {
   description: string;
   nodeCount: number;
   triggers: string[];
-  lastRun: { id: string; status: FlowStatus; createdAt: string } | null;
+  lastRun: { id: string; status: FlowStatus; state: RunState; createdAt: string } | null;
   version: number | null;
   draft: "changed" | "removed" | null;
   starts: { type: string; detail: string | null }[];
@@ -205,10 +192,7 @@ export function Flows({
           cell: (row) =>
             row.lastRun ? (
               <span className="flex flex-col">
-                <StatePill
-                  state={stateOf(row.lastRun.status)}
-                  detail={fromNow(row.lastRun.createdAt)}
-                />
+                <StatePill state={row.lastRun.state} detail={fromNow(row.lastRun.createdAt)} />
                 <span className="text-meta text-ink-subtle">
                   {row.runs.lastDay} today
                   {row.runs.failedLastDay ? ` · ${row.runs.failedLastDay} failed` : ""}
@@ -354,6 +338,7 @@ interface FlowDetail {
 interface FlowRunRow {
   id: string;
   status: FlowStatus;
+  state: RunState;
   trigger: { type: string };
   createdAt: string;
   finishedAt: string | null;
@@ -487,7 +472,7 @@ export function FlowView({
                 </Link>
               ),
             },
-            { header: "Status", cell: (row) => <StatusBadge status={row.status} /> },
+            { header: "Status", cell: (row) => <StatePill state={row.state} /> },
             { header: "Started by", cell: (row) => TRIGGER[row.trigger.type] ?? row.trigger.type },
           ]}
         />
@@ -500,6 +485,7 @@ export interface StepRow {
   node: string;
   item: string;
   status: string;
+  state: RunState;
   outputName: string | null;
   output: unknown;
   error: { message: string } | null;
@@ -558,7 +544,15 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
   const [selected, setSelected] = useState<string>();
   const [tick, setTick] = useState(0);
   const flow = useLoad<FlowDetail>(run ? `${root}/flows/${run.flow}` : null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is changed after an action to poll again
+  const streaming = useStreamConnected();
+  const [changed, setChanged] = useState(0);
+  // Read again when the flow run, a step of it or a script run it started changes, and
+  // after an action here. Without the stream, every second and a half while it runs.
+  useStreamEvents(
+    (event) => event.id === id || event.flow === id,
+    () => setChanged((n) => n + 1),
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` and `changed` ask again
   useEffect(() => {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -567,7 +561,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
         const current = await api.get<FlowRunDetail>(`${root}/flow-runs/${id}`);
         if (stopped) return;
         setRun(current);
-        if (current.status === "running") timer = setTimeout(poll, 1500);
+        if (current.status === "running" && !streaming) timer = setTimeout(poll, 1500);
       } catch (caught) {
         if (!stopped) setError((caught as Error).message);
       }
@@ -577,12 +571,12 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
       stopped = true;
       clearTimeout(timer);
     };
-  }, [root, id, tick]);
+  }, [root, id, tick, changed, streaming]);
 
   if (error) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
   const steps = run.steps.filter((step) => step.item === "");
-  const statuses = Object.fromEntries(steps.map((step) => [step.node, step.status]));
+  const statuses = Object.fromEntries(steps.map((step) => [step.node, step.state]));
   const chosen = steps.find((step) => step.node === selected);
   const items = run.steps.filter((step) => step.node === selected && step.item !== "");
   const waitingApprovals = steps.filter((step) => step.status === "waiting" && step.detail.title);
@@ -637,7 +631,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
         <Link to={`${link}/flows/${run.flow}`} className="text-action">
           {run.flow}
         </Link>
-        <StatusBadge status={run.status} />
+        <StatePill state={run.state} />
         <span className="text-ink-muted">
           Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`}, on
           bundle version {run.bundleVersion}
@@ -715,7 +709,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
       {chosen ? (
         <section className="rounded-panel border border-line bg-surface p-4">
           <h2 className="mt-0 mb-2 flex items-center gap-2 text-base font-semibold">
-            {code(chosen.node)} <StatusBadge status={chosen.status} />
+            {code(chosen.node)} <StatePill state={chosen.state} />
             {chosen.outputName ? (
               <span className="font-normal text-ink-muted">took the case {chosen.outputName}</span>
             ) : null}

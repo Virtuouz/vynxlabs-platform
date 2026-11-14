@@ -5,7 +5,7 @@ import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
-import { Mono, StatePill, stateOf } from "../kit/status.tsx";
+import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue } from "../router.tsx";
 import { stamp } from "./Execution.tsx";
@@ -27,7 +27,13 @@ interface Trigger {
   lastFiredAt: string | null;
   url: string | null;
   paused: { at: string; by: string | null; reason: string } | null;
-  lastRun: { kind: "script" | "flow"; id: string; status: string; createdAt: string } | null;
+  lastRun: {
+    kind: "script" | "flow";
+    id: string;
+    status: string;
+    state: RunState;
+    createdAt: string;
+  } | null;
   lastRefusal: { reason: string; problem: string; at: string } | null;
 }
 
@@ -126,7 +132,7 @@ export function TriggersWorkbench({
       cell: (row) =>
         row.lastRun ? (
           <span className="flex flex-col">
-            <StatePill state={stateOf(row.lastRun.status)} />
+            <StatePill state={row.lastRun.state} />
             <span className="text-meta text-ink-subtle">{fromNow(row.lastRun.createdAt)}</span>
           </span>
         ) : row.lastFiredAt ? (

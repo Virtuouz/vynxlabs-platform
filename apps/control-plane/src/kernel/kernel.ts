@@ -14,6 +14,7 @@ import { registerExecutionHooks } from "./execution/triggers.js";
 import { Expressions } from "./flows/expressions.js";
 import { type KindHook, registerDataHooks, registerKernelKinds } from "./kinds.js";
 import { Mailer } from "./mail.js";
+import { StreamHub } from "./stream.js";
 
 /** Everything the kernel's routes and services share. */
 export interface Kernel {
@@ -40,6 +41,8 @@ export interface Kernel {
   mail: Mailer;
   /** The files of the app that draws interfaces. */
   screens: RuntimeFiles;
+  /** What changes in runs, passed on to the browsers that may see it. */
+  stream: StreamHub;
 }
 
 export function createKernel(
@@ -71,6 +74,7 @@ export function createKernel(
     log,
     hosts: new Hosts(db, config),
     mail: new Mailer(config, log),
+    stream: new StreamHub(database, log),
     screens: new RuntimeFiles(
       config.screensDir ??
         fileURLToPath(new URL("../../../../packages/screens/runtime/dist", import.meta.url)),

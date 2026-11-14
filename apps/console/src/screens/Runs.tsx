@@ -6,18 +6,20 @@ import { ask, notify } from "../ask.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
-import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
+import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Link, navigate, useQueryValue } from "../router.tsx";
+import { useStreamConnected } from "../stream.ts";
 import { stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
-type Status = "queued" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";
+/** What the list can be narrowed to: a state, or either kind of waiting. */
+type Filter = "queued" | "running" | "waiting" | "succeeded" | "failed" | "canceled";
 
 interface Activity {
   kind: "script" | "flow";
   id: string;
   target: string;
-  status: Status;
+  state: RunState;
   trigger: string;
   attempt: number;
   maxAttempts: number;
@@ -43,15 +45,17 @@ const WINDOWS = [
   { value: "all", label: "Everything kept" },
 ];
 
-const STATUSES: { value: "all" | Status; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "failed", label: "Failed" },
-  { value: "running", label: "Running" },
-  { value: "waiting", label: "Waiting" },
-  { value: "queued", label: "Queued" },
-  { value: "succeeded", label: "Succeeded" },
-  { value: "cancelled", label: "Canceled" },
+const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = [
+  { value: "all", label: "All", states: [] },
+  { value: "failed", label: "Failed", states: ["failed"] },
+  { value: "running", label: "Running", states: ["running"] },
+  { value: "waiting", label: "Waiting", states: ["waiting_approval", "waiting_time"] },
+  { value: "queued", label: "Queued", states: ["queued"] },
+  { value: "succeeded", label: "Succeeded", states: ["succeeded"] },
+  { value: "canceled", label: "Canceled", states: ["canceled"] },
 ];
+/** States in which a run may still change. */
+const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
 
 /** How long ago, or the date when it is older than a day. */
 function started(iso: string) {
@@ -78,10 +82,12 @@ export function RunsWorkbench({
   // The status filter lives in the address, so a link can open the failed runs and a
   // reload or a shared link keeps them.
   const [asked, ask] = useQueryValue("status");
-  const status: "all" | Status = STATUSES.some((one) => one.value === asked)
-    ? (asked as Status)
+  // An address from before the states, `?status=cancelled`, still works.
+  const wanted = asked === "cancelled" ? "canceled" : asked;
+  const status: "all" | Filter = FILTERS.some((one) => one.value === wanted)
+    ? (wanted as Filter)
     : "all";
-  const setStatus = (next: "all" | Status) => ask(next === "all" ? null : next);
+  const setStatus = (next: "all" | Filter) => ask(next === "all" ? null : next);
   const [kind, setKind] = useState("all");
   const [hours, setHours] = useState("24");
   const [tick, setTick] = useState(0);
@@ -94,25 +100,30 @@ export function RunsWorkbench({
     [hours, tick],
   );
   const query = new URLSearchParams({ limit: "100" });
-  if (status !== "all") query.set("status", status);
+  if (status !== "all") query.set("state", status);
   if (kind !== "all") query.set("kind", kind);
   if (from) query.set("from", from);
   const listPath = `${root}/activity?${query}&tick=${tick}`;
-  const list = useLoad<{ items: Activity[]; counts: Record<string, number>; keptDays?: number }>(
-    listPath,
-  );
+  const list = useLoad<{
+    items: Activity[];
+    stateCounts: Record<string, number>;
+    keptDays?: number;
+  }>(listPath);
   const items = list.data?.items ?? [];
-  const live = items.some((one) => ["queued", "running", "waiting"].includes(one.status));
+  const live = items.some((one) => LIVE.includes(one.state));
 
-  // While anything is in progress, the list asks again every few seconds.
+  // While anything is in progress, changes arrive as events. Without them, the list asks
+  // again every few seconds.
+  const streaming = useStreamConnected();
   useEffect(() => {
-    if (!live) return;
+    if (!live || streaming) return;
     const timer = setInterval(() => setTick((n) => n + 1), 5000);
     return () => clearInterval(timer);
-  }, [live]);
+  }, [live, streaming]);
 
   const chosen = items.find((one) => one.id === selected);
-  const total = Object.values(list.data?.counts ?? {}).reduce((a, b) => a + b, 0);
+  const counts = list.data?.stateCounts ?? {};
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const close = () => navigate(`${link}/runs${location.search}`);
 
   return (
@@ -133,7 +144,7 @@ export function RunsWorkbench({
             {live ? (
               <span className="flex items-center gap-1.5 text-meta text-ink-muted">
                 <Junction kind="here" size={5} />
-                Live · updates every 5s
+                {streaming ? "Live" : "Live · updates every 5s"}
               </span>
             ) : null}
             <div className="w-40">
@@ -164,9 +175,11 @@ export function RunsWorkbench({
           label="Status"
           value={status}
           onChange={setStatus}
-          options={STATUSES.map((one) => ({
-            ...one,
-            count: one.value === "all" ? total : (list.data?.counts[one.value] ?? 0),
+          options={FILTERS.map(({ value, label, states }) => ({
+            value,
+            label,
+            count:
+              value === "all" ? total : states.reduce((sum, one) => sum + (counts[one] ?? 0), 0),
           }))}
         />
       </div>
@@ -224,7 +237,7 @@ export function RunsWorkbench({
                     className={`cursor-pointer border-line border-b ${on ? "bg-selected" : "hover:bg-surface"}`}
                   >
                     <td className="px-4 py-2.5 md:pl-6">
-                      <StatePill state={stateOf(row.status)} />
+                      <StatePill state={row.state} />
                     </td>
                     <td className="px-3 py-2.5">
                       <Link
@@ -263,7 +276,7 @@ export function RunsWorkbench({
 function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
   return (
     <div className="flex flex-col gap-4">
-      <StatePill state={stateOf(run.status)} />
+      <StatePill state={run.state} />
       {run.error ? <Notice tone="danger">{run.error}</Notice> : null}
       <KeyValues
         rows={[
@@ -312,7 +325,7 @@ export function ScriptRunPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatePill state={stateOf(run.status)} detail={took(run) || undefined} />
+        <StatePill state={run.state} detail={took(run) || undefined} />
         <div className="flex gap-2">
           {active ? (
             <Button

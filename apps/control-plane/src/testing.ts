@@ -62,6 +62,8 @@ export interface Client {
     extraHeaders?: Record<string, string>,
     method?: "POST" | "PUT",
   ): Promise<ApiResponse>;
+  /** The headers it sends, such as its session cookie, for requests made some other way. */
+  readonly headers: Record<string, string>;
 }
 
 /** A running app on a throwaway database, with the first operator admin created. */
@@ -168,6 +170,7 @@ export async function startTestApp(
       delete: (url) => call("DELETE", url),
       upload: (url, content, contentType, extraHeaders, method = "POST") =>
         call(method, url, content, contentType, extraHeaders),
+      headers,
     };
   }
 

@@ -5,6 +5,12 @@ import { forbidden, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { diagnose } from "../kernel/execution/diagnose.js";
 import { bundleFrames, originalPosition } from "../kernel/execution/sourcemap.js";
+import {
+  flowStateSql,
+  type RunState,
+  RunStateSchema,
+  runStateSql,
+} from "../kernel/execution/state.js";
 import { access, findWorkspace } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { effectivePolicy } from "../kernel/retention.js";
@@ -34,6 +40,7 @@ const Activity = Type.Object({
   id: Id,
   target: Type.String({ description: "The script's or the flow's path." }),
   status: ActivityStatus,
+  state: RunStateSchema,
   trigger: Type.String({ description: "What started it: manual, schedule, webhook, event, form…" }),
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
@@ -55,6 +62,7 @@ interface ActivityRow {
   id: string;
   target: string;
   status: ActivityStatus;
+  state: RunState;
   trigger_type: string;
   attempt: number;
   max_attempts: number;
@@ -110,7 +118,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       if (may.scripts)
         parts.push(sql`
           select 'script' as kind, r.id, r.script_path as target, r.status::text as status,
-            r.trigger_type, r.attempt, r.max_attempts, r.error->>'message' as error,
+            ${runStateSql("r.status")} as state, r.trigger_type, r.attempt, r.max_attempts, r.error->>'message' as error,
             b.version, r.created_at, r.started_at, r.finished_at
           from run r join bundle b on b.id = r.bundle_id
           where r.workspace_id = ${w} and r.flow_run_id is null and ${window("r.created_at")}
@@ -122,7 +130,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             case when f.status = 'running' and exists (
               select 1 from step_run s where s.flow_run_id = f.id and s.status = 'waiting'
             ) then 'waiting' else f.status::text end as status,
-            f.trigger_type, 1 as attempt, 1 as max_attempts, f.error->>'message' as error,
+            ${flowStateSql("f")} as state, f.trigger_type, 1 as attempt, 1 as max_attempts, f.error->>'message' as error,
             b.version, f.created_at, f.created_at as started_at, f.finished_at
           from flow_run f join bundle b on b.id = f.bundle_id
           where f.workspace_id = ${w} and f.parent_flow_run_id is null and ${window("f.created_at")}
@@ -148,6 +156,11 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
             cursor: Type.Optional(Type.String()),
             status: Type.Optional(ActivityStatus),
+            state: Type.Optional(
+              Type.Union([RunStateSchema, Type.Literal("waiting")], {
+                description: "Only runs in this state. `waiting` is either kind of waiting.",
+              }),
+            ),
             kind: Type.Optional(Type.Union([Type.Literal("script"), Type.Literal("flow")])),
             target: Type.Optional(Type.String({ maxLength: 500 })),
             from: Type.Optional(Time),
@@ -158,6 +171,9 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               items: Type.Array(Activity),
               nextCursor: NullableString,
               counts: Type.Record(Type.String(), Type.Integer()),
+              stateCounts: Type.Record(Type.String(), Type.Integer(), {
+                description: "Per state, over the same window and target.",
+              }),
               keptDays: Type.Integer({
                 description: "How many days runs are kept after they end, in this tenant.",
               }),
@@ -178,19 +194,29 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           target: query.target,
         };
         if (!may.scripts && !may.flows) {
-          return { items: [], nextCursor: null, counts: {}, keptDays };
+          return { items: [], nextCursor: null, counts: {}, stateCounts: {}, keptDays };
         }
         const all = union(params.w, may, filters);
         const rows = await sql<ActivityRow>`
           select * from (${all}) as activity
           where true
             ${query.status ? sql`and status = ${query.status}` : sql``}
+            ${
+              query.state === "waiting"
+                ? sql`and state in ('waiting_approval', 'waiting_time')`
+                : query.state
+                  ? sql`and state = ${query.state}`
+                  : sql``
+            }
             ${args.after ? sql`and id < ${args.after}` : sql``}
           order by id desc
           limit ${args.limit + 1}
         `.execute(db);
         const counted = await sql<{ status: string; n: string }>`
           select status, count(*) as n from (${all}) as activity group by status
+        `.execute(db);
+        const stateCounted = await sql<{ state: string; n: string }>`
+          select state, count(*) as n from (${all}) as activity group by state
         `.execute(db);
         return {
           ...toPage(
@@ -202,6 +228,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               id: row.id,
               target: row.target,
               status: row.status,
+              state: row.state,
               trigger: row.trigger_type,
               attempt: Number(row.attempt),
               maxAttempts: Number(row.max_attempts),
@@ -213,6 +240,9 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           ),
           counts: Object.fromEntries(counted.rows.map((row) => [row.status, Number(row.n)])),
+          stateCounts: Object.fromEntries(
+            stateCounted.rows.map((row) => [row.state, Number(row.n)]),
+          ),
           keptDays,
         };
       },

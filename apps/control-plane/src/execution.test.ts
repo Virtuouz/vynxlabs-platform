@@ -622,7 +622,11 @@ describe("running", () => {
     await sleep(1500);
     expect((await alice.get(`${ws()}/runs/${waiting}`)).body.status).toBe("queued");
 
-    expect((await alice.post(`${ws()}/runs/${waiting}/cancel`)).body.status).toBe("cancelled");
+    expect((await alice.post(`${ws()}/runs/${waiting}/cancel`)).body).toMatchObject({
+      status: "cancelled",
+      // The status keeps its spelling for clients that read it; the state is in US English.
+      state: "canceled",
+    });
     expect((await alice.post(`${ws()}/runs/${running}/cancel`)).body.status).toBe("cancelled");
     expect((await alice.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);
     expect((await bob.client.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);

@@ -335,6 +335,9 @@ export async function importTenant(
     }
 
     const report = await mutate(kernel.db, actor, async (trx, audit) => {
+      // Every run, flow run and step loaded here would announce itself to the browsers.
+      // Nobody is watching a tenant that does not exist yet.
+      await sql`set local vx.quiet = 'on'`.execute(trx);
       await trx
         .insertInto("tenant")
         .values({

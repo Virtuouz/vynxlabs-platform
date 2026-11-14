@@ -6,6 +6,8 @@ import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
 import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
+import { InstanceBranding } from "./screens/InstanceBranding.tsx";
+import { KitSheet } from "./screens/KitSheet.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 
@@ -14,7 +16,6 @@ const SingleSignOn = lazy(() =>
 );
 
 import { Tenants } from "./screens/Tenants.tsx";
-import { useTenantTheme } from "./theme.ts";
 
 const RETURN_TO = ["/apps/", "/portal/", "/api/v1/app-handoffs/start"];
 
@@ -37,7 +38,6 @@ export function App() {
   useEffect(() => {
     if (target) window.location.assign(target);
   }, [target]);
-  useTenantTheme(me.data ? tenant?.tenantId : undefined);
 
   if (me.loading && !me.data && !me.error) return null;
   if (me.error?.status === 401 || !me.data) {
@@ -69,6 +69,8 @@ export function App() {
   else if (path === "/instance/audit") screen = <InstanceAudit />;
   else if (path === "/instance/databases") screen = <DatabaseLocations />;
   else if (path === "/instance/import") screen = <TenantImport />;
+  else if (path === "/instance/branding") screen = <InstanceBranding />;
+  else if (path === "/instance/kit") screen = <KitSheet />;
 
   return (
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>

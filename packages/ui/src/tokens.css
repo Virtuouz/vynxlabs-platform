@@ -22,6 +22,13 @@
   --vx-danger-soft: #fbe9e7;
   --vx-success: #1f7a4d;
   --vx-success-soft: #e1f3e9;
+  --vx-structure: #e7ebf0;
+  --vx-raised: #ffffff;
+  --vx-selected: #e3eff4;
+  --vx-line-strong: #b4bfcb;
+  --vx-ink-subtle: #687485;
+  --vx-code-bg: #f5f7f9;
+  --vx-focus: #0e5f7a;
   --vx-radius-control: 6px;
   --vx-radius-panel: 10px;
   --vx-font: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -50,6 +57,13 @@
     --vx-danger-soft: #3d1b18;
     --vx-success: #6fcf9a;
     --vx-success-soft: #153326;
+    --vx-structure: #0c1118;
+    --vx-raised: #1f2a38;
+    --vx-selected: #172430;
+    --vx-line-strong: #3a4859;
+    --vx-ink-subtle: #7e8b9b;
+    --vx-code-bg: #0b1016;
+    --vx-focus: #5cb8d6;
     color-scheme: dark;
   }
 }
@@ -70,6 +84,13 @@
   --vx-danger-soft: #3d1b18;
   --vx-success: #6fcf9a;
   --vx-success-soft: #153326;
+  --vx-structure: #0c1118;
+  --vx-raised: #1f2a38;
+  --vx-selected: #172430;
+  --vx-line-strong: #3a4859;
+  --vx-ink-subtle: #7e8b9b;
+  --vx-code-bg: #0b1016;
+  --vx-focus: #5cb8d6;
   color-scheme: dark;
 }
 
@@ -89,10 +110,48 @@
   --color-danger-soft: var(--vx-danger-soft);
   --color-success: var(--vx-success);
   --color-success-soft: var(--vx-success-soft);
+  --color-structure: var(--vx-structure);
+  --color-raised: var(--vx-raised);
+  --color-selected: var(--vx-selected);
+  --color-line-strong: var(--vx-line-strong);
+  --color-ink-subtle: var(--vx-ink-subtle);
+  --color-code-bg: var(--vx-code-bg);
+  --color-focus: var(--vx-focus);
   --radius-control: var(--vx-radius-control);
   --radius-panel: var(--vx-radius-panel);
   --font-sans: var(--vx-font);
   --font-mono: var(--vx-font-code);
+}
+
+/*
+ * Type roles. Sizes, not brand: a theme does not set them. `text-label` is
+ * written in capitals by the element that uses it.
+ */
+@theme {
+  --text-display: 26px;
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.015em;
+  --text-display--font-weight: 600;
+  --text-title: 18px;
+  --text-title--line-height: 1.3;
+  --text-title--font-weight: 600;
+  --text-body: 14px;
+  --text-body--line-height: 1.45;
+  --text-label: 12px;
+  --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.06em;
+  --text-label--font-weight: 600;
+  --text-meta: 12.5px;
+  --text-meta--line-height: 1.4;
+  --text-telemetry: 13px;
+  --text-telemetry--line-height: 1.4;
+  --text-micro: 10px;
+  --text-micro--line-height: 1.2;
+  --text-micro--font-weight: 500;
+  --text-tag: 10.5px;
+  --text-tag--line-height: 1;
+  --text-tag--letter-spacing: 0.06em;
+  --text-tag--font-weight: 600;
 }
 
 body {
@@ -106,7 +165,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--vx-action);
+  outline: 2px solid var(--vx-focus);
   outline-offset: 2px;
 }
 

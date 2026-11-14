@@ -6,6 +6,8 @@ const styles = {
   quiet: "text-action hover:bg-action-soft",
   danger: "text-danger hover:bg-danger-soft",
   "danger-solid": "bg-danger text-surface hover:brightness-110",
+  /** Reserved for the one action that changes production. */
+  promote: "bg-attention text-canvas hover:brightness-110",
 };
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "size"> {

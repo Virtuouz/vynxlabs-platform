@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App, returnTarget } from "./App.tsx";
 import { match } from "./router.tsx";
@@ -74,7 +74,9 @@ test("signing in: a wrong password explains itself, the right one shows the memb
   fireEvent.input(screen.getByLabelText("Password"), { target: { value: "right-password" } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   await screen.findByRole("heading", { name: "Tenants" });
-  expect((await screen.findByRole("link", { name: "Acme Corp" })).getAttribute("href")).toBe(
+  // The tenant is listed on the screen, and in the navigation beside it.
+  const main = screen.getByRole("main");
+  expect((await within(main).findByRole("link", { name: "Acme Corp" })).getAttribute("href")).toBe(
     "/t/t1/workspaces",
   );
   // A member who is not an operator sees no instance section and cannot create tenants.

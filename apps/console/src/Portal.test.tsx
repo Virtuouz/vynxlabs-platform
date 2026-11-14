@@ -9,7 +9,7 @@ import { Branding, KIT, THEME_TOKENS } from "./screens/Branding.tsx";
 import { Domains } from "./screens/Domains.tsx";
 import { EndUsers } from "./screens/EndUsers.tsx";
 import { answer, show } from "./testing.tsx";
-import { refreshTenantTheme, useTenantTheme } from "./theme.ts";
+import { loadInstanceTheme, refreshInstanceTheme } from "./theme.ts";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -81,7 +81,7 @@ test("the apps of a workspace are listed with their addresses and who they are o
   ];
   show(<Apps root={`${base}/workspaces/w1`} />);
   const address = await screen.findByRole("link", {
-    name: "https://apps.example.test/apps/acme/main/portal/orders/",
+    name: "apps.example.test/apps/acme/main/portal/orders/",
   });
   expect(address.getAttribute("target")).toBe("_blank");
   expect(screen.getByRole("link", { name: "orders.acme.example" }).getAttribute("href")).toBe(
@@ -89,12 +89,14 @@ test("the apps of a workspace are listed with their addresses and who they are o
   );
   // A hostname that is not enabled serves nothing, so it is not offered as a link.
   expect(screen.queryByRole("link", { name: "old.acme.example" })).toBeNull();
-  const page = document.body.textContent ?? "";
-  expect(page).toContain("Customers follow their orders.");
-  expect(page).toContain("12 files, 340 KB");
-  expect(page).toContain("1 file, 900 B");
-  expect(page).toContain("every end user, Finance team");
-  expect(page).toContain("Only staff whose role lets them read this workspace");
+  const list = document.body.textContent ?? "";
+  expect(list).toContain("every end user, Finance team");
+  expect(list).toContain("Staff only");
+  // The rest is in the inspector of the chosen app.
+  fireEvent.click(screen.getByText("Orders"));
+  const sheet = await screen.findByRole("dialog");
+  expect(sheet.textContent).toContain("Customers follow their orders.");
+  expect(sheet.textContent).toContain("12, 340 KB");
 });
 
 test("a workspace with no apps says where apps come from", async () => {
@@ -268,7 +270,7 @@ test("branding saves only the tokens that are set, and shows the server's error 
         ]
       : [200, { ...portal, theme }];
   };
-  show(<Branding base={base} tenantId="t1" />);
+  show(<Branding base={base} />);
   const action = (await screen.findByLabelText("action, light")) as HTMLInputElement;
   expect(action.value).toBe("#7c3aed");
   expect(action.placeholder).toBe("kit default");
@@ -322,7 +324,7 @@ test("self sign-up is saved when it is switched, and a logo is checked before it
     current = { ...portal, logo: true };
     return [204, null];
   };
-  show(<Branding base={base} tenantId="t1" />);
+  show(<Branding base={base} />);
   fireEvent.click(await screen.findByLabelText("People may create their own account"));
   await waitFor(() => expect(sent("PUT")[0]?.body).toEqual({ signUp: true }));
 
@@ -461,29 +463,23 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/domains/d1`);
 });
 
-// ----- The tenant's colours in the console -----
+// ----- The console's own colours -----
 
-test("the tenant's stylesheet is in the page while the tenant is shown, and is loaded again after a save", () => {
+test("the instance's stylesheet is loaded once, never a tenant's, and again after a save", () => {
   // The test browser fetches no stylesheets. Without this it reports each one as an error.
   const browser = window as unknown as {
     happyDOM: { settings: { handleDisabledFileLoadingAsSuccess: boolean } };
   };
   browser.happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
-  const Shown = ({ tenantId }: { tenantId: string | undefined }) => {
-    useTenantTheme(tenantId);
-    return null;
-  };
   const links = () =>
     [...document.head.querySelectorAll('link[rel="stylesheet"]')].map((link) =>
       link.getAttribute("href"),
     );
-  const { rerender, unmount } = show(<Shown tenantId="t1" />);
-  expect(links()).toEqual(["/api/v1/tenants/t1/theme.css"]);
-  refreshTenantTheme("t1");
-  expect(links()[0]).toMatch(/^\/api\/v1\/tenants\/t1\/theme\.css\?saved=\d+$/);
-  rerender(<Shown tenantId="t2" />);
-  expect(links()).toEqual(["/api/v1/tenants/t2/theme.css"]);
-  rerender(<Shown tenantId={undefined} />);
-  expect(links()).toEqual([]);
-  unmount();
+  loadInstanceTheme();
+  loadInstanceTheme();
+  expect(links()).toEqual(["/api/v1/instance/theme.css"]);
+  refreshInstanceTheme();
+  expect(links()[0]).toMatch(/^\/api\/v1\/instance\/theme\.css\?saved=\d+$/);
+  expect(links().some((href) => href?.includes("/tenants/"))).toBe(false);
+  for (const link of document.head.querySelectorAll("link[data-instance-theme]")) link.remove();
 });

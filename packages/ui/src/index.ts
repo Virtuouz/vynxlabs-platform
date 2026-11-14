@@ -35,6 +35,7 @@ export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";
+export { SideSheet, type SideSheetProps } from "./SideSheet.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
 export {

@@ -554,6 +554,13 @@ describe("API keys and service accounts", () => {
 
   test("a service account acts only inside its tenant, with what it is bound to", async () => {
     const account = await alice.client.post(`/tenants/${acme}/service-accounts`, { name: "ci" });
+    expect(
+      (
+        await alice.client.patch(`/tenants/${acme}/service-accounts/${account.body.id}`, {
+          description: "Deploys from CI",
+        })
+      ).body.description,
+    ).toBe("Deploys from CI");
     const key = await alice.client.post(
       `/tenants/${acme}/service-accounts/${account.body.id}/api-keys`,
       { name: "pipeline" },

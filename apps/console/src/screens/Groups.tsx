@@ -1,8 +1,11 @@
-import { Badge, Button, ComboboxField, Dialog, EmptyState, Notice, TextField } from "@vynxlabs/ui";
+import { Button, ComboboxField, Dialog, EmptyState, Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
-import { ListScreen, RemoveButton, when } from "../ListScreen.tsx";
+import { CollectionView } from "../kit/CollectionView.tsx";
+import { Mono } from "../kit/status.tsx";
+import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
+import { type Framed, toolbarOf } from "./Members.tsx";
 
 interface Person {
   id: string;
@@ -132,41 +135,65 @@ function MembersDialog({
 }
 
 /** Groups of members: staff who are given access together. */
-export function Groups({ base }: { base: string }) {
+export function Groups({ base, framed }: { base: string; framed?: Framed }) {
+  const groups = useLoad<{ items: { id: string; name: string; createdAt: string }[] }>(
+    `${base}/groups`,
+  );
   const [open, setOpen] = useState<{ id: string; name: string }>();
+  const [creating, setCreating] = useState(false);
   return (
     <>
-      <ListScreen<{ id: string; name: string; createdAt: string }>
-        title="Groups"
-        description="A group is a set of members that can be given access together. Give a group a role under Access."
-        path={`${base}/groups`}
+      <CollectionView<{ id: string; name: string; createdAt: string }>
+        title={framed?.title ?? "Groups"}
+        description="A group is a set of members that can be given access together. Give a group a role under Access grants."
+        actions={
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            Create group
+          </Button>
+        }
+        toolbar={toolbarOf(framed)}
+        label="Groups"
+        rows={groups.data?.items}
+        error={groups.error?.message}
         rowKey={(row) => row.id}
         columns={[
-          { header: "Name", cell: (row) => row.name },
-          { header: "Created", cell: (row) => when(row.createdAt) },
+          { header: "Name", cell: (row) => <span className="font-medium">{row.name}</span> },
+          { header: "Created", priority: 2, cell: (row) => when(row.createdAt) },
+          {
+            header: "",
+            align: "end",
+            cell: (row) => (
+              <span className="inline-flex gap-1">
+                <Button size="small" onClick={() => setOpen(row)}>
+                  Members
+                </Button>
+                <RemoveButton
+                  label="Delete"
+                  confirm={`The group ${row.name} is deleted, and access given to it is removed.`}
+                  run={() => api.delete(`${base}/groups/${row.id}`)}
+                  onDone={groups.reload}
+                />
+              </span>
+            ),
+          },
         ]}
         empty={{
           title: "No groups yet",
           text: "Create a group when several people need the same access.",
         }}
-        create={{
+      />
+      <CreateDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={() => {
+          setCreating(false);
+          groups.reload();
+        }}
+        config={{
           action: "Create group",
           fields: [{ name: "name", label: "Name", placeholder: "Finance team" }],
           submit: (values) => api.post(`${base}/groups`, values),
         }}
-        rowActions={(row, reload) => (
-          <span className="inline-flex gap-1">
-            <Button size="small" onClick={() => setOpen(row)}>
-              Members
-            </Button>
-            <RemoveButton
-              label="Delete"
-              confirm={`The group ${row.name} is deleted, and access given to it is removed.`}
-              run={() => api.delete(`${base}/groups/${row.id}`)}
-              onDone={reload}
-            />
-          </span>
-        )}
       />
       {open ? (
         <MembersDialog
@@ -191,35 +218,66 @@ interface EndUserGroup {
 
 /** Groups of end users: the people of the tenant's apps, sorted by what they may see and do. */
 export function EndUserGroups({ base }: { base: string }) {
+  const groups = useLoad<{ items: EndUserGroup[] }>(`${base}/end-user-groups`);
   const [open, setOpen] = useState<EndUserGroup>();
-  const [version, setVersion] = useState(0);
+  const [creating, setCreating] = useState(false);
   return (
     <>
-      <ListScreen<EndUserGroup>
-        key={version}
+      <CollectionView<EndUserGroup>
         title="End-user groups"
-        description="Sort the people who use your apps into groups, such as one per customer or per job. Give a group a role under Access, and rule a table's rows by it under Tables."
-        path={`${base}/end-user-groups`}
+        description="Sort the people who use your apps into groups, such as one per customer or per job. Give a group a role under Access grants, and rule a table's rows by it under Tables."
+        actions={
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            Create group
+          </Button>
+        }
+        label="End-user groups"
+        rows={groups.data?.items}
+        error={groups.error?.message}
         rowKey={(row) => row.id}
         columns={[
-          {
-            header: "Name",
-            cell: (row) => <code className="font-mono text-[13px]">{row.name}</code>,
-          },
+          { header: "Name", cell: (row) => <Mono>{row.name}</Mono> },
           {
             header: "What it is for",
+            priority: 2,
             cell: (row) => <span className="text-ink-muted">{row.description}</span>,
           },
           {
             header: "People",
-            cell: (row) => <Badge>{row.memberCount}</Badge>,
+            align: "end",
+            cell: (row) => <span className="font-mono text-telemetry">{row.memberCount}</span>,
+          },
+          {
+            header: "",
+            align: "end",
+            cell: (row) => (
+              <span className="inline-flex gap-1">
+                <Button size="small" onClick={() => setOpen(row)}>
+                  People
+                </Button>
+                <RemoveButton
+                  label="Delete"
+                  confirm={`The group ${row.name} is deleted. Its people lose what it was given, and rows ruled by it are shown to nobody in it.`}
+                  run={() => api.delete(`${base}/end-user-groups/${row.id}`)}
+                  onDone={groups.reload}
+                />
+              </span>
+            ),
           },
         ]}
         empty={{
           title: "No groups of end users yet",
           text: "Create one when some of your apps' users should see or do what others should not.",
         }}
-        create={{
+      />
+      <CreateDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={() => {
+          setCreating(false);
+          groups.reload();
+        }}
+        config={{
           action: "Create group",
           description: "The name is what a table's rules refer to, so it cannot be changed later.",
           fields: [
@@ -233,19 +291,6 @@ export function EndUserGroups({ base }: { base: string }) {
           ],
           submit: (values) => api.post(`${base}/end-user-groups`, values),
         }}
-        rowActions={(row, reload) => (
-          <span className="inline-flex gap-1">
-            <Button size="small" onClick={() => setOpen(row)}>
-              People
-            </Button>
-            <RemoveButton
-              label="Delete"
-              confirm={`The group ${row.name} is deleted. Its people lose what it was given, and rows ruled by it are shown to nobody in it.`}
-              run={() => api.delete(`${base}/end-user-groups/${row.id}`)}
-              onDone={reload}
-            />
-          </span>
-        )}
       />
       {open ? (
         <MembersDialog
@@ -257,7 +302,7 @@ export function EndUserGroups({ base }: { base: string }) {
           onClose={() => {
             setOpen(undefined);
             // The count on the list is of the people just added or taken out.
-            setVersion((before) => before + 1);
+            groups.reload();
           }}
         />
       ) : null}

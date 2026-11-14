@@ -1,7 +1,9 @@
-import { Badge, Button, EmptyState, Menu, Notice } from "@vynxlabs/ui";
+import { Badge, Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
 import { lazy, Suspense, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { notify } from "../ask.tsx";
+import { CollectionView } from "../kit/CollectionView.tsx";
+import { Inspector, KeyValues } from "../kit/layout.tsx";
 import { UsedBy, useReferences } from "../kit/references.tsx";
 import {
   type CreateConfig,
@@ -21,7 +23,7 @@ import { Branding } from "./Branding.tsx";
 import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
 import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
-import { Promotion, TenantExport, WorkspaceControls } from "./Environments.tsx";
+import { TenantExport, WorkspaceSettings } from "./Environments.tsx";
 import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
 import { GitSync } from "./GitSync.tsx";
 import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.tsx";
@@ -55,8 +57,13 @@ const FlowEditor = lazy(() =>
 
 import { FlowRunView, Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
-import { EndUserGroups, Groups } from "./Groups.tsx";
-import { type Role, Roles } from "./Roles.tsx";
+import { EndUserGroups } from "./Groups.tsx";
+import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
+import type { Role } from "./Roles.tsx";
+import { TenantOverview } from "./TenantOverview.tsx";
+
+const isAccessTab = (slug: string): slug is AccessTab =>
+  ACCESS_TABS.some((tab) => tab.slug === slug);
 
 interface Workspace {
   id: string;
@@ -176,7 +183,7 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
     );
   }
 
-  const section = match("/t/:t/:section/*", path)?.section ?? "workspaces";
+  const section = match("/t/:t/:section/*", path)?.section ?? "overview";
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
   const runId = match("/t/:t/workspaces/:w/runs/:id", path)?.id;
   return (
@@ -213,24 +220,20 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <ApprovalsQueue base={base} tenantId={tenantId} />
       ) : section === "workers" ? (
         <Workers base={base} />
-      ) : section === "members" ? (
-        <Members base={base} />
+      ) : section === "overview" ? (
+        <TenantOverview base={base} tenantId={tenantId} />
+      ) : isAccessTab(section) ? (
+        <MembersAndAccess base={base} tenantId={tenantId} tab={section} />
       ) : section === "end-users" ? (
         <EndUsers base={base} />
       ) : section === "branding" ? (
         <Branding base={base} />
       ) : section === "domains" ? (
         <Domains base={base} />
-      ) : section === "groups" ? (
-        <Groups base={base} />
       ) : section === "end-user-groups" ? (
         <EndUserGroups base={base} />
       ) : section === "service-accounts" ? (
         <ServiceAccounts base={base} path={path} />
-      ) : section === "roles" ? (
-        <Roles base={base} />
-      ) : section === "access" ? (
-        <Access base={base} />
       ) : section === "operator-access" ? (
         <OperatorAccess base={base} />
       ) : section === "repository" ? (
@@ -364,19 +367,13 @@ function WorkspaceDetail({
         />
       ) : null}
       {tab === "settings" ? (
-        <Page
-          title="Workspace settings"
-          description="Pause what starts by itself, make a copy, or delete a dev workspace."
-        >
-          <WorkspaceControls
-            key={workspaceId}
-            base={base}
-            tenantId={tenantId}
-            workspace={workspace.data}
-            reload={workspace.reload}
-          />
-          <Promotion base={base} workspace={workspace.data} reload={workspace.reload} />
-        </Page>
+        <WorkspaceSettings
+          key={workspaceId}
+          base={base}
+          tenantId={tenantId}
+          workspace={workspace.data}
+          reload={workspace.reload}
+        />
       ) : null}
       {tab === "flows" && (rest === "new" || rest.startsWith("edit/")) ? (
         workspace.data.type === "dev" ? (
@@ -649,76 +646,6 @@ function WorkspaceDetail({
   );
 }
 
-function Members({ base }: { base: string }) {
-  return (
-    <ListScreen<{ id: string; name: string; email: string; suspended?: boolean }>
-      title="Members"
-      description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access."
-      path={`${base}/members?limit=200`}
-      rowKey={(row) => row.id}
-      columns={[
-        { header: "Name", cell: (row) => row.name },
-        { header: "Email", cell: (row) => row.email },
-        {
-          header: "",
-          cell: (row) => (row.suspended ? <Badge tone="attention">Suspended</Badge> : null),
-        },
-      ]}
-      empty={{ title: "No members yet" }}
-      create={{
-        action: "Add member",
-        description:
-          "For someone who already has an account, the email is enough. Otherwise fill in all three to create one.",
-        fields: [
-          { name: "email", label: "Email", type: "email" },
-          { name: "name", label: "Name", required: false, hint: "Only for a new account." },
-          {
-            name: "password",
-            label: "Initial password",
-            type: "password",
-            required: false,
-            hint: "Only for a new account. At least 12 characters.",
-          },
-        ],
-        submit: ({ email, name, password }) =>
-          api.post(`${base}/members`, {
-            email,
-            ...(name ? { name } : {}),
-            ...(password ? { password } : {}),
-          }),
-      }}
-      rowActions={(row, reload) => (
-        <span className="flex justify-end gap-2">
-          <Button
-            size="small"
-            onClick={async () => {
-              if (!row.suspended) {
-                const sure = await ask.confirm({
-                  title: `Suspend ${row.email}?`,
-                  text: "They hold nothing in this tenant until they are resumed. What they were given is kept, and so is whatever they hold in other tenants.",
-                  action: "Suspend",
-                  danger: true,
-                });
-                if (!sure) return;
-              }
-              await api
-                .patch(`${base}/members/${row.id}`, { suspended: !row.suspended })
-                .then(reload, notify.error);
-            }}
-          >
-            {row.suspended ? "Resume" : "Suspend"}
-          </Button>
-          <RemoveButton
-            confirm={`Remove ${row.email} from this tenant? Their access here is removed too.`}
-            run={() => api.delete(`${base}/members/${row.id}`)}
-            onDone={reload}
-          />
-        </span>
-      )}
-    />
-  );
-}
-
 function ServiceAccounts({ base, path }: { base: string; path: string }) {
   const selected = match("/t/:t/service-accounts/:id", path)?.id;
   if (selected) {
@@ -758,156 +685,180 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
       </>
     );
   }
-  const tenantId = base.split("/")[2];
-  return (
-    <ListScreen<{ id: string; name: string; createdAt: string }>
-      title="Service accounts"
-      description="Identities for machines: a deploy pipeline, another system. They sign in with an API key."
-      path={`${base}/service-accounts`}
-      rowKey={(row) => row.id}
-      columns={[
-        {
-          header: "Name",
-          cell: (row) => (
-            <Link
-              to={`/t/${tenantId}/service-accounts/${row.id}`}
-              className="font-medium text-action"
-            >
-              {row.name}
-            </Link>
-          ),
-        },
-        { header: "Created", cell: (row) => when(row.createdAt) },
-      ]}
-      empty={{ title: "No service accounts yet" }}
-      create={{
-        action: "Create service account",
-        fields: [{ name: "name", label: "Name", placeholder: "ci" }],
-        submit: (values) => api.post(`${base}/service-accounts`, values),
-      }}
-      rowActions={(row, reload) => (
-        <RemoveButton
-          label="Delete"
-          confirm={`Delete ${row.name}? Its keys stop working.`}
-          run={() => api.delete(`${base}/service-accounts/${row.id}`)}
-          onDone={reload}
-        />
-      )}
-    />
-  );
+  return <ServiceAccountList base={base} />;
 }
 
-interface Binding {
+interface ServiceAccount {
   id: string;
-  scopeType: string;
-  workspaceId: string | null;
-  principalType: string;
-  principalLabel: string;
-  roleName: string;
-  managedByResource: boolean;
+  name: string;
+  description: string;
+  createdAt: string;
 }
 
-function Access({ base }: { base: string }) {
-  const roles = useLoad<{ items: Role[] }>(`${base}/roles`);
-  const members = useLoad<{ items: { id: string; email: string }[] }>(`${base}/members?limit=200`);
-  const groups = useLoad<{ items: { id: string; name: string }[] }>(`${base}/groups`);
-  const accounts = useLoad<{ items: { id: string; name: string }[] }>(`${base}/service-accounts`);
-  const endUserGroups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${base}/end-user-groups`,
-  );
-  const endUsers = useLoad<{ items: { id: string; email: string }[] }>(
-    `${base}/end-users?limit=200`,
-  );
-  const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
-  const workspaceName = (id: string | null) =>
-    workspaces.data?.items.find((w) => w.id === id)?.name ?? "";
-  const principals = [
-    ...(members.data?.items ?? []).map((m) => ({ value: `member:${m.id}`, label: m.email })),
-    ...(groups.data?.items ?? []).map((g) => ({
-      value: `group:${g.id}`,
-      label: `Group: ${g.name}`,
-    })),
-    ...(accounts.data?.items ?? []).map((a) => ({
-      value: `service_account:${a.id}`,
-      label: `Service account: ${a.name}`,
-    })),
-    // Every end user is one principal with no ID: whoever has signed in to this tenant's portal.
-    { value: "end_users:", label: "Every end user" },
-    ...(endUserGroups.data?.items ?? []).map((g) => ({
-      value: `end_user_group:${g.id}`,
-      label: `End-user group: ${g.name}`,
-    })),
-    ...(endUsers.data?.items ?? []).map((u) => ({
-      value: `end_user:${u.id}`,
-      label: `End user: ${u.email}`,
-    })),
-  ];
+function ServiceAccountList({ base }: { base: string }) {
+  const tenantId = base.split("/")[2];
+  const accounts = useLoad<{ items: ServiceAccount[] }>(`${base}/service-accounts`);
+  const [selected, setSelected] = useState<string>();
+  const [creating, setCreating] = useState(false);
+  const chosen = accounts.data?.items.find((row) => row.id === selected);
   return (
-    <ListScreen<Binding>
-      title="Access"
-      description="Who holds which role, and where. Access given at the tenant applies to every workspace in it."
-      path={`${base}/bindings`}
-      rowKey={(row) => row.id}
-      columns={[
-        { header: "Who", cell: (row) => row.principalLabel },
-        { header: "Role", cell: (row) => code(row.roleName) },
-        {
-          header: "Where",
-          cell: (row) =>
-            row.scopeType === "tenant"
-              ? "Whole tenant"
-              : `${workspaceName(row.workspaceId)}${row.scopeType === "resource" ? " (one resource)" : ""}`,
-        },
-        {
-          header: "",
-          cell: (row) =>
-            row.managedByResource ? <Badge tone="action">From repository</Badge> : null,
-        },
-      ]}
-      empty={{
-        title: "Nobody has access yet",
-        text: "Give a member, a group, a service account or an end user a role.",
-      }}
-      create={{
-        action: "Give access",
-        fields: [
-          { name: "principal", label: "Who", options: principals },
+    <>
+      <CollectionView<ServiceAccount>
+        title="Service accounts"
+        description="Identities for machines: a deploy pipeline, another system. They sign in with an API key."
+        actions={
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            Create service account
+          </Button>
+        }
+        label="Service accounts"
+        rows={accounts.data?.items}
+        error={accounts.error?.message}
+        rowKey={(row) => row.id}
+        selected={selected}
+        onSelect={(row) => setSelected(row.id)}
+        columns={[
           {
-            name: "roleId",
-            label: "Role",
-            options: (roles.data?.items ?? [])
-              .filter((role) => !role.workspaceId)
-              .map((role) => ({ value: role.id, label: role.name })),
+            header: "Name",
+            cell: (row) => (
+              <span className="flex min-w-0 flex-col">
+                <span className="font-medium">{row.name}</span>
+                {row.description ? (
+                  <span className="text-meta text-ink-muted md:hidden">{row.description}</span>
+                ) : null}
+              </span>
+            ),
           },
           {
-            name: "workspaceId",
-            label: "Where",
-            options: [
-              { value: "", label: "Whole tenant" },
-              ...(workspaces.data?.items ?? []).map((w) => ({ value: w.id, label: w.name })),
-            ],
+            header: "What it is for",
+            priority: 2,
+            cell: (row) =>
+              row.description ? (
+                <span className="text-ink-muted">{row.description}</span>
+              ) : (
+                <span className="text-ink-subtle">Not said</span>
+              ),
           },
-        ],
-        submit: ({ principal = "", roleId, workspaceId }) => {
-          const [principalType, principalId] = principal.split(":");
-          return api.post(`${base}/bindings`, {
-            principalType,
-            ...(principalId ? { principalId } : {}),
-            roleId,
-            ...(workspaceId ? { workspaceId } : {}),
-          });
-        },
+          { header: "Created", priority: 3, cell: (row) => when(row.createdAt) },
+        ]}
+        empty={{
+          title: "No service accounts yet",
+          text: "Create one for each system that calls this tenant, so each can be given only what it needs.",
+        }}
+        inspector={
+          <Inspector
+            open={chosen !== undefined}
+            label="Service account"
+            eyebrow="Service account"
+            title={chosen?.name}
+            onClose={() => setSelected(undefined)}
+            footer={
+              chosen ? (
+                <>
+                  <Link
+                    to={`/t/${tenantId}/service-accounts/${chosen.id}`}
+                    className="font-medium text-[13px] text-action hover:underline"
+                  >
+                    Keys and agent access
+                  </Link>
+                  <span className="flex-1" />
+                  <RemoveButton
+                    label="Delete"
+                    confirm={`Delete ${chosen.name}? Its keys stop working.`}
+                    run={() => api.delete(`${base}/service-accounts/${chosen.id}`)}
+                    onDone={() => {
+                      setSelected(undefined);
+                      accounts.reload();
+                    }}
+                  />
+                </>
+              ) : null
+            }
+          >
+            {chosen ? (
+              <DescriptionForm
+                key={chosen.id}
+                base={base}
+                account={chosen}
+                onSaved={accounts.reload}
+              />
+            ) : null}
+          </Inspector>
+        }
+      />
+      <CreateDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={() => {
+          setCreating(false);
+          accounts.reload();
+        }}
+        config={{
+          action: "Create service account",
+          fields: [
+            { name: "name", label: "Name", placeholder: "ci" },
+            {
+              name: "description",
+              label: "What it is for",
+              placeholder: "Deploys from CI",
+              required: false,
+            },
+          ],
+          submit: ({ name, description }) =>
+            api.post(`${base}/service-accounts`, {
+              name,
+              ...(description ? { description } : {}),
+            }),
+        }}
+      />
+    </>
+  );
+}
+
+/** What a service account is for, in a sentence, changed in place. */
+function DescriptionForm({
+  base,
+  account,
+  onSaved,
+}: {
+  base: string;
+  account: ServiceAccount;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(account.description);
+  const [busy, setBusy] = useState(false);
+  const changed = text.trim() !== account.description;
+  return (
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setBusy(true);
+        try {
+          await api.patch(`${base}/service-accounts/${account.id}`, { description: text });
+          onSaved();
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
       }}
-      rowActions={(row, reload) =>
-        row.managedByResource ? null : (
-          <RemoveButton
-            confirm={`Remove the ${row.roleName} role from ${row.principalLabel}?`}
-            run={() => api.delete(`${base}/bindings/${row.id}`)}
-            onDone={reload}
-          />
-        )
-      }
-    />
+    >
+      <KeyValues rows={[{ label: "Created", value: when(account.createdAt) }]} />
+      <TextField
+        name="description"
+        label="What it is for"
+        hint="A sentence, so whoever finds its key later knows what breaks if it is revoked."
+        value={text}
+        required={false}
+        onChange={setText}
+      />
+      <div>
+        <Button type="submit" size="small" variant="primary" disabled={busy || !changed}>
+          Save
+        </Button>
+      </div>
+    </form>
   );
 }
 

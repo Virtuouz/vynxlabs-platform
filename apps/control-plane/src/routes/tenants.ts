@@ -717,6 +717,41 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.patch(
+      "/tenants/:t/service-accounts/:id",
+      {
+        config: { access: access.tenant("service_account:write") },
+        schema: {
+          summary: "Change what a service account is for",
+          tags: ["identity"],
+          params: Type.Object({ t: Id, id: Id }),
+          body: Type.Object({ description: Type.String({ maxLength: 300 }) }),
+          response: { 200: ServiceAccount },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const account = await ctx.mutate(async (trx, audit) => {
+          const row = await trx
+            .updateTable("service_account")
+            .set({ description: body.description.trim() })
+            .where("id", "=", params.id)
+            .where("tenant_id", "=", params.t)
+            .returningAll()
+            .executeTakeFirst();
+          if (!row) throw notFound("The service account");
+          await audit({
+            action: "service_account.updated",
+            targetType: "service_account",
+            targetId: row.id,
+            tenantId: params.t,
+            details: { name: row.name, description: row.description },
+          });
+          return row;
+        });
+        return toServiceAccount(account);
+      },
+    );
+
     app.delete(
       "/tenants/:t/service-accounts/:id",
       {

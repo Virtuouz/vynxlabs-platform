@@ -902,42 +902,124 @@ export function Variables({ root }: { root: string }) {
   );
 }
 
+interface WorkerPool {
+  id: string | null;
+  name: string | null;
+  description: string;
+  credentials: number;
+  online: number;
+  lastSeenAt: string | null;
+  workspaces: { id: string; name: string }[];
+  managed: boolean;
+}
+
+/** One place code runs: whether a worker is there now, and what runs on it. */
+function PoolCard({
+  pool,
+  remove,
+  onRemoved,
+}: {
+  pool: WorkerPool;
+  remove: (() => Promise<unknown>) | undefined;
+  onRemoved: () => void;
+}) {
+  const label = pool.name ?? "Default pool";
+  return (
+    <li className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h3 className="m-0 flex flex-wrap items-center gap-2 text-title">
+            {pool.name ? <Mono>{pool.name}</Mono> : label}
+            {pool.managed ? <Tag>Instance-run</Tag> : null}
+            {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
+          </h3>
+          {pool.description ? (
+            <p className="m-0 text-meta text-ink-muted">{pool.description}</p>
+          ) : null}
+        </div>
+        {pool.online > 0 ? (
+          <StatePill state="ok" detail={pool.lastSeenAt ? fromNow(pool.lastSeenAt) : undefined}>
+            {pool.online} online
+          </StatePill>
+        ) : (
+          <StatePill
+            state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "cancelled"}
+            detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
+          >
+            No worker online
+          </StatePill>
+        )}
+      </div>
+      <KeyValues
+        rows={[
+          {
+            label: "Runs code of",
+            value:
+              pool.workspaces.length > 0
+                ? pool.workspaces.map((workspace) => workspace.name).join(", ")
+                : "No workspace yet",
+          },
+          { label: "Credentials", value: <Mono>{pool.credentials}</Mono> },
+        ]}
+      />
+      {remove ? (
+        <div>
+          <RemoveButton
+            label="Remove pool"
+            confirm={`Remove the pool "${label}"? Scripts that name it wait until it is made again.`}
+            run={remove}
+            onDone={onRemoved}
+          />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 export function Workers({ base }: { base: string }) {
-  const live = useLoad<{
-    items: { id: string; credentialName: string; managed: boolean; lastSeenAt: string }[];
-  }>(`${base}/workers`);
+  const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
+  const [adding, setAdding] = useState(false);
+  const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
+  const poolOptions = [
+    { value: "", label: "Default pool: scripts that name no pool" },
+    ...made.map((pool) => ({ value: pool.name as string, label: pool.name as string })),
+  ];
   return (
     <div className="flex flex-col gap-8">
       <Page
         title="Workers"
-        description="Workers run this tenant's scripts. The instance starts one when there is work and stops it when there is none. A standalone worker is one you run yourself, for example inside your own network."
+        description="Workers run this tenant's scripts. A pool is one place code runs, such as inside a client's network: a script names its pool, and only workers started with a credential for that pool run it."
+        action={
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            Add pool
+          </Button>
+        }
       >
-        {live.data && live.data.items.length > 0 ? (
-          <ul className="m-0 flex list-none flex-col gap-1 p-0">
-            {live.data.items.map((worker) => (
-              <li key={worker.id} className="flex items-center gap-2">
-                <Badge tone="success">Running</Badge>
-                {worker.managed
-                  ? "Started by the instance"
-                  : `Standalone, using "${worker.credentialName}"`}
-                <span className="text-ink-muted">last heard from {when(worker.lastSeenAt)}</span>
-              </li>
+        {pools.error ? (
+          <Notice tone="danger">{pools.error.message}</Notice>
+        ) : !pools.data ? (
+          <p className="m-0 text-ink-muted">Loading…</p>
+        ) : (
+          <ul
+            aria-label="Worker pools"
+            className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2 2xl:grid-cols-3"
+          >
+            {pools.data.items.map((pool) => (
+              <PoolCard
+                key={pool.id ?? pool.name ?? "default"}
+                pool={pool}
+                remove={pool.id ? () => api.delete(`${base}/worker-pools/${pool.id}`) : undefined}
+                onRemoved={pools.reload}
+              />
             ))}
           </ul>
-        ) : (
-          <p className="m-0 text-ink-muted">
-            No worker is running right now.
-            {tenant.data?.managedWorkers === false
-              ? " This tenant runs on its own workers: start one with a credential from below."
-              : " One starts when a script needs to run."}
-          </p>
         )}
         {tenant.data ? (
           <div className="flex flex-wrap items-center gap-3">
             <span>
               {tenant.data.managedWorkers
-                ? "The instance starts workers for this tenant."
+                ? "The instance starts workers for the default pool when there is work."
                 : "The instance starts no workers for this tenant."}
             </span>
             <Button
@@ -953,6 +1035,33 @@ export function Workers({ base }: { base: string }) {
             </Button>
           </div>
         ) : null}
+        <CreateDialog
+          config={{
+            action: "Add pool",
+            description:
+              "Scripts name the pool with `worker`. Then make a credential for it and start a worker there.",
+            fields: [
+              {
+                name: "name",
+                label: "Name",
+                placeholder: "warehouse",
+                hint: "Lower case letters, digits and dashes.",
+              },
+              { name: "description", label: "Description", required: false },
+            ],
+            submit: ({ name, description }) =>
+              api.post(`${base}/worker-pools`, {
+                name,
+                ...(description ? { description } : {}),
+              }),
+          }}
+          open={adding}
+          onClose={() => setAdding(false)}
+          onCreated={() => {
+            setAdding(false);
+            pools.reload();
+          }}
+        />
       </Page>
       <ListScreen<{
         id: string;
@@ -971,9 +1080,8 @@ export function Workers({ base }: { base: string }) {
           { header: "Name", cell: (row) => row.name },
           { header: "Credential", cell: (row) => code(`${row.prefix}…`) },
           {
-            header: "Runs",
-            cell: (row) =>
-              row.pool ? `Scripts of the pool "${row.pool}"` : "Scripts that name no pool",
+            header: "Pool",
+            cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
           },
           { header: "Created", cell: (row) => when(row.createdAt) },
           {
@@ -997,13 +1105,18 @@ export function Workers({ base }: { base: string }) {
             {
               name: "pool",
               label: "Pool",
-              required: false,
-              placeholder: "warehouse",
-              hint: "Leave empty to run scripts that name no pool. With a pool, the worker runs only the scripts that name it.",
+              options: poolOptions,
+              hint: "The worker runs only the scripts of this pool.",
             },
           ],
-          submit: ({ name, pool }) =>
-            api.post(`${base}/worker-credentials`, { name, ...(pool ? { pool } : {}) }),
+          submit: async ({ name, pool }) => {
+            const result = await api.post(`${base}/worker-credentials`, {
+              name,
+              ...(pool ? { pool } : {}),
+            });
+            pools.reload();
+            return result;
+          },
           afterCreate: (result) => (
             <span>
               Copy this credential now. It is not shown again:{" "}
@@ -1019,7 +1132,10 @@ export function Workers({ base }: { base: string }) {
               label="Revoke"
               confirm={`Revoke "${row.name}"? A worker using it stops.`}
               run={() => api.delete(`${base}/worker-credentials/${row.id}`)}
-              onDone={reload}
+              onDone={() => {
+                reload();
+                pools.reload();
+              }}
             />
           )
         }

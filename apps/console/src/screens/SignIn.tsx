@@ -1,7 +1,7 @@
 import { Button, Notice, TextField } from "@vynxlabs/ui";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
-import { type ApiError, api } from "../api.ts";
+import { ApiError, api } from "../api.ts";
 import { BrandMark, useBrand } from "../kit/brand.tsx";
 import { Junction } from "../kit/motifs.tsx";
 
@@ -43,6 +43,22 @@ function takeSsoError(): string | undefined {
   return SSO_ERRORS[reason] ?? "You could not be signed in. Try again.";
 }
 
+/**
+ * Signs in with a password and a recovery code, which the server takes in a
+ * header while single sign-on is required. The code is spent on the attempt.
+ */
+async function signInWithCode(email: string, password: string, code: string) {
+  const response = await fetch("/api/v1/auth/sign-in/email", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json", "x-recovery-code": code.trim() },
+    body: JSON.stringify({ email, password }),
+  });
+  if (response.ok) return;
+  const text = await response.text();
+  throw new ApiError(response.status, text === "" ? {} : JSON.parse(text));
+}
+
 export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -53,7 +69,11 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const back = new URLSearchParams(window.location.search).get("return");
   const withReturn = (url: string) => (back ? `${url}?return=${encodeURIComponent(back)}` : url);
   const [reveal, setReveal] = useState(false);
+  /** An owner signing in with a recovery code while their organisation's sign-in is required. */
+  const [recovering, setRecovering] = useState(false);
+  const [code, setCode] = useState("");
   const brand = useBrand();
+  const asksPassword = ways ? ways.password || recovering : false;
 
   const step = ways ? 1 : 0;
   return (
@@ -95,14 +115,17 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   setWays(found);
                   return;
                 }
-                await api.post("/auth/sign-in/email", { email, password });
+                if (recovering) await signInWithCode(email, password, code);
+                else await api.post("/auth/sign-in/email", { email, password });
                 onSignedIn();
               } catch (caught) {
                 const failure = caught as ApiError;
                 setError(
                   failure.status === 401
                     ? "That email and password do not match an account."
-                    : failure.message,
+                    : recovering && failure.status === 403
+                      ? "That recovery code is not right, or was already used. Each code works once."
+                      : failure.message,
                 );
               } finally {
                 setBusy(false);
@@ -118,6 +141,8 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   onClick={() => {
                     setWays(undefined);
                     setPassword("");
+                    setRecovering(false);
+                    setCode("");
                     setError(undefined);
                   }}
                 >
@@ -144,7 +169,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 Sign in with {provider.name}
               </a>
             ))}
-            {ways?.password ? (
+            {asksPassword ? (
               <div className="relative">
                 <TextField
                   label="Password"
@@ -170,7 +195,18 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 </button>
               </div>
             ) : null}
-            {ways && !ways.password ? (
+            {recovering ? (
+              <TextField
+                label="Recovery code"
+                name="recovery-code"
+                autoComplete="one-time-code"
+                value={code}
+                required
+                hint="One of the codes you made on your account page. It works once."
+                onChange={setCode}
+              />
+            ) : null}
+            {ways && !ways.password && !recovering ? (
               <p className="m-0 text-ink-muted">
                 Your organisation requires its own sign-in. There is no password to enter here.
               </p>
@@ -179,6 +215,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             {!ways ? (
               <Button type="submit" variant="primary" disabled={busy} className="h-10">
                 {busy ? "Checking…" : "Continue"}
+              </Button>
+            ) : recovering ? (
+              <Button type="submit" variant="primary" disabled={busy} className="h-10">
+                Sign in with the recovery code
               </Button>
             ) : ways.password ? (
               <Button
@@ -189,6 +229,19 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               >
                 {ways.providers.length > 0 ? "Sign in with a password" : "Sign in"}
               </Button>
+            ) : null}
+            {ways && !ways.password ? (
+              <button
+                type="button"
+                className="self-start text-meta text-action hover:underline"
+                onClick={() => {
+                  setRecovering((on) => !on);
+                  setCode("");
+                  setError(undefined);
+                }}
+              >
+                {recovering ? "Back to your organisation's sign-in" : "Use a recovery code"}
+              </button>
             ) : null}
             <p className="m-0 text-meta text-ink-subtle">
               {ways

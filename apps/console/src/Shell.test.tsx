@@ -72,7 +72,8 @@ test("an address says which area and screen it is, and whether it is an editor",
     section: "flows",
     editor: true,
   });
-  expect(whereIs("/t/t1/roles", false)).toMatchObject({ area: "tenant", section: "roles" });
+  expect(whereIs("/t/t1/roles", false)).toMatchObject({ area: "tenant", section: "members" });
+  expect(whereIs("/t/t1", false)).toMatchObject({ area: "tenant", section: "overview" });
   expect(whereIs("/", true).area).toBe("instance");
   expect(whereIs("/", false).area).toBe("tenants");
   expect(whereIs("/account/api-keys", false).area).toBe("account");
@@ -85,16 +86,20 @@ test("in a tenant the sections are the tenant's, the open one is marked, and cou
     </Shell>,
   );
   const sections = screen.getByRole("navigation", { name: "Sections" });
-  expect(linksIn("Sections")).toContain("Roles");
+  // Roles is a tab of Members & access, which is marked as the open section.
+  expect(linksIn("Sections").some((name) => name.startsWith("Members & access"))).toBe(true);
+  expect(linksIn("Sections")).not.toContain("Roles");
   expect(linksIn("Sections")).not.toContain("Flows");
   // A member who is not an operator is not shown the instance.
   expect(linksIn("Main")).not.toContain("Instance");
-  expect(within(sections).getByRole("link", { name: "Roles" }).getAttribute("aria-current")).toBe(
-    "page",
-  );
+  expect(
+    within(sections)
+      .getByRole("link", { name: /^Members & access/ })
+      .getAttribute("aria-current"),
+  ).toBe("page");
   const where = screen.getByRole("navigation", { name: "Where you are" }).textContent ?? "";
   expect(where).toContain("Acme");
-  expect(where).toContain("/Roles");
+  expect(where).toContain("/Members & access");
   // The tenant's counts arrive with its summary; one the person may not read is left out.
   expect(await within(sections).findByText("1")).toBeTruthy();
   expect(within(sections).queryByText(/active/)).toBeNull();

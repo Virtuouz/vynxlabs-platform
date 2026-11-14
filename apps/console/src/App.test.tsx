@@ -77,7 +77,7 @@ test("signing in: a wrong password explains itself, the right one shows the memb
   // The tenant is listed on the screen, and in the navigation beside it.
   const main = screen.getByRole("main");
   expect((await within(main).findByRole("link", { name: "Acme Corp" })).getAttribute("href")).toBe(
-    "/t/t1/workspaces",
+    "/t/t1",
   );
   // A member who is not an operator sees no instance section and cannot create tenants.
   expect(screen.queryByText("Operators")).toBeNull();

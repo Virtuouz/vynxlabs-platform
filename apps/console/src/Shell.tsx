@@ -218,7 +218,7 @@ function panelFor(
           ...me.tenants.map((tenant) => ({
             key: tenant.id,
             label: tenant.name,
-            to: `/t/${tenant.id}/workspaces`,
+            to: `/t/${tenant.id}`,
             current: false,
           })),
         ],
@@ -564,7 +564,7 @@ export function Shell({
         key: `tenant-${one.id}`,
         label: one.name,
         where: "Tenant",
-        to: `/t/${one.id}/workspaces`,
+        to: `/t/${one.id}`,
         icon: AREA_ICON.tenant,
       });
     if (operator)
@@ -605,7 +605,7 @@ export function Shell({
       {tenantId ? <span aria-hidden="true" className="my-2 h-px w-6 bg-line" /> : null}
       {tenantId ? (
         <RailItem
-          to={`/t/${tenantId}/workspaces`}
+          to={`/t/${tenantId}`}
           label={AREA_LABEL.tenant}
           icon={AREA_ICON.tenant}
           current={where.area === "tenant"}
@@ -721,7 +721,7 @@ export function Shell({
               {tenantId && workspaceId ? (
                 <>
                   <Link
-                    to={`/t/${tenantId}/workspaces`}
+                    to={`/t/${tenantId}`}
                     className="hidden truncate text-ink-muted no-underline hover:text-ink sm:inline"
                   >
                     {tenant?.name ?? "Tenant"}
@@ -793,7 +793,7 @@ export function Shell({
                       ...me.tenants.map((one) => ({
                         label: one.name,
                         current: one.id === tenantId,
-                        onSelect: () => navigate(`/t/${one.id}/workspaces`),
+                        onSelect: () => navigate(`/t/${one.id}`),
                       })),
                       {
                         label: "All tenants",

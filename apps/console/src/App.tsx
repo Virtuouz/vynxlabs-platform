@@ -1,5 +1,5 @@
 import { Notice } from "@vynxlabs/ui";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { api, type Me, useLoad } from "./api.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
@@ -30,9 +30,32 @@ export function returnTarget(search: string): string | null {
   return RETURN_TO.some((prefix) => value.startsWith(prefix)) ? value : null;
 }
 
+/**
+ * Tells the server which tenant and workspace the member is in, so "where you
+ * were" follows them to another device. Sent once the place has settled, and
+ * only when it changes; a failure changes nothing here.
+ */
+export function useRememberPlace(signedIn: boolean, path: string) {
+  const sent = useRef<string | undefined>(undefined);
+  const inWorkspace = match("/t/:t/workspaces/:w/*", path);
+  const tenantId = match("/t/:t/*", path)?.t;
+  const workspaceId = inWorkspace?.w;
+  useEffect(() => {
+    if (!signedIn || !tenantId) return;
+    const key = `${tenantId} ${workspaceId ?? ""}`;
+    if (sent.current === key) return;
+    const timer = setTimeout(() => {
+      sent.current = key;
+      api.put("/me/recent", { tenantId, workspaceId: workspaceId ?? null }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [signedIn, tenantId, workspaceId]);
+}
+
 export function App() {
   const me = useLoad<Me>("/me");
   const path = usePath();
+  useRememberPlace(me.data !== undefined && !me.error, path);
   const tenant = match("/t/:tenantId/*", path);
   const target = me.data ? returnTarget(location.search) : null;
   useEffect(() => {

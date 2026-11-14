@@ -158,6 +158,15 @@ test("inviting an end user shows the link once, and says to pass it on when no m
   await screen.findByText("Invited");
 });
 
+/** A wide screen: the inspector stands beside the list instead of over it. */
+const wide = () =>
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+
 test("a link that was emailed says so, and the search is sent to the server", async () => {
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: [ada], nextCursor: null }];
   routes[`POST /api/v1${base}/end-users/u1/links`] = () => [
@@ -168,8 +177,9 @@ test("a link that was emailed says so, and the search is sent to the server", as
       emailed: true,
     },
   ];
+  wide();
   show(<EndUsers base={base} />);
-  fireEvent.click(await screen.findByText("Actions"));
+  fireEvent.click(await screen.findByText(ada.email));
   // Ada has a password, so she is offered a reset and not a new invitation.
   expect(screen.queryByText("New invitation link")).toBeNull();
   fireEvent.click(await screen.findByText("Password reset link"));
@@ -195,24 +205,23 @@ test("an end user is disabled and deleted through their own routes, and deleting
     users = [];
     return [204, null];
   };
+  wide();
   show(<EndUsers base={base} />);
-  fireEvent.click(await screen.findByText("Actions"));
-  fireEvent.click(await screen.findByText("Disable"));
-  await screen.findByText("Disabled");
+  fireEvent.click(await screen.findByText(ada.email));
+  fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  await screen.findAllByText("Disabled");
   expect(sent("PATCH")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
   expect(sent("PATCH")[0]?.body).toEqual({ disabled: true });
 
   // A disabled account is offered no link, and can be enabled again.
-  fireEvent.click(screen.getByText("Actions"));
-  await screen.findByText("Enable");
+  await screen.findByRole("button", { name: "Enable" });
   expect(screen.queryByText("Password reset link")).toBeNull();
 
-  fireEvent.click(screen.getByText("Delete"));
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
   expect(await answer("Cancel")).toContain("Their rows in tables are kept.");
   expect(sent("DELETE")).toHaveLength(0);
 
-  fireEvent.click(screen.getByText("Actions"));
-  fireEvent.click(await screen.findByText("Delete"));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
   await answer("Delete");
   await screen.findByText("No end users yet");
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
@@ -461,6 +470,33 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   expect(await answer("Remove")).toContain("sign-ins made at that hostname end");
   await screen.findByText("No hostnames yet");
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/domains/d1`);
+});
+
+test("a hostname can serve the portal and every app, even from a workspace with no app chosen", async () => {
+  let domains: (typeof domain)[] = [];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [{ id: "w0", name: "Dev" }] }];
+  routes[`GET /api/v1${base}/workspaces/w0/apps`] = () => [200, { items: [] }];
+  routes[`POST /api/v1${base}/domains`] = () => {
+    domains = [{ ...domain, workspaceId: "w0", app: "", hostname: "apps.acme.example" }];
+    return [201, domains[0]];
+  };
+  show(<Domains base={base} />);
+  await screen.findByText("No hostnames yet");
+  fireEvent.click(screen.getAllByRole("button", { name: "Add a hostname" })[0] as HTMLElement);
+  fireEvent.change(await screen.findByLabelText("Serves"), { target: { value: "portal" } });
+  expect(screen.queryByLabelText("App")).toBeNull();
+  fireEvent.input(screen.getByLabelText("Hostname"), { target: { value: "apps.acme.example" } });
+  fireEvent.submit(screen.getByLabelText("Hostname").closest("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(sent("POST")[0]?.body).toEqual({
+      workspaceId: "w0",
+      app: "",
+      hostname: "apps.acme.example",
+    }),
+  );
+  const row = (await screen.findByRole("button", { name: /Details/, hidden: true })).closest("tr");
+  expect(row?.textContent).toContain("The portal and every app");
 });
 
 // ----- The console's own colours -----

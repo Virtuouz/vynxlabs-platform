@@ -199,6 +199,11 @@ describe("small things the console shows", () => {
       description: " Deploys from CI ",
     });
     expect(account.body.description).toBe("Deploys from CI");
+    const changed = await alice.patch(`/tenants/${tenant}/service-accounts/${account.body.id}`, {
+      description: "Deploys from CI and nightly ",
+    });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(changed.body.description).toBe("Deploys from CI and nightly");
     const key = await alice.post(
       `/tenants/${tenant}/service-accounts/${account.body.id}/api-keys`,
       {

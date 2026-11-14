@@ -79,6 +79,9 @@ The design is recorded in the mock-up `Console Redesign.dc.html` with its generi
 - **"See it as" a group** reads rows as someone in that group who owns no row. Owner rules show nothing in it; rules by group and by attribute do.
 - **Connections are not tested from the control plane.** A data source is reached from the control plane, as it always was. An HTTP or SMTP connection would let the control plane call any address on its own network for whoever may bind a connection, so testing one is left to a worker, with the custom connectors, in milestone 6.
 - **Where a member was last** is written through the audited write path, as every change is, and only when the workspace changes, so moving around one workspace leaves the audit log alone.
+- **One hostname for everything** is a domain registered with an empty app path. It serves the portal's home at its root, the sign-in pages under `/_`, and each app of its workspace at `/<app path>/`, matched by the longest path. It serves one workspace, as a hostname for one app does, and its home lists that workspace's apps, a dev workspace's included.
+- **Recovery codes** are spent inside the sign-in check, before the password is accepted, so two sign-ins racing with one code cannot both pass.
+- **A staged import** is kept on the disk of the replica that received it, since the object store takes whole files and an import may be very large. Behind several replicas the confirmation must reach the same one: another answers `409 staged_elsewhere`. A staged file is removed after its time is up.
 - **Change descriptions** compare a draft with what is deployed. A promotion still lists changes by path: the descriptions need the two bundles' bodies side by side, which is left for milestone 8.
 
 ## Proposed deviations

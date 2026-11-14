@@ -18,6 +18,7 @@ import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { Stepper } from "../kit/layout.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { Provisioning } from "./Provisioning.tsx";
 
@@ -948,6 +949,47 @@ function ProviderDetail({
 }) {
   const root = `${base}/identity-providers/${provider.id}`;
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState("setup");
+  const domains = useLoad<{ items: Domain[] }>(`${root}/domains`);
+  const maps = useLoad<{ items: GroupMap[] }>(instance ? null : `${root}/group-maps`);
+  const proved = (domains.data?.items ?? []).some((domain) => domain.verified);
+  const mapped = (maps.data?.items ?? []).length > 0;
+  const on = provider.enabled && !provider.paused;
+  const steps = [
+    {
+      key: "setup",
+      label: "Connect",
+      detail: provider.lastTest?.ok ? "A try passed" : "Enter the addresses, then try it",
+      done: provider.lastTest?.ok === true,
+    },
+    {
+      key: "domains",
+      label: "Prove domains",
+      detail: proved
+        ? "Proved"
+        : provider.audience === "members"
+          ? "Needed for members"
+          : "Optional for end users",
+      done: proved,
+    },
+    ...(instance
+      ? []
+      : [
+          {
+            key: "groups",
+            label: "Map groups",
+            detail: mapped ? `${maps.data?.items.length} mapped` : "Optional",
+            done: mapped,
+          },
+        ]),
+    {
+      key: "enforce",
+      label: "Switch on",
+      detail: provider.enforce ? "On and required" : on ? "On; passwords still work" : "Off",
+      done: on,
+    },
+  ];
+  const current = steps.find((step) => !step.done && step.key !== "groups")?.key ?? "enforce";
   const patch = async (body: Record<string, unknown>, done: string) => {
     setBusy(true);
     try {
@@ -1049,6 +1091,19 @@ function ProviderDetail({
           </Button>
         </span>
       </header>
+      <nav aria-label="Setting up">
+        <Stepper
+          steps={steps}
+          current={current}
+          onChoose={(key) => setTab(key === "enforce" ? "setup" : key)}
+        />
+      </nav>
+      {on && !provider.enforce && provider.audience === "members" ? (
+        <Notice tone="plain">
+          Before you require single sign-on, owners should generate recovery codes in Account. A
+          code lets an owner sign in with a password if the provider breaks.
+        </Notice>
+      ) : null}
       {provider.paused ? (
         <Notice tone="attention">
           This tenant came from another instance, so the provider is paused. Give the provider's
@@ -1058,6 +1113,8 @@ function ProviderDetail({
       ) : null}
       <Tabs
         label="Provider sections"
+        value={tab}
+        onChange={setTab}
         tabs={[
           {
             id: "setup",

@@ -16,7 +16,6 @@ import {
   GitCompareArrows,
   Globe,
   KeyRound,
-  KeySquare,
   LayoutDashboard,
   LayoutGrid,
   LifeBuoy,
@@ -142,6 +141,7 @@ export const TENANT_GROUPS: readonly (readonly [label: string, sections: readonl
   [
     "Work",
     [
+      { slug: "overview", label: "Overview", icon: Activity },
       { slug: "workspaces", label: "Workspaces", icon: Boxes },
       { slug: "approvals", label: "Approvals", icon: CircleCheck },
     ],
@@ -149,13 +149,10 @@ export const TENANT_GROUPS: readonly (readonly [label: string, sections: readonl
   [
     "People and access",
     [
-      { slug: "members", label: "Members", icon: UserRound },
-      { slug: "groups", label: "Groups", icon: UsersRound },
+      { slug: "members", label: "Members & access", icon: UserRound },
       { slug: "end-users", label: "End users", icon: Globe },
       { slug: "end-user-groups", label: "End-user groups", icon: UsersRound },
       { slug: "service-accounts", label: "Service accounts", icon: Bot },
-      { slug: "roles", label: "Roles", icon: ShieldCheck },
-      { slug: "access", label: "Access grants", icon: KeySquare },
       { slug: "operator-access", label: "Operator access", icon: LifeBuoy },
     ],
   ],
@@ -229,7 +226,30 @@ const WORKBENCHES: RegExp[] = [
   /^flows\/(new|edit\/)/,
 ];
 /** The same, for a tenant's screens. */
-const TENANT_WORKBENCHES: RegExp[] = [/^approvals$/];
+const TENANT_WORKBENCHES: RegExp[] = [
+  /^approvals$/,
+  /^(members|groups|roles|access|end-users|end-user-groups)$/,
+  /^audit$/,
+];
+/** Instance screens that are lists beside an inspector. */
+const INSTANCE_WORKBENCHES = new Set([
+  "/",
+  "/instance/members",
+  "/instance/operators",
+  "/instance/audit",
+]);
+
+/**
+ * A tenant's addresses that belong to another entry in the navigation: groups,
+ * roles and access are tabs of Members & access, and the tenant itself opens
+ * on its overview.
+ */
+export const TENANT_ALIASES: Record<string, string> = {
+  "": "overview",
+  groups: "members",
+  roles: "members",
+  access: "members",
+};
 
 /** Where a path is: which area, which screen, and whether it is an editor. */
 export function whereIs(path: string, operator: boolean): Where {
@@ -256,7 +276,10 @@ export function whereIs(path: string, operator: boolean): Where {
     return {
       area: "tenant",
       tenantId: inTenant.t,
-      section: path.split("/")[3] ?? "",
+      section: (() => {
+        const slug = path.split("/")[3] ?? "";
+        return TENANT_ALIASES[slug] ?? slug;
+      })(),
       editor: false,
       workbench: TENANT_WORKBENCHES.some((pattern) =>
         pattern.test(path.split("/").slice(3).join("/")),
@@ -266,8 +289,13 @@ export function whereIs(path: string, operator: boolean): Where {
   if (path.startsWith("/account/"))
     return { area: "account", section: path, editor: false, workbench: false };
   if (path.startsWith("/instance/") || (operator && path === "/"))
-    return { area: "instance", section: path, editor: false, workbench: false };
-  return { area: "tenants", section: path, editor: false, workbench: false };
+    return {
+      area: "instance",
+      section: path,
+      editor: false,
+      workbench: INSTANCE_WORKBENCHES.has(path),
+    };
+  return { area: "tenants", section: path, editor: false, workbench: path === "/" };
 }
 
 /** Where a workspace area opens. */

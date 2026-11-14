@@ -1,10 +1,13 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import {
+  checkRepository,
+  compareWithBranch,
   followBranch,
   gitStatus,
   pull,
   push,
+  pushRelease,
   removeRepository,
   saveRepository,
 } from "../kernel/git.js";
@@ -22,6 +25,19 @@ const Repository = Type.Object({
   paused: Type.Boolean({
     description:
       "True on a tenant imported from another instance, until the repository is saved again.",
+  }),
+  verifiedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()], {
+    description: "When the stored token last reached the repository.",
+  }),
+  credentialKind: Type.String({
+    description:
+      "The kind of token, from its shape: github-fine-grained, github-classic, github-app, " +
+      "gitlab-deploy-token, gitlab-access-token, bitbucket-token, or token. A classic GitHub " +
+      "token belongs to a person, and stops working when they leave.",
+  }),
+  releaseBranch: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "Each promotion commits what production runs to `<releaseBranch>/<workspace>`. Null: off.",
   }),
 });
 const State = Type.Union(
@@ -58,11 +74,17 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       default_branch: string;
       folder: string;
       paused: boolean;
+      verified_at?: Date | null;
+      credential_kind?: string;
+      release_branch?: string | null;
     }) => ({
       url: row.url,
       defaultBranch: row.default_branch,
       folder: row.folder,
       paused: row.paused,
+      verifiedAt: row.verified_at ? iso(row.verified_at) : null,
+      credentialKind: row.credential_kind ?? "token",
+      releaseBranch: row.release_branch ?? null,
     });
     const status = async (workspace: WorkspaceRef) => {
       const { repository, link } = await gitStatus(kernel, workspace);
@@ -91,7 +113,15 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params }) => {
         const row = await db
           .selectFrom("git_repository")
-          .select(["url", "default_branch", "folder", "paused"])
+          .select([
+            "url",
+            "default_branch",
+            "folder",
+            "paused",
+            "verified_at",
+            "credential_kind",
+            "release_branch",
+          ])
           .where("tenant_id", "=", params.t)
           .executeTakeFirst();
         return { repository: row ? toRepository(row) : null };
@@ -118,6 +148,9 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             folder: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
             username: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
             token: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+            releaseBranch: Type.Optional(
+              Type.Union([Type.String({ minLength: 1, maxLength: 150 }), Type.Null()]),
+            ),
           }),
           response: { 200: Repository },
         },
@@ -209,6 +242,12 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: WorkspaceParams,
           body: Type.Object({
             message: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+            drafts: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Commit the drafts too, saved and not deployed, so a developer can pick them up.",
+              }),
+            ),
           }),
           response: {
             200: Type.Object({
@@ -222,7 +261,185 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, body }) => {
         ctx.mutated = true;
-        return push(kernel, ctx.actor, ctx.workspace as WorkspaceRef, { message: body.message });
+        return push(kernel, ctx.actor, ctx.workspace as WorkspaceRef, {
+          message: body.message,
+          drafts: body.drafts,
+        });
+      },
+    );
+
+    app.get(
+      `${base}/git/compare`,
+      {
+        config: { access: access.workspace("git:read") },
+        schema: {
+          summary: "The workspace beside its branch, file by file",
+          description:
+            "What each side changed since they last agreed, read from the branch now, with " +
+            "both versions of a file changed on both. Nothing is changed. With `drafts`, the " +
+            "workspace's side includes what is saved and not deployed.",
+          tags: ["git"],
+          params: WorkspaceParams,
+          querystring: Type.Object({ drafts: Type.Optional(Type.Boolean()) }),
+          response: {
+            200: Type.Object({
+              branch: Type.String(),
+              exists: Type.Boolean(),
+              head: Type.Union([
+                Type.Object({
+                  commit: Type.String(),
+                  message: Type.String(),
+                  author: Type.String(),
+                  at: Time,
+                }),
+                Type.Null(),
+              ]),
+              syncedCommit: NullableString,
+              ahead: Type.Integer(),
+              behind: Type.Integer(),
+              conflicts: Type.Integer(),
+              files: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  here: Type.Boolean(),
+                  branch: Type.Boolean(),
+                  conflict: Type.Boolean(),
+                  mine: Type.Optional(NullableString),
+                  theirs: Type.Optional(NullableString),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx, query }) =>
+        compareWithBranch(kernel, ctx.workspace as WorkspaceRef, { drafts: query.drafts === true }),
+    );
+
+    app.post(
+      `${base}/git/release`,
+      {
+        config: { access: access.workspace("promotion:write") },
+        schema: {
+          summary: "Commit what this production workspace runs to its release branch again",
+          description: "What a promotion does by itself. For trying again after that push failed.",
+          tags: ["git"],
+          params: WorkspaceParams,
+          response: {
+            200: Type.Object({
+              status: Type.String(),
+              branch: NullableString,
+              problem: Type.Optional(Type.String()),
+            }),
+          },
+        },
+      },
+      async ({ ctx }) => {
+        const workspace = ctx.workspace as WorkspaceRef;
+        const active = await db
+          .selectFrom("workspace")
+          .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+          .select(["bundle.version", "workspace.type"])
+          .where("workspace.id", "=", workspace.id)
+          .executeTakeFirst();
+        if (!active) return { status: "nothing", branch: null };
+        ctx.mutated = true;
+        return pushRelease(kernel, ctx.actor, workspace, { version: active.version });
+      },
+    );
+
+    app.get(
+      "/tenants/:t/git-branches",
+      {
+        config: { access: access.tenant("git:read") },
+        schema: {
+          summary: "Every branch the tenant's workspaces use",
+          description:
+            "The branch each dev workspace follows, with how it stands, and the release " +
+            "branch each production workspace's promotions are committed to.",
+          tags: ["git"],
+          params: TenantParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  workspaceId: Id,
+                  workspace: Type.String(),
+                  type: Type.String(),
+                  branch: NullableString,
+                  mode: Type.String({
+                    description: "`follows` for dev, `release` for production.",
+                  }),
+                  state: NullableString,
+                  lastError: NullableString,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const repository = await db
+          .selectFrom("git_repository")
+          .select("release_branch")
+          .where("tenant_id", "=", params.t)
+          .executeTakeFirst();
+        const rows = await db
+          .selectFrom("workspace")
+          .leftJoin("workspace_git", "workspace_git.workspace_id", "workspace.id")
+          .select([
+            "workspace.id",
+            "workspace.name",
+            "workspace.slug",
+            "workspace.type",
+            "workspace_git.branch",
+            "workspace_git.state",
+            "workspace_git.last_error",
+          ])
+          .where("workspace.tenant_id", "=", params.t)
+          .orderBy("workspace.name")
+          .execute();
+        return {
+          items: rows.map((row) => ({
+            workspaceId: row.id,
+            workspace: row.name,
+            type: row.type,
+            branch:
+              row.type === "production"
+                ? repository?.release_branch
+                  ? `${repository.release_branch}/${row.slug}`
+                  : null
+                : (row.branch ?? null),
+            mode: row.type === "production" ? "release" : "follows",
+            state: row.state ?? null,
+            lastError: row.last_error ?? null,
+          })),
+        };
+      },
+    );
+
+    app.post(
+      "/tenants/:t/git-repository/check",
+      {
+        config: { access: access.tenant("git:write") },
+        schema: {
+          summary: "Reach the repository again with the stored token",
+          description: "Keeps when it worked, so the console can say how long ago it was verified.",
+          tags: ["git"],
+          params: TenantParams,
+          response: {
+            200: Type.Object({
+              ok: Type.Boolean(),
+              problem: NullableString,
+              repository: Repository,
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        ctx.mutated = true;
+        const checked = await checkRepository(kernel, ctx.actor, params.t);
+        return { ...checked, repository: toRepository(checked.repository) };
       },
     );
 

@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { ComposeError, composeBundle, SOURCE_KINDS, type UnsignedBundle } from "@vynxlabs/compose";
-import { sql } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import { type Bundle, type BundleManifest, CORE_PREFIX, entryFor } from "@vynxlabs/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@vynxlabs/sdk";
 import type { Audit, Db, Principal, Trx } from "./audit.js";
@@ -129,7 +129,7 @@ export async function saveDraft(
 
   const existing = await trx
     .selectFrom("resource_draft")
-    .select(["revision"])
+    .selectAll()
     .where("workspace_id", "=", workspace.id)
     .where("path", "=", input.path)
     .forUpdate()
@@ -150,6 +150,8 @@ export async function saveDraft(
     updated_by_id: principal.id,
     updated_at: new Date(),
   };
+  // What this save replaces is kept, so that no earlier text is lost.
+  if (existing) await keepInHistory(trx, existing, "replaced");
   const row = existing
     ? await trx
         .updateTable("resource_draft")
@@ -180,14 +182,62 @@ export async function saveDraft(
   return { draft: row, takesOver: resource?.ownership === "code" };
 }
 
+/** How many earlier versions are kept of one draft. */
+const DRAFT_HISTORY_KEPT = 30;
+
+type DraftRow = {
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  kind: string;
+  schema_version: number;
+  body: Record<string, unknown>;
+  deleted: boolean;
+  revision: number;
+  updated_by_type: string;
+  updated_by_id: string | null;
+  updated_at: Date;
+};
+
+/** Keeps a draft as it stands in its history, and lets the oldest go beyond the limit. */
+async function keepInHistory(trx: Trx, draft: DraftRow, reason: "replaced" | "set_aside") {
+  await trx
+    .insertInto("resource_draft_history")
+    .values({
+      id: newId(),
+      tenant_id: draft.tenant_id,
+      workspace_id: draft.workspace_id,
+      path: draft.path,
+      kind: draft.kind,
+      schema_version: draft.schema_version,
+      body: JSON.stringify(draft.body),
+      deleted: draft.deleted,
+      revision: draft.revision,
+      reason,
+      saved_by_type: draft.updated_by_type,
+      saved_by_id: draft.updated_by_id,
+      saved_at: draft.updated_at,
+    })
+    .execute();
+  await sql`
+    delete from resource_draft_history where id in (
+      select id from resource_draft_history
+      where workspace_id = ${draft.workspace_id} and path = ${draft.path}
+      order by kept_at desc offset ${DRAFT_HISTORY_KEPT}
+    )
+  `.execute(trx);
+}
+
+/** Sets a draft aside: it stops being a draft, and is kept whole in its history. */
 export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: string) {
   const removed = await trx
     .deleteFrom("resource_draft")
     .where("workspace_id", "=", workspace.id)
     .where("path", "=", path)
-    .returning(["kind"])
+    .returningAll()
     .executeTakeFirst();
   if (!removed) throw notFound(`A draft at ${path}`);
+  await keepInHistory(trx, removed as unknown as DraftRow, "set_aside");
   await audit({
     action: "resource.draft_discarded",
     targetType: "resource",

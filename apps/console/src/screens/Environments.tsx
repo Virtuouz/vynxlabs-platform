@@ -194,7 +194,7 @@ function CloneDialog({
                   const made = clone.workspaceId;
                   setClone(undefined);
                   onClose();
-                  navigate(`/t/${tenantId}/workspaces/${made}/scripts`);
+                  navigate(`/t/${tenantId}/workspaces/${made}/overview`);
                 }}
               >
                 Open the copy

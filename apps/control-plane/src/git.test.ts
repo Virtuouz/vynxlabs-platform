@@ -207,12 +207,15 @@ describe("connecting a repository", () => {
       token: TOKEN,
     });
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-    expect(saved.body).toEqual({
+    expect(saved.body).toMatchObject({
       url: repoUrl,
       defaultBranch: "main",
       folder: "platform",
       paused: false,
+      credentialKind: "token",
+      releaseBranch: "release",
     });
+    expect(saved.body.verifiedAt).toEqual(expect.any(String));
     expect(
       JSON.stringify((await alice.get(`/tenants/${tenant}/git-repository`)).body),
     ).not.toContain(TOKEN);
@@ -429,6 +432,81 @@ describe("pulling", () => {
     // Within the limit, the same branch is taken in.
     commitOnBranch({ "platform/notes/long.script.ts": null }, "Remove it");
     expect((await alice.post(`${ws()}/git/pull`, {})).body.status).toMatch(/done|nothing/);
+  });
+});
+
+describe("seeing both sides, drafts and releases", () => {
+  test("a file changed on both sides is shown side by side before anything is pulled", async () => {
+    commitOnBranch(
+      { "platform/orders/hello.script.ts": "export default async () => ({ hello: 'branch' });\n" },
+      "Branch side",
+    );
+    await deployDraft("orders/hello", "export default async () => ({ hello: 'here' });\n");
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    expect(compared).toMatchObject({ branch: "vx/dev", exists: true, conflicts: 1 });
+    expect(compared.head).toMatchObject({ message: "Branch side", author: "Dev" });
+    const clash = compared.files.find(
+      (file: { path: string }) => file.path === "orders/hello.script.ts",
+    );
+    expect(clash).toMatchObject({ here: true, branch: true, conflict: true });
+    expect(clash.mine).toContain("here");
+    expect(clash.theirs).toContain("branch");
+    // Nothing changed by looking.
+    expect(await sourceOf("orders/hello")).toContain("here");
+    await alice.post(`${ws()}/git/pull`, { resolutions: { "orders/hello.script": "mine" } });
+    expect((await alice.post(`${ws()}/git/push`, { message: "Keep here" })).body.status).toBe(
+      "done",
+    );
+  });
+
+  test("drafts can be pushed before they are deployed, for a developer to pick up", async () => {
+    const saved = await alice.put(`${ws()}/drafts/orders/drafted`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody("export default async () => ({ drafted: true });\n"),
+    });
+    expect(saved.status).toBe(200);
+    const withDrafts = (await alice.get(`${ws()}/git/compare?drafts=true`)).body;
+    expect(withDrafts.files.map((file: { path: string }) => file.path)).toContain(
+      "orders/drafted.script.ts",
+    );
+    const pushed = await alice.post(`${ws()}/git/push`, {
+      message: "Work in progress",
+      drafts: true,
+    });
+    expect(pushed.body.status).toBe("done");
+    expect(sh(["show", "vx/dev:platform/orders/drafted.script.ts"], bare())).toContain("drafted");
+    // Set aside, and the next push takes it off the branch again.
+    await alice.delete(`${ws()}/drafts/orders/drafted`);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+  });
+
+  test("a promotion commits what production now runs to its release branch", async () => {
+    const promoted = await alice.post(`${ws()}/promotions`, {});
+    expect(promoted.status, JSON.stringify(promoted.body)).toBe(201);
+    expect(promoted.body.release).toEqual({ status: "done", branch: "release/main" });
+    expect(sh(["show", "release/main:platform/orders/hello.script.ts"], bare())).toContain("here");
+    expect(sh(["log", "--format=%s", "release/main", "-1"], bare())).toMatch(
+      /^Promoted version \d+ to main$/,
+    );
+    // Asked again, with nothing new, it writes nothing.
+    expect((await alice.post(`${ws(prod)}/git/release`, {})).body).toEqual({
+      status: "nothing",
+      branch: "release/main",
+    });
+    const branches = (await alice.get(`/tenants/${tenant}/git-branches`)).body.items;
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ workspaceId: dev, branch: "vx/dev", mode: "follows" }),
+        expect.objectContaining({ workspaceId: prod, branch: "release/main", mode: "release" }),
+      ]),
+    );
+  });
+
+  test("the repository can be checked again, and says when it last worked", async () => {
+    const checked = await alice.post(`/tenants/${tenant}/git-repository/check`, {});
+    expect(checked.body).toMatchObject({ ok: true, problem: null });
+    expect(checked.body.repository.verifiedAt).toEqual(expect.any(String));
   });
 });
 

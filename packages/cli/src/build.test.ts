@@ -36,6 +36,15 @@ const problems = async (source: string) => {
 };
 
 describe("building the example repository", () => {
+  test("carries the repository's own TypeScript and a map to it, and no dependency", async () => {
+    const bundle = await buildBundle({ directory: example });
+    const files = bundle.sources?.files.map((file) => file.path) ?? [];
+    expect(files).toContain("src/index.ts");
+    expect(files.some((path) => path.includes("node_modules"))).toBe(false);
+    expect(JSON.parse(bundle.sources?.map ?? "{}").version).toBe(3);
+    expect(bundle.code).not.toContain("sourceMappingURL");
+  });
+
   test("produces one manifest per resource, in deploy order, and one module of code", async () => {
     const bundle = await buildBundle({ directory: example });
     expect(bundle.manifests.map((manifest) => `${manifest.kind} ${manifest.path}`)).toEqual([

@@ -870,6 +870,13 @@ export interface AppOptions {
    * for apps that route in the browser. Default true.
    */
   fallback?: boolean;
+  /**
+   * The tables the app's code reads. It is shown to whoever shares the app, so
+   * they can see what it reaches; access is still decided by the tables'
+   * policies and the app's bindings. An app that serves an interface reads the
+   * tables of its widgets, and needs no list.
+   */
+  reads?: string[];
 }
 
 export interface AppDefinition extends ResourceDefinition {
@@ -899,6 +906,7 @@ export function defineApp(options: AppOptions): AppDefinition {
           description: options.description,
           entry: options.entry ?? "index.html",
           fallback: options.fallback,
+          reads: options.reads,
         }),
   );
   return {

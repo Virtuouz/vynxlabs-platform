@@ -17,8 +17,13 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { CollectionView } from "../kit/CollectionView.tsx";
+import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
+import { Junction } from "../kit/motifs.tsx";
+import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
 import { ListScreen, Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
@@ -52,6 +57,21 @@ const TRIGGER: Record<string, string> = {
   flow: "Another flow",
 };
 
+interface FlowRow {
+  path: string;
+  description: string;
+  nodeCount: number;
+  triggers: string[];
+  lastRun: { id: string; status: FlowStatus; createdAt: string } | null;
+  version: number | null;
+  draft: "changed" | "removed" | null;
+  starts: { type: string; detail: string | null }[];
+  runs: { lastDay: number; failedLastDay: number; waiting: number };
+}
+
+type FlowFilter = "all" | "failing" | "waiting" | "draft";
+
+/** The workspace's processes: what starts each, how its runs went, and what is drafted. */
 export function Flows({
   root,
   link,
@@ -62,63 +82,262 @@ export function Flows({
   /** Whether flows can be drawn here: true in a dev workspace. */
   editable?: boolean;
 }) {
+  const list = useLoad<{ items: FlowRow[] }>(`${root}/flows`);
+  const [filter, setFilter] = useState<FlowFilter>("all");
+  const [search, setSearch] = useState("");
+  const [chosen, setChosen] = useState<string>();
+  const items = list.data?.items ?? [];
+  const wanted = search.trim().toLowerCase();
+  const rows = items.filter(
+    (row) =>
+      (filter === "all" ||
+        (filter === "failing" && row.runs.failedLastDay > 0) ||
+        (filter === "waiting" && row.runs.waiting > 0) ||
+        (filter === "draft" && row.draft !== null)) &&
+      (!wanted ||
+        row.path.toLowerCase().includes(wanted) ||
+        row.description.toLowerCase().includes(wanted)),
+  );
+  const open = items.find((row) => row.path === chosen);
+  const waiting = items.reduce((sum, row) => sum + row.runs.waiting, 0);
+
   return (
-    <ListScreen<{
-      path: string;
-      description: string;
-      nodeCount: number;
-      triggers: string[];
-      lastRun: { id: string; status: FlowStatus; createdAt: string } | null;
-    }>
+    <CollectionView<FlowRow>
       title="Flows"
       description="A flow is a graph of steps the platform runs in order, remembering where it is. It survives a restart."
-      action={
+      actions={
         editable ? (
           <Button variant="primary" onClick={() => navigate(`${link}/flows/new`)}>
             New flow
           </Button>
         ) : undefined
       }
-      path={`${root}/flows`}
-      rowKey={(row) => row.path}
+      toolbar={
+        <div className="flex flex-col gap-3">
+          {waiting > 0 ? (
+            <Notice tone="attention">
+              {waiting} run{waiting === 1 ? " is" : "s are"} waiting for a person.{" "}
+              <Link to={link.replace(/\/workspaces\/.*$/, "/approvals")}>Decide</Link>
+            </Notice>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-2.5 text-ink-subtle">
+              <span className="sr-only">Find a flow</span>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Find by path or purpose"
+                className="min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
+              />
+            </label>
+            <FilterChips<FlowFilter>
+              label="Show"
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: "all", label: "All", count: items.length },
+                {
+                  value: "failing",
+                  label: "Failed today",
+                  count: items.filter((row) => row.runs.failedLastDay > 0).length,
+                },
+                {
+                  value: "waiting",
+                  label: "Waiting",
+                  count: items.filter((row) => row.runs.waiting > 0).length,
+                },
+                {
+                  value: "draft",
+                  label: "Drafted",
+                  count: items.filter((row) => row.draft).length,
+                },
+              ]}
+            />
+          </div>
+        </div>
+      }
       columns={[
         {
           header: "Flow",
           cell: (row) => (
-            <Link to={`${link}/flows/${row.path}`} className="font-medium text-action">
-              {row.path}
-            </Link>
+            <span className="flex min-w-0 flex-col">
+              <Link
+                to={`${link}/flows/${row.path}`}
+                className="truncate font-mono text-telemetry text-ink no-underline"
+              >
+                {row.path}
+              </Link>
+              <span className="truncate text-meta text-ink-subtle">
+                {row.description || "No description"}
+              </span>
+            </span>
           ),
         },
         {
-          header: "What it does",
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          header: "Started by",
+          priority: 3,
+          cell: (row) => (
+            <span className="flex flex-col text-ink-muted">
+              {row.starts.length === 0
+                ? "Nothing yet"
+                : row.starts.map((one) => (
+                    <span key={`${one.type}-${one.detail}`} className="truncate">
+                      {TRIGGER[one.type] ?? one.type}
+                      {one.detail ? (
+                        <span className="font-mono text-telemetry text-ink-subtle">
+                          {" "}
+                          · {one.detail}
+                        </span>
+                      ) : null}
+                    </span>
+                  ))}
+            </span>
+          ),
         },
         {
-          header: "Started by",
-          cell: (row) => [...new Set(row.triggers)].map((type) => TRIGGER[type] ?? type).join(", "),
+          header: "Steps",
+          priority: 3,
+          cell: (row) => <StepChain count={row.nodeCount} />,
         },
         {
           header: "Last run",
+          priority: 2,
           cell: (row) =>
             row.lastRun ? (
-              <Link
-                to={`${link}/flow-runs/${row.lastRun.id}`}
-                className="inline-flex items-center gap-2 no-underline"
-              >
-                <StatusBadge status={row.lastRun.status} />
-                <span className="text-ink-muted">{when(row.lastRun.createdAt)}</span>
-              </Link>
+              <span className="flex flex-col">
+                <StatePill
+                  state={stateOf(row.lastRun.status)}
+                  detail={fromNow(row.lastRun.createdAt)}
+                />
+                <span className="text-meta text-ink-subtle">
+                  {row.runs.lastDay} today
+                  {row.runs.failedLastDay ? ` · ${row.runs.failedLastDay} failed` : ""}
+                  {row.runs.waiting ? ` · ${row.runs.waiting} waiting` : ""}
+                </span>
+              </span>
             ) : (
-              <span className="text-ink-muted">Never</span>
+              <span className="text-ink-subtle">Never</span>
             ),
         },
+        {
+          header: "State",
+          cell: (row) => (
+            <span className="flex flex-wrap items-center gap-1.5">
+              {row.version === null ? null : <Tag tone="live">v{row.version}</Tag>}
+              {row.draft === "changed" ? <Tag tone="draft">Draft</Tag> : null}
+              {row.draft === "removed" ? <Tag tone="danger">Removing</Tag> : null}
+            </span>
+          ),
+        },
       ]}
+      rows={list.data ? rows : undefined}
+      rowKey={(row) => row.path}
+      selected={chosen}
+      onSelect={(row) => setChosen(row.path)}
+      error={list.error?.message}
       empty={{
-        title: "No flows yet",
-        text: "Define a flow in the tenant's repository with defineFlow, and deploy it.",
+        title: items.length > 0 ? "No flow matches" : "No flows yet",
+        text:
+          items.length > 0
+            ? "Try another word, or show every flow."
+            : editable
+              ? "Draw one here, or define one in the tenant's repository with defineFlow."
+              : "Flows reach a production workspace by promotion from its dev workspace.",
+        ...(editable && items.length === 0
+          ? {
+              action: (
+                <Button variant="primary" onClick={() => navigate(`${link}/flows/new`)}>
+                  New flow
+                </Button>
+              ),
+            }
+          : {}),
       }}
+      inspector={
+        open ? (
+          <Inspector
+            open
+            label="The chosen flow"
+            title={open.path}
+            eyebrow="Flow"
+            onClose={() => setChosen(undefined)}
+            footer={
+              <>
+                <Button variant="primary" onClick={() => navigate(`${link}/flows/${open.path}`)}>
+                  Open
+                </Button>
+                {editable && open.draft !== "removed" ? (
+                  <Button onClick={() => navigate(`${link}/flows/edit/${open.path}`)}>Edit</Button>
+                ) : null}
+              </>
+            }
+          >
+            <div className="flex flex-col gap-4">
+              <p className="m-0 text-ink-muted">{open.description || "No description."}</p>
+              <KeyValues
+                rows={[
+                  {
+                    label: "Deployed",
+                    value: open.version === null ? "Not yet" : `v${open.version}`,
+                    mono: true,
+                  },
+                  {
+                    label: "Draft",
+                    value:
+                      open.draft === "changed"
+                        ? "Changes saved, not deployed"
+                        : open.draft === "removed"
+                          ? "Removed in the draft"
+                          : "None",
+                  },
+                  { label: "Steps", value: String(open.nodeCount), mono: true },
+                  {
+                    label: "Runs today",
+                    value: `${open.runs.lastDay}, ${open.runs.failedLastDay} failed`,
+                    mono: true,
+                  },
+                ]}
+              />
+              <div className="flex flex-col gap-1.5">
+                <span className="text-label text-ink-subtle uppercase">What starts it</span>
+                {open.starts.length === 0 ? (
+                  <span className="text-ink-subtle">No trigger yet.</span>
+                ) : (
+                  open.starts.map((one) => (
+                    <span key={`${one.type}-${one.detail}`} className="flex items-center gap-2">
+                      <Junction kind="here" size={5} />
+                      {TRIGGER[one.type] ?? one.type}
+                      {one.detail ? <Mono className="text-ink-subtle">{one.detail}</Mono> : null}
+                    </span>
+                  ))
+                )}
+              </div>
+              {open.lastRun ? (
+                <Link to={`${link}/flow-runs/${open.lastRun.id}`} className="text-meta">
+                  Open the last run
+                </Link>
+              ) : null}
+            </div>
+          </Inspector>
+        ) : null
+      }
     />
+  );
+}
+
+/** A flow's size as a short chain of junctions. */
+function StepChain({ count }: { count: number }) {
+  const shown = Math.min(count, 6);
+  return (
+    <span className="flex items-center gap-1" title={`${count} steps`}>
+      {Array.from({ length: shown }, (_, index) => `step-${index}`).map((key, index) => (
+        <span key={key} className="flex items-center gap-1">
+          {index > 0 ? <span aria-hidden="true" className="h-px w-2 bg-line-strong" /> : null}
+          <Junction kind={index === 0 ? "here" : "plain"} size={5} />
+        </span>
+      ))}
+      <Mono className="ml-1.5 text-ink-subtle">{count}</Mono>
+    </span>
   );
 }
 

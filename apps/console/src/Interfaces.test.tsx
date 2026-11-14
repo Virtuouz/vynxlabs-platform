@@ -384,8 +384,10 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
   }
   const { Apps } = await import("./screens/Apps.tsx");
   show(<Apps root={root} />);
+  // The app's inspector opens on choosing it, and sharing starts there.
+  fireEvent.click(await screen.findByText("Sales"));
   fireEvent.click(await screen.findByRole("button", { name: "Share" }));
-  const dialog = within(await screen.findByRole("dialog"));
+  const dialog = within(await screen.findByRole("dialog", { name: "Share Sales" }));
   await dialog.findByText("Nobody else yet.");
   // It says what comes with the app, so nobody is surprised by it.
   await dialog.findByText(/its tables customers, orders/);

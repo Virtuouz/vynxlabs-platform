@@ -13,15 +13,15 @@ import {
   TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
-import { RunDetail } from "./Execution.tsx";
 import { GitPanel } from "./Git.tsx";
 import { isEditedKind } from "./ResourceEditor.tsx";
+import { ScriptRunPanel } from "./Runs.tsx";
 
 const STARTER = `import type { ScriptContext } from "@vynxlabs/sdk";
 
@@ -280,6 +280,20 @@ export function ScriptEditor({
     };
   }, [root, opened, about]);
 
+  // ⌘↵ or Ctrl+Enter runs the draft, from anywhere in the editor.
+  const runShortcut = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (kind !== "script") return;
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        runShortcut.current();
+      }
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [kind]);
+
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <p className="text-ink-muted">Loading…</p>;
 
@@ -355,6 +369,8 @@ export function ScriptEditor({
       setBusy(false);
     }
   };
+
+  runShortcut.current = readOnly ? () => {} : () => void test();
 
   const STATE: Record<typeof state, [BadgeTone, string]> = {
     new: ["neutral", "Not saved"],
@@ -510,7 +526,8 @@ export function ScriptEditor({
         </Button>
       </div>
       <p className="m-0 text-[13px] text-ink-muted">
-        Runs the script as its draft has it, on a worker, without deploying anything.
+        Runs the script as its draft has it, on a worker, without deploying anything.{" "}
+        <kbd className="rounded-[4px] border border-line px-1 font-mono text-tag">⌘↵</kbd>
       </p>
     </div>
   );
@@ -597,7 +614,7 @@ export function ScriptEditor({
       <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
         <div className="min-w-0">
           {fromRepository ? (
-            <EmptyState title="The source is in the repository" />
+            <RepositorySource root={root} path={path} />
           ) : (
             <CodeEditor
               label={`Source of ${path || `the new ${about.noun}`}`}
@@ -624,7 +641,21 @@ export function ScriptEditor({
         </div>
       </div>
       {testRun ? (
-        <RunDetail key={testRun} root={root} runId={testRun} backLink={`${link}/runs`} />
+        <section
+          aria-label="The test run"
+          className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="m-0 text-title">Test run</h2>
+            <Button size="small" variant="quiet" onClick={() => setTestRun(undefined)}>
+              Close
+            </Button>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+            <ScriptRunPanel key={testRun} root={root} link={link} runId={testRun} />
+            <PublishedEvents root={root} runId={testRun} />
+          </div>
+        </section>
       ) : null}
     </section>
   );
@@ -950,5 +981,87 @@ export function Extensions({
         <p className="text-ink-muted">Loading…</p>
       )}
     </Page>
+  );
+}
+
+/** What one test run published, as it publishes it. */
+function PublishedEvents({ root, runId }: { root: string; runId: string }) {
+  const [tick, setTick] = useState(0);
+  const events = useLoad<{ items: { id: string; name: string; occurredAt: string }[] }>(
+    `${root}/events?run=${runId}&limit=20&tick=${tick}`,
+  );
+  useEffect(() => {
+    const timer = setInterval(() => setTick((n) => n + 1), 3000);
+    const stop = setTimeout(() => clearInterval(timer), 60_000);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(stop);
+    };
+  }, []);
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-label text-ink-subtle uppercase">Events it published</span>
+      {(events.data?.items ?? []).length === 0 ? (
+        <span className="text-meta text-ink-subtle">None.</span>
+      ) : (
+        events.data?.items.map((event) => (
+          <span key={event.id} className="font-mono text-telemetry">
+            {event.name}
+          </span>
+        ))
+      )}
+    </div>
+  );
+}
+
+/**
+ * The TypeScript a repository script was built from, read-only, when its bundle
+ * carries it. The file that defines the script comes first.
+ */
+function RepositorySource({ root, path }: { root: string; path: string }) {
+  const source = useLoad<{
+    available: boolean;
+    file: string | null;
+    line: number | null;
+    files: { path: string; content: string }[];
+  }>(`${root}/script-source/${path}`);
+  const [chosen, setChosen] = useState<string>();
+  if (source.error) return <Notice tone="danger">{source.error.message}</Notice>;
+  if (!source.data) return <p className="text-ink-muted">Loading the source…</p>;
+  if (!source.data.available)
+    return (
+      <EmptyState title="The source is in the repository">
+        The bundle that runs here was built without its TypeScript. Deploy it again with a newer CLI
+        to read it here.
+      </EmptyState>
+    );
+  const file = chosen ?? source.data.file ?? source.data.files[0]?.path;
+  const content = source.data.files.find((one) => one.path === file)?.content ?? "";
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="w-72 max-w-full">
+          <SelectField
+            label="File"
+            name="file"
+            value={file ?? ""}
+            options={source.data.files.map((one) => ({ value: one.path, label: one.path }))}
+            onChange={setChosen}
+          />
+        </div>
+        {source.data.file === file && source.data.line ? (
+          <span className="text-meta text-ink-muted">Defined at line {source.data.line}</span>
+        ) : null}
+      </div>
+      <CodeEditor
+        label={`Source of ${file ?? path}`}
+        path={`repository/${file ?? "source.ts"}`}
+        language="typescript"
+        value={content}
+        readOnly
+        height="34rem"
+        onChange={() => {}}
+      />
+    </div>
   );
 }

@@ -188,8 +188,40 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       return { target, scope };
     }
 
-    /** The scope to read with when the caller asks to look through an end user's eyes. */
-    async function seenAs(tenantId: string, scope: DataScope, as: string | undefined) {
+    /**
+     * The scope to read with when the caller asks to look through an end user's
+     * eyes, or through a group's: someone in that group and nothing else, who owns
+     * no row, the way the builder previews an app for an audience.
+     */
+    async function seenAs(
+      tenantId: string,
+      scope: DataScope,
+      as: string | undefined,
+      asGroup?: string | undefined,
+    ) {
+      if (asGroup !== undefined) {
+        if (!scope.all) throw forbidden("the permission to read every row of this table");
+        const group =
+          (await db
+            .selectFrom("end_user_group")
+            .select(["id", "name"])
+            .where("id", "=", asGroup)
+            .where("tenant_id", "=", tenantId)
+            .executeTakeFirst()) ??
+          (await db
+            .selectFrom("principal_group")
+            .select(["id", "name"])
+            .where("id", "=", asGroup)
+            .where("tenant_id", "=", tenantId)
+            .executeTakeFirst());
+        if (!group) throw badRequest("`asGroup` is not a group of this tenant.");
+        return {
+          principalId: "00000000-0000-0000-0000-000000000000",
+          all: false,
+          groups: [group.id, group.name],
+          attributes: {},
+        } satisfies DataScope;
+      }
       if (as === undefined) return scope;
       // Only someone who may see every row may look through another person's eyes.
       if (!scope.all) throw forbidden("the permission to read every row of this table");
@@ -394,13 +426,20 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "Read as this end user would: the rows the table's policy gives them. For checking a policy. Needs `data_all:read`.",
               }),
             ),
+            asGroup: Type.Optional(
+              Type.String({
+                format: "uuid",
+                description:
+                  "Read as someone in this group, of members or of end users, who owns no row would. Needs `data_all:read`.",
+              }),
+            ),
           }),
           response: { 200: RowsPage },
         },
       },
       async ({ ctx, params, query }) => {
         const entered = await enter(ctx, params, wildPath(params), "read");
-        const scope = await seenAs(params.t, entered.scope, query.as);
+        const scope = await seenAs(params.t, entered.scope, query.as, query.asGroup);
         const asked = parseRowsQuery(query);
         return toRowsPage(
           await withData(kernel, params.t, scope, (data) => findRows(data, entered.target, asked)),
@@ -439,6 +478,13 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "Work the totals out as this end user would see them. Needs `data_all:read`.",
               }),
             ),
+            asGroup: Type.Optional(
+              Type.String({
+                format: "uuid",
+                description:
+                  "Work the totals out as someone in this group who owns no row would. Needs `data_all:read`.",
+              }),
+            ),
           }),
           response: {
             200: Type.Object({
@@ -452,7 +498,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, query }) => {
         const entered = await enter(ctx, params, wildPath(params), "read");
-        const scope = await seenAs(params.t, entered.scope, query.as);
+        const scope = await seenAs(params.t, entered.scope, query.as, query.asGroup);
         const asked = parseAggregateQuery(query);
         return withData(kernel, params.t, scope, (data) =>
           aggregateRows(data, entered.target, asked),

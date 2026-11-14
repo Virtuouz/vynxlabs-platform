@@ -235,10 +235,13 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   // one of the two flows, chosen by what the order is worth.
   await ada.goto(`${link}/flows/new`);
   await ada.getByLabel("Path").fill("orders/intake");
+  // Steps are added from a list that opens over the canvas.
+  await ada.getByRole("button", { name: "Add step" }).click();
   const palette = ada.getByRole("complementary", { name: "Steps to add" });
   // The steps that come with the platform are there to pick.
-  await expect(palette.getByRole("button", { name: "Send email" })).toBeVisible();
-  await expect(palette.getByRole("button", { name: "Write a row" })).toBeVisible();
+  await expect(palette.getByRole("button", { name: /^Send email/ })).toBeVisible();
+  await expect(palette.getByRole("button", { name: /^Write a row/ })).toBeVisible();
+  await ada.getByRole("button", { name: "Add step" }).click();
   const panel = ada.getByRole("complementary", { name: "The chosen step" });
   await ada.locator('.react-flow__node[data-id="start"]').click();
   await panel.getByLabel("It starts").selectOption("webhook");
@@ -246,7 +249,8 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   await panel.getByLabel("Header it is sent in").fill("x-shop-signature");
   await panel.getByLabel("Secret it was signed with").click();
   await ada.getByRole("option", { name: "SHOP_SIGNING" }).click();
-  await palette.getByRole("button", { name: "Run a flow" }).click();
+  await ada.getByRole("button", { name: "Add step" }).click();
+  await palette.getByRole("button", { name: /^Run a flow/ }).click();
   await panel.getByLabel("Which flow").selectOption("chosen");
   await panel
     .getByLabel("Expression that gives the flow's path")
@@ -273,7 +277,7 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   await ada.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
   await ada.mouse.up();
   await ada.getByRole("button", { name: "Save draft" }).click();
-  await expect(ada.getByRole("link", { name: "Review and deploy" })).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Review and deploy" })).toBeVisible();
   const saved = ok(await asAda("GET", `${W}/drafts/orders/intake`), "the drawn flow").body.body;
   expect(saved.edges).toEqual([{ from: "start", to: "subflow" }]);
   expect(saved.nodes.start.trigger.verify).toMatchObject({
@@ -282,7 +286,7 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   });
 
   // Deployed from the Changes screen, with a word about what changed.
-  await ada.getByRole("link", { name: "Review and deploy" }).click();
+  await ada.getByRole("button", { name: "Review and deploy" }).click();
   await expect(ada.getByText(/Deploying creates/)).toBeVisible();
   await ada.getByLabel("What changed").fill("Take orders in");
   await ada.getByRole("button", { name: /^Deploy \d+ changes?$/ }).click();

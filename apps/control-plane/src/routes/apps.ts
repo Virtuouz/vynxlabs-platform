@@ -86,6 +86,14 @@ const AppItem = Type.Object({
   access: Type.Array(Type.String(), {
     description: "Who is bound to a role at the app itself: anyone, every end user, or a name.",
   }),
+  builtWith: Type.Union([Type.Literal("code"), Type.Literal("builder")], {
+    description: "`builder` for an app that serves an interface made in the console.",
+  }),
+  interface: NullableString,
+  reads: Type.Array(Type.String(), {
+    description:
+      "The tables it reads: those its code declares, or those of its interface's widgets.",
+  }),
 });
 
 const LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -311,9 +319,30 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace.id", "=", params.w)
           .executeTakeFirst();
         const assets = active ? ((await loadBundle(kernel, active)).assets ?? []) : [];
+        const interfaces = await db
+          .selectFrom("resource")
+          .select(["path", "body"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "interface")
+          .execute();
+        const tablesOf = (path: string) => {
+          const body = interfaces.find((one) => one.path === path)?.body as
+            | { pages?: { widgets?: { table?: unknown }[] }[] }
+            | undefined;
+          const tables = new Set<string>();
+          for (const page of body?.pages ?? [])
+            for (const widget of page.widgets ?? [])
+              if (typeof widget.table === "string") tables.add(widget.table);
+          return [...tables].sort();
+        };
         return {
           items: resources.map((resource) => {
-            const body = resource.body as { title?: string; description?: string };
+            const body = resource.body as {
+              title?: string;
+              description?: string;
+              interface?: string;
+              reads?: string[];
+            };
             const files = assets.filter((asset) => asset.app === resource.path);
             return {
               id: resource.id,
@@ -334,6 +363,9 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 })),
               files: files.length,
               bytes: files.reduce((sum, file) => sum + file.size, 0),
+              builtWith: body.interface ? ("builder" as const) : ("code" as const),
+              interface: body.interface ?? null,
+              reads: body.interface ? tablesOf(body.interface) : [...(body.reads ?? [])].sort(),
               access: bound
                 .filter((binding) => binding.resource_id === resource.id)
                 .map(

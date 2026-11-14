@@ -28,10 +28,12 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { Play, Plus, TriangleAlert } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
+import { Tag } from "../kit/status.tsx";
 import { Link, navigate } from "../router.tsx";
 import {
   FormDesigner,
@@ -380,6 +382,10 @@ export function FlowEditor({
   const [dirty, setDirty] = useState(false);
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState<number>();
+  const [adding, setAdding] = useState(false);
+  const [addSearch, setAddSearch] = useState("");
+  const [, setTick] = useState(0);
   const scripts = useLoad<{
     items: {
       path: string;
@@ -630,12 +636,41 @@ export function FlowEditor({
       setRevision(saved.revision);
       setState("draft");
       setDirty(false);
+      setSavedAt(Date.now());
       drafts.reload();
       if (!opened) navigate(`${link}/flows/edit/${path}`, { replace: true });
     } catch (error) {
       setProblem(failureText(error));
     } finally {
       setBusy(false);
+    }
+  };
+
+  // A flow already saved once is saved again a moment after each change, as the app builder does.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `save` reads the latest state when it runs
+  useEffect(() => {
+    if (!dirty || busy || state === "new" || state === "repository") return;
+    const timer = setTimeout(() => void save(), 1500);
+    return () => clearTimeout(timer);
+  }, [dirty, busy, state, nodes, edges, description]);
+  // "Saved 12s ago" moves on by itself.
+  useEffect(() => {
+    const timer = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(timer);
+  }, []);
+  const hasManual = nodes.some((one) => {
+    const step = one.data.node as { type: string; trigger?: { type?: string } };
+    return step.type === "trigger" && step.trigger?.type === "manual";
+  });
+  const runDraft = async () => {
+    try {
+      const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
+        flow: path,
+        input: {},
+      });
+      navigate(`${link}/flow-runs/${started.runId}`);
+    } catch (error) {
+      notify.error(error);
     }
   };
 
@@ -666,17 +701,34 @@ export function FlowEditor({
       />
     ) : null;
 
+  const wanted = addSearch.trim().toLowerCase();
+  const matches = (label: string, hint?: string) =>
+    !wanted || label.toLowerCase().includes(wanted) || (hint ?? "").toLowerCase().includes(wanted);
+  const saveState = dirty
+    ? state === "new" || state === "repository"
+      ? "Not saved"
+      : "Saving…"
+    : savedAt
+      ? `Draft saved ${Math.max(1, Math.round((Date.now() - savedAt) / 1000)) < 60 ? `${Math.max(1, Math.round((Date.now() - savedAt) / 1000))}s` : `${Math.round((Date.now() - savedAt) / 60000)}m`} ago`
+      : STATE[state][1];
+
   return (
-    <section className="flex flex-col gap-3">
-      <Link to={`${link}/flows`} className="text-[13px] text-action">
-        All flows
-      </Link>
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-end gap-3">
+    <section className="flex min-h-0 flex-1 flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-2.5 md:px-5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+          <Link
+            to={`${link}/flows`}
+            className="text-meta text-ink-subtle no-underline hover:text-ink"
+          >
+            Flows
+          </Link>
+          <span aria-hidden="true" className="text-ink-subtle">
+            /
+          </span>
           {opened ? (
-            <h1 className="m-0 truncate font-mono text-lg font-semibold">{path}</h1>
+            <h1 className="m-0 truncate font-mono text-base font-semibold">{path}</h1>
           ) : (
-            <div className="w-64">
+            <div className="w-56">
               <TextField
                 name="path"
                 label="Path"
@@ -686,25 +738,25 @@ export function FlowEditor({
               />
             </div>
           )}
-          <div className="w-80">
-            <TextField
-              name="description"
-              label="What it does"
-              value={description}
-              required={false}
-              onChange={(value) => {
-                setDescription(value);
-                setDirty(true);
-              }}
-            />
-          </div>
-          <span className="flex items-center gap-2 pb-2">
-            <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
-            {dirty ? <Badge>Unsaved changes</Badge> : null}
+          {state === "repository" ? (
+            <Tag tone="repository">From repository</Tag>
+          ) : state === "deployed" && !dirty ? (
+            <Tag tone="live">Deployed</Tag>
+          ) : (
+            <Tag tone="draft">Draft</Tag>
+          )}
+          {found.length > 0 ? (
+            <span className="flex items-center gap-1 text-meta text-attention">
+              <TriangleAlert aria-hidden="true" size={13} /> {found.length} to fix
+            </span>
+          ) : null}
+          <span role="status" className="text-meta text-ink-subtle">
+            {saveState}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
+            size="small"
             onClick={() => {
               const positions = autoLayout(flowNodes, flowEdges);
               setNodes((before) =>
@@ -715,120 +767,169 @@ export function FlowEditor({
           >
             Tidy up
           </Button>
-          <Button variant="primary" disabled={busy || (!dirty && state !== "new")} onClick={save}>
+          {state === "draft" && !dirty && hasManual ? (
+            <Button size="small" onClick={runDraft}>
+              <Play aria-hidden="true" size={13} /> Run by hand
+            </Button>
+          ) : null}
+          <Button
+            size="small"
+            variant={state === "draft" && !dirty ? "secondary" : "primary"}
+            disabled={busy || (!dirty && state !== "new")}
+            onClick={save}
+          >
             Save draft
           </Button>
           {state === "draft" && !dirty ? (
-            <Link to={`${link}/changes`} className="text-action">
+            <Button size="small" variant="primary" onClick={() => navigate(`${link}/changes`)}>
               Review and deploy
-            </Link>
+            </Button>
           ) : null}
         </div>
       </header>
-      {state === "repository" ? (
-        <Notice tone="attention">
-          This flow is managed in the tenant's repository. Saving a draft of it takes it over.
-        </Notice>
-      ) : null}
-      {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      {found.length > 0 ? (
-        <Notice tone="attention">
-          <ul className="m-0 pl-5">
-            {found.map((one) => (
-              <li key={one}>{one}</li>
-            ))}
-          </ul>
-        </Notice>
-      ) : null}
-      <div className="grid gap-3 xl:grid-cols-[11rem_1fr_20rem]">
-        <aside
-          aria-label="Steps to add"
-          className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-3"
-        >
-          {[...new Set(PALETTE.map((entry) => entry.group))].map((group) => (
-            <div key={group} className="flex flex-col gap-1">
-              <p className="m-0 text-[11px] font-semibold tracking-wider text-ink-muted uppercase">
-                {group}
-              </p>
-              {PALETTE.filter((entry) => entry.group === group).map((entry) => (
-                <button
-                  key={entry.label}
-                  type="button"
-                  title={entry.hint}
-                  className="rounded-control border border-line bg-canvas px-2 py-1 text-left text-[13px] hover:bg-sunken"
-                  onClick={() => add(entry)}
-                >
-                  {entry.label}
-                </button>
-              ))}
-            </div>
-          ))}
-          {[...new Set(pickable.map((one) => one.category))].map((category) => (
-            <div key={category} className="flex flex-col gap-1">
-              <p className="m-0 text-[11px] font-semibold tracking-wider text-ink-muted uppercase">
-                {category}
-              </p>
-              {pickable
-                .filter((one) => one.category === category)
-                .map((one) => (
-                  <button
-                    key={one.path}
-                    type="button"
-                    title={one.description}
-                    className="rounded-control border border-line bg-canvas px-2 py-1 text-left text-[13px] hover:bg-sunken"
-                    onClick={() =>
-                      add({
-                        base: (one.path.split("/").at(-1) ?? "step").replace(/[^a-z0-9_]/g, "_"),
-                        make: () => ({ type: "script", script: one.path, inputs: {} }),
-                      })
-                    }
-                  >
-                    {one.label}
-                  </button>
+      {state === "repository" || problem || found.length > 0 ? (
+        <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
+          {state === "repository" ? (
+            <Notice tone="attention">
+              This flow is managed in the tenant's repository. Saving a draft of it takes it over.
+            </Notice>
+          ) : null}
+          {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          {found.length > 0 ? (
+            <Notice tone="attention">
+              <ul className="m-0 pl-5">
+                {found.map((one) => (
+                  <li key={one}>{one}</li>
                 ))}
-            </div>
-          ))}
-        </aside>
-        <div
-          className="h-[36rem] overflow-hidden rounded-panel border border-line bg-sunken"
-          data-testid="flow-canvas"
-        >
-          <NodeNames.Provider value={names}>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              onNodesChange={(changes) => {
-                onNodesChange(changes);
-                if (
-                  changes.some((change) => change.type === "position" || change.type === "remove")
-                )
-                  setDirty(true);
-              }}
-              onEdgesChange={(changes) => {
-                onEdgesChange(changes);
-                if (changes.some((change) => change.type === "remove")) setDirty(true);
-              }}
-              onConnect={connect}
-              onSelectionChange={({ nodes: picked }) => setSelected(picked[0]?.id)}
-              onInit={setCanvas}
-              fitView
-              fitViewOptions={FIT}
-              maxZoom={1.5}
-              minZoom={0.2}
-              proOptions={{ hideAttribution: false }}
-              // The canvas takes its colours from the kit's tokens, so it follows the theme.
-              style={CANVAS_COLOURS}
+              </ul>
+            </Notice>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="relative flex min-h-[28rem] flex-1 flex-col">
+          <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+            <Button
+              variant="primary"
+              size="small"
+              aria-expanded={adding}
+              onClick={() => setAdding((open) => !open)}
             >
-              <Background />
-              <Controls />
-              <MiniMap pannable zoomable />
-            </ReactFlow>
-          </NodeNames.Provider>
+              <Plus aria-hidden="true" size={14} /> Add step
+            </Button>
+            {adding ? (
+              <aside
+                aria-label="Steps to add"
+                className="flex max-h-[60vh] w-64 flex-col gap-3 overflow-y-auto rounded-panel border border-line bg-raised p-3 shadow-xl"
+              >
+                <input
+                  aria-label="Find a step"
+                  placeholder="Find a step"
+                  value={addSearch}
+                  onChange={(event) => setAddSearch(event.target.value)}
+                  className="h-8 rounded-control border border-line bg-structure px-2.5 text-ink outline-none placeholder:text-ink-subtle"
+                />
+                {[...new Set(PALETTE.map((entry) => entry.group))].map((group) => {
+                  const shown = PALETTE.filter(
+                    (entry) => entry.group === group && matches(entry.label, entry.hint),
+                  );
+                  return shown.length === 0 ? null : (
+                    <div key={group} className="flex flex-col gap-0.5">
+                      <p className="m-0 text-tag text-ink-subtle uppercase">{group}</p>
+                      {shown.map((entry) => (
+                        <button
+                          key={entry.label}
+                          type="button"
+                          className="flex flex-col rounded-control px-2 py-1.5 text-left hover:bg-selected"
+                          onClick={() => {
+                            add(entry);
+                            setAdding(false);
+                          }}
+                        >
+                          <span>{entry.label}</span>
+                          {entry.hint ? (
+                            <span className="text-meta text-ink-subtle">{entry.hint}</span>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+                {[...new Set(pickable.map((one) => one.category))].map((category) => {
+                  const shown = pickable.filter(
+                    (one) => one.category === category && matches(one.label, one.description),
+                  );
+                  return shown.length === 0 ? null : (
+                    <div key={category} className="flex flex-col gap-0.5">
+                      <p className="m-0 text-tag text-ink-subtle uppercase">{category}</p>
+                      {shown.map((one) => (
+                        <button
+                          key={one.path}
+                          type="button"
+                          className="flex flex-col rounded-control px-2 py-1.5 text-left hover:bg-selected"
+                          onClick={() => {
+                            add({
+                              base: (one.path.split("/").at(-1) ?? "step").replace(
+                                /[^a-z0-9_]/g,
+                                "_",
+                              ),
+                              make: () => ({ type: "script", script: one.path, inputs: {} }),
+                            });
+                            setAdding(false);
+                          }}
+                        >
+                          <span>{one.label}</span>
+                          {one.description ? (
+                            <span className="truncate text-meta text-ink-subtle">
+                              {one.description}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </aside>
+            ) : null}
+          </div>
+          <div className="min-h-0 flex-1 bg-sunken" data-testid="flow-canvas">
+            <NodeNames.Provider value={names}>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={nodeTypes}
+                onNodesChange={(changes) => {
+                  onNodesChange(changes);
+                  if (
+                    changes.some((change) => change.type === "position" || change.type === "remove")
+                  )
+                    setDirty(true);
+                }}
+                onEdgesChange={(changes) => {
+                  onEdgesChange(changes);
+                  if (changes.some((change) => change.type === "remove")) setDirty(true);
+                }}
+                onConnect={connect}
+                onSelectionChange={({ nodes: picked }) => setSelected(picked[0]?.id)}
+                onInit={setCanvas}
+                fitView
+                fitViewOptions={FIT}
+                maxZoom={1.5}
+                minZoom={0.2}
+                proOptions={{ hideAttribution: false }}
+                // The canvas takes its colours from the kit's tokens, so it follows the theme.
+                style={CANVAS_COLOURS}
+              >
+                <Background />
+                <Controls />
+                <MiniMap pannable zoomable />
+              </ReactFlow>
+            </NodeNames.Provider>
+          </div>
         </div>
         <aside
           aria-label="The chosen step"
-          className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-3"
+          className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:w-[22rem] lg:border-t-0 lg:border-l"
         >
           {chosen && node ? (
             <>
@@ -1067,10 +1168,25 @@ export function FlowEditor({
               </div>
             </>
           ) : (
-            <p className="m-0 text-ink-muted">
-              Choose a step to change it. Add steps from the left, and drag from the dot on a step's
-              right edge to the next step. The red dot underneath is where it goes when it fails.
-            </p>
+            <div className="flex flex-col gap-3">
+              <span aria-hidden="true" className="block h-0.5 w-5 bg-action" />
+              <h2 className="m-0 text-title">About this flow</h2>
+              <TextField
+                name="description"
+                label="What it does"
+                value={description}
+                required={false}
+                onChange={(value) => {
+                  setDescription(value);
+                  setDirty(true);
+                }}
+              />
+              <p className="m-0 text-meta text-ink-muted">
+                Choose a step to change it. Add steps with Add step, and drag from the dot on a
+                step's right edge to the next step. The red dot underneath is where it goes when it
+                fails.
+              </p>
+            </div>
           )}
         </aside>
       </div>

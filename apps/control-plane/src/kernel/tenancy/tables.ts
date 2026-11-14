@@ -335,6 +335,8 @@ export const INSTANCE_TABLES = [
   "database_location",
   // How the console looks on this instance. A tenant's branding is its portal's.
   "instance_branding",
+  // Rate-limit counters, keyed by route and caller, shared by every replica.
+  "rate_limit",
   // In the platform database these hold every shared tenant's catalog. They are
   // handled with the tables they describe, which may be in another database.
   "data_table",

@@ -943,6 +943,9 @@ function PoolCard({
 export function Workers({ base }: { base: string }) {
   const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
+  const managed = useLoad<{ state: "off" | "isolated" | "shared" | "refused" }>(
+    `${base}/managed-workers`,
+  );
   const [adding, setAdding] = useState(false);
   const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
   const poolOptions = [
@@ -979,6 +982,18 @@ export function Workers({ base }: { base: string }) {
             ))}
           </ul>
         )}
+        {managed.data?.state === "refused" ? (
+          <Notice tone="attention">
+            <strong>This tenant's code runs on standalone workers only.</strong> People outside the
+            instance's operators write its code, and this instance cannot run the workers it starts
+            as a user of their own, so it starts none. Make a credential below and start a worker
+            with it: see "Standalone workers" in the self-hosting guide.
+          </Notice>
+        ) : managed.data?.state === "shared" && tenant.data?.managedWorkers ? (
+          <p className="m-0 text-meta text-ink-muted">
+            Workers the instance starts run as the control plane's own user.
+          </p>
+        ) : null}
         {tenant.data ? (
           <div className="flex flex-wrap items-center gap-3">
             <span>

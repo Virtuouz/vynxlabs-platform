@@ -119,6 +119,13 @@ export const scriptKind: KindDefinition = {
       input: jsonSchema,
       output: jsonSchema,
       timeoutSeconds: { type: "integer", minimum: 1, maximum: 3600 },
+      memoryMb: {
+        type: "integer",
+        minimum: 64,
+        maximum: 4096,
+        description:
+          "The most memory the script may use, in MB. Default 512. Past it, the run fails.",
+      },
       retries: {
         type: "object",
         properties: {

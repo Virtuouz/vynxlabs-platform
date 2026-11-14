@@ -785,6 +785,13 @@ export interface MemberRecentScopeTable {
   visited_at: Generated<Date>;
 }
 
+/** One rate-limited key's count in its current window, shared by every replica. */
+export interface RateLimitTable {
+  key: string;
+  hits: number;
+  window_ends: Date;
+}
+
 export interface WorkerPoolTable {
   id: string;
   tenant_id: string;
@@ -1016,6 +1023,7 @@ export interface PlatformSchema {
   scim_refusal: ScimRefusalTable;
   worker_pool: WorkerPoolTable;
   member_recent_scope: MemberRecentScopeTable;
+  rate_limit: RateLimitTable;
   dashboard_share: DashboardShareTable;
   health_check: HealthCheckTable;
   resource_draft_history: ResourceDraftHistoryTable;

@@ -113,6 +113,26 @@ A script that names a pool runs only on a worker of that pool. A script that nam
 
 A run that is waiting with no worker connected that could take it says so on its page.
 
+A worker's credential is best handed to it on its standard input, `platform-worker --url … --token-stdin < credential`, rather than in `PLATFORM_WORKER_TOKEN` or `--token`. A script's process runs as the worker's own user, and that user can read a process's environment and command line. Whatever way it arrives, the credential is never given to the process a script runs in.
+
+## Workers the instance starts
+
+For a tenant with work and no worker of its own, the control plane starts one, on the same machine. Each attempt of a script runs in a process of its own, ended at its time limit or when canceled, and limited to the script's `memoryMb` (512 by default).
+
+These workers run as a user of their own, `vxrun` (uid and gid 10001), so that a script can neither read the control plane's environment, with the master key and the database address, nor signal it. The image is built for this: the control plane runs on a copy of node, `node-cp`, that may switch users, and workers run on plain node, which may not.
+
+Switching users needs the container's `CAP_SETUID` and `CAP_SETGID`. Docker gives both by default. They are missing when capabilities are dropped, as with `cap_drop: [ALL]` or a Kubernetes `securityContext` that drops them. Add them back with `cap_add: [SETUID, SETGID]`, or `capabilities: { add: [SETUID, SETGID] }`. Some runtimes also refuse file capabilities under `no-new-privileges` or `allowPrivilegeEscalation: false`; Docker 29 did not in our checks. The control plane's log says at start which way it went.
+
+Without them the kernel will not start `node-cp`, so the image starts the control plane on plain node instead. It says so in its log at start, and starts no managed worker for a tenant whose code is written by anyone outside the instance's operators: a member or a group with `code:write` who holds no instance-wide role, or any service account. That tenant's Workers page says it runs on standalone workers only. A tenant whose code only the operators write still gets managed workers, as the control plane's own user.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MANAGED_WORKERS` | `true` | Whether the control plane starts workers at all |
+| `MANAGED_WORKER_USER` | `own` | `own`: run them as their own user. `same`: run them as the control plane's user, for every tenant. Only for an instance where everyone who writes code works for the operator, or for development |
+| `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` | `10001` | The user and group they run as |
+
+Rate limits on webhooks, sign-ins and guests are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas run.
+
 ## Moving a tenant
 
 A tenant can be taken out of an instance at any time, and brought into another. This is also how a tenant moves between a shared instance and a dedicated one, and between the cloud and a site.

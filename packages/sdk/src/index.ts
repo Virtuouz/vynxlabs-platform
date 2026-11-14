@@ -105,6 +105,8 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   sources?: (string | { path: string })[];
   /** How long one attempt may run. Default 300, maximum 3600. */
   timeoutSeconds?: number;
+  /** The most memory one attempt may use, in MB. Default 512, from 64 to 4096. */
+  memoryMb?: number;
   /**
    * Retries after a failed attempt. Delivery is at-least-once even without
    * retries, so a script must be safe to run twice.
@@ -158,6 +160,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
       input: z.toJSONSchema(options.input, { io: "input" }),
       output: z.toJSONSchema(options.output, { io: "output" }),
       timeoutSeconds: options.timeoutSeconds ?? 300,
+      memoryMb: options.memoryMb,
       retries: {
         limit: options.retries?.limit ?? 0,
         delaySeconds: options.retries?.delaySeconds ?? 30,

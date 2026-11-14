@@ -6,4 +6,5 @@
 .env.*
 docs
 deploy
+!deploy/image
 **/.platform

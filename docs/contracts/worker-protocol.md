@@ -44,6 +44,7 @@ Response: `{"job": null}`, or a job:
 | `input` | The script's input |
 | `bundle.id`, `bundle.digest` | The bundle this run is pinned to |
 | `timeoutSeconds` | How long this attempt may take |
+| `memoryMb` | The most memory the script may use, in MB. Default 512. A worker that cannot limit memory may ignore it |
 | `heartbeatSeconds` | Send a heartbeat at least this often |
 | `idempotencyKey` | The same on every attempt of this run |
 | `trigger` | What started the run |
@@ -165,7 +166,7 @@ Response: `{"final": false}` when the run will be retried, `{"final": true}` whe
 1. Claim. On `null`, claim again.
 2. Get the bundle for the job, by digest, from its cache or the control plane.
 3. Start sending heartbeats.
-4. Run the script named by `script.entry` with `input`, giving it a way to read its declared secrets, variables and connections, a logger, the run's details, and a signal that fires on cancellation or when `timeoutSeconds` has passed.
+4. Run the script named by `script.entry` with `input`, giving it a way to read its declared secrets, variables and connections, a logger, the run's details, and a signal that fires on cancellation or when `timeoutSeconds` has passed. A script that does not stop when the signal fires must be stopped anyway: the reference worker runs each attempt in a process of its own, ends it a few seconds after the signal, and never gives that process the worker credential.
 5. Send any remaining logs, then report `complete` or `fail`. Keep lines that could not be sent and try them again; report any that are finally given up as `logsLost`.
 6. On `cancelled: true` or a 409, stop and report nothing.
 

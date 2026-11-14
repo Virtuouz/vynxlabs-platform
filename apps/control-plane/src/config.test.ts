@@ -41,8 +41,23 @@ describe("configuration", () => {
       masterKey: Buffer.alloc(32, 7),
       bootstrapAdmin: undefined,
       managedWorkers: true,
+      managedWorkerUser: { uid: 10001, gid: 10001 },
       consoleDir: undefined,
     });
+  });
+
+  test("managed workers run as their own user unless the operator says otherwise", () => {
+    expect(loadConfig({ ...valid, MANAGED_WORKER_UID: "2000" }).managedWorkerUser).toEqual({
+      uid: 2000,
+      gid: 10001,
+    });
+    expect(loadConfig({ ...valid, MANAGED_WORKER_USER: "same" }).managedWorkerUser).toBe("same");
+    expect(() => loadConfig({ ...valid, MANAGED_WORKER_USER: "root" })).toThrow(
+      /MANAGED_WORKER_USER must be own or same/,
+    );
+    expect(() => loadConfig({ ...valid, MANAGED_WORKER_UID: "-1" })).toThrow(
+      /MANAGED_WORKER_UID must be a positive whole number/,
+    );
   });
 
   test("reads every variable", () => {

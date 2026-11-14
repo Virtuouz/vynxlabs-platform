@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { conflict, notFound } from "../kernel/errors.js";
+import { hasOutsideCodeWriters, workerUserMode } from "../kernel/execution/isolation.js";
 import { WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -25,9 +26,58 @@ const Pool = Type.Object({
   managed: Type.Boolean({ description: "Whether the instance starts workers for it itself." }),
 });
 
+const ManagedWorkers = Type.Object({
+  state: Type.Union(
+    [
+      Type.Literal("off"),
+      Type.Literal("isolated"),
+      Type.Literal("shared"),
+      Type.Literal("refused"),
+    ],
+    {
+      description:
+        "`off`: the instance starts no workers for this tenant. `isolated`: it does, as a " +
+        "user of their own. `shared`: it does, as the control plane's own user, by the " +
+        "operator's choice or because only the operator writes this tenant's code. `refused`: it would, but cannot run them as their own user, and " +
+        "people outside the operator write this tenant's code, so it needs a standalone worker.",
+    },
+  ),
+});
+
 /** A tenant's worker pools: where its code runs, and whether anything is there to run it. */
 export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
+    app.get(
+      "/tenants/:t/managed-workers",
+      {
+        config: { access: access.tenant("worker:read") },
+        schema: {
+          summary: "Whether the instance runs this tenant's code on workers it starts",
+          tags: ["workers"],
+          params: TenantParams,
+          response: { 200: ManagedWorkers },
+        },
+      },
+      async ({ params }) => {
+        const tenant = await kernel.db
+          .selectFrom("tenant")
+          .select("managed_workers")
+          .where("id", "=", params.t)
+          .executeTakeFirstOrThrow();
+        const mode = workerUserMode();
+        if (!tenant.managed_workers || mode === "off") return { state: "off" as const };
+        if (mode === "isolated") return { state: "isolated" as const };
+        if (mode === "shared") return { state: "shared" as const };
+        // Workers cannot have a user of their own here. Code only the operator writes may
+        // still run beside the control plane.
+        return {
+          state: (await hasOutsideCodeWriters(kernel, params.t))
+            ? ("refused" as const)
+            : ("shared" as const),
+        };
+      },
+    );
+
     const { db } = kernel;
 
     app.get(

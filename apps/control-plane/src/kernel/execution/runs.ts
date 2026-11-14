@@ -18,6 +18,8 @@ export interface ScriptBody {
   input: object;
   output: object;
   timeoutSeconds: number;
+  /** The most memory the script may use, in MB. */
+  memoryMb?: number;
   retries: { limit: number; delaySeconds: number; backoff: boolean };
   concurrency?: number;
   /** The worker pool the script runs on. */

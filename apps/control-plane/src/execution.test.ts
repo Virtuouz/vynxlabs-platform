@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { newId } from "@vynxlabs/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { Worker } from "@vynxlabs/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -795,6 +796,38 @@ describe("triggers", () => {
       );
     }
     expect([...statuses].sort()).toEqual([404, 429]);
+    // Counted in the database, not in this process.
+    const kept = await t.db.selectFrom("rate_limit").select(["key", "hits"]).execute();
+    expect(kept.some((row) => row.key.includes("/hooks/") && row.hits >= 121)).toBe(true);
+  });
+
+  test("two control planes on one database share one count per caller", async () => {
+    const { postgresRateLimitStore } = await import("./kernel/ratelimit.js");
+    const Store = postgresRateLimitStore(t.kernel);
+    const route = { routeInfo: { method: "POST", url: "/api/v1/hooks/:token" } };
+    // biome-ignore lint/suspicious/noExplicitAny: the plugin's own options type is not needed here
+    const one = new Store({} as any).child(route as any);
+    // biome-ignore lint/suspicious/noExplicitAny: as above
+    const two = new Store({} as any).child(route as any);
+    const hit = (store: typeof one) =>
+      new Promise<{ current: number; ttl: number }>((resolve, reject) =>
+        store.incr(
+          "198.51.100.7",
+          (error, result) =>
+            error ? reject(error) : resolve(result as { current: number; ttl: number }),
+          60_000,
+          120,
+        ),
+      );
+    let last = { current: 0, ttl: 0 };
+    for (let i = 0; i < 121; i++) last = await hit(i % 2 === 0 ? one : two);
+    expect(last.current).toBe(121);
+    expect(last.ttl).toBeGreaterThan(0);
+    expect(last.ttl).toBeLessThanOrEqual(60_000);
+    // Another route counts on its own.
+    // biome-ignore lint/suspicious/noExplicitAny: as above
+    const other = new Store({} as any).child({ routeInfo: { method: "GET", url: "/x" } } as any);
+    expect((await hit(other)).current).toBe(1);
   });
 });
 
@@ -1071,12 +1104,13 @@ describe("managed workers", () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
     const supervisor = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
 
-    const environment = supervisor.environment("vxw_example");
+    // The credential is handed over on standard input, never in the environment.
+    const environment = supervisor.environment();
     expect(
       Object.keys(environment)
         .sort()
         .filter((name) => name.startsWith("PLATFORM_")),
-    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT", "PLATFORM_WORKER_TOKEN"]);
+    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT"]);
     for (const secret of [
       "DATABASE_URL",
       "MASTER_KEY",
@@ -1121,5 +1155,78 @@ describe("managed workers", () => {
     expect(credentials.length).toBeGreaterThan(0);
     expect(credentials.every((row) => row.revoked_at !== null)).toBe(true);
     await supervisor.stop();
+  }, 90_000);
+
+  test("code written only by the operator is not written outside it; a tenant admin's is", async () => {
+    const { hasOutsideCodeWriters } = await import("./kernel/execution/isolation.js");
+    const lone = (await t.admin.post("/tenants", { slug: "lone", name: "Lone" })).body.id;
+    expect(await hasOutsideCodeWriters(t.kernel, lone)).toBe(false);
+    const operator = (await t.admin.get("/me")).body.principal.id;
+    // The operator, made a member and a tenant admin of it, is still the operator.
+    await t.db
+      .insertInto("tenant_member")
+      .values({ tenant_id: lone, member_id: operator })
+      .execute();
+    await t.db
+      .insertInto("binding")
+      .values({
+        id: newId(),
+        scope_type: "tenant",
+        tenant_id: lone,
+        workspace_id: null,
+        resource_id: null,
+        principal_type: "member",
+        principal_id: operator,
+        role_id: roles.tenant_admin as string,
+        source_resource_id: null,
+      })
+      .execute();
+    expect(await hasOutsideCodeWriters(t.kernel, lone)).toBe(false);
+    // Alice is a tenant admin and no operator, and Bob a developer.
+    expect(await hasOutsideCodeWriters(t.kernel, tenant)).toBe(true);
+  });
+
+  test("where workers cannot run as their own user, a tenant whose code is written outside the operator gets none", async () => {
+    // Running the tests as root would switch users and prove nothing here.
+    if (process.getuid?.() === 0) return;
+    const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
+    const { workerUserMode } = await import("./kernel/execution/isolation.js");
+    const supervisor = new WorkerSupervisor(t.kernel, {
+      url,
+      idleExitSeconds: 2,
+      user: { uid: 10001, gid: 10001 },
+    });
+    expect(await supervisor.mode()).toBe("unable");
+    expect(workerUserMode()).toBe("unable");
+    const id = await start("greet", { name: "Refused" });
+    await supervisor.tick();
+    expect(supervisor.tenants).toEqual([]);
+    expect(await supervisor.allowed(tenant)).toBe(false);
+    // The tenant's people are told.
+    expect((await alice.get(`/tenants/${tenant}/managed-workers`)).body).toEqual({
+      state: "refused",
+    });
+    await supervisor.stop();
+    // A worker of the tenant's own still runs it.
+    const own = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "own" })).body.token,
+    );
+    const claimed = await until(
+      async () => (await own.claim()).body.job,
+      (job) => job?.runId === id,
+      20,
+    );
+    await own.post(`/runs/${id}/complete`, { attempt: claimed.attempt, output: {} });
+  }, 60_000);
+
+  test("two control planes on one database start one worker for a tenant", async () => {
+    const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
+    const first = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    const second = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    const id = await start("greet", { name: "Once" });
+    await Promise.all([first.tick(), second.tick()]);
+    expect([...first.tenants, ...second.tenants]).toEqual([tenant]);
+    expect(await finished(id, 30)).toMatchObject({ status: "succeeded" });
+    await Promise.all([first.stop(), second.stop()]);
   }, 90_000);
 });

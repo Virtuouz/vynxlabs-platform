@@ -12,6 +12,7 @@ import { installFrontDoor } from "./kernel/apps/front.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
+import { postgresRateLimitStore } from "./kernel/ratelimit.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
@@ -101,8 +102,9 @@ export async function buildApp(options: AppOptions) {
   // Apps and their sign-in pages, at whichever address the request came to.
   installFrontDoor(app, kernel);
 
-  // Applies only to routes that ask for it, such as public webhooks.
-  await app.register(rateLimit, { global: false });
+  // Applies only to routes that ask for it, such as public webhooks. Counted in Postgres,
+  // so a limit holds across every replica.
+  await app.register(rateLimit, { global: false, store: postgresRateLimitStore(kernel) });
 
   await app.register(swagger, {
     openapi: {

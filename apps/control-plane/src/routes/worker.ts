@@ -52,6 +52,9 @@ const Job = Type.Object({
   input: Type.Unknown(),
   bundle: Type.Object({ id: Id, digest: Type.String() }),
   timeoutSeconds: Type.Integer(),
+  memoryMb: Type.Integer({
+    description: "The most memory the script may use, in MB. A worker ends the script past it.",
+  }),
   heartbeatSeconds: Type.Integer({ description: "Send a heartbeat at least this often." }),
   idempotencyKey: Type.String(),
   trigger: AnyObject,
@@ -66,6 +69,8 @@ const Job = Type.Object({
 
 const MAX_WAIT_SECONDS = 25;
 const MAX_LOG_MESSAGE = 8000;
+/** Memory for a script that does not say, in MB. */
+const DEFAULT_MEMORY_MB = 512;
 /** Log lines the worker held but could not deliver. The run says how many. */
 const LogsLost = Type.Optional(Type.Integer({ minimum: 0 }));
 
@@ -189,6 +194,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 input: await readPayload(kernel, run.input, run.input_ref),
                 bundle: { id: bundle.id, digest: bundle.digest },
                 timeoutSeconds: claimed.timeoutSeconds,
+                memoryMb: manifest?.memoryMb ?? DEFAULT_MEMORY_MB,
                 heartbeatSeconds: Math.floor(HEARTBEAT_SECONDS / 3),
                 idempotencyKey: run.idempotency_key,
                 trigger: { type: run.trigger_type, ...run.trigger_detail, grants: undefined },

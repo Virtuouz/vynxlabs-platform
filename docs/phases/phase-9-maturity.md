@@ -1,6 +1,6 @@
 # Phase 9: maturity
 
-Status: in progress. Milestone 1 (quick wins) built and tested locally. Milestones 2 to 7 not started.
+Status: in progress. Milestones 1 (quick wins) and 2 (execution isolation) built and tested locally, milestone 2 also in the image on the dev stack. Milestones 3 to 7 not started.
 Last updated: 2026-11-14
 
 Phase 9 builds the P0 and P1 items of the [evolution roadmap](../evolution/07-roadmap.md). It changes no part of the platform's model. It makes what already exists dependable and connected:
@@ -83,3 +83,11 @@ Each item's acceptance criteria are in the roadmap and its spec. New suites this
 - **A worker sent at most 500 log lines per request, but sent everything it held at once.** A run that logged more than 500 lines between heartbeats had the whole batch refused, and the refusal was swallowed. Fixed with P0-3: lines are sent in batches of 500.
 - **A link inside a row that opens on click fired both.** Adding target links to Triggers rows showed it: the row's selection ran after the link's navigation and rewrote the address. `Link` now stops the click from reaching the row.
 - **The `Changes` screen was dead, but its tests covered behavior the live Release screen has.** They were moved to `Release.test.tsx` instead of being deleted.
+- **`cap_add` alone gives the control plane nothing.** Docker drops a non-root user's capabilities when it starts a program, so the image keeps `node-cp`, a copy of node that holds `CAP_SETUID` and `CAP_SETGID` as file capabilities, and runs only the control plane on it. Workers and scripts run on plain node, and cannot switch back: checked in the image, a script running as `vxrun` gets EPERM from `setuid` and EACCES reading the control plane's `/proc/1/environ`.
+- **With capabilities dropped, the kernel refuses to start `node-cp` at all.** A plain `CMD ["node-cp", …]` would have left the control plane down under `cap_drop: [ALL]`. `platform-start` tries `node-cp` and falls back to plain node, and the control plane then applies the refusal rule. Checked in the image.
+- **`no-new-privileges` did not stop the file capabilities under Docker 29**, against what the plan assumed. The docs say runtimes differ, and the log says which way it went.
+- **A worker's credential was readable by its own scripts through `/proc`.** Deleting `PLATFORM_WORKER_TOKEN` from `process.env` does not change `/proc/<pid>/environ`. Managed workers now get the credential on standard input (`--token-stdin`), and standalone workers are advised to use it.
+- **Connection clients cannot cross into a script's process; their configuration can.** The runner builds clients from the bound connection's configuration, as the worker did, so the credential a script reaches is its own connection's, as before, and never the worker's.
+- **A script's process runs as its worker's user.** With `kernel.yama.ptrace_scope` at 0 it could read the worker's memory; the worker warns at start when it is. Separating them is the P3 sandboxing item.
+- **"Outside the operator"** is anyone with `code:write` in the tenant, wildcards included, who holds no instance-wide role: a member, a member of a group, or any service account. A tenant's admins usually match, so without the capability most tenants get no managed worker.
+

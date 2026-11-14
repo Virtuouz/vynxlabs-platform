@@ -29,6 +29,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     masterKey: randomBytes(32),
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
+    managedWorkerUser: "same",
     consoleDir: undefined,
     screensDir: undefined,
     appsUrl: undefined,

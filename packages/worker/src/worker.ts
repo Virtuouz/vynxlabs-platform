@@ -1,12 +1,14 @@
+import { type ChildProcess, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { type Connector, httpConnector, type ScriptContext, type TableClient } from "@vynxlabs/sdk";
-import { smtpConnector } from "./smtp.js";
+import { allowedCall, type Job, type LogEntry } from "./context.js";
+import type { FromRunner, ToRunner } from "./runner.js";
 
 export type WorkerLog = (
   level: "info" | "warn" | "error",
@@ -28,33 +30,13 @@ export interface WorkerOptions {
   log?: WorkerLog;
   /** How long one claim waits for work. Lower in tests. */
   claimWaitSeconds?: number;
+  /** The runner each attempt is started with. Default: the one beside this file. */
+  runner?: string;
 }
 
-interface Job {
-  runId: string;
-  attempt: number;
-  workspaceId: string;
-  script: { path: string; entry: string };
-  input: unknown;
-  bundle: { id: string; digest: string };
-  timeoutSeconds: number;
-  heartbeatSeconds: number;
-  idempotencyKey: string;
-  trigger: { type: string; [detail: string]: unknown };
-  /** Absent from a control plane older than 0.4.0. */
-  startedBy?: { type: string; id: string | null };
-}
-
-interface LogEntry {
-  time: string;
-  level: "debug" | "info" | "warn" | "error";
-  message: string;
-  fields?: Record<string, unknown>;
-}
-
-/** A bundle as the worker holds it: what its code exports, and what it says it contains. */
-interface Loaded {
-  exports: Record<string, unknown>;
+/** A bundle's code on disk, and what it says it contains. */
+interface CachedBundle {
+  file: string;
   manifests: BundleManifest[];
 }
 
@@ -74,10 +56,58 @@ const LOG_BATCH = 500;
 const LOG_FINAL_TRIES = 3;
 const LOG_RETRY_MS = 250;
 
+/** Memory for a script that does not say, in MB. */
+const DEFAULT_MEMORY_MB = 512;
+/** How long a script told to stop has before its process is ended. */
+const ABORT_GRACE_MS = 3000;
+/** Bundles kept on disk at once. */
+const MAX_BUNDLE_FILES = 50;
+/** How much of a script process's stderr is kept to explain its end. */
+const STDERR_KEPT = 2048;
+
+/** What a script's process may see of the worker's environment. Never the credential. */
+const RUNNER_ENVIRONMENT = ["PATH", "TZ", "LANG", "TMPDIR", "NODE_EXTRA_CA_CERTS"];
+
+function runnerEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const name of RUNNER_ENVIRONMENT) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
+}
+
+/**
+ * The runner beside this file. Run from its TypeScript source, as in this
+ * package's own tests, the built one is used.
+ */
+function defaultRunner(): string {
+  const beside = fileURLToPath(new URL("./runner.js", import.meta.url));
+  if (existsSync(beside)) return beside;
+  return fileURLToPath(new URL("../dist/runner.js", import.meta.url));
+}
+
+/** Why a script's process ended without saying how its script did. */
+function processEnded(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  stderr: string,
+  memoryMb: number,
+): Error {
+  const error =
+    /heap out of memory|Allocation failed/i.test(stderr) || code === 134
+      ? new Error(`The script ran out of memory (${memoryMb} MB).`)
+      : new Error(
+          `The script's process ended unexpectedly (${signal ? `signal ${signal}` : `code ${code}`}).`,
+        );
+  if (stderr.trim()) error.stack = `${error.message}\n${stderr.trim()}`;
+  return error;
+}
+
 /**
  * Runs a tenant's scripts. It only ever calls the control plane: it claims a
- * job, downloads the bundle the run is pinned to, runs the script, and reports
- * back.
+ * job, downloads the bundle the run is pinned to, runs the script in a process
+ * of its own, and reports back. The script's process never holds the credential.
  */
 export class Worker {
   readonly id = randomUUID();
@@ -85,12 +115,9 @@ export class Worker {
   readonly #url: string;
   readonly #log: WorkerLog;
   readonly #cacheDir: string;
-  readonly #modules = new Map<string, Promise<Loaded>>();
-  /** The connectors every worker has. A bundle may bring more. */
-  readonly #connectors = new Map<string, Connector<unknown, unknown>>([
-    ["http", httpConnector as Connector<unknown, unknown>],
-    ["smtp", smtpConnector as Connector<unknown, unknown>],
-  ]);
+  readonly #runner: string;
+  /** Bundles on disk by digest, least recently used first. */
+  readonly #bundles = new Map<string, Promise<CachedBundle>>();
   #stopping = false;
   #inFlight = 0;
   #lastWork = Date.now();
@@ -101,6 +128,7 @@ export class Worker {
     this.#url = options.url.replace(/\/+$/, "");
     this.#log = options.log ?? (() => {});
     this.#cacheDir = options.cacheDir ?? join(tmpdir(), `platform-worker-${this.id}`);
+    this.#runner = options.runner ?? defaultRunner();
   }
 
   /** Works until `stop()` is called, the credential is refused, or it has been idle long enough. */
@@ -206,24 +234,37 @@ export class Worker {
     }
   }
 
-  /** The module of a bundle, downloaded and checked once, then reused. */
-  #module(bundle: Job["bundle"]): Promise<Loaded> {
-    let loading = this.#modules.get(bundle.digest);
-    if (!loading) {
-      loading = (async () => {
-        const content = await this.#call<Bundle>("GET", `/bundles/${bundle.id}`);
-        if (bundleDigest(content) !== bundle.digest) {
-          throw new Error("The downloaded bundle does not match its digest.");
-        }
-        const file = join(this.#cacheDir, `${bundle.digest}.mjs`);
-        await writeFile(file, content.code);
-        return {
-          exports: (await import(pathToFileURL(file).href)) as Record<string, unknown>,
-          manifests: content.manifests,
-        };
-      })();
-      this.#modules.set(bundle.digest, loading);
-      loading.catch(() => this.#modules.delete(bundle.digest));
+  /**
+   * A bundle's code on disk, downloaded and checked once, then reused by every
+   * attempt that runs it. Each attempt imports it in a process of its own, so
+   * nothing of it stays in the worker's memory. Past `MAX_BUNDLE_FILES` the
+   * least recently used are removed.
+   */
+  #bundleFile(bundle: Job["bundle"]): Promise<CachedBundle> {
+    let loading = this.#bundles.get(bundle.digest);
+    if (loading) {
+      // Most recently used goes last.
+      this.#bundles.delete(bundle.digest);
+      this.#bundles.set(bundle.digest, loading);
+      return loading;
+    }
+    loading = (async () => {
+      const content = await this.#call<Bundle>("GET", `/bundles/${bundle.id}`);
+      if (bundleDigest(content) !== bundle.digest) {
+        throw new Error("The downloaded bundle does not match its digest.");
+      }
+      const file = join(this.#cacheDir, `${bundle.digest}.mjs`);
+      await writeFile(file, content.code);
+      return { file, manifests: content.manifests };
+    })();
+    this.#bundles.set(bundle.digest, loading);
+    loading.catch(() => this.#bundles.delete(bundle.digest));
+    while (this.#bundles.size > MAX_BUNDLE_FILES) {
+      const [oldest] = this.#bundles.keys();
+      if (oldest === undefined) break;
+      this.#bundles.delete(oldest);
+      // An attempt that already started has the module loaded; a new one downloads it again.
+      void rm(join(this.#cacheDir, `${oldest}.mjs`), { force: true });
     }
     return loading;
   }
@@ -231,7 +272,8 @@ export class Worker {
   async #execute(job: Job): Promise<void> {
     const runPath = `/runs/${job.runId}`;
     const abort = new AbortController();
-    let over = false;
+    /** Why the attempt ended early, when the control plane ended it. */
+    let ended: AttemptOver | CredentialRefused | undefined;
 
     // Log lines wait here until the control plane has them. A line that cannot be
     // sent stays for the next try; only past the limit, or at the very end, is it
@@ -279,16 +321,6 @@ export class Worker {
       pending.length = 0;
       return lost > 0 ? { logsLost: lost } : {};
     };
-    const write =
-      (level: LogEntry["level"]) => (message: string, fields?: Record<string, unknown>) => {
-        pending.push({
-          time: new Date().toISOString(),
-          level,
-          message: String(message),
-          ...(fields ? { fields } : {}),
-        });
-        bound();
-      };
 
     const heartbeat = setInterval(async () => {
       await flush();
@@ -298,7 +330,7 @@ export class Worker {
           workerId: this.id,
         });
         if (reply.cancelled) {
-          over = true;
+          ended = new AttemptOver();
           abort.abort(new Error("The run was canceled."));
         }
       } catch {
@@ -313,175 +345,82 @@ export class Worker {
       job.timeoutSeconds * 1000,
     );
 
-    const data = async <T>(
-      table: string,
-      source: string | undefined,
-      as: string | undefined,
-      op: string,
-      args: object,
-    ) =>
-      (
-        await this.#call<{ result: T }>("POST", `${runPath}/data`, {
-          attempt: job.attempt,
-          table,
-          ...(source ? { source } : {}),
-          ...(as ? { as } : {}),
-          op,
-          args,
-        })
-      ).result;
-    const tableClient = <Row, Insert>(
-      table: string,
-      source: string | undefined,
-      as: string | undefined,
-    ): TableClient<Row, Insert> => ({
-      find: async (options = {}) =>
-        (await data<{ items: Row[] }>(table, source, as, "find", options)).items,
-      get: (id) => data<Row | null>(table, source, as, "get", { id }),
-      insert: async (row) =>
-        (await data<Row[]>(table, source, as, "insert", { rows: [row] }))[0] as Row,
-      insertMany: (rows) => data<Row[]>(table, source, as, "insert", { rows }),
-      update: (id, patch) => data<Row>(table, source, as, "update", { id, patch }),
-      delete: async (id) => {
-        await data<null>(table, source, as, "delete", { id });
-      },
-      aggregate: (options = {}) =>
-        data(table, source, as, "aggregate", {
-          group: options.group,
-          measure: options.measures,
-          filter: options.filter,
-          sort: options.sort,
-          limit: options.limit,
-        }),
-      as: (principalId) => tableClient<Row, Insert>(table, source, principalId),
-    });
-    const read = async <T>(path: string) =>
-      this.#call<T>("GET", `${runPath}${path}?attempt=${job.attempt}`);
-    /**
-     * The client for a bound connection. Its connector is one every worker
-     * has, or one the run's own bundle carries, so a run uses the connector
-     * code it was deployed with.
-     */
-    let loaded: Loaded | undefined;
-    const connect = (bound: { connector: string; config: unknown; credential?: string }) => {
-      const builtin = this.#connectors.get(bound.connector);
-      if (builtin) return builtin.create(bound.config, bound.credential, abort.signal);
-      const manifest = loaded?.manifests.find(
-        (candidate) => candidate.kind === "connector" && candidate.path === bound.connector,
-      );
-      const entry = (manifest?.body as { entry?: string } | undefined)?.entry;
-      const own = entry
-        ? (loaded?.exports[entry] as Partial<Connector<unknown, unknown>> | undefined)
-        : undefined;
-      if (typeof own?.create !== "function") {
-        throw new Error(
-          `There is no connector "${bound.connector}": it is not one every worker has, and this run's bundle does not carry it.`,
-        );
-      }
-      return own.create(bound.config, bound.credential, abort.signal);
-    };
-    const context: ScriptContext = {
-      connection: async <Client>(path: string) => {
-        const bound = await read<{ connector: string; config: unknown; credential?: string }>(
-          `/connections/${path}`,
-        );
-        return connect(bound) as Client;
-      },
-      connections: <Client>(group: string | { path: string }) => {
-        const path = typeof group === "string" ? group : group.path;
-        return {
-          get: async (key: string) => {
-            const bound = await read<{ connector: string; config: unknown; credential?: string }>(
-              `/connection-group-members/${encodeURIComponent(key)}/${path}`,
-            );
-            return connect(bound) as Client;
-          },
-          keys: async () =>
-            (await read<{ items: { key: string; label: string }[] }>(`/connection-groups/${path}`))
-              .items,
-        };
-      },
-      secret: async (name) =>
-        (await read<{ value: string }>(`/secrets/${encodeURIComponent(name)}`)).value,
-      variable: async (path) => (await read<{ value: string }>(`/variables/${path}`)).value,
-      table: <Row, Insert>(table: string | { path: string }) =>
-        tableClient<Row, Insert>(
-          typeof table === "string" ? table : table.path,
-          undefined,
-          undefined,
-        ),
-      source: (source) => ({
-        table: (name) =>
-          tableClient<Record<string, unknown>, Partial<Record<string, unknown>>>(
-            name,
-            typeof source === "string" ? source : source.path,
-            undefined,
-          ),
-      }),
-      files: {
-        put: async (name, content, contentType) => {
-          const bytes =
-            typeof content === "string" ? Buffer.from(content, "utf8") : Buffer.from(content);
-          const stored = await this.#call<{ id: string }>("POST", `${runPath}/files`, {
-            attempt: job.attempt,
-            name,
-            ...(contentType ? { contentType } : {}),
-            base64: bytes.toString("base64"),
-          });
-          return { id: stored.id };
-        },
-        get: async (id) => {
-          const file = await read<{ name: string; contentType: string; base64: string }>(
-            `/files/${id}`,
-          );
-          return {
-            name: file.name,
-            contentType: file.contentType,
-            content: new Uint8Array(Buffer.from(file.base64, "base64")),
-          };
-        },
-      },
-      events: {
-        publish: async (event, payload) => {
-          await this.#call("POST", `${runPath}/events`, { attempt: job.attempt, event, payload });
-        },
-      },
-      log: {
-        debug: write("debug"),
-        info: write("info"),
-        warn: write("warn"),
-        error: write("error"),
-      },
-      run: {
-        id: job.runId,
-        attempt: job.attempt,
-        idempotencyKey: job.idempotencyKey,
-        trigger: job.trigger,
-        startedBy: job.startedBy ?? { type: "system", id: null },
-      },
-      signal: abort.signal,
-    };
-
+    let child: ChildProcess | undefined;
+    let killing: NodeJS.Timeout | undefined;
     try {
-      loaded = await this.#module(job.bundle);
-      const script = loaded.exports[job.script.entry] as
-        | { execute?: (input: unknown, ctx: ScriptContext) => Promise<unknown> }
-        | undefined;
-      if (typeof script?.execute !== "function") {
-        throw new Error(`The bundle does not export a script named "${job.script.entry}".`);
-      }
-      // A script that ignores the signal must not hold the attempt open past its limit.
-      const aborted = new Promise<never>((_, reject) => {
-        abort.signal.addEventListener("abort", () => reject(abort.signal.reason), { once: true });
+      const bundle = await this.#bundleFile(job.bundle);
+      const memoryMb = job.memoryMb ?? DEFAULT_MEMORY_MB;
+      const started = fork(this.#runner, [], {
+        env: runnerEnvironment(),
+        execArgv: [`--max-old-space-size=${memoryMb}`],
+        stdio: ["ignore", "inherit", "pipe", "ipc"],
       });
-      const output = await Promise.race([script.execute(job.input, context), aborted]);
+      child = started;
+      // What the script's process says on stderr goes on to the worker's, and its end is kept
+      // to say why the process died, if it does.
+      let stderr = "";
+      started.stderr?.on("data", (chunk: Buffer) => {
+        process.stderr.write(chunk);
+        stderr = (stderr + chunk.toString("utf8")).slice(-STDERR_KEPT);
+      });
+
+      const outcome = new Promise<unknown>((resolve, reject) => {
+        started.on("message", (message: FromRunner) => {
+          if (message.t === "log") {
+            pending.push(message.entry);
+            bound();
+          } else if (message.t === "call") {
+            void this.#answer(job, started, message).catch((error) => {
+              if (error instanceof AttemptOver || error instanceof CredentialRefused) {
+                ended = error;
+                abort.abort(error);
+              }
+            });
+          } else if (message.t === "done") {
+            resolve(message.output);
+          } else if (message.t === "failed") {
+            const failure = new Error(message.error.message);
+            if (message.error.stack) failure.stack = message.error.stack;
+            reject(failure);
+          }
+        });
+        started.once("exit", (code, signal) =>
+          reject(processEnded(code, signal, stderr, memoryMb)),
+        );
+        started.once("error", reject);
+      });
+      started.send({
+        t: "start",
+        job,
+        bundleFile: bundle.file,
+        manifests: bundle.manifests,
+      } satisfies ToRunner);
+
+      // A script that ignores the signal must not hold the attempt open past its limit:
+      // it is told, then its process is ended.
+      const aborted = new Promise<never>((_, reject) => {
+        const stop = () => {
+          if (started.connected)
+            started.send({
+              t: "abort",
+              message: String((abort.signal.reason as Error)?.message ?? abort.signal.reason),
+            } satisfies ToRunner);
+          killing = setTimeout(() => started.kill("SIGKILL"), ABORT_GRACE_MS);
+          reject(abort.signal.reason);
+        };
+        if (abort.signal.aborted) stop();
+        else abort.signal.addEventListener("abort", stop, { once: true });
+      });
+      const output = await Promise.race([outcome, aborted]);
       const logs = await settle();
       await this.#call("POST", `${runPath}/complete`, { attempt: job.attempt, output, ...logs });
     } catch (error) {
       const logs = await settle();
-      if (error instanceof CredentialRefused) throw error;
+      if (error instanceof CredentialRefused || ended instanceof CredentialRefused) {
+        throw ended ?? error;
+      }
       // A canceled or reclaimed attempt has nothing left to report.
-      if (over || error instanceof AttemptOver) return;
+      if (ended || error instanceof AttemptOver) return;
       const failure = error instanceof Error ? error : new Error(String(error));
       await this.#call("POST", `${runPath}/fail`, {
         attempt: job.attempt,
@@ -502,6 +441,45 @@ export class Worker {
     } finally {
       clearInterval(heartbeat);
       clearTimeout(timeout);
+      // Whatever the script left running ends with its attempt. An aborted one had its
+      // grace to stop by itself; any other is ended now.
+      if (child && child.exitCode === null && child.signalCode === null) {
+        if (!killing) child.kill("SIGKILL");
+        child.once("exit", () => clearTimeout(killing));
+      }
+    }
+  }
+
+  /** Makes a call a script asked for, if it is one its own run may make, and answers it. */
+  async #answer(
+    job: Job,
+    child: ChildProcess,
+    message: Extract<FromRunner, { t: "call" }>,
+  ): Promise<void> {
+    const reply = (answer: ToRunner) => {
+      if (child.connected) child.send(answer);
+    };
+    if (!allowedCall(job, message.method, message.path)) {
+      reply({ t: "reply", id: message.id, error: "This call is not open to a script." });
+      return;
+    }
+    // The attempt is the worker's to say, not the script's.
+    let path = message.path;
+    let body = message.body;
+    if (message.method === "GET") {
+      const [base, query = ""] = path.split("?");
+      const params = new URLSearchParams(query);
+      params.set("attempt", String(job.attempt));
+      path = `${base}?${params}`;
+    } else if (body && typeof body === "object" && !Array.isArray(body)) {
+      body = { ...(body as Record<string, unknown>), attempt: job.attempt };
+    }
+    try {
+      const result = await this.#call<unknown>(message.method, path, body);
+      reply({ t: "reply", id: message.id, result });
+    } catch (error) {
+      reply({ t: "reply", id: message.id, error: (error as Error).message ?? String(error) });
+      if (error instanceof AttemptOver || error instanceof CredentialRefused) throw error;
     }
   }
 }

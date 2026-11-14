@@ -20,6 +20,11 @@ export interface Config {
   bootstrapAdmin: { email: string; password: string } | undefined;
   /** Whether the control plane starts worker processes itself, one per tenant with work. */
   managedWorkers: boolean;
+  /**
+   * The user managed workers run as: their own, so that a script cannot read the
+   * control plane's environment, or `same`, the control plane's, by the operator's choice.
+   */
+  managedWorkerUser: { uid: number; gid: number } | "same";
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
   /** Where the built app that draws interfaces is. Without it, generated apps are not served. */
@@ -137,6 +142,20 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if (managed !== "true" && managed !== "false") {
     problems.push("MANAGED_WORKERS must be true or false.");
   }
+  const workerUser = value("MANAGED_WORKER_USER") ?? "own";
+  if (workerUser !== "own" && workerUser !== "same") {
+    problems.push("MANAGED_WORKER_USER must be own or same.");
+  }
+  const id = (name: string) => {
+    const raw = value(name) ?? "10001";
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      problems.push(`${name} must be a positive whole number.`);
+    }
+    return parsed;
+  };
+  const workerUid = id("MANAGED_WORKER_UID");
+  const workerGid = id("MANAGED_WORKER_GID");
 
   const config: Config = {
     databaseUrl,
@@ -159,6 +178,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
         ? { email: bootstrapEmail.toLowerCase(), password: bootstrapPassword }
         : undefined,
     managedWorkers: managed === "true",
+    managedWorkerUser: workerUser === "same" ? "same" : { uid: workerUid, gid: workerGid },
     consoleDir: value("CONSOLE_DIR"),
     screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),

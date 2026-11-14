@@ -77,7 +77,10 @@ try {
   background = startBackground(
     app.kernel,
     config.managedWorkers
-      ? new WorkerSupervisor(app.kernel, { url: `http://127.0.0.1:${config.port}` })
+      ? new WorkerSupervisor(app.kernel, {
+          url: `http://127.0.0.1:${config.port}`,
+          user: config.managedWorkerUser,
+        })
       : undefined,
   );
   app.log.info({ version, managedWorkers: config.managedWorkers }, "control plane started");

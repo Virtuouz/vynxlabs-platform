@@ -3,6 +3,7 @@ import { checkDueSources } from "../data/health.js";
 import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { pruneRateLimits } from "../ratelimit.js";
+import { pruneOnce } from "../retention.js";
 import { removeExpiredSso } from "../sso/flow.js";
 import { removeExpiredImports } from "../tenancy/staging.js";
 import { removeOldPreviews } from "./bundles.js";
@@ -16,6 +17,9 @@ import { fireDueSchedules } from "./triggers.js";
  * and keep managed workers running where there is work.
  * Every replica runs this. Each step is safe to run concurrently.
  */
+/** How often the retention job runs. */
+const RETENTION_EVERY_MS = 10 * 60_000;
+
 export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, intervalMs = 2000) {
   let running = false;
   let swept = 0;
@@ -36,6 +40,14 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     await removeExpiredImports(kernel);
     await pruneRateLimits(kernel);
   };
+  let pruned = 0;
+  /** What is past each tenant's retention goes, every ten minutes, on one replica at a time. */
+  const retention = async () => {
+    if (Date.now() - pruned < RETENTION_EVERY_MS) return;
+    pruned = Date.now();
+    const result = await pruneOnce(kernel);
+    if (result !== "busy") kernel.log.info({ pruned: result }, "retention pass");
+  };
   const steps: [string, () => Promise<unknown>][] = [
     ["schedules", () => fireDueSchedules(kernel)],
     ["lost runs", () => requeueLostRuns(kernel)],
@@ -43,6 +55,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     ["flows", () => advanceDueFlows(kernel)],
     ["expired sign-ins", sweep],
     ["health", health],
+    ["retention", retention],
     ...(supervisor
       ? ([["managed workers", () => supervisor.tick()]] as [string, () => Promise<unknown>][])
       : []),

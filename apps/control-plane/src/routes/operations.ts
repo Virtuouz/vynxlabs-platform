@@ -7,6 +7,7 @@ import { diagnose } from "../kernel/execution/diagnose.js";
 import { bundleFrames, originalPosition } from "../kernel/execution/sourcemap.js";
 import { access, findWorkspace } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { effectivePolicy } from "../kernel/retention.js";
 import {
   Id,
   iso,
@@ -157,12 +158,16 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               items: Type.Array(Activity),
               nextCursor: NullableString,
               counts: Type.Record(Type.String(), Type.Integer()),
+              keptDays: Type.Integer({
+                description: "How many days runs are kept after they end, in this tenant.",
+              }),
             }),
           },
         },
       },
       async ({ ctx, params, query }) => {
         await findWorkspace(kernel, params.t, params.w);
+        const keptDays = (await effectivePolicy(kernel, params.t)).runsDays;
         const may = await readable(ctx, params.t, params.w);
         if (query.kind === "script") may.flows = false;
         if (query.kind === "flow") may.scripts = false;
@@ -172,7 +177,9 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           to: query.to ? new Date(query.to) : undefined,
           target: query.target,
         };
-        if (!may.scripts && !may.flows) return { items: [], nextCursor: null, counts: {} };
+        if (!may.scripts && !may.flows) {
+          return { items: [], nextCursor: null, counts: {}, keptDays };
+        }
         const all = union(params.w, may, filters);
         const rows = await sql<ActivityRow>`
           select * from (${all}) as activity
@@ -206,6 +213,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           ),
           counts: Object.fromEntries(counted.rows.map((row) => [row.status, Number(row.n)])),
+          keptDays,
         };
       },
     );

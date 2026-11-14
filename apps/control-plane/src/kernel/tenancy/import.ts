@@ -306,6 +306,8 @@ export async function importTenant(
       change?: (row: Record<string, unknown>) => void,
       /** For records that may already be here, from an earlier stay of the same tenant. */
       skipExisting = false,
+      /** Runs before each batch is inserted, with the batch's rows. */
+      beforeBatch?: (rows: Record<string, unknown>[]) => Promise<void>,
     ) {
       for (const entry of parts(checked, prefix)) {
         const lines = rewrite((await tarRead(file, entry)).toString("utf8"))
@@ -320,6 +322,7 @@ export async function importTenant(
               return JSON.stringify(row);
             });
           }
+          if (beforeBatch) await beforeBatch(batch.map((line) => JSON.parse(line)));
           // Numbers the database would hand out itself are kept as they were.
           await sql`
             insert into ${target} overriding system value
@@ -397,6 +400,23 @@ export async function importTenant(
           // An instance keeps a tenant's audit entries when the tenant is deleted. If the
           // tenant comes back, the entries it brings that are already here are the same ones.
           entry.keep === true,
+          // The audit log is kept a month to a partition: each month the entries bring needs
+          // its own, or they would sit apart and never age out.
+          entry.table === "audit_entry"
+            ? async (rows) => {
+                const months = new Set(
+                  rows
+                    .map((row) => new Date(String(row.occurred_at)))
+                    .filter((at) => !Number.isNaN(at.getTime()))
+                    .map((at) => at.toISOString().slice(0, 7)),
+                );
+                for (const month of months) {
+                  await sql`select audit_partition(${`${month}-01T00:00:00Z`}::timestamptz)`.execute(
+                    trx,
+                  );
+                }
+              }
+            : undefined,
         );
       }
       for (const link of links) {

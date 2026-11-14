@@ -1,6 +1,6 @@
 # Phase 9: maturity
 
-Status: in progress. Milestones 1 (quick wins) and 2 (execution isolation) built and tested locally, milestone 2 also in the image on the dev stack. Milestones 3 to 7 not started.
+Status: in progress. Milestones 1 (quick wins), 2 (execution isolation) and 3 (retention) built and tested locally, milestone 2 also in the image on the dev stack. Milestones 4 to 7 not started.
 Last updated: 2026-11-14
 
 Phase 9 builds the P0 and P1 items of the [evolution roadmap](../evolution/07-roadmap.md). It changes no part of the platform's model. It makes what already exists dependable and connected:
@@ -90,4 +90,11 @@ Each item's acceptance criteria are in the roadmap and its spec. New suites this
 - **Connection clients cannot cross into a script's process; their configuration can.** The runner builds clients from the bound connection's configuration, as the worker did, so the credential a script reaches is its own connection's, as before, and never the worker's.
 - **A script's process runs as its worker's user.** With `kernel.yama.ptrace_scope` at 0 it could read the worker's memory; the worker warns at start when it is. Separating them is the P3 sandboxing item.
 - **"Outside the operator"** is anyone with `code:write` in the tenant, wildcards included, who holds no instance-wide role: a member, a member of a group, or any service account. A tenant's admins usually match, so without the capability most tenants get no managed worker.
+- **`health_check` does not grow; `scim_refusal` does.** The first holds one row per checked thing, updated in place, and is not pruned. Refused SCIM pushes are pruned with refused webhook requests.
+- **Flow runs go as whole trees.** A script run points at its flow run, and a child flow run at its parent, with no cascade, so a tree is removed from its finished top run down, in one transaction, and passed over while any part of it is still going.
+- **Stored payloads are removed after their rows,** not before as S2 had it: at worst an object is left behind and logged, never a row pointing at nothing.
+- **The object store takes whole buffers,** so an audit month is exported in gzipped parts of 50,000 entries with a manifest of counts and checksums. The month is dropped only when its row count, taken under lock, matches the export.
+- **Imports make the audit months they bring.** Without that, imported entries would sit in the default partition and never age out.
+- **The documented restore needed CSV mode.** Text-mode `COPY` reads backslashes as escapes and breaks the JSON of an entry. Checked by round-tripping entries with quotes, tabs, backslashes and newlines.
+- **Measured on 1,000,000 finished runs with 5 log lines each** (434 MB of runs, 896 MB of logs), on the dev stack: deleting a batch of 500 runs and their 2,500 lines took 8 ms at the median and 133 ms at most over 100 batches, on the new `run_retention_idx`. A run inserted every 20 ms meanwhile took 1.3 ms at the median and 137 ms at most. S2 asked for no lock held over 2 s.
 

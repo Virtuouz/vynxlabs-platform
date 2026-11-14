@@ -40,7 +40,7 @@ const WINDOWS = [
   { value: "1", label: "Last hour" },
   { value: "24", label: "Last 24 hours" },
   { value: "168", label: "Last 7 days" },
-  { value: "all", label: "All time" },
+  { value: "all", label: "Everything kept" },
 ];
 
 const STATUSES: { value: "all" | Status; label: string }[] = [
@@ -98,7 +98,9 @@ export function RunsWorkbench({
   if (kind !== "all") query.set("kind", kind);
   if (from) query.set("from", from);
   const listPath = `${root}/activity?${query}&tick=${tick}`;
-  const list = useLoad<{ items: Activity[]; counts: Record<string, number> }>(listPath);
+  const list = useLoad<{ items: Activity[]; counts: Record<string, number>; keptDays?: number }>(
+    listPath,
+  );
   const items = list.data?.items ?? [];
   const live = items.some((one) => ["queued", "running", "waiting"].includes(one.status));
 
@@ -122,6 +124,9 @@ export function RunsWorkbench({
             <p className="m-0 text-ink-muted">
               Every script and flow that ran here, newest first. A step of a flow is part of its
               flow's run.
+              {list.data?.keptDays
+                ? ` History is kept for ${list.data.keptDays} day${list.data.keptDays === 1 ? "" : "s"}.`
+                : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">

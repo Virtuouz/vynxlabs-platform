@@ -25,6 +25,8 @@ export interface Config {
    * control plane's environment, or `same`, the control plane's, by the operator's choice.
    */
   managedWorkerUser: { uid: number; gid: number } | "same";
+  /** How many days each kind of history is kept, unless a tenant says otherwise. */
+  retention: RetentionDays;
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
   /** Where the built app that draws interfaces is. Without it, generated apps are not served. */
@@ -39,6 +41,23 @@ export interface Config {
 }
 
 export const MIN_PASSWORD_LENGTH = 12;
+
+export interface RetentionDays {
+  /** Script runs and flow runs, with their logs, steps and stored payloads, after they end. */
+  runsDays: number;
+  eventsDays: number;
+  /** Refused webhook requests and SCIM pushes. */
+  refusalsDays: number;
+  auditDays: number;
+}
+
+/** The shortest and longest each kind may be kept, by an instance or a tenant. */
+export const RETENTION_BOUNDS = {
+  runsDays: { min: 1, max: 3650 },
+  eventsDays: { min: 1, max: 3650 },
+  refusalsDays: { min: 1, max: 3650 },
+  auditDays: { min: 90, max: 3650 },
+} as const;
 
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -154,6 +173,21 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     }
     return parsed;
   };
+  const days = (name: string, fallback: number, bounds: { min: number; max: number }) => {
+    const raw = value(name);
+    if (raw === undefined) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < bounds.min || parsed > bounds.max) {
+      problems.push(`${name} must be a whole number of days from ${bounds.min} to ${bounds.max}.`);
+    }
+    return parsed;
+  };
+  const retention = {
+    runsDays: days("RETENTION_RUNS_DAYS", 30, RETENTION_BOUNDS.runsDays),
+    eventsDays: days("RETENTION_EVENTS_DAYS", 30, RETENTION_BOUNDS.eventsDays),
+    refusalsDays: days("RETENTION_REFUSALS_DAYS", 7, RETENTION_BOUNDS.refusalsDays),
+    auditDays: days("RETENTION_AUDIT_DAYS", 400, RETENTION_BOUNDS.auditDays),
+  };
   const workerUid = id("MANAGED_WORKER_UID");
   const workerGid = id("MANAGED_WORKER_GID");
 
@@ -179,6 +213,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
         : undefined,
     managedWorkers: managed === "true",
     managedWorkerUser: workerUser === "same" ? "same" : { uid: workerUid, gid: workerGid },
+    retention,
     consoleDir: value("CONSOLE_DIR"),
     screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),

@@ -882,7 +882,10 @@ describe("the list of tenant-owned tables", () => {
   test("names every table in the database, so none is forgotten when a tenant is deleted or exported", async () => {
     const present = (
       await sql<{ name: string }>`
-        select table_name as name from information_schema.tables where table_schema = 'public' order by 1
+        select table_name as name from information_schema.tables where table_schema = 'public'
+          -- A partition is part of its table: the audit log's months are the audit log.
+          and table_name not in (select relname from pg_class where relispartition)
+        order by 1
       `.execute(t.db)
     ).rows.map((row) => row.name);
     const known = [...OWNED_TABLES.map((entry) => entry.table), ...INSTANCE_TABLES].sort();
@@ -891,7 +894,9 @@ describe("the list of tenant-owned tables", () => {
     const carrying = (
       await sql<{ name: string }>`
         select table_name as name from information_schema.columns
-        where table_schema = 'public' and column_name = 'tenant_id' order by 1
+        where table_schema = 'public' and column_name = 'tenant_id'
+          and table_name not in (select relname from pg_class where relispartition)
+        order by 1
       `.execute(t.db)
     ).rows.map((row) => row.name);
     const owned = new Set<string>(OWNED_TABLES.map((entry) => entry.table));

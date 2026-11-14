@@ -15,6 +15,7 @@ import {
   GitBranch,
   GitCompareArrows,
   Globe,
+  History,
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
@@ -170,6 +171,7 @@ export const TENANT_GROUPS: readonly (readonly [label: string, sections: readonl
     "Governance",
     [
       { slug: "audit", label: "Audit log", icon: ScrollText },
+      { slug: "retention", label: "Retention", icon: History },
       { slug: "export", label: "Export", icon: Download },
     ],
   ],

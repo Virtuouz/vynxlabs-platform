@@ -2,6 +2,19 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 9, maturity
+
+### For operators
+
+- **History is no longer kept forever.** A retention pass runs every ten minutes, on one replica at a time. On the first pass after upgrading it removes runs (with their logs, steps and stored inputs and outputs) and events older than 30 days, refused webhook and SCIM requests older than 7 days, and audit entries older than 400 days. **To keep more, set `RETENTION_RUNS_DAYS`, `RETENTION_EVENTS_DAYS`, `RETENTION_REFUSALS_DAYS` or `RETENTION_AUDIT_DAYS` before upgrading.** A tenant can set its own periods, from 1 day (90 for audit) to 3650, under Retention. See "Retention" in the self-hosting guide.
+- **The audit log is kept a month to a partition.** Migration 0047 moves the existing entries, in one transaction, at start. A month past every tenant's period is exported to the object store under `audit/<yyyy-mm>/` and then dropped. Entries stay append-only one by one.
+- **Database changes.** Migrations 0046 (rate-limit counters) and 0047 (retention and the audit partitions) run on start.
+- **Each script attempt runs in a process of its own,** ended at its time limit or when canceled, whatever it is doing, and limited to the script's `memoryMb` (512 MB by default). It never holds the worker's credential.
+- **Managed workers run as a user of their own,** `vxrun` (uid 10001), where the container may switch users; Docker's defaults allow it. Where it may not, a tenant whose code is written outside the operators gets no managed worker. Set `MANAGED_WORKER_USER=same` on a development machine. See "Workers the instance starts" in the self-hosting guide.
+- **Standalone workers can read their credential from standard input,** with `--token-stdin`, which keeps it out of reach of the scripts they run.
+- **Rate limits are shared across replicas,** counted in the database, and each tenant has at most one managed worker however many replicas run.
+- **Moving between workspaces is no longer audited.** It is remembered, and the console opens where the member last was.
+
 ## 0.5.0, not yet released
 
 Authoring in the console (phase 7).

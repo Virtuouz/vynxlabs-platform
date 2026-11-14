@@ -31,6 +31,7 @@ import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.ts
 import { Overview } from "./Overview.tsx";
 import { Release } from "./Release.tsx";
 import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
+import { RetentionSettings } from "./Retention.tsx";
 import { RunsWorkbench } from "./Runs.tsx";
 
 // Screens that bring a library with them, or that few people open, are fetched when first
@@ -243,6 +244,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <SingleSignOn base={base} />
       ) : section === "export" ? (
         <ExportSection base={base} />
+      ) : section === "retention" ? (
+        <RetentionSettings base={base} />
       ) : section === "audit" ? (
         <AuditTable
           title="Audit log"

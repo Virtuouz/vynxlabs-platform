@@ -42,8 +42,19 @@ describe("configuration", () => {
       bootstrapAdmin: undefined,
       managedWorkers: true,
       managedWorkerUser: { uid: 10001, gid: 10001 },
+      retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
       consoleDir: undefined,
     });
+  });
+
+  test("history is kept 30, 30, 7 and 400 days unless the operator says otherwise, within bounds", () => {
+    expect(
+      loadConfig({ ...valid, RETENTION_RUNS_DAYS: "90", RETENTION_AUDIT_DAYS: "730" }).retention,
+    ).toEqual({ runsDays: 90, eventsDays: 30, refusalsDays: 7, auditDays: 730 });
+    expect(() => loadConfig({ ...valid, RETENTION_AUDIT_DAYS: "30" })).toThrow(
+      /RETENTION_AUDIT_DAYS must be a whole number of days from 90 to 3650/,
+    );
+    expect(() => loadConfig({ ...valid, RETENTION_RUNS_DAYS: "0" })).toThrow(/RETENTION_RUNS_DAYS/);
   });
 
   test("managed workers run as their own user unless the operator says otherwise", () => {

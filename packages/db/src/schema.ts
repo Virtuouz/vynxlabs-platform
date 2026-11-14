@@ -785,6 +785,16 @@ export interface MemberRecentScopeTable {
   visited_at: Generated<Date>;
 }
 
+/** How long a tenant's history is kept. A null column takes the instance's default. */
+export interface TenantRetentionTable {
+  tenant_id: string;
+  runs_days: number | null;
+  events_days: number | null;
+  refusals_days: number | null;
+  audit_days: number | null;
+  updated_at: Generated<Date>;
+}
+
 /** One rate-limited key's count in its current window, shared by every replica. */
 export interface RateLimitTable {
   key: string;
@@ -1024,6 +1034,7 @@ export interface PlatformSchema {
   worker_pool: WorkerPoolTable;
   member_recent_scope: MemberRecentScopeTable;
   rate_limit: RateLimitTable;
+  tenant_retention: TenantRetentionTable;
   dashboard_share: DashboardShareTable;
   health_check: HealthCheckTable;
   resource_draft_history: ResourceDraftHistoryTable;

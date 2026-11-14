@@ -302,6 +302,8 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "always",
   },
   { table: "worker_pool", ofTenant: own, key: ["id"], export: "always" },
+  // How long the tenant's history is kept. It travels with the tenant.
+  { table: "tenant_retention", ofTenant: own, key: ["tenant_id"], export: "always" },
   // Where members were last; this instance's to remember, not the tenant's to carry.
   { table: "member_recent_scope", ofTenant: own, key: ["member_id", "tenant_id"], export: "never" },
   {

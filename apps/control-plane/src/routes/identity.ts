@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import { PERMISSION_KINDS } from "@vynxlabs/manifest";
 import { CORE_NODES } from "@vynxlabs/nodes";
 import { Type } from "typebox";
@@ -11,6 +11,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { createMember } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
+import { effectivePolicy } from "../kernel/retention.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
@@ -211,6 +212,12 @@ export async function auditPage(
   if (query.from) select = select.where("occurred_at", ">=", new Date(query.from));
   if (query.to) select = select.where("occurred_at", "<=", new Date(query.to));
   if (args.after) select = select.where("id", "<", args.after);
+  // Nothing older than the tenant keeps its log, even while the month it is in is kept for others.
+  const keepDays =
+    tenantId === null
+      ? kernel.config.retention.auditDays
+      : (await effectivePolicy(kernel, tenantId)).auditDays;
+  select = select.where("occurred_at", ">=", sql<Date>`now() - make_interval(days => ${keepDays})`);
   const rows = await select
     .orderBy("id", "desc")
     .limit(args.limit + 1)

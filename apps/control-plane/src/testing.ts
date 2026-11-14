@@ -30,6 +30,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
     managedWorkerUser: "same",
+    retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
     consoleDir: undefined,
     screensDir: undefined,
     appsUrl: undefined,

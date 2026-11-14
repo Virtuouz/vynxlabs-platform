@@ -1,6 +1,6 @@
 import { Button, JsonView, LogViewer, Notice, SelectField, Tabs } from "@vynxlabs/ui";
 import { ArrowUpRight, CircleX, Lightbulb, RotateCcw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
@@ -82,11 +82,17 @@ export function RunsWorkbench({
   const [hours, setHours] = useState("24");
   const [tick, setTick] = useState(0);
 
+  // The window's start is fixed when the period is chosen or the list refreshes. Worked
+  // out on each render, it would change the address every time and load without end.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` moves the window forward
+  const from = useMemo(
+    () => (hours === "all" ? null : new Date(Date.now() - Number(hours) * 3_600_000).toISOString()),
+    [hours, tick],
+  );
   const query = new URLSearchParams({ limit: "100" });
   if (status !== "all") query.set("status", status);
   if (kind !== "all") query.set("kind", kind);
-  if (hours !== "all")
-    query.set("from", new Date(Date.now() - Number(hours) * 3_600_000).toISOString());
+  if (from) query.set("from", from);
   const listPath = `${root}/activity?${query}&tick=${tick}`;
   const list = useLoad<{ items: Activity[]; counts: Record<string, number> }>(listPath);
   const items = list.data?.items ?? [];

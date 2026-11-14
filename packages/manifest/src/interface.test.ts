@@ -176,7 +176,7 @@ describe("an interface", () => {
           summary: { groupBy: [], aggregates: [{ fn: "count", as: "n" }] },
         }),
       ]).join("\n"),
-    ).toContain("only a table or a chart can show totals");
+    ).toContain("only a table, a chart or a figure can show totals");
     expect(problems([widget("c", { type: "chart" })]).join("\n")).toContain(
       "a chart needs a shape",
     );

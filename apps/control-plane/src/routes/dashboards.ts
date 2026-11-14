@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import type { InterfaceBody, InterfacePage } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
@@ -16,7 +16,12 @@ const Summary = Type.Object({
   title: Type.String(),
   mine: Type.Boolean({ description: "False for a dashboard another member shared." }),
   owner: Type.String({ description: "Whose it is: their name, or their email." }),
-  shared: Type.Boolean(),
+  shared: Type.Boolean({
+    description: "Shown to everyone in the workspace who may see dashboards.",
+  }),
+  sharedWith: Type.Array(Type.Object({ id: Id, name: Type.String() }), {
+    description: "Groups of members it is shown to, when it is not shown to everyone.",
+  }),
   revision: Type.Integer(),
   updatedAt: Time,
 });
@@ -60,27 +65,63 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         ])
         .where("member_dashboard.workspace_id", "=", workspace.id);
     type Row = Awaited<ReturnType<ReturnType<typeof rows>["execute"]>>[number];
-    const summary = (row: Row, me: string) => ({
+    /** The groups each dashboard is shared with. */
+    const sharesOf = async (ids: string[]) => {
+      const found =
+        ids.length === 0
+          ? []
+          : await db
+              .selectFrom("dashboard_share")
+              .innerJoin("principal_group", "principal_group.id", "dashboard_share.group_id")
+              .select([
+                "dashboard_share.dashboard_id",
+                "principal_group.id",
+                "principal_group.name",
+              ])
+              .where("dashboard_share.dashboard_id", "in", ids)
+              .orderBy("principal_group.name")
+              .execute();
+      return (id: string) =>
+        found
+          .filter((one) => one.dashboard_id === id)
+          .map((one) => ({ id: one.id, name: one.name }));
+    };
+    const summary = (row: Row, me: string, sharedWith: { id: string; name: string }[] = []) => ({
       id: row.id,
       title: row.title,
       mine: row.member_id === me,
       owner: row.owner_name || row.owner_email,
       shared: row.shared,
+      sharedWith,
       revision: row.revision,
       updatedAt: iso(row.updated_at),
     });
+    /** Whether a dashboard is open to a member: theirs, shared with everyone, or with a group of theirs. */
+    const openTo = (me: string) =>
+      sql<boolean>`(
+        member_dashboard.member_id = ${me}
+        or member_dashboard.shared
+        or exists (
+          select 1 from dashboard_share s
+          join group_member g on g.group_id = s.group_id
+          where s.dashboard_id = member_dashboard.id and g.member_id = ${me}
+        )
+      )`;
     const whole = async (workspace: WorkspaceRef, row: Row, me: string) => {
       const page = row.body as unknown as InterfacePage;
       return {
-        ...summary(row, me),
+        ...summary(row, me, (await sharesOf([row.id]))(row.id)),
         page: page as unknown as Record<string, unknown>,
         problems: await interfaceProblems(kernel, workspace, { title: row.title, pages: [page] }),
       };
     };
-    /** A dashboard the caller may see: their own, or one shared in the workspace. */
+    /** A dashboard the caller may see: their own, or one shared with them. */
     const visible = async (workspace: WorkspaceRef, id: string, me: string) => {
-      const row = await rows(workspace).where("member_dashboard.id", "=", id).executeTakeFirst();
-      if (!row || (row.member_id !== me && !row.shared)) throw notFound("The dashboard");
+      const row = await rows(workspace)
+        .where("member_dashboard.id", "=", id)
+        .where(openTo(me))
+        .executeTakeFirst();
+      if (!row) throw notFound("The dashboard");
       return row;
     };
     /** Checks a page as a page of an interface is checked. */
@@ -118,16 +159,12 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx }) => {
         const me = member(ctx);
         const found = await rows(ctx.workspace as WorkspaceRef)
-          .where((eb) =>
-            eb.or([
-              eb("member_dashboard.member_id", "=", me),
-              eb("member_dashboard.shared", "=", true),
-            ]),
-          )
+          .where(openTo(me))
           .orderBy("member_dashboard.title")
           .orderBy("member_dashboard.id")
           .execute();
-        return { items: found.map((row) => summary(row, me)) };
+        const shares = await sharesOf(found.map((row) => row.id));
+        return { items: found.map((row) => summary(row, me, shares(row.id))) };
       },
     );
 
@@ -226,6 +263,13 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             title: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
             page: Type.Optional(AnyObject),
             shared: Type.Optional(Type.Boolean()),
+            sharedWith: Type.Optional(
+              Type.Array(Id, {
+                maxItems: 50,
+                uniqueItems: true,
+                description: "Groups of members to show it to. Replaces the groups it had.",
+              }),
+            ),
             revision: Type.Optional(Type.Integer({ minimum: 1 })),
           }),
           response: { 200: Dashboard },
@@ -255,18 +299,54 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             })
             .where("id", "=", current.id)
             .execute();
+          if (body.sharedWith !== undefined) {
+            const groups =
+              body.sharedWith.length === 0
+                ? []
+                : await trx
+                    .selectFrom("principal_group")
+                    .select("id")
+                    .where("tenant_id", "=", workspace.tenantId)
+                    .where("id", "in", body.sharedWith)
+                    .execute();
+            if (groups.length !== body.sharedWith.length) {
+              throw badRequest("Share it with groups of members of this tenant.", [
+                { path: "/sharedWith", message: "names a group that is not one of this tenant's" },
+              ]);
+            }
+            await trx
+              .deleteFrom("dashboard_share")
+              .where("dashboard_id", "=", current.id)
+              .execute();
+            if (groups.length > 0)
+              await trx
+                .insertInto("dashboard_share")
+                .values(
+                  groups.map((group) => ({
+                    dashboard_id: current.id,
+                    group_id: group.id,
+                    tenant_id: workspace.tenantId,
+                  })),
+                )
+                .execute();
+          }
           await audit({
             action:
               body.shared !== undefined && body.shared !== current.shared
                 ? body.shared
                   ? "dashboard.shared"
                   : "dashboard.unshared"
-                : "dashboard.saved",
+                : body.sharedWith !== undefined
+                  ? "dashboard.shared_with_groups"
+                  : "dashboard.saved",
             targetType: "dashboard",
             targetId: current.id,
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
-            details: { title },
+            details: {
+              title,
+              ...(body.sharedWith !== undefined ? { sharedWith: body.sharedWith } : {}),
+            },
           });
         });
         return whole(workspace, await visible(workspace, params.d, me), me);

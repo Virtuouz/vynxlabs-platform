@@ -1,4 +1,5 @@
 import { removeExpiredAppSessions } from "../apps/sessions.js";
+import { checkDueSources } from "../data/health.js";
 import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { removeExpiredSso } from "../sso/flow.js";
@@ -16,6 +17,13 @@ import { fireDueSchedules } from "./triggers.js";
 export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, intervalMs = 2000) {
   let running = false;
   let swept = 0;
+  let checked = 0;
+  /** Data sources are reached at most once a minute here; each is due every ten. */
+  const health = async () => {
+    if (Date.now() - checked < 60_000) return;
+    checked = Date.now();
+    await checkDueSources(kernel);
+  };
   /** Sign-ins and links that have run out are useless already. Clearing them can wait a minute. */
   const sweep = async () => {
     if (Date.now() - swept < 60_000) return;
@@ -30,6 +38,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     ["dead runs", () => reapDeadRuns(kernel)],
     ["flows", () => advanceDueFlows(kernel)],
     ["expired sign-ins", sweep],
+    ["health", health],
     ...(supervisor
       ? ([["managed workers", () => supervisor.tick()]] as [string, () => Promise<unknown>][])
       : []),

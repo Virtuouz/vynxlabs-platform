@@ -17,9 +17,23 @@ export interface InterfacePage {
   id: string;
   title: string;
   widgets: PageWidget[];
+  /**
+   * Filters over the whole page, set by whoever reads it: a range of dates, or
+   * one value. Each narrows every widget whose table has the column.
+   */
+  filters?: PageFilter[];
 }
 
-export const WIDGET_TYPES = ["table", "card", "cards", "chart", "form", "text"] as const;
+export const PAGE_FILTER_TYPES = ["date", "value"] as const;
+export interface PageFilter {
+  id: string;
+  label: string;
+  column: string;
+  type: (typeof PAGE_FILTER_TYPES)[number];
+}
+export const MAX_PAGE_FILTERS = 4;
+
+export const WIDGET_TYPES = ["table", "card", "cards", "chart", "figure", "form", "text"] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 export const SUMMARY_FUNCTIONS = ["count", "sum", "avg", "min", "max"] as const;
 export const SUMMARY_BUCKETS = ["day", "week", "month", "year"] as const;
@@ -218,6 +232,21 @@ export const interfacePageSchema = {
     id: { type: "string", pattern: SLUG },
     title: { type: "string", minLength: 1, maxLength: 100 },
     widgets: { type: "array", maxItems: MAX_WIDGETS, items: widgetSchema },
+    filters: {
+      type: "array",
+      maxItems: MAX_PAGE_FILTERS,
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string", pattern: SLUG },
+          label: { type: "string", minLength: 1, maxLength: 60 },
+          column: { type: "string", pattern: COLUMN },
+          type: { enum: [...PAGE_FILTER_TYPES] },
+        },
+        required: ["id", "label", "column", "type"],
+        additionalProperties: false,
+      },
+    },
   },
   required: ["id", "title", "widgets"],
   additionalProperties: false,
@@ -299,8 +328,16 @@ export function checkPage(
       problem("/table", `a ${widget.type} widget needs a table`);
       return;
     }
-    if (widget.summary && widget.type !== "table" && widget.type !== "chart") {
-      problem("/summary", `only a table or a chart can show totals, not a ${widget.type} widget`);
+    if (
+      widget.summary &&
+      widget.type !== "table" &&
+      widget.type !== "chart" &&
+      widget.type !== "figure"
+    ) {
+      problem(
+        "/summary",
+        `only a table, a chart or a figure can show totals, not a ${widget.type} widget`,
+      );
     }
 
     const summary = widget.summary;
@@ -406,6 +443,12 @@ export function checkPage(
     if (widget.type === "form") {
       if (!widget.fields?.length) problem("/fields", "a form needs at least one field");
     }
+    if (widget.type === "figure") {
+      if (!summary || summary.aggregates.length === 0)
+        problem("/summary", "a figure needs a total to show");
+      else if (summary.groupBy.length > 0)
+        problem("/summary/groupBy", "a figure shows one total, not one per group");
+    }
     if (widget.type === "chart") {
       const options = widget.options ?? {};
       if (!options.mark) problem("/options/mark", "a chart needs a shape");
@@ -424,7 +467,12 @@ export function checkPage(
       problem("/link/from", `there is no other widget "${link.from}" on this page`);
       return;
     }
-    if (source.type === "form" || source.type === "text" || source.type === "chart") {
+    if (
+      source.type === "form" ||
+      source.type === "text" ||
+      source.type === "chart" ||
+      source.type === "figure"
+    ) {
       problem("/link/from", `a row cannot be chosen in a ${source.type} widget`);
       return;
     }

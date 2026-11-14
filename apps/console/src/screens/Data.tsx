@@ -1,21 +1,24 @@
 import {
   Badge,
   Button,
-  Dialog,
   EmptyState,
   Grid,
   type GridColumn,
   type GridSort,
+  Menu,
   Notice,
   parseValue,
   SelectField,
+  SideSheet,
+  showValue,
   Table,
   TextField,
 } from "@vynxlabs/ui";
+import { Columns3 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask } from "../ask.tsx";
-import { CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
+import { ask, notify } from "../ask.tsx";
+import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import {
   type Policy,
@@ -91,6 +94,9 @@ function RowsBrowser(props: RowsBrowserProps) {
   /** The cursors of the pages before this one, so "Previous" has somewhere to go. */
   const [trail, setTrail] = useState<(string | null)[]>([null]);
   const [adding, setAdding] = useState(false);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [compact, setCompact] = useState(false);
+  const [chosen, setChosen] = useState<string>();
 
   let filter: object | undefined;
   try {
@@ -117,13 +123,22 @@ function RowsBrowser(props: RowsBrowserProps) {
   const changed = saved && saved.of === page.data ? saved.rows : {};
   const rows = (page.data?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
   const restart = () => setTrail([null]);
-  const grid: GridColumn[] = columns.map((column) => ({
-    name: column.name,
-    type: column.type,
-    editable: canChange && column.writable && column.type !== "file",
-    sortable: column.type !== "json",
-    filterable: !["json", "ARRAY"].includes(column.type),
-  }));
+  // How many rows the filters leave, from the totals of a custom table. A source has none.
+  const totalPath = props.rowsPath.includes("/rows/")
+    ? `${props.rowsPath.replace("/rows/", "/aggregate/")}${filter ? `?filter=${encodeURIComponent(JSON.stringify(filter))}` : ""}`
+    : null;
+  const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
+  const counted = total.data?.items[0]?.values.count;
+  const open = rows.find((row) => keyOf(row) === chosen);
+  const grid: GridColumn[] = columns
+    .filter((column) => !hidden.has(column.name))
+    .map((column) => ({
+      name: column.name,
+      type: column.type,
+      editable: canChange && column.writable && column.type !== "file",
+      sortable: column.type !== "json",
+      filterable: !["json", "ARRAY"].includes(column.type),
+    }));
 
   return (
     <div className="flex flex-col gap-3">
@@ -132,9 +147,37 @@ function RowsBrowser(props: RowsBrowserProps) {
           {props.readOnlyNote ??
             "Select a value to change it. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
         </p>
-        <Button variant="primary" onClick={() => setAdding(true)}>
-          Add row
-        </Button>
+        <span className="flex flex-wrap items-center gap-2">
+          <Menu
+            ariaLabel="Columns shown"
+            triggerClassName="inline-flex h-7 items-center gap-1.5 rounded-control border border-line px-2.5 text-[13px] hover:bg-sunken"
+            label={
+              <>
+                <Columns3 aria-hidden="true" size={14} /> Columns
+                {hidden.size > 0 ? (
+                  <span className="text-ink-muted">({columns.length - hidden.size})</span>
+                ) : null}
+              </>
+            }
+            items={columns.map((column) => ({
+              label: column.name,
+              current: !hidden.has(column.name),
+              onSelect: () =>
+                setHidden((before) => {
+                  const next = new Set(before);
+                  if (next.has(column.name)) next.delete(column.name);
+                  else if (next.size < columns.length - 1) next.add(column.name);
+                  return next;
+                }),
+            }))}
+          />
+          <Button size="small" aria-pressed={compact} onClick={() => setCompact((now) => !now)}>
+            {compact ? "Comfortable" : "Compact"}
+          </Button>
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            Add row
+          </Button>
+        </span>
       </div>
       {filterError ? <Notice tone="danger">{filterError}</Notice> : null}
       {page.error ? (
@@ -142,71 +185,79 @@ function RowsBrowser(props: RowsBrowserProps) {
           {page.error.message}
         </Notice>
       ) : null}
-      <Grid<DataRow>
-        label={props.label}
-        columns={grid}
-        rows={rows}
-        rowKey={keyOf}
-        sort={sort}
-        onSort={(column) => {
-          setSort((current) =>
-            current?.column !== column
-              ? { column, descending: false }
-              : current.descending
-                ? undefined
-                : { column, descending: true },
-          );
-          restart();
-        }}
-        filters={filters}
-        onFilter={(column, text) => {
-          setFilterError(undefined);
-          setFilters((current) => ({ ...current, [column]: text }));
-          restart();
-        }}
-        {...(canChange
-          ? {
-              onEdit: async (row: DataRow, column: string, value: unknown) => {
-                const now = await api.patch<DataRow>(rowPath(keyOf(row)), { [column]: value });
-                setSaved({ of: page.data, rows: { ...changed, [keyOf(row)]: now } });
-              },
-              rowActions: (row: DataRow) => (
-                <RemoveButton
-                  label="Delete"
-                  confirm="Delete this row? This cannot be undone."
-                  run={() => api.delete(rowPath(keyOf(row)))}
-                  onDone={page.reload}
-                />
-              ),
-            }
-          : {})}
-        cell={(row, column) => {
-          const value = row[column.name];
-          if (column.type === "file" && typeof value === "string" && props.filesPath) {
-            return (
-              <a className="text-action" href={`/api/v1${props.filesPath}/${value}/content`}>
-                Download
-              </a>
+      <div className={compact ? "[&_td]:py-1 [&_th]:py-1" : ""}>
+        <Grid<DataRow>
+          label={props.label}
+          columns={grid}
+          rows={rows}
+          rowKey={keyOf}
+          selectedKey={chosen}
+          onSelect={(row) => setChosen(keyOf(row))}
+          sort={sort}
+          onSort={(column) => {
+            setSort((current) =>
+              current?.column !== column
+                ? { column, descending: false }
+                : current.descending
+                  ? undefined
+                  : { column, descending: true },
             );
+            restart();
+          }}
+          filters={filters}
+          onFilter={(column, text) => {
+            setFilterError(undefined);
+            setFilters((current) => ({ ...current, [column]: text }));
+            restart();
+          }}
+          {...(canChange
+            ? {
+                onEdit: async (row: DataRow, column: string, value: unknown) => {
+                  const now = await api.patch<DataRow>(rowPath(keyOf(row)), { [column]: value });
+                  setSaved({ of: page.data, rows: { ...changed, [keyOf(row)]: now } });
+                },
+                rowActions: (row: DataRow) => (
+                  <RemoveButton
+                    label="Delete"
+                    confirm="Delete this row? This cannot be undone."
+                    run={() => api.delete(rowPath(keyOf(row)))}
+                    onDone={page.reload}
+                  />
+                ),
+              }
+            : {})}
+          cell={(row, column) => {
+            const value = row[column.name];
+            if (column.type === "file" && typeof value === "string" && props.filesPath) {
+              return (
+                <a className="text-action" href={`/api/v1${props.filesPath}/${value}/content`}>
+                  Download
+                </a>
+              );
+            }
+            if (column.name === keyColumn && column.type === "uuid") {
+              return <span className="font-mono text-[12px] text-ink-muted">{String(value)}</span>;
+            }
+            return undefined;
+          }}
+          empty={
+            !page.data
+              ? "Loading…"
+              : filter
+                ? "No rows match the filters."
+                : "This table has no rows yet."
           }
-          if (column.name === keyColumn && column.type === "uuid") {
-            return <span className="font-mono text-[12px] text-ink-muted">{String(value)}</span>;
-          }
-          return undefined;
-        }}
-        empty={
-          !page.data
-            ? "Loading…"
-            : filter
-              ? "No rows match the filters."
-              : "This table has no rows yet."
-        }
-      />
+        />
+      </div>
       <div className="flex items-center justify-between gap-3 text-[13px] text-ink-muted">
         <span>
           {rows.length === 0
             ? ""
-            : `Rows ${(trail.length - 1) * PAGE + 1} to ${(trail.length - 1) * PAGE + rows.length}`}
+            : `Rows ${(trail.length - 1) * PAGE + 1} to ${(trail.length - 1) * PAGE + rows.length}${
+                typeof counted === "number"
+                  ? ` of ${counted.toLocaleString()}${filter ? " that match" : ""}`
+                  : ""
+              }`}
         </span>
         <span className="flex gap-2">
           <Button
@@ -227,6 +278,38 @@ function RowsBrowser(props: RowsBrowserProps) {
           </Button>
         </span>
       </div>
+      <SideSheet
+        open={open !== undefined}
+        onClose={() => setChosen(undefined)}
+        title="Row"
+        description={open ? keyOf(open) : undefined}
+        footer={
+          open && canChange ? (
+            <RemoveButton
+              label="Delete row"
+              confirm="Delete this row? It is removed for everyone. This cannot be undone."
+              run={() => api.delete(rowPath(keyOf(open)))}
+              onDone={() => {
+                setChosen(undefined);
+                page.reload();
+              }}
+            />
+          ) : undefined
+        }
+      >
+        {open ? (
+          <dl className="m-0 grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2">
+            {columns.map((column) => (
+              <div key={column.name} className="contents">
+                <dt className="text-[13px] text-ink-muted">{column.name}</dt>
+                <dd className="m-0 font-mono text-[13px] break-words">
+                  {showValue(column.type, open[column.name]) || "—"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </SideSheet>
       <AddRow
         open={adding}
         onClose={() => setAdding(false)}
@@ -304,16 +387,46 @@ function AddRow({
     }
   };
 
+  const ordered = [
+    ...columns.filter((column) => column.required),
+    ...columns.filter((column) => !column.required),
+  ];
+  const firstOptional = ordered.find((column) => !column.required)?.name;
   return (
-    <Dialog open={open} onClose={onClose} title="Add row">
+    <SideSheet
+      open={open}
+      onClose={onClose}
+      title="Add row"
+      description="Required values first. A value left empty is stored as none, or the column's default."
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" form="add-row" variant="primary" disabled={busy}>
+            Add row
+          </Button>
+        </>
+      }
+    >
       <form
-        className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto"
+        id="add-row"
+        className="flex flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
-        {columns.map((column) =>
+        {ordered.length > 0 && ordered[0]?.required ? (
+          <p className="m-0 text-label text-ink-subtle uppercase">Required</p>
+        ) : null}
+        {ordered.map((column) => [
+          column.name === firstOptional ? (
+            <p
+              key={`${column.name}-heading`}
+              className="m-0 mt-2 text-label text-ink-subtle uppercase"
+            >
+              Optional
+            </p>
+          ) : null,
           column.type === "boolean" ? (
             <SelectField
               key={column.name}
@@ -355,16 +468,10 @@ function AddRow({
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
           ),
-        )}
+        ])}
         {failure ? <Notice tone="danger">{failure}</Notice> : null}
-        <div className="mt-1 flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
-            Add row
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </SideSheet>
   );
 }
 
@@ -883,6 +990,12 @@ interface SourceBinding {
   description: string;
   defined: boolean;
   bound: boolean;
+  health?: {
+    ok: boolean;
+    problem: string | null;
+    latencyMs: number | null;
+    checkedAt: string;
+  } | null;
   config: {
     host?: string;
     port?: number;
@@ -923,15 +1036,55 @@ export function Sources({ root, link }: { root: string; link: string }) {
             ),
         },
         { header: "Password", cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : "") },
+        {
+          header: "Reached",
+          cell: (row) =>
+            !row.bound ? (
+              ""
+            ) : !row.health ? (
+              <span className="text-ink-muted">Not checked yet</span>
+            ) : row.health.ok ? (
+              <span className="text-success" title={`Checked ${when(row.health.checkedAt)}`}>
+                Yes{row.health.latencyMs !== null ? `, ${row.health.latencyMs} ms` : ""}
+              </span>
+            ) : (
+              <span className="text-danger" title={row.health.problem ?? ""}>
+                No: {row.health.problem}
+              </span>
+            ),
+        },
       ]}
       rowActions={(row, reload) =>
         row.bound ? (
-          <RemoveButton
-            label="Disconnect"
-            confirm={`Disconnect "${row.path}"? Scripts that use it will fail until it is connected again. Nothing in that database changes.`}
-            run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
-            onDone={reload}
-          />
+          <span className="inline-flex gap-2">
+            <Button
+              size="small"
+              onClick={async () => {
+                try {
+                  const result = await api.post<{ ok: boolean; problem: string | null }>(
+                    `${root}/data-source-checks/${row.path}`,
+                    {},
+                  );
+                  notify.success(
+                    result.ok
+                      ? `${row.path} answered.`
+                      : `${row.path} did not answer: ${result.problem}`,
+                  );
+                  reload();
+                } catch (caught) {
+                  notify.error(caught);
+                }
+              }}
+            >
+              Test connection
+            </Button>
+            <RemoveButton
+              label="Disconnect"
+              confirm={`Disconnect "${row.path}"? Scripts that use it will fail until it is connected again. Nothing in that database changes.`}
+              run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
+              onDone={reload}
+            />
+          </span>
         ) : null
       }
       empty={{

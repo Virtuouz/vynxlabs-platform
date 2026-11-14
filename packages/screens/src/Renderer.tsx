@@ -106,7 +106,10 @@ function WidgetView({
   onSelect,
   onChanged,
   onLooked,
+  narrowed,
 }: {
+  /** What the page's filters add, for this widget's table. */
+  narrowed?: Filter | undefined;
   widget: PageWidget;
   source: PageWidget | undefined;
   /** The row chosen in the widget this one follows. */
@@ -136,7 +139,9 @@ function WidgetView({
   const table = widget.table;
   const link = linkFilter(widget, source, chosen);
   const held = typeof link === "string" ? link : undefined;
-  const filter = held ? undefined : all([widget.filter as Filter | undefined, link as Filter]);
+  const filter = held
+    ? undefined
+    : all([widget.filter as Filter | undefined, link as Filter, narrowed]);
   const readable = widget.type !== "text" && widget.type !== "form" && info?.found && info.canRead;
   const fields = useMemo(() => fieldsOf(widget, info), [widget, info]);
   const limit = widget.type === "card" ? 1 : (widget.pageSize ?? 50);
@@ -373,6 +378,28 @@ function WidgetView({
       : {}),
   };
 
+  if (widget.type === "figure") {
+    const first = widget.summary?.aggregates[0];
+    const value = first ? data.rows[0]?.[first.as] : undefined;
+    const shown =
+      typeof value === "number"
+        ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+        : value === undefined || value === null
+          ? "—"
+          : String(value);
+    return (
+      <div className="flex h-full flex-col justify-center gap-1">
+        <span className="text-[13px] text-ink-muted">
+          {widget.title || heading(first?.as ?? "total")}
+        </span>
+        <span className="font-mono text-3xl font-semibold tabular-nums">
+          {data.loading && data.rows.length === 0 ? "…" : shown}
+        </span>
+        {data.error ? <span className="text-[13px] text-danger">{data.error}</span> : null}
+      </div>
+    );
+  }
+
   if (widget.type === "chart") {
     const options = widget.options ?? {};
     /** What a value is called: the name its field was given, or its own made readable. */
@@ -458,8 +485,87 @@ export interface PageRendererProps {
     | undefined;
 }
 
+/** What someone set in a page's filters: a range of dates, or one value. */
+type Narrow = { from?: string | undefined; to?: string | undefined; value?: string | undefined };
+
+/** The conditions a page's filters put on one table: only those whose column the table has. */
+function pageNarrowing(
+  page: InterfacePage,
+  values: Record<string, Narrow>,
+  info: TableInfo | undefined,
+): Filter | undefined {
+  const parts: Filter[] = [];
+  for (const one of page.filters ?? []) {
+    if (!info?.columns.some((column) => column.name === one.column)) continue;
+    const set = values[one.id];
+    if (!set) continue;
+    if (one.type === "date") {
+      if (set.from) parts.push({ column: one.column, op: "gte", value: set.from });
+      if (set.to) parts.push({ column: one.column, op: "lt", value: set.to });
+    } else if (set.value) {
+      parts.push({ column: one.column, op: "eq", value: set.value });
+    }
+  }
+  return parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : { and: parts };
+}
+
+function PageFilters({
+  page,
+  values,
+  onChange,
+}: {
+  page: InterfacePage;
+  values: Record<string, Narrow>;
+  onChange: (id: string, value: Narrow) => void;
+}) {
+  const input =
+    "h-8 rounded-control border border-line bg-surface px-2 text-ink placeholder:text-ink-muted/70";
+  return (
+    <search aria-label="Filters" className="mb-3 flex flex-wrap items-end gap-3">
+      {(page.filters ?? []).map((one) => {
+        const set = values[one.id] ?? {};
+        return one.type === "date" ? (
+          <fieldset key={one.id} className="m-0 flex items-end gap-1.5 border-0 p-0">
+            <legend className="mb-1 p-0 text-[13px] text-ink-muted">{one.label}</legend>
+            <input
+              type="date"
+              aria-label={`${one.label} from`}
+              className={input}
+              value={set.from ?? ""}
+              onChange={(event) =>
+                onChange(one.id, { ...set, from: event.target.value || undefined })
+              }
+            />
+            <span className="pb-1.5 text-ink-muted">–</span>
+            <input
+              type="date"
+              aria-label={`${one.label} until`}
+              className={input}
+              value={set.to ?? ""}
+              onChange={(event) =>
+                onChange(one.id, { ...set, to: event.target.value || undefined })
+              }
+            />
+          </fieldset>
+        ) : (
+          <label key={one.id} className="flex flex-col gap-1 text-[13px] text-ink-muted">
+            {one.label}
+            <input
+              className={input}
+              placeholder="All"
+              value={set.value ?? ""}
+              onChange={(event) => onChange(one.id, { value: event.target.value || undefined })}
+            />
+          </label>
+        );
+      })}
+    </search>
+  );
+}
+
 function PageBody({ page, tables, client, editing }: PageRendererProps) {
   const [chosen, setChosen] = useState<Record<string, Row>>({});
+  const [narrow, setNarrow] = useState<Record<string, Narrow>>({});
   const [version, setVersion] = useState(0);
   const lookups = useRef<Lookups>(new Map()).current;
   const byId = useMemo(
@@ -544,81 +650,95 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
   }
   const movable = editing?.onMove !== undefined;
   return (
-    <div ref={grid} className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
-      {ordered.map((widget) => {
-        const source = widget.link ? byId.get(widget.link.from) : undefined;
-        const active = editing?.selected === widget.id;
-        const at = held?.id === widget.id ? held.at : widget.at;
-        return (
-          <section
-            key={widget.id}
-            aria-label={widget.title || widget.id}
-            style={
-              {
-                "--col": `${at.x + 1} / span ${at.w}`,
-                "--row": `${at.y + 1} / span ${at.h}`,
-              } as CSSProperties
-            }
-            className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
-              active ? "border-action ring-2 ring-action/30" : "border-line"
-            } ${held?.id === widget.id ? "z-10 opacity-90 shadow-lg" : ""}`}
-          >
-            {widget.title || editing ? (
-              <header
-                className={`flex items-center justify-between gap-2 border-line border-b px-3 py-2 ${
-                  movable ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
-                }`}
-                {...(movable
-                  ? {
-                      title: "Drag to move",
-                      onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
-                        grab(event, widget, "move"),
-                    }
-                  : {})}
-              >
-                <h2 className="m-0 truncate text-[14px] font-semibold">
-                  {widget.title || heading(widget.id)}
-                </h2>
-                {editing ? (
-                  <Button
-                    size="small"
-                    variant={active ? "primary" : "quiet"}
-                    onClick={() => editing.onSelect(widget.id)}
-                  >
-                    {active ? "Editing" : "Edit"}
-                  </Button>
-                ) : null}
-              </header>
-            ) : null}
-            {movable ? (
-              <span
-                aria-hidden="true"
-                title="Drag to change its size"
-                className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 md:block"
-                onPointerDown={(event) => grab(event, widget, "stretch")}
-              />
-            ) : null}
-            <div className="min-h-0 flex-1 overflow-auto p-3">
-              <WidgetView
-                widget={widget}
-                source={source}
-                chosen={source ? chosen[source.id] : undefined}
-                info={widget.table ? tables[widget.table] : undefined}
-                tables={tables}
-                client={client}
-                version={version}
-                lookups={lookups}
-                selected={chosen[widget.id]}
-                followed={followed.has(widget.id)}
-                onSelect={(row) => setChosen((before) => ({ ...before, [widget.id]: row }))}
-                onChanged={changed}
-                onLooked={looked}
-              />
-            </div>
-          </section>
-        );
-      })}
-    </div>
+    <>
+      {page.filters && page.filters.length > 0 ? (
+        <PageFilters
+          page={page}
+          values={narrow}
+          onChange={(id, value) => setNarrow((before) => ({ ...before, [id]: value }))}
+        />
+      ) : null}
+      <div ref={grid} className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
+        {ordered.map((widget) => {
+          const source = widget.link ? byId.get(widget.link.from) : undefined;
+          const active = editing?.selected === widget.id;
+          const at = held?.id === widget.id ? held.at : widget.at;
+          return (
+            <section
+              key={widget.id}
+              aria-label={widget.title || widget.id}
+              style={
+                {
+                  "--col": `${at.x + 1} / span ${at.w}`,
+                  "--row": `${at.y + 1} / span ${at.h}`,
+                } as CSSProperties
+              }
+              className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
+                active ? "border-action ring-2 ring-action/30" : "border-line"
+              } ${held?.id === widget.id ? "z-10 opacity-90 shadow-lg" : ""}`}
+            >
+              {widget.title || editing ? (
+                <header
+                  className={`flex items-center justify-between gap-2 border-line border-b px-3 py-2 ${
+                    movable ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
+                  }`}
+                  {...(movable
+                    ? {
+                        title: "Drag to move",
+                        onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
+                          grab(event, widget, "move"),
+                      }
+                    : {})}
+                >
+                  <h2 className="m-0 truncate text-[14px] font-semibold">
+                    {widget.title || heading(widget.id)}
+                  </h2>
+                  {editing ? (
+                    <Button
+                      size="small"
+                      variant={active ? "primary" : "quiet"}
+                      onClick={() => editing.onSelect(widget.id)}
+                    >
+                      {active ? "Editing" : "Edit"}
+                    </Button>
+                  ) : null}
+                </header>
+              ) : null}
+              {movable ? (
+                <span
+                  aria-hidden="true"
+                  title="Drag to change its size"
+                  className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 md:block"
+                  onPointerDown={(event) => grab(event, widget, "stretch")}
+                />
+              ) : null}
+              <div className="min-h-0 flex-1 overflow-auto p-3">
+                <WidgetView
+                  widget={widget}
+                  source={source}
+                  chosen={source ? chosen[source.id] : undefined}
+                  info={widget.table ? tables[widget.table] : undefined}
+                  tables={tables}
+                  client={client}
+                  version={version}
+                  lookups={lookups}
+                  selected={chosen[widget.id]}
+                  followed={followed.has(widget.id)}
+                  onSelect={(row) => setChosen((before) => ({ ...before, [widget.id]: row }))}
+                  onChanged={changed}
+                  onLooked={looked}
+                  narrowed={pageNarrowing(
+                    page,
+                    narrow,
+                    widget.table ? tables[widget.table] : undefined,
+                  )}
+                />
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

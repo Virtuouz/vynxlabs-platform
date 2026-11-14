@@ -2,7 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { type Audit, SYSTEM, type Trx, writeAudit } from "../kernel/audit.js";
@@ -186,6 +186,75 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         async ({ params }) => describe(await provider(params)),
       );
 
+      app.get(
+        `${prefix}/pushed`,
+        {
+          config: { access: read },
+          schema: {
+            summary: "The people a provider has pushed, and the pushes it was refused",
+            description:
+              "Who arrived, whether each is active, and the newest refusals with their reason. " +
+              "Nothing a refused push carried is kept.",
+            tags,
+            params: Params,
+            response: {
+              200: Type.Object({
+                people: Type.Array(
+                  Type.Object({
+                    userName: Type.String(),
+                    email: Type.String(),
+                    displayName: Type.Union([Type.String(), Type.Null()]),
+                    active: Type.Boolean(),
+                    updatedAt: Type.String({ format: "date-time" }),
+                  }),
+                ),
+                refusals: Type.Array(
+                  Type.Object({
+                    method: Type.String(),
+                    resource: Type.String(),
+                    status: Type.Integer(),
+                    reason: Type.String(),
+                    at: Type.String({ format: "date-time" }),
+                  }),
+                ),
+              }),
+            },
+          },
+        },
+        async ({ params }) => {
+          const found = await provider(params);
+          const people = await kernel.db
+            .selectFrom("scim_user")
+            .select(["user_name", "email", "display_name", "active", "updated_at"])
+            .where("provider_id", "=", found.id)
+            .orderBy("user_name")
+            .limit(1000)
+            .execute();
+          const refusals = await kernel.db
+            .selectFrom("scim_refusal")
+            .selectAll()
+            .where("provider_id", "=", found.id)
+            .orderBy("occurred_at", "desc")
+            .execute();
+          return {
+            people: people.map((row) => ({
+              userName: row.user_name,
+              email: row.email,
+              displayName: row.display_name,
+              active: row.active,
+              updatedAt: iso(row.updated_at),
+            })),
+            refusals: refusals.map((row) => ({
+              method: row.method,
+              resource: row.resource,
+              status: row.status,
+              reason: row.reason,
+              at: iso(row.occurred_at),
+            })),
+          };
+        },
+      );
+
       app.put(
         prefix,
         {
@@ -316,6 +385,24 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const failure = error as { statusCode?: number; message: string; validation?: unknown };
         const status = known?.status ?? (failure.validation ? 400 : (failure.statusCode ?? 500));
         if (status >= 500) request.log.error({ err: error }, "a SCIM request failed");
+        // A push from a provider that was turned away is kept, with its reason and nothing it
+        // carried, so the console can say why someone did not arrive.
+        const scope = (request as unknown as { scim?: { provider: Provider } }).scim;
+        if (scope && status >= 400 && status < 500 && request.method !== "GET") {
+          const resource = /\/Users(\/|$)/.test(request.url)
+            ? "Users"
+            : /\/Groups(\/|$)/.test(request.url)
+              ? "Groups"
+              : "other";
+          void recordScimRefusal(kernel, {
+            providerId: scope.provider.id,
+            tenantId: scope.provider.tenantId,
+            method: request.method,
+            resource,
+            status,
+            reason: failure.message.slice(0, 500),
+          }).catch((problem) => request.log.error({ err: problem }, "a SCIM refusal was not kept"));
+        }
         return reply
           .code(status)
           .header("content-type", SCIM_TYPE)
@@ -910,4 +997,38 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       );
     });
   };
+}
+
+/** How many refused pushes are kept for one provider. */
+const REFUSALS_KEPT = 50;
+
+async function recordScimRefusal(
+  kernel: Kernel,
+  refusal: {
+    providerId: string;
+    tenantId: string | null;
+    method: string;
+    resource: "Users" | "Groups" | "other";
+    status: number;
+    reason: string;
+  },
+) {
+  await kernel.db
+    .insertInto("scim_refusal")
+    .values({
+      id: newId(),
+      provider_id: refusal.providerId,
+      tenant_id: refusal.tenantId,
+      method: refusal.method,
+      resource: refusal.resource,
+      status: refusal.status,
+      reason: refusal.reason,
+    })
+    .execute();
+  await sql`
+    delete from scim_refusal where id in (
+      select id from scim_refusal where provider_id = ${refusal.providerId}
+      order by occurred_at desc offset ${REFUSALS_KEPT}
+    )
+  `.execute(kernel.db);
 }

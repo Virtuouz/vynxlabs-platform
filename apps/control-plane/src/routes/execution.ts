@@ -1905,6 +1905,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .executeTakeFirst();
             if (!workspace) throw badRequest("The workspace is not in this tenant.");
           }
+          // A credential for a pool not made yet makes it, so every pool served is a record.
+          if (body.pool)
+            await trx
+              .insertInto("worker_pool")
+              .values({ id: newId(), tenant_id: params.t, name: body.pool })
+              .onConflict((c) => c.columns(["tenant_id", "name"]).doNothing())
+              .execute();
           const credential = await createWorkerCredential(trx, {
             tenantId: params.t,
             workspaceId: body.workspaceId ?? null,

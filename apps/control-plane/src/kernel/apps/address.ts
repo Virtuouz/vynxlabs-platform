@@ -18,7 +18,10 @@ export function appBasePath(
   place: Place,
   app: { tenantSlug: string; workspaceSlug: string; path: string },
 ): string {
-  if (place.kind === "domain") return "/";
+  if (place.kind === "domain") {
+    // A hostname for the portal serves every app of its workspace by path beneath it.
+    return place.domain.appPath === "" ? `${join("", app.path)}/` : "/";
+  }
   return `${join("/apps", app.tenantSlug, app.workspaceSlug, app.path)}/`;
 }
 
@@ -36,7 +39,11 @@ export function appUrl(
   return `${join(`${kernel.hosts.appsOrigin}/apps`, app.tenantSlug, app.workspaceSlug, app.path)}/`;
 }
 
-/** The address of an app at a hostname registered for it. */
-export function domainUrl(kernel: Kernel, hostname: string): string {
-  return `${new URL(kernel.hosts.mainOrigin).protocol}//${hostname}/`;
+/**
+ * The address of an app at a hostname registered for it. With `appPath`, the
+ * hostname serves the portal and the app is found by its path beneath it.
+ */
+export function domainUrl(kernel: Kernel, hostname: string, appPath?: string): string {
+  const root = `${new URL(kernel.hosts.mainOrigin).protocol}//${hostname}`;
+  return appPath ? `${join(root, appPath)}/` : `${root}/`;
 }

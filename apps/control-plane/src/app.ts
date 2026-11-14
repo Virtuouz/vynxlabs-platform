@@ -32,6 +32,7 @@ import { locationRoutes } from "./routes/locations.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { operationsRoutes } from "./routes/operations.js";
 import { permissionRoutes } from "./routes/permissions.js";
+import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { scimRoutes } from "./routes/scim.js";
 import { sourceRoutes } from "./routes/sources.js";
@@ -174,6 +175,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(workerRoutes(kernel));
       await api.register(summaryRoutes(kernel));
       await api.register(operationsRoutes(kernel));
+      await api.register(poolRoutes(kernel));
       api.get(
         "/openapi.json",
         {

@@ -8,6 +8,7 @@ import { type Config, MIN_PASSWORD_LENGTH } from "../config.js";
 import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
 import { finish, stateCookie } from "./sso/flow.js";
 import { memberPasswordRefusedBy } from "./sso/people.js";
+import { findRecoveryCode, RECOVERY_HEADER, useRecoveryCode } from "./sso/recovery.js";
 
 const timestamps = { createdAt: "created_at", updatedAt: "updated_at" };
 
@@ -175,6 +176,25 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
         }
         const provider = await memberPasswordRefusedBy(db, email);
         if (!provider) return;
+        // A recovery code lets an owner in with their password while the provider is broken.
+        // It is spent here, as it is let through, so no code ever works twice; a wrong
+        // password with it costs the code.
+        const offered = ctx.headers?.get(RECOVERY_HEADER);
+        const code = offered ? await findRecoveryCode(db, email, offered) : undefined;
+        if (code && (await useRecoveryCode(db, code.id))) {
+          await writeAudit(
+            db,
+            { principal: ANONYMOUS, userAgent: ctx.headers?.get("user-agent") ?? undefined },
+            {
+              action: "member.recovery_code_used",
+              targetType: "member",
+              targetId: code.memberId,
+              tenantId: provider.tenantId,
+              details: { identityProvider: provider.name },
+            },
+          );
+          return;
+        }
         await writeAudit(
           db,
           { principal: ANONYMOUS, userAgent: ctx.headers?.get("user-agent") ?? undefined },

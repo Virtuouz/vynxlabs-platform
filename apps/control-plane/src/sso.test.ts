@@ -815,6 +815,25 @@ describe("a tenant's members signing in over OIDC", () => {
       false,
     );
 
+    // An owner's recovery code, with their own password, lets them in once.
+    const codes = await alice.post("/me/recovery-codes", {});
+    expect(codes.status, JSON.stringify(codes.body)).toBe(201);
+    expect(codes.body.codes).toHaveLength(10);
+    const withCode = (code: string, password = PASSWORD) =>
+      t.app.inject({
+        method: "POST",
+        url: "/api/v1/auth/sign-in/email",
+        headers: { host: MAIN, origin: `http://${MAIN}`, "x-recovery-code": code },
+        payload: { email: "alice@acme.example", password },
+      });
+    expect((await withCode("nope-nope")).statusCode).toBe(403);
+    const recovered = await withCode(codes.body.codes[0]);
+    expect(recovered.statusCode, recovered.body).toBe(200);
+    expect((await audit("member.recovery_code_used")).length).toBe(1);
+    // Never twice.
+    expect((await withCode(codes.body.codes[0])).statusCode).toBe(403);
+    expect((await alice.get("/me/recovery-codes")).body).toMatchObject({ eligible: true, left: 9 });
+
     // Other domains are untouched, and the operator keeps a way in.
     expect((await browser().post("/api/v1/auth/sign-in/email", ADMIN)).status).toBe(200);
 

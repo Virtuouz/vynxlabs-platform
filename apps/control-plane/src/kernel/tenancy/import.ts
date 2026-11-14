@@ -103,6 +103,105 @@ function parts(checked: Checked, prefix: string): TarIndexEntry[] {
     .sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
+export interface ImportInspection {
+  /** Why the file cannot be imported at all: damaged, not an export, another format. */
+  problem: string | null;
+  tenant: { id: string; slug: string; name: string } | null;
+  exportedAt: string | null;
+  coreVersion: string | null;
+  migrationLevel: number | null;
+  /** Whether this instance is at the database level the export was made at. */
+  levelMatches: boolean;
+  history: boolean;
+  workspaces: { name: string; type: string }[];
+  rows: number;
+  members: number;
+  pendingRuns: number;
+  notCarried: string[];
+  /** Null when no passphrase was given to try. */
+  passphraseOk: boolean | null;
+  tenantPresent: boolean;
+  slugTaken: boolean;
+}
+
+/**
+ * What an export holds and whether it can come in here, read without writing
+ * anything: its contents and version, whether a passphrase opens it, and
+ * whether its tenant or slug is taken.
+ */
+export async function inspectImport(
+  kernel: Kernel,
+  archivePath: string,
+  options: { passphrase?: string | undefined; slug?: string | undefined } = {},
+): Promise<ImportInspection> {
+  const empty: ImportInspection = {
+    problem: null,
+    tenant: null,
+    exportedAt: null,
+    coreVersion: null,
+    migrationLevel: null,
+    levelMatches: false,
+    history: false,
+    workspaces: [],
+    rows: 0,
+    members: 0,
+    pendingRuns: 0,
+    notCarried: [],
+    passphraseOk: null,
+    tenantPresent: false,
+    slugTaken: false,
+  };
+  const file = await open(archivePath, "r");
+  try {
+    let checked: Checked;
+    try {
+      checked = await check(file);
+    } catch (error) {
+      return { ...empty, problem: (error as Error).message };
+    }
+    const { manifest } = checked;
+    let passphraseOk: boolean | null = null;
+    if (options.passphrase) {
+      const entry = checked.byPath.get("key.json");
+      const exported = entry
+        ? (JSON.parse((await tarRead(file, entry)).toString("utf8")) as PassphraseWrappedKey | null)
+        : null;
+      try {
+        if (!exported) throw new Error("no key");
+        kernel.vault.importTenantKey(manifest.tenant.id, exported, options.passphrase);
+        passphraseOk = true;
+      } catch {
+        passphraseOk = false;
+      }
+    }
+    const slug = options.slug ?? manifest.tenant.slug;
+    const present = await kernel.db
+      .selectFrom("tenant")
+      .select(["id", "slug"])
+      .where((eb) => eb.or([eb("id", "=", manifest.tenant.id), eb("slug", "=", slug)]))
+      .execute();
+    return {
+      problem: null,
+      tenant: { id: manifest.tenant.id, slug: manifest.tenant.slug, name: manifest.tenant.name },
+      exportedAt: manifest.exportedAt,
+      coreVersion: manifest.coreVersion,
+      migrationLevel: manifest.migrationLevel,
+      levelMatches: manifest.migrationLevel === (await kernel.migrationLevel()),
+      history: manifest.history,
+      workspaces: manifest.workspaces.map((one) => ({ name: one.name, type: one.type })),
+      rows: Object.values(manifest.counts).reduce((sum, n) => sum + n, 0),
+      members: manifest.counts.members ?? 0,
+      pendingRuns: manifest.pendingRuns,
+      notCarried: manifest.notCarried,
+      passphraseOk,
+      tenantPresent: present.some((one) => one.id === manifest.tenant.id),
+      slugTaken: present.some((one) => one.slug === slug && one.id !== manifest.tenant.id),
+    };
+  } finally {
+    await file.close();
+  }
+}
+
 /**
  * Brings an exported tenant into this instance as a new tenant. Either all of
  * it arrives or none of it does.

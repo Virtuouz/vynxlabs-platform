@@ -38,7 +38,10 @@ const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?
 const Domain = Type.Object({
   id: Id,
   workspaceId: Id,
-  app: Type.String({ description: "The path of the app served at the hostname's root." }),
+  app: Type.String({
+    description:
+      "The path of the app served at the hostname's root, or empty for the portal and every app beneath it.",
+  }),
   hostname: Type.String(),
   url: Type.String(),
   enabled: Type.Boolean(),
@@ -355,10 +358,14 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 path: resource.path,
               }),
               domains: domains
-                .filter((domain) => domain.app_path === resource.path)
+                .filter((domain) => domain.app_path === resource.path || domain.app_path === "")
                 .map((domain) => ({
                   hostname: domain.hostname,
-                  url: domainUrl(kernel, domain.hostname),
+                  url: domainUrl(
+                    kernel,
+                    domain.hostname,
+                    domain.app_path === "" ? resource.path : undefined,
+                  ),
                   enabled: domain.enabled,
                 })),
               files: files.length,
@@ -654,7 +661,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("domain:write") },
         schema: {
-          summary: "Register a hostname for one app",
+          summary: "Register a hostname for one app, or for the portal",
           description:
             "The app is then served at the hostname's root, once the registration is " +
             "enabled. Point the name at this instance with a CNAME or an address record, " +
@@ -665,7 +672,12 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: TenantParams,
           body: Type.Object({
             workspaceId: Id,
-            app: Type.String({ maxLength: 255 }),
+            app: Type.String({
+              maxLength: 255,
+              description:
+                "The app's path. Empty for the portal: the hostname then serves the portal " +
+                "at its root and every app of the workspace by its path beneath it.",
+            }),
             hostname: Hostname,
           }),
           response: { 201: Domain },
@@ -690,7 +702,18 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("kind", "=", "app")
             .where("path", "=", body.app)
             .executeTakeFirst();
-          if (!target) throw badRequest("No app has that path in that workspace of this tenant.");
+          if (body.app !== "" && !target) {
+            throw badRequest("No app has that path in that workspace of this tenant.");
+          }
+          if (body.app === "") {
+            const workspace = await trx
+              .selectFrom("workspace")
+              .select("id")
+              .where("tenant_id", "=", params.t)
+              .where("id", "=", body.workspaceId)
+              .executeTakeFirst();
+            if (!workspace) throw badRequest("That workspace is not in this tenant.");
+          }
           const taken = await trx
             .selectFrom("app_domain")
             .select("id")
@@ -824,7 +847,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         }
         const row = await ctx.mutate(async (trx, audit) => {
-          if (body.app !== undefined) {
+          if (body.app !== undefined && body.app !== "") {
             const target = await trx
               .selectFrom("resource")
               .select("id")

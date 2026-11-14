@@ -785,6 +785,43 @@ export interface MemberRecentScopeTable {
   visited_at: Generated<Date>;
 }
 
+export interface WorkerPoolTable {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: Generated<string>;
+  created_at: Generated<Date>;
+}
+
+export interface ScimRefusalTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  method: string;
+  resource: "Users" | "Groups" | "other";
+  status: number;
+  reason: string;
+  occurred_at: Generated<Date>;
+}
+
+export interface MemberRecoveryCodeTable {
+  id: string;
+  member_id: string;
+  code_hash: string;
+  used_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface ImportStagingTable {
+  id: string;
+  created_by: string | null;
+  file_name: string;
+  size_bytes: ColumnType<string, number, number>;
+  inspection: ColumnType<Record<string, unknown>, string, string>;
+  created_at: Generated<Date>;
+  expires_at: Date;
+}
+
 export interface TriggerPauseTable {
   workspace_id: string;
   tenant_id: string;
@@ -974,6 +1011,10 @@ export interface PlatformSchema {
   member_dashboard: MemberDashboardTable;
   instance_branding: InstanceBrandingTable;
   trigger_pause: TriggerPauseTable;
+  import_staging: ImportStagingTable;
+  member_recovery_code: MemberRecoveryCodeTable;
+  scim_refusal: ScimRefusalTable;
+  worker_pool: WorkerPoolTable;
   member_recent_scope: MemberRecentScopeTable;
   dashboard_share: DashboardShareTable;
   health_check: HealthCheckTable;

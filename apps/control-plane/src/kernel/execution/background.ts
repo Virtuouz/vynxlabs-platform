@@ -3,6 +3,7 @@ import { checkDueSources } from "../data/health.js";
 import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { removeExpiredSso } from "../sso/flow.js";
+import { removeExpiredImports } from "../tenancy/staging.js";
 import { removeOldPreviews } from "./bundles.js";
 import { reapDeadRuns, requeueLostRuns } from "./runs.js";
 import type { WorkerSupervisor } from "./supervisor.js";
@@ -31,6 +32,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     await removeExpiredAppSessions(kernel.db);
     await removeExpiredSso(kernel.db);
     await removeOldPreviews(kernel);
+    await removeExpiredImports(kernel);
   };
   const steps: [string, () => Promise<unknown>][] = [
     ["schedules", () => fireDueSchedules(kernel)],

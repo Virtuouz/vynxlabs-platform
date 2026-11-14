@@ -486,6 +486,15 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
         .where("email", "=", "eve@elsewhere.example")
         .execute(),
     ).toEqual([]);
+    // The console can say why Eve did not arrive, without keeping what was pushed for her.
+    const seen = await alice.get(`${provisioning(staff)}/pushed`);
+    expect(seen.status, JSON.stringify(seen.body)).toBe(200);
+    expect(seen.body.refusals[0]).toMatchObject({ method: "POST", resource: "Users", status: 400 });
+    expect(seen.body.refusals[0].reason).toContain("has proved");
+    expect(JSON.stringify(seen.body.refusals)).not.toContain("e-1");
+    expect(seen.body.people.map((one: { email: string }) => one.email)).toContain(
+      "bob@acme.example",
+    );
     const nameless = await push(staff, "POST", "/Users", { schemas: [USER], active: true });
     expect(nameless.status).toBe(400);
     const noEmail = await push(staff, "POST", "/Users", { schemas: [USER], userName: "bob2" });

@@ -5,12 +5,13 @@ import { CORE_NODES } from "@vynxlabs/nodes";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Trx } from "../kernel/audit.js";
-import { badRequest, conflict, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { createMember } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
+import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
@@ -279,6 +280,74 @@ const InstanceBinding = Type.Object({
 
 export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
+    app.get(
+      "/me/recovery-codes",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "How many of the caller's recovery codes are left",
+          tags: ["identity"],
+          response: {
+            200: Type.Object({
+              eligible: Type.Boolean({
+                description: "Whether the caller owns a tenant, and so may hold codes.",
+              }),
+              left: Type.Integer(),
+              madeAt: Type.Union([Time, Type.Null()]),
+            }),
+          },
+        },
+      },
+      async ({ ctx }) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id)
+          return { eligible: false, left: 0, madeAt: null };
+        const rows = await kernel.db
+          .selectFrom("member_recovery_code")
+          .select(["used_at", "created_at"])
+          .where("member_id", "=", ctx.principal.id)
+          .execute();
+        return {
+          eligible: await ownsATenant(kernel.db, ctx.principal.id),
+          left: rows.filter((row) => row.used_at === null).length,
+          madeAt: rows[0] ? iso(rows[0].created_at) : null,
+        };
+      },
+    );
+
+    app.post(
+      "/me/recovery-codes",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Make the caller's recovery codes, putting away any they had",
+          description:
+            "For a tenant's owner. While single sign-on is required, a code with the owner's " +
+            "own password signs them in once, so a broken provider cannot lock the tenant out. " +
+            "The codes are shown in this answer only, and kept as hashes.",
+          tags: ["identity"],
+          response: { 201: Type.Object({ codes: Type.Array(Type.String()) }) },
+        },
+      },
+      async ({ ctx }, reply) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id)
+          throw forbidden("a member's own sign-in");
+        const memberId = ctx.principal.id;
+        if (!(await ownsATenant(kernel.db, memberId)))
+          throw forbidden("tenant_admin over a tenant: recovery codes are for a tenant's owners");
+        const codes = await ctx.mutate(async (trx, audit) => {
+          const made = await makeRecoveryCodes(trx, memberId);
+          await audit({
+            action: "member.recovery_codes_made",
+            targetType: "member",
+            targetId: memberId,
+            details: { count: made.length },
+          });
+          return made;
+        });
+        return reply.code(201).send({ codes });
+      },
+    );
+
     app.get(
       "/me/recent",
       {

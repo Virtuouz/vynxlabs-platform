@@ -285,6 +285,7 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["group_id", "user_id"],
     export: "always",
   },
+  { table: "scim_refusal", ofTenant: own, key: ["id"], export: "never" },
   { table: "sso_state", ofTenant: own, key: ["id"], export: "never" },
   {
     table: "sso_assertion",
@@ -300,6 +301,7 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["id"],
     export: "always",
   },
+  { table: "worker_pool", ofTenant: own, key: ["id"], export: "always" },
   // Where members were last; this instance's to remember, not the tenant's to carry.
   { table: "member_recent_scope", ofTenant: own, key: ["member_id", "tenant_id"], export: "never" },
   {
@@ -326,6 +328,10 @@ export const INSTANCE_TABLES = [
   "member_session",
   "member_account",
   "member_verification",
+  // A member's own, like their password: shared by every tenant they are in.
+  "member_recovery_code",
+  // An upload waiting to be imported belongs to no tenant yet.
+  "import_staging",
   "database_location",
   // How the console looks on this instance. A tenant's branding is its portal's.
   "instance_branding",

@@ -1505,6 +1505,50 @@ describe("a hostname of the tenant's own", () => {
       "Order status",
     );
   });
+
+  test("a hostname for the portal serves its home at the root and every app by path", async () => {
+    const hostname = "everything.acme.test";
+    const created = await alice.post(`/tenants/${tenant}/domains`, {
+      workspaceId: prod,
+      app: "",
+      hostname,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    expect(created.body).toMatchObject({ app: "", url: `http://${hostname}/` });
+    const grant = await t.admin.post(`/tenants/${tenant}/access-grants`, {
+      reason: "Internal name",
+      roleId: roles.tenant_admin,
+    });
+    await t.admin.patch(`/tenants/${tenant}/domains/${created.body.id}`, { enabled: true });
+    await t.admin.delete(`/tenants/${tenant}/access-grants/${grant.body.id}`);
+
+    const listed = (await alice.get(`${ws()}/apps`)).body.items;
+    expect(listed.find((app: { path: string }) => app.path === "status").domains).toContainEqual({
+      hostname,
+      url: `http://${hostname}/status/`,
+      enabled: true,
+    });
+
+    const visitor = browser(t, hostname);
+    expect((await visitor.get("/")).body).toContain('href="/_/sign-in"');
+    await visitor.form("/_/sign-in", {
+      email: "ed@customer.example",
+      password: PASSWORD,
+      return: "/",
+    });
+    const home = await visitor.get("/");
+    expect(home.status).toBe(200);
+    expect(home.body).toContain('href="/portal/"');
+    const status = await visitor.get("/status");
+    expect(status.status).toBe(308);
+    expect(status.location).toBe("/status/");
+    expect((await visitor.get("/status/")).body).toContain("Order status");
+    const app = await visitor.get("/portal/");
+    expect(app.body).toContain('<base href="/portal/">');
+    expect((await visitor.get("/nothing/")).status).toBe(404);
+
+    expect((await alice.delete(`/tenants/${tenant}/domains/${created.body.id}`)).status).toBe(204);
+  });
 });
 
 describe("a second address for apps", () => {

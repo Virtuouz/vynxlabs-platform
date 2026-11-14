@@ -209,7 +209,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const signUp = await signUpAllowed(db, tenant.id);
 
     if (sub === "" || sub === "/") {
-      if (place.kind === "domain") return redirect(reply, "/");
+      if (place.kind === "domain" && place.domain.appPath !== "") return redirect(reply, "/");
       const principal = await resolvePrincipal(kernel, request, tenant.id);
       const apps =
         principal.type === "anonymous" ? [] : await openableApps(place, tenant, principal);
@@ -688,7 +688,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
 
   /** The apps of a tenant's production workspaces that a principal may open, with where each is. */
   async function openableApps(place: Place, tenant: Tenant, principal: Principal) {
-    const rows = await db
+    let query = db
       .selectFrom("resource")
       .innerJoin("workspace", "workspace.id", "resource.workspace_id")
       .select([
@@ -700,9 +700,14 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       ])
       .where("resource.tenant_id", "=", tenant.id)
       .where("resource.kind", "=", "app")
-      .where("workspace.active_bundle_id", "is not", null)
-      // A dev workspace's copy of an app is for the people working on it, who have its address.
-      .where("workspace.type", "=", "production")
+      .where("workspace.active_bundle_id", "is not", null);
+    query =
+      place.kind === "domain"
+        ? // A hostname for the portal serves the apps of its own workspace.
+          query.where("workspace.id", "=", place.domain.workspaceId)
+        : // A dev workspace's copy of an app is for the people working on it, who have its address.
+          query.where("workspace.type", "=", "production");
+    const rows = await query
       .orderBy("workspace.slug")
       .orderBy("resource.path")
       .limit(100)
@@ -910,6 +915,11 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       if (path === "/_" || path.startsWith("/_/")) {
         return portal(request, reply, place, tenant, path.slice(2), url.searchParams);
       }
+      const everything = place.domain.appPath === "";
+      // A hostname for the portal has the portal's home at its root.
+      if (everything && path === "/") {
+        return portal(request, reply, place, tenant, "", url.searchParams);
+      }
       if (!isPage) return plain(reply, 405, "Method not allowed.");
       const segments = decodeSegments(path.slice(1));
       if (!segments) return plain(reply, 400, "That address is not valid.");
@@ -920,7 +930,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         tenant,
         workspace,
         segments.join("/"),
-        place.domain.appPath,
+        everything ? undefined : place.domain.appPath,
       );
     }
 

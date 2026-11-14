@@ -223,6 +223,42 @@ describe("small things the console shows", () => {
   });
 });
 
+describe("worker pools", () => {
+  test("a pool is made, shown with what serves it, and kept while a credential serves it", async () => {
+    const made = await alice.post(`/tenants/${tenant}/worker-pools`, {
+      name: "client-lan",
+      description: "Inside the client's network",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(
+      (await alice.post(`/tenants/${tenant}/worker-pools`, { name: "client-lan" })).status,
+    ).toBe(409);
+    const credential = await alice.post(`/tenants/${tenant}/worker-credentials`, {
+      name: "lan-1",
+      pool: "client-lan",
+    });
+    expect(credential.status, JSON.stringify(credential.body)).toBe(201);
+    // A credential for a pool not made yet makes it.
+    await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "dock-1", pool: "dock" });
+    const pools = (await alice.get(`/tenants/${tenant}/worker-pools`)).body.items;
+    expect(pools[0]).toMatchObject({ id: null, name: null });
+    expect(pools.find((one: { name: string }) => one.name === "client-lan")).toMatchObject({
+      description: "Inside the client's network",
+      credentials: 1,
+      online: 0,
+      lastSeenAt: null,
+    });
+    expect(pools.some((one: { name: string }) => one.name === "dock")).toBe(true);
+    expect((await alice.delete(`/tenants/${tenant}/worker-pools/${made.body.id}`)).status).toBe(
+      409,
+    );
+    await alice.delete(`/tenants/${tenant}/worker-credentials/${credential.body.id}`);
+    expect((await alice.delete(`/tenants/${tenant}/worker-pools/${made.body.id}`)).status).toBe(
+      204,
+    );
+  });
+});
+
 describe("a tenant's summary", () => {
   test("counts workspaces and members, and nothing to fix", async () => {
     const summary = await alice.get(`/tenants/${tenant}/summary`);

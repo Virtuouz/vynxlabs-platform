@@ -1,6 +1,7 @@
 import { Badge, type BadgeTone, Button, JsonView, Notice } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api } from "../api.ts";
+import { actionWords } from "../audit-words.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
 
@@ -147,9 +148,13 @@ export function AuditTable({
     (entry) =>
       (verb === "all" || verbOf(entry.action) === verb) &&
       (needle === "" ||
-        [who(entry), entry.action, entry.targetId ?? "", entry.targetType].some((text) =>
-          text.toLowerCase().includes(needle),
-        )),
+        [
+          who(entry),
+          entry.action,
+          actionWords(entry.action),
+          entry.targetId ?? "",
+          entry.targetType,
+        ].some((text) => text.toLowerCase().includes(needle))),
   );
   // On a wide screen the newest entry is open beside the list; on a narrow one, only what is chosen.
   const chosen = closed
@@ -190,7 +195,8 @@ export function AuditTable({
         return (
           <span className="flex flex-wrap items-center gap-1.5">
             {kind === "Other" ? null : <Badge tone={VERB_TONE[kind]}>{kind}</Badge>}
-            <code className="rounded-[4px] bg-sunken px-1.5 py-0.5 font-mono text-telemetry">
+            <span className="font-medium">{actionWords(entry.action)}</span>
+            <code className="rounded-[4px] bg-sunken px-1.5 py-0.5 font-mono text-meta text-ink-subtle">
               {entry.action}
             </code>
             {entry.accessGrantId ? <Badge tone="attention">Operator</Badge> : null}

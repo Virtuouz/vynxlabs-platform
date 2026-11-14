@@ -284,8 +284,8 @@ export function EndUserGroups({ base }: { base: string }) {
             {
               name: "name",
               label: "Name",
-              placeholder: "finance",
-              hint: "Lowercase letters, digits, hyphens and underscores.",
+              placeholder: "Front desk",
+              hint: "Any name on one line, such as Front desk. A table's rules match it exactly.",
             },
             { name: "description", label: "What it is for", required: false },
           ],

@@ -237,7 +237,7 @@ Strengthened. A deploy cannot destroy tenant data. A rollback cannot destroy it 
 
 | Check | Result |
 | --- | --- |
-| Lint, type check, schema, migration and licence checks | Passed |
+| Lint, type check, schema, migration and license checks | Passed |
 | Every test on Postgres 16 and 18 | Passed |
 | The example, built with the SDK and deployed by the CLI: the order flow writes each order it sends to the `orders` table | Passed, in `packages/cli/src/example.test.ts` and on the Compose stack |
 | **Exit criterion on the single-host stack.** A dev workspace with 5 orders and a production workspace with 7, written by the flow and through the API. The repository's table was changed to add a column, rename one and remove one. The bundle was deployed to dev, then the same bundle (same digest) to production | Passed. Every row and value was intact in both, checked through the API and by reading the tables directly in Postgres. The removed column was still there, retired, holding its values |

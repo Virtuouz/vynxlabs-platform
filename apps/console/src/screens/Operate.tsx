@@ -124,7 +124,12 @@ export function TriggersWorkbench({
         ) : row.lastFiredAt ? (
           <span className="text-ink-muted">{fromNow(row.lastFiredAt)}</span>
         ) : (
-          <span className="text-ink-subtle">Never</span>
+          <span
+            className="text-ink-subtle"
+            title="This trigger has not started anything yet. Runs started by hand are not counted."
+          >
+            Not fired yet
+          </span>
         ),
     },
   ];
@@ -263,7 +268,7 @@ export function TriggersWorkbench({
                     label: "Last fired",
                     value: open.lastFiredAt
                       ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
-                      : "Never",
+                      : "Not fired yet. Runs started by hand are not counted.",
                   },
                 ]}
               />
@@ -480,6 +485,27 @@ interface Waiting {
   approvers: { groups: string[]; roles: string[]; text: string } | null;
 }
 
+/**
+ * What an approval is about, in one line: the first few fields of its detail,
+ * so that several waiting approvals of one step can be told apart in the list.
+ */
+export function detailSummary(detail: unknown, most = 4): string | null {
+  if (detail === null || detail === undefined) return null;
+  if (typeof detail !== "object") return String(detail);
+  if (Array.isArray(detail)) return `${detail.length} items`;
+  const words = (key: string) => key.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase());
+  const shown = (value: unknown) =>
+    value === null || value === undefined
+      ? "—"
+      : typeof value === "object"
+        ? JSON.stringify(value).slice(0, 40)
+        : String(value);
+  const entries = Object.entries(detail as Record<string, unknown>).slice(0, most);
+  return entries.length > 0
+    ? entries.map(([key, value]) => `${words(key)}: ${shown(value)}`).join(" · ")
+    : null;
+}
+
 interface Decided {
   flowRunId: string;
   workspaceId: string;
@@ -604,14 +630,18 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
       columns={[
         {
           header: "Decision",
-          cell: (row) => (
-            <span className="flex flex-col">
-              <span className="font-medium">{row.title}</span>
-              <span className="text-meta text-ink-subtle">
-                <Mono>{row.flow}</Mono> · {nameOf(row.workspaceId)}
+          cell: (row) => {
+            const about = detailSummary(row.detail);
+            return (
+              <span className="flex flex-col">
+                <span className="font-medium">{row.title}</span>
+                {about ? <span className="text-ink-muted">{about}</span> : null}
+                <span className="text-meta text-ink-subtle">
+                  <Mono>{row.flow}</Mono> · {nameOf(row.workspaceId)}
+                </span>
               </span>
-            </span>
-          ),
+            );
+          },
         },
         {
           header: "Waiting",

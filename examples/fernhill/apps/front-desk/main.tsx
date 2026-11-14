@@ -1,12 +1,20 @@
-import { appContext, logoUrl, signOut, useQuery, useSession } from "@vynxlabs/app";
-import { Button, EmptyState, Notice, SelectField, ToastProvider } from "@vynxlabs/ui";
+import { appContext, logoUrl, signOut, totalOf, useQuery, useSession } from "@vynxlabs/app";
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  Notice,
+  PageShell,
+  SegmentedControl,
+  ToastProvider,
+} from "@vynxlabs/ui";
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Board } from "./Board.tsx";
 import { Book } from "./Book.tsx";
 import { ClientsScreen } from "./Clients.tsx";
 import { Callbacks, Stock } from "./Stock.tsx";
-import { Appointments, Clinics, Loading, Registrations, useRemembered } from "./shared.tsx";
+import { CLINICS, Clinics, Loading, Registrations, useRemembered } from "./shared.tsx";
 import "./styles.css";
 
 const SECTIONS = [
@@ -25,8 +33,7 @@ const readSection = (): Section => {
 };
 
 function useSection(): [Section, (section: Section) => void] {
-  const read = readSection;
-  const [section, setSection] = useState<Section>(read);
+  const [section, setSection] = useState<Section>(readSection);
   useEffect(() => {
     const update = () => setSection(readSection());
     addEventListener("hashchange", update);
@@ -35,40 +42,35 @@ function useSection(): [Section, (section: Section) => void] {
   return [section, (next) => (location.hash = next)];
 }
 
-/**
- * Which clinics the person sees. Front-desk staff see one: the table's rules
- * give them only their clinic's visits. A practice manager sees them all, and
- * chooses.
- */
-function useClinics() {
-  return useQuery(async () => {
-    const [all, visible] = await Promise.all([
-      Clinics().find({ sort: ["name"] }),
-      Appointments().aggregate({ group: ["clinic"] }),
-    ]);
-    const mine = new Set(visible.items.map((item) => String(item.by.clinic)));
-    return all.items.filter((clinic) => mine.has(clinic.code));
-  });
-}
-
 function App() {
   const context = appContext();
-  const { principal } = useSession();
+  const { principal, groups } = useSession();
   const [section, go] = useSection();
-  const clinics = useClinics();
+  // Front-desk staff are in their clinic's group. Anyone else here, such as a practice
+  // manager signed in as staff, sees every clinic and chooses.
+  const groupList = groups.join(",");
+  const own = useMemo(
+    () => CLINICS.filter((code) => groupList.split(",").includes(code)) as string[],
+    [groupList],
+  );
+  const clinics = useQuery(() => Clinics().find({ sort: ["name"] }));
   const [chosen, choose] = useRemembered("fernhill-front-desk-clinic", "");
   const [client, setClient] = useState<string>();
   const [bookFor, setBookFor] = useState<string>();
-  const options = useMemo(
-    () => (clinics.data ?? []).map((clinic) => ({ value: clinic.code, label: clinic.name })),
-    [clinics.data],
+  const mine = useMemo(
+    () => (clinics.data ?? []).filter((clinic) => own.length === 0 || own.includes(clinic.code)),
+    [clinics.data, own],
   );
+  const options = mine.map((clinic) => ({
+    value: clinic.code,
+    label: clinic.name.replace(/^Fernhill /, ""),
+  }));
   const clinic = options.some((one) => one.value === chosen) ? chosen : (options[0]?.value ?? "");
-  const current = clinics.data?.find((one) => one.code === clinic);
+  const current = mine.find((one) => one.code === clinic);
   const waiting = useQuery(
     async () =>
       clinic
-        ? (
+        ? totalOf(
             await Registrations().aggregate({
               filter: {
                 and: [
@@ -76,8 +78,9 @@ function App() {
                   { column: "status", value: "new" },
                 ],
               },
-            })
-          ).items[0]?.values.count
+            }),
+            "count",
+          )
         : 0,
     [clinic, section],
   );
@@ -100,7 +103,7 @@ function App() {
           <Book
             key={`${clinic}-${bookFor ?? ""}`}
             clinic={clinic}
-            clinicOptions={options}
+            clinicOptions={mine.map((one) => ({ value: one.code, label: one.name }))}
             clientCode={bookFor}
             onBooked={(_number, code) => {
               setBookFor(undefined);
@@ -138,95 +141,46 @@ function App() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas text-ink">
-      <header className="sticky top-0 z-20 border-line border-b bg-surface">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <img src={logoUrl()} alt="" className="size-8 shrink-0 rounded-control" />
-            <div className="flex min-w-0 flex-col leading-tight">
-              <span className="truncate font-semibold">{current?.name ?? context.app.title}</span>
-              <span className="truncate text-meta text-ink-muted">
-                Front desk{current ? ` · ${current.phone}` : ""}
-              </span>
-            </div>
-          </div>
-          <nav aria-label="Sections" className="hidden gap-1 md:flex">
-            {SECTIONS.map((item) => (
-              <a
-                key={item.id}
-                href={`#${item.id}`}
-                aria-current={section === item.id ? "page" : undefined}
-                className={`flex items-center gap-1.5 rounded-control px-3 py-1.5 font-medium no-underline ${
-                  section === item.id
-                    ? "bg-action-soft text-action"
-                    : "text-ink-muted hover:bg-sunken hover:text-ink"
-                }`}
-              >
-                {item.label}
-                {item.id === "callbacks" && Number(waiting.data ?? 0) > 0 ? (
-                  <span className="rounded-full bg-attention px-1.5 font-mono text-micro text-canvas">
-                    {waiting.data}
-                  </span>
-                ) : null}
-              </a>
-            ))}
-          </nav>
-          <div className="ml-auto flex items-center gap-2">
-            {options.length > 1 ? (
-              <div className="w-44">
-                <SelectField
-                  name="clinic"
-                  label="Clinic"
-                  value={clinic}
-                  options={options}
-                  onChange={choose}
-                />
-              </div>
-            ) : null}
-            <span className="hidden max-w-48 truncate text-meta text-ink-muted sm:inline">
-              {who}
-            </span>
-            <Button
+    <PageShell
+      title={current?.name ?? context.app.title}
+      subtitle={`Front desk${current ? ` · ${current.phone}` : ""}`}
+      logo={logoUrl()}
+      width="full"
+      nav={SECTIONS.map((item) => ({
+        label: item.label,
+        current: section === item.id,
+        onSelect: () => go(item.id),
+        ...(item.id === "callbacks" ? { count: waiting.data ?? 0 } : {}),
+      }))}
+      actions={
+        <>
+          {options.length > 1 ? (
+            <SegmentedControl
+              label="Clinic"
               size="small"
-              onClick={async () => {
-                await signOut();
-                location.assign(`${context.portal}/sign-in`);
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 pb-24 sm:px-6 md:pb-8">
-        {body()}
-      </main>
-
-      {/* On a phone the sections sit at the bottom, in reach of a thumb. */}
-      <nav
-        aria-label="Sections"
-        className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-line border-t bg-surface md:hidden"
-      >
-        {SECTIONS.map((item) => (
-          <a
-            key={item.id}
-            href={`#${item.id}`}
-            aria-current={section === item.id ? "page" : undefined}
-            className={`relative flex min-h-14 items-center justify-center px-1 text-meta font-medium no-underline ${
-              section === item.id ? "text-action" : "text-ink-muted"
-            }`}
+              value={clinic}
+              options={options}
+              onChange={choose}
+            />
+          ) : null}
+          <span className="hidden items-center gap-2 text-meta text-ink-muted sm:inline-flex">
+            <Avatar name={who} size="small" decorative />
+            <span className="max-w-40 truncate">{who}</span>
+          </span>
+          <Button
+            size="small"
+            onClick={async () => {
+              await signOut();
+              location.assign(`${context.portal}/sign-in`);
+            }}
           >
-            {item.label}
-            {item.id === "callbacks" && Number(waiting.data ?? 0) > 0 ? (
-              <span className="absolute top-2 right-2 size-2 rounded-full bg-attention">
-                <span className="sr-only">, people waiting</span>
-              </span>
-            ) : null}
-          </a>
-        ))}
-      </nav>
-    </div>
+            Sign out
+          </Button>
+        </>
+      }
+    >
+      {body()}
+    </PageShell>
   );
 }
 

@@ -155,6 +155,49 @@ function bundle(
       ],
     ),
     flow(
+      "tolerant",
+      {
+        start: manual,
+        each: {
+          type: "foreach",
+          items: "trigger.fails",
+          script: "risky",
+          input: "{'fail': item}",
+          continueOnError: true,
+        },
+        done: set({
+          failed: "size(steps.each.output.filter(o, has(o.error)))",
+          when: "string(now).substring(0, 4)",
+        }),
+      },
+      [
+        ["start", "each"],
+        ["each", "done"],
+      ],
+    ),
+    flow(
+      "typed",
+      {
+        start: {
+          type: "trigger",
+          trigger: {
+            type: "manual",
+            input: object({ sku: { type: "string" }, quantity: { type: "integer", minimum: 1 } }, [
+              "sku",
+              "quantity",
+            ]),
+          },
+        },
+        done: set({ ordered: "trigger.sku" }),
+      },
+      [["start", "done"]],
+    ),
+    flow(
+      "calls-typed",
+      { start: manual, child: { type: "subflow", flow: "typed", input: "{'sku': 'A'}" } },
+      [["start", "child"]],
+    ),
+    flow(
       "looping",
       {
         start: manual,
@@ -634,6 +677,38 @@ describe("running a flow", () => {
     expect(notList.error.message).toContain('"items" must give a list');
   });
 
+  test("a foreach told to carry on gives each failed item's error in its place, and succeeds", async () => {
+    const done = await finished(await start("tolerant", { fails: [false, true, false, true] }));
+    expect(done.status).toBe("succeeded");
+    expect(done.output.done.failed).toBe(2);
+    // `now` is the time the expression was worked out.
+    expect(done.output.done.when).toBe(String(new Date().getUTCFullYear()));
+    expect(step(done, "each").output).toEqual([
+      { ok: true },
+      { error: { message: "The ERP said no" } },
+      { ok: true },
+      { error: { message: "The ERP said no" } },
+    ]);
+  });
+
+  test("a manual trigger that declares its input refuses one that does not match, by hand and as a sub-flow", async () => {
+    const refused = await alice.post(`${ws()}/flow-runs`, {
+      flow: "typed",
+      input: { sku: "A", quantity: 0 },
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.detail).toContain("/input/quantity");
+    expect(refused.body.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "/input/quantity" })]),
+    );
+    const started = await finished(await start("typed", { sku: "A", quantity: 2 }));
+    expect(started.output).toEqual({ done: { ordered: "A" } });
+
+    const parent = await finished(await start("calls-typed"));
+    expect(parent.status).toBe("failed");
+    expect(step(parent, "child").error.message).toContain("/input");
+  });
+
   test("a failed step takes its error path when it has one", async () => {
     const fine = await finished(await start("recovering", { fail: false }));
     expect(fine.output).toEqual({ fine: { outcome: "fine" } });
@@ -958,7 +1033,7 @@ describe("waiting", () => {
     );
   });
 
-  test("a flow run can be cancelled, and its running step is cancelled with it", async () => {
+  test("a flow run can be canceled, and its running step is canceled with it", async () => {
     const id = await start("slow-flow", { ms: 20_000 });
     const running = await until(
       () => read(id),

@@ -136,6 +136,34 @@
                         "type": "string",
                         "pattern": "^[a-z][a-z0-9_]{0,62}$"
                       },
+                      "format": {
+                        "type": "object",
+                        "properties": {
+                          "style": {
+                            "enum": [
+                              "number",
+                              "currency",
+                              "percent"
+                            ]
+                          },
+                          "currency": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{3}$"
+                          },
+                          "minorUnits": {
+                            "type": "boolean"
+                          },
+                          "decimals": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 6
+                          }
+                        },
+                        "required": [
+                          "style"
+                        ],
+                        "additionalProperties": false
+                      },
                       "label": {
                         "type": "string",
                         "minLength": 1,
@@ -251,6 +279,34 @@
                     },
                     "allowDelete": {
                       "type": "boolean"
+                    },
+                    "format": {
+                      "type": "object",
+                      "properties": {
+                        "style": {
+                          "enum": [
+                            "number",
+                            "currency",
+                            "percent"
+                          ]
+                        },
+                        "currency": {
+                          "type": "string",
+                          "pattern": "^[A-Z]{3}$"
+                        },
+                        "minorUnits": {
+                          "type": "boolean"
+                        },
+                        "decimals": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 6
+                        }
+                      },
+                      "required": [
+                        "style"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": false

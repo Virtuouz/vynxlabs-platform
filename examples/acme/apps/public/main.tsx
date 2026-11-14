@@ -23,11 +23,11 @@ function App() {
       ]}
     >
       {found.error ? <Notice tone="danger">{found.error.message}</Notice> : null}
-      {found.data?.items.length === 0 ? (
+      {found.data?.length === 0 ? (
         <EmptyState title="Nothing to report">Deliveries are running as usual.</EmptyState>
       ) : null}
       <div className="grid max-w-2xl gap-3">
-        {found.data?.items.map((notice) => (
+        {found.data?.map((notice) => (
           <article key={notice.id} className="rounded-panel border border-line bg-surface p-4">
             <h2 className="m-0 text-base">{notice.title}</h2>
             {notice.body ? <p className="mt-1 mb-0 text-ink-muted">{notice.body}</p> : null}

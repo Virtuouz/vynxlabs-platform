@@ -273,7 +273,7 @@ test("branding saves only the tokens that are set, and shows the server's error 
             code: "bad_request",
             detail: "That is not a theme.",
             errors: [
-              { path: "/tokens/surface", message: "must be a plain colour, length or font list" },
+              { path: "/tokens/surface", message: "must be a plain color, length or font list" },
             ],
           },
         ]
@@ -303,9 +303,9 @@ test("branding saves only the tokens that are set, and shows the server's error 
   fireEvent.input(screen.getByLabelText("line, light"), { target: { value: "   " } });
   expect(preview("dark").getPropertyValue("--vx-ink")).toBe("#fafafa");
   fireEvent.submit(action.closest("form") as HTMLFormElement);
-  expect(
-    (await screen.findByText("surface must be a plain colour, length or font list")).role,
-  ).toBe("alert");
+  expect((await screen.findByText("surface must be a plain color, length or font list")).role).toBe(
+    "alert",
+  );
   expect(sent("PUT")[0]?.body).toEqual({
     theme: { tokens: { action: "#7c3aed", surface: "url(x)" }, dark: { ink: "#fafafa" } },
   });
@@ -316,7 +316,7 @@ test("branding saves only the tokens that are set, and shows the server's error 
   expect(sent("PUT")[1]?.body).toEqual({
     theme: { tokens: { action: "#7c3aed" }, dark: { ink: "#fafafa" } },
   });
-  expect(screen.queryByText("surface must be a plain colour, length or font list")).toBeNull();
+  expect(screen.queryByText("surface must be a plain color, length or font list")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Reset to the kit's values" }));
   await answer("Reset");
@@ -499,7 +499,7 @@ test("a hostname can serve the portal and every app, even from a workspace with 
   expect(row?.textContent).toContain("The portal and every app");
 });
 
-// ----- The console's own colours -----
+// ----- The console's own colors -----
 
 test("the instance's stylesheet is loaded once, never a tenant's, and again after a save", () => {
   // The test browser fetches no stylesheets. Without this it reports each one as an error.

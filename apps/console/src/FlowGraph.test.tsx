@@ -66,7 +66,7 @@ test("nodes are buttons that say what they are and how they went, and saved posi
   fireEvent.keyDown(approve, { key: "Enter" });
   expect(onSelect).toHaveBeenLastCalledWith("approve");
 
-  // Branch cases and the error path are labelled on their edges.
+  // Branch cases and the error path are labeled on their edges.
   const labels = [...container.querySelectorAll("svg > g > text")]
     .filter((text) => text.parentElement?.querySelector("path"))
     .map((text) => text.textContent);

@@ -54,7 +54,7 @@ const STATUS: Record<string, { stroke: string; label: string }> = {
   failed: { stroke: "var(--vx-danger)", label: "Failed" },
   running: { stroke: "var(--vx-action)", label: "Running" },
   waiting: { stroke: "var(--vx-attention)", label: "Waiting" },
-  cancelled: { stroke: "var(--vx-ink-muted)", label: "Cancelled" },
+  cancelled: { stroke: "var(--vx-ink-muted)", label: "Canceled" },
   skipped: { stroke: "var(--vx-line)", label: "Skipped" },
 };
 

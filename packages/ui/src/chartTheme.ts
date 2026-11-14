@@ -53,8 +53,8 @@ export function chartConfig(tokens: ChartTokens): Config {
     tokens.success,
     tokens.danger,
     tokens.inkMuted,
-  ].filter((colour) => colour !== "");
-  const ramp = [tokens.actionSoft, tokens.action].filter((colour) => colour !== "");
+  ].filter((color) => color !== "");
+  const ramp = [tokens.actionSoft, tokens.action].filter((color) => color !== "");
 
   return {
     background: "transparent",

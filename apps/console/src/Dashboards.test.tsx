@@ -80,7 +80,7 @@ test("dashboards are listed with whose they are, and a new one is named in the c
   expect(sent("POST")[0]?.body).toEqual({ title: "Returns" });
 });
 
-test("a member's own dashboard is changed and saved when they say, and shared with a tick", async () => {
+test("a member's own dashboard is changed and saved when they say, and shared with a checkbox", async () => {
   let stored: Any = mine;
   routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
   routes[`PUT ${api}/dashboards/d1`] = (body) => {

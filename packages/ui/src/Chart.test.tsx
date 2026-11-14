@@ -42,7 +42,7 @@ function theme(values: Record<string, string>) {
 }
 
 describe("chart theme", () => {
-  test("the tokens become the chart's colours and font", () => {
+  test("the tokens become the chart's colors and font", () => {
     const config = chartConfig(tokens);
     expect(config.background).toBe("transparent");
     expect(config.font).toBe("Inter, sans-serif");
@@ -94,7 +94,7 @@ describe("chart theme", () => {
 });
 
 describe("chart", () => {
-  test("shows a placeholder, then the chart, drawn as SVG in the theme's colours", async () => {
+  test("shows a placeholder, then the chart, drawn as SVG in the theme's colors", async () => {
     theme({ "--vx-action": "#123456", "--vx-ink-muted": "#654321" });
     const { container } = render(
       <Chart spec={spec} data={rows} title="Orders by month" description="Rising since January" />,
@@ -116,7 +116,7 @@ describe("chart", () => {
     expect(screen.queryByText("Loading chart")).toBeNull();
   });
 
-  test("draws again when the colour scheme changes, and lets go of the view when it leaves", async () => {
+  test("draws again when the color scheme changes, and lets go of the view when it leaves", async () => {
     const vega = await import("vega");
     const finalize = vi.spyOn(vega.View.prototype, "finalize");
     const listeners = new Set<() => void>();

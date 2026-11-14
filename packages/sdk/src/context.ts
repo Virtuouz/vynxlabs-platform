@@ -64,6 +64,6 @@ export interface ScriptContext {
   };
   log: Logger;
   run: RunInfo;
-  /** Aborts when the run is cancelled or runs out of time. Pass it to anything slow. */
+  /** Aborts when the run is canceled or runs out of time. Pass it to anything slow. */
   signal: AbortSignal;
 }

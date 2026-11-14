@@ -25,7 +25,7 @@ export interface ImportReport {
   counts: Record<string, number>;
   members: { created: number; linked: number };
   objects: number;
-  /** Runs and flow runs that were unfinished in the export, recorded here as cancelled. */
+  /** Runs and flow runs that were unfinished in the export, recorded here as canceled. */
   cancelled: { runs: number; flowRuns: number };
   /** Every workspace arrives with its triggers paused. */
   pausedWorkspaces: number;

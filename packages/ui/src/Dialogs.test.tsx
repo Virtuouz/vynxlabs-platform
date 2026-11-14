@@ -46,7 +46,7 @@ test("a confirmation resolves to what the person chose, and names its action", a
   expect(await agreed.answer).toBe(true);
 });
 
-test("a prompt returns what was typed, refuses an empty answer, and returns null when cancelled", async () => {
+test("a prompt returns what was typed, refuses an empty answer, and returns null when canceled", async () => {
   mount();
   const named = await asking((d) =>
     d.prompt({ title: "Rename", label: "New name", initial: "total", action: "Rename" }),

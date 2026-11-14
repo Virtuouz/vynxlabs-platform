@@ -4,7 +4,7 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
  * The console of phase 8, checked in a browser on a running instance: every
  * top-level screen at a phone's, a tablet's and a desktop's width, in light and
  * in dark, without the page scrolling sideways. The navigation opens as a
- * drawer on a phone. The instance's branding names and colours the console, and
+ * drawer on a phone. The instance's branding names and colors the console, and
  * a tenant's branding does not reach it.
  *
  * Screenshots are kept beside each test's results, in `e2e/results/`, to look over by eye.
@@ -205,7 +205,7 @@ test("on a phone the navigation is a drawer that opens and closes", async () => 
   await expect(admin).toHaveURL(/\/runs$/);
 });
 
-test("the console carries the instance's name and colour, and not the tenant's", async ({
+test("the console carries the instance's name and color, and not the tenant's", async ({
   browser,
 }) => {
   // A browser that has not seen the instance before, so no stylesheet is kept from

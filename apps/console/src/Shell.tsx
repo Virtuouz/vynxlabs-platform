@@ -411,7 +411,7 @@ function ThemeMenu({ compact = false }: { compact?: boolean }) {
   const ThemeIcon = THEMES.find(([choice]) => choice === theme)?.[2] ?? Monitor;
   return (
     <Menu
-      ariaLabel="Colour theme"
+      ariaLabel="Color theme"
       align={compact ? "start" : "end"}
       triggerClassName="flex size-8 items-center justify-center rounded-control text-ink-muted hover:bg-surface hover:text-ink"
       label={<ThemeIcon aria-hidden="true" size={16} />}

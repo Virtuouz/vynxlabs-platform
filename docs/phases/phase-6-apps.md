@@ -45,7 +45,7 @@ This is a deviation from the kernel phase's plan, and from the spec's wording th
 
 ### Building an app from the CLI
 
-Passed. Vite, with the Preact and Tailwind plugins, is loaded from the tenant repository, not shipped with the CLI. Two reasons: a repository pins its build tool like any dependency, and Tailwind's compiler carries a licence (MPL-2.0) that is allowed for tools and not for what ships. Built with `base: "./"`, a page's addresses are relative, and the instance adds a `<base>` element when it serves the page. One build is then served under a path and at the root of a hostname. Two builds of the same source give the same bundle digest.
+Passed. Vite, with the Preact and Tailwind plugins, is loaded from the tenant repository, not shipped with the CLI. Two reasons: a repository pins its build tool like any dependency, and Tailwind's compiler carries a license (MPL-2.0) that is allowed for tools and not for what ships. Built with `base: "./"`, a page's addresses are relative, and the instance adds a `<base>` element when it serves the page. One build is then served under a path and at the root of a hostname. Two builds of the same source give the same bundle digest.
 
 ### Vega-Lite under Preact and a strict policy
 
@@ -53,8 +53,8 @@ Passed.
 
 | Point | Result |
 | --- | --- |
-| Licences | Passed with no change to the allowlist. Vega, Vega-Lite and the interpreter are BSD-3-Clause |
-| No evaluation of strings as code | A chart with a calculation, a filter, colour and a tooltip draws under Node's `--disallow-code-generation-from-strings`. The same chart through Vega's default path fails under that flag, so the flag bites |
+| Licenses | Passed with no change to the allowlist. Vega, Vega-Lite and the interpreter are BSD-3-Clause |
+| No evaluation of strings as code | A chart with a calculation, a filter, color and a tooltip draws under Node's `--disallow-code-generation-from-strings`. The same chart through Vega's default path fails under that flag, so the flag bites |
 | In a browser, under `script-src 'self'` | Draws, with no policy violation reported |
 | Real React | None. Vega has no React dependency, and Base UI's tabs, fields, dialog and menu pass under the compatibility layer |
 | Size | The kit with Preact and Base UI is 23 kB compressed. The chart engine is about 275 kB compressed, in chunks that load only when a chart is shown |
@@ -152,7 +152,7 @@ Everything that is not the API and not the console is served before routing, by 
 - `@vynxlabs/app` is the browser client: `table`, `runScript`, `session`, `signOut`, `useQuery`, `useSession`. It reads the page's context and calls the public API.
 - SDK: `defineApp`, `defineTheme`, `defineRole`, `defineBinding`.
 - CLI: `build` compiles apps, `deploy` uploads the files the tenant lacks and then the bundle, and `dev` serves an app from its source with reload, against a workspace, as the developer.
-- Console: a workspace's Apps tab, and End users, Branding and Domains for a tenant. It shows a tenant's colours while that tenant is open.
+- Console: a workspace's Apps tab, and End users, Branding and Domains for a tenant. It shows a tenant's colors while that tenant is open.
 
 ## Schemas
 
@@ -217,7 +217,7 @@ Checked on 2026-11-12 against the build on the `claude/modest-johnson-9fi53e` br
 
 | Check | Result |
 | --- | --- |
-| Lint, type check, schema, migration and licence checks | Passed |
+| Lint, type check, schema, migration and license checks | Passed |
 | Every test on Postgres 16 | Passed: 39 files, 483 tests. Postgres 18 was not run here, and is left to CI |
 | The control plane and CLI tests with the instance held to one database connection | Passed |
 | The image, built from the Dockerfile | Built, and both instances below ran from it. The build here added this machine's proxy certificate and took the base image from a mirror, because Docker Hub refused the pull. The Dockerfile's own steps were otherwise unchanged |
@@ -225,7 +225,7 @@ Checked on 2026-11-12 against the build on the `claude/modest-johnson-9fi53e` br
 | Staff, in a real browser | Passed. A member signed in to the console, saw both apps with their addresses and who they are open to, invited a customer and was shown the link to pass on, since the instance sends no mail. In the portal the member saw every order and published a notice |
 | Portal users | Passed. The customer opened the invitation, chose a password, and asked for an order. A script on a managed worker wrote it as theirs and it appeared, with the chart. A second customer saw none of it, was answered 404 for the row by its ID and for a change to it, 403 for writing a row as the first, and 403 for the tenant's members, end users, secrets and runs |
 | Guests | Passed. Anyone read the public page and its notices. Reading orders and writing notices answered 401, and the portal sent them to sign in. Of 140 requests in a row, 120 were answered and 20 refused with 429, while a signed-in customer was not limited |
-| Branding | Passed. The tenant's colours and logo showed on the sign-in page and in the console. The app showed the workspace's theme over the tenant's |
+| Branding | Passed. The tenant's colors and logo showed on the sign-in page and in the console. The app showed the workspace's theme over the tenant's |
 | Policy | Passed. Apps ran under `script-src 'self'` with the chart drawn. No page reported an error or a policy violation. The first run did report one: the platform's own pages carried an inline style their policy forbids. Fixed, and a test now holds it |
 | Moving the tenant | Passed. Exported from A and imported into B with the CLI. On B the customer signed in with the password they had and saw their order |
 | Instance B behind Caddy with TLS, `APPS_URL` set | Passed. The instance's own address sent apps to the second address. The console and member sign-in answered 404 there. The customer's cookie was secure, HTTP-only and for that host alone. A member signed in at the console was not signed in there |
@@ -255,7 +255,7 @@ One full run of the tests, out of five, failed seven tests in `execution.test.ts
 - The start page of a portal lists production's apps only. A dev workspace's app is reached by its address.
 - `platform dev` acts as the developer, with an API key. It does not show the app as an end user would see it.
 - A link to a registered hostname assumes the default port.
-- Charts take their categorical colours from five tokens, three of which mean a status. More than five series repeat.
+- Charts take their categorical colors from five tokens, three of which mean a status. More than five series repeat.
 - Generated apps and a builder: phase 7.
 - Nothing is published: no image, no package. The Fly.io deploy from phase 0 and the production exit check from phase 2 are still open.
 - The address for security reports, and default retention for runs and audit entries.

@@ -1,6 +1,14 @@
 import { RunError, runScript, table } from "@vynxlabs/app";
-import { Badge, type BadgeTone } from "@vynxlabs/ui";
+import { Badge, type BadgeTone, Skeleton } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
+// These two files import nothing, so they are safe in the browser.
+import {
+  type AppointmentStatus,
+  dollars,
+  NEXT_STATUS,
+  STATUS_WORDS,
+  TIME_ZONE,
+} from "../../src/constants.ts";
 // Types only: none of the repository's server code reaches the browser.
 import type {
   appointments,
@@ -11,53 +19,41 @@ import type {
   pets,
   registrations,
 } from "../../src/model.ts";
+import { clockText, instantAt, wallClock } from "../../src/time.ts";
 
-/**
- * The same lists as the scripts use. They are copied, not imported: importing
- * a value from `src/` would put the SDK and its schemas in the page.
- */
-export const REASONS = [
-  "Check-up",
-  "Vaccination",
-  "Dental",
-  "Surgery",
-  "Lameness",
-  "Skin",
-  "Follow-up",
-] as const;
+export { CLINICS, REASONS, VISIT_MINUTES } from "../../src/constants.ts";
 
-/** Which status may follow which, as `appointments/set-status` allows. */
-export const NEXT: Record<
-  string,
-  { status: string; label: string; tone?: "primary" | "danger" }[]
-> = {
-  booked: [
-    { status: "checked_in", label: "Check in", tone: "primary" },
-    { status: "no_show", label: "No-show" },
-    { status: "cancelled", label: "Cancel", tone: "danger" },
-  ],
-  checked_in: [
-    { status: "in_exam", label: "To exam room", tone: "primary" },
-    { status: "cancelled", label: "Cancel", tone: "danger" },
-  ],
-  in_exam: [{ status: "done", label: "Finish visit", tone: "primary" }],
-  done: [],
-  no_show: [{ status: "booked", label: "Rebook" }],
-  cancelled: [{ status: "booked", label: "Restore" }],
+/** What each move is called on a button, and how loud it is. */
+const MOVES: Record<AppointmentStatus, { label: string; tone?: "primary" | "danger" }> = {
+  checked_in: { label: "Check in", tone: "primary" },
+  in_exam: { label: "To exam room", tone: "primary" },
+  done: { label: "Finish visit", tone: "primary" },
+  no_show: { label: "No-show" },
+  cancelled: { label: "Cancel", tone: "danger" },
+  booked: { label: "Rebook" },
 };
 
-export const STATUS: Record<string, { label: string; tone: BadgeTone }> = {
-  booked: { label: "Booked", tone: "neutral" },
-  checked_in: { label: "Checked in", tone: "action" },
-  in_exam: { label: "In exam", tone: "attention" },
-  done: { label: "Done", tone: "success" },
-  no_show: { label: "No-show", tone: "danger" },
-  cancelled: { label: "Cancelled", tone: "neutral" },
+/** The moves a visit can make next, as `appointments/set-status` allows them. */
+export const nextMoves = (status: string) =>
+  (NEXT_STATUS[status as AppointmentStatus] ?? []).map((next) => ({
+    status: next,
+    // A canceled visit is restored, not rebooked.
+    label: status === "cancelled" && next === "booked" ? "Restore" : MOVES[next].label,
+    tone: MOVES[next].tone,
+  }));
+
+const TONES: Record<AppointmentStatus, BadgeTone> = {
+  booked: "neutral",
+  checked_in: "action",
+  in_exam: "attention",
+  done: "success",
+  no_show: "danger",
+  cancelled: "neutral",
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const known = STATUS[status] ?? { label: status, tone: "neutral" as const };
-  return <Badge tone={known.tone}>{known.label}</Badge>;
+  const known = status as AppointmentStatus;
+  return <Badge tone={TONES[known] ?? "neutral"}>{STATUS_WORDS[known] ?? status}</Badge>;
 }
 
 // ----- Tables, typed by their definitions -----
@@ -77,35 +73,37 @@ export type Clinic = NonNullable<typeof clinics.__row>;
 export type StockLine = NonNullable<typeof inventory.__row>;
 export type Registration = NonNullable<typeof registrations.__row>;
 
-// ----- Formatting. Clinic times are kept in UTC, as the booking script checks them. -----
+// ----- Formatting. Every clinic keeps Pacific time, and money is kept in cents. -----
 
-export const pounds = (pence: number) =>
-  new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
+export { dollars };
 
-export const clock = (iso: string) =>
-  new Date(iso).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-  });
+/** "8:30 AM" at the clinic. */
+export const clock = (iso: string) => clockText(iso, TIME_ZONE);
 
-export const day = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-GB", {
+/** "Mon, Nov 16" for a clinic day, `YYYY-MM-DD`. */
+export const day = (date: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
     weekday: "short",
-    day: "numeric",
     month: "short",
-    timeZone: "UTC",
-  });
+    day: "numeric",
+  }).format(instantAt(date, 12 * 60, TIME_ZONE));
 
-export const todayIso = () => new Date().toISOString().slice(0, 10);
+/** Today at the clinics. */
+export const todayIso = () => wallClock(new Date(), TIME_ZONE).date;
 
-export const shiftDay = (date: string, by: number) =>
-  new Date(new Date(`${date}T00:00:00Z`).getTime() + by * 86_400_000).toISOString().slice(0, 10);
+/** The clinic day of an instant. */
+export const dayOf = (iso: string) => wallClock(new Date(iso), TIME_ZONE).date;
 
+/** A clinic day's visits, from midnight to midnight Pacific time. */
 export const dayRange = (date: string) => ({
   and: [
-    { column: "starts_at", op: "gte" as const, value: `${date}T00:00:00Z` },
-    { column: "starts_at", op: "lte" as const, value: `${date}T23:59:59Z` },
+    { column: "starts_at", op: "gte" as const, value: instantAt(date, 0, TIME_ZONE).toISOString() },
+    {
+      column: "starts_at",
+      op: "lt" as const,
+      value: instantAt(date, 24 * 60, TIME_ZONE).toISOString(),
+    },
   ],
 });
 
@@ -186,10 +184,6 @@ export function Panel({
   );
 }
 
-export function Loading({ what }: { what: string }) {
-  return (
-    <p className="m-0 py-6 text-center text-ink-muted" aria-live="polite">
-      Loading {what}…
-    </p>
-  );
+export function Loading({ what, lines = 3 }: { what: string; lines?: number }) {
+  return <Skeleton lines={lines} label={`Loading ${what}`} className="py-2" />;
 }

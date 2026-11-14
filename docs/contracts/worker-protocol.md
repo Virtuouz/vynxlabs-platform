@@ -59,7 +59,7 @@ Returns the bundle: see `schemas/bundle.schema.json`. A worker must check that t
 
 Request: `attempt`, optional `workerId`.
 
-Response: `{"cancelled": false}` while the attempt is this worker's. `{"cancelled": true}` means stop: the run was cancelled, or the attempt was taken back. Stop the script and report nothing further.
+Response: `{"cancelled": false}` while the attempt is this worker's. `{"cancelled": true}` means stop: the run was canceled, or the attempt was taken back. Stop the script and report nothing further.
 
 A worker that sends no heartbeat for 30 seconds loses the job. The job is then offered again, as the next attempt, if the run has attempts left.
 

@@ -177,7 +177,7 @@ export async function composeCode(
       target: "node24",
       write: false,
       logLevel: "silent",
-      // No tsconfig.json is looked for or honoured.
+      // No tsconfig.json is looked for or honored.
       tsconfigRaw: {},
       plugins: [lockdown(sources, options.sdkEntry)],
     });

@@ -9,7 +9,7 @@ const data = {
     order: {
       id: "1001",
       total: 1250.5,
-      currency: "EUR",
+      currency: "USD",
       lines: [
         { sku: "A", qty: 2, price: 100 },
         { sku: "B", qty: 1, price: 1050.5 },
@@ -52,7 +52,7 @@ describe("wiring data between steps", () => {
     ).toEqual(["A"]);
     expect(
       await evaluate("'Order ' + trigger.order.id + ' (' + trigger.order.currency + ')'"),
-    ).toBe("Order 1001 (EUR)");
+    ).toBe("Order 1001 (USD)");
     expect(await evaluate("size(trigger.order.lines)")).toBe(2);
     expect(await evaluate("trigger.order.lines.map(l, l.qty * l.price)")).toEqual([200, 1050.5]);
   });
@@ -139,5 +139,18 @@ describe("containment", () => {
       Array.from({ length: 200 }, (_, index) => evaluate("x * 2.0", { x: index })),
     );
     expect(results).toEqual(Array.from({ length: 200 }, (_, index) => index * 2));
+  });
+});
+
+describe("the time", () => {
+  const at = { ...data, now: new Date("2026-11-14T10:00:00Z") };
+  test("`now` is a timestamp: it compares, takes durations, and reads as ISO 8601 text", async () => {
+    expect(await evaluate("string(now - duration('336h')).substring(0, 10)", at)).toBe(
+      "2026-10-31",
+    );
+    expect(await evaluate("now > timestamp('2026-01-01T00:00:00Z')", at)).toBe(true);
+    expect(await evaluate("string(now)", at)).toBe("2026-11-14T10:00:00.000Z");
+    // Other values still read as text as they did.
+    expect(await evaluate("string(12) + string(true)", at)).toBe("12true");
   });
 });

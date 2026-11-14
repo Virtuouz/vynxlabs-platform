@@ -169,7 +169,7 @@ test("a chosen theme is put on the page and remembered, and the system's is the 
     </Shell>,
   );
   expect(document.documentElement.dataset.theme).toBeUndefined();
-  fireEvent.click(screen.getAllByRole("button", { name: "Colour theme" })[0] as HTMLElement);
+  fireEvent.click(screen.getAllByRole("button", { name: "Color theme" })[0] as HTMLElement);
   fireEvent.click(await screen.findByText("Dark"));
   expect(document.documentElement.dataset.theme).toBe("dark");
   expect(localStorage.getItem("vx-theme")).toBe("dark");

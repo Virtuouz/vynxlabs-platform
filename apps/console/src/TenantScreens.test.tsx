@@ -83,7 +83,7 @@ test("the tenant's overview says what needs attention, and how each workspace st
   expect(await screen.findByText("2 drafts")).toBeTruthy();
   expect(screen.getByText(/Running v7/)).toBeTruthy();
   expect(screen.getByText(/Nothing deployed · promotes to Main/)).toBeTruthy();
-  expect(await screen.findByText("secret.set")).toBeTruthy();
+  expect(await screen.findByText("Secret set")).toBeTruthy();
 });
 
 test("Members & access keeps one tab per old address, and a member opens beside the list", async () => {

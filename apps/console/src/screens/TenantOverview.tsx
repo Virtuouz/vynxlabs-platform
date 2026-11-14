@@ -2,6 +2,7 @@ import { Notice } from "@vynxlabs/ui";
 import { CircleCheck, CirclePause, Cpu, Globe, LifeBuoy } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
+import { actionWords } from "../audit-words.ts";
 import { KeyValues, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
@@ -67,8 +68,8 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         key="domains"
         tone="attention"
         icon={<Globe aria-hidden="true" size={15} />}
-        title={`${plural(c.domainsToFix, "hostname")} not working yet`}
-        detail="Not verified, or the last check failed."
+        title={`${plural(c.domainsToFix, "hostname")} to check`}
+        detail="Its last check failed, or it is waiting on its DNS record before it can serve."
         action={<Go to={t("domains")}>Check</Go>}
       />,
     );
@@ -219,7 +220,9 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                       key={entry.id}
                       className="flex flex-col gap-0.5 border-line border-b px-4 py-2.5 last:border-b-0"
                     >
-                      <Mono className="truncate">{entry.action}</Mono>
+                      <span className="truncate font-medium" title={entry.action}>
+                        {actionWords(entry.action)}
+                      </span>
                       <span className="text-meta text-ink-muted">
                         {entry.actorLabel ?? entry.actorType} · {when(entry.occurredAt)}
                       </span>

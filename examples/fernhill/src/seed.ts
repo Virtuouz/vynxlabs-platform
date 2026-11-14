@@ -1,4 +1,5 @@
 import { defineScript, z } from "@vynxlabs/sdk";
+import { type Reason, TIME_ZONE, VISIT_MINUTES } from "./constants.ts";
 import {
   appointments,
   clients,
@@ -9,6 +10,7 @@ import {
   purchaseOrders,
   registrations,
 } from "./model.ts";
+import { hoursOn, instantAt, wallClock } from "./time.ts";
 
 /** The same numbers every time, so two workspaces seeded alike look alike. */
 function random(seed: number) {
@@ -26,32 +28,35 @@ const CLINIC_ROWS = [
   {
     code: "northside",
     name: "Fernhill Northside",
-    phone: "+44 161 555 0101",
-    address: "14 Mill Lane, Northside, M4 2AB",
+    phone: "(503) 555-0101",
+    address: "4815 NE 33rd Ave, Portland, OR 97211",
     opens: "08:00",
     closes: "18:00",
+    saturday_closes: "12:00",
   },
   {
     code: "riverside",
     name: "Fernhill Riverside",
-    phone: "+44 161 555 0202",
-    address: "2 Quay Street, Riverside, M3 4QD",
+    phone: "(503) 555-0102",
+    address: "1220 SE Water Ave, Portland, OR 97214",
     opens: "08:30",
     closes: "18:30",
+    saturday_closes: "12:30",
   },
   {
     code: "hilltop",
     name: "Fernhill Hilltop",
-    phone: "+44 161 555 0303",
-    address: "88 Ridge Road, Hilltop, M20 6HT",
+    phone: "(503) 555-0103",
+    address: "3075 SW Council Crest Dr, Portland, OR 97239",
     opens: "09:00",
     closes: "17:00",
+    saturday_closes: null,
   },
 ];
 const VETS: Record<string, string[]> = {
-  northside: ["Dr Amara Okafor", "Dr Tom Hale"],
-  riverside: ["Dr Priya Raman", "Dr Leo Marsh"],
-  hilltop: ["Dr Hannah Cole", "Dr Sam Ortiz"],
+  northside: ["Dr. Amara Okafor", "Dr. Tom Hale"],
+  riverside: ["Dr. Priya Raman", "Dr. Leo Marsh"],
+  hilltop: ["Dr. Hannah Cole", "Dr. Sam Ortiz"],
 };
 const FIRST = [
   "Olivia",
@@ -143,7 +148,7 @@ const PETS: { species: string; names: string[]; breeds: string[]; weight: [numbe
       "Dachshund",
       "Greyhound",
     ],
-    weight: [6, 38],
+    weight: [12, 85],
   },
   {
     species: "Cat",
@@ -160,19 +165,19 @@ const PETS: { species: string; names: string[]; breeds: string[]; weight: [numbe
       "Simba",
     ],
     breeds: ["Domestic shorthair", "Maine Coon", "British Shorthair", "Siamese", "Ragdoll"],
-    weight: [3, 7],
+    weight: [7, 16],
   },
   {
     species: "Rabbit",
     names: ["Clover", "Thumper", "Hazel", "Bramble"],
     breeds: ["Lionhead", "Mini Lop", "Netherland Dwarf"],
-    weight: [1, 3],
+    weight: [2, 7],
   },
   {
     species: "Bird",
     names: ["Kiwi", "Sunny", "Rio"],
     breeds: ["Budgerigar", "Cockatiel"],
-    weight: [0.03, 0.1],
+    weight: [0.1, 0.3],
   },
 ];
 const ALERTS = [
@@ -183,7 +188,7 @@ const ALERTS = [
   "Heart murmur",
 ];
 const REASON_WEIGHTS: [string, number][] = [
-  ["Check-up", 30],
+  ["Checkup", 30],
   ["Vaccination", 25],
   ["Follow-up", 15],
   ["Skin", 10],
@@ -200,8 +205,8 @@ const STOCK: {
   qty: number;
 }[] = [
   {
-    sku: "VAC-DHP",
-    item: "Canine DHP vaccine",
+    sku: "VAC-DHPP",
+    item: "Canine DHPP vaccine",
     category: "Vaccines",
     cost: 820,
     reorderAt: 20,
@@ -217,7 +222,7 @@ const STOCK: {
   },
   {
     sku: "VAC-FEL",
-    item: "Feline RCP vaccine",
+    item: "Feline FVRCP vaccine",
     category: "Vaccines",
     cost: 710,
     reorderAt: 15,
@@ -225,7 +230,7 @@ const STOCK: {
   },
   {
     sku: "VAC-RHD2",
-    item: "Rabbit RHD2 vaccine",
+    item: "Rabbit RHDV2 vaccine",
     category: "Vaccines",
     cost: 1150,
     reorderAt: 6,
@@ -233,7 +238,7 @@ const STOCK: {
   },
   {
     sku: "MED-MELOX",
-    item: "Meloxicam oral 1.5mg/ml, 32ml",
+    item: "Meloxicam oral suspension 1.5 mg/mL, 32 mL",
     category: "Medicines",
     cost: 960,
     reorderAt: 10,
@@ -241,7 +246,7 @@ const STOCK: {
   },
   {
     sku: "MED-AMOX",
-    item: "Amoxicillin 250mg, 100 tabs",
+    item: "Amoxicillin 250 mg, 100 tablets",
     category: "Medicines",
     cost: 1480,
     reorderAt: 8,
@@ -249,7 +254,7 @@ const STOCK: {
   },
   {
     sku: "MED-INSUL",
-    item: "Caninsulin 10ml",
+    item: "Vetsulin 10 mL",
     category: "Medicines",
     cost: 4350,
     reorderAt: 4,
@@ -257,7 +262,7 @@ const STOCK: {
   },
   {
     sku: "ANA-ISO",
-    item: "Isoflurane 250ml",
+    item: "Isoflurane 250 mL",
     category: "Anaesthesia",
     cost: 6200,
     reorderAt: 3,
@@ -265,7 +270,7 @@ const STOCK: {
   },
   {
     sku: "ANA-PROP",
-    item: "Propofol 20ml",
+    item: "Propofol 20 mL",
     category: "Anaesthesia",
     cost: 1890,
     reorderAt: 6,
@@ -289,7 +294,7 @@ const STOCK: {
   },
   {
     sku: "SUP-SYR",
-    item: "Syringes 2ml, box of 100",
+    item: "Syringes 3 mL, box of 100",
     category: "Consumables",
     cost: 850,
     reorderAt: 10,
@@ -297,7 +302,7 @@ const STOCK: {
   },
   {
     sku: "FOOD-RENAL",
-    item: "Renal diet, feline, 4kg",
+    item: "Renal diet, feline, 8.8 lb bag",
     category: "Diets",
     cost: 3150,
     reorderAt: 5,
@@ -305,7 +310,7 @@ const STOCK: {
   },
   {
     sku: "FOOD-GI",
-    item: "Gastrointestinal diet, canine, 12kg",
+    item: "Gastrointestinal diet, canine, 27.5 lb bag",
     category: "Diets",
     cost: 5620,
     reorderAt: 4,
@@ -375,8 +380,9 @@ export const seedDemo = defineScript({
         const first = pick(FIRST);
         const last = pick(LAST);
         // A few numbers TextLine refuses, so reminders have something to report.
-        const phone =
-          number % 17 === 0 ? "+44 7700 900000" : `+44 7700 9${String(number).padStart(5, "0")}`;
+        // Numbers in 555-0100 to 0199 are set aside for fiction. 0199 is a landline TextLine refuses,
+        // so reminders have something to report.
+        const phone = number % 17 === 0 ? "(503) 555-0199" : `(503) 555-0${100 + (number - 1000)}`;
         owners.push({ code: `C-${number}`, name: `${first} ${last}`, phone, clinic: clinic.code });
         number += 1;
       }
@@ -410,7 +416,7 @@ export const seedDemo = defineScript({
           species: kind.species,
           breed: pick(kind.breeds),
           born: born.toISOString().slice(0, 10),
-          weight_kg: Math.round((low + rnd() * (high - low)) * 10) / 10,
+          weight_lb: Math.round((low + rnd() * (high - low)) * 10) / 10,
           client_code: owner.code,
           clinic: owner.clinic,
           alert: rnd() < 0.08 ? pick(ALERTS) : null,
@@ -429,31 +435,24 @@ export const seedDemo = defineScript({
     });
     const petsAt = (clinic: string) => storedPets.filter((pet) => pet.clinic === clinic);
 
-    // Visits: the past weeks, today, and ten days ahead, on weekdays and Saturday mornings.
+    // Visits: the past weeks, today, and ten days ahead, by each clinic's own clock.
     const now = Date.now();
-    const today = new Date(now);
-    today.setUTCHours(0, 0, 0, 0);
     const visitRows: NonNullable<typeof appointments.__insert>[] = [];
     let visitNumber = 4000;
     for (let day = -input.pastDays; day <= 10; day += 1) {
-      const date = new Date(today.getTime() + day * 86_400_000);
-      const weekday = date.getUTCDay();
-      if (weekday === 0) continue;
+      const local = wallClock(new Date(now + day * 86_400_000), TIME_ZONE);
       for (const clinic of CLINIC_ROWS) {
-        const opens = Number(clinic.opens.slice(0, 2)) * 60 + Number(clinic.opens.slice(3));
-        const closes =
-          weekday === 6
-            ? opens + 240
-            : Number(clinic.closes.slice(0, 2)) * 60 + Number(clinic.closes.slice(3));
-        const slots = Math.floor((closes - opens) / 20);
+        const hours = hoursOn(clinic, local.weekday);
+        if (!hours) continue;
+        const slots = Math.floor((hours.closes - hours.opens) / 20);
         const busy = day > 3 ? 0.25 : 0.45;
         for (let slot = 0; slot < slots; slot += 1) {
           for (const vet of VETS[clinic.code] ?? []) {
             if (rnd() > busy) continue;
             const pet = pick(petsAt(clinic.code));
-            const startsAt = new Date(date.getTime() + (opens + slot * 20) * 60_000);
+            const startsAt = instantAt(local.date, hours.opens + slot * 20, TIME_ZONE);
             const reason = weighted(REASON_WEIGHTS);
-            const minutes = reason === "Surgery" ? 60 : reason === "Dental" ? 40 : 20;
+            const minutes = VISIT_MINUTES[reason as Reason];
             const past = startsAt.getTime() + minutes * 60_000 < now;
             const started = startsAt.getTime() < now;
             let status = "booked";
@@ -511,7 +510,7 @@ export const seedDemo = defineScript({
     const invoiceRows = storedVisits
       .filter((visit) => visit.status === "done")
       .map((visit) => {
-        const issued = visit.starts_at.slice(0, 10);
+        const issued = wallClock(new Date(visit.starts_at), TIME_ZONE).date;
         const ageDays = (now - new Date(visit.starts_at).getTime()) / 86_400_000;
         const lines = [{ label: "Consultation", amount: FEE }];
         if (EXTRAS[visit.reason])
@@ -577,7 +576,7 @@ export const seedDemo = defineScript({
     await ctx.table(registrations).insertMany([
       {
         name: "Daniel Price",
-        phone: "+44 7700 911223",
+        phone: "(503) 555-0181",
         email: "dan.price@example.net",
         pet_name: "Pickle",
         species: "Dog",
@@ -586,7 +585,7 @@ export const seedDemo = defineScript({
       },
       {
         name: "Hana Sato",
-        phone: "+44 7700 922334",
+        phone: "(503) 555-0182",
         email: null,
         pet_name: "Yuzu",
         species: "Cat",
@@ -595,7 +594,7 @@ export const seedDemo = defineScript({
       },
       {
         name: "Callum Reid",
-        phone: "+44 7700 933445",
+        phone: "(503) 555-0183",
         email: "callum@example.net",
         pet_name: "Nibbles",
         species: "Rabbit",

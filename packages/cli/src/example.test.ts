@@ -72,9 +72,9 @@ beforeAll(async () => {
         shopQueries.push(request.url);
         response.end(
           JSON.stringify([
-            { id: "1001", total: 49.5, currency: "EUR" },
-            { id: "1002", total: 120, currency: "EUR" },
-            { id: "1003", total: 8.25, currency: "EUR" },
+            { id: "1001", total: 49.5, currency: "USD" },
+            { id: "1002", total: 120, currency: "USD" },
+            { id: "1003", total: 8.25, currency: "USD" },
           ]),
         );
       } else if (request.url === "/erp/import/orders") {
@@ -253,7 +253,7 @@ describe("the example integration", () => {
         path: "orders/sync-every-five-minutes",
         script: "orders/sync",
         cron: "*/5 * * * *",
-        timezone: "Europe/Madrid",
+        timezone: "America/New_York",
       },
     );
     const hook = triggers.find((trigger: { type: string }) => trigger.type === "webhook");
@@ -262,7 +262,7 @@ describe("the example integration", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         secret: "shared-with-the-shop",
-        order: { id: "2001", total: 15, currency: "EUR" },
+        order: { id: "2001", total: 15, currency: "USD" },
       }),
     });
     expect(delivered.status).toBe(202);
@@ -297,7 +297,7 @@ describe("the example integration", () => {
     // A small order goes straight through.
     await alice.post(`${base}/events`, {
       name: "orders/received",
-      payload: { id: "3001", total: 80, currency: "EUR" },
+      payload: { id: "3001", total: 80, currency: "USD" },
     });
     const small = await settled(await latest(), (run) => run.status !== "running");
     expect(small.status).toBe("succeeded");
@@ -307,7 +307,7 @@ describe("the example integration", () => {
     // A large one waits for a person.
     await alice.post(`${base}/events`, {
       name: "orders/received",
-      payload: { id: "3002", total: 4200, currency: "EUR" },
+      payload: { id: "3002", total: 4200, currency: "USD" },
     });
     const waiting = await settled(await latest(), (run) =>
       run.steps.some((s) => s.node === "approve" && s.status === "waiting"),
@@ -316,7 +316,7 @@ describe("the example integration", () => {
     const approvals = (await alice.get(`${base}/approvals`)).body.items;
     expect(approvals[0]).toMatchObject({
       title: "Approve a large order",
-      detail: { order: "3002", total: 4200, currency: "EUR" },
+      detail: { order: "3002", total: 4200, currency: "USD" },
     });
     await alice.post(`${base}/flow-runs/${approvals[0].flowRunId}/approvals/approve`, {
       decision: "approve",
@@ -329,13 +329,13 @@ describe("the example integration", () => {
     // One the check refuses fails the flow with the reason.
     await alice.post(`${base}/events`, {
       name: "orders/received",
-      payload: { id: "3003", total: 50, currency: "USD" },
+      payload: { id: "3003", total: 50, currency: "CAD" },
     });
     const refused = await settled(await latest(), (run) => run.status !== "running");
     expect(refused).toMatchObject({
       status: "failed",
       error: {
-        message: 'The step "refuse" failed: Order 3003 was refused: Only EUR orders are handled.',
+        message: 'The step "refuse" failed: Order 3003 was refused: Only USD orders are handled.',
       },
     });
 
@@ -487,7 +487,7 @@ describe("the example integration", () => {
         await carl.browse(`/api/v1${base}/runs`, {
           json: {
             script: "orders/request",
-            input: { number: "C-1", total: 12.5, currency: "EUR" },
+            input: { number: "C-1", total: 12.5, currency: "USD" },
           },
         })
       ).text,

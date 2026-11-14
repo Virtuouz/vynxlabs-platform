@@ -128,7 +128,7 @@ Never:
 
 - API keys and worker credentials. They are made again where the tenant goes.
 - Operator access grants. They belong to the instance the tenant is leaving.
-- The queue. A run that was waiting is not carried. With history it arrives recorded as cancelled.
+- The queue. A run that was waiting is not carried. With history it arrives recorded as canceled.
 - End users' sign-ins, and invitation and reset links that were not used. People sign in again with the password they had, and staff make new links.
 - Hostnames registered for apps. A name points at one instance, so it is registered again where the tenant arrives.
 - The instance master key.

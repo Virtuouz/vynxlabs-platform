@@ -375,9 +375,13 @@ A flow is a declarative graph of steps stored as data, and the platform's own fl
 
 A flow may have several trigger entry nodes, each leading into its own branch of logic. This lets related logic be grouped as one flow. A run is one trigger firing and walking the part of the graph reachable from it.
 
+A manual trigger may declare the input it takes, as a JSON Schema. A run started by hand, from the API, by an agent or as a sub-flow is refused when its input does not match, with each problem named by path. An agent is shown the same schema for the flow's tool.
+
 ### Control flow
 
 The engine must be designed for branching, looping over items, parallel paths, waits and delays, approval steps that pause for a person, and error-handling paths. These can be delivered progressively.
+
+A loop over items fails as soon as one item fails, unless it is told to carry on. It then gives `{ error: { message } }` in place of each failed item's result, and succeeds.
 
 An approval step may name who can decide it, as groups or roles. A person then needs both the approval permission and a place in one of those. A step that names nobody can be decided by anyone holding the permission.
 
@@ -391,6 +395,7 @@ Nodes can be placed freely on a canvas. Positions are stored apart from the logi
 - Simple transformations use a small, language-neutral expression language that the control plane evaluates safely.
 - Anything more complex becomes a code step.
 - The expression language is CEL. It cannot express unbounded work or run arbitrary code, and the control plane evaluates it in a sandbox with time and memory limits.
+- An expression can read `now`, the time it is evaluated, as a timestamp. A timestamp reads as ISO 8601 text in UTC, so `string(now - duration('336h')).substring(0, 10)` is the date two weeks ago.
 
 ### Durability
 
@@ -553,7 +558,7 @@ Failures can notify people and can start an error-handling script or flow, confi
 - Connections and data sources are checked on a schedule and their last result is kept, so a list can show what is reachable.
 - Refused provisioning pushes are recorded briefly with their reason, as refused webhook requests are.
 - A failed run carries a suggested next step when the failure matches a known shape, such as a refused request, a missing binding or a timeout. The suggestion is advice; it never acts.
-- The console summarises a workspace's health, recent runs and what needs attention from these records, never from figures it makes up.
+- The console summarizes a workspace's health, recent runs and what needs attention from these records, never from figures it makes up.
 
 ### Audit log
 

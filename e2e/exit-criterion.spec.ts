@@ -92,7 +92,7 @@ test.afterAll(async () => {
 test("a member signs in through single sign-on, and is given a tenant to look after", async ({
   browser,
 }) => {
-  // An operator connects the organisation's identity provider, once.
+  // An operator connects the organization's identity provider, once.
   for (const old of (await asAdmin("GET", "/instance/identity-providers")).body.items) {
     await asAdmin("DELETE", `/instance/identity-providers/${old.id}`);
   }

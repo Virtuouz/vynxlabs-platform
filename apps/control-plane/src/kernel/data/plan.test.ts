@@ -142,7 +142,7 @@ describe("planning a table", () => {
       columns: {
         number: v1.columns.number as never,
         total: { type: "integer" },
-        currency: { type: "text", default: "EUR" },
+        currency: { type: "text", default: "USD" },
       },
     });
     expect(plan.steps).toEqual([
@@ -155,7 +155,7 @@ describe("planning a table", () => {
           type: "text",
           required: false,
           unique: false,
-          default: "EUR",
+          default: "USD",
           referenceTable: null,
         },
       },

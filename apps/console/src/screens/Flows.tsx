@@ -33,7 +33,7 @@ const STATUS: Record<string, [BadgeTone, string]> = {
   waiting: ["attention", "Waiting"],
   succeeded: ["success", "Succeeded"],
   failed: ["danger", "Failed"],
-  cancelled: ["neutral", "Cancelled"],
+  cancelled: ["neutral", "Canceled"],
   skipped: ["neutral", "Skipped"],
 };
 const StatusBadge = ({ status }: { status: string }) => (
@@ -618,7 +618,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
             onClick={async () => {
               const sure = await ask.confirm({
                 title: "Cancel this flow run?",
-                text: "Steps in progress are cancelled too.",
+                text: "Steps in progress are canceled too.",
                 action: "Cancel flow run",
                 cancel: "Keep running",
                 danger: true,

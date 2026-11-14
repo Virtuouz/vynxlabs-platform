@@ -49,7 +49,7 @@ const STATUSES: { value: "all" | Status; label: string }[] = [
   { value: "waiting", label: "Waiting" },
   { value: "queued", label: "Queued" },
   { value: "succeeded", label: "Succeeded" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "cancelled", label: "Canceled" },
 ];
 
 /** How long ago, or the date when it is older than a day. */

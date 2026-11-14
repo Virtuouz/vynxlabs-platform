@@ -40,7 +40,7 @@ export interface TypeToConfirmOptions extends ConfirmOptions {
 export interface Dialogs {
   /** Asks a yes or no question. Resolves to whether the person went ahead. */
   confirm: (options: ConfirmOptions) => Promise<boolean>;
-  /** Asks for one line or one block of text. Resolves to it, or to `null` when cancelled. */
+  /** Asks for one line or one block of text. Resolves to it, or to `null` when canceled. */
   prompt: (options: PromptOptions) => Promise<string | null>;
   /** Asks the person to type a name before something is destroyed. */
   typeToConfirm: (options: TypeToConfirmOptions) => Promise<boolean>;

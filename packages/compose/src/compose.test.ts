@@ -134,7 +134,7 @@ describe("composing a bundle", () => {
 
   test("console source cannot read the machine it is compiled on", async () => {
     const secret = JSON.stringify(join(scratch, "secret.txt"));
-    // A tsconfig.json beside the sources would remap the SDK, if it were honoured.
+    // A tsconfig.json beside the sources would remap the SDK, if it were honored.
     const attempts: Record<string, string> = {
       relative: 'import x from "../secret.txt"; export default async () => x;',
       absolute: `import x from ${secret}; export default async () => x;`,

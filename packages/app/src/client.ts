@@ -2,7 +2,8 @@
 export interface AppContext {
   /** The API's path on this address, for example `/api/v1`. */
   api: string;
-  tenant: { id: string; slug: string; name: string };
+  /** `logo` says whether the tenant has set one: see `logoUrl()`. */
+  tenant: { id: string; slug: string; name: string; logo?: boolean };
   workspace: { id: string; slug: string };
   /** `interface` is set on an app made in the console: the path of the interface it shows. */
   app: { path: string; title: string; interface?: string };
@@ -19,6 +20,10 @@ export interface Principal {
   id: string | null;
   name: string | null;
   email: string | null;
+  /** The names of an end user's groups, such as their team. Empty for anyone else. */
+  groups?: string[];
+  /** An end user's attributes, the ones tables' rules match. Empty for anyone else. */
+  attributes?: Record<string, string>;
 }
 
 /** A request the API refused, with the server's own code and explanation. */
@@ -155,11 +160,31 @@ export interface AggregateOptions {
   limit?: number;
 }
 
-/** Totals, one item for each group. With no groups there is one item. */
+/**
+ * Totals, one item for each group. With no groups there is one item.
+ *
+ * `values` is keyed by the measure as it was asked for: `"count"`,
+ * `"sum:total"`. A count, a sum and an average are always numbers, or null
+ * when no row had a value. A least or a most is a value of its column, so it
+ * may be text or a date. `totalOf` reads one number for you.
+ */
 export interface Aggregated {
   items: { by: Record<string, unknown>; values: Record<string, number | string | null> }[];
   /** True when there were more groups than `limit`. */
   truncated: boolean;
+}
+
+/**
+ * One measure as a number, added up over every group: the figure for a page's
+ * headline. A missing or null value counts as 0.
+ *
+ *     const owed = totalOf(await table("invoices").aggregate({ measures: ["sum:total"] }), "sum:total");
+ */
+export function totalOf(result: Aggregated, measure: string): number {
+  return result.items.reduce((sum, item) => {
+    const value = Number(item.values[measure] ?? 0);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
 }
 
 /** Anything that carries a table's row types: what `defineTable` returns. */
@@ -175,8 +200,13 @@ type InsertOf<T> = T extends { readonly __insert?: infer Insert }
 
 /** Reads and writes the rows of one table, as the person using the app. */
 export interface AppTable<Row, Insert> {
-  /** One page of rows. The table's row policy decides which rows the person sees. */
-  find(options?: FindOptions): Promise<Page<Row>>;
+  /**
+   * The rows, as many as `limit` (default 50). The table's row policy decides
+   * which rows the person sees. It answers what a script's `find()` answers.
+   */
+  find(options?: FindOptions): Promise<Row[]>;
+  /** One page of rows, and the cursor of the next page, for going through many. */
+  page(options?: FindOptions): Promise<Page<Row>>;
   /** The row with this ID, or null when there is none the person may see. */
   get(id: string): Promise<Row | null>;
   insert(row: Insert): Promise<Row>;
@@ -198,6 +228,9 @@ export interface AppTable<Row, Insert> {
  *
  *     import type { orders } from "../../src/index.ts";
  *     const rows = await table<typeof orders>("orders").find();
+ *
+ * `find()` answers the rows, as a script's does; `page()` answers a page and
+ * the cursor of the next one.
  */
 export function table<Definition extends TableTypes = TableTypes>(
   path: string,
@@ -206,16 +239,20 @@ export function table<Definition extends TableTypes = TableTypes>(
   type Insert = InsertOf<Definition>;
   const rows = () => `${workspacePath()}/rows/${path}`;
   const row = (id: string) => `${workspacePath()}/row/${encodeURIComponent(id)}/${path}`;
+  const page = (options: FindOptions = {}) => {
+    const query = new URLSearchParams();
+    if (options.filter) query.set("filter", JSON.stringify(options.filter));
+    if (options.sort?.length) query.set("sort", options.sort.join(","));
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.cursor) query.set("cursor", options.cursor);
+    const text = query.toString();
+    return api.get<Page<Row>>(`${rows()}${text ? `?${text}` : ""}`);
+  };
   return {
-    find(options = {}) {
-      const query = new URLSearchParams();
-      if (options.filter) query.set("filter", JSON.stringify(options.filter));
-      if (options.sort?.length) query.set("sort", options.sort.join(","));
-      if (options.limit !== undefined) query.set("limit", String(options.limit));
-      if (options.cursor) query.set("cursor", options.cursor);
-      const text = query.toString();
-      return api.get<Page<Row>>(`${rows()}${text ? `?${text}` : ""}`);
+    async find(options = {}) {
+      return (await page(options)).items;
     },
+    page,
     async get(id) {
       try {
         return await api.get<Row>(row(id));
@@ -315,7 +352,7 @@ export interface FlowRun<Output = unknown> {
   error?: { message: string } | null;
 }
 
-/** Thrown by `runFlow` when the flow fails, is cancelled, or has not ended in time. */
+/** Thrown by `runFlow` when the flow fails, is canceled, or has not ended in time. */
 export class FlowRunError extends Error {
   constructor(readonly flowRun: FlowRun) {
     super(flowRun.error?.message ?? `The flow ended as ${flowRun.status}.`);
@@ -377,6 +414,7 @@ export async function runFlow<Output = unknown>(
 // ----- Who is using the app -----
 
 export interface Session {
+  /** Who it is. An end user's `groups` and `attributes` are filled in. */
   principal: Principal;
   /** Whether people may make their own account in this tenant. */
   signUp: boolean;
@@ -404,8 +442,13 @@ export async function signOut(): Promise<void> {
   await api.post(`/tenants/${appContext().tenant.id}/end-user-auth/sign-out`);
 }
 
-/** The tenant's logo, if it has set one. */
-export function logoUrl(): string {
+/**
+ * The address of the tenant's logo, or null when it has none, so a page never
+ * shows a broken image. A page served by an older platform does not say, and
+ * gets the address.
+ */
+export function logoUrl(): string | null {
   const context = appContext();
+  if (context.tenant.logo === false) return null;
   return `${context.api}/tenants/${context.tenant.id}/portal/logo`;
 }

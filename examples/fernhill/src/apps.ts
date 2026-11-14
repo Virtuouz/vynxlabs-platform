@@ -4,10 +4,14 @@ import {
   bookAppointment,
   clinicDay,
   findClient,
+  freeTimes,
   lowStock,
   setStatus,
   useStock,
 } from "./scripts.ts";
+
+/** Money is kept in cents and shown in dollars. */
+const DOLLARS = { style: "currency", currency: "USD", minorUnits: true } as const;
 
 // ----- The apps -----
 
@@ -50,26 +54,29 @@ export const performance = defineInterface({
         {
           id: "invoiced",
           type: "figure",
-          title: "Invoiced (pence)",
+          title: "Invoiced",
           table: "invoices",
           summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "invoiced" }] },
+          options: { format: DOLLARS },
           at: { x: 0, y: 0, w: 4, h: 3 },
         },
         {
-          // A figure counts every row its page's filters leave: it cannot narrow itself to unpaid ones.
-          id: "issued",
+          id: "unpaid",
           type: "figure",
-          title: "Invoices issued",
+          title: "Unpaid",
           table: "invoices",
-          summary: { groupBy: [], aggregates: [{ fn: "count", as: "issued" }] },
+          filter: { column: "status", value: "unpaid" },
+          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "unpaid" }] },
+          options: { format: DOLLARS },
           at: { x: 4, y: 0, w: 4, h: 3 },
         },
         {
           id: "average",
           type: "figure",
-          title: "Average invoice (pence)",
+          title: "Average invoice",
           table: "invoices",
           summary: { groupBy: [], aggregates: [{ fn: "avg", column: "total", as: "average" }] },
+          options: { format: DOLLARS },
           at: { x: 8, y: 0, w: 4, h: 3 },
         },
         {
@@ -81,7 +88,7 @@ export const performance = defineInterface({
             groupBy: [{ column: "issued_on", bucket: "week" }],
             aggregates: [{ fn: "sum", column: "total", as: "invoiced" }],
           },
-          options: { mark: "line", x: "issued_on", y: "invoiced" },
+          options: { mark: "line", x: "issued_on", y: "invoiced", format: DOLLARS },
           at: { x: 0, y: 3, w: 8, h: 8 },
         },
         {
@@ -93,7 +100,7 @@ export const performance = defineInterface({
             groupBy: [{ column: "clinic" }],
             aggregates: [{ fn: "sum", column: "total", as: "invoiced" }],
           },
-          options: { mark: "bar", x: "clinic", y: "invoiced" },
+          options: { mark: "bar", x: "clinic", y: "invoiced", format: DOLLARS },
           at: { x: 8, y: 3, w: 4, h: 8 },
         },
         {
@@ -105,7 +112,7 @@ export const performance = defineInterface({
             { column: "number" },
             { column: "clinic" },
             { column: "client_code", label: "Client" },
-            { column: "total", label: "Total (pence)" },
+            { column: "total", label: "Total", format: DOLLARS },
             { column: "status" },
             { column: "issued_on", label: "Issued" },
           ],
@@ -207,7 +214,7 @@ export const performance = defineInterface({
             { column: "number" },
             { column: "clinic" },
             { column: "item" },
-            { column: "total", label: "Total (pence)" },
+            { column: "total", label: "Total", format: DOLLARS },
             { column: "status" },
           ],
           sort: [{ column: "created_at", desc: true }],
@@ -225,7 +232,7 @@ export const performanceApp = defineApp({
   interface: "screens/performance",
 });
 
-/** Fernhill's own colours, for its apps and its portal pages. */
+/** Fernhill's own colors, for its apps and its portal pages. */
 export const theme = defineTheme({
   tokens: {
     action: "#1f6f5c",
@@ -276,7 +283,7 @@ export const decidesApprovals = defineRole({
   permissions: ["approval:read", "approval:write"],
 });
 
-const FRONT_DESK = { type: "end_user_group", name: "front-desk" } as const;
+const FRONT_DESK = { type: "end_user_group", name: "Front desk" } as const;
 export const frontDeskOpens = defineBinding({
   path: "access/front-desk-app",
   role: opensApp,
@@ -293,6 +300,12 @@ export const frontDeskBooks = defineBinding({
   role: runsScript,
   principal: FRONT_DESK,
   resource: bookAppointment,
+});
+export const frontDeskFreeTimes = defineBinding({
+  path: "access/front-desk-free-times",
+  role: runsScript,
+  principal: FRONT_DESK,
+  resource: freeTimes,
 });
 export const frontDeskMoves = defineBinding({
   path: "access/front-desk-status",
@@ -318,6 +331,13 @@ export const ownersRead = defineBinding({
   path: "access/owners-rows",
   role: readsData,
   principal: { type: "end_users" },
+});
+/** Owners see which times are free without seeing anyone else's visits. */
+export const ownersFreeTimes = defineBinding({
+  path: "access/owners-free-times",
+  role: runsScript,
+  principal: { type: "end_users" },
+  resource: freeTimes,
 });
 export const ownersBook = defineBinding({
   path: "access/owners-book",
@@ -348,6 +368,12 @@ export const agentStock = defineBinding({
   role: runsScript,
   principal: AGENT,
   resource: lowStock,
+});
+export const agentFreeTimes = defineBinding({
+  path: "access/agent-free-times",
+  role: runsScript,
+  principal: AGENT,
+  resource: freeTimes,
 });
 export const agentBooks = defineBinding({
   path: "access/agent-book",

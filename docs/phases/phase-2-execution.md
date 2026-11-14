@@ -116,7 +116,7 @@ The second language-neutral contract, specified in `docs/contracts/worker-protoc
 - HTTP and JSON under `/api/v1/worker`. The worker always calls. The control plane never connects to a worker.
 - A worker credential (`vxw_…`) is scoped to a tenant, optionally to one workspace.
 - `claim` (long poll), `bundles/{id}`, and per run: `heartbeat`, `logs`, `secrets/{name}`, `variables/{path}`, `connections/{path}`, `complete`, `fail`.
-- The heartbeat reply tells the worker when the run was cancelled.
+- The heartbeat reply tells the worker when the run was canceled.
 - A worker silent for longer than the heartbeat window loses the job, and the job is retried.
 
 ## Workers
@@ -246,7 +246,7 @@ Checked on 2026-11-11 against the build on the `phase-2-execution` branch.
 | --- | --- |
 | Every test on Postgres 16 and 18 | Passed |
 | The example repository built and deployed by the CLI, run by a real worker against stand-in systems | Passed, in `packages/cli/src/example.test.ts` |
-| On the single-host stack: starter repository initialised, run locally, deployed, run from the console on a managed worker, with logs and output shown | Passed |
+| On the single-host stack: starter repository initialized, run locally, deployed, run from the console on a managed worker, with logs and output shown | Passed |
 | A run started before a deploy finishes on its own bundle, and the next run uses the new one | Passed on the stack |
 | A managed worker killed mid-run: the run is retried by a new worker | Passed on the stack, 45 seconds after the kill |
 | A standalone worker from outside the stack registers and serves its tenant | Passed |

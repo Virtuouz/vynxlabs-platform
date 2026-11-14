@@ -1,5 +1,6 @@
-import { useQuery } from "@vynxlabs/app";
-import { Badge, Button, EmptyState, Notice, TextField } from "@vynxlabs/ui";
+import { totalOf, useQuery } from "@vynxlabs/app";
+import { Avatar, Badge, Button, Card, EmptyState, Notice, TextField } from "@vynxlabs/ui";
+import { ChevronLeft, TriangleAlert } from "@vynxlabs/ui/icons";
 import { useEffect, useState } from "react";
 import {
   Appointments,
@@ -7,11 +8,12 @@ import {
   Clients,
   clock,
   day,
+  dayOf,
+  dollars,
   Invoices,
   Loading,
   Panel,
   Pets,
-  pounds,
   StatusBadge,
 } from "./shared.tsx";
 
@@ -42,11 +44,15 @@ export function ClientSearch({
   const query = useSettled(text.trim());
   const found = useQuery(async () => {
     if (query.length < 2) return [] as Client[];
+    // Numbers are kept as people write them, (503) 555-0142: match on the last digits.
+    const digits = query.replace(/\D/g, "");
     const owners = await Clients().find({
       filter: {
         or: [
           { column: "name", op: "contains", value: query },
-          { column: "phone", op: "contains", value: query },
+          ...(digits.length >= 4
+            ? [{ column: "phone", op: "contains" as const, value: digits.slice(-4) }]
+            : []),
           { column: "code", value: query.toUpperCase() },
         ],
       },
@@ -56,16 +62,15 @@ export function ClientSearch({
       filter: { column: "name", op: "contains", value: query },
       limit: 20,
     });
-    const known = new Set(owners.items.map((owner) => owner.code));
-    const more = [...new Set(byPet.items.map((pet) => pet.client_code))].filter(
+    const known = new Set(owners.map((owner) => owner.code));
+    const more = [...new Set(byPet.map((pet) => pet.client_code))].filter(
       (code) => !known.has(code),
     );
     const extra =
       more.length === 0
         ? []
-        : (await Clients().find({ filter: { column: "code", op: "in", value: more }, limit: 20 }))
-            .items;
-    return [...owners.items, ...extra];
+        : await Clients().find({ filter: { column: "code", op: "in", value: more }, limit: 20 });
+    return [...owners, ...extra];
   }, [query]);
   const rows = found.data ?? [];
   return (
@@ -94,7 +99,10 @@ export function ClientSearch({
                   chosen === client.code ? "bg-action-soft" : "hover:bg-sunken"
                 }`}
               >
-                <span className="font-medium">{client.name}</span>
+                <span className="flex items-center gap-2 font-medium">
+                  <Avatar name={client.name} size="small" decorative />
+                  {client.name}
+                </span>
                 <span className="font-mono text-meta text-ink-muted">
                   {client.code} · {client.phone}
                 </span>
@@ -110,8 +118,7 @@ export function ClientSearch({
 /** One owner: how to reach them, their animals, their visits and what they owe. */
 export function ClientDetail({ code, onBook }: { code: string; onBook: (code: string) => void }) {
   const data = useQuery(async () => {
-    const [client] = (await Clients().find({ filter: { column: "code", value: code }, limit: 1 }))
-      .items;
+    const [client] = await Clients().find({ filter: { column: "code", value: code }, limit: 1 });
     if (!client) return null;
     const [pets, visits, unpaid] = await Promise.all([
       Pets().find({ filter: { column: "client_code", value: code }, sort: ["name"], limit: 50 }),
@@ -132,9 +139,10 @@ export function ClientDetail({ code, onBook }: { code: string; onBook: (code: st
     ]);
     return {
       client,
-      pets: pets.items,
-      visits: visits.items,
-      unpaid: unpaid.items[0]?.values ?? {},
+      pets,
+      visits,
+      owed: totalOf(unpaid, "sum:total"),
+      owedCount: totalOf(unpaid, "count"),
     };
   }, [code]);
 
@@ -147,23 +155,24 @@ export function ClientDetail({ code, onBook }: { code: string; onBook: (code: st
       </EmptyState>
     );
   }
-  const { client, pets, visits, unpaid } = data.data;
+  const { client, pets, visits, owed, owedCount } = data.data;
   const now = Date.now();
   const upcoming = visits
     .filter((visit) => new Date(visit.starts_at).getTime() >= now && visit.status === "booked")
     .reverse();
   const past = visits.filter((visit) => !upcoming.includes(visit));
-  const owed = Number(unpaid["sum:total"] ?? 0);
-  const owedCount = Number(unpaid.count ?? 0);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="m-0 text-title">{client.name}</h2>
-          <p className="m-0 font-mono text-meta text-ink-muted">
-            {client.code} · registered at {client.home_clinic}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={client.name} size="large" decorative />
+          <div className="flex min-w-0 flex-col gap-1">
+            <h2 className="m-0 text-title">{client.name}</h2>
+            <p className="m-0 font-mono text-meta text-ink-muted">
+              {client.code} · registered at {client.home_clinic}
+            </p>
+          </div>
         </div>
         <Button variant="primary" onClick={() => onBook(client.code)}>
           Book a visit
@@ -173,7 +182,7 @@ export function ClientDetail({ code, onBook }: { code: string; onBook: (code: st
         <div>
           <dt className="text-label text-ink-subtle uppercase">Phone</dt>
           <dd className="m-0">
-            <a href={`tel:${client.phone.replace(/\s+/g, "")}`}>{client.phone}</a>
+            <a href={`tel:+1${client.phone.replace(/\D/g, "")}`}>{client.phone}</a>
           </dd>
         </div>
         <div>
@@ -184,7 +193,7 @@ export function ClientDetail({ code, onBook }: { code: string; onBook: (code: st
           <dt className="text-label text-ink-subtle uppercase">Unpaid</dt>
           <dd className={`m-0 font-mono ${owed > 0 ? "text-danger" : ""}`}>
             {owed > 0
-              ? `${pounds(owed)} on ${owedCount} invoice${owedCount === 1 ? "" : "s"}`
+              ? `${dollars(owed)} on ${owedCount} invoice${owedCount === 1 ? "" : "s"}`
               : "Nothing"}
           </dd>
         </div>
@@ -197,27 +206,27 @@ export function ClientDetail({ code, onBook }: { code: string; onBook: (code: st
         ) : (
           <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2">
             {pets.map((pet) => (
-              <li
-                key={pet.id}
-                className="flex flex-col gap-1 rounded-control border border-line p-3"
-              >
-                <span className="font-semibold">
-                  {pet.name} <span className="font-normal text-ink-muted">· {pet.species}</span>
-                </span>
-                <span className="text-meta text-ink-muted">
-                  {[
+              <li key={pet.id}>
+                <Card
+                  title={pet.name}
+                  description={[
+                    pet.species,
                     pet.breed,
                     pet.born ? `born ${pet.born}` : null,
-                    pet.weight_kg ? `${pet.weight_kg} kg` : null,
+                    pet.weight_lb ? `${pet.weight_lb} lb` : null,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
-                </span>
-                {pet.alert ? (
-                  <span className="self-start">
-                    <Badge tone="danger">⚠ {pet.alert}</Badge>
-                  </span>
-                ) : null}
+                >
+                  {pet.alert ? (
+                    <span className="self-start">
+                      <Badge tone="danger">
+                        <TriangleAlert aria-hidden="true" size={12} className="mr-1 inline" />
+                        {pet.alert}
+                      </Badge>
+                    </span>
+                  ) : null}
+                </Card>
               </li>
             ))}
           </ul>
@@ -263,7 +272,7 @@ function VisitList({
               {visit.pet_name} · {visit.reason}
             </span>
             <span className="font-mono text-meta text-ink-muted">
-              {day(visit.starts_at)} {clock(visit.starts_at)} · {visit.clinic}
+              {day(dayOf(visit.starts_at))} {clock(visit.starts_at)} · {visit.clinic}
             </span>
           </span>
           <StatusBadge status={visit.status} />
@@ -295,7 +304,7 @@ export function ClientsScreen({
           <div className="flex flex-col gap-3">
             <div className="lg:hidden">
               <Button size="small" variant="quiet" onClick={() => onChoose(undefined)}>
-                ‹ Back to search
+                <ChevronLeft aria-hidden="true" size={14} /> Back to search
               </Button>
             </div>
             <ClientDetail code={code} onBook={onBook} />

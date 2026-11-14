@@ -208,7 +208,7 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
         );
         throw new APIError("FORBIDDEN", {
           code: "SSO_REQUIRED",
-          message: `Sign in with ${provider.name}. Passwords are turned off for your organisation.`,
+          message: `Sign in with ${provider.name}. Passwords are turned off for your organization.`,
         });
       }),
     },

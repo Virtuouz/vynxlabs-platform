@@ -2,12 +2,14 @@ import type {
   InterfaceBody,
   InterfacePage,
   PageWidget,
+  ValueFormat,
   WidgetLink,
   WidgetType,
 } from "@vynxlabs/manifest";
 import {
   type DataClient,
   type Filter,
+  formatValue,
   heading,
   PageRenderer,
   settle,
@@ -284,6 +286,93 @@ function linkChoices(
 }
 
 // ----- The settings of one widget -----
+
+/**
+ * How a number is written: as it is, as a number, as money or as a percent.
+ * Money kept in cents is divided by 100. An example shows the result.
+ */
+function FormatSettings({
+  name,
+  label,
+  format,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  format: ValueFormat | undefined;
+  onChange: (format: ValueFormat | undefined) => void;
+}) {
+  const sample = 123456.789;
+  const example = format
+    ? formatValue(format.minorUnits ? Math.round(sample * 100) : sample, format)
+    : undefined;
+  return (
+    <div className="flex flex-col gap-2">
+      <SelectField
+        label={label}
+        name={`format-${name}`}
+        value={format?.style ?? ""}
+        options={[
+          { value: "", label: "As it is" },
+          { value: "number", label: "A number: 1,234.5" },
+          { value: "currency", label: "Money: $1,234.50" },
+          { value: "percent", label: "A percent: 0.25 as 25%" },
+        ]}
+        onChange={(style) =>
+          onChange(
+            style
+              ? {
+                  ...(format?.style === style ? format : {}),
+                  style: style as ValueFormat["style"],
+                  ...(style === "currency" ? { currency: format?.currency ?? "USD" } : {}),
+                }
+              : undefined,
+          )
+        }
+      />
+      {format?.style === "currency" ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <TextField
+            label="Currency"
+            name={`currency-${name}`}
+            value={format.currency ?? "USD"}
+            maxLength={3}
+            onChange={(code) => onChange({ ...format, currency: code.toUpperCase() || "USD" })}
+          />
+          <CheckboxField
+            label="Kept in cents"
+            name={`cents-${name}`}
+            checked={format.minorUnits ?? false}
+            onChange={(minorUnits) => {
+              const next = { ...format };
+              if (minorUnits) next.minorUnits = true;
+              else delete next.minorUnits;
+              onChange(next);
+            }}
+          />
+        </div>
+      ) : null}
+      {format ? (
+        <SelectField
+          label="Decimal places"
+          name={`decimals-${name}`}
+          value={format.decimals === undefined ? "" : String(format.decimals)}
+          options={[
+            { value: "", label: "As usual" },
+            ...[0, 1, 2, 3].map((n) => ({ value: String(n), label: String(n) })),
+          ]}
+          onChange={(places) => {
+            const next = { ...format };
+            if (places === "") delete next.decimals;
+            else next.decimals = Number(places);
+            onChange(next);
+          }}
+        />
+      ) : null}
+      {example ? <p className="m-0 text-[12.5px] text-ink-muted">Shown as {example}</p> : null}
+    </div>
+  );
+}
 
 function WidgetSettings({
   widget,
@@ -576,7 +665,7 @@ function WidgetSettings({
                   ? "Along the bottom, or each slice"
                   : axis === "y"
                     ? "How much"
-                    : "A colour for each"
+                    : "A color for each"
               }
               name={axis}
               value={widget.options?.[axis] ?? ""}
@@ -593,6 +682,37 @@ function WidgetSettings({
               }
             />
           ))}
+          <FormatSettings
+            name="chart"
+            label="How much is written as"
+            format={widget.options?.format}
+            onChange={(format) =>
+              onChange((draft) => {
+                draft.options = { ...draft.options };
+                if (format) draft.options.format = format;
+                else delete draft.options.format;
+              })
+            }
+          />
+        </>
+      ) : null}
+
+      {widget.table && widget.type === "figure" ? (
+        <>
+          <h3 className={section}>Number</h3>
+          <FormatSettings
+            name="figure"
+            label="Written as"
+            format={widget.options?.format}
+            onChange={(format) =>
+              onChange((draft) => {
+                draft.options = { ...draft.options };
+                if (format) draft.options.format = format;
+                else delete draft.options.format;
+                if (Object.keys(draft.options).length === 0) delete draft.options;
+              })
+            }
+          />
         </>
       ) : null}
 
@@ -693,6 +813,31 @@ function WidgetSettings({
                         if (!one) return;
                         if (show) one.show = show;
                         else delete one.show;
+                      })
+                    }
+                  />
+                ) : null}
+                {widget.type !== "form" &&
+                (summary
+                  ? summary.aggregates.some(
+                      (aggregate) =>
+                        aggregate.as === field.column &&
+                        (aggregate.fn === "count" ||
+                          ["integer", "number"].includes(
+                            columns.find((one) => one.name === aggregate.column)?.type ?? "",
+                          )),
+                    )
+                  : column?.type === "integer" || column?.type === "number") ? (
+                  <FormatSettings
+                    name={field.column}
+                    label={`Written as (${field.column})`}
+                    format={field.format}
+                    onChange={(format) =>
+                      onChange((draft) => {
+                        const one = draft.fields?.[index];
+                        if (!one) return;
+                        if (format) one.format = format;
+                        else delete one.format;
                       })
                     }
                   />
@@ -840,6 +985,12 @@ function WidgetSettings({
               </div>
             );
           })}
+          {summary && conditions.length === 0 ? (
+            <p className="m-0 text-[12.5px] text-ink-muted">
+              A condition narrows what is counted or added up here, besides the page's filters: for
+              example, only the invoices whose status is unpaid.
+            </p>
+          ) : null}
           {conditions.length < 20 && columns.length > 0 ? (
             <Button
               size="small"

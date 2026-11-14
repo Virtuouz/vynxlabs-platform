@@ -946,7 +946,7 @@ export function TenantImport() {
                   ? [
                       {
                         label: "Unfinished runs",
-                        value: `${inspection.pendingRuns}, recorded as cancelled`,
+                        value: `${inspection.pendingRuns}, recorded as canceled`,
                       },
                     ]
                   : []),

@@ -610,7 +610,7 @@ describe("running", () => {
     });
   }, 45_000);
 
-  test("a waiting run and a running run can both be cancelled", async () => {
+  test("a waiting run and a running run can both be canceled", async () => {
     const running = await start("slow", { ms: 20_000 });
     await until(
       async () => (await alice.get(`${ws()}/runs/${running}`)).body,

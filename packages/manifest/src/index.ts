@@ -79,6 +79,8 @@ export {
   SUMMARY_BUCKETS,
   SUMMARY_FUNCTIONS,
   summaryNames,
+  VALUE_FORMAT_STYLES,
+  type ValueFormat,
   WIDGET_TYPES,
   type WidgetField,
   type WidgetLink,

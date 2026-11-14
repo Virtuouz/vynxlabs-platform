@@ -433,7 +433,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "`theme` replaces the tenant's token values: `tokens` for light, `dark` for dark. " +
             "A token that is left out keeps the component kit's value. Each value must be a " +
-            "plain colour, length or font list. A workspace can override them with a theme " +
+            "plain color, length or font list. A workspace can override them with a theme " +
             "resource.",
           tags: ["branding"],
           params: TenantParams,

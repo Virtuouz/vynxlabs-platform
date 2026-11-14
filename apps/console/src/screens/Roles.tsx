@@ -396,15 +396,15 @@ export function inShort(role: Role, kinds: readonly PermissionKind[]): string[] 
 
 export function Roles({ base, framed }: { base: string; framed?: Framed }) {
   const roles = useLoad<{ items: Role[] }>(`${base}/roles`);
-  const catalogue = useLoad<{ items: PermissionKind[] }>("/permissions");
+  const catalog = useLoad<{ items: PermissionKind[] }>("/permissions");
   const [open, setOpen] = useState<Role | "new">();
   const [selected, setSelected] = useState<string>();
   const [show, setShow] = useState<Show>("all");
-  const kinds = catalogue.data?.items ?? [];
-  const failure = roles.error ?? catalogue.error;
+  const kinds = catalog.data?.items ?? [];
+  const failure = roles.error ?? catalog.error;
   const all = roles.data?.items;
   const rows =
-    all && catalogue.data
+    all && catalog.data
       ? all.filter((role) => show === "all" || (show === "own" ? !role.builtin : role.builtin))
       : undefined;
   const chosen = all?.find((role) => role.id === selected);

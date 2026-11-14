@@ -1,4 +1,5 @@
-import { defineFlow, defineSchedule, defineWebhook, step, trigger } from "@vynxlabs/sdk";
+import { defineFlow, defineSchedule, defineWebhook, step, trigger, z } from "@vynxlabs/sdk";
+import { CLINICS } from "./constants.ts";
 import { invoices, registrationReceived, registrations, stockLow, visitDone } from "./model.ts";
 import {
   chaseOne,
@@ -28,7 +29,7 @@ export const afterVisit = defineFlow({
         to: "steps.invoice.output.phone",
         text:
           "'Fernhill Vets: thank you for bringing ' + steps.invoice.output.pet + ' in today. Your invoice ' + " +
-          "steps.invoice.output.number + ' is £' + string(double(steps.invoice.output.total) / 100.0) + '. Pay online in the pet portal.'",
+          "steps.invoice.output.number + ' is ' + steps.invoice.output.amount + '. Pay online in the pet portal.'",
       },
     }),
     unsent: step.set({
@@ -54,21 +55,28 @@ export const reorder = defineFlow({
     "Prices and places an order for low stock. Orders over the threshold wait for a practice manager.",
   nodes: {
     low: trigger.event(stockLow),
-    by_hand: trigger.manual(),
+    // Started by hand, or by an agent, with the same fields the event carries.
+    by_hand: trigger.manual({
+      input: z.object({
+        line: z.uuid().describe("The stock line's row ID, from agent/low-stock."),
+        clinic: z.enum(CLINICS),
+        sku: z.string().describe("The supplier's product code, such as VAC-DHPP."),
+        item: z.string(),
+        on_hand: z.number().int(),
+        quantity: z.number().int().positive().describe("How many to order."),
+      }),
+    }),
     quote: step.script(quoteOrder, {
       input: "{'sku': trigger.sku, 'quantity': trigger.quantity}",
     }),
     route: step.branch({ large: "steps.quote.output.needs_approval" }),
-    // Who may decide is set on the step itself: the SDK has no option for it yet.
-    approve: {
-      ...step.approval("Approve a stock order", {
-        detail:
-          "{'clinic': trigger.clinic, 'item': trigger.item, 'quantity': trigger.quantity, " +
-          "'total_pence': steps.quote.output.total, 'on_hand': trigger.on_hand}",
-        timeoutSeconds: 3 * 24 * 3600,
-      }),
+    approve: step.approval("Approve a stock order", {
+      detail:
+        "{'clinic': trigger.clinic, 'item': trigger.item, 'quantity': trigger.quantity, " +
+        "'total': steps.quote.output.amount, 'on_hand': trigger.on_hand}",
+      timeoutSeconds: 3 * 24 * 3600,
       approvers: { groups: ["Practice managers"] },
-    },
+    }),
     place: step.script(placeOrder, {
       input:
         "{'line': trigger.line, 'quantity': trigger.quantity, 'total': steps.quote.output.total}",
@@ -91,20 +99,21 @@ export const reorder = defineFlow({
 
 /**
  * Every Monday morning, text each owner with an invoice unpaid for two weeks.
- * A core step reads the unpaid invoices; a script decides, per invoice, whether
- * it is old enough, since a flow's expressions have no clock to compare with.
+ * A core step reads those invoices; a script texts each one. An owner who
+ * cannot be texted does not stop the others.
  */
 export const chaseUnpaid = defineFlow({
   path: "billing/chase-unpaid",
   description: "Texts owners about invoices unpaid for more than two weeks.",
   nodes: {
-    weekly: trigger.schedule("0 9 * * 1", { timezone: "Europe/London" }),
+    weekly: trigger.schedule("0 9 * * 1", { timezone: "America/Los_Angeles" }),
     by_hand: trigger.manual(),
     find: step.script("core/table-read", {
       inputs: {
         table: "'invoices'",
         filter:
-          "{'and': [{'column': 'status', 'value': 'unpaid'}, {'column': 'chased_at', 'op': 'is_null'}]}",
+          "{'and': [{'column': 'status', 'value': 'unpaid'}, {'column': 'chased_at', 'op': 'is_null'}, " +
+          "{'column': 'issued_on', 'op': 'lte', 'value': string(now - duration('336h')).substring(0, 10)}]}",
         sort: "'issued_on'",
         limit: "100",
       },
@@ -114,10 +123,12 @@ export const chaseUnpaid = defineFlow({
       script: chaseOne,
       input: "{'invoice': item.id}",
       concurrency: 4,
+      continueOnError: true,
     }),
     count: step.set({
       looked_at: "size(steps.find.output.rows)",
-      texted: "size(steps.chase.output.filter(x, x.texted))",
+      texted: "size(steps.chase.output.filter(x, has(x.texted) && x.texted))",
+      failed: "size(steps.chase.output.filter(x, has(x.error)))",
     }),
   },
   edges: [
@@ -188,14 +199,14 @@ export const remindersEveryHour = defineSchedule({
   path: "reminders/hourly",
   script: sendReminders,
   cron: "0 * * * *",
-  timezone: "Europe/London",
+  timezone: "America/Los_Angeles",
 });
 
 export const stockEveryHalfHour = defineSchedule({
   path: "inventory/half-hourly",
   script: checkStock,
   cron: "*/30 * * * *",
-  timezone: "Europe/London",
+  timezone: "America/Los_Angeles",
 });
 
 /** PayFern signs each notification with the shared secret. An unsigned one is refused. */

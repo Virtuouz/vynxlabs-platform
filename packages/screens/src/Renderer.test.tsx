@@ -452,3 +452,79 @@ test("an interface with several pages shows them as tabs, and one page as itself
   );
   expect(screen.getByText("This app has no pages yet.")).toBeTruthy();
 });
+
+test("a figure narrows its own rows, writes its number as money, and names itself once", async () => {
+  const { client, asked } = fake();
+  render(
+    <PageRenderer
+      tables={tables}
+      client={client}
+      page={page([
+        widget("owed", {
+          type: "figure",
+          title: "Owed on open orders",
+          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "owed" }] },
+          filter: { column: "status", value: "open" },
+          options: { format: { style: "currency", minorUnits: true } },
+        }),
+      ])}
+    />,
+  );
+  const region = screen.getByRole("region", { name: "Owed on open orders" });
+  // Only the open orders: 10 and 20 cents.
+  expect(await within(region).findByText("$0.30")).toBeTruthy();
+  expect(asked.find((one) => one.call === "aggregate")?.options.filter).toEqual({
+    column: "status",
+    value: "open",
+  });
+  expect(within(region).getAllByText(/Owed/)).toHaveLength(1);
+});
+
+test("a field with a format is written in it, in US English", async () => {
+  const { client } = fake({
+    ...data,
+    orders: [{ id: "o9", number: "A-9", total: 123456, status: "open", customer: "c1" }],
+  });
+  render(
+    <PageRenderer
+      tables={tables}
+      client={client}
+      page={page([
+        widget("orders", {
+          title: "Orders",
+          fields: [
+            { column: "number" },
+            { column: "total", format: { style: "currency", currency: "USD", minorUnits: true } },
+          ],
+        }),
+      ])}
+    />,
+  );
+  expect(await screen.findByText("$1,234.56")).toBeTruthy();
+});
+
+test("a filter on one value lists the values the column holds, and narrows every widget", async () => {
+  const { client, asked } = fake();
+  render(
+    <PageRenderer
+      tables={tables}
+      client={client}
+      page={{
+        ...page([widget("orders", { title: "Orders", fields: [{ column: "number" }] })]),
+        filters: [{ id: "status", label: "Status", column: "status", type: "value" }],
+      }}
+    />,
+  );
+  const choose = (await screen.findByRole("combobox", { name: "Status" })) as HTMLSelectElement;
+  await waitFor(() => expect(choose.disabled).toBe(false));
+  expect([...choose.options].map((option) => option.textContent)).toEqual(["All", "open", "done"]);
+  fireEvent.change(choose, { target: { value: "done" } });
+  await waitFor(() =>
+    expect(screen.getByRole("region", { name: "Orders" }).textContent).not.toContain("A-1"),
+  );
+  expect(asked.filter((one) => one.call === "find").at(-1)?.options.filter).toEqual({
+    column: "status",
+    op: "eq",
+    value: "done",
+  });
+});

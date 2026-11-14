@@ -11,7 +11,7 @@ export interface Connector<Config, Client> {
   configSchema: object;
   /**
    * Builds the client a script receives. `credential` is the connection's
-   * secret, when it has one. `signal` aborts when the run is cancelled.
+   * secret, when it has one. `signal` aborts when the run is canceled.
    */
   create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
 }

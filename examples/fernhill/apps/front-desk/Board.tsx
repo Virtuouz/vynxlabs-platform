@@ -1,19 +1,18 @@
 import { useQuery } from "@vynxlabs/app";
-import { Badge, Button, EmptyState, Notice, useToast } from "@vynxlabs/ui";
+import { Badge, Button, DateStepper, EmptyState, Notice, useToast } from "@vynxlabs/ui";
+import { TriangleAlert } from "@vynxlabs/ui/icons";
 import { useCallback, useMemo, useState } from "react";
 import {
   type Appointment,
   Appointments,
   attempt,
   clock,
-  day,
   dayRange,
   Loading,
-  NEXT,
+  nextMoves,
   type Pet,
   Pets,
   StatusBadge,
-  shiftDay,
   todayIso,
   useEvery,
 } from "./shared.tsx";
@@ -47,17 +46,17 @@ export function Board({
       }),
     [clinic, date],
   );
-  const items = visits.data?.items ?? [];
+  const items = visits.data ?? [];
   const petIds = useMemo(() => [...new Set(items.map((visit) => visit.pet))].sort(), [items]);
   const pets = useQuery(
     () =>
       petIds.length === 0
-        ? Promise.resolve({ items: [] as Pet[], nextCursor: null })
+        ? Promise.resolve([] as Pet[])
         : Pets().find({ filter: { column: "id", op: "in", value: petIds }, limit: 500 }),
     [petIds.join(",")],
   );
   const petById = useMemo(
-    () => new Map((pets.data?.items ?? []).map((pet) => [pet.id, pet])),
+    () => new Map((pets.data ?? []).map((pet) => [pet.id, pet])),
     [pets.data],
   );
   const reload = useCallback(() => visits.reload(), [visits.reload]);
@@ -75,32 +74,7 @@ export function Board({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <fieldset className="m-0 flex items-center gap-1 border-0 p-0">
-          <legend className="sr-only">Day</legend>
-          <Button
-            size="small"
-            onClick={() => setDate(shiftDay(date, -1))}
-            aria-label="The day before"
-          >
-            ‹
-          </Button>
-          <span className="min-w-36 text-center font-semibold" aria-live="polite">
-            {isToday ? "Today, " : ""}
-            {day(`${date}T12:00:00Z`)}
-          </span>
-          <Button
-            size="small"
-            onClick={() => setDate(shiftDay(date, 1))}
-            aria-label="The day after"
-          >
-            ›
-          </Button>
-          {isToday ? null : (
-            <Button size="small" variant="quiet" onClick={() => setDate(todayIso())}>
-              Today
-            </Button>
-          )}
-        </fieldset>
+        <DateStepper value={date} onChange={setDate} label="The day shown" locale="en-US" />
         <Summary items={items} late={late.length} />
       </div>
 
@@ -158,7 +132,7 @@ export function Board({
       {closed.length > 0 ? (
         <details className="rounded-panel border border-line bg-surface">
           <summary className="cursor-pointer px-4 py-2.5 font-medium">
-            No-shows and cancelled ({closed.length})
+            No-shows and cancellations ({closed.length})
           </summary>
           <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-3">
             {closed.map((visit) => (
@@ -275,7 +249,8 @@ function VisitCard({
           className="m-0 rounded-control bg-danger-soft px-2 py-1 text-meta text-danger"
           role="note"
         >
-          ⚠ {pet.alert}
+          <TriangleAlert aria-hidden="true" size={13} className="mr-1 inline align-[-2px]" />
+          {pet.alert}
         </p>
       ) : null}
       {visit.notes ? <p className="m-0 text-meta text-ink-subtle">{visit.notes}</p> : null}
@@ -284,9 +259,9 @@ function VisitCard({
           {problem}
         </p>
       ) : null}
-      {(NEXT[visit.status] ?? []).length > 0 ? (
+      {nextMoves(visit.status).length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
-          {(NEXT[visit.status] ?? []).map((next) => (
+          {nextMoves(visit.status).map((next) => (
             <Button
               key={next.status}
               size="small"

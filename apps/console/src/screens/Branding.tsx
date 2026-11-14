@@ -52,7 +52,7 @@ const isColour = (token: string) => !token.startsWith("radius-") && !token.start
 /**
  * The component kit's own values. They are written here as well as in the kit's
  * stylesheet because the editor shows them where nothing is set, and a
- * stylesheet's values cannot be read back per colour scheme. A test holds the
+ * stylesheet's values cannot be read back per color scheme. A test holds the
  * two to each other.
  */
 export const KIT: Theme = {
@@ -246,7 +246,7 @@ function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
       setBusy(false);
     }
   };
-  // In dark, a length or font follows light, and a colour is the kit's dark one unless set for dark.
+  // In dark, a length or font follows light, and a color is the kit's dark one unless set for dark.
   const lightValues = { ...KIT.tokens, ...set(light) };
   const darkBase = { ...lightValues, ...KIT.dark };
   const darkValues = { ...darkBase, ...set(dark) };
@@ -256,10 +256,10 @@ function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
       <section className={panel}>
         <h2 className="m-0 text-base font-semibold">Theme</h2>
         <p className="m-0 max-w-[75ch] text-ink-muted">
-          The colours, corners and fonts of this tenant's portal, sign-in pages and apps. The
-          console keeps its own look. Set a token to a plain colour, length or font list, or leave
-          it empty to keep the component kit's value. A workspace can override these with a theme
-          resource in its repository.
+          The colors, corners and fonts of this tenant's portal, sign-in pages and apps. The console
+          keeps its own look. Set a token to a plain color, length or font list, or leave it empty
+          to keep the component kit's value. A workspace can override these with a theme resource in
+          its repository.
         </p>
         <form
           className="flex flex-col gap-4"

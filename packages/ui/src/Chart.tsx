@@ -17,7 +17,7 @@ export interface ChartProps {
 }
 
 /**
- * A chart drawn from a Vega-Lite spec, in the theme's colours and font. The
+ * A chart drawn from a Vega-Lite spec, in the theme's colors and font. The
  * engine is fetched when the first chart appears.
  */
 export function Chart({ spec, data, title, description, height = 240 }: ChartProps) {
@@ -28,7 +28,7 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
   // A spec written inline is a new object on every render. Its text says whether it changed.
   const specText = JSON.stringify(spec);
 
-  // The tokens change with the colour scheme, and the chart holds their values, not the variables.
+  // The tokens change with the color scheme, and the chart holds their values, not the variables.
   useEffect(() => {
     const dark = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
     if (!dark) return;

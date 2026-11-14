@@ -101,7 +101,7 @@ test("an owner makes recovery codes, sees them once, and is asked before replaci
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
 });
 
-test("while the organisation's sign-in is required, an owner can sign in with a recovery code", async () => {
+test("while the organization's sign-in is required, an owner can sign in with a recovery code", async () => {
   routes["GET /api/v1/sso/providers?email=olive%40acme.example"] = () => [
     200,
     { providers: [{ id: "p1", name: "Acme Login", url: "/api/v1/sso/p1/start" }], password: false },

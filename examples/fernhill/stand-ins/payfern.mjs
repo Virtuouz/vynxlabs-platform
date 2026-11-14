@@ -1,6 +1,6 @@
 // Sends a payment notification as PayFern would, signed with the shared secret.
 //
-//   node stand-ins/payfern.mjs <webhook url> <invoice number> <amount in pence> [--bad-signature]
+//   node stand-ins/payfern.mjs <webhook url> <invoice number> <amount in cents> [--bad-signature]
 //
 // The webhook's address is shown in the console under Operate → Triggers.
 import { createHmac } from "node:crypto";
@@ -8,7 +8,7 @@ import { createHmac } from "node:crypto";
 const [url, invoice, amount, flag] = process.argv.slice(2);
 if (!url || !invoice || !amount) {
   console.error(
-    "Usage: node stand-ins/payfern.mjs <webhook url> <invoice number> <amount in pence> [--bad-signature]",
+    "Usage: node stand-ins/payfern.mjs <webhook url> <invoice number> <amount in cents> [--bad-signature]",
   );
   process.exit(2);
 }

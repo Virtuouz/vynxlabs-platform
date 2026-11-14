@@ -34,15 +34,21 @@ interface ScriptUses {
  *
  * The build runs this, and so does the control plane on upload.
  */
+/** "a" or "an", by how the kind's name is said. */
+const article = (kind: string) => (/^[aeiou]/.test(kind) ? "an" : "a");
+
 export function checkBundleManifests(manifests: BundleManifest[]): string[] {
   const problems: string[] = [];
   const byPath = new Map<string, BundleManifest>();
+  /** Paths used twice. That is reported once; references to them are not reported again. */
+  const twice = new Set<string>();
 
   for (const manifest of manifests) {
     const existing = byPath.get(manifest.path);
     if (existing) {
+      twice.add(manifest.path);
       problems.push(
-        `${manifest.path}: used by both a ${existing.kind} and a ${manifest.kind}. Paths must be unique.`,
+        `${manifest.path}: used by both ${article(existing.kind)} ${existing.kind} and ${article(manifest.kind)} ${manifest.kind}. Paths must be unique.`,
       );
     }
     byPath.set(manifest.path, manifest);
@@ -65,9 +71,10 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
   const expect = (from: BundleManifest, field: string, path: unknown, kind: string) => {
     if (typeof path !== "string") return;
     if (kind === "event" && path.startsWith(PLATFORM_EVENT_PREFIX)) return;
+    if (twice.has(path)) return;
     if (byPath.get(path)?.kind !== kind) {
       problems.push(
-        `${from.path} (${from.kind}): ${field} refers to "${path}", which is not ${kind === "event" || kind === "interface" ? "an" : "a"} ${kind} in this repository.`,
+        `${from.path} (${from.kind}): ${field} refers to "${path}", which is not ${article(kind)} ${kind} in this repository.`,
       );
     }
   };
@@ -251,7 +258,7 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const [token, value] of Object.entries(values ?? {})) {
         if (typeof value === "string" && !isThemeValue(value)) {
           problems.push(
-            `${theme.path} (theme): /body/${set}/${token} must be a plain colour, length or font list.`,
+            `${theme.path} (theme): /body/${set}/${token} must be a plain color, length or font list.`,
           );
         }
       }

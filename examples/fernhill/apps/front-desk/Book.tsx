@@ -1,14 +1,16 @@
-import { useQuery } from "@vynxlabs/app";
+import { runScript, useQuery } from "@vynxlabs/app";
 import {
   Button,
-  DateField,
+  DateStepper,
   Notice,
   NumberField,
   SelectField,
   TextAreaField,
   useToast,
 } from "@vynxlabs/ui";
+import { TriangleAlert } from "@vynxlabs/ui/icons";
 import { useState } from "react";
+import type { Reason } from "../../src/constants.ts";
 import { ClientSearch } from "./Clients.tsx";
 import {
   Appointments,
@@ -17,21 +19,25 @@ import {
   Clients,
   clock,
   day,
+  dayRange,
+  Loading,
+  messageOf,
   Panel,
   Pets,
   REASONS,
+  todayIso,
+  VISIT_MINUTES,
 } from "./shared.tsx";
 
-/** The next quarter hour from now, in clinic time, for the date and time field. */
-function nextSlot() {
-  const at = new Date(Date.now() + 15 * 60_000);
-  at.setUTCMinutes(Math.ceil(at.getUTCMinutes() / 15) * 15, 0, 0);
-  return at.toISOString().slice(0, 16);
+interface FreeTimes {
+  closed: boolean;
+  times: { starts_at: string; local: string }[];
 }
 
 /**
- * Books a visit. The booking script decides whether the time works: opening
- * hours and clashes are its rules, and its refusal is shown as it gave it.
+ * Books a visit. The free times come from `appointments/free-times`, so only a
+ * time the booking script will accept is offered; if someone takes it first,
+ * the script's refusal is shown as it gave it.
  */
 export function Book({
   clinic,
@@ -48,10 +54,11 @@ export function Book({
   const [client, setClient] = useState<string | undefined>(clientCode);
   const [pet, setPet] = useState("");
   const [where, setWhere] = useState(clinic);
-  const [when, setWhen] = useState(nextSlot);
-  const [minutes, setMinutes] = useState<number | undefined>(20);
-  const [reason, setReason] = useState<string>("Check-up");
+  const [date, setDate] = useState(todayIso);
+  const [reason, setReason] = useState<Reason>("Checkup");
+  const [minutes, setMinutes] = useState<number | undefined>(VISIT_MINUTES.Checkup);
   const [vet, setVet] = useState("");
+  const [slot, setSlot] = useState<string>();
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
@@ -59,16 +66,15 @@ export function Book({
   const owner = useQuery(
     async () =>
       client
-        ? ((await Clients().find({ filter: { column: "code", value: client }, limit: 1 }))
-            .items[0] ?? null)
+        ? ((await Clients().find({ filter: { column: "code", value: client }, limit: 1 }))[0] ??
+          null)
         : null,
     [client],
   );
   const pets = useQuery(
     async () =>
       client
-        ? (await Pets().find({ filter: { column: "client_code", value: client }, sort: ["name"] }))
-            .items
+        ? Pets().find({ filter: { column: "client_code", value: client }, sort: ["name"] })
         : [],
     [client],
   );
@@ -87,15 +93,25 @@ export function Book({
         .sort(),
     [where],
   );
-  const date = when.slice(0, 10);
+  const free = useQuery(
+    () =>
+      minutes
+        ? runScript<FreeTimes>("appointments/free-times", {
+            clinic: where,
+            date,
+            minutes,
+            ...(vet ? { vet } : {}),
+          })
+        : Promise.resolve({ closed: false, times: [] }),
+    [where, date, minutes, vet],
+  );
   const sameDay = useQuery(
     () =>
       Appointments().find({
         filter: {
           and: [
             { column: "clinic", value: where },
-            { column: "starts_at", op: "gte", value: `${date}T00:00:00Z` },
-            { column: "starts_at", op: "lte", value: `${date}T23:59:59Z` },
+            dayRange(date),
             { column: "status", op: "in", value: ["booked", "checked_in", "in_exam"] },
           ],
         },
@@ -110,7 +126,7 @@ export function Book({
     setPet("");
     setProblem(undefined);
   };
-  const ready = client && pet && when && minutes && reason;
+  const ready = client && pet && slot && minutes && reason;
 
   const submit = async () => {
     if (!ready) return;
@@ -119,7 +135,7 @@ export function Book({
     const result = await attempt<{ number: string; starts_at: string }>("appointments/book", {
       pet,
       clinic: where,
-      starts_at: `${when}:00Z`,
+      starts_at: slot,
       minutes,
       reason,
       ...(vet ? { vet } : {}),
@@ -128,10 +144,12 @@ export function Book({
     setBusy(false);
     if (!result.ok) {
       setProblem(result.message);
+      setSlot(undefined);
+      free.reload();
       return;
     }
     toast.success(
-      `Booked ${result.output.number} for ${day(result.output.starts_at)} at ${clock(result.output.starts_at)}.`,
+      `Booked ${result.output.number} for ${day(date)} at ${clock(result.output.starts_at)}.`,
     );
     sameDay.reload();
     onBooked(result.output.number, client);
@@ -190,7 +208,10 @@ export function Book({
                         {one.name} <span className="text-ink-muted">· {one.species}</span>
                       </span>
                       {one.alert ? (
-                        <span className="text-meta text-danger">⚠ {one.alert}</span>
+                        <span className="inline-flex items-center gap-1 text-meta text-danger">
+                          <TriangleAlert aria-hidden="true" size={13} />
+                          {one.alert}
+                        </span>
                       ) : null}
                     </label>
                   ))}
@@ -205,32 +226,34 @@ export function Book({
               label="Clinic"
               value={where}
               options={clinicOptions}
-              onChange={setWhere}
-            />
-            <DateField
-              name="when"
-              label="Date and time"
-              hint="Clinic time (UTC)"
-              withTime
-              value={when}
-              onChange={setWhen}
-              required
+              onChange={(value) => {
+                setWhere(value);
+                setSlot(undefined);
+              }}
             />
             <SelectField
               name="reason"
               label="Reason"
               value={reason}
               options={REASONS.map((value) => ({ value, label: value }))}
-              onChange={setReason}
+              onChange={(value) => {
+                setReason(value as Reason);
+                setMinutes(VISIT_MINUTES[value as Reason]);
+                setSlot(undefined);
+              }}
             />
             <NumberField
               name="minutes"
               label="Minutes"
+              hint="What the reason usually takes. Change it for a longer visit."
               value={minutes}
               min={10}
               max={240}
               step={5}
-              onChange={setMinutes}
+              onChange={(value) => {
+                setMinutes(value);
+                setSlot(undefined);
+              }}
             />
             <SelectField
               name="vet"
@@ -240,9 +263,54 @@ export function Book({
                 { value: "", label: "Any vet" },
                 ...(vets.data ?? []).map((name) => ({ value: name, label: name })),
               ]}
-              onChange={setVet}
+              onChange={(value) => {
+                setVet(value);
+                setSlot(undefined);
+              }}
             />
           </div>
+
+          <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+            <legend className="mb-1 font-medium">When? Pacific time</legend>
+            <DateStepper
+              value={date}
+              min={todayIso()}
+              locale="en-US"
+              label="The day of the visit"
+              onChange={(value) => {
+                setDate(value);
+                setSlot(undefined);
+              }}
+            />
+            {free.error ? (
+              <Notice tone="danger">{messageOf(free.error)}</Notice>
+            ) : !free.data ? (
+              <Loading what="free times" lines={2} />
+            ) : free.data.closed ? (
+              <p className="m-0 text-ink-muted">The clinic is closed that day.</p>
+            ) : free.data.times.length === 0 ? (
+              <p className="m-0 text-ink-muted">No free time that day. Try the next one.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-6">
+                {free.data.times.map((time) => (
+                  <button
+                    key={time.starts_at}
+                    type="button"
+                    aria-pressed={slot === time.starts_at}
+                    onClick={() => setSlot(time.starts_at)}
+                    className={`rounded-control border px-2 py-1.5 font-mono text-meta ${
+                      slot === time.starts_at
+                        ? "border-action bg-action text-action-ink"
+                        : "border-line bg-surface hover:bg-sunken"
+                    }`}
+                  >
+                    {clock(time.starts_at)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </fieldset>
+
           <TextAreaField
             name="notes"
             label="Notes"
@@ -259,19 +327,19 @@ export function Book({
           ) : null}
           <div className="flex justify-end">
             <Button type="submit" variant="primary" disabled={!ready || busy}>
-              {busy ? "Booking…" : "Book visit"}
+              {busy ? "Booking…" : slot ? `Book for ${clock(slot)}` : "Choose a time"}
             </Button>
           </div>
         </form>
       </Panel>
 
-      <Panel title={`Already booked, ${day(`${date}T12:00:00Z`)}`}>
+      <Panel title={`Already booked, ${day(date)}`}>
         {sameDay.data ? (
-          sameDay.data.items.length === 0 ? (
+          sameDay.data.length === 0 ? (
             <p className="m-0 text-ink-muted">The day is free.</p>
           ) : (
             <ul className="m-0 flex max-h-[28rem] list-none flex-col overflow-y-auto p-0">
-              {sameDay.data.items.map((visit) => (
+              {sameDay.data.map((visit) => (
                 <li
                   key={visit.id}
                   className="flex justify-between gap-2 border-line border-b py-1.5 text-meta last:border-b-0"
@@ -290,7 +358,7 @@ export function Book({
             </ul>
           )
         ) : (
-          <p className="m-0 text-ink-muted">Loading…</p>
+          <Loading what="the day's bookings" />
         )}
       </Panel>
     </div>

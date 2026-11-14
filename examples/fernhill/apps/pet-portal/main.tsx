@@ -11,31 +11,50 @@ import {
   useSession,
 } from "@vynxlabs/app";
 import {
+  Avatar,
   Badge,
   type BadgeTone,
   Button,
-  DateField,
+  Card,
+  DateStepper,
   EmptyState,
   Notice,
   PageShell,
+  SegmentedControl,
   SelectField,
+  Skeleton,
   TextAreaField,
   ToastProvider,
   useToast,
 } from "@vynxlabs/ui";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  Bird,
+  CalendarPlus,
+  Cat,
+  Clock,
+  Dog,
+  MapPin,
+  PawPrint,
+  Phone,
+  Rabbit,
+  Receipt,
+  TriangleAlert,
+} from "@vynxlabs/ui/icons";
+import { type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+// Values and clock helpers that import nothing, so they are safe in the browser.
+import {
+  type AppointmentStatus,
+  dollars,
+  REASONS,
+  type Reason,
+  STATUS_WORDS,
+  TIME_ZONE,
+  VISIT_MINUTES,
+} from "../../src/constants.ts";
 // Types only: none of the repository's server code reaches the browser.
 import type { appointments, clients, clinics, invoices, pets } from "../../src/model.ts";
-import {
-  AlertIcon,
-  CalendarIcon,
-  ClockIcon,
-  PawIcon,
-  PhoneIcon,
-  PinIcon,
-  ReceiptIcon,
-} from "./icons.tsx";
+import { clockText, wallClock } from "../../src/time.ts";
 import "./styles.css";
 
 type Pet = NonNullable<typeof pets.__row>;
@@ -44,52 +63,34 @@ type Invoice = NonNullable<typeof invoices.__row>;
 type Clinic = NonNullable<typeof clinics.__row>;
 type Client = NonNullable<typeof clients.__row>;
 
-/**
- * The reasons a visit can be booked for, as `appointments/book` takes them.
- * Repeated from the repository: importing the list itself would bring the
- * server's SDK into the page.
- */
-const REASONS = [
-  "Check-up",
-  "Vaccination",
-  "Dental",
-  "Surgery",
-  "Lameness",
-  "Skin",
-  "Follow-up",
-] as const;
-/** How long each kind of visit takes, as the clinics book them. */
-const LENGTH: Record<string, number> = { Surgery: 60, Dental: 40 };
-
 const UPCOMING = new Set(["booked", "checked_in", "in_exam"]);
-const STATUS: Record<string, { label: string; tone: BadgeTone }> = {
-  booked: { label: "Booked", tone: "action" },
-  checked_in: { label: "Checked in", tone: "attention" },
-  in_exam: { label: "With the vet", tone: "attention" },
-  done: { label: "Seen", tone: "success" },
-  no_show: { label: "Missed", tone: "danger" },
-  cancelled: { label: "Cancelled", tone: "neutral" },
+const TONES: Record<AppointmentStatus, BadgeTone> = {
+  booked: "action",
+  checked_in: "attention",
+  in_exam: "attention",
+  done: "success",
+  no_show: "danger",
+  cancelled: "neutral",
 };
 
-// The clinics are in the UK. Times are shown as the clinic's clock shows them.
-const ZONE = "Europe/London";
-const money = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
-const pounds = (pence: number) => money.format(pence / 100);
+// The clinics are in Portland. Every time is shown as the clinic's clock shows it.
 const day = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-GB", {
+  new Date(iso).toLocaleDateString("en-US", {
     weekday: "short",
-    day: "numeric",
     month: "short",
-    timeZone: ZONE,
-  });
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: ZONE });
-const longDate = (date: string) =>
-  new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", {
     day: "numeric",
-    month: "long",
-    year: "numeric",
+    timeZone: TIME_ZONE,
   });
+const time = (iso: string) => clockText(iso, TIME_ZONE);
+const longDate = (date: string) =>
+  new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+/** Today at the clinics, as `YYYY-MM-DD`. */
+const clinicToday = () => wallClock(new Date(), TIME_ZONE).date;
 
 function age(born: string | null): string | null {
   if (!born) return null;
@@ -107,6 +108,20 @@ const messageOf = (error: unknown) =>
   error instanceof RunError || error instanceof ApiError || error instanceof Error
     ? error.message
     : String(error);
+
+function SpeciesIcon({ species, size = 14 }: { species: string; size?: number }) {
+  const Icon =
+    species === "Dog"
+      ? Dog
+      : species === "Cat"
+        ? Cat
+        : species === "Rabbit"
+          ? Rabbit
+          : species === "Bird"
+            ? Bird
+            : PawPrint;
+  return <Icon aria-hidden="true" size={size} />;
+}
 
 // ----- Where the person is in the portal: the address's hash -----
 
@@ -149,51 +164,48 @@ interface Mine {
   clinics: Clinic[];
 }
 
-function useMine(owner: boolean) {
+/** `clientId` is the owner's `client_id` attribute: which client row is theirs. */
+function useMine(clientId: string | undefined) {
   return useQuery<Mine>(async () => {
     // The tables' rules give an owner their own rows and nobody else's.
     const [me, petRows, visitRows, invoiceRows, clinicRows] = await Promise.all([
-      table<typeof clients>("clients").find({ limit: 1 }),
+      clientId
+        ? table<typeof clients>("clients").find({
+            filter: { column: "code", value: clientId },
+            limit: 1,
+          })
+        : Promise.resolve([]),
       table<typeof pets>("pets").find({ sort: ["name"], limit: 100 }),
       table<typeof appointments>("appointments").find({ sort: ["-starts_at"], limit: 500 }),
       table<typeof invoices>("invoices").find({ sort: ["-issued_on"], limit: 500 }),
       table<typeof clinics>("clinics").find({ sort: ["name"] }),
     ]);
     return {
-      // Staff see every client's row: none of them is "me".
-      me: owner ? me.items[0] : undefined,
-      pets: petRows.items,
-      visits: visitRows.items,
-      invoices: invoiceRows.items,
-      clinics: clinicRows.items,
+      me: me[0],
+      pets: petRows,
+      visits: visitRows,
+      invoices: invoiceRows,
+      clinics: clinicRows,
     };
-  });
+  }, [clientId]);
 }
 
 // ----- Pieces -----
 
-function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <section className={`rounded-panel border border-line bg-surface p-4 ${className}`}>
-      {children}
-    </section>
-  );
-}
-
 function StatusBadge({ status }: { status: string }) {
-  const known = STATUS[status] ?? { label: status, tone: "neutral" as BadgeTone };
-  return <Badge tone={known.tone}>{known.label}</Badge>;
+  const known = status as AppointmentStatus;
+  return <Badge tone={TONES[known] ?? "neutral"}>{STATUS_WORDS[known] ?? status}</Badge>;
 }
 
 function PetAvatar({ pet }: { pet: Pick<Pet, "name" | "species"> }) {
   return (
-    <span
-      aria-hidden="true"
-      className="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-action-soft text-action"
-    >
-      <span className="text-lg font-semibold">{pet.name.slice(0, 1)}</span>
-      <span className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full border-2 border-surface bg-action text-action-ink">
-        <PawIcon size={12} />
+    <span className="relative shrink-0">
+      <Avatar name={pet.name} size="large" decorative />
+      <span
+        aria-hidden="true"
+        className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full border-2 border-surface bg-action text-action-ink"
+      >
+        <SpeciesIcon species={pet.species} size={12} />
       </span>
     </span>
   );
@@ -204,11 +216,11 @@ function ClinicLine({ clinic }: { clinic: Clinic | undefined }) {
   return (
     <div className="flex flex-col gap-1 text-sm text-ink-muted">
       <span className="flex items-center gap-1.5">
-        <PinIcon size={14} />
+        <MapPin aria-hidden="true" size={14} />
         {clinic.name}, {clinic.address}
       </span>
-      <a href={`tel:${clinic.phone.replace(/\s+/g, "")}`} className="flex items-center gap-1.5">
-        <PhoneIcon size={14} />
+      <a href={`tel:${clinic.phone.replace(/[^\d+]/g, "")}`} className="flex items-center gap-1.5">
+        <Phone aria-hidden="true" size={14} />
         {clinic.phone}
       </a>
     </div>
@@ -217,14 +229,35 @@ function ClinicLine({ clinic }: { clinic: Clinic | undefined }) {
 
 function Loading({ what }: { what: string }) {
   return (
-    <div aria-busy="true" className="grid gap-3">
-      <span className="sr-only">Loading {what}</span>
-      {[0, 1, 2].map((key) => (
-        <div key={key} className="h-24 animate-pulse rounded-panel bg-sunken" />
-      ))}
+    <div className="grid gap-3">
+      <Skeleton className="h-8 w-48" label={`Loading ${what}`} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[0, 1, 2].map((key) => (
+          <Skeleton key={key} className="h-36 w-full rounded-panel" label={`Loading ${what}`} />
+        ))}
+      </div>
     </div>
   );
 }
+
+function Heading({ title, text, action }: { title: string; text?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="m-0 text-2xl font-semibold">{title}</h1>
+        {text ? <p className="m-0 mt-1 text-ink-muted">{text}</p> : null}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+const bookButton = (
+  <Button variant="primary" href="#book">
+    <CalendarPlus aria-hidden="true" size={16} />
+    Book a visit
+  </Button>
+);
 
 // ----- My pets -----
 
@@ -246,36 +279,23 @@ function Home({ mine }: { mine: Mine }) {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="m-0 text-2xl font-semibold">
-            {firstName ? `Hello, ${firstName}` : "Hello"}
-          </h1>
-          <p className="m-0 mt-1 text-ink-muted">
-            {home ? `Your clinic is ${home.name}.` : "Here is everything we hold for your pets."}
-          </p>
-        </div>
-        <a href="#book" className="no-underline">
-          <Button variant="primary" tabIndex={-1}>
-            <CalendarIcon size={16} />
-            Book a visit
-          </Button>
-        </a>
-      </div>
+      <Heading
+        title={firstName ? `Hello, ${firstName}` : "Hello"}
+        text={home ? `Your clinic is ${home.name}.` : "Here is everything we have for your pets."}
+        action={bookButton}
+      />
 
       {unpaid.length > 0 ? (
         <Notice
           tone="attention"
           action={
-            <a href="#invoices">
-              <Button size="small" tabIndex={-1}>
-                See invoices
-              </Button>
-            </a>
+            <Button size="small" href="#invoices">
+              See invoices
+            </Button>
           }
         >
           You have {unpaid.length} unpaid {unpaid.length === 1 ? "invoice" : "invoices"} for{" "}
-          <strong>{pounds(owed)}</strong>.
+          <strong>{dollars(owed)}</strong>.
         </Notice>
       ) : null}
 
@@ -287,12 +307,12 @@ function Home({ mine }: { mine: Mine }) {
         <ul className="m-0 grid list-none gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3">
           {mine.pets.map((pet) => {
             const next = nextFor(pet);
-            const facts = [pet.breed, age(pet.born), pet.weight_kg ? `${pet.weight_kg} kg` : null]
+            const facts = [pet.breed, age(pet.born), pet.weight_lb ? `${pet.weight_lb} lb` : null]
               .filter(Boolean)
               .join(" · ");
             return (
-              <li key={pet.id}>
-                <Panel className="flex h-full flex-col gap-4">
+              <li key={pet.id} className="flex">
+                <Card className="w-full">
                   <div className="flex items-start gap-3">
                     <PetAvatar pet={pet} />
                     <div className="min-w-0">
@@ -305,7 +325,7 @@ function Home({ mine }: { mine: Mine }) {
                   </div>
                   {pet.alert ? (
                     <p className="m-0 flex items-start gap-1.5 text-sm text-attention">
-                      <AlertIcon size={15} />
+                      <TriangleAlert aria-hidden="true" size={15} className="mt-0.5 shrink-0" />
                       <span>
                         <span className="sr-only">Our note: </span>
                         {pet.alert}
@@ -316,7 +336,7 @@ function Home({ mine }: { mine: Mine }) {
                     {next ? (
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5">
-                          <ClockIcon size={15} />
+                          <Clock aria-hidden="true" size={15} />
                           <span>
                             <strong>{day(next.starts_at)}</strong> at {time(next.starts_at)} ·{" "}
                             {next.reason}
@@ -333,7 +353,7 @@ function Home({ mine }: { mine: Mine }) {
                       </div>
                     )}
                   </div>
-                </Panel>
+                </Card>
               </li>
             );
           })}
@@ -354,44 +374,42 @@ function VisitCard({
   clinic: Clinic | undefined;
   upcoming: boolean;
 }) {
+  const at = new Date(visit.starts_at);
   return (
     <li>
-      <Panel className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex gap-3">
-          <div className="flex w-14 shrink-0 flex-col items-center rounded-control bg-action-soft py-1.5 text-action">
-            <span className="text-xs font-medium uppercase">
-              {new Date(visit.starts_at).toLocaleDateString("en-GB", {
-                month: "short",
-                timeZone: ZONE,
-              })}
-            </span>
-            <span className="text-xl font-semibold leading-tight">
-              {new Date(visit.starts_at).toLocaleDateString("en-GB", {
-                day: "numeric",
-                timeZone: ZONE,
-              })}
-            </span>
+      <Card>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <div className="flex w-14 shrink-0 flex-col items-center rounded-control bg-action-soft py-1.5 text-action">
+              <span className="text-xs font-medium uppercase">
+                {at.toLocaleDateString("en-US", { month: "short", timeZone: TIME_ZONE })}
+              </span>
+              <span className="text-xl font-semibold leading-tight">
+                {at.toLocaleDateString("en-US", { day: "numeric", timeZone: TIME_ZONE })}
+              </span>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="m-0 flex items-center gap-1.5 font-semibold">
+                <SpeciesIcon species={visit.species ?? ""} />
+                {visit.pet_name} · {visit.reason}
+              </p>
+              <p className="m-0 text-sm text-ink-muted">
+                {day(visit.starts_at)}, {time(visit.starts_at)} for {visit.minutes} minutes
+                {visit.vet ? ` with ${visit.vet}` : ""}
+              </p>
+              {upcoming ? (
+                <ClinicLine clinic={clinic} />
+              ) : (
+                <p className="m-0 text-sm text-ink-muted">{clinic?.name ?? visit.clinic}</p>
+              )}
+              {visit.notes ? <p className="m-0 text-sm">{visit.notes}</p> : null}
+            </div>
           </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <p className="m-0 font-semibold">
-              {visit.pet_name} · {visit.reason}
-            </p>
-            <p className="m-0 text-sm text-ink-muted">
-              {day(visit.starts_at)}, {time(visit.starts_at)} for {visit.minutes} minutes
-              {visit.vet ? ` with ${visit.vet}` : ""}
-            </p>
-            {upcoming ? (
-              <ClinicLine clinic={clinic} />
-            ) : (
-              <p className="m-0 text-sm text-ink-muted">{clinic?.name ?? visit.clinic}</p>
-            )}
-            {visit.notes ? <p className="m-0 text-sm">{visit.notes}</p> : null}
+          <div className="shrink-0">
+            <StatusBadge status={visit.status} />
           </div>
         </div>
-        <div className="shrink-0">
-          <StatusBadge status={visit.status} />
-        </div>
-      </Panel>
+      </Card>
     </li>
   );
 }
@@ -406,14 +424,11 @@ function Visits({ mine }: { mine: Mine }) {
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="m-0 text-2xl font-semibold">Visits</h1>
-        <a href="#book">
-          <Button variant="primary" tabIndex={-1}>
-            Book a visit
-          </Button>
-        </a>
-      </div>
+      <Heading
+        title="Visits"
+        text="Times are Pacific time, as the clinic's clock shows them."
+        action={bookButton}
+      />
       <section aria-labelledby="upcoming" className="grid gap-3">
         <h2 id="upcoming" className="m-0 text-lg font-semibold">
           Coming up
@@ -453,24 +468,9 @@ function Visits({ mine }: { mine: Mine }) {
 
 // ----- Booking -----
 
-const toMinutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
-const today = () => new Date().toISOString().slice(0, 10);
-
-/**
- * The times a visit of this length could start at the clinic on a day: every
- * 20 minutes from opening, ending by closing. The clinic's hours are kept in
- * UTC, as the booking script reads them.
- */
-function slotsFor(clinic: Clinic | undefined, date: string, minutes: number): string[] {
-  if (!clinic || !date) return [];
-  const opens = toMinutes(clinic.opens);
-  const closes = toMinutes(clinic.closes);
-  const slots: string[] = [];
-  for (let at = opens; at + minutes <= closes; at += 20) {
-    const iso = `${date}T${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}:00.000Z`;
-    if (Date.parse(iso) > Date.now() + 15 * 60_000) slots.push(iso);
-  }
-  return slots;
+interface FreeTimes {
+  closed: boolean;
+  times: { starts_at: string; local: string }[];
 }
 
 function Book({
@@ -485,23 +485,24 @@ function Book({
   const toast = useToast();
   const [pet, setPet] = useState(chosenPet ?? mine.pets[0]?.id ?? "");
   const [clinic, setClinic] = useState(mine.me?.home_clinic ?? mine.clinics[0]?.code ?? "");
-  const [reason, setReason] = useState<string>("Check-up");
-  const [date, setDate] = useState(today());
+  const [reason, setReason] = useState<Reason>("Checkup");
+  const [date, setDate] = useState(clinicToday);
   const [slot, setSlot] = useState<string>();
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
-  // Times the clinic turned down, so they are not offered again.
-  const [refused, setRefused] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (chosenPet) setPet(chosenPet);
   }, [chosenPet]);
 
-  const minutes = LENGTH[reason] ?? 20;
+  const minutes = VISIT_MINUTES[reason];
   const place = mine.clinics.find((one) => one.code === clinic);
-  const slots = useMemo(() => slotsFor(place, date, minutes), [place, date, minutes]);
-  const sunday = date ? new Date(`${date}T12:00:00Z`).getUTCDay() === 0 : false;
+  // Only the times the clinic can take: the script sees every visit, and shows no one's.
+  const free = useQuery<FreeTimes>(
+    () => runScript<FreeTimes>("appointments/free-times", { clinic, date, minutes }),
+    [clinic, date, minutes],
+  );
 
   // A different clinic, day or kind of visit offers different times.
   // biome-ignore lint/correctness/useExhaustiveDependencies: these are what the chosen time depends on
@@ -539,23 +540,24 @@ function Book({
       onBooked();
       location.hash = "visits";
     } catch (error) {
+      // Someone may have taken the time since the list was read: show the list again.
       setProblem(messageOf(error));
-      setRefused((before) => new Set(before).add(`${clinic} ${slot}`));
       setSlot(undefined);
+      free.reload();
     } finally {
       setBusy(false);
     }
   };
 
+  const times = free.loading ? undefined : free.data;
+
   return (
     <div className="grid max-w-2xl gap-5">
-      <div>
-        <h1 className="m-0 text-2xl font-semibold">Book a visit</h1>
-        <p className="m-0 mt-1 text-ink-muted">
-          Choose a time and we will text you a reminder the day before.
-        </p>
-      </div>
-      <Panel className="grid gap-4">
+      <Heading
+        title="Book a visit"
+        text="Choose a time and we will text you a reminder the day before."
+      />
+      <Card>
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             label="Who is it for?"
@@ -571,70 +573,81 @@ function Book({
             label="What for?"
             name="reason"
             value={reason}
-            onChange={setReason}
+            onChange={(value) => setReason(value as Reason)}
             options={REASONS.map((one) => ({ value: one, label: one }))}
           />
-          <SelectField
+        </div>
+        <div className="grid gap-1.5">
+          <span className="text-sm font-medium">Which clinic?</span>
+          <SegmentedControl
             label="Which clinic?"
-            name="clinic"
             value={clinic}
             onChange={setClinic}
             options={mine.clinics.map((one) => ({
               value: one.code,
-              label: one.code === mine.me?.home_clinic ? `${one.name} (your clinic)` : one.name,
+              label:
+                one.code === mine.me?.home_clinic
+                  ? `${one.name.replace("Fernhill ", "")} (yours)`
+                  : one.name.replace("Fernhill ", ""),
             }))}
           />
-          <DateField label="Which day?" name="date" value={date} min={today()} onChange={setDate} />
         </div>
         <ClinicLine clinic={place} />
-      </Panel>
+      </Card>
 
-      <Panel className="grid gap-3">
+      <Card>
         <fieldset className="m-0 grid gap-3 border-0 p-0">
           <legend className="mb-1 flex items-center gap-1.5 p-0 font-semibold">
-            <ClockIcon size={16} />
+            <Clock aria-hidden="true" size={16} />
             Choose a time
-            <span className="font-normal text-ink-muted">· {minutes} minutes</span>
+            <span className="font-normal text-ink-muted">· {minutes} minutes, Pacific time</span>
           </legend>
-          {sunday ? (
+          <DateStepper
+            value={date}
+            onChange={setDate}
+            min={clinicToday()}
+            label="Which day?"
+            locale="en-US"
+          />
+          {free.error ? (
+            <Notice tone="danger" action={<Button onClick={free.reload}>Try again</Button>}>
+              We could not read the free times. {free.error.message}
+            </Notice>
+          ) : !times ? (
+            <Skeleton lines={2} label="Finding free times" />
+          ) : times.closed ? (
             <p className="m-0 text-ink-muted">
-              The clinics are closed on Sundays. Choose another day.
+              {place?.name ?? "The clinic"} is closed that day. Choose another day.
             </p>
-          ) : slots.length === 0 ? (
-            <p className="m-0 text-ink-muted">No times are left on this day. Choose another day.</p>
+          ) : times.times.length === 0 ? (
+            <p className="m-0 text-ink-muted">No times are free that day. Choose another day.</p>
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {slots.map((iso) => {
-                const taken = refused.has(`${clinic} ${iso}`);
-                const on = iso === slot;
+              {times.times.map((one) => {
+                const on = one.starts_at === slot;
                 return (
                   <button
-                    key={iso}
+                    key={one.starts_at}
                     type="button"
                     aria-pressed={on}
-                    disabled={taken || busy}
-                    title={taken ? "The clinic could not take this time" : undefined}
-                    onClick={() => setSlot(iso)}
-                    className={`h-10 rounded-control border text-sm font-medium tabular-nums disabled:cursor-not-allowed disabled:line-through disabled:opacity-50 ${
+                    disabled={busy}
+                    onClick={() => setSlot(one.starts_at)}
+                    className={`h-10 rounded-control border text-sm font-medium tabular-nums disabled:cursor-not-allowed disabled:opacity-50 ${
                       on
                         ? "border-action bg-action text-action-ink"
                         : "border-line bg-surface text-ink hover:bg-action-soft"
                     }`}
                   >
-                    {time(iso)}
+                    {time(one.starts_at)}
                   </button>
                 );
               })}
             </div>
           )}
         </fieldset>
-        <p className="m-0 text-sm text-ink-muted">
-          Times are shown as the clinic's clock. A time may already be taken: the clinic checks when
-          you book.
-        </p>
-      </Panel>
+      </Card>
 
-      <Panel className="grid gap-4">
+      <Card>
         <TextAreaField
           label="Anything we should know? (optional)"
           name="notes"
@@ -658,7 +671,7 @@ function Book({
             {busy ? "Booking…" : "Book this visit"}
           </Button>
         </div>
-      </Panel>
+      </Card>
     </div>
   );
 }
@@ -684,12 +697,25 @@ function InvoiceCard({ invoice, mine }: { invoice: Invoice; mine: Mine }) {
   const paid = invoice.status === "paid";
   return (
     <li>
-      <Panel className="grid gap-3">
+      <Card
+        footer={
+          !paid ? (
+            <Button
+              size="small"
+              onClick={() =>
+                toast.success(
+                  "To pay, use the PayFern link in the text we sent you, or pay at the front desk.",
+                )
+              }
+            >
+              Pay now
+            </Button>
+          ) : undefined
+        }
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
-            <span className="mt-0.5 text-ink-muted">
-              <ReceiptIcon />
-            </span>
+            <Receipt aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-ink-muted" />
             <div className="min-w-0">
               <p className="m-0 font-semibold">{invoice.number}</p>
               <p className="m-0 text-sm text-ink-muted">
@@ -699,7 +725,7 @@ function InvoiceCard({ invoice, mine }: { invoice: Invoice; mine: Mine }) {
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <span className="text-lg font-semibold tabular-nums">{pounds(invoice.total)}</span>
+            <span className="text-lg font-semibold tabular-nums">{dollars(invoice.total)}</span>
             {paid ? (
               <Badge tone="success">Paid{invoice.paid_at ? ` ${day(invoice.paid_at)}` : ""}</Badge>
             ) : (
@@ -716,32 +742,18 @@ function InvoiceCard({ invoice, mine }: { invoice: Invoice; mine: Mine }) {
                 {lines.map((line) => (
                   <tr key={line.label} className="border-line border-t">
                     <td className="py-1.5">{line.label}</td>
-                    <td className="py-1.5 text-right tabular-nums">{pounds(line.amount)}</td>
+                    <td className="py-1.5 text-right tabular-nums">{dollars(line.amount)}</td>
                   </tr>
                 ))}
                 <tr className="border-line border-t font-semibold">
                   <td className="py-1.5">Total</td>
-                  <td className="py-1.5 text-right tabular-nums">{pounds(invoice.total)}</td>
+                  <td className="py-1.5 text-right tabular-nums">{dollars(invoice.total)}</td>
                 </tr>
               </tbody>
             </table>
           </details>
         ) : null}
-        {!paid ? (
-          <div className="flex justify-end">
-            <Button
-              size="small"
-              onClick={() =>
-                toast.success(
-                  "To pay, use the PayFern link in the text we sent you, or pay at the front desk.",
-                )
-              }
-            >
-              Pay now
-            </Button>
-          </div>
-        ) : null}
-      </Panel>
+      </Card>
     </li>
   );
 }
@@ -752,14 +764,14 @@ function Invoices({ mine }: { mine: Mine }) {
   const owed = unpaid.reduce((sum, invoice) => sum + invoice.total, 0);
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="m-0 text-2xl font-semibold">Invoices</h1>
-        <p className="m-0 mt-1 text-ink-muted">
-          {unpaid.length > 0
-            ? `${pounds(owed)} to pay across ${unpaid.length} ${unpaid.length === 1 ? "invoice" : "invoices"}.`
-            : "Everything is paid. Thank you."}
-        </p>
-      </div>
+      <Heading
+        title="Invoices"
+        text={
+          unpaid.length > 0
+            ? `${dollars(owed)} to pay across ${unpaid.length} ${unpaid.length === 1 ? "invoice" : "invoices"}.`
+            : "Everything is paid. Thank you."
+        }
+      />
       {mine.invoices.length === 0 ? (
         <EmptyState title="No invoices yet">An invoice is written after each visit.</EmptyState>
       ) : (
@@ -802,7 +814,7 @@ function Welcome() {
     <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10 text-ink">
       <div className="grid w-full max-w-md gap-5 rounded-panel border border-line bg-surface p-6 text-center sm:p-8">
         <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-action-soft text-action">
-          <PawIcon size={28} />
+          <PawPrint aria-hidden="true" size={28} />
         </span>
         <div>
           <h1 className="m-0 text-2xl font-semibold">Fernhill pet portal</h1>
@@ -810,11 +822,9 @@ function Welcome() {
             See your pets' visits, book the next one, and keep track of invoices.
           </p>
         </div>
-        <a href={signInUrl()} className="no-underline">
-          <Button variant="primary" className="w-full" tabIndex={-1}>
-            Sign in
-          </Button>
-        </a>
+        <Button variant="primary" href={signInUrl()} className="w-full justify-center">
+          Sign in
+        </Button>
         <p className="m-0 text-sm text-ink-muted">
           New to Fernhill?{" "}
           <a href={`${context.portal}/`} className="font-medium">
@@ -830,10 +840,11 @@ function Welcome() {
 
 function Portal() {
   const context = appContext();
-  const { principal } = useSession();
+  const { principal, attributes } = useSession();
   const [section, detail] = useHash();
   const owner = principal.type === "end_user";
-  const mine = useMine(owner);
+  // The account's client_id attribute says which client row is the owner's own.
+  const mine = useMine(owner ? attributes.client_id : undefined);
 
   const body = mine.error ? (
     <Notice tone="danger" action={<Button onClick={mine.reload}>Try again</Button>}>
@@ -882,6 +893,13 @@ function Portal() {
           <Notice tone="plain">
             You are signed in as staff. This portal shows a pet owner's own records; staff see every
             client's rows here.
+          </Notice>
+        </div>
+      ) : owner && mine.data && !mine.data.me ? (
+        <div className="mb-4">
+          <Notice tone="attention">
+            Your account is not linked to a client record yet. Call your clinic and they will link
+            it.
           </Notice>
         </div>
       ) : null}

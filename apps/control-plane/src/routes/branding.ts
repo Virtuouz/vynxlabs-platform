@@ -69,7 +69,7 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "`productName` replaces the console's name; null goes back to the default. " +
             "`theme` replaces the instance's token values: `tokens` for light, `dark` for dark. " +
-            "A token left out keeps the console's own value. Each value must be a plain colour, " +
+            "A token left out keeps the console's own value. Each value must be a plain color, " +
             "length or font list.",
           tags: ["instance"],
           body: Type.Object({

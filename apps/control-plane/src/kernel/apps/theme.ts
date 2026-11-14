@@ -81,7 +81,7 @@ export function cleanTheme(input: ThemeValues): ThemeValues {
         throw badRequest("That is not a theme.", [
           {
             path: `/${where}/${token}`,
-            message: "must be a plain colour, length or font list",
+            message: "must be a plain color, length or font list",
           },
         ]);
       }

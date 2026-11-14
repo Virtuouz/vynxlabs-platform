@@ -217,14 +217,14 @@ A caller with no access to a tenant gets 404 for anything inside it, not 403, so
 
 ## Console shell
 
-- `packages/ui` is the component kit. It defines the theme tokens as CSS variables and maps them into Tailwind, so every colour, radius and font in a component comes from a token. Tenant branding in phase 6 becomes a token override.
+- `packages/ui` is the component kit. It defines the theme tokens as CSS variables and maps them into Tailwind, so every color, radius and font in a component comes from a token. Tenant branding in phase 6 becomes a token override.
 - Kit components in phase 1: button, text field, select field, dialog, menu, table, badge, notice and empty state. Fields, dialog and menu wrap Base UI primitives. The select field is a native select, which already works with every keyboard, screen reader and phone.
 - `apps/console` is a single-page app built with Vite. The control plane serves the built files, so there is still one image and one container.
 - The console calls only the public API, with the session cookie.
 - Screens: sign in, tenants, and inside a tenant: workspaces, members, groups, roles and bindings, service accounts, secrets, resources (read-only), access grants and the audit log. Plus the instance pages for operator admins: members, instance bindings, instance audit.
 - An operator who opens a tenant without a grant sees a screen that explains why and offers to open one. While a grant is active, an amber banner states the access level, the reason and the end time on every tenant screen.
 - Production workspaces are always marked in the same amber.
-- The typeface is the system font. A bundled webfont would bring a font licence outside the allowlist, and the console must work offline. The font is a theme token, so a tenant's branding can set one.
+- The typeface is the system font. A bundled webfont would bring a font license outside the allowlist, and the console must work offline. The font is a theme token, so a tenant's branding can set one.
 
 ## CLI skeleton
 

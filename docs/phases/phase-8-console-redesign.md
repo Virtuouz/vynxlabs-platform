@@ -3,11 +3,11 @@
 Status: in progress. Built and tested locally: milestones 1 to 7, and of 8 the checks of every top-level screen at 390, 768 and 1440 pixels in light and dark (`e2e/redesign.spec.ts`), with the phase 7 exit criterion passing on the redesigned console. Open: testing a connection on a worker (waiting on the owner's choice of how), change descriptions in a promotion, and walking this phase's own exit criterion in a browser on a phone-sized screen.
 Last updated: 2026-11-13
 
-Phase 8 rebuilds the console to the "Signal Workshop" design: a quiet operational instrument panel in which each task gets the layout it needs. A rail and a section panel replace the long sidebar. Flows, scripts, apps and tables become full-width workbenches. Collections become lists with an inspector beside them. The workspace and the tenant each get an overview of what needs attention. The console is branded per instance instead of borrowing each tenant's colours, works in light and dark, and works from a phone's width up.
+Phase 8 rebuilds the console to the "Signal Workshop" design: a quiet operational instrument panel in which each task gets the layout it needs. A rail and a section panel replace the long sidebar. Flows, scripts, apps and tables become full-width workbenches. Collections become lists with an inspector beside them. The workspace and the tenant each get an overview of what needs attention. The console is branded per instance instead of borrowing each tenant's colors, works in light and dark, and works from a phone's width up.
 
 The design is recorded in the mock-up `Console Redesign.dc.html` with its generic screens in `console-screens.js`, and the audit that led to it. Where the mock-up showed something the platform could not yet do, the owner chose what to build; those are listed below.
 
-**Exit criterion:** on a fresh instance branded by its operator, a member can, on a laptop and again on a phone-sized screen, sign in, read the workspace overview, find a failed run and the step and log line that failed, edit and test-run a flow, review and deploy a release and promote it to production, share an app with a group and see which rows each audience reads, and pause one trigger in production. No screen uses a raw colour, a tenant's branding never reaches the console, and every screen works in light and dark.
+**Exit criterion:** on a fresh instance branded by its operator, a member can, on a laptop and again on a phone-sized screen, sign in, read the workspace overview, find a failed run and the step and log line that failed, edit and test-run a flow, review and deploy a release and promote it to production, share an app with a group and see which rows each audience reads, and pause one trigger in production. No screen uses a raw color, a tenant's branding never reaches the console, and every screen works in light and dark.
 
 ## Spec sections implemented
 
@@ -41,7 +41,7 @@ The design is recorded in the mock-up `Console Redesign.dc.html` with its generi
 
 ## Design in brief
 
-- **Tokens or nothing.** Every colour in the mock-up maps to a `--vx-*` token. New roles: `structure`, `raised`, `selected`, `line-strong`, `ink-subtle`, `code-bg`, `focus`. They join the tenant theme's list too, so one stylesheet writer serves both.
+- **Tokens or nothing.** Every color in the mock-up maps to a `--vx-*` token. New roles: `structure`, `raised`, `selected`, `line-strong`, `ink-subtle`, `code-bg`, `focus`. They join the tenant theme's list too, so one stylesheet writer serves both.
 - **The kit's defaults do not move.** Tenant apps import `@vynxlabs/ui`. New console pieces live in `apps/console/src/kit/`; shared components gain opt-in variants only.
 - **Instance branding reuses the tenant pipeline.** The same token list, the same value check and the same stylesheet writer, served at `/api/v1/instance/theme.css` and loaded before the console renders.
 - **Five regions.** A rail of areas; a section panel with counts that hides in the editors; a header with the scope as a signal path; a work surface whose width the task sets; an inspector that opens on selection.

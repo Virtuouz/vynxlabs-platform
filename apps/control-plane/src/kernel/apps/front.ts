@@ -9,6 +9,7 @@ import {
   checkEndUserPassword,
   createEndUser,
   createPasswordToken,
+  endUserIdentity,
   readPasswordToken,
   setPasswordWithToken,
   signUpAllowed,
@@ -523,7 +524,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   // ----- Single sign-on for end users -----
 
   const starts = new Limiter(30, 60);
-  /** Many people of one organisation share an address, so this is generous. It is there to stop a flood. */
+  /** Many people of one organization share an address, so this is generous. It is there to stop a flood. */
   const answers = new Limiter(300, 60);
 
   /**
@@ -848,7 +849,12 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         themeHref: look.themeHref,
         data: {
           api: "/api/v1",
-          tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+          tenant: {
+            id: tenant.id,
+            slug: tenant.slug,
+            name: tenant.name,
+            logo: look.logoHref !== undefined,
+          },
           workspace: { id: workspace.id, slug: workspace.slug },
           app: {
             path: manifest.path,
@@ -862,6 +868,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
             id: principal.id,
             name: principal.name ?? null,
             email: principal.email ?? null,
+            ...(await endUserIdentity(db, tenant.id, principal)),
           },
         },
       });

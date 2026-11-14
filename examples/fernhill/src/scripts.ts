@@ -1,4 +1,14 @@
-import { defineScript, z } from "@vynxlabs/sdk";
+import { defineScript, type ScriptContext, z } from "@vynxlabs/sdk";
+import {
+  type AppointmentStatus,
+  CLINICS,
+  dollars,
+  NEXT_STATUS,
+  ROOMS,
+  STATUS_WORDS,
+  TIME_ZONE,
+  VISIT_MINUTES,
+} from "./constants.ts";
 import {
   AppointmentState,
   appointments,
@@ -20,20 +30,21 @@ import {
   supplier,
   visitDone,
 } from "./model.ts";
+import { clockText, hhmmOf, hoursOn, instantAt, wallClock } from "./time.ts";
 
-/** What each reason for a visit adds to the consultation fee, in pence. */
+/** What each reason for a visit adds to the exam fee, in cents. */
 const EXTRAS: Record<string, { label: string; amount: number }[]> = {
   Vaccination: [{ label: "Vaccine, annual booster", amount: 4800 }],
   Dental: [
-    { label: "Scale and polish", amount: 14500 },
-    { label: "General anaesthetic", amount: 9500 },
+    { label: "Dental cleaning", amount: 14500 },
+    { label: "General anesthesia", amount: 9500 },
   ],
   Surgery: [
     { label: "Surgical procedure", amount: 38000 },
-    { label: "General anaesthetic", amount: 9500 },
+    { label: "General anesthesia", amount: 9500 },
     { label: "Pain relief, 5 days", amount: 2400 },
   ],
-  Lameness: [{ label: "X-ray, two views", amount: 11500 }],
+  Lameness: [{ label: "Radiographs, two views", amount: 11500 }],
   Skin: [{ label: "Skin scrape and cytology", amount: 5200 }],
 };
 
@@ -49,20 +60,127 @@ const shortNumber = (prefix: string) =>
 
 // ----- Booking -----
 
+type Visit = NonNullable<typeof appointments.__row>;
+type ClinicRow = NonNullable<typeof clinics.__row>;
+const ACTIVE = ["booked", "checked_in", "in_exam"];
+
+/** The clinic's row, or a refusal that says which clinics there are. */
+async function clinicCalled(ctx: ScriptContext, code: string): Promise<ClinicRow> {
+  const [clinic] = await ctx
+    .table(clinics)
+    .find({ filter: { column: "code", value: code }, limit: 1 });
+  if (!clinic) throw new Error(`There is no clinic called ${code}. Choose ${CLINICS.join(", ")}.`);
+  return clinic;
+}
+
+/** The visits still to happen at a clinic on one of its days, by its own clock. */
+async function visitsOn(ctx: ScriptContext, clinic: string, date: string): Promise<Visit[]> {
+  const from = instantAt(date, 0, TIME_ZONE);
+  const to = instantAt(date, 24 * 60, TIME_ZONE);
+  return ctx.table(appointments).find({
+    filter: {
+      and: [
+        { column: "clinic", value: clinic },
+        { column: "starts_at", op: "gte", value: from.toISOString() },
+        { column: "starts_at", op: "lt", value: to.toISOString() },
+        { column: "status", op: "in", value: ACTIVE },
+      ],
+    },
+    limit: 1000,
+  });
+}
+
+/**
+ * Why a visit cannot start then, or null when it can: outside opening hours,
+ * all consulting rooms taken, or the named vet already busy.
+ */
+function refusal(
+  clinic: ClinicRow,
+  booked: Visit[],
+  start: Date,
+  minutes: number,
+  vet: string | undefined,
+): string | null {
+  const local = wallClock(start, TIME_ZONE);
+  const hours = hoursOn(clinic, local.weekday);
+  if (!hours)
+    return `${clinic.name} is closed on ${local.weekday === "Sun" ? "Sundays" : "that day"}.`;
+  if (local.minutes < hours.opens || local.minutes + minutes > hours.closes) {
+    return `${clinic.name} is open ${hhmmOf(hours.opens)} to ${hhmmOf(hours.closes)} that day, Pacific time. Choose a time inside those hours.`;
+  }
+  const wanted = { start: start.getTime(), minutes };
+  const meeting = booked.filter((other) =>
+    overlaps(wanted, { start: new Date(other.starts_at).getTime(), minutes: other.minutes }),
+  );
+  const busyVet = vet ? meeting.find((other) => other.vet === vet) : undefined;
+  if (busyVet) {
+    return `${vet} is with ${busyVet.pet_name} then (${busyVet.number}). Try another time or any vet.`;
+  }
+  if (meeting.length >= ROOMS) return "Every consulting room is taken then. Try another time.";
+  return null;
+}
+
+export const freeTimes = defineScript({
+  path: "appointments/free-times",
+  description:
+    "Lists the times a visit of a given length can start at a clinic on a day, Pacific time. Shows no one else's visits.",
+  input: z.object({
+    clinic: Clinic,
+    date: z.iso.date().describe("The day, YYYY-MM-DD, at the clinic."),
+    minutes: z.number().int().min(10).max(240).default(20),
+    vet: z.string().max(80).optional(),
+  }),
+  output: z.object({
+    closed: z.boolean(),
+    times: z.array(z.object({ starts_at: z.string(), local: z.string() })),
+  }),
+  tables: [clinics, appointments],
+  async run(input, ctx) {
+    const clinic = await clinicCalled(ctx, input.clinic);
+    const booked = await visitsOn(ctx, input.clinic, input.date);
+    const day = wallClock(instantAt(input.date, 12 * 60, TIME_ZONE), TIME_ZONE);
+    const hours = hoursOn(clinic, day.weekday);
+    if (!hours) return { closed: true, times: [] };
+    const times = [];
+    for (let at = hours.opens; at + input.minutes <= hours.closes; at += 20) {
+      const start = instantAt(input.date, at, TIME_ZONE);
+      if (start.getTime() < Date.now() + 15 * MINUTE) continue;
+      if (refusal(clinic, booked, start, input.minutes, input.vet)) continue;
+      times.push({ starts_at: start.toISOString(), local: hhmmOf(at) });
+    }
+    return { closed: false, times };
+  },
+});
+
 export const bookAppointment = defineScript({
   path: "appointments/book",
   description:
-    "Books a visit for a pet at a clinic. Refuses a time outside opening hours or one that clashes with the vet's other visits. A pet owner may book only for their own pets.",
+    "Books a visit for a pet at a clinic. Refuses a time outside opening hours (Pacific time), when every room is taken, or when the named vet is busy. A pet owner may book only for their own pets.",
   input: z.object({
     pet: z.uuid().describe("The pet's row ID."),
     clinic: Clinic.describe("Which clinic: northside, riverside or hilltop."),
-    starts_at: z.iso.datetime().describe("When the visit starts, as an ISO date and time."),
-    minutes: z.number().int().min(10).max(240).default(20),
+    starts_at: z.iso
+      .datetime({ offset: true })
+      .describe(
+        "When the visit starts: an ISO date and time with its offset, such as 2026-11-17T10:00:00-08:00.",
+      ),
+    minutes: z
+      .number()
+      .int()
+      .min(10)
+      .max(240)
+      .optional()
+      .describe("Default: what the reason usually takes."),
     reason: z.enum(REASONS),
     vet: z.string().max(80).optional().describe("A vet's name, when the owner asks for one."),
     notes: z.string().max(500).optional(),
   }),
-  output: z.object({ id: z.string(), number: z.string(), starts_at: z.string() }),
+  output: z.object({
+    id: z.string(),
+    number: z.string(),
+    starts_at: z.string(),
+    local: z.string(),
+  }),
   tables: [pets, clinics, appointments],
   async run(input, ctx) {
     const who = ctx.run.startedBy;
@@ -72,59 +190,28 @@ export const bookAppointment = defineScript({
     const pet = await petTable.get(input.pet);
     if (!pet) throw new Error("There is no such pet, or it is not yours to book for.");
 
-    const [clinic] = await ctx
-      .table(clinics)
-      .find({ filter: { column: "code", value: input.clinic }, limit: 1 });
-    if (!clinic) throw new Error(`There is no clinic called ${input.clinic}.`);
+    const clinic = await clinicCalled(ctx, input.clinic);
     const start = new Date(input.starts_at);
-    if (Number.isNaN(start.getTime())) throw new Error("That is not a date and time.");
     if (start.getTime() < Date.now() - 5 * MINUTE) throw new Error("That time has passed.");
-    const hhmm = start.toISOString().slice(11, 16);
-    const end = new Date(start.getTime() + input.minutes * MINUTE).toISOString().slice(11, 16);
-    if (hhmm < clinic.opens || end > clinic.closes) {
-      throw new Error(
-        `${clinic.name} is open ${clinic.opens} to ${clinic.closes} (UTC). Choose a time inside those hours.`,
-      );
-    }
+    const minutes = input.minutes ?? VISIT_MINUTES[input.reason];
+    const booked = await visitsOn(ctx, input.clinic, wallClock(start, TIME_ZONE).date);
 
-    const sameDay = await ctx.table(appointments).find({
-      filter: {
-        and: [
-          { column: "clinic", value: input.clinic },
-          { column: "starts_at", op: "gte", value: `${input.starts_at.slice(0, 10)}T00:00:00Z` },
-          { column: "starts_at", op: "lte", value: `${input.starts_at.slice(0, 10)}T23:59:59Z` },
-          { column: "status", op: "in", value: ["booked", "checked_in", "in_exam"] },
-        ],
-      },
-      limit: 500,
-    });
-    const wanted = { start: start.getTime(), minutes: input.minutes };
     // The same animal cannot be in two places: a second booking is usually a retry.
-    const twice = sameDay.find(
+    const twice = booked.find(
       (other) =>
         other.pet === pet.id &&
-        overlaps(wanted, { start: new Date(other.starts_at).getTime(), minutes: other.minutes }),
+        overlaps(
+          { start: start.getTime(), minutes },
+          { start: new Date(other.starts_at).getTime(), minutes: other.minutes },
+        ),
     );
     if (twice) {
       throw new Error(
-        `${pet.name} is already booked at ${twice.starts_at.slice(11, 16)} (${twice.number}).`,
+        `${pet.name} is already booked at ${clockText(twice.starts_at, TIME_ZONE)} (${twice.number}).`,
       );
     }
-    const clash = sameDay.find(
-      (other) =>
-        (input.vet ? other.vet === input.vet : true) &&
-        overlaps(wanted, { start: new Date(other.starts_at).getTime(), minutes: other.minutes }) &&
-        // Without a vet named, the clinic has three consulting rooms.
-        (input.vet ||
-          sameDay.filter((one) =>
-            overlaps(wanted, { start: new Date(one.starts_at).getTime(), minutes: one.minutes }),
-          ).length >= 3),
-    );
-    if (clash) {
-      throw new Error(
-        `That time clashes with ${clash.number} at ${clash.starts_at.slice(11, 16)}. Try another time.`,
-      );
-    }
+    const why = refusal(clinic, booked, start, minutes, input.vet);
+    if (why) throw new Error(why);
 
     const row = await ctx.table(appointments).insert({
       number: shortNumber("A"),
@@ -135,30 +222,25 @@ export const bookAppointment = defineScript({
       clinic: input.clinic,
       vet: input.vet ?? null,
       starts_at: start.toISOString(),
-      minutes: input.minutes,
+      minutes,
       reason: input.reason,
       status: "booked",
       notes: input.notes ?? null,
     });
     ctx.log.info("Visit booked", { number: row.number, clinic: input.clinic, by: who.type });
-    return { id: row.id, number: row.number, starts_at: row.starts_at };
+    return {
+      id: row.id,
+      number: row.number,
+      starts_at: row.starts_at,
+      local: `${wallClock(start, TIME_ZONE).date} ${clockText(start, TIME_ZONE)} Pacific`,
+    };
   },
 });
-
-/** Which status may follow which. */
-const NEXT: Record<string, string[]> = {
-  booked: ["checked_in", "no_show", "cancelled"],
-  checked_in: ["in_exam", "cancelled"],
-  in_exam: ["done"],
-  done: [],
-  no_show: ["booked"],
-  cancelled: ["booked"],
-};
 
 export const setStatus = defineScript({
   path: "appointments/set-status",
   description:
-    "Moves a visit on: checked in, in the exam room, done, a no-show, or cancelled. Done starts the invoice.",
+    "Moves a visit on: checked in, in the exam room, done, a no-show, or canceled. Done starts the invoice.",
   input: z.object({
     appointment: z.uuid(),
     status: AppointmentState,
@@ -176,9 +258,9 @@ export const setStatus = defineScript({
         : ctx.table(appointments);
     const visit = await table.get(input.appointment);
     if (!visit) throw new Error("There is no such visit, or it is another clinic's.");
-    if (!NEXT[visit.status]?.includes(input.status)) {
+    if (!NEXT_STATUS[visit.status as AppointmentStatus]?.includes(input.status)) {
       throw new Error(
-        `A visit that is ${visit.status.replace("_", " ")} cannot become ${input.status.replace("_", " ")}.`,
+        `A visit that is ${STATUS_WORDS[visit.status as AppointmentStatus].toLowerCase()} cannot become ${STATUS_WORDS[input.status].toLowerCase()}.`,
       );
     }
     const changes: Record<string, unknown> = { status: input.status };
@@ -258,12 +340,19 @@ export const sendReminders = defineScript({
         .table(clients)
         .find({ filter: { column: "code", value: visit.client_code }, limit: 1 });
       if (!owner) continue;
-      const when = new Date(visit.starts_at).toUTCString().slice(0, 22);
+      const when = new Intl.DateTimeFormat("en-US", {
+        timeZone: TIME_ZONE,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(visit.starts_at));
       const response = await gateway.post(
         "/messages",
         {
           to: owner.phone,
-          text: `Fernhill Vets: ${visit.pet_name} is booked in at ${visit.clinic} on ${when}. Reply C to cancel.`,
+          text: `Fernhill Vets: ${visit.pet_name} has a visit at our ${visit.clinic} clinic on ${when}. Reply C to cancel.`,
         },
         { allowFailure: true },
       );
@@ -299,7 +388,10 @@ export const createInvoice = defineScript({
   output: z.object({
     id: z.string(),
     number: z.string(),
+    /** In cents. */
     total: z.number(),
+    /** The total as people read it: $65.00. */
+    amount: z.string(),
     phone: z.string(),
     pet: z.string(),
   }),
@@ -320,12 +412,13 @@ export const createInvoice = defineScript({
         id: existing.id,
         number: existing.number,
         total: existing.total,
+        amount: dollars(existing.total),
         phone: owner.phone,
         pet: visit.pet_name,
       };
     }
     const fee = Number(await ctx.variable("billing/exam-fee"));
-    const lines = [{ label: "Consultation", amount: fee }, ...(EXTRAS[visit.reason] ?? [])];
+    const lines = [{ label: "Exam", amount: fee }, ...(EXTRAS[visit.reason] ?? [])];
     const total = lines.reduce((sum, line) => sum + line.amount, 0);
     const row = await ctx.table(invoices).insert({
       number: shortNumber("INV"),
@@ -334,11 +427,18 @@ export const createInvoice = defineScript({
       clinic: visit.clinic,
       total,
       status: "unpaid",
-      issued_on: new Date().toISOString().slice(0, 10),
+      issued_on: wallClock(new Date(), TIME_ZONE).date,
       lines,
     });
     ctx.log.info("Invoice written", { number: row.number, total });
-    return { id: row.id, number: row.number, total, phone: owner.phone, pet: visit.pet_name };
+    return {
+      id: row.id,
+      number: row.number,
+      total,
+      amount: dollars(total),
+      phone: owner.phone,
+      pet: visit.pet_name,
+    };
   },
 });
 
@@ -401,7 +501,7 @@ export const chaseOne = defineScript({
       "/messages",
       {
         to: owner.phone,
-        text: `Fernhill Vets: invoice ${invoice.number} for £${(invoice.total / 100).toFixed(2)} is still unpaid. Pay it in the pet portal, or call your clinic.`,
+        text: `Fernhill Vets: invoice ${invoice.number} for ${dollars(invoice.total)} is still unpaid. Pay it in the pet portal, or call your clinic.`,
       },
       { allowFailure: true },
     );
@@ -456,8 +556,12 @@ export const quoteOrder = defineScript({
   description: "Asks VetSupply what an order would cost, and whether a manager must approve it.",
   input: z.object({ sku: z.string(), quantity: z.number().int().positive() }),
   output: z.object({
+    /** In cents. */
     unit_price: z.number(),
+    /** In cents. */
     total: z.number(),
+    /** The total as people read it: $378.00. */
+    amount: z.string(),
     needs_approval: z.boolean(),
     lead_days: z.number(),
   }),
@@ -466,7 +570,7 @@ export const quoteOrder = defineScript({
   async run(input, ctx) {
     const api = await ctx.connection("supplier");
     const quote = (
-      await api.get(`/catalogue/${encodeURIComponent(input.sku)}`, {
+      await api.get(`/catalog/${encodeURIComponent(input.sku)}`, {
         query: { quantity: input.quantity },
       })
     ).json() as { unit_price: number; lead_days: number };
@@ -475,6 +579,7 @@ export const quoteOrder = defineScript({
     return {
       unit_price: quote.unit_price,
       total,
+      amount: dollars(total),
       needs_approval: total > limit,
       lead_days: quote.lead_days,
     };
@@ -610,11 +715,15 @@ export const findClient = defineScript({
   tables: [clients, pets, appointments, invoices],
   async run(input, ctx) {
     const q = input.query.trim();
+    const digits = q.replace(/\D/g, "");
     const byOwner = await ctx.table(clients).find({
       filter: {
         or: [
           { column: "name", op: "contains", value: q },
-          { column: "phone", op: "contains", value: q.replace(/\s+/g, "") },
+          // Numbers are stored as people write them, (503) 555-0142: match on the last digits.
+          ...(digits.length >= 4
+            ? [{ column: "phone", op: "contains" as const, value: digits.slice(-4) }]
+            : []),
           { column: "code", value: q.toUpperCase() },
         ],
       },
@@ -685,7 +794,7 @@ export const findClient = defineScript({
 export const clinicDay = defineScript({
   path: "agent/clinic-day",
   description:
-    "How a clinic's day looks: visits by status, who has not arrived, and what was invoiced. Without a date, today.",
+    "How a clinic's day looks: visits by status, who has not arrived, and what was invoiced, in dollars. Without a date, today (Pacific time).",
   input: z.object({
     clinic: Clinic,
     date: z.iso.date().optional().describe("YYYY-MM-DD. Default today."),
@@ -695,18 +804,24 @@ export const clinicDay = defineScript({
     date: z.string(),
     visits: z.record(z.string(), z.number()),
     waiting: z.array(z.object({ number: z.string(), pet: z.string(), starts_at: z.string() })),
+    /** In cents. */
     invoiced: z.number(),
+    /** In cents. */
     paid: z.number(),
   }),
   tables: [appointments, invoices],
   async run(input, ctx) {
-    const date = input.date ?? new Date().toISOString().slice(0, 10);
+    const date = input.date ?? wallClock(new Date(), TIME_ZONE).date;
     const visits = await ctx.table(appointments).find({
       filter: {
         and: [
           { column: "clinic", value: input.clinic },
-          { column: "starts_at", op: "gte", value: `${date}T00:00:00Z` },
-          { column: "starts_at", op: "lte", value: `${date}T23:59:59Z` },
+          { column: "starts_at", op: "gte", value: instantAt(date, 0, TIME_ZONE).toISOString() },
+          {
+            column: "starts_at",
+            op: "lt",
+            value: instantAt(date, 24 * 60, TIME_ZONE).toISOString(),
+          },
         ],
       },
       sort: ["starts_at"],

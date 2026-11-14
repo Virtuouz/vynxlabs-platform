@@ -1200,7 +1200,7 @@ export function SingleSignOn({ base }: { base: string }) {
       description={
         instance
           ? "Identity providers for the people who run this instance. A tenant connects its own under its settings."
-          : "Let people sign in through your organisation's identity provider, over OIDC or SAML: members to this console, end users to the tenant's apps."
+          : "Let people sign in through your organization's identity provider, over OIDC or SAML: members to this console, end users to the tenant's apps."
       }
       action={connect}
     >

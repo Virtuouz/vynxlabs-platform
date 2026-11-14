@@ -181,10 +181,21 @@ export function NumberField(props: NumberFieldProps) {
 
 export interface DateFieldProps extends Common {
   name: string;
-  /** `2026-03-09`, or `2026-03-09T14:30` in local time when `withTime` is set. */
+  /**
+   * `2026-03-09`, or with `withTime` a date and time: `2026-03-09T14:30` in the
+   * person's local time, or with `timeZone: "UTC"` an instant such as
+   * `2026-03-09T14:30:00.000Z`.
+   */
   value?: string;
   /** Asks for a time of day as well. */
   withTime?: boolean;
+  /**
+   * Which clock a time is read and written in. `local`, the default, is the
+   * browser's. With `UTC` the field shows UTC times and `value`, `min`, `max`
+   * and `onChange` are ISO instants ending in `Z`, so what is stored never
+   * depends on where the person is.
+   */
+  timeZone?: "local" | "UTC";
   /** The earliest and latest values allowed, in the same form as `value`. */
   min?: string;
   max?: string;
@@ -193,15 +204,50 @@ export interface DateFieldProps extends Common {
   onChange?: (value: string) => void;
 }
 
+/** An ISO instant as a UTC wall-clock time for a `datetime-local` input. */
+export function utcInputValue(instant: string | undefined): string | undefined {
+  if (!instant) return instant;
+  const date = new Date(instant);
+  return Number.isNaN(date.getTime()) ? instant : date.toISOString().slice(0, 16);
+}
+
+/** A `datetime-local` input's value, read as UTC, as an ISO instant. */
+export function utcInstant(wallClock: string): string {
+  if (!wallClock) return "";
+  const date = new Date(`${wallClock.length === 16 ? `${wallClock}:00` : wallClock}Z`);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 /** The browser's own date picker: it follows the person's locale and works on a phone. */
-export function DateField({ label, hint, error, withTime, onChange, ...input }: DateFieldProps) {
+export function DateField({
+  label,
+  hint,
+  error,
+  withTime,
+  timeZone = "local",
+  onChange,
+  ...input
+}: DateFieldProps) {
+  const utc = withTime && timeZone === "UTC";
+  const shown = utc
+    ? {
+        ...input,
+        value: utcInputValue(input.value),
+        min: utcInputValue(input.min),
+        max: utcInputValue(input.max),
+      }
+    : input;
+  const note = utc ? (hint ? `${hint} Times are in UTC.` : "Times are in UTC.") : hint;
   return (
-    <Frame label={label} {...(hint ? { hint } : {})} error={error}>
+    <Frame label={label} {...(note ? { hint: note } : {})} error={error}>
       <Field.Control
-        {...input}
+        {...Object.fromEntries(Object.entries(shown).filter(([, value]) => value !== undefined))}
         type={withTime ? "datetime-local" : "date"}
         className={control}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => {
+          const value = event.currentTarget.value;
+          onChange?.(utc ? utcInstant(value) : value);
+        }}
       />
     </Frame>
   );

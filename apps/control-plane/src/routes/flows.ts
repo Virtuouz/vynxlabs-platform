@@ -380,7 +380,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Save where a flow's nodes are drawn",
           description:
-            "Positions are not part of the flow. Saving them changes no version and no behaviour.",
+            "Positions are not part of the flow. Saving them changes no version and no behavior.",
           tags: ["flows"],
           params: WildParams,
           body: Type.Object({ positions: Type.Record(Type.String(), Position) }),
@@ -647,7 +647,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return flowRun;
         });
-        // A cancelled sub-flow lets the flow that started it move on.
+        // A canceled sub-flow lets the flow that started it move on.
         if (cancelled.parent_flow_run_id) kickFlow(kernel, cancelled.parent_flow_run_id);
         return toFlowRun(
           await flowRuns(params.w).where("flow_run.id", "=", params.id).executeTakeFirstOrThrow(),

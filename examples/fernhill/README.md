@@ -2,7 +2,7 @@
 
 A complete, hypothetical customer of the platform, built to vet the console, the apps and the agent surface against something that looks like real work.
 
-Fernhill runs three clinics: Northside, Riverside and Hilltop. On the platform it has:
+Fernhill runs three clinics in Portland, Oregon: Northside, Riverside and Hilltop. Every clinic keeps Pacific time, and Hilltop is closed on Saturdays. Money is kept in cents and shown in dollars. On the platform it has:
 
 | What | Where it lives | Who uses it |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Fernhill runs three clinics: Northside, Riverside and Hilltop. On the platform i
 | **Pet portal**: pets, visits, booking and invoices. A custom React app | `apps/pet-portal` | Pet owners: end users with a `client_id` attribute |
 | **Clinic performance**: money, visits and stock. Built from widgets, with no code | `src/apps.ts` (`screens/performance`) | Practice managers: members of the tenant |
 | **Integrations**: TextLine (SMS), VetSupply (stock orders), PayFern (signed payment webhook) | `src/model.ts`, `src/flows.ts`, `stand-ins/` | Scripts and flows |
+| **Shared code for scripts and apps**: lists, visit lengths, status words, dollars, and Pacific clock time | `src/constants.ts`, `src/time.ts` (no imports, so apps can use them) | Both |
 | **Flows**: invoice and thank-you text after a visit; reorder with a manager's approval; weekly chasing of unpaid invoices; public registration form | `src/flows.ts` | Event, schedule, webhook and form triggers |
 | **Phone assistant**: an AI agent connected over MCP with a service account's key | `src/apps.ts` (bindings), `setup/agent.mjs` | The `phone-assistant` service account |
 
@@ -78,9 +79,9 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
 3. **Approvals, as Rowan.** Approve a stock order. The order appears at `http://127.0.0.1:4020/`.
 4. **Front desk as Jess, on a phone.** Check a patient in, move them to the exam room, finish the visit. Then:
    - The invoice appears for the owner, and the thank-you text at the stand-ins page.
-   - Then book a visit at a clashing time.
+   - Then book a visit: only free times are offered, in Pacific time.
 5. **Front desk as Omar.** He sees none of Northside's visits.
-6. **Pet portal as George.** Book a visit for his dog; see his unpaid invoices.
+6. **Pet portal as George.** Book a visit for his dog from the free times (Hilltop is closed on Saturdays), and see his unpaid invoices in dollars.
 7. **Clinic performance**, through "Staff sign-in" on the portal as Maya. Try the page filters.
 8. **The public form** at the portal's registration address (Operate → Triggers) lands in the front desk's Callbacks.
 9. **Ship a change as Devi.** Change the reminder text in `src/scripts.ts` and deploy it to the sandbox:
@@ -91,59 +92,62 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
 
    Then, as Maya, review it in Release and promote it. Repository scripts are read-only in the console's editor.
 
-## Findings from building it
+## Findings from building it, and what became of them
 
-What got in the way while building Fernhill. "Fixed" means it is fixed in the same change as this example.
+Building Fernhill and using it as its people and its agent turned up these problems. All of them are fixed, except the last two, which are this example's to solve.
 
 **Security**
 
-- **Fixed: the agent could decide approvals reserved for others.** `decide_approval` over MCP ignored the step's approvers: the phone assistant approved a stock order meant for the Practice managers group. `list_approvals` also listed such steps. Both now check approvers as the console's route does.
+- **Fixed: an agent could decide approvals reserved for others.** Over MCP, `decide_approval` ignored a step's approvers, and `list_approvals` showed those steps. Both now check approvers, as the console's route does.
 
 **The SDK**
 
-- **Fixed: required columns typed as nullable.** Every column read as `T | null`, even `required: true` ones, because `defineTable`'s expected type widened each column's `Required` to `boolean`. A required column with a default was also demanded on insert. Both are fixed, with a type test.
-- **No `approvers` on `step.approval()`.** The manifest supports it; the SDK does not, so `src/flows.ts` writes it onto the node by hand.
-- **`find()` differs between scripts and apps.** It returns an array in scripts and `{ items, nextCursor }` in apps.
-- **Aggregate results are awkward.** They are keyed `"sum:total"` and typed `number | string | null`.
-- **No browser-safe way to share constants.** Importing `REASONS` from `src/` pulls the server SDK into the app, so both apps copy it.
+- **Fixed: required columns were typed as nullable.** A required column with a default was also demanded on insert.
+- **Fixed: `step.approval()` takes `approvers`.**
+- **Fixed: one `find()`.** It returns rows in scripts and in apps. Apps page with `table().page()`, and `totalOf()` reads an aggregate.
+- **Constants shared with apps:** an app imports from a repository file that imports nothing. Here that is `src/constants.ts` and `src/time.ts`.
 
 **Flows**
 
-- **No clock in expressions.** There is no `now`, so "unpaid for two weeks" needs a script.
-- **A loop fails as a whole when one item fails.** One unreachable phone number failed the whole chase flow; a loop step has no option to carry on.
-- **A flow's manual trigger declares no input.** The MCP tool for it accepts any object. The agent guessed and got `No such key: line` from inside a step.
+- **Fixed: a clock in expressions.** `now` is a timestamp, and `string(timestamp)` writes ISO 8601.
+- **Fixed: a loop can carry on.** `step.foreach({ continueOnError: true })` makes a failed item `{ error }` in the output.
+- **Fixed: a manual trigger declares its input.** It is `trigger.manual({ input: zodSchema })`. A start is checked against it, from the API and from MCP.
+- **Fixed: build errors no longer cascade** when two resources share a path.
 
 **MCP**
 
-- **Connecting needs `workspace:read`, and nothing says so.** The account had bindings on six scripts and a flow and was still refused. Fixed: the console's Agent access notice now names the permission.
-- **A failed run is not an error result.** The tool answers `isError: false` with `status: "failed"`.
-- **Schema errors show raw regexes.** A bad date gets the whole pattern back, not "must be an ISO date and time".
-- **No output schemas.** Scripts declare them; the tools don't advertise them.
-- **Bloated input schemas.** Tool schemas carry zod's long regex patterns alongside `format`.
-- **No idempotency on run tools.** An agent that retries books twice. The booking script now refuses a second visit for the same pet at once.
+- **Fixed: what connecting needs is said.** It takes `workspace:read`. The routes and the console's Agent access screen say so.
+- **Fixed: a failed run is an error result.** It comes with `structuredContent`.
+- **Fixed: formats read as words.** "must be a date and time in ISO 8601, such as …" replaces the raw pattern.
+- **Fixed: tools are lean and typed.** Schemas drop `$schema`, restated patterns and safe-integer bounds. Run tools advertise an `outputSchema`, and flow tools take their manual trigger's input.
+- **Fixed: retries are safe.** Run and flow tools take an `idempotencyKey`.
 
 **The console and the no-code apps**
 
-- **A figure counts every row its page's filters leave.** "Unpaid invoices" cannot be built.
-- **Each figure repeats its title** as its label.
-- **No number or currency format.** Money shows in pence.
-- **A value page filter is a free-text box**, not a list of the values.
-- **Approvals list identical rows.** Four "Approve a stock order" rows, without the item or amount from the step's detail.
-- **Tenant overview: an operator-enabled, unverified hostname is "not working yet"** while it serves.
-- **Recent changes show raw audit codes** such as `end_user.signed_in`.
-- **A schedule's "Last fired: Never"** reads oddly when its script has been run by hand.
+- **Fixed: values have formats.** Fields, figures and charts take `format: { style: "currency", currency: "USD", minorUnits: true }`.
+- **Fixed: a figure shows its title once.**
+- **Fixed: a value page filter lists the column's values.**
+- **Fixed: approvals say what they are about.** The list shows the first fields of each step's detail.
+- **Fixed: the tenant overview counts only hostnames that need looking at.** That is one whose last check failed, or one not serving yet.
+- **Fixed: recent changes and the audit log read in words.**
+- **Fixed: a trigger that has not fired says "Not fired yet".** Runs started by hand are not counted.
+- **Not a flaw: a widget can narrow its own rows.** `widget.filter` was already there; the first version of this example did not use it.
 
 **The UI kit, for custom apps**
 
-- **`PageShell` doesn't suit an app that switches screens in the browser.** Its navigation is links only, and its width is capped.
-- **Missing pieces:** no icons, no segmented control, no date stepper, no cards, avatars or loading placeholders. `Button` cannot be a link.
-- **Date fields use the browser's local time**, with no time-zone option.
-- **`logoUrl()` answers even when there is no logo**, so a page shows a broken image until one is uploaded.
-- **Charts come along unused.** Importing anything from `@vynxlabs/ui` adds about 800 KB of chart library to an app that draws no chart.
-- **`useSession()` gives neither groups nor attributes.** The front desk cannot ask which clinic is the person's, and the portal cannot read its own `client_id`.
-- **Owners cannot see which times are free.** The rules hide other people's visits. That is right, but it means a clash only shows after booking. An availability script owners may run would fix it, in the repository.
+- **Fixed: icons.** They come from `@vynxlabs/ui/icons`.
+- **Fixed: missing pieces.** There are now `SegmentedControl`, `Card`, `Avatar`, `Skeleton` and `DateStepper`, and `Button` takes `href`.
+- **Fixed: `PageShell` suits apps that switch screens in the browser.** Its navigation takes `onSelect`, and it takes `width="full"`.
+- **Fixed: `DateField` takes `timeZone`.**
+- **Fixed: `logoUrl()` is null when there is no logo.**
+- **Fixed: `useSession()` gives groups and attributes.** That is how the front desk knows its clinic and the portal knows its client.
+- **Not a flaw: charts load only when one draws.**
 
 **End users**
 
-- **Names follow different rules.** End-user group names must be slugs (`front-desk`), while member groups take any name ("Practice managers").
-- **One namespace for every kind.** An app and a table cannot share a path (`pets`). The build then reports four more errors that all follow from the first.
+- **Fixed: a group of end users takes any one-line name,** as a group of members does: `Front desk`.
+
+**Left to this example**
+
+- **Owners could not see free times.** `appointments/free-times` now lists them without showing anyone's visits, and both apps book from it.
+- **One namespace for every kind.** An app and a table still cannot share a path. That is by design: a path names one resource in a workspace.

@@ -34,7 +34,7 @@ const STATES: Record<State, [label: string, icon: LucideIcon, tone: string]> = {
   queued: ["Queued", Clock, "text-ink-muted"],
   waiting: ["Waiting", CirclePause, "text-attention"],
   paused: ["Paused", CirclePause, "text-attention"],
-  cancelled: ["Cancelled", CircleDashed, "text-ink-subtle"],
+  cancelled: ["Canceled", CircleDashed, "text-ink-subtle"],
   retired: ["Retired", CircleDashed, "text-ink-subtle"],
   warning: ["Needs attention", TriangleAlert, "text-attention"],
   info: ["Note", Info, "text-action"],
@@ -42,7 +42,7 @@ const STATES: Record<State, [label: string, icon: LucideIcon, tone: string]> = {
 };
 
 /**
- * A state as an icon and a word in its colour, never a filled chip, so colour is
+ * A state as an icon and a word in its color, never a filled chip, so color is
  * never the only sign. `children` replaces the word; `detail` follows it, muted.
  */
 export function StatePill({

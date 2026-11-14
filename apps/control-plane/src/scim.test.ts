@@ -258,7 +258,7 @@ describe("what a provider sends, read", () => {
   });
 
   test("a change is read whether it names a path or sends an object", () => {
-    // Entra: capitalised operations, and true and false as text.
+    // Entra: capitalized operations, and true and false as text.
     expect(
       userChanges({
         schemas: [PATCH],

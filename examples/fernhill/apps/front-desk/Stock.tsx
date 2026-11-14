@@ -1,12 +1,23 @@
 import { useQuery } from "@vynxlabs/app";
-import { Badge, Button, EmptyState, Notice, NumberField, useToast } from "@vynxlabs/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Notice,
+  NumberField,
+  SegmentedControl,
+  useToast,
+} from "@vynxlabs/ui";
+import { Phone } from "@vynxlabs/ui/icons";
 import { useMemo, useState } from "react";
 import {
   attempt,
+  day,
+  dayOf,
+  dollars,
   Inventory,
   Loading,
   Panel,
-  pounds,
   type Registration,
   Registrations,
   type StockLine,
@@ -20,7 +31,7 @@ export function Stock({ clinic }: { clinic: string }) {
     [clinic],
   );
   const [category, setCategory] = useState("all");
-  const all = lines.data?.items ?? [];
+  const all = lines.data ?? [];
   const categories = useMemo(() => [...new Set(all.map((line) => line.category))].sort(), [all]);
   const shown = all
     .filter((line) => category === "all" || line.category === category)
@@ -47,19 +58,20 @@ export function Stock({ clinic }: { clinic: string }) {
           at the next stock check, within half an hour.
         </Notice>
       ) : null}
-      <fieldset className="m-0 flex flex-wrap gap-1.5 border-0 p-0">
-        <legend className="sr-only">Category</legend>
-        {["all", ...categories].map((name) => (
-          <Button
-            key={name}
-            size="small"
-            variant={category === name ? "primary" : "secondary"}
-            onClick={() => setCategory(name)}
-          >
-            {name === "all" ? "Everything" : name}
-          </Button>
-        ))}
-      </fieldset>
+      <div className="max-w-full overflow-x-auto">
+        <SegmentedControl
+          label="Category"
+          size="small"
+          value={category}
+          onChange={setCategory}
+          options={["all", ...categories].map((name) => ({
+            value: name,
+            label: name === "all" ? "Everything" : name,
+            count:
+              name === "all" ? all.length : all.filter((line) => line.category === name).length,
+          }))}
+        />
+      </div>
       <ul className="m-0 grid list-none gap-2 p-0 md:grid-cols-2">
         {shown.map((line) => (
           <StockRow key={line.id} line={line} onUsed={lines.reload} />
@@ -98,7 +110,7 @@ function StockRow({ line, onUsed }: { line: StockLine; onUsed: () => void }) {
         <div className="flex min-w-0 flex-col">
           <span className="font-medium">{line.item}</span>
           <span className="font-mono text-meta text-ink-muted">
-            {line.sku} · {line.category} · {pounds(line.unit_cost)} each
+            {line.sku} · {line.category} · {dollars(line.unit_cost)} each
           </span>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -173,7 +185,7 @@ export function Callbacks({ clinic }: { clinic: string }) {
   };
   if (found.error) return <Notice tone="danger">{found.error.message}</Notice>;
   if (!found.data) return <Loading what="callbacks" />;
-  const rows = found.data.items;
+  const rows = found.data;
   return (
     <Panel title={`To call back (${rows.length})`}>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
@@ -196,12 +208,14 @@ export function Callbacks({ clinic }: { clinic: string }) {
                   </span>
                 </span>
                 <span className="text-meta text-ink-muted">
-                  <a href={`tel:${row.phone.replace(/\s+/g, "")}`}>{row.phone}</a>
-                  {row.email ? ` · ${row.email}` : ""} · asked{" "}
-                  {new Date(row.created_at).toLocaleDateString("en-GB", {
-                    day: "numeric",
-                    month: "short",
-                  })}
+                  <a
+                    href={`tel:+1${row.phone.replace(/\D/g, "")}`}
+                    className="inline-flex items-center gap-1"
+                  >
+                    <Phone aria-hidden="true" size={12} />
+                    {row.phone}
+                  </a>
+                  {row.email ? ` · ${row.email}` : ""} · asked {day(dayOf(row.created_at))}
                 </span>
               </div>
               <Button size="small" disabled={busy === row.id} onClick={() => done(row)}>

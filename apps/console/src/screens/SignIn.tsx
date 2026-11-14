@@ -69,7 +69,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const back = new URLSearchParams(window.location.search).get("return");
   const withReturn = (url: string) => (back ? `${url}?return=${encodeURIComponent(back)}` : url);
   const [reveal, setReveal] = useState(false);
-  /** An owner signing in with a recovery code while their organisation's sign-in is required. */
+  /** An owner signing in with a recovery code while their organization's sign-in is required. */
   const [recovering, setRecovering] = useState(false);
   const [code, setCode] = useState("");
   const brand = useBrand();
@@ -208,7 +208,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             ) : null}
             {ways && !ways.password && !recovering ? (
               <p className="m-0 text-ink-muted">
-                Your organisation requires its own sign-in. There is no password to enter here.
+                Your organization requires its own sign-in. There is no password to enter here.
               </p>
             ) : null}
             {error ? <Notice tone="danger">{error}</Notice> : null}
@@ -240,12 +240,12 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   setError(undefined);
                 }}
               >
-                {recovering ? "Back to your organisation's sign-in" : "Use a recovery code"}
+                {recovering ? "Back to your organization's sign-in" : "Use a recovery code"}
               </button>
             ) : null}
             <p className="m-0 text-meta text-ink-subtle">
               {ways
-                ? "Use the account your administrator created for you, or your organisation's sign-in."
+                ? "Use the account your administrator created for you, or your organization's sign-in."
                 : "We check which ways of signing in your address has. Nothing is sent to you yet."}
             </p>
           </form>

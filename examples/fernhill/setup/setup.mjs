@@ -172,7 +172,7 @@ const PEOPLE = [
   },
   {
     email: "amara.okafor@fernhill.example",
-    name: "Dr Amara Okafor",
+    name: "Dr. Amara Okafor",
     role: "viewer",
     about: "Clinical director",
   },
@@ -230,7 +230,7 @@ const assistantKey = await admin.post(`${T}/service-accounts/${assistant.id}/api
 step("Creating end-user groups and front-desk accounts");
 const euGroups = {};
 for (const [name, description] of [
-  ["front-desk", "Everyone on a front desk. Opens the Front desk app."],
+  ["Front desk", "Everyone on a front desk. Opens the Front desk app."],
   ["northside", "Northside clinic staff. Sees Northside's rows."],
   ["riverside", "Riverside clinic staff. Sees Riverside's rows."],
   ["hilltop", "Hilltop clinic staff. Sees Hilltop's rows."],
@@ -253,7 +253,7 @@ const desk = [
   ["omar.haddad@fernhill.example", "Omar Haddad", "riverside"],
   ["lena.fischer@fernhill.example", "Lena Fischer", "hilltop"],
 ];
-for (const [email, name, clinic] of desk) await endUser(email, name, ["front-desk", clinic]);
+for (const [email, name, clinic] of desk) await endUser(email, name, ["Front desk", clinic]);
 
 // ----- The outside systems, per workspace -----
 

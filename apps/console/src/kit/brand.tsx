@@ -58,7 +58,7 @@ export function monogram(name: string): string {
 
 /**
  * The instance's mark: its logo when one is set, otherwise its initials on the
- * accent colour, cut at one corner like a port.
+ * accent color, cut at one corner like a port.
  */
 export function BrandMark({
   size = 32,

@@ -7,7 +7,7 @@ const TONES = {
   literal: "text-ink-muted",
 };
 
-/** Splits pretty-printed JSON into coloured pieces. Text that is not JSON is left as it is. */
+/** Splits pretty-printed JSON into colored pieces. Text that is not JSON is left as it is. */
 function paint(text: string): ReactNode[] {
   const pieces: ReactNode[] = [];
   const token =
@@ -47,7 +47,7 @@ export interface JsonViewProps {
   maxHeight?: string;
 }
 
-/** A value shown as indented, coloured JSON, with a button to copy it. */
+/** A value shown as indented, colored JSON, with a button to copy it. */
 export function JsonView({ value, label, tone = "plain", maxHeight = "18rem" }: JsonViewProps) {
   const [copied, setCopied] = useState(false);
   const text = value === undefined ? "" : JSON.stringify(value, null, 2);

@@ -40,7 +40,7 @@ const orderForm: FormSchema = {
   properties: {
     number: { type: "string", title: "Order number", minLength: 1, maxLength: 40 },
     total: { type: "number", title: "Total", minimum: 0.01 },
-    currency: { type: "string", title: "Currency", enum: ["EUR", "USD", "GBP"], default: "EUR" },
+    currency: { type: "string", title: "Currency", enum: ["USD"], default: "USD" },
   },
   required: ["number", "total", "currency"],
 };
@@ -58,7 +58,7 @@ function Orders() {
   const found = useQuery(() =>
     table<typeof orders>("orders").find({ sort: ["-created_at"], limit: 200 }),
   );
-  const rows = found.data?.items ?? [];
+  const rows = found.data ?? [];
   const byStatus = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of rows) {
@@ -133,7 +133,7 @@ function Orders() {
 function Notices() {
   const toast = useToast();
   const found = useQuery(() => table<typeof notices>("notices").find({ sort: ["-created_at"] }));
-  const rows = found.data?.items ?? [];
+  const rows = found.data ?? [];
   return (
     <div className="grid gap-6">
       <Table

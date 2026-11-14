@@ -104,7 +104,7 @@ describe("job queue", () => {
     expect(await database.queue.takeDead()).toBeNull();
   });
 
-  test("a job can be cancelled while waiting or running", async () => {
+  test("a job can be canceled while waiting or running", async () => {
     const q = queue();
     const waiting = await database.queue.enqueue(q, {});
     expect(await database.queue.cancel(q, waiting)).toBe(true);

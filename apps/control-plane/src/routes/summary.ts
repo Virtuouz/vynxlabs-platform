@@ -272,8 +272,13 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   .selectFrom("app_domain")
                   .select((eb) => eb.fn.countAll().as("n"))
                   .where("tenant_id", "=", params.t)
+                  // A hostname needs looking at when its last check failed, or when it is not
+                  // serving yet for want of proof. One an operator turned on unproven still serves.
                   .where((eb) =>
-                    eb.or([eb("verified_at", "is", null), eb("check_error", "is not", null)]),
+                    eb.or([
+                      eb("check_error", "is not", null),
+                      eb.and([eb("verified_at", "is", null), eb("enabled", "=", false)]),
+                    ]),
                   )
                   .executeTakeFirst(),
               )

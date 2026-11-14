@@ -1,7 +1,7 @@
 // Stand-ins for the outside systems Fernhill connects to:
 //
 //   TextLine   the SMS gateway           /textline/messages
-//   VetSupply  the stock supplier        /vetsupply/catalogue/:sku, /vetsupply/orders
+//   VetSupply  the stock supplier        /vetsupply/catalog/:sku, /vetsupply/orders
 //
 // Open http://127.0.0.1:4020/ to see every text and order the platform sent.
 // POST /control/outage {"on": true} makes TextLine answer 503, to see a run fail.
@@ -13,7 +13,7 @@ const TOKENS = {
   vetsupply: process.env.VETSUPPLY_TOKEN ?? "vs_demo_51be22",
 };
 const PRICES = {
-  "VAC-DHP": 820,
+  "VAC-DHPP": 820,
   "VAC-LEPTO": 640,
   "VAC-FEL": 710,
   "VAC-RHD2": 1150,
@@ -98,8 +98,8 @@ createServer((request, response) => {
       if (!authorized(request, TOKENS.textline)) return done(401, { error: "Unknown API token." });
       if (outage) return done(503, { error: "TextLine is having an outage." });
       if (!body.to || !body.text) return done(400, { error: "to and text are required." });
-      // Numbers ending 900000 are not reachable, so some reminders are refused.
-      if (String(body.to).replace(/\s/g, "").endsWith("900000")) {
+      // 555-0199 is a landline, so some reminders are refused.
+      if (String(body.to).replace(/\D/g, "").endsWith("5550199")) {
         messages.push({ at, to: body.to, text: body.text, status: "refused" });
         return done(422, { error: "That number cannot receive texts." });
       }
@@ -108,7 +108,7 @@ createServer((request, response) => {
       return done(201, { id });
     }
 
-    const item = /^\/vetsupply\/catalogue\/([A-Z0-9-]+)$/.exec(url.pathname);
+    const item = /^\/vetsupply\/catalog\/([A-Z0-9-]+)$/.exec(url.pathname);
     if (item && request.method === "GET") {
       if (!authorized(request, TOKENS.vetsupply)) return done(401, { error: "Unknown API token." });
       const price = PRICES[item[1]];

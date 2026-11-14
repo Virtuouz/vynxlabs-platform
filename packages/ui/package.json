@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./icons": "./src/icons.ts"
   },
   "files": [
     "dist"
@@ -15,7 +16,11 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       },
-      "./tokens.css": "./dist/tokens.css"
+      "./tokens.css": "./dist/tokens.css",
+      "./icons": {
+        "types": "./dist/icons.d.ts",
+        "default": "./dist/icons.js"
+      }
     }
   },
   "scripts": {
@@ -24,6 +29,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
+    "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "vega": "^6.4.0",

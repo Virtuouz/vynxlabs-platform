@@ -61,7 +61,7 @@ interface Loaded {
 /** The control plane refused the credential. There is no point in going on. */
 class CredentialRefused extends Error {}
 
-/** The control plane said this attempt is over: cancelled, timed out or taken back. */
+/** The control plane said this attempt is over: canceled, timed out or taken back. */
 class AttemptOver extends Error {}
 
 const WORKER_VERSION = "0.5.0";
@@ -252,7 +252,7 @@ export class Worker {
         });
         if (reply.cancelled) {
           over = true;
-          abort.abort(new Error("The run was cancelled."));
+          abort.abort(new Error("The run was canceled."));
         }
       } catch {
         // A missed heartbeat is not fatal. The next one may get through.
@@ -433,7 +433,7 @@ export class Worker {
     } catch (error) {
       await flush();
       if (error instanceof CredentialRefused) throw error;
-      // A cancelled or reclaimed attempt has nothing left to report.
+      // A canceled or reclaimed attempt has nothing left to report.
       if (over || error instanceof AttemptOver) return;
       const failure = error instanceof Error ? error : new Error(String(error));
       await this.#call("POST", `${runPath}/fail`, {

@@ -488,7 +488,13 @@ export const flowKind: KindDefinition = {
               {
                 trigger: {
                   oneOf: [
-                    node("manual", {}),
+                    node("manual", {
+                      input: {
+                        ...jsonSchema,
+                        description:
+                          "A JSON Schema the input must match when the flow is started by hand, from the API, by an agent or as a sub-flow.",
+                      },
+                    }),
                     node("webhook", {
                       ...webhookOptions,
                       respond: {
@@ -587,6 +593,11 @@ export const flowKind: KindDefinition = {
                 allow: allowedFlows,
                 input: expression,
                 concurrency: { type: "integer", minimum: 1, maximum: 20 },
+                continueOnError: {
+                  type: "boolean",
+                  description:
+                    "Whether a failed item lets the others carry on. A failed item is then `{ error: { message } }` in the output, and the step succeeds.",
+                },
                 with: grants,
               },
               ["items"],
@@ -993,7 +1004,7 @@ export const THEME_TOKENS = [
 ] as const;
 
 /**
- * What a token's value may be made of: enough for a colour, a length or a list
+ * What a token's value may be made of: enough for a color, a length or a list
  * of fonts, and nothing that could end the declaration it is written into or
  * make a browser fetch something.
  */

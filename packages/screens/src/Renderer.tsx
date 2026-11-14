@@ -1,6 +1,7 @@
 import type { InterfaceBody, InterfacePage, PageWidget, WidgetField } from "@vynxlabs/manifest";
 import {
   Button,
+  chartSpecFor,
   Dialog,
   DialogsProvider,
   type FormSchema,
@@ -14,6 +15,7 @@ import {
 import type React from "react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type DataClient, type Filter, failure, type Row, type TableInfo } from "./data.ts";
+import { axisFormat, formatValue } from "./format.ts";
 import { all, heading, linkDefaults, linkFilter, sortOf, summaryRows } from "./links.ts";
 
 const SYSTEM = new Set(["id", "created_at", "updated_at"]);
@@ -228,6 +230,7 @@ function WidgetView({
   const display = useCallback(
     (column: string, value: unknown) => {
       const field = fields.find((candidate) => candidate.column === column);
+      if (field?.format) return formatValue(value, field.format);
       if (!field?.show || typeof value !== "string") return undefined;
       const target = info?.columns.find((candidate) => candidate.name === column)?.references;
       const shown = target ? lookups.get(target)?.get(value)?.[field.show] : undefined;
@@ -381,17 +384,15 @@ function WidgetView({
   if (widget.type === "figure") {
     const first = widget.summary?.aggregates[0];
     const value = first ? data.rows[0]?.[first.as] : undefined;
+    const format = widget.options?.format ?? { style: "number" as const };
     const shown =
-      typeof value === "number"
-        ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-        : value === undefined || value === null
-          ? "—"
-          : String(value);
+      value === undefined || value === null ? "—" : (formatValue(value, format) ?? String(value));
     return (
       <div className="flex h-full flex-col justify-center gap-1">
-        <span className="text-[13px] text-ink-muted">
-          {widget.title || heading(first?.as ?? "total")}
-        </span>
+        {/* The widget's heading names it. Without one, the total's own name does. */}
+        {widget.title ? null : (
+          <span className="text-[13px] text-ink-muted">{heading(first?.as ?? "total")}</span>
+        )}
         <span className="font-mono text-3xl font-semibold tabular-nums">
           {data.loading && data.rows.length === 0 ? "…" : shown}
         </span>
@@ -405,22 +406,49 @@ function WidgetView({
     /** What a value is called: the name its field was given, or its own made readable. */
     const titleOf = (name: string) =>
       fields.find((field) => field.column === name)?.label ?? heading(name);
+    const shape = {
+      title: widget.title || "Chart",
+      mark: options.mark,
+      x: options.x,
+      y: options.y,
+      ...(options.series ? { series: options.series } : {}),
+      xType: typeOf(widget, info, options.x ?? ""),
+      ...(options.x ? { xTitle: titleOf(options.x) } : {}),
+      ...(options.y ? { yTitle: titleOf(options.y) } : {}),
+      ...(options.series ? { seriesTitle: titleOf(options.series) } : {}),
+      height: 220,
+    };
+    // The values up the side written as their format says: the chart's own, or its y field's.
+    const format = options.format ?? fields.find((field) => field.column === options.y)?.format;
+    if (!format || !options.mark || !options.x || !options.y) {
+      return <Widget name="chart" config={shape} context={{ rows: data.rows }} />;
+    }
+    const y = options.y;
+    const axis = axisFormat(format);
+    const rows = data.rows.map((row) => {
+      const value = Number(row[y]);
+      return Number.isFinite(value) ? { ...row, [y]: value / axis.divide } : row;
+    });
+    const spec = chartSpecFor({
+      ...shape,
+      mark: options.mark,
+      x: options.x,
+      y,
+      ...(axis.note ? { yTitle: `${shape.yTitle ?? y} (${axis.note})` } : {}),
+    }) as {
+      encoding: Record<string, Record<string, unknown>>;
+    };
+    const valueChannel = options.mark === "pie" ? "theta" : "y";
+    const channel = spec.encoding[valueChannel];
+    if (channel) {
+      channel.format = axis.format;
+      if (valueChannel === "y") channel.axis = { ...(channel.axis as object), format: axis.format };
+    }
     return (
       <Widget
         name="chart"
-        config={{
-          title: widget.title || "Chart",
-          mark: options.mark,
-          x: options.x,
-          y: options.y,
-          ...(options.series ? { series: options.series } : {}),
-          xType: typeOf(widget, info, options.x ?? ""),
-          ...(options.x ? { xTitle: titleOf(options.x) } : {}),
-          ...(options.y ? { yTitle: titleOf(options.y) } : {}),
-          ...(options.series ? { seriesTitle: titleOf(options.series) } : {}),
-          height: 220,
-        }}
-        context={{ rows: data.rows }}
+        config={{ title: shape.title, spec, height: shape.height }}
+        context={{ rows }}
       />
     );
   }
@@ -509,15 +537,114 @@ function pageNarrowing(
   return parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : { and: parts };
 }
 
+/** The most values a value filter lists. With more, it takes typed text instead. */
+export const FILTER_CHOICES = 200;
+
+/**
+ * A filter on one value: a list of the values the column holds, read from the
+ * first table on the page that has it. A column with too many values to list,
+ * or that cannot be read, takes typed text.
+ */
+function ValueFilter({
+  label,
+  column,
+  table,
+  client,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  column: string;
+  table: string | undefined;
+  client: DataClient;
+  value: string | undefined;
+  onChange: (value: string | undefined) => void;
+  className: string;
+}) {
+  const [choices, setChoices] = useState<string[] | null>();
+  useEffect(() => {
+    if (!table) {
+      setChoices(null);
+      return;
+    }
+    let current = true;
+    client.aggregate(table, { group: [column], sort: [column], limit: FILTER_CHOICES + 1 }).then(
+      (totals) => {
+        if (!current) return;
+        const found = totals.items
+          .map((item) => item.by[column])
+          .filter((one) => one !== null && one !== undefined && one !== "")
+          .map(String);
+        setChoices(totals.truncated || found.length > FILTER_CHOICES ? null : found);
+      },
+      () => current && setChoices(null),
+    );
+    return () => {
+      current = false;
+    };
+  }, [table, column, client]);
+
+  if (choices === null) {
+    return (
+      <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+        {label}
+        <input
+          className={className}
+          placeholder="All"
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value || undefined)}
+        />
+      </label>
+    );
+  }
+  return (
+    <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+      {label}
+      <select
+        className={`${className} min-w-32`}
+        value={value ?? ""}
+        disabled={choices === undefined}
+        onChange={(event) => onChange(event.target.value || undefined)}
+      >
+        <option value="">All</option>
+        {(choices ?? []).map((one) => (
+          <option key={one} value={one}>
+            {one}
+          </option>
+        ))}
+        {/* A value set before the list arrived, or that no row holds any more, stays chosen. */}
+        {value && choices && !choices.includes(value) ? (
+          <option value={value}>{value}</option>
+        ) : null}
+      </select>
+    </label>
+  );
+}
+
 function PageFilters({
   page,
   values,
   onChange,
+  tables,
+  client,
 }: {
   page: InterfacePage;
   values: Record<string, Narrow>;
   onChange: (id: string, value: Narrow) => void;
+  tables: Record<string, TableInfo>;
+  client: DataClient;
 }) {
+  /** The first table on the page that has the column and may be read. */
+  const tableWith = (column: string) =>
+    page.widgets
+      .map((widget) => widget.table)
+      .find(
+        (table) =>
+          table !== undefined &&
+          tables[table]?.canRead &&
+          tables[table]?.columns.some((one) => one.name === column),
+      );
   const input =
     "h-8 rounded-control border border-line bg-surface px-2 text-ink placeholder:text-ink-muted/70";
   return (
@@ -548,15 +675,16 @@ function PageFilters({
             />
           </fieldset>
         ) : (
-          <label key={one.id} className="flex flex-col gap-1 text-[13px] text-ink-muted">
-            {one.label}
-            <input
-              className={input}
-              placeholder="All"
-              value={set.value ?? ""}
-              onChange={(event) => onChange(one.id, { value: event.target.value || undefined })}
-            />
-          </label>
+          <ValueFilter
+            key={one.id}
+            label={one.label}
+            column={one.column}
+            table={tableWith(one.column)}
+            client={client}
+            value={set.value}
+            onChange={(value) => onChange(one.id, { value })}
+            className={input}
+          />
         );
       })}
     </search>
@@ -654,6 +782,8 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
       {page.filters && page.filters.length > 0 ? (
         <PageFilters
           page={page}
+          tables={tables}
+          client={client}
           values={narrow}
           onChange={(id, value) => setNarrow((before) => ({ ...before, [id]: value }))}
         />

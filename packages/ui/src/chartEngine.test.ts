@@ -58,7 +58,7 @@ describe("chart engine", () => {
   test("draws without building code from strings", async () => {
     const { stdout } = await draw(true);
     expect(stdout).toMatch(/^<svg/);
-    // Two bars, in the first two colours of the theme's range, and the axis in the theme's ink.
+    // Two bars, in the first two colors of the theme's range, and the axis in the theme's ink.
     expect(stdout.match(/aria-roledescription="bar"/g)).toHaveLength(2);
     expect(stdout).toContain('fill="#0e5f7a"');
     expect(stdout).toContain('fill="#b45309"');

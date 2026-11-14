@@ -455,7 +455,7 @@ export function ResourceEditor({
               required={false}
               disabled={readOnly}
               placeholder="UTC"
-              hint="An IANA name, such as Europe/London."
+              hint="An IANA name, such as America/Chicago."
               onChange={(value) => change({ timezone: value })}
             />
             {ofKind("trigger_source", "poll").length > 0 || body.source ? (

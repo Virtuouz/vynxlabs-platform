@@ -6,9 +6,13 @@ import {
   defineVariable,
   z,
 } from "@vynxlabs/sdk";
+import { APPOINTMENT_STATES, CLINICS } from "./constants.ts";
+
+export { APPOINTMENT_STATES, CLINICS, REASONS } from "./constants.ts";
 
 /**
- * Fernhill Veterinary Group: three clinics, Northside, Riverside and Hilltop.
+ * Fernhill Veterinary Group: three clinics in Portland, Oregon: Northside,
+ * Riverside and Hilltop.
  *
  * Who sees what is decided by the tables' rules, not by the apps:
  *
@@ -20,14 +24,13 @@ import {
  *   read everything.
  */
 
-export const CLINICS = ["northside", "riverside", "hilltop"] as const;
 export const Clinic = z.enum(CLINICS);
 
 // ----- Places -----
 
 export const clinics = defineTable({
   path: "clinics",
-  description: "The group's clinics: where they are and when they open.",
+  description: "The group's clinics: where they are and when they open, in Pacific time.",
   columns: {
     code: column.text({ required: true, unique: true }),
     name: column.text({ required: true }),
@@ -35,6 +38,8 @@ export const clinics = defineTable({
     address: column.text({ required: true }),
     opens: column.text({ required: true, default: "08:00" }),
     closes: column.text({ required: true, default: "18:00" }),
+    /** Saturdays open at the usual time and close at this one. Empty when closed on Saturdays. */
+    saturday_closes: column.text(),
   },
   policy: { rules: [{ allow: "read", when: { everyone: true } }] },
 });
@@ -69,7 +74,7 @@ export const pets = defineTable({
     species: column.text({ required: true }),
     breed: column.text(),
     born: column.date(),
-    weight_kg: column.number(),
+    weight_lb: column.number(),
     client_code: column.text({ required: true }),
     clinic: column.text({ required: true }),
     /** Something every member of staff should know before handling the animal. */
@@ -84,25 +89,7 @@ export const pets = defineTable({
   },
 });
 
-export const APPOINTMENT_STATES = [
-  "booked",
-  "checked_in",
-  "in_exam",
-  "done",
-  "no_show",
-  "cancelled",
-] as const;
 export const AppointmentState = z.enum(APPOINTMENT_STATES);
-
-export const REASONS = [
-  "Check-up",
-  "Vaccination",
-  "Dental",
-  "Surgery",
-  "Lameness",
-  "Skin",
-  "Follow-up",
-] as const;
 
 export const appointments = defineTable({
   path: "appointments",
@@ -142,7 +129,7 @@ export const invoices = defineTable({
     appointment: column.reference("appointments"),
     client_code: column.text({ required: true }),
     clinic: column.text({ required: true }),
-    /** In pence. */
+    /** In cents. */
     total: column.integer({ required: true }),
     status: column.text({ required: true, default: "unpaid" }),
     issued_on: column.date({ required: true }),
@@ -173,7 +160,7 @@ export const inventory = defineTable({
     on_hand: column.integer({ required: true }),
     reorder_at: column.integer({ required: true }),
     reorder_qty: column.integer({ required: true }),
-    /** In pence, as the supplier last quoted it. */
+    /** In cents, as the supplier last quoted it. */
     unit_cost: column.integer({ required: true }),
     /** Set while an order for this line is being decided or is on its way. */
     reorder_pending: column.boolean({ default: false }),
@@ -191,7 +178,7 @@ export const purchaseOrders = defineTable({
     sku: column.text({ required: true }),
     item: column.text({ required: true }),
     quantity: column.integer({ required: true }),
-    /** In pence. */
+    /** In cents. */
     total: column.integer({ required: true }),
     status: column.text({ required: true }),
     supplier_ref: column.text(),
@@ -237,12 +224,12 @@ export const reminderLeadHours = defineVariable({
 });
 export const approvalThreshold = defineVariable({
   path: "inventory/approval-threshold",
-  description: "An order costing more than this, in pence, waits for a practice manager.",
+  description: "An order costing more than this, in cents, waits for a practice manager.",
   default: "30000",
 });
 export const examFee = defineVariable({
   path: "billing/exam-fee",
-  description: "The consultation fee on every invoice, in pence.",
+  description: "The exam fee on every invoice, in cents.",
   default: "6500",
 });
 

@@ -33,7 +33,7 @@ describe("kit components under React", () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  test("text field is labelled, reports input and shows its error", () => {
+  test("text field is labeled, reports input and shows its error", () => {
     const onInput = vi.fn();
     const { rerender } = render(
       <TextField label="Slug" name="slug" hint="Lowercase letters" onChange={onInput} />,
@@ -65,7 +65,7 @@ describe("kit components under React", () => {
     expect(onChange).toHaveBeenCalledWith("production");
   });
 
-  test("dialog opens, is labelled by its title and closes", async () => {
+  test("dialog opens, is labeled by its title and closes", async () => {
     function Example() {
       const [open, setOpen] = useState(false);
       return (
@@ -129,7 +129,7 @@ describe("kit components under React", () => {
     expect(screen.getByText("Production")).toBeTruthy();
   });
 
-  test("checkbox field is labelled, reports a tick and shows its error", () => {
+  test("checkbox field is labeled, reports a check and shows its error", () => {
     const onChange = vi.fn();
     const { rerender } = render(
       <CheckboxField label="Send a receipt" name="receipt" hint="By email" onChange={onChange} />,

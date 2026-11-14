@@ -109,7 +109,7 @@ const { total: _total, note: _note, ...kept } = ordersV1;
 const ordersV2 = {
   ...kept,
   amount: { type: "number", renamedFrom: "total" },
-  currency: { type: "text", required: true, default: "EUR" },
+  currency: { type: "text", required: true, default: "USD" },
 };
 
 const ws = (id: string) => `/tenants/${tenant}/workspaces/${id}`;
@@ -636,7 +636,7 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
       );
       expect(here.length, entry.table).toBe(there.length);
       if (entry.table === "run") {
-        // The finished run is identical. The two that were queued are recorded as cancelled.
+        // The finished run is identical. The two that were queued are recorded as canceled.
         const finishedThere = there.filter((line) => line.includes('"status": "succeeded"'));
         expect(here.filter((line) => line.includes('"status": "succeeded"'))).toEqual(
           finishedThere,
@@ -750,7 +750,7 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
     expect(here).toEqual(JSON.parse(JSON.stringify(there).replaceAll(bob.id, bobOnB)));
     expect(here[0]).toMatchObject({
       amount: 110.25,
-      currency: "EUR",
+      currency: "USD",
       meta: { tags: ["x", "y"], nested: { n: 1 } },
       placed: "2026-03-01T10:15:30.123Z",
     });

@@ -118,7 +118,7 @@ export const syncEveryFiveMinutes = defineSchedule({
   path: "orders/sync-every-five-minutes",
   script: syncOrders,
   cron: "*/5 * * * *",
-  timezone: "Europe/Madrid",
+  timezone: "America/New_York",
 });
 
 /** Receives an order the moment the shop takes it. */
@@ -172,8 +172,8 @@ export const checkOrder = defineScript({
   output: z.object({ valid: z.boolean(), reason: z.string() }),
   async run(input) {
     if (input.order.total <= 0) return { valid: false, reason: "The order has no value." };
-    if (input.order.currency !== "EUR")
-      return { valid: false, reason: "Only EUR orders are handled." };
+    if (input.order.currency !== "USD")
+      return { valid: false, reason: "Only USD orders are handled." };
     return { valid: true, reason: "" };
   },
 });
@@ -459,7 +459,7 @@ export const requestOrder = defineScript({
   },
 });
 
-/** Acme's colours, where they differ from the tenant's branding. */
+/** Acme's colors, where they differ from the tenant's branding. */
 export const theme = defineTheme({
   tokens: { action: "#0b6e4f", "action-soft": "#dff3ea", "radius-panel": "14px" },
   dark: { action: "#5fd3a6", "action-ink": "#04261a", "action-soft": "#143a2c" },

@@ -2,6 +2,7 @@ import {
   Badge,
   type BadgeTone,
   Button,
+  CheckboxField,
   ComboboxField,
   MultiSelectField,
   Notice,
@@ -250,7 +251,7 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
 }
 const nodeTypes = { flow: FlowNodeCard };
 const FIT = { maxZoom: 1, padding: 0.25 };
-const CANVAS_COLOURS = {
+const CANVAS_COLORS = {
   "--xy-background-color": "var(--vx-sunken)",
   "--xy-background-pattern-color": "var(--vx-line)",
   "--xy-edge-stroke": "var(--vx-ink-muted)",
@@ -917,8 +918,8 @@ export function FlowEditor({
                 maxZoom={1.5}
                 minZoom={0.2}
                 proOptions={{ hideAttribution: false }}
-                // The canvas takes its colours from the kit's tokens, so it follows the theme.
-                style={CANVAS_COLOURS}
+                // The canvas takes its colors from the kit's tokens, so it follows the theme.
+                style={CANVAS_COLORS}
               >
                 <Background />
                 <Controls />
@@ -1087,6 +1088,17 @@ export function FlowEditor({
               {node.type === "foreach"
                 ? expression("Items", "items", "An expression that gives a list.")
                 : null}
+              {node.type === "foreach" ? (
+                <CheckboxField
+                  name="continueOnError"
+                  label="Keep going when an item fails"
+                  hint="A failed item gives { error: { message } } in the list, and the step still succeeds."
+                  checked={node.continueOnError === true}
+                  onChange={(checked) =>
+                    update(chosen.id, { continueOnError: checked ? true : undefined })
+                  }
+                />
+              ) : null}
               {node.type === "script" && specs.has(String(node.script)) ? (
                 <NodeInputs
                   node={node}

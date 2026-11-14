@@ -389,7 +389,7 @@ const FIELD_TYPES: Option[] = [
   { value: "number", label: "A number" },
   { value: "date", label: "A date" },
   { value: "select", label: "One of a list" },
-  { value: "checkbox", label: "A tick box" },
+  { value: "checkbox", label: "A checkbox" },
 ];
 
 /** A name for a field made from its label: what the value is called in the flow. */

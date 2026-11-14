@@ -3,7 +3,7 @@ import type { CacheProvider } from "@node-saml/node-saml";
 import { newId } from "@vynxlabs/db";
 import { type Actor, ANONYMOUS, type Db, mutate, writeAudit } from "../audit.js";
 import type { Kernel } from "../kernel.js";
-import { summarise } from "./claims.js";
+import { summarize } from "./claims.js";
 import { type OidcPending, oidcFinish, oidcStart } from "./oidc.js";
 import { type Asserted, resolvePerson, SsoRefusal } from "./people.js";
 import {
@@ -375,7 +375,7 @@ async function recordTest(
           name: result.asserted.name ?? null,
           groups: result.asserted.groups.slice(0, 200),
           attributes: result.asserted.attributes,
-          received: summarise(result.received),
+          received: summarize(result.received),
         }
       : {}),
   };

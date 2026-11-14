@@ -13,7 +13,7 @@ type Tokens = Record<string, string>;
 const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 
 /**
- * How the console looks on this instance: its name, its mark, and its colours.
+ * How the console looks on this instance: its name, its mark, and its colors.
  * A tenant's branding is for its own apps and portal and never reaches here.
  */
 export function InstanceBranding() {
@@ -87,7 +87,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
       <PageHeader
         eyebrow="Instance"
         title="Console branding"
-        description="How this console looks to everyone who signs in to it: its name, its mark and its colours. Tenants brand their own apps and portal; that never changes the console."
+        description="How this console looks to everyone who signs in to it: its name, its mark and its colors. Tenants brand their own apps and portal; that never changes the console."
       />
 
       <Panel className="flex flex-col gap-4 p-4">
@@ -152,11 +152,10 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
       </Panel>
 
       <Panel className="flex flex-col gap-4 p-4">
-        <SectionLabel>Colours, corners and fonts</SectionLabel>
+        <SectionLabel>Colors, corners and fonts</SectionLabel>
         <p className="m-0 max-w-[75ch] text-ink-muted">
-          Set a token to a plain colour, length or font list, or leave it empty to keep the
-          console's own value. Production is always marked in the attention colour, so keep it
-          clearly amber.
+          Set a token to a plain color, length or font list, or leave it empty to keep the console's
+          own value. Production is always marked in the attention color, so keep it clearly amber.
         </p>
         <form
           className="flex flex-col gap-4"
@@ -204,7 +203,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
                 if (sure) save({ theme: { tokens: {}, dark: {} } }, "Reset.");
               }}
             >
-              Reset colours
+              Reset colors
             </Button>
             {saved ? (
               <span role="status" className="text-ink-muted">

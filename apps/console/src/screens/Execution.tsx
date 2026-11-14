@@ -32,7 +32,7 @@ const STATUS: Record<Status, [BadgeTone, string]> = {
   running: ["action", "Running"],
   succeeded: ["success", "Succeeded"],
   failed: ["danger", "Failed"],
-  cancelled: ["neutral", "Cancelled"],
+  cancelled: ["neutral", "Canceled"],
 };
 
 export interface Run {
@@ -370,7 +370,7 @@ export function RunDetail({
       : run.status === "failed"
         ? `Failed${duration ? ` after ${duration}` : ""}`
         : run.status === "cancelled"
-          ? "Cancelled"
+          ? "Canceled"
           : run.status === "running"
             ? "Running"
             : "Waiting for a worker";

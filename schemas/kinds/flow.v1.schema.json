@@ -31,6 +31,10 @@
                     "properties": {
                       "type": {
                         "const": "manual"
+                      },
+                      "input": {
+                        "type": "object",
+                        "description": "A JSON Schema the input must match when the flow is started by hand, from the API, by an agent or as a sub-flow."
                       }
                     },
                     "required": [
@@ -514,6 +518,10 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 20
+              },
+              "continueOnError": {
+                "type": "boolean",
+                "description": "Whether a failed item lets the others carry on. A failed item is then `{ error: { message } }` in the output, and the step succeeds."
               },
               "with": {
                 "type": "object",

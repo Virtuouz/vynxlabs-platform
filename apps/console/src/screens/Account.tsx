@@ -77,7 +77,7 @@ export function RecoveryCodes() {
     if (madeAt) {
       const sure = await ask.confirm({
         title: "Make new recovery codes?",
-        text: "The codes you have now stop working. Keep the new ones somewhere safe that does not depend on your organisation's sign-in.",
+        text: "The codes you have now stop working. Keep the new ones somewhere safe that does not depend on your organization's sign-in.",
         action: "Make new codes",
         danger: true,
       });
@@ -99,7 +99,7 @@ export function RecoveryCodes() {
     <Panel className="flex flex-col gap-4 p-4 md:p-5">
       <SectionLabel>Recovery codes</SectionLabel>
       <p className="m-0 max-w-[70ch] text-ink-muted">
-        You own a tenant. If your organisation's sign-in breaks while it is required, a recovery
+        You own a tenant. If your organization's sign-in breaks while it is required, a recovery
         code with your password lets you in once, to put it right. Each code works one time.
       </p>
       <KeyValues

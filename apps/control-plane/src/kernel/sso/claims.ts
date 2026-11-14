@@ -64,7 +64,7 @@ export function readClaims(
 }
 
 /** What a provider sent, cut down to something that can be kept and shown. */
-export function summarise(claims: Record<string, unknown>): Record<string, unknown> {
+export function summarize(claims: Record<string, unknown>): Record<string, unknown> {
   const short = (value: unknown): unknown => {
     if (typeof value === "string") return value.length > 300 ? `${value.slice(0, 300)}…` : value;
     if (Array.isArray(value)) return value.slice(0, 50).map(short);

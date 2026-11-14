@@ -9,6 +9,7 @@ import { Type } from "typebox";
 import { check } from "../kernel/authorize.js";
 import { HttpError, notFound } from "../kernel/errors.js";
 import { startRun } from "../kernel/execution/runs.js";
+import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
 import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -34,7 +35,11 @@ interface Tool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** What the tool answers, as structured content alongside the text. */
+  outputSchema?: Record<string, unknown>;
   call: (input: Record<string, unknown>) => Promise<unknown>;
+  /** Whether an answer reports a failure: a run that failed or was canceled. */
+  failed?: (answer: unknown) => boolean;
 }
 
 /** A tool name from a path: letters, digits and underscores, at most 64 characters. */
@@ -46,6 +51,126 @@ export function toolName(prefix: string, path: string): string {
 const objectSchema = (schema: unknown): Record<string, unknown> => {
   const given = (schema ?? {}) as Record<string, unknown>;
   return given.type === "object" ? given : { type: "object", additionalProperties: true };
+};
+
+/**
+ * A schema as an agent is best given it: without `$schema`, and without a
+ * `pattern` that only restates the `format` beside it, which zod writes out as
+ * a long regular expression, and without the bounds zod gives every integer,
+ * which say only that it is a safe integer. Validation still uses the schema as declared.
+ */
+export function leanSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(leanSchema);
+  if (schema === null || typeof schema !== "object") return schema;
+  const given = schema as Record<string, unknown>;
+  const restated = typeof given.format === "string" && typeof given.pattern === "string";
+  return Object.fromEntries(
+    Object.entries(given)
+      .filter(
+        ([key, value]) =>
+          !(key === "$schema" && typeof value === "string") &&
+          !(key === "pattern" && restated) &&
+          !(
+            (key === "maximum" || key === "minimum") &&
+            Math.abs(value as number) === Number.MAX_SAFE_INTEGER
+          ),
+      )
+      .map(([key, value]) => [key, leanSchema(value)]),
+  );
+}
+
+/** Whether a schema refers to definitions elsewhere in its document, which do not travel. */
+const refers = (schema: unknown): boolean =>
+  Array.isArray(schema)
+    ? schema.some(refers)
+    : schema !== null &&
+      typeof schema === "object" &&
+      Object.entries(schema).some(([key, value]) => key === "$ref" || refers(value));
+
+/**
+ * A name for the idempotency key argument that the tool's own input does not
+ * use: `idempotencyKey`, or that with underscores before it.
+ */
+function keyArgument(schema: Record<string, unknown>): string {
+  const taken = Object.keys((schema.properties ?? {}) as Record<string, unknown>);
+  let name = "idempotencyKey";
+  while (taken.includes(name)) name = `_${name}`;
+  return name;
+}
+
+/** Adds the idempotency key argument to a tool's input schema. */
+function withKey(schema: Record<string, unknown>, name: string): Record<string, unknown> {
+  return {
+    ...schema,
+    properties: {
+      ...((schema.properties ?? {}) as Record<string, unknown>),
+      [name]: {
+        type: "string",
+        minLength: 1,
+        maxLength: 200,
+        description:
+          "Optional. Calling again with the same key answers with the first run instead of starting another. Use one per request you are carrying out, so a retry cannot do it twice.",
+      },
+    },
+  };
+}
+
+/** Takes the idempotency key out of a call's arguments, leaving the input for the script or flow. */
+function splitKey(
+  input: Record<string, unknown>,
+  name: string,
+): { key: string | undefined; rest: Record<string, unknown> } {
+  const { [name]: given, ...rest } = input;
+  if (given === undefined) return { key: undefined, rest };
+  if (typeof given !== "string" || given.length === 0 || given.length > 200) {
+    throw new HttpError(
+      400,
+      "validation_failed",
+      `${name} must be a string of 1 to 200 characters.`,
+    );
+  }
+  return { key: given, rest };
+}
+
+const RUN_ENDED_BADLY = ["failed", "cancelled"];
+const endedBadly = (answer: unknown) =>
+  RUN_ENDED_BADLY.includes(String((answer as { status?: unknown }).status));
+
+/** What a script's tool answers. `output` is the script's declared output. */
+const runAnswerSchema = (output: unknown): Record<string, unknown> => {
+  const declared = output && !refers(output) ? (leanSchema(output) as object) : {};
+  return {
+    type: "object",
+    properties: {
+      runId: { type: "string" },
+      script: { type: "string" },
+      status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "cancelled"] },
+      output: {
+        description:
+          "What the script returned, once it succeeded. A large output is stored and referred to.",
+        anyOf: [
+          declared,
+          { type: "object", properties: { stored: { type: "string" } }, required: ["stored"] },
+          { type: "null" },
+        ],
+      },
+      error: { type: "string" },
+      note: { type: "string" },
+    },
+    required: ["runId", "script", "status"],
+  };
+};
+const FLOW_ANSWER_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    flowRunId: { type: "string" },
+    flow: { type: "string" },
+    status: { type: "string", enum: ["running", "succeeded", "failed", "cancelled"] },
+    output: { description: "Each step's output by step, once the flow succeeded." },
+    error: { type: "string" },
+    note: { type: "string" },
+  },
+  required: ["flowRunId", "flow", "status"],
 };
 
 /** What working out the tools needs of a caller: who they are, and what they may do. */
@@ -123,13 +248,33 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     const scope = { ...target, resourceId: resource.id };
     if (resource.kind === "script") {
       if (!(await ctx.allowed("run:write", scope))) continue;
-      const body = resource.body as { description?: string; input?: unknown };
+      const body = resource.body as { description?: string; input?: unknown; output?: unknown };
+      const declared = objectSchema(body.input);
+      const keyName = keyArgument(declared);
       tools.push({
         name: toolName("run", resource.path),
-        description: `Runs the script ${resource.path}. ${body.description ?? ""}`.trim(),
-        inputSchema: objectSchema(body.input),
-        call: async (input) => {
+        description:
+          `Runs the script ${resource.path}. ${body.description ?? ""} Waits a short while for it to end. Pass ${keyName} to make a retry safe.`
+            .replace(/\s+/g, " ")
+            .trim(),
+        inputSchema: withKey(leanSchema(declared) as Record<string, unknown>, keyName),
+        outputSchema: runAnswerSchema(body.output),
+        failed: endedBadly,
+        call: async (args) => {
           await ctx.authorize("run:write", scope);
+          const { key, rest: input } = splitKey(args, keyName);
+          const idempotencyKey = key ? `mcp:${ctx.principal.id}:${key}` : undefined;
+          // A repeat with the same key answers with the first run and changes nothing.
+          const earlier = idempotencyKey
+            ? await db
+                .selectFrom("run")
+                .select("id")
+                .where("workspace_id", "=", workspace.id)
+                .where("script_path", "=", resource.path)
+                .where("idempotency_key", "=", idempotencyKey)
+                .executeTakeFirst()
+            : undefined;
+          if (earlier) return showRun(await ended(() => readRun(earlier.id)));
           const started = await ctx.mutate(async (trx, audit) => {
             const result = await startRun(kernel, trx, {
               tenantId: workspace.tenantId,
@@ -138,6 +283,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
               input,
               trigger: { type: "manual", detail: { via: "mcp" } },
               startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+              ...(idempotencyKey ? { idempotencyKey } : {}),
             });
             await audit({
               action: "run.started",
@@ -158,13 +304,37 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
         (node) => node.type === "trigger" && node.trigger.type === "manual",
       );
       if (!manual || !(await ctx.allowed("flow_run:write", scope))) continue;
+      // The manual trigger may declare what it takes. The first one is the one started.
+      const first = Object.values(body.nodes ?? {}).find(
+        (node) => node.type === "trigger" && node.trigger.type === "manual",
+      ) as { trigger: { input?: unknown } } | undefined;
+      const declared = first?.trigger.input
+        ? objectSchema(first.trigger.input)
+        : { type: "object", additionalProperties: true };
+      const keyName = keyArgument(declared);
       tools.push({
         name: toolName("start", resource.path),
         description:
-          `Starts the flow ${resource.path} and waits a short while for it to end. ${body.description ?? ""}`.trim(),
-        inputSchema: { type: "object", additionalProperties: true },
-        call: async (input) => {
+          `Starts the flow ${resource.path} and waits a short while for it to end. ${body.description ?? ""} Pass ${keyName} to make a retry safe.`
+            .replace(/\s+/g, " ")
+            .trim(),
+        inputSchema: withKey(leanSchema(declared) as Record<string, unknown>, keyName),
+        outputSchema: FLOW_ANSWER_SCHEMA,
+        failed: endedBadly,
+        call: async (args) => {
           await ctx.authorize("flow_run:write", scope);
+          const { key, rest: input } = splitKey(args, keyName);
+          const idempotencyKey = key ? `mcp:${ctx.principal.id}:${key}` : undefined;
+          const earlier = idempotencyKey
+            ? await db
+                .selectFrom("flow_run")
+                .select("id")
+                .where("workspace_id", "=", workspace.id)
+                .where("flow_path", "=", resource.path)
+                .where("idempotency_key", "=", idempotencyKey)
+                .executeTakeFirst()
+            : undefined;
+          if (earlier) return showFlowRun(await ended(() => readFlowRun(earlier.id)));
           const started = await ctx.mutate(async (trx, audit) => {
             const result = await startFlowRun(kernel, trx, {
               tenantId: workspace.tenantId,
@@ -173,6 +343,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
               input,
               trigger: { type: "manual", detail: { via: "mcp" } },
               startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+              ...(idempotencyKey ? { idempotencyKey } : {}),
             });
             await audit({
               action: "flow_run.started",
@@ -248,8 +419,16 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           .orderBy("step_run.started_at")
           .limit(100)
           .execute();
+        // A step that names its approvers is shown only to them, as in the console.
+        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+        const mine = [];
+        for (const row of rows) {
+          const named = approversOf(row.detail as Record<string, unknown>);
+          if (named && !(await isApprover(db, target, memberId, named))) continue;
+          mine.push(row);
+        }
         return {
-          approvals: rows.map((row) => ({
+          approvals: mine.map((row) => ({
             flowRunId: row.flow_run_id,
             node: row.node_id,
             flow: row.flow_path,
@@ -282,6 +461,25 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
         const flowRunId = String(input.flowRunId);
         const approve = input.decision === "approve";
         const comment = typeof input.comment === "string" ? input.comment : undefined;
+        // The step's approvers are checked here as the API route checks them.
+        const waiting = await db
+          .selectFrom("step_run")
+          .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
+          .select("step_run.detail")
+          .where("step_run.flow_run_id", "=", flowRunId)
+          .where("step_run.node_id", "=", String(input.node))
+          .where("step_run.item_key", "=", "")
+          .where("flow_run.workspace_id", "=", workspace.id)
+          .executeTakeFirst();
+        const named = waiting ? approversOf(waiting.detail as Record<string, unknown>) : undefined;
+        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+        if (!(await isApprover(db, target, memberId, named))) {
+          throw new HttpError(
+            403,
+            "not_an_approver",
+            `Only ${describeApprovers(named)} may decide this approval.`,
+          );
+        }
         const decided = await ctx.mutate(async (trx, audit) => {
           const result = await decideApproval(trx, {
             workspaceId: workspace.id,
@@ -330,7 +528,9 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "What `tools/list` would answer over the Model Context Protocol in one workspace, " +
             "worked out for the service account and not for the caller. Nothing is run. " +
-            "`address` is where an agent connects, with one of the account's API keys.",
+            "`address` is where an agent connects, with one of the account's API keys. " +
+            "Connecting needs `workspace:read` in the workspace: an account bound only to " +
+            "single scripts or flows is refused, and `reachable` is false.",
           tags: ["agents"],
           params: Type.Object({ t: Id, id: Id }),
           querystring: Type.Object({ workspace: Id }),
@@ -346,6 +546,7 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   name: Type.String(),
                   description: Type.String(),
                   inputSchema: Type.Object({}, { additionalProperties: true }),
+                  outputSchema: Type.Optional(Type.Object({}, { additionalProperties: true })),
                 }),
               ),
             }),
@@ -386,10 +587,11 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           address: `${kernel.config.publicUrl}/api/v1/tenants/${params.t}/workspaces/${workspace.id}/mcp`,
           reachable,
-          tools: tools.map(({ name, description, inputSchema }) => ({
+          tools: tools.map(({ name, description, inputSchema, outputSchema }) => ({
             name,
             description,
             inputSchema: inputSchema as Record<string, unknown>,
+            ...(outputSchema ? { outputSchema } : {}),
           })),
         };
       },
@@ -406,7 +608,9 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "API key, usually a service account's. The tools offered are the scripts and flows " +
             "the caller may start, with `get_run`, `get_flow_run`, and the approval tools when " +
             "the caller may read and decide approvals. A script's tool takes the script's own " +
-            "input schema.",
+            "input schema, and a flow's tool the input its manual trigger declares. The caller " +
+            "needs `workspace:read` in the workspace to connect at all; roles bound only to " +
+            "single scripts or flows are not enough on their own.",
           tags: ["agents"],
           params: Type.Object({ t: Id, w: Id }),
           body: Type.Unknown(),
@@ -441,23 +645,27 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           return tools;
         };
         server.setRequestHandler(ListToolsRequestSchema, async () => ({
-          tools: (await load()).map(({ name, description, inputSchema }) => ({
+          tools: (await load()).map(({ name, description, inputSchema, outputSchema }) => ({
             name,
             description,
             inputSchema: inputSchema as { type: "object" },
+            ...(outputSchema ? { outputSchema: outputSchema as { type: "object" } } : {}),
           })),
         }));
         server.setRequestHandler(CallToolRequestSchema, async ({ params: call }) => {
           const tool = (await load()).find((one) => one.name === call.name);
-          const text = (value: unknown, isError = false) => ({
+          const text = (value: unknown, isError = false, structured = false) => ({
             content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+            ...(structured ? { structuredContent: value as Record<string, unknown> } : {}),
             ...(isError ? { isError: true } : {}),
           });
           if (!tool) {
             return text({ error: `There is no tool ${call.name}, or you may not use it.` }, true);
           }
           try {
-            return text(await tool.call((call.arguments ?? {}) as Record<string, unknown>));
+            const answer = await tool.call((call.arguments ?? {}) as Record<string, unknown>);
+            // A run that failed is the tool's failure, though the call itself went through.
+            return text(answer, tool.failed?.(answer) ?? false, Boolean(tool.outputSchema));
           } catch (error) {
             // A refusal is the tool's answer, for the agent to read, not a protocol failure.
             if (error instanceof HttpError && error.statusCode < 500) {

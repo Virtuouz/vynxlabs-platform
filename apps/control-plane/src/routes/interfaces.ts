@@ -115,6 +115,19 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   app: Type.Union([Type.String(), Type.Null()], {
                     description: "The path of an app that serves it, deployed or in draft.",
                   }),
+                  pages: Type.Integer({
+                    description: "Pages, as the draft has it if there is one.",
+                  }),
+                  version: Type.Union([Type.Integer(), Type.Null()], {
+                    description: "The deployed version; null when it is only a draft.",
+                  }),
+                  tables: Type.Array(Type.String(), {
+                    description:
+                      "The tables its widgets read, as the draft has it if there is one.",
+                  }),
+                  editedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()], {
+                    description: "When its draft was last saved.",
+                  }),
                 }),
               ),
             }),
@@ -128,13 +141,13 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const [live, drafts] = await Promise.all([
           db
             .selectFrom("resource")
-            .select(["path", "kind", "body"])
+            .select(["path", "kind", "body", "version"])
             .where("workspace_id", "=", workspace.id)
             .where("kind", "in", ["interface", "app"])
             .execute(),
           db
             .selectFrom("resource_draft")
-            .select(["path", "kind", "body", "deleted"])
+            .select(["path", "kind", "body", "deleted", "updated_at"])
             .where("workspace_id", "=", workspace.id)
             .where("kind", "in", ["interface", "app"])
             .execute(),
@@ -145,9 +158,28 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const served = (row.body as { interface?: unknown } | null)?.interface;
           if (row.kind === "app" && typeof served === "string") servedBy.set(served, row.path);
         }
+        /** How many pages a body has, and the tables its widgets read. */
+        const shapeOf = (body: unknown) => {
+          const pages = ((body as { pages?: { widgets?: { table?: unknown }[] }[] } | null)
+            ?.pages ?? []) as { widgets?: { table?: unknown }[] }[];
+          const tables = new Set<string>();
+          for (const page of pages)
+            for (const widget of page.widgets ?? [])
+              if (typeof widget.table === "string") tables.add(widget.table);
+          return { pages: pages.length, tables: [...tables].sort() };
+        };
         const found = new Map<
           string,
-          { title: string; deployed: boolean; draft: boolean; removing: boolean }
+          {
+            title: string;
+            deployed: boolean;
+            draft: boolean;
+            removing: boolean;
+            pages: number;
+            version: number | null;
+            tables: string[];
+            editedAt: string | null;
+          }
         >();
         for (const row of live.filter((row) => row.kind === "interface")) {
           found.set(row.path, {
@@ -155,6 +187,9 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: true,
             draft: false,
             removing: false,
+            ...shapeOf(row.body),
+            version: row.version,
+            editedAt: null,
           });
         }
         for (const draft of drafts.filter((draft) => draft.kind === "interface")) {
@@ -166,6 +201,11 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: known?.deployed ?? false,
             draft: true,
             removing: draft.deleted,
+            ...(draft.deleted
+              ? { pages: known?.pages ?? 0, tables: known?.tables ?? [] }
+              : shapeOf(draft.body)),
+            version: known?.version ?? null,
+            editedAt: draft.updated_at.toISOString(),
           });
         }
         return {

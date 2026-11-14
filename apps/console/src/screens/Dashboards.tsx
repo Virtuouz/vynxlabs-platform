@@ -1,6 +1,15 @@
 import type { InterfacePage } from "@vynxlabs/manifest";
 import { heading } from "@vynxlabs/screens";
-import { Badge, Button, CheckboxField, EmptyState, Notice, Table, TextField } from "@vynxlabs/ui";
+import {
+  Badge,
+  Button,
+  CheckboxField,
+  EmptyState,
+  MultiSelectField,
+  Notice,
+  Table,
+  TextField,
+} from "@vynxlabs/ui";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
@@ -15,6 +24,7 @@ interface Summary {
   mine: boolean;
   owner: string;
   shared: boolean;
+  sharedWith?: { id: string; name: string }[];
   revision: number;
   updatedAt: string;
 }
@@ -78,7 +88,15 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
             {
               header: "Seen by",
               cell: (row) =>
-                row.shared ? <Badge tone="action">Everyone here</Badge> : <Badge>Only you</Badge>,
+                row.shared ? (
+                  <Badge tone="action">Everyone here</Badge>
+                ) : row.sharedWith && row.sharedWith.length > 0 ? (
+                  <Badge tone="action">
+                    {row.sharedWith.map((group) => group.name).join(", ")}
+                  </Badge>
+                ) : (
+                  <Badge>Only you</Badge>
+                ),
             },
             { header: "Changed", cell: (row) => when(row.updatedAt) },
           ]}
@@ -230,6 +248,21 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           )
         }
       />
+      {loaded.shared ? null : (
+        <SharedWith
+          root={root}
+          chosen={(loaded.sharedWith ?? []).map((group) => group.id)}
+          disabled={busy}
+          onChange={(sharedWith) =>
+            void put(
+              { sharedWith },
+              sharedWith.length === 0
+                ? "Only you can see it now."
+                : "The groups you chose can now see it.",
+            )
+          }
+        />
+      )}
       {loaded.problems.length > 0 && !dirty ? (
         <Notice tone="attention">
           <strong>Something on this dashboard cannot be shown:</strong>
@@ -258,5 +291,35 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         }}
       />
     </section>
+  );
+}
+
+/** The groups of members a dashboard is shown to, when it is not shown to everyone. */
+function SharedWith({
+  root,
+  chosen,
+  disabled,
+  onChange,
+}: {
+  root: string;
+  chosen: string[];
+  disabled: boolean;
+  onChange: (groups: string[]) => void;
+}) {
+  const tenantBase = root.split("/workspaces/")[0] ?? "";
+  const groups = useLoad<{ items: { id: string; name: string }[] }>(
+    `${tenantBase}/groups?limit=200`,
+  );
+  if (!groups.data || groups.data.items.length === 0) return null;
+  return (
+    <MultiSelectField
+      label="Or show it to these groups"
+      options={groups.data.items.map((group) => ({ value: group.id, label: group.name }))}
+      value={chosen}
+      disabled={disabled}
+      placeholder="Nobody else"
+      hint="Members in them can look and not change it. Each sees only the rows they may read."
+      onChange={onChange}
+    />
   );
 }

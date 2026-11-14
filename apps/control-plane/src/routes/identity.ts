@@ -5,12 +5,13 @@ import { CORE_NODES } from "@vynxlabs/nodes";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Trx } from "../kernel/audit.js";
-import { badRequest, conflict, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { createMember } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
+import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
@@ -69,6 +70,11 @@ export const ApiKey = Type.Object({
   id: Id,
   name: Type.String(),
   prefix: Type.String({ description: "The first characters of the key, to tell keys apart." }),
+  suffix: Type.Optional(
+    Type.Union([Type.String(), Type.Null()], {
+      description: "Its last four characters. Null for a key made before they were kept.",
+    }),
+  ),
   ownerType: Type.Union([Type.Literal("member"), Type.Literal("service_account")]),
   ownerId: Id,
   expiresAt: NullableTime,
@@ -86,6 +92,7 @@ interface ApiKeyRow {
   id: string;
   name: string;
   prefix: string;
+  suffix?: string | null;
   owner_type: "member" | "service_account";
   owner_id: string;
   expires_at: Date | null;
@@ -97,6 +104,7 @@ export const toApiKey = (row: ApiKeyRow) => ({
   id: row.id,
   name: row.name,
   prefix: row.prefix,
+  suffix: row.suffix ?? null,
   ownerType: row.owner_type,
   ownerId: row.owner_id,
   expiresAt: isoOrNull(row.expires_at),
@@ -122,6 +130,7 @@ export async function insertApiKey(
       owner_id: owner.id,
       name: input.name,
       prefix: key.prefix,
+      suffix: key.token.slice(-4),
       token_hash: key.hash,
       expires_at: expiresAt,
       last_used_at: null,
@@ -271,6 +280,195 @@ const InstanceBinding = Type.Object({
 
 export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
+    app.get(
+      "/me/recovery-codes",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "How many of the caller's recovery codes are left",
+          tags: ["identity"],
+          response: {
+            200: Type.Object({
+              eligible: Type.Boolean({
+                description: "Whether the caller owns a tenant, and so may hold codes.",
+              }),
+              left: Type.Integer(),
+              madeAt: Type.Union([Time, Type.Null()]),
+            }),
+          },
+        },
+      },
+      async ({ ctx }) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id)
+          return { eligible: false, left: 0, madeAt: null };
+        const rows = await kernel.db
+          .selectFrom("member_recovery_code")
+          .select(["used_at", "created_at"])
+          .where("member_id", "=", ctx.principal.id)
+          .execute();
+        return {
+          eligible: await ownsATenant(kernel.db, ctx.principal.id),
+          left: rows.filter((row) => row.used_at === null).length,
+          madeAt: rows[0] ? iso(rows[0].created_at) : null,
+        };
+      },
+    );
+
+    app.post(
+      "/me/recovery-codes",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Make the caller's recovery codes, putting away any they had",
+          description:
+            "For a tenant's owner. While single sign-on is required, a code with the owner's " +
+            "own password signs them in once, so a broken provider cannot lock the tenant out. " +
+            "The codes are shown in this answer only, and kept as hashes.",
+          tags: ["identity"],
+          response: { 201: Type.Object({ codes: Type.Array(Type.String()) }) },
+        },
+      },
+      async ({ ctx }, reply) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id)
+          throw forbidden("a member's own sign-in");
+        const memberId = ctx.principal.id;
+        if (!(await ownsATenant(kernel.db, memberId)))
+          throw forbidden("tenant_admin over a tenant: recovery codes are for a tenant's owners");
+        const codes = await ctx.mutate(async (trx, audit) => {
+          const made = await makeRecoveryCodes(trx, memberId);
+          await audit({
+            action: "member.recovery_codes_made",
+            targetType: "member",
+            targetId: memberId,
+            details: { count: made.length },
+          });
+          return made;
+        });
+        return reply.code(201).send({ codes });
+      },
+    );
+
+    app.get(
+      "/me/recent",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Where the caller was last in each tenant",
+          description: "Kept by the server, so it follows a member from one device to the next.",
+          tags: ["identity"],
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  tenantId: Id,
+                  workspaceId: Type.Union([Id, Type.Null()]),
+                  visitedAt: Time,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx }) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id) return { items: [] };
+        const rows = await kernel.db
+          .selectFrom("member_recent_scope")
+          .selectAll()
+          .where("member_id", "=", ctx.principal.id)
+          .orderBy("visited_at", "desc")
+          .execute();
+        return {
+          items: rows.map((row) => ({
+            tenantId: row.tenant_id,
+            workspaceId: row.workspace_id,
+            visitedAt: iso(row.visited_at),
+          })),
+        };
+      },
+    );
+
+    app.put(
+      "/me/recent",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Remember where the caller is",
+          description:
+            "Kept only for a tenant the member belongs to, and written only when the workspace " +
+            "changes. It records where a person was, for them to come back to.",
+          tags: ["identity"],
+          body: Type.Object({
+            tenantId: Id,
+            workspaceId: Type.Optional(Type.Union([Id, Type.Null()])),
+          }),
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, body }, reply) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id) {
+          ctx.mutated = true;
+          return reply.code(204).send(null);
+        }
+        const memberId = ctx.principal.id;
+        const belongs = await kernel.db
+          .selectFrom("tenant_member")
+          .select("tenant_id")
+          .where("member_id", "=", memberId)
+          .where("tenant_id", "=", body.tenantId)
+          .executeTakeFirst();
+        if (!belongs) {
+          // Nothing is kept for a tenant the caller does not belong to: nothing changed.
+          ctx.mutated = true;
+          return reply.code(204).send(null);
+        }
+        const workspace = body.workspaceId
+          ? await kernel.db
+              .selectFrom("workspace")
+              .select("id")
+              .where("id", "=", body.workspaceId)
+              .where("tenant_id", "=", body.tenantId)
+              .executeTakeFirst()
+          : undefined;
+        const before = await kernel.db
+          .selectFrom("member_recent_scope")
+          .select("workspace_id")
+          .where("member_id", "=", memberId)
+          .where("tenant_id", "=", body.tenantId)
+          .executeTakeFirst();
+        const now = workspace?.id ?? null;
+        // Kept through the write path, and only when it moves: moving within one workspace
+        // writes nothing, and so leaves the audit log alone.
+        if (before && before.workspace_id === now) {
+          ctx.mutated = true;
+          return reply.code(204).send(null);
+        }
+        await ctx.mutate(async (trx, audit) => {
+          await trx
+            .insertInto("member_recent_scope")
+            .values({
+              member_id: memberId,
+              tenant_id: body.tenantId,
+              workspace_id: now,
+              visited_at: new Date(),
+            })
+            .onConflict((c) =>
+              c
+                .columns(["member_id", "tenant_id"])
+                .doUpdateSet({ workspace_id: now, visited_at: new Date() }),
+            )
+            .execute();
+          await audit({
+            action: "member.recent_set",
+            targetType: "tenant",
+            targetId: body.tenantId,
+            tenantId: body.tenantId,
+            details: { workspaceId: now },
+          });
+        });
+        return reply.code(204).send(null);
+      },
+    );
+
     app.get(
       "/me",
       {
@@ -538,9 +736,17 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("member:read") },
         schema: {
           summary: "Every member of the instance",
+          description: "With the tenants each belongs to.",
           tags: ["identity"],
           querystring: PageQuery,
-          response: { 200: pageOf(Member) },
+          response: {
+            200: pageOf(
+              Type.Object({
+                ...Member.properties,
+                tenants: Type.Array(Type.Object({ id: Id, name: Type.String() })),
+              }),
+            ),
+          },
         },
       },
       async ({ query }) => {
@@ -553,7 +759,28 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("id")
           .limit(args.limit + 1)
           .execute();
-        return toPage(rows, args, (row) => row.id, toMember);
+        const ids = rows.map((row) => row.id);
+        const belongs =
+          ids.length === 0
+            ? []
+            : await kernel.db
+                .selectFrom("tenant_member")
+                .innerJoin("tenant", "tenant.id", "tenant_member.tenant_id")
+                .select(["tenant_member.member_id", "tenant.id", "tenant.name"])
+                .where("tenant_member.member_id", "in", ids)
+                .orderBy("tenant.name")
+                .execute();
+        return toPage(
+          rows,
+          args,
+          (row) => row.id,
+          (row) => ({
+            ...toMember(row),
+            tenants: belongs
+              .filter((one) => one.member_id === row.id)
+              .map((one) => ({ id: one.id, name: one.name })),
+          }),
+        );
       },
     );
 

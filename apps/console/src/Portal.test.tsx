@@ -9,7 +9,7 @@ import { Branding, KIT, THEME_TOKENS } from "./screens/Branding.tsx";
 import { Domains } from "./screens/Domains.tsx";
 import { EndUsers } from "./screens/EndUsers.tsx";
 import { answer, show } from "./testing.tsx";
-import { refreshTenantTheme, useTenantTheme } from "./theme.ts";
+import { loadInstanceTheme, refreshInstanceTheme } from "./theme.ts";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -81,7 +81,7 @@ test("the apps of a workspace are listed with their addresses and who they are o
   ];
   show(<Apps root={`${base}/workspaces/w1`} />);
   const address = await screen.findByRole("link", {
-    name: "https://apps.example.test/apps/acme/main/portal/orders/",
+    name: "apps.example.test/apps/acme/main/portal/orders/",
   });
   expect(address.getAttribute("target")).toBe("_blank");
   expect(screen.getByRole("link", { name: "orders.acme.example" }).getAttribute("href")).toBe(
@@ -89,12 +89,14 @@ test("the apps of a workspace are listed with their addresses and who they are o
   );
   // A hostname that is not enabled serves nothing, so it is not offered as a link.
   expect(screen.queryByRole("link", { name: "old.acme.example" })).toBeNull();
-  const page = document.body.textContent ?? "";
-  expect(page).toContain("Customers follow their orders.");
-  expect(page).toContain("12 files, 340 KB");
-  expect(page).toContain("1 file, 900 B");
-  expect(page).toContain("every end user, Finance team");
-  expect(page).toContain("Only staff whose role lets them read this workspace");
+  const list = document.body.textContent ?? "";
+  expect(list).toContain("every end user, Finance team");
+  expect(list).toContain("Staff only");
+  // The rest is in the inspector of the chosen app.
+  fireEvent.click(screen.getByText("Orders"));
+  const sheet = await screen.findByRole("dialog");
+  expect(sheet.textContent).toContain("Customers follow their orders.");
+  expect(sheet.textContent).toContain("12, 340 KB");
 });
 
 test("a workspace with no apps says where apps come from", async () => {
@@ -156,6 +158,15 @@ test("inviting an end user shows the link once, and says to pass it on when no m
   await screen.findByText("Invited");
 });
 
+/** A wide screen: the inspector stands beside the list instead of over it. */
+const wide = () =>
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+
 test("a link that was emailed says so, and the search is sent to the server", async () => {
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: [ada], nextCursor: null }];
   routes[`POST /api/v1${base}/end-users/u1/links`] = () => [
@@ -166,8 +177,9 @@ test("a link that was emailed says so, and the search is sent to the server", as
       emailed: true,
     },
   ];
+  wide();
   show(<EndUsers base={base} />);
-  fireEvent.click(await screen.findByText("Actions"));
+  fireEvent.click(await screen.findByText(ada.email));
   // Ada has a password, so she is offered a reset and not a new invitation.
   expect(screen.queryByText("New invitation link")).toBeNull();
   fireEvent.click(await screen.findByText("Password reset link"));
@@ -193,24 +205,23 @@ test("an end user is disabled and deleted through their own routes, and deleting
     users = [];
     return [204, null];
   };
+  wide();
   show(<EndUsers base={base} />);
-  fireEvent.click(await screen.findByText("Actions"));
-  fireEvent.click(await screen.findByText("Disable"));
-  await screen.findByText("Disabled");
+  fireEvent.click(await screen.findByText(ada.email));
+  fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  await screen.findAllByText("Disabled");
   expect(sent("PATCH")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
   expect(sent("PATCH")[0]?.body).toEqual({ disabled: true });
 
   // A disabled account is offered no link, and can be enabled again.
-  fireEvent.click(screen.getByText("Actions"));
-  await screen.findByText("Enable");
+  await screen.findByRole("button", { name: "Enable" });
   expect(screen.queryByText("Password reset link")).toBeNull();
 
-  fireEvent.click(screen.getByText("Delete"));
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
   expect(await answer("Cancel")).toContain("Their rows in tables are kept.");
   expect(sent("DELETE")).toHaveLength(0);
 
-  fireEvent.click(screen.getByText("Actions"));
-  fireEvent.click(await screen.findByText("Delete"));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
   await answer("Delete");
   await screen.findByText("No end users yet");
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
@@ -262,13 +273,13 @@ test("branding saves only the tokens that are set, and shows the server's error 
             code: "bad_request",
             detail: "That is not a theme.",
             errors: [
-              { path: "/tokens/surface", message: "must be a plain colour, length or font list" },
+              { path: "/tokens/surface", message: "must be a plain color, length or font list" },
             ],
           },
         ]
       : [200, { ...portal, theme }];
   };
-  show(<Branding base={base} tenantId="t1" />);
+  show(<Branding base={base} />);
   const action = (await screen.findByLabelText("action, light")) as HTMLInputElement;
   expect(action.value).toBe("#7c3aed");
   expect(action.placeholder).toBe("kit default");
@@ -292,9 +303,9 @@ test("branding saves only the tokens that are set, and shows the server's error 
   fireEvent.input(screen.getByLabelText("line, light"), { target: { value: "   " } });
   expect(preview("dark").getPropertyValue("--vx-ink")).toBe("#fafafa");
   fireEvent.submit(action.closest("form") as HTMLFormElement);
-  expect(
-    (await screen.findByText("surface must be a plain colour, length or font list")).role,
-  ).toBe("alert");
+  expect((await screen.findByText("surface must be a plain color, length or font list")).role).toBe(
+    "alert",
+  );
   expect(sent("PUT")[0]?.body).toEqual({
     theme: { tokens: { action: "#7c3aed", surface: "url(x)" }, dark: { ink: "#fafafa" } },
   });
@@ -305,7 +316,7 @@ test("branding saves only the tokens that are set, and shows the server's error 
   expect(sent("PUT")[1]?.body).toEqual({
     theme: { tokens: { action: "#7c3aed" }, dark: { ink: "#fafafa" } },
   });
-  expect(screen.queryByText("surface must be a plain colour, length or font list")).toBeNull();
+  expect(screen.queryByText("surface must be a plain color, length or font list")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Reset to the kit's values" }));
   await answer("Reset");
@@ -322,7 +333,7 @@ test("self sign-up is saved when it is switched, and a logo is checked before it
     current = { ...portal, logo: true };
     return [204, null];
   };
-  show(<Branding base={base} tenantId="t1" />);
+  show(<Branding base={base} />);
   fireEvent.click(await screen.findByLabelText("People may create their own account"));
   await waitFor(() => expect(sent("PUT")[0]?.body).toEqual({ signUp: true }));
 
@@ -461,29 +472,50 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/domains/d1`);
 });
 
-// ----- The tenant's colours in the console -----
+test("a hostname can serve the portal and every app, even from a workspace with no app chosen", async () => {
+  let domains: (typeof domain)[] = [];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [{ id: "w0", name: "Dev" }] }];
+  routes[`GET /api/v1${base}/workspaces/w0/apps`] = () => [200, { items: [] }];
+  routes[`POST /api/v1${base}/domains`] = () => {
+    domains = [{ ...domain, workspaceId: "w0", app: "", hostname: "apps.acme.example" }];
+    return [201, domains[0]];
+  };
+  show(<Domains base={base} />);
+  await screen.findByText("No hostnames yet");
+  fireEvent.click(screen.getAllByRole("button", { name: "Add a hostname" })[0] as HTMLElement);
+  fireEvent.change(await screen.findByLabelText("Serves"), { target: { value: "portal" } });
+  expect(screen.queryByLabelText("App")).toBeNull();
+  fireEvent.input(screen.getByLabelText("Hostname"), { target: { value: "apps.acme.example" } });
+  fireEvent.submit(screen.getByLabelText("Hostname").closest("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(sent("POST")[0]?.body).toEqual({
+      workspaceId: "w0",
+      app: "",
+      hostname: "apps.acme.example",
+    }),
+  );
+  const row = (await screen.findByRole("button", { name: /Details/, hidden: true })).closest("tr");
+  expect(row?.textContent).toContain("The portal and every app");
+});
 
-test("the tenant's stylesheet is in the page while the tenant is shown, and is loaded again after a save", () => {
+// ----- The console's own colors -----
+
+test("the instance's stylesheet is loaded once, never a tenant's, and again after a save", () => {
   // The test browser fetches no stylesheets. Without this it reports each one as an error.
   const browser = window as unknown as {
     happyDOM: { settings: { handleDisabledFileLoadingAsSuccess: boolean } };
   };
   browser.happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
-  const Shown = ({ tenantId }: { tenantId: string | undefined }) => {
-    useTenantTheme(tenantId);
-    return null;
-  };
   const links = () =>
     [...document.head.querySelectorAll('link[rel="stylesheet"]')].map((link) =>
       link.getAttribute("href"),
     );
-  const { rerender, unmount } = show(<Shown tenantId="t1" />);
-  expect(links()).toEqual(["/api/v1/tenants/t1/theme.css"]);
-  refreshTenantTheme("t1");
-  expect(links()[0]).toMatch(/^\/api\/v1\/tenants\/t1\/theme\.css\?saved=\d+$/);
-  rerender(<Shown tenantId="t2" />);
-  expect(links()).toEqual(["/api/v1/tenants/t2/theme.css"]);
-  rerender(<Shown tenantId={undefined} />);
-  expect(links()).toEqual([]);
-  unmount();
+  loadInstanceTheme();
+  loadInstanceTheme();
+  expect(links()).toEqual(["/api/v1/instance/theme.css"]);
+  refreshInstanceTheme();
+  expect(links()[0]).toMatch(/^\/api\/v1\/instance\/theme\.css\?saved=\d+$/);
+  expect(links().some((href) => href?.includes("/tenants/"))).toBe(false);
+  for (const link of document.head.querySelectorAll("link[data-instance-theme]")) link.remove();
 });

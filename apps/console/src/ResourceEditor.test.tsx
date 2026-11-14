@@ -117,7 +117,7 @@ test("a schedule from the repository opens with its settings, and saving takes i
   // A source for schedules is offered because the workspace has one.
   expect(screen.getByText("Trigger source (optional)")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Time zone (optional)"), {
-    target: { value: "Europe/London" },
+    target: { value: "America/Chicago" },
   });
   fireEvent.click(screen.getByLabelText("Turned on"));
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
@@ -126,7 +126,7 @@ test("a schedule from the repository opens with its settings, and saving takes i
     script: "orders/sync",
     cron: "0 2 * * *",
     input: { full: true },
-    timezone: "Europe/London",
+    timezone: "America/Chicago",
     enabled: false,
   });
 });

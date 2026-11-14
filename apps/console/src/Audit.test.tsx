@@ -24,6 +24,13 @@ let asked: string[];
 
 beforeEach(() => {
   asked = [];
+  // A wide screen: the inspector stands beside the list.
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
   vi.stubGlobal("fetch", async (address: string) => {
     asked.push(address);
     const items = address.includes("area=role")
@@ -70,14 +77,29 @@ test("the newest entry is open beside the list, and choosing another opens it", 
 test("the list narrows by kind here and by area on the server", async () => {
   show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
   await screen.findAllByText("secret.set");
-  fireEvent.click(screen.getByRole("button", { name: "Execute" }));
+  fireEvent.click(screen.getByRole("radio", { name: /Execute/ }));
   expect(screen.queryByText("secret.set")).toBeNull();
   // In the list, and in the details that open for it.
   expect(screen.getAllByText("run.started")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "Create" }));
+  fireEvent.click(screen.getByRole("radio", { name: /Create/ }));
   expect(screen.getByText("Nothing of that kind")).toBeTruthy();
 
   fireEvent.change(screen.getByLabelText("Area"), { target: { value: "role" } });
   await screen.findAllByText("role.created");
   await waitFor(() => expect(asked.at(-1)).toBe("/api/v1/tenants/t1/audit?limit=50&area=role"));
+});
+
+test("a search narrows what was loaded, by who, action or ID", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  fireEvent.input(screen.getByLabelText("Search"), { target: { value: "target-c" } });
+  await waitFor(() => expect(screen.queryByText("secret.set")).toBeNull());
+  expect(screen.getAllByText("run.started").length).toBeGreaterThan(0);
+});
+
+test("the time it covers is asked of the server", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  fireEvent.change(screen.getByLabelText("Since"), { target: { value: "24h" } });
+  await waitFor(() => expect(asked.at(-1)).toMatch(/[?&]from=\d{4}-/));
 });

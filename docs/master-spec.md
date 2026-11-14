@@ -161,6 +161,7 @@ Every mode runs the same image. The mode is configuration, never a code branch.
 - **Data routing.** Each tenant record states where its data lives: by default the shared database, optionally a dedicated database. Every data access resolves through this routing. It must exist from the first phase.
 - **Tenant export and import.** A tenant can be exported and imported between instances at any time. The export covers resources, custom table data, files, bindings, the end-user pool and the tenant's encryption key, in standard formats.
 - **Promotion between modes** is an export followed by an import. No mode needs a special migration path.
+- **An import is staged.** The file is uploaded once and inspected, showing its contents, version, conflicts and whether the passphrase opens it, before anything is written. A staged file that is not imported is removed after a short time.
 - **Single-host install.** A one-machine container deployment must be supported for on-prem sites.
 - **Hosting.** Any container host works. A managed Postgres with point-in-time recovery is recommended for Vynxlabs-hosted instances. No provider is locked in.
 
@@ -267,6 +268,8 @@ Authentication is implemented by a library inside the control plane, Better Auth
 
 End users sign in with an email and a password. An account is made by the tenant's staff, who get a one-time link for the person to set a password with, or by the person, where the tenant has turned sign-up on. A reset is a one-time link too. Sending mail is optional: an instance that sends none hands the link to whoever asked for it.
 
+An owner of a tenant that requires single sign-on holds one-time recovery codes, shown once and stored hashed, so a broken identity provider cannot lock the tenant out. Using one is audited.
+
 The end-user pool is kept by the control plane itself, with the same password hashing as members. Better Auth looks a person up by email alone, so it cannot hold the same email in two tenants. This is recorded as provisional until the owner confirms it.
 
 ## Data layer
@@ -347,9 +350,12 @@ The queue is implemented by embedding pg-boss, a Postgres-native library with an
 - Built-in triggers are schedule, webhook, event and manual.
 - Custom triggers, such as a message broker, a database change or a polling source, are added through the trigger extension point.
 - Built-in triggers are implemented through that same extension point.
+- One trigger can be paused while running, in any workspace, production included. The pause outlives deploys until someone resumes it, and both are audited.
+- A webhook request that is refused, for a bad signature or a bad body, is recorded briefly so the workspace can see why calls are failing.
 
 ### Worker behavior
 
+- Workers belong to named pools. A pool is a record of its own that credentials join, so a tenant can see which pools have a worker that is reachable and which workspaces each serves.
 - Workers send heartbeats. Jobs held by a worker that stops responding are reclaimed and retried.
 - A deploy never interrupts a run in progress. Each run finishes on the bundle version it started with.
 - Small payloads are stored with the run. Large payloads are passed by reference to file storage or a staging table.
@@ -369,9 +375,15 @@ A flow is a declarative graph of steps stored as data, and the platform's own fl
 
 A flow may have several trigger entry nodes, each leading into its own branch of logic. This lets related logic be grouped as one flow. A run is one trigger firing and walking the part of the graph reachable from it.
 
+A manual trigger may declare the input it takes, as a JSON Schema. A run started by hand, from the API, by an agent or as a sub-flow is refused when its input does not match, with each problem named by path. An agent is shown the same schema for the flow's tool.
+
 ### Control flow
 
 The engine must be designed for branching, looping over items, parallel paths, waits and delays, approval steps that pause for a person, and error-handling paths. These can be delivered progressively.
+
+A loop over items fails as soon as one item fails, unless it is told to carry on. It then gives `{ error: { message } }` in place of each failed item's result, and succeeds.
+
+An approval step may name who can decide it, as groups or roles. A person then needs both the approval permission and a place in one of those. A step that names nobody can be decided by anyone holding the permission.
 
 ### Layout
 
@@ -383,6 +395,7 @@ Nodes can be placed freely on a canvas. Positions are stored apart from the logi
 - Simple transformations use a small, language-neutral expression language that the control plane evaluates safely.
 - Anything more complex becomes a code step.
 - The expression language is CEL. It cannot express unbounded work or run arbitrary code, and the control plane evaluates it in a sandbox with time and memory limits.
+- An expression can read `now`, the time it is evaluated, as a timestamp. A timestamp reads as ISO 8601 text in UTC, so `string(now - duration('336h')).substring(0, 10)` is the date two weeks ago.
 
 ### Durability
 
@@ -424,12 +437,18 @@ Environments are workspaces, flagged production or dev at creation, and changes 
 
 - Promotion deploys the same bundle that ran in the dev workspace to its linked production workspace. Nothing is rebuilt.
 - Connections, secrets and variables are bound per workspace and never travel in a bundle.
-- A deploy fails with a clear message if the target workspace lacks a binding the bundle needs.
+- A promotion fails with a clear message if the production workspace lacks a binding the bundle needs. A deploy to a dev workspace goes ahead with a warning, and a run that reaches the missing binding fails with the same message.
+- Promoting to production needs its own permission, `promotion:write`, separate from deploying to a dev workspace.
+- When the tenant's repository is connected, each promotion also commits what production now runs to a release branch. The branch is written, never read. If the push fails the promotion still stands, and the failure is shown with a way to retry.
 - Custom table migrations in the bundle run on deploy. Data stays where it is.
 
 ### Editing in dev workspaces
 
 Resources can be edited through the interface in a dev workspace. Those edits sync back to the tenant repository so that git stays the source of truth.
+
+- A draft keeps its history. Setting a draft aside or replacing it never loses the earlier text.
+- Drafts can be pushed to the workspace's branch before they are deployed, so a developer can pick them up in an editor.
+- A repository script's TypeScript source travels in its bundle, with a source map, so the console can show it and a failure can point at its line.
 
 ### Cloning
 
@@ -455,6 +474,10 @@ The generated tier takes its idea from Grist: typed tables and linked views. Gri
 
 The platform's own interface covers resources, runs, logs, users, settings and the database studio. It is built with the same component kit and the same public API as client apps.
 
+- The console keeps its own look. A tenant's branding never changes it, so an operator reading many tenants always sees the same tool.
+- The console is branded per instance. An operator sets its product name, logo and theme tokens, in light and dark, so a self-hosted instance can carry its own brand.
+- Every console screen works from a phone's width up. A screen that shows less on a small screen still offers every action.
+
 ### Unified experience
 
 - Everything a user sees must use one design system.
@@ -463,7 +486,8 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 
 ### Branding
 
-- Branding is a set of theme tokens defined at the tenant and overridable per workspace.
+- Branding is a set of theme tokens defined at the tenant and overridable per workspace. It applies to the tenant's apps, portal and sign-in pages.
+- The console's branding is a separate set of the same tokens, with a product name and a logo, defined once per instance.
 - The component kit must be built on theme tokens from its first version. Retrofitting them later is costly.
 
 ### Access
@@ -480,6 +504,9 @@ An app is JavaScript written for one tenant. Where it is served decides what it 
 - **By path**, on the instance's own address. This needs one hostname, so it works on a single-host install. It relies on the trust model: everyone who authors code works for the operator.
 - **On a second address**, when the operator configures one. Every app is then served there and not at the instance's own address.
 - **At a hostname a tenant registers** for one app, public or internal. The app is served at its root. The name's owner shows agreement with a DNS record. Certificates belong to whatever terminates TLS in front of the instance: the platform issues none.
+- **At a hostname a tenant registers for its portal.** The portal is served at its root and every app of the workspace by path beneath it, so one name and one DNS record serve them all.
+
+An app built in code may declare the tables it reads, so that whoever shares it can see what it reaches. Apps built in the console declare theirs from their widgets.
 
 A member's console session counts only at the instance's own address. At any other address a member is carried over by a one-time code and gets a sign-in for that one tenant, limited to what apps use. An operator's reach across tenants therefore never arrives where a tenant's code runs.
 
@@ -525,6 +552,13 @@ One run model and one audit stream cover the whole platform.
 ### Alerts
 
 Failures can notify people and can start an error-handling script or flow, configured per workspace or per resource.
+
+### Health and diagnosis
+
+- Connections and data sources are checked on a schedule and their last result is kept, so a list can show what is reachable.
+- Refused provisioning pushes are recorded briefly with their reason, as refused webhook requests are.
+- A failed run carries a suggested next step when the failure matches a known shape, such as a refused request, a missing binding or a timeout. The suggestion is advice; it never acts.
+- The console summarizes a workspace's health, recent runs and what needs attention from these records, never from figures it makes up.
 
 ### Audit log
 
@@ -594,7 +628,7 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Deploy unit | Immutable versioned bundle per workspace | Locked |
 | App hosting | Apps built and served by the platform | Locked |
 | Queue and events | Built-in queue and event-driven design | Locked |
-| Interface | One unified experience, with branding per tenant and per workspace | Locked |
+| Interface | One unified experience, with branding per tenant and per workspace for apps and the portal, and per instance for the console | Locked |
 | Licensing | Open source | Locked |
 | License text | Apache 2.0, pending legal review | Provisional |
 | Resource file format | TypeScript authoring compiled to canonical JSON manifests | Provisional |
@@ -614,7 +648,7 @@ Each decision below is locked, provisional or open, and the rest of this spec sh
 | Authentication | Better Auth inside the control plane, with external single sign-on as an option | Locked |
 | End-user sign-in | Email and password, with invitation and reset by one-time link. Mail is optional. Sign-up is a tenant setting, off by default | Locked |
 | End-user pool | Kept by the control plane itself, with Better Auth's password hashing. Better Auth cannot hold one email in two tenants | Provisional, proposed in phase 6 |
-| App addresses | By path on the instance's address. Optionally a second address for every app. A hostname a tenant registers serves one app at its root, with TLS left to the proxy in front | Locked |
+| App addresses | By path on the instance's address. Optionally a second address for every app. A hostname a tenant registers serves one app at its root, or the portal with every app beneath it, with TLS left to the proxy in front | Locked |
 | App files | Listed in the bundle by checksum, stored once per tenant | Provisional |
 | Expression language | CEL (Common Expression Language), evaluated in a sandbox with time and memory limits | Locked |
 | Frontend framework and component kit | React and Vite, with a kit built on Base UI and Tailwind | Locked |

@@ -17,17 +17,40 @@ export interface ManifestIssue {
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; issues: ManifestIssue[] };
 
+/**
+ * What a value of each string format looks like, in words. zod writes each
+ * format out as a long regular expression beside it, and "must match pattern"
+ * followed by that expression tells a person, or an agent, nothing.
+ */
+const FORMATS: Record<string, string> = {
+  "date-time": "must be a date and time in ISO 8601, such as 2026-11-17T10:00:00Z",
+  date: "must be a date as YYYY-MM-DD, such as 2026-11-17",
+  time: "must be a time as HH:MM:SS, such as 14:30:00",
+  duration: "must be an ISO 8601 duration, such as PT30M",
+  uuid: "must be a UUID, such as 0b8f6c3e-2a51-4d8e-9a6f-3c1e7d2b4a90",
+  email: "must be an email address, such as name@example.com",
+  uri: "must be a URL, such as https://example.com/page",
+  url: "must be a URL, such as https://example.com/page",
+  ipv4: "must be an IPv4 address, such as 192.0.2.10",
+  ipv6: "must be an IPv6 address, such as 2001:db8::1",
+};
+
+function messageOf(error: ErrorObject): string {
+  // A pattern that only restates a format is described by the format. Needs `verbose`.
+  const format = (error.parentSchema as { format?: unknown } | undefined)?.format;
+  if (error.keyword === "pattern" && typeof format === "string") {
+    return FORMATS[format] ?? `must be in the ${format} format`;
+  }
+  const extra =
+    error.keyword === "additionalProperties" ? ` (${String(error.params.additionalProperty)})` : "";
+  return `${error.message ?? "is invalid"}${extra}`;
+}
+
 function toIssues(errors: ErrorObject[] | null | undefined, prefix = ""): ManifestIssue[] {
-  return (errors ?? []).map((error) => {
-    const extra =
-      error.keyword === "additionalProperties"
-        ? ` (${String(error.params.additionalProperty)})`
-        : "";
-    return {
-      path: `${prefix}${error.instancePath}` || "/",
-      message: `${error.message ?? "is invalid"}${extra}`,
-    };
-  });
+  return (errors ?? []).map((error) => ({
+    path: `${prefix}${error.instancePath}` || "/",
+    message: messageOf(error),
+  }));
 }
 
 /**
@@ -110,7 +133,8 @@ export class KindRegistry {
   }
 }
 
-const schemaValidator = new Ajv2020({ allErrors: true, strict: false });
+// `verbose` keeps each error's schema, so a format's pattern can be described in words.
+const schemaValidator = new Ajv2020({ allErrors: true, strict: false, verbose: true });
 const compiled = new WeakMap<object, ValidateFunction>();
 
 /** Checks a value against any JSON Schema. Returns the problems, or an empty list. */

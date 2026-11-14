@@ -224,15 +224,48 @@ test("an export needs the passphrase typed twice the same", async () => {
   expect(sent("POST")).toHaveLength(0);
 });
 
-test("an import sends the file with its passphrase in a header, and reports what arrived", async () => {
+const inspection = {
+  problem: null,
+  tenant: { id: "t9", slug: "acme", name: "Acme Corp" },
+  exportedAt: "2026-11-10T10:00:00Z",
+  coreVersion: "1.8.0",
+  migrationLevel: 44,
+  levelMatches: true,
+  history: true,
+  workspaces: [
+    { name: "Main", type: "production" },
+    { name: "Dev", type: "dev" },
+  ],
+  rows: 32,
+  members: 3,
+  pendingRuns: 2,
+  notCarried: ["API keys: create new ones on the instance the tenant moves to."],
+  passphraseOk: null as boolean | null,
+  tenantPresent: false,
+  slugTaken: true,
+};
+const staged = (more: Partial<typeof inspection> = {}) => ({
+  id: "s1",
+  fileName: "acme.tar",
+  sizeBytes: 4096,
+  expiresAt: "2026-11-13T11:00:00Z",
+  inspection: { ...inspection, ...more },
+});
+
+test("an import is uploaded and checked first, then imported with its passphrase in a header", async () => {
   routes["GET /api/v1/instance/database-locations"] = () => [
     200,
     { items: [{ name: "acme-db", host: "db.internal", database: "acme" }] },
   ];
-  routes["POST /api/v1/instance/tenant-imports"] = () => [
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
+  routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [
+    200,
+    staged({ passphraseOk: true, slugTaken: false }),
+  ];
+  routes["POST /api/v1/instance/tenant-imports/staged/s1/import"] = () => [
     201,
     {
-      tenant: { id: "t9", slug: "acme", name: "Acme Corp", dataLocation: "acme-db" },
+      tenant: { id: "t9", slug: "acme-2", name: "Acme Corp", dataLocation: "acme-db" },
       counts: { workspace: 2, resource: 30 },
       members: { created: 2, linked: 1 },
       objects: 5,
@@ -242,19 +275,40 @@ test("an import sends the file with its passphrase in a header, and reports what
     },
   ];
   show(<TenantImport />);
-  await screen.findByText(/acme-db: acme on db.internal/);
   const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
   fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+
+  // What it holds, and why it cannot come in yet.
+  await screen.findByText("Acme Corp");
+  expect(sent("POST")[0]?.url).toBe("/api/v1/instance/tenant-imports/staged?name=acme.tar");
+  expect(sent("POST")[0]?.body).toBe(file);
+  expect(screen.getByText("Its slug is taken here: choose another below")).toBeTruthy();
+  expect(screen.getByText("Passphrase not checked yet")).toBeTruthy();
+  const importButton = () =>
+    screen.getByRole("button", { name: "Import tenant" }) as HTMLButtonElement;
+  expect(importButton().disabled).toBe(true);
+
   fireEvent.input(screen.getByLabelText("Its passphrase"), { target: { value: "the passphrase" } });
+  fireEvent.input(screen.getByLabelText("Slug on this instance"), { target: { value: "acme-2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByText("The passphrase opens it");
+  const check = sent("GET").find((call) => call.url.startsWith("/api/v1/instance/tenant-imports"));
+  expect(check?.url).toBe("/api/v1/instance/tenant-imports/staged/s1?slug=acme-2");
+  expect(check?.headers["x-export-passphrase"]).toBe("the passphrase");
+  await screen.findByText(/acme-db: acme on db.internal/);
   fireEvent.change(screen.getByLabelText("Where its custom tables go"), {
     target: { value: "acme-db" },
   });
+  await waitFor(() => expect(importButton().disabled).toBe(false));
   fireEvent.submit(screen.getByLabelText("Its passphrase").closest("form") as HTMLFormElement);
+
   await screen.findByText(/was imported/);
-  const call = sent("POST")[0];
-  expect(call?.url).toBe("/api/v1/instance/tenant-imports?dataLocation=acme-db");
+  const call = sent("POST")[1];
+  expect(call?.url).toBe(
+    "/api/v1/instance/tenant-imports/staged/s1/import?slug=acme-2&dataLocation=acme-db",
+  );
   expect(call?.headers["x-export-passphrase"]).toBe("the passphrase");
-  expect(call?.body).toBe(file);
   const page = document.body.textContent ?? "";
   expect(page).toMatch(
     /32 rows and 5 stored objects\. Members created:\s*2\. Members linked to accounts already here:\s*1\./,
@@ -263,4 +317,21 @@ test("an import sends the file with its passphrase in a header, and reports what
   expect(page).toContain("All 2 workspaces arrived with their triggers paused.");
   expect(page).toContain("2 runs and 0 flow runs were unfinished");
   expect(page).toContain("Not carried: API keys");
+});
+
+test("an upload kept by another replica is said so, and asked for again", async () => {
+  routes["GET /api/v1/instance/database-locations"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
+  routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [
+    409,
+    { status: 409, code: "staged_elsewhere", detail: "That upload is kept elsewhere." },
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  await screen.findByText("Acme Corp");
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByText(/another replica of the control plane kept it/);
+  expect(screen.getByRole("button", { name: "Upload and check" })).toBeTruthy();
 });

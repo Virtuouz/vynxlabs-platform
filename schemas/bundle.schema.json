@@ -144,6 +144,42 @@
       "maxItems": 5000,
       "description": "The files of the bundle's apps. Format 2 only."
     },
+    "sources": {
+      "type": "object",
+      "required": [
+        "files",
+        "map"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "content"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Relative to the repository root."
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 2000
+        },
+        "map": {
+          "type": "string",
+          "description": "A source map (version 3) from `code` to the files, without their contents."
+        }
+      },
+      "additionalProperties": false
+    },
     "digest": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",

@@ -52,6 +52,34 @@ export type BundleAsset = Static<typeof BundleAsset>;
 /** The most files one bundle may list. */
 export const MAX_BUNDLE_ASSETS = 5000;
 
+/** The most source text one bundle carries, in characters. Beyond it, sources are left out. */
+export const MAX_BUNDLE_SOURCE = 4 * 1024 * 1024;
+
+/**
+ * The repository's own TypeScript, beside the code built from it, so that the
+ * console can show a repository script's source and point a failure at its
+ * line. Never a dependency's files: those are only named in the map.
+ */
+export const BundleSources = Type.Object(
+  {
+    files: Type.Array(
+      Type.Object(
+        {
+          path: Type.String({ maxLength: 500, description: "Relative to the repository root." }),
+          content: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 2000 },
+    ),
+    map: Type.String({
+      description: "A source map (version 3) from `code` to the files, without their contents.",
+    }),
+  },
+  { additionalProperties: false },
+);
+export type BundleSources = Static<typeof BundleSources>;
+
 /** The unit of deploy: one workspace's manifests and code, immutable once built. */
 export const Bundle = Type.Object(
   {
@@ -82,6 +110,7 @@ export const Bundle = Type.Object(
         description: "The files of the bundle's apps. Format 2 only.",
       }),
     ),
+    sources: Type.Optional(BundleSources),
     digest: Type.String({
       pattern: "^[0-9a-f]{64}$",
       description: "SHA-256 over the other fields.",
@@ -112,10 +141,13 @@ function canonical(value: unknown): string {
 export function bundleDigest(bundle: Omit<Bundle, "digest">): string {
   const { formatVersion, sdkVersion, core, manifests, code } = bundle;
   // A format 1 bundle is hashed exactly as it always was, so its digest does not change.
-  const hashed =
-    formatVersion === 1
+  // Sources count only when they are there, so a bundle without them hashes as before.
+  const hashed = {
+    ...(formatVersion === 1
       ? { formatVersion, sdkVersion, core, manifests, code }
-      : { formatVersion, sdkVersion, core, manifests, code, assets: bundle.assets ?? [] };
+      : { formatVersion, sdkVersion, core, manifests, code, assets: bundle.assets ?? [] }),
+    ...(bundle.sources ? { sources: bundle.sources } : {}),
+  };
   return createHash("sha256").update(canonical(hashed)).digest("hex");
 }
 

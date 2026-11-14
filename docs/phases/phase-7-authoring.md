@@ -37,11 +37,11 @@ Not in this phase: SSH deploy keys, a GitHub App, merging inside a file, npm pac
 | Generated screens | Members build them in the console. End users make personal dashboards |
 | Extensions | Connectors, trigger sources and nodes can all be written in the console |
 | Code authoring | A new permission, `code:write`, held by `tenant_admin` and `developer` only, and a switch per tenant that an operator can turn off |
-| Licences | Zlib joins the allowlist, for the port of zlib that the git library depends on |
+| Licenses | Zlib joins the allowlist, for the port of zlib that the git library depends on |
 | Single sign-on | Our own flows with `openid-client` and `node-saml`, built to the bar an enterprise buyer and a security review would hold it to |
 | The rest of the phase | Four units, in order: apps made in the console, extensions and the node pack, SCIM, then finishing |
 | Who builds screens | Members, gated by permission, so that some become maintainers with no developer. End users use what is published. This replaces "end users make personal dashboards" above: dashboards are a member's |
-| Reference for screens | Grist's behaviour: pages of widgets over tables, summaries, linked widgets. No formula engine. Grist is not embedded |
+| Reference for screens | Grist's behavior: pages of widgets over tables, summaries, linked widgets. No formula engine. Grist is not embedded |
 | Publishing a screen | Edited in a dev workspace with a live preview, deployed to publish, promoted to production |
 | Dashboards | Private to the member, with optional read-only sharing with the workspace |
 | Send email | The tenant's own SMTP connection |
@@ -107,7 +107,7 @@ Passed against a local remote served over HTTP by `git http-backend`. Not run ag
 | Push with a token | Accepted. A wrong token is a 401 |
 | Push after the remote moved | Refused, with an error the server can tell apart |
 | Reading one file at the remote's tip | Works with no working tree |
-| Licences | isomorphic-git is MIT. It depends on pako, a port of zlib, whose licence is "MIT AND Zlib". Zlib is permissive and was not on the allowlist, so the licence check failed from the commit that added git sync until the owner added Zlib to the list. The spike's first reading missed it |
+| Licenses | isomorphic-git is MIT. It depends on pako, a port of zlib, whose license is "MIT AND Zlib". Zlib is permissive and was not on the allowlist, so the license check failed from the commit that added git sync until the owner added Zlib to the list. The spike's first reading missed it |
 
 ### YAML that round-trips
 
@@ -115,7 +115,7 @@ Passed with the `yaml` package (ISC) at version 1.2 with no line folding. Forty 
 
 ### Monaco in the console
 
-Passed for the build. Monaco 0.57 (MIT) builds under Vite as chunks that load on demand, and the console's first script does not grow. The editor is 2.7 MB and the TypeScript worker 6.9 MB before compression, in 98 files. Still to check in a browser, when the script editor is built: the SDK's types in the editor, and colours taken from the tokens.
+Passed for the build. Monaco 0.57 (MIT) builds under Vite as chunks that load on demand, and the console's first script does not grow. The editor is 2.7 MB and the TypeScript worker 6.9 MB before compression, in 98 files. Still to check in a browser, when the script editor is built: the SDK's types in the editor, and colors taken from the tokens.
 
 ### Three ways to do single sign-on
 
@@ -132,7 +132,7 @@ All three passed. Each signed one person in through a Keycloak container standin
 | The provider's client secret | **Stored in plain text** in the plugin's table | Held by Keycloak | Sealed as our other secrets are |
 | What a self-hoster runs | Nothing new | **A second service**: a 718 MB image that held 986 MB of memory idle, with a database of its own | Nothing new |
 | Who holds the people | better-auth, as now | Keycloak keeps a copy of every person, with rules of its own. It showed its own "Update Account Information" page until those were relaxed | The platform, as now |
-| Licences | MIT, with MIT and ISC beneath | Apache-2.0, not shipped in the image | MIT |
+| Licenses | MIT, with MIT and ISC beneath | Apache-2.0, not shipped in the image | MIT |
 | Other | Sign-in must begin with a POST from the browser. A second provider for an email that already signed in is refused as "not linked" until trust is configured. A version for better-auth 1.7.21 exists; 1.7.23 is what was run | The platform still needs the OIDC half of option C to talk to Keycloak | We own how SAML is configured and checked, and its upkeep. The libraries do the cryptography |
 
 Every option needs the auth proxy to stop turning a posted form into JSON (`routes/auth.ts`), since SAML answers with a form.
@@ -195,7 +195,7 @@ Built and checked in a browser against an instance started for the purpose, in l
 - **Permissions.** `packages/manifest/src/permissions.ts` lists every permission with what each verb allows, where it is checked and whether an end user can hold it. `GET /permissions` serves it. A role is built from a grid of boxes, and an existing role can be changed.
 - **Choices in place of typed names.** A create dialog can take its choices from the API. The operator's member, a tenant's database location, a connection, a variable, a referenced table and a data source are chosen from a searchable list.
 - **Shell.** The sidebar shows a tenant's screens in a tenant and a workspace's screens in a workspace, grouped, with icons. Tenants and workspaces are switched from it. A top bar says where you are and holds the account menu and a choice of light, dark or the system's theme.
-- **A run.** One panel: outcome and duration, facts, input and result as coloured JSON, and a log with search, a lowest level, wrapping, following and a download.
+- **A run.** One panel: outcome and duration, facts, input and result as colored JSON, and a log with search, a lowest level, wrapping, following and a download.
 - **A flow run.** A timeline with each step cut into waiting for a worker, running, and held on purpose. The graph is the second tab.
 - **Audit log.** Narrowed by area on the server and by kind of action in the list, with the chosen entry's facts and details beside it. Entries name who acted.
 
@@ -230,7 +230,7 @@ Still open in milestone 1: screens loaded on demand, a data cache in place of `u
 
 **Permissions.** `code:write` is held by `tenant_admin` and `developer`. A workspace admin may change resources and may not write code. `tenant.console_code` turns code authoring off for a tenant.
 
-**In the console.** A script opens in Monaco, fetched on first use, with the SDK's types and the theme's colours. Beside it are its settings, with the connections, secrets and variables it may use chosen from what the workspace has, and a panel that runs the draft and shows the run. A Changes screen lists drafts, says what a deploy would do or why it cannot be done, and deploys.
+**In the console.** A script opens in Monaco, fetched on first use, with the SDK's types and the theme's colors. Beside it are its settings, with the connections, secrets and variables it may use chosen from what the workspace has, and a panel that runs the draft and shows the run. A Changes screen lists drafts, says what a deploy would do or why it cannot be done, and deploys.
 
 Checked in a browser: a script written in the editor ran on a worker and was deployed. Compiling console code was checked inside the image as the `node` user.
 
@@ -394,7 +394,7 @@ A tenant reaches outside systems the platform does not know, and people who writ
 
 **A flow can answer the request that started it.** A webhook trigger of a flow may say `respond: flow`. The request is held open for up to 25 seconds and a `respond` step answers it. The answer is kept on the flow run, because the flow may run on another process than the one holding the request. It is a tenant's answer sent from the platform's address, so it carries a sandboxing content security policy and may not set a cookie.
 
-**A trigger can be a form.** A title, up to thirty fields of seven plain types, and who may send it. The platform serves it as a page of the tenant's portal with no script on it. It reuses the portal's own defences, adds a field that only machines fill in, and a key that makes sending one page twice start one run.
+**A trigger can be a form.** A title, up to thirty fields of seven plain types, and who may send it. The platform serves it as a page of the tenant's portal with no script on it. It reuses the portal's own defenses, adds a field that only machines fill in, and a key that makes sending one page twice start one run.
 
 **In the console.** The flow editor's palette lists the core nodes and the workspace's own. A step's form is drawn from the script's input schema, and choosing a connection, a table or an event in it hands that thing to the step. A webhook has its settings, a form trigger a designer, and an Answer step its status, body and headers. The code editor writes connectors and trigger sources as it writes scripts, from a new Extensions screen. A connection of a kind other than HTTP is set up with a form drawn from its connector's schema.
 
@@ -440,7 +440,7 @@ Not built: bulk operations, sorting, ETags, password sync, attributes for end us
 
 **The exit criterion is walked in a browser.** `e2e/exit-criterion.spec.ts` does all of it on a fresh instance: a member signs in through Keycloak, writes a script, draws a flow that a signed webhook starts and that starts one of two flows by the data, deploys from the Changes screen, finds the commit on the branch under her own name, promotes to production once production has its own secret, builds and publishes an app that people of two groups see differently, and has a developer's pushed change pulled in. It fails if a browser dialog opens or a page throws. A CI job builds the image and runs it. It passes against the image in fifteen seconds. The CI job has not yet run on GitHub.
 
-**Two instances, from the image.** The tenant the browser test built on one instance was exported and imported into a second with a different master key. On the second: both workspaces had every resource, the core node among them; the orders were there; the member suspended on the first was suspended; the people and the group a provider had pushed were there under the same IDs, and the provider was paused, its old token refused and a new one refused until the provider was saved again; the workspace's triggers arrived paused, and once resumed a webhook signed with the secret that travelled started the flow, which wrote its row; and two end users signed in with the passwords they had set on the first instance and saw three rows and two, totalling 30 for the second. A wrong passphrase was refused.
+**Two instances, from the image.** The tenant the browser test built on one instance was exported and imported into a second with a different master key. On the second: both workspaces had every resource, the core node among them; the orders were there; the member suspended on the first was suspended; the people and the group a provider had pushed were there under the same IDs, and the provider was paused, its old token refused and a new one refused until the provider was saved again; the workspace's triggers arrived paused, and once resumed a webhook signed with the secret that traveled started the flow, which wrote its row; and two end users signed in with the passwords they had set on the first instance and saw three rows and two, totalling 30 for the second. A wrong passphrase was refused.
 
 **Version 0.5.0.** Every package, the SDK's range of cores, the worker and the CLI's local project. The oldest bundle taken stays 0.2.0.
 
@@ -545,7 +545,7 @@ Migrations 0019 to 0032. Bundle format 3. Version 0.5.0.
 | Run nine spikes before building | Six ran first. Three run at the start of their milestones | Each of the three needs its feature half built to measure anything |
 | React as milestone 1, after the spikes | The move was the spike, and is committed | Proving it meant doing it |
 | Migration 0019 is `authoring` | 0019 is `permissions`. Authoring takes 0020 | The permission rename was needed first |
-| TanStack Query and a route table in milestone 1 | Not yet done | The visible work came first. They change no behaviour |
+| TanStack Query and a route table in milestone 1 | Not yet done | The visible work came first. They change no behavior |
 | The preview of a deploy is a `POST` | It is a `GET` | It changes nothing, and every `POST` that succeeds must leave an audit entry |
 | Git operations run as queued jobs | They run inside the request, under a lease, holding no database connection | Simpler, and the person asking sees the outcome. A queue is still the right place for a slow remote |
 | A push follows every deploy by itself | A deploy marks the workspace "ahead", and a person pushes | A push that fails after a deploy needs somewhere to be seen and retried, which the panel is |

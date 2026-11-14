@@ -5,12 +5,15 @@ import {
   EmptyState,
   Notice,
   SelectField,
+  SideSheet,
   Table,
   TextField,
 } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
+import { SectionLabel } from "../kit/layout.tsx";
+import { StatePill } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import type { AppSummary } from "./Apps.tsx";
 
@@ -70,6 +73,7 @@ function AddDialog({
   onAdded: (domain: Domain) => void;
 }) {
   const [chosen, setChosen] = useState("");
+  const [serves, setServes] = useState<"app" | "portal">("app");
   const [app, setApp] = useState("");
   const [hostname, setHostname] = useState("");
   const [error, setError] = useState<ApiError>();
@@ -88,7 +92,7 @@ function AddDialog({
       open={open}
       onClose={onClose}
       title="Add a hostname"
-      description="The app is served at the hostname's root once the hostname is verified and enabled."
+      description="It serves what you choose once the hostname is verified and enabled."
     >
       <form
         className="flex flex-col gap-3"
@@ -99,7 +103,7 @@ function AddDialog({
           try {
             const domain = await api.post<Domain>(`${base}/domains`, {
               workspaceId,
-              app: appPath,
+              app: serves === "portal" ? "" : appPath,
               hostname: hostname.trim(),
             });
             setHostname("");
@@ -122,20 +126,39 @@ function AddDialog({
           }}
         />
         <SelectField
-          label="App"
-          name="app"
-          value={appPath}
-          disabled={choices.length === 0}
-          options={choices.map((candidate) => ({
-            value: candidate.path,
-            label: `${candidate.title} (${candidate.path})`,
-          }))}
-          {...(apps.data && choices.length === 0
-            ? { hint: "This workspace has no apps. Deploy one first, or choose another workspace." }
+          label="Serves"
+          name="serves"
+          value={serves}
+          options={[
+            { value: "app", label: "One app, at the hostname's root" },
+            { value: "portal", label: "The portal, and every app by its path" },
+          ]}
+          {...(serves === "portal"
+            ? {
+                hint: "The sign-in pages and the list of apps are at the root, and each app of the workspace is at /its-path/.",
+              }
             : {})}
-          error={apps.error?.message}
-          onChange={setApp}
+          onChange={(value) => setServes(value === "portal" ? "portal" : "app")}
         />
+        {serves === "app" ? (
+          <SelectField
+            label="App"
+            name="app"
+            value={appPath}
+            disabled={choices.length === 0}
+            options={choices.map((candidate) => ({
+              value: candidate.path,
+              label: `${candidate.title} (${candidate.path})`,
+            }))}
+            {...(apps.data && choices.length === 0
+              ? {
+                  hint: "This workspace has no apps. Deploy one first, or choose another workspace.",
+                }
+              : {})}
+            error={apps.error?.message}
+            onChange={setApp}
+          />
+        ) : null}
         <TextField
           label="Hostname"
           name="hostname"
@@ -148,7 +171,11 @@ function AddDialog({
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy || apps.loading || appPath === ""}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || (serves === "app" && (apps.loading || appPath === ""))}
+          >
             Add hostname
           </Button>
         </div>
@@ -201,33 +228,44 @@ function DetailsDialog({
     }
   };
 
+  const steps = domain
+    ? [
+        {
+          label: "Record created and found",
+          state: domain.verifiedAt
+            ? ("ok" as const)
+            : domain.checkError
+              ? ("failed" as const)
+              : ("queued" as const),
+          detail: domain.verifiedAt
+            ? `Verified ${when(domain.verifiedAt)}.`
+            : domain.checkedAt
+              ? `Not verified. Last checked ${when(domain.checkedAt)}.`
+              : "Not checked yet.",
+        },
+        {
+          label: "Enabled",
+          state: domain.enabled ? ("ok" as const) : ("queued" as const),
+          detail: domain.enabled ? "Serving." : "Serves nothing until enabled.",
+        },
+      ]
+    : [];
+
   return (
-    <Dialog open={domain !== undefined} onClose={close} title={domain?.hostname ?? ""}>
-      {domain ? (
-        <div className="flex flex-col gap-4">
-          <State domain={domain} />
-          <div className="flex flex-col gap-2">
-            <p className="m-0">
-              Create this TXT record where the hostname's DNS is managed. It shows that whoever
-              controls the name agrees to this tenant using it.
-            </p>
-            <div className="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
-              <RecordLine label="Record name" value={domain.challenge.name} />
-              <RecordLine label="Record value" value={domain.challenge.value} />
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <p className="m-0 text-ink-muted" role="status">
-              {domain.verifiedAt
-                ? `Verified ${when(domain.verifiedAt)}.`
-                : domain.checkedAt
-                  ? `Not verified. Last checked ${when(domain.checkedAt)}.`
-                  : "Not checked yet."}
-            </p>
-            {domain.checkError ? <Notice tone="attention">{domain.checkError}</Notice> : null}
-            {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          </div>
-          <div className="flex flex-wrap justify-between gap-2">
+    <SideSheet
+      open={domain !== undefined}
+      onClose={close}
+      title={domain?.hostname ?? ""}
+      description={
+        domain
+          ? domain.app === ""
+            ? "The portal and every app"
+            : `Serves ${domain.app}`
+          : undefined
+      }
+      footer={
+        domain ? (
+          <div className="flex w-full flex-wrap justify-between gap-2">
             <Button
               variant="danger"
               disabled={busy}
@@ -263,6 +301,7 @@ function DetailsDialog({
                 {domain.enabled ? "Disable" : "Enable"}
               </Button>
               <Button
+                variant="primary"
                 disabled={busy}
                 onClick={() =>
                   run(async () =>
@@ -272,14 +311,48 @@ function DetailsDialog({
               >
                 Check now
               </Button>
-              <Button variant="primary" onClick={close}>
-                Done
-              </Button>
             </span>
           </div>
+        ) : undefined
+      }
+    >
+      {domain ? (
+        <div className="flex flex-col gap-5">
+          <State domain={domain} />
+          <section className="flex flex-col gap-2">
+            <SectionLabel>1 · Point the name here</SectionLabel>
+            <p className="m-0 text-ink-muted">
+              A CNAME or an address record to this instance, and a certificate for the name wherever
+              TLS ends in front of it.
+            </p>
+          </section>
+          <section className="flex flex-col gap-2">
+            <SectionLabel>2 · Show the name agrees</SectionLabel>
+            <p className="m-0">
+              Create this TXT record where the hostname's DNS is managed. It shows that whoever
+              controls the name agrees to this tenant using it.
+            </p>
+            <div className="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
+              <RecordLine label="Record name" value={domain.challenge.name} />
+              <RecordLine label="Record value" value={domain.challenge.value} />
+            </div>
+          </section>
+          <section className="flex flex-col gap-2">
+            <SectionLabel>3 · Check and enable</SectionLabel>
+            <ul className="m-0 flex list-none flex-col gap-2 p-0" role="status">
+              {steps.map((step) => (
+                <li key={step.label} className="flex flex-col gap-0.5">
+                  <StatePill state={step.state}>{step.label}</StatePill>
+                  <span className="text-meta text-ink-muted">{step.detail}</span>
+                </li>
+              ))}
+            </ul>
+            {domain.checkError ? <Notice tone="attention">{domain.checkError}</Notice> : null}
+            {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          </section>
         </div>
       ) : null}
-    </Dialog>
+    </SideSheet>
   );
 }
 
@@ -302,9 +375,9 @@ export function Domains({ base }: { base: string }) {
       <div className="flex max-w-[75ch] flex-col gap-2 text-ink-muted">
         <p className="m-0">
           A hostname of the client's own, public or internal to their network, serves one app at its
-          root. Point the name at this instance with a CNAME or an address record. Whatever
-          terminates TLS in front of the instance must hold the certificate for it: the platform
-          issues none.
+          root, or the portal with every app of a workspace by its path. Point the name at this
+          instance with a CNAME or an address record. Whatever terminates TLS in front of the
+          instance must hold the certificate for it: the platform issues none.
         </p>
         <p className="m-0">
           Then create the TXT record shown for the hostname and run a check. Once the check finds
@@ -340,7 +413,7 @@ export function Domains({ base }: { base: string }) {
               header: "Serves",
               cell: (row) => (
                 <span>
-                  {code(row.app)}{" "}
+                  {row.app === "" ? "The portal and every app" : code(row.app)}{" "}
                   <span className="text-ink-muted">in {workspaceName(row.workspaceId)}</span>
                 </span>
               ),

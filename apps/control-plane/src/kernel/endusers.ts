@@ -271,3 +271,33 @@ export async function signUpAllowed(db: Db | Trx, tenantId: string): Promise<boo
     .executeTakeFirst();
   return portal?.sign_up ?? false;
 }
+
+/**
+ * What an app may know about the end user using it: the names of their
+ * groups and their attributes. Empty for anyone who is not an end user of
+ * this tenant. It is their own information, which the tables' rules already
+ * act on, so an app can say which clinic is theirs without guessing.
+ */
+export async function endUserIdentity(
+  db: Db | Trx,
+  tenantId: string,
+  principal: { type: string; id: string | null },
+): Promise<{ groups: string[]; attributes: Record<string, string> }> {
+  if (principal.type !== "end_user" || !principal.id) return { groups: [], attributes: {} };
+  const user = await db
+    .selectFrom("end_user")
+    .select("attributes")
+    .where("id", "=", principal.id)
+    .where("tenant_id", "=", tenantId)
+    .executeTakeFirst();
+  if (!user) return { groups: [], attributes: {} };
+  const groups = await db
+    .selectFrom("end_user_group_member")
+    .innerJoin("end_user_group", "end_user_group.id", "end_user_group_member.group_id")
+    .select("end_user_group.name")
+    .where("end_user_group_member.end_user_id", "=", principal.id)
+    .where("end_user_group.tenant_id", "=", tenantId)
+    .orderBy("end_user_group.name")
+    .execute();
+  return { groups: groups.map((group) => group.name), attributes: user.attributes ?? {} };
+}

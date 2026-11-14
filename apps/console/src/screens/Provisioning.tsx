@@ -2,6 +2,8 @@ import { Button, CheckboxField, EmptyState, Facts, Notice, SelectField, Table } 
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { FilterChips, SectionLabel } from "../kit/layout.tsx";
+import { Mono, StatePill } from "../kit/status.tsx";
 import { CopyButton, when } from "../ListScreen.tsx";
 
 interface Settings {
@@ -235,6 +237,112 @@ export function Provisioning({
           A push never deletes an account.
         </p>
       </section>
+      <Pushed root={root} />
     </div>
+  );
+}
+
+interface PushedPerson {
+  userName: string;
+  email: string;
+  displayName: string | null;
+  active: boolean;
+  updatedAt: string;
+}
+interface Refusal {
+  method: string;
+  resource: string;
+  status: number;
+  reason: string;
+  at: string;
+}
+
+/** Who the provider has pushed, and the pushes that were refused with why. */
+function Pushed({ root }: { root: string }) {
+  const pushed = useLoad<{ people: PushedPerson[]; refusals: Refusal[] }>(`${root}/pushed`);
+  const [filter, setFilter] = useState<"all" | "active" | "off">("all");
+  if (pushed.error) return <Notice tone="danger">{pushed.error.message}</Notice>;
+  const people = pushed.data?.people ?? [];
+  const refusals = pushed.data?.refusals ?? [];
+  const shown = people.filter((person) =>
+    filter === "all" ? true : filter === "active" ? person.active : !person.active,
+  );
+  return (
+    <>
+      <section className="flex flex-col gap-3">
+        <SectionLabel>People pushed</SectionLabel>
+        <FilterChips
+          label="Show"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "All", count: people.length },
+            { value: "active", label: "Active", count: people.filter((p) => p.active).length },
+            { value: "off", label: "Turned off", count: people.filter((p) => !p.active).length },
+          ]}
+        />
+        <Table<PushedPerson>
+          rows={shown}
+          rowKey={(row) => row.userName}
+          empty={<EmptyState title="Nobody pushed yet">The provider has pushed nobody.</EmptyState>}
+          columns={[
+            {
+              header: "Person",
+              cell: (row) => (
+                <span className="flex min-w-0 flex-col">
+                  <span>{row.displayName ?? row.email}</span>
+                  <Mono className="text-ink-subtle">{row.userName}</Mono>
+                </span>
+              ),
+            },
+            { header: "Email", cell: (row) => row.email },
+            {
+              header: "State",
+              cell: (row) =>
+                row.active ? (
+                  <StatePill state="ok">Active</StatePill>
+                ) : (
+                  <StatePill state="cancelled">Turned off</StatePill>
+                ),
+            },
+            { header: "Last change", cell: (row) => when(row.updatedAt) },
+          ]}
+        />
+      </section>
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Refused pushes</SectionLabel>
+        {refusals.length === 0 ? (
+          <p className="m-0 text-ink-muted">No push has been refused.</p>
+        ) : (
+          <>
+            <p className="m-0 max-w-3xl text-meta text-ink-muted">
+              The newest refusals and why. Nothing a refused push carried is kept: fix it at the
+              provider, and its next push is taken.
+            </p>
+            <Table<Refusal>
+              rows={refusals}
+              empty={null}
+              rowKey={(row) => `${row.at} ${row.method} ${row.resource}`}
+              columns={[
+                { header: "When", cell: (row) => when(row.at) },
+                {
+                  header: "Push",
+                  cell: (row) => (
+                    <Mono>
+                      {row.method} {row.resource}
+                    </Mono>
+                  ),
+                },
+                {
+                  header: "Answer",
+                  cell: (row) => <StatePill state="failed">{String(row.status)}</StatePill>,
+                },
+                { header: "Why", cell: (row) => row.reason },
+              ]}
+            />
+          </>
+        )}
+      </section>
+    </>
   );
 }

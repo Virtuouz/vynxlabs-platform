@@ -8,6 +8,7 @@ import {
   type FlowNode,
   OTHERWISE,
   reachableFrom,
+  validateJson,
 } from "@vynxlabs/manifest";
 import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
@@ -89,6 +90,21 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
         ? `The flow ${request.flow} has no trigger "${request.triggerNode}".`
         : `The flow ${request.flow} has no manual trigger, so it cannot be started by hand.`,
     );
+  }
+
+  // A manual trigger may say what its input must be, as a script's input does.
+  const entry = body.nodes[triggerNode];
+  if (entry?.type === "trigger" && entry.trigger.type === "manual" && entry.trigger.input) {
+    const issues = validateJson(entry.trigger.input, request.input ?? {}, "/input");
+    if (issues.length > 0) {
+      throw badRequest(
+        `The input does not match what the flow ${request.flow} takes: ${issues
+          .slice(0, 3)
+          .map((issue) => `${issue.path} ${issue.message}`)
+          .join("; ")}.`,
+        issues,
+      );
+    }
   }
 
   const key = request.idempotencyKey ?? randomUUID();
@@ -490,7 +506,13 @@ class Advance {
         steps[step.node_id] = { error: step.error ?? { message: "" } };
     }
     const trigger = this.#steps.get(stepKey(this.#flowRun.trigger_node));
-    return { trigger: trigger ? await this.#outputOf(trigger) : {}, steps, ...extra };
+    return {
+      trigger: trigger ? await this.#outputOf(trigger) : {},
+      steps,
+      // The time the expression is worked out, as a CEL timestamp.
+      now: new Date(),
+      ...extra,
+    };
   }
 
   async #evaluate(
@@ -568,7 +590,14 @@ class Advance {
           const detail = node.detail ? await this.#evaluate("detail", node.detail) : null;
           await this.#update(step, {
             status: "waiting",
-            detail: { title: node.title, detail },
+            detail: {
+              title: node.title,
+              detail,
+              ...(node.approvers &&
+              ((node.approvers.groups?.length ?? 0) > 0 || (node.approvers.roles?.length ?? 0) > 0)
+                ? { approvers: node.approvers }
+                : {}),
+            },
             wake_at: node.timeoutSeconds ? new Date(Date.now() + node.timeoutSeconds * 1000) : null,
           });
           break;
@@ -652,7 +681,7 @@ class Advance {
             flow: this.#flowRun.flow_path,
             node: step.node_id,
             depth: Number(this.#flowRun.trigger_detail.depth ?? 0),
-            // What the step hands the script. The worker's routes honour it for this run alone.
+            // What the step hands the script. The worker's routes honor it for this run alone.
             ...(grants ? { grants } : {}),
           },
         },
@@ -748,7 +777,7 @@ class Advance {
         await this.#fail(
           step,
           run?.status === "cancelled"
-            ? "The step's run was cancelled."
+            ? "The step's run was canceled."
             : (run?.error?.message ?? "The step's run failed."),
         );
         return true;
@@ -791,7 +820,8 @@ class Advance {
       );
     let moved = false;
 
-    const failed = itemSteps().find((item) => item.status === "failed");
+    const carryOn = node.continueOnError === true;
+    const failed = carryOn ? undefined : itemSteps().find((item) => item.status === "failed");
     if (failed) {
       for (const item of itemSteps().filter(isActive)) await this.#cancelStep(item);
       await this.#fail(
@@ -815,15 +845,23 @@ class Advance {
       } catch (error) {
         if (!(error instanceof StepFailure)) throw error;
         await this.#fail(item, error.message);
-        return this.#settleForeach(step);
+        if (!carryOn) return this.#settleForeach(step);
       }
     }
 
     const done = itemSteps();
-    if (done.length === items.length && done.every((item) => item.status === "succeeded")) {
+    const ended = (item: StepRow) =>
+      item.status === "succeeded" || (carryOn && item.status === "failed");
+    if (done.length === items.length && done.every(ended)) {
       const ordered = done.sort((a, b) => Number(a.item_key) - Number(b.item_key));
       const outputs = [];
-      for (const item of ordered) outputs.push(await this.#outputOf(item));
+      for (const item of ordered) {
+        outputs.push(
+          item.status === "failed"
+            ? { error: { message: item.error?.message ?? "No reason was given." } }
+            : await this.#outputOf(item),
+        );
+      }
       await this.#succeed(step, outputs);
       return true;
     }

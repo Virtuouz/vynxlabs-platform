@@ -5,11 +5,14 @@ import {
   ApiError,
   type AppContext,
   appContext,
+  logoUrl,
   RunError,
   runScript,
+  session,
   setAppContext,
   signInUrl,
   table,
+  totalOf,
   useQuery,
   useSession,
 } from "./index.ts";
@@ -64,16 +67,20 @@ test("a table reads and writes rows through the public API", async () => {
   const orders = table<Order>("orders");
   answers = [
     { status: 200, body: { items: [{ id: "1", number: "A-1" }], nextCursor: "abc" } },
+    { status: 200, body: { items: [{ id: "1", number: "A-1" }], nextCursor: "abc" } },
     { status: 201, body: { items: [{ id: "2", number: "A-2" }] } },
     { status: 404, body: { code: "not_found", detail: "The row was not found." } },
     { status: 200, body: { id: "2", number: "A-3" } },
     { status: 204, body: null },
   ];
-  const page = await orders.find({
+  // `find()` answers the rows, as a script's does; `page()` the page and the next cursor.
+  const found = await orders.find({
     filter: { column: "number", op: "contains", value: "A" },
     sort: ["-number"],
     limit: 10,
   });
+  expect(found.map((row) => row.number)).toEqual(["A-1"]);
+  const page = await orders.page({ limit: 1, cursor: "xyz" });
   expect(page.items[0]?.number).toBe("A-1");
   expect(page.nextCursor).toBe("abc");
   expect((await orders.insert({ number: "A-2" })).id).toBe("2");
@@ -84,6 +91,7 @@ test("a table reads and writes rows through the public API", async () => {
   const base = "/api/v1/tenants/t1/workspaces/w1";
   expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
     `GET ${base}/rows/orders?filter=${encodeURIComponent('{"column":"number","op":"contains","value":"A"}')}&sort=-number&limit=10`,
+    `GET ${base}/rows/orders?limit=1&cursor=xyz`,
     `POST ${base}/rows/orders`,
     `GET ${base}/row/missing/orders`,
     `PATCH ${base}/row/2/orders`,
@@ -110,6 +118,10 @@ test("a table's totals are asked for by name, and come back one item a group", a
     limit: 20,
   });
   expect(totals.items[0]?.values["sum:total"]).toBe(30);
+  expect(totalOf(totals, "sum:total")).toBe(30);
+  expect(totalOf({ items: [{ by: {}, values: { count: null } }], truncated: false }, "count")).toBe(
+    0,
+  );
   expect((await table("orders").aggregate()).items[0]?.values.count).toBe(5);
   const base = "/api/v1/tenants/t1/workspaces/w1";
   expect(calls.map((call) => call.url)).toEqual([
@@ -194,7 +206,7 @@ test("useQuery loads, reloads, and useSession starts from who the page was serve
         <p>{signedIn ? `Hello ${principal.name}` : "Hello stranger"}</p>
         {orders.loading && !orders.data ? <p>Loading</p> : null}
         <ul>
-          {orders.data?.items.map((row) => (
+          {orders.data?.map((row) => (
             <li key={String(row.id)}>{String(row.number)}</li>
           ))}
         </ul>
@@ -245,4 +257,53 @@ describe("flows", () => {
     reads = 0;
     await expect(runFlow("orders/handle")).rejects.toThrow("Refused.");
   });
+});
+
+test("the logo's address is given only when the tenant has one", () => {
+  setAppContext({ ...context, tenant: { ...context.tenant, logo: true } });
+  expect(logoUrl()).toBe("/api/v1/tenants/t1/portal/logo");
+  setAppContext({ ...context, tenant: { ...context.tenant, logo: false } });
+  expect(logoUrl()).toBeNull();
+  // A page from a platform that does not say still gets the address.
+  setAppContext(context);
+  expect(logoUrl()).toBe("/api/v1/tenants/t1/portal/logo");
+});
+
+test("an end user's groups and attributes come with who they are", async () => {
+  setAppContext({
+    ...context,
+    principal: {
+      ...context.principal,
+      groups: ["front-desk", "northside"],
+      attributes: { clinic: "northside" },
+    },
+  });
+  function Who() {
+    const { groups, attributes } = useSession();
+    return (
+      <p>
+        {groups.join(" ")} / {attributes.clinic}
+      </p>
+    );
+  }
+  render(<Who />);
+  expect(screen.getByText("front-desk northside / northside")).toBeTruthy();
+
+  answers = [
+    {
+      status: 200,
+      body: {
+        principal: {
+          type: "end_user",
+          id: "u1",
+          name: "Ed",
+          email: null,
+          groups: ["a"],
+          attributes: {},
+        },
+        signUp: false,
+      },
+    },
+  ];
+  expect((await session()).principal.groups).toEqual(["a"]);
 });

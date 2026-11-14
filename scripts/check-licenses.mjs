@@ -22,7 +22,7 @@ const SHIPPED = new Set([
 
 /**
  * Development tools are never distributed, so two more are accepted there:
- * file-level copyleft (MPL-2.0), and the attribution licence on the browser
+ * file-level copyleft (MPL-2.0), and the attribution license on the browser
  * support data that the console's build tooling reads (CC-BY-4.0).
  */
 const TOOLING = new Set([...SHIPPED, "MPL-2.0", "CC-BY-4.0"]);

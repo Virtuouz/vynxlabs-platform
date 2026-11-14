@@ -204,7 +204,7 @@ export interface ScheduleOptions {
   script: string | { path: string };
   /** Five-field cron expression, for example `0 6 * * 1-5`. */
   cron: string;
-  /** IANA time zone, for example `Europe/Madrid`. Default UTC. */
+  /** IANA time zone, for example `America/New_York`. Default UTC. */
   timezone?: string;
   /** The input each scheduled run receives. */
   input?: Record<string, unknown>;
@@ -426,7 +426,7 @@ export interface ConnectorOptions<Config, Client> {
   configSchema: object;
   /**
    * Builds the client a script is given for a connection. `credential` is the
-   * connection's secret, when it has one. `signal` aborts when the run is cancelled.
+   * connection's secret, when it has one. `signal` aborts when the run is canceled.
    */
   create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
 }
@@ -554,8 +554,18 @@ export type FlowNode = Record<string, unknown> & { type: string };
 
 /** The entry points of a flow. A flow may have several, each leading into its own part of the graph. */
 export const trigger = {
-  /** Started by hand, from the API, or as a sub-flow. */
-  manual: (): FlowNode => ({ type: "trigger", trigger: { type: "manual" } }),
+  /**
+   * Started by hand, from the API, by an agent, or as a sub-flow. With `input`,
+   * what it is started with must match that schema; it is also the schema an
+   * agent is shown for the flow's tool.
+   */
+  manual: (options: { input?: z.ZodType } = {}): FlowNode => ({
+    type: "trigger",
+    trigger: compact({
+      type: "manual",
+      input: options.input ? z.toJSONSchema(options.input, { io: "input" }) : undefined,
+    }),
+  }),
   /**
    * Started on a five-field cron schedule. With `source`, each tick runs that
    * trigger source, and the flow starts once for each thing it finds.
@@ -621,7 +631,10 @@ const grantsOf = (grants: StepGrants | undefined) =>
 
 /**
  * The steps of a flow. Where a step takes an expression, it is CEL, and can
- * read `trigger`, `steps.<node>.output`, and inside a foreach, `item` and `index`.
+ * read `trigger`, `steps.<node>.output`, `now` (the current time, as a
+ * timestamp), and inside a foreach, `item` and `index`. A timestamp reads as
+ * ISO 8601 text: `string(now - duration('336h')).substring(0, 10)` is the
+ * date two weeks ago.
  */
 export const step = {
   /**
@@ -647,7 +660,11 @@ export const step = {
     type: "branch",
     cases: Object.entries(cases).map(([name, when]) => ({ name, when })),
   }),
-  /** Runs a script or a flow once per item. Its output is the list of results, in order. */
+  /**
+   * Runs a script or a flow once per item. Its output is the list of results, in
+   * order. One failed item fails the step, unless `continueOnError` is set: then
+   * a failed item is `{ error: { message } }` in the list and the others carry on.
+   */
   foreach: (
     items: string,
     options: {
@@ -655,6 +672,7 @@ export const step = {
       flow?: Target;
       input?: string;
       concurrency?: number;
+      continueOnError?: boolean;
       with?: StepGrants;
     },
   ): FlowNode =>
@@ -665,19 +683,32 @@ export const step = {
       flow: options.flow ? pathOf(options.flow) : undefined,
       input: options.input,
       concurrency: options.concurrency,
+      continueOnError: options.continueOnError,
       with: grantsOf(options.with),
     }) as FlowNode,
   /** Waits for every path that leads into it. */
   join: (): FlowNode => ({ type: "join" }),
   /** Waits this many seconds. */
   delay: (seconds: number): FlowNode => ({ type: "delay", seconds }),
-  /** Pauses until a person approves. Rejecting, or the timeout passing, fails the step. */
-  approval: (title: string, options: { detail?: string; timeoutSeconds?: number } = {}): FlowNode =>
+  /**
+   * Pauses until a person approves. Rejecting, or the timeout passing, fails the
+   * step. `approvers` names who may decide: members of these groups, or holders
+   * of these roles. Without it, anyone who may decide approvals here may.
+   */
+  approval: (
+    title: string,
+    options: {
+      detail?: string;
+      timeoutSeconds?: number;
+      approvers?: { groups?: string[]; roles?: string[] };
+    } = {},
+  ): FlowNode =>
     compact({
       type: "approval",
       title,
       detail: options.detail,
       timeoutSeconds: options.timeoutSeconds,
+      approvers: options.approvers,
     }) as FlowNode,
   /** Runs another flow from its manual trigger and waits for it. */
   subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>
@@ -725,7 +756,7 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
   );
 }
 
-export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean>>> {
+export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>> {
   /** The table's name, for example `crm/orders`. */
   path: string;
   description?: string;
@@ -772,7 +803,7 @@ export interface TableDefinition<Row, Insert> extends ResourceDefinition {
  * new columns are added, and a column that is no longer declared is retired
  * with its data kept, never dropped.
  */
-export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean>>>(
+export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>>(
   options: TableOptions<C>,
 ): TableDefinition<RowOf<C>, InsertOf<C>> {
   const definition = resource("table", options.path, () =>
@@ -831,7 +862,7 @@ export interface ThemeOptions {
   /** Default `theme`. A workspace has one theme. */
   path?: string;
   description?: string;
-  /** Values that replace the tenant's: plain colours, lengths and font lists. */
+  /** Values that replace the tenant's: plain colors, lengths and font lists. */
   tokens?: Partial<Record<ThemeToken, string>>;
   /** The same, for when the viewer prefers a dark scheme. */
   dark?: Partial<Record<ThemeToken, string>>;
@@ -870,6 +901,13 @@ export interface AppOptions {
    * for apps that route in the browser. Default true.
    */
   fallback?: boolean;
+  /**
+   * The tables the app's code reads. It is shown to whoever shares the app, so
+   * they can see what it reaches; access is still decided by the tables'
+   * policies and the app's bindings. An app that serves an interface reads the
+   * tables of its widgets, and needs no list.
+   */
+  reads?: string[];
 }
 
 export interface AppDefinition extends ResourceDefinition {
@@ -899,6 +937,7 @@ export function defineApp(options: AppOptions): AppDefinition {
           description: options.description,
           entry: options.entry ?? "index.html",
           fallback: options.fallback,
+          reads: options.reads,
         }),
   );
   return {

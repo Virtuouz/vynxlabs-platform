@@ -1,16 +1,18 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Environment } from "@marcbachmann/cel-js";
 import { ComposeError, composeBundle, coreNodesFor } from "@vynxlabs/compose";
 import {
   type Bundle,
   type BundleManifest,
+  type BundleSources,
   bundleDigest,
   bundleExpressions,
   checkBundleAssets,
   checkBundleManifests,
+  MAX_BUNDLE_SOURCE,
   parseResourceFiles,
   RESOURCE_FOLDER,
   type ResourceFile,
@@ -119,7 +121,7 @@ export async function appSources(options: BuildOptions): Promise<AppSource[]> {
 export async function buildRepository(options: BuildOptions): Promise<Built> {
   const directory = resolve(options.directory);
   const entry = options.entry ?? "src/index.ts";
-  const { code, definitions, sdk, sdkEntry } = await loadDefinitions(options);
+  const { code, sources, definitions, sdk, sdkEntry } = await loadDefinitions(options);
 
   const inOrder = (a: BundleManifest, b: BundleManifest) =>
     KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1);
@@ -169,6 +171,7 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
     core: sdk.CORE_RANGE as { min: string; below: string },
     manifests: fromCode.sort(inOrder),
     code,
+    ...(sources ? { sources } : {}),
   };
   // A repository without apps is still written as format 1, so that it keeps deploying
   // to an instance that has not been upgraded yet.
@@ -200,6 +203,7 @@ async function loadDefinitions(options: BuildOptions) {
   const entry = options.entry ?? "src/index.ts";
 
   let code: string;
+  let map = "";
   try {
     const result = await esbuild({
       absWorkingDir: directory,
@@ -210,12 +214,21 @@ async function loadDefinitions(options: BuildOptions) {
       target: "node24",
       write: false,
       logLevel: "silent",
+      // A map back to the repository's TypeScript, so a failure can name its line. The
+      // sources travel apart, and only the repository's own.
+      outfile: "bundle.mjs",
+      sourcemap: "external",
+      sourcesContent: false,
       // Lets bundled CommonJS dependencies call require.
       banner: {
         js: 'import { createRequire as __createRequire } from "node:module";\nconst require = __createRequire(import.meta.url);',
       },
     });
-    code = result.outputFiles[0]?.text ?? "";
+    code = (result.outputFiles.find((file) => file.path.endsWith(".mjs"))?.text ?? "").replace(
+      /\n\/\/# sourceMappingURL=[^\n]*\n?$/,
+      "\n",
+    );
+    map = result.outputFiles.find((file) => file.path.endsWith(".map"))?.text ?? "";
   } catch (error) {
     const failures = (
       error as { errors?: { text: string; location?: { file: string; line: number } }[] }
@@ -258,10 +271,36 @@ async function loadDefinitions(options: BuildOptions) {
   );
   return {
     code,
+    sources: await repositorySources(directory, map),
     definitions,
     sdk: sdk as { SDK_VERSION: string; CORE_RANGE: object },
     sdkEntry,
   };
+}
+
+/**
+ * The repository's own files that went into the code, with the map back to them.
+ * A dependency's files are named in the map and never carried. When the
+ * repository's own source is too large, none is carried: the bundle still runs,
+ * and the console says it has no source to show.
+ */
+async function repositorySources(
+  directory: string,
+  map: string,
+): Promise<BundleSources | undefined> {
+  if (!map) return undefined;
+  const parsed = JSON.parse(map) as { sources?: string[] };
+  const files: { path: string; content: string }[] = [];
+  let total = 0;
+  for (const source of parsed.sources ?? []) {
+    if (source.includes("node_modules") || source.startsWith("..") || isAbsolute(source)) continue;
+    const content = await readFile(join(directory, source), "utf8").catch(() => undefined);
+    if (content === undefined) continue;
+    total += content.length;
+    if (total > MAX_BUNDLE_SOURCE) return undefined;
+    files.push({ path: source.split(sep).join("/"), content });
+  }
+  return files.length > 0 ? { files, map } : undefined;
 }
 
 /** Everything wrong with a set of manifests, each problem naming the resource and field. */

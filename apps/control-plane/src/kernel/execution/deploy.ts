@@ -174,7 +174,7 @@ export async function deployBundle(
 ) {
   const current = await trx
     .selectFrom("workspace")
-    .select(["active_bundle_id"])
+    .select(["active_bundle_id", "type"])
     .where("id", "=", workspace.id)
     .forUpdate()
     .executeTakeFirstOrThrow();
@@ -206,9 +206,14 @@ export async function deployBundle(
     );
   }
   const content = await loadBundle(kernel, bundle);
-  const missing = options.allowMissingBindings
+  const needed = options.allowMissingBindings
     ? []
     : await missingBindings(trx, workspace, content.manifests);
+  // A dev workspace takes a deploy with something unbound, and says so: a run that reaches it
+  // fails with the same words. Production, and a promotion, refuse it.
+  const warnOnly = current.type === "dev" && options.promotedFrom === undefined;
+  const warnings = warnOnly ? needed : [];
+  const missing = warnOnly ? [] : needed;
   if (missing.length > 0) {
     throw new HttpError(
       409,
@@ -253,6 +258,7 @@ export async function deployBundle(
     deleted: 0,
     data: [] as string[],
     changes: [] as ResourceChange[],
+    warnings,
   };
   const note = (change: ResourceChange["change"], kind: string, path: string) => {
     if (summary.changes.length < MAX_LISTED_CHANGES) summary.changes.push({ change, kind, path });

@@ -3,7 +3,6 @@ import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
 import { Page, RemoveButton } from "../ListScreen.tsx";
-import { refreshTenantTheme } from "../theme.ts";
 import { size } from "./Apps.tsx";
 
 type Tokens = Record<string, string>;
@@ -36,6 +35,13 @@ export const THEME_TOKENS = [
   "danger-soft",
   "success",
   "success-soft",
+  "structure",
+  "raised",
+  "selected",
+  "line-strong",
+  "ink-subtle",
+  "code-bg",
+  "focus",
   "radius-control",
   "radius-panel",
   "font",
@@ -46,7 +52,7 @@ const isColour = (token: string) => !token.startsWith("radius-") && !token.start
 /**
  * The component kit's own values. They are written here as well as in the kit's
  * stylesheet because the editor shows them where nothing is set, and a
- * stylesheet's values cannot be read back per colour scheme. A test holds the
+ * stylesheet's values cannot be read back per color scheme. A test holds the
  * two to each other.
  */
 export const KIT: Theme = {
@@ -66,6 +72,13 @@ export const KIT: Theme = {
     "danger-soft": "#fbe9e7",
     success: "#1f7a4d",
     "success-soft": "#e1f3e9",
+    structure: "#e7ebf0",
+    raised: "#ffffff",
+    selected: "#e3eff4",
+    "line-strong": "#b4bfcb",
+    "ink-subtle": "#687485",
+    "code-bg": "#f5f7f9",
+    focus: "#0e5f7a",
     "radius-control": "6px",
     "radius-panel": "10px",
     font: 'ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
@@ -87,18 +100,25 @@ export const KIT: Theme = {
     "danger-soft": "#3d1b18",
     success: "#6fcf9a",
     "success-soft": "#153326",
+    structure: "#0c1118",
+    raised: "#1f2a38",
+    selected: "#172430",
+    "line-strong": "#3a4859",
+    "ink-subtle": "#7e8b9b",
+    "code-bg": "#0b1016",
+    focus: "#5cb8d6",
   },
 };
 
-const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const MAX_LOGO_BYTES = 512 * 1024;
+export const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
+export const MAX_LOGO_BYTES = 512 * 1024;
 
 const panel = "flex flex-col gap-3 rounded-panel border border-line bg-surface p-4";
 const control =
   "h-9 w-full min-w-0 rounded-control border border-line bg-surface px-2.5 text-ink placeholder:text-ink-muted/70";
 
 /** The values that are set: what is sent, and what the preview lays over the kit's. */
-const set = (values: Tokens): Tokens =>
+export const set = (values: Tokens): Tokens =>
   Object.fromEntries(
     Object.entries(values)
       .map(([token, value]) => [token, value.trim()])
@@ -110,7 +130,7 @@ const variables = (values: Tokens, scheme: "light" | "dark") => ({
   "color-scheme": scheme,
 });
 
-function TokenRows({
+export function TokenRows({
   mode,
   values,
   effective,
@@ -174,7 +194,7 @@ function TokenRows({
 }
 
 /** A few kit components under the values in the editor, so a change can be judged before it is saved. */
-function Preview({ scheme, values }: { scheme: "light" | "dark"; values: Tokens }) {
+export function Preview({ scheme, values }: { scheme: "light" | "dark"; values: Tokens }) {
   return (
     <div
       data-preview={scheme}
@@ -204,15 +224,7 @@ function Preview({ scheme, values }: { scheme: "light" | "dark"; values: Tokens 
   );
 }
 
-function ThemeEditor({
-  base,
-  tenantId,
-  stored,
-}: {
-  base: string;
-  tenantId: string;
-  stored: Theme;
-}) {
+function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
   const [light, setLight] = useState<Tokens>(stored.tokens);
   const [dark, setDark] = useState<Tokens>(stored.dark);
   const [error, setError] = useState<ApiError>();
@@ -228,14 +240,13 @@ function ThemeEditor({
       setLight(now.theme.tokens);
       setDark(now.theme.dark);
       setSaved(done);
-      refreshTenantTheme(tenantId);
     } catch (caught) {
       setError(caught as ApiError);
     } finally {
       setBusy(false);
     }
   };
-  // In dark, a length or font follows light, and a colour is the kit's dark one unless set for dark.
+  // In dark, a length or font follows light, and a color is the kit's dark one unless set for dark.
   const lightValues = { ...KIT.tokens, ...set(light) };
   const darkBase = { ...lightValues, ...KIT.dark };
   const darkValues = { ...darkBase, ...set(dark) };
@@ -245,10 +256,10 @@ function ThemeEditor({
       <section className={panel}>
         <h2 className="m-0 text-base font-semibold">Theme</h2>
         <p className="m-0 max-w-[75ch] text-ink-muted">
-          The colours, corners and fonts of this tenant's portal, sign-in pages and apps, and of the
-          console while it shows this tenant. Set a token to a plain colour, length or font list, or
-          leave it empty to keep the component kit's value. A workspace can override these with a
-          theme resource in its repository.
+          The colors, corners and fonts of this tenant's portal, sign-in pages and apps. The console
+          keeps its own look. Set a token to a plain color, length or font list, or leave it empty
+          to keep the component kit's value. A workspace can override these with a theme resource in
+          its repository.
         </p>
         <form
           className="flex flex-col gap-4"
@@ -387,7 +398,7 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
   );
 }
 
-export function Branding({ base, tenantId }: { base: string; tenantId: string }) {
+export function Branding({ base }: { base: string }) {
   const portal = useLoad<Portal>(`${base}/portal`);
   const [signUp, setSignUp] = useState<boolean>();
   const [problem, setProblem] = useState<string>();
@@ -446,7 +457,7 @@ export function Branding({ base, tenantId }: { base: string; tenantId: string })
           }}
         />
       </section>
-      <ThemeEditor base={base} tenantId={tenantId} stored={data.theme} />
+      <ThemeEditor base={base} stored={data.theme} />
       <Logo base={base} has={data.logo} reload={portal.reload} />
     </Page>
   );

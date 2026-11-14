@@ -70,7 +70,7 @@ const ordersV2 = table(
   {
     number: { type: "text", required: true, unique: true },
     amount: { type: "integer", renamedFrom: "total" },
-    currency: { type: "text", required: true, default: "EUR" },
+    currency: { type: "text", required: true, default: "USD" },
     customer: { type: "reference", references: "customers" },
     owner_id: { type: "uuid" },
   },
@@ -864,7 +864,7 @@ describe("changing a table without losing data: the exit criterion", () => {
       expect(
         now.map((row) => [row.number, row.amount === null ? null : String(row.amount)]),
       ).toEqual(before.map((row) => [row.number, row.total]));
-      expect(now.every((row) => row.currency === "EUR")).toBe(true);
+      expect(now.every((row) => row.currency === "USD")).toBe(true);
       expect(now.every((row) => !("note" in row) && !("total" in row))).toBe(true);
       // In the database the removed column is still there, holding what it held.
       expect((await stored(workspace, "t_orders", "number, note")).map((row) => row.note)).toEqual(
@@ -933,9 +933,9 @@ describe("changing a table without losing data: the exit criterion", () => {
         row.currency,
       ]),
     ).toEqual([
-      ["P-1", 500, "EUR"],
-      ["P-2", 750, "EUR"],
-      ["P-3", null, "EUR"],
+      ["P-1", 500, "USD"],
+      ["P-2", 750, "USD"],
+      ["P-3", null, "USD"],
       ["P-4", 90, "USD"],
     ]);
   });
@@ -967,7 +967,7 @@ describe("refusals, retiring and purging", () => {
       'The table "orders" cannot be changed: column "region" is required and the table already has rows. Give it a default, so existing rows have a value.',
     );
     const unique = await refused({
-      currency: { type: "text", required: true, default: "EUR", unique: true },
+      currency: { type: "text", required: true, default: "USD", unique: true },
     });
     expect(unique.body.detail).toBe(
       'The table "orders" cannot be changed: column "currency" is now unique, and some rows share a value. Make the values distinct first.',

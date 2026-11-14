@@ -36,6 +36,15 @@ const problems = async (source: string) => {
 };
 
 describe("building the example repository", () => {
+  test("carries the repository's own TypeScript and a map to it, and no dependency", async () => {
+    const bundle = await buildBundle({ directory: example });
+    const files = bundle.sources?.files.map((file) => file.path) ?? [];
+    expect(files).toContain("src/index.ts");
+    expect(files.some((path) => path.includes("node_modules"))).toBe(false);
+    expect(JSON.parse(bundle.sources?.map ?? "{}").version).toBe(3);
+    expect(bundle.code).not.toContain("sourceMappingURL");
+  });
+
   test("produces one manifest per resource, in deploy order, and one module of code", async () => {
     const bundle = await buildBundle({ directory: example });
     expect(bundle.manifests.map((manifest) => `${manifest.kind} ${manifest.path}`)).toEqual([
@@ -222,6 +231,16 @@ describe("a repository with mistakes", () => {
     expect(
       await problems(`${head}${script()}export const c = defineConnection({ path: "jobs/a" });`),
     ).toEqual(["jobs/a: used by both a connection and a script. Paths must be unique."]);
+    // What refers to a path used twice is not reported again: the one problem is the clash.
+    expect(
+      await problems(
+        `import { column, defineApp, defineInterface, defineTable } from "@vynxlabs/sdk";
+export const pets = defineTable({ path: "pets", columns: { name: column.text() } });
+export const app = defineApp({ path: "pets", title: "Pets", interface: "screens/pets" });
+export const visits = defineTable({ path: "visits", columns: { pet: column.reference("pets") } });
+export const screen = defineInterface({ path: "screens/pets", title: "Pets", pages: [{ id: "p", title: "Pets", widgets: [] }] });`,
+      ),
+    ).toEqual(["pets: used by both a table and an app. Paths must be unique."]);
     expect(await problems("export const nothing = 1;")).toEqual([
       "src/index.ts exports no resources. Export what you define with the SDK.",
     ]);

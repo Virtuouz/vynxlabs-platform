@@ -56,8 +56,17 @@ const toGroup = (row: { id: string; tenant_id: string; name: string; created_at:
   createdAt: iso(row.created_at),
 });
 
-const ServiceAccount = Group;
-const toServiceAccount = toGroup;
+const ServiceAccount = Type.Object({
+  ...Group.properties,
+  description: Type.String({ description: 'What it is for, in a sentence: "deploys from CI".' }),
+});
+const toServiceAccount = (row: {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description?: string;
+  created_at: Date;
+}) => ({ ...toGroup(row), description: row.description ?? "" });
 
 const GroupParams = Type.Object({ t: Id, g: Id });
 const GroupMemberParams = Type.Object({ t: Id, g: Id, memberId: Id });
@@ -77,7 +86,14 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Every tenant for an operator. Otherwise the tenants the caller belongs to.",
           tags: ["tenancy"],
           querystring: PageQuery,
-          response: { 200: pageOf(Tenant) },
+          response: {
+            200: pageOf(
+              Type.Object({
+                ...Tenant.properties,
+                workspaceCount: Type.Integer({ minimum: 0 }),
+              }),
+            ),
+          },
         },
       },
       async ({ ctx, query }) => {
@@ -102,7 +118,28 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("id")
           .limit(args.limit + 1)
           .execute();
-        return toPage(rows, args, (row) => row.id, toTenant);
+        const counts =
+          rows.length === 0
+            ? []
+            : await db
+                .selectFrom("workspace")
+                .select(["tenant_id", (eb) => eb.fn.countAll<string>().as("count")])
+                .where(
+                  "tenant_id",
+                  "in",
+                  rows.map((row) => row.id),
+                )
+                .groupBy("tenant_id")
+                .execute();
+        return toPage(
+          rows,
+          args,
+          (row) => row.id,
+          (row) => ({
+            ...toTenant(row),
+            workspaceCount: Number(counts.find((one) => one.tenant_id === row.id)?.count ?? 0),
+          }),
+        );
       },
     );
 
@@ -676,7 +713,10 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Create a service account",
           tags: ["identity"],
           params: TenantParams,
-          body: Type.Object({ name: Name }),
+          body: Type.Object({
+            name: Name,
+            description: Type.Optional(Type.String({ maxLength: 300 })),
+          }),
           response: { 201: ServiceAccount },
         },
       },
@@ -684,7 +724,12 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const account = await ctx.mutate(async (trx, audit) => {
           const row = await trx
             .insertInto("service_account")
-            .values({ id: newId(), tenant_id: params.t, name: body.name })
+            .values({
+              id: newId(),
+              tenant_id: params.t,
+              name: body.name,
+              description: body.description?.trim() ?? "",
+            })
             .returningAll()
             .executeTakeFirstOrThrow();
           await audit({
@@ -697,6 +742,41 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           return row;
         });
         return reply.code(201).send(toServiceAccount(account));
+      },
+    );
+
+    app.patch(
+      "/tenants/:t/service-accounts/:id",
+      {
+        config: { access: access.tenant("service_account:write") },
+        schema: {
+          summary: "Change what a service account is for",
+          tags: ["identity"],
+          params: Type.Object({ t: Id, id: Id }),
+          body: Type.Object({ description: Type.String({ maxLength: 300 }) }),
+          response: { 200: ServiceAccount },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const account = await ctx.mutate(async (trx, audit) => {
+          const row = await trx
+            .updateTable("service_account")
+            .set({ description: body.description.trim() })
+            .where("id", "=", params.id)
+            .where("tenant_id", "=", params.t)
+            .returningAll()
+            .executeTakeFirst();
+          if (!row) throw notFound("The service account");
+          await audit({
+            action: "service_account.updated",
+            targetType: "service_account",
+            targetId: row.id,
+            tenantId: params.t,
+            details: { name: row.name, description: row.description },
+          });
+          return row;
+        });
+        return toServiceAccount(account);
       },
     );
 

@@ -35,7 +35,7 @@ const flow: BundleManifest = {
       check: { type: "script", script: "orders/sync", input: "{'order': trigger}" },
       route: {
         type: "branch",
-        cases: [{ name: "large", when: "trigger.total > 1000.0 &&\n  trigger.currency == 'EUR'" }],
+        cases: [{ name: "large", when: "trigger.total > 1000.0 &&\n  trigger.currency == 'USD'" }],
       },
     },
     edges: [

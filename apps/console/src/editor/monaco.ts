@@ -45,7 +45,7 @@ for (const [name, content] of Object.entries(libraries)) {
   monaco.typescript.typescriptDefaults.addExtraLib(content, `${sdk}/${name}`);
 }
 
-/** The editor's colours, read from the kit's tokens so that it follows the theme and a tenant's branding. */
+/** The editor's colors, read from the kit's tokens so that it follows the theme and a tenant's branding. */
 export function applyTheme() {
   const style = getComputedStyle(document.documentElement);
   const token = (name: string) => style.getPropertyValue(`--vx-${name}`).trim();

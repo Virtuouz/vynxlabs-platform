@@ -144,6 +144,7 @@ export interface ServiceAccountTable {
   id: string;
   tenant_id: string;
   name: string;
+  description: Generated<string>;
   created_at: Generated<Date>;
 }
 
@@ -153,6 +154,7 @@ export interface ApiKeyTable {
   owner_id: string;
   name: string;
   prefix: string;
+  suffix: string | null;
   token_hash: string;
   expires_at: Date | null;
   last_used_at: Date | null;
@@ -309,6 +311,9 @@ export interface GitRepositoryTable {
   paused: Generated<boolean>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+  verified_at: Date | null;
+  credential_kind: Generated<string>;
+  release_branch: Generated<string | null>;
 }
 
 export type GitState = "never" | "synced" | "ahead" | "behind" | "conflict" | "error";
@@ -739,6 +744,114 @@ export interface TenantPortalTable {
   updated_at: Generated<Date>;
 }
 
+export interface ResourceDraftHistoryTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  kind: string;
+  schema_version: number;
+  body: Json<Record<string, unknown>>;
+  deleted: Generated<boolean>;
+  revision: number;
+  reason: "replaced" | "set_aside";
+  saved_by_type: string;
+  saved_by_id: string | null;
+  saved_at: Date;
+  kept_at: Generated<Date>;
+}
+
+export interface HealthCheckTable {
+  workspace_id: string;
+  tenant_id: string;
+  kind: "data_source" | "connection";
+  path: string;
+  ok: boolean;
+  problem: string | null;
+  latency_ms: number | null;
+  checked_at: Generated<Date>;
+}
+
+export interface DashboardShareTable {
+  dashboard_id: string;
+  group_id: string;
+  tenant_id: string;
+}
+
+export interface MemberRecentScopeTable {
+  member_id: string;
+  tenant_id: string;
+  workspace_id: string | null;
+  visited_at: Generated<Date>;
+}
+
+export interface WorkerPoolTable {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: Generated<string>;
+  created_at: Generated<Date>;
+}
+
+export interface ScimRefusalTable {
+  id: string;
+  provider_id: string;
+  tenant_id: string | null;
+  method: string;
+  resource: "Users" | "Groups" | "other";
+  status: number;
+  reason: string;
+  occurred_at: Generated<Date>;
+}
+
+export interface MemberRecoveryCodeTable {
+  id: string;
+  member_id: string;
+  code_hash: string;
+  used_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface ImportStagingTable {
+  id: string;
+  created_by: string | null;
+  file_name: string;
+  size_bytes: ColumnType<string, number, number>;
+  inspection: ColumnType<Record<string, unknown>, string, string>;
+  created_at: Generated<Date>;
+  expires_at: Date;
+}
+
+export interface TriggerPauseTable {
+  workspace_id: string;
+  tenant_id: string;
+  path: string;
+  node_id: Generated<string>;
+  reason: Generated<string>;
+  paused_by: string | null;
+  paused_at: Generated<Date>;
+}
+
+export interface WebhookRefusalTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  node_id: Generated<string>;
+  reason: "signature" | "body" | "paused";
+  problem: Generated<string>;
+  occurred_at: Generated<Date>;
+}
+
+export interface InstanceBrandingTable {
+  id: Generated<boolean>;
+  product_name: string | null;
+  theme: ColumnType<ThemeValues, string | undefined, string>;
+  logo_key: string | null;
+  logo_content_type: string | null;
+  updated_at: Generated<Date>;
+}
+
 export interface MemberDashboardTable {
   id: string;
   tenant_id: string;
@@ -896,4 +1009,15 @@ export interface PlatformSchema {
   sso_state: SsoStateTable;
   sso_assertion: SsoAssertionTable;
   member_dashboard: MemberDashboardTable;
+  instance_branding: InstanceBrandingTable;
+  trigger_pause: TriggerPauseTable;
+  import_staging: ImportStagingTable;
+  member_recovery_code: MemberRecoveryCodeTable;
+  scim_refusal: ScimRefusalTable;
+  worker_pool: WorkerPoolTable;
+  member_recent_scope: MemberRecentScopeTable;
+  dashboard_share: DashboardShareTable;
+  health_check: HealthCheckTable;
+  resource_draft_history: ResourceDraftHistoryTable;
+  webhook_refusal: WebhookRefusalTable;
 }

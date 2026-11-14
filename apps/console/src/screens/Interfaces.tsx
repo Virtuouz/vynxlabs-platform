@@ -2,19 +2,20 @@ import type {
   InterfaceBody,
   InterfacePage,
   PageWidget,
+  ValueFormat,
   WidgetLink,
   WidgetType,
 } from "@vynxlabs/manifest";
 import {
   type DataClient,
   type Filter,
+  formatValue,
   heading,
   PageRenderer,
   settle,
   type TableInfo,
 } from "@vynxlabs/screens";
 import {
-  Badge,
   Button,
   CheckboxField,
   ComboboxField,
@@ -27,12 +28,23 @@ import {
   TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Monitor,
+  Plus,
+  Smartphone,
+  Tablet,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { Mono, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { fromNow } from "./Overview.tsx";
 
 interface Listed {
   path: string;
@@ -41,6 +53,10 @@ interface Listed {
   draft: boolean;
   removing: boolean;
   app: string | null;
+  pages?: number;
+  version?: number | null;
+  tables?: string[];
+  editedAt?: string | null;
 }
 interface DraftAnswer {
   revision: number;
@@ -65,6 +81,7 @@ const TYPES: { type: WidgetType; label: string; about: string }[] = [
   { type: "card", label: "Card", about: "One row, a value a line" },
   { type: "cards", label: "Cards", about: "Each row as a card to choose" },
   { type: "chart", label: "Chart", about: "Bars, lines or a pie" },
+  { type: "figure", label: "Figure", about: "One total, large: a count, a sum" },
   { type: "form", label: "Form", about: "Adds a row" },
   { type: "text", label: "Text", about: "Words on the page" },
 ];
@@ -100,8 +117,11 @@ const slug = (text: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
 
-/** Rows for the builder's preview, read as the member who is building. */
-function clientFor(root: string): DataClient {
+/**
+ * Rows for the builder's preview, read as the member who is building, or as
+ * someone in a chosen group would read them.
+ */
+function clientFor(root: string, asGroup?: string): DataClient {
   const query = (options: Record<string, unknown>) => {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(options)) {
@@ -119,7 +139,8 @@ function clientFor(root: string): DataClient {
     return text ? `?${text}` : "";
   };
   return {
-    find: (table, options) => api.get(`${root}/rows/${table}${query(options)}`),
+    find: (table, options) =>
+      api.get(`${root}/rows/${table}${query({ ...options, ...(asGroup ? { asGroup } : {}) })}`),
     aggregate: (table, options) =>
       api.get(
         `${root}/aggregate/${table}${query({
@@ -128,6 +149,7 @@ function clientFor(root: string): DataClient {
           filter: options.filter,
           sort: options.sort,
           limit: options.limit,
+          ...(asGroup ? { asGroup } : {}),
         })}`,
       ),
     insert: async (table, row) =>
@@ -264,6 +286,93 @@ function linkChoices(
 }
 
 // ----- The settings of one widget -----
+
+/**
+ * How a number is written: as it is, as a number, as money or as a percent.
+ * Money kept in cents is divided by 100. An example shows the result.
+ */
+function FormatSettings({
+  name,
+  label,
+  format,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  format: ValueFormat | undefined;
+  onChange: (format: ValueFormat | undefined) => void;
+}) {
+  const sample = 123456.789;
+  const example = format
+    ? formatValue(format.minorUnits ? Math.round(sample * 100) : sample, format)
+    : undefined;
+  return (
+    <div className="flex flex-col gap-2">
+      <SelectField
+        label={label}
+        name={`format-${name}`}
+        value={format?.style ?? ""}
+        options={[
+          { value: "", label: "As it is" },
+          { value: "number", label: "A number: 1,234.5" },
+          { value: "currency", label: "Money: $1,234.50" },
+          { value: "percent", label: "A percent: 0.25 as 25%" },
+        ]}
+        onChange={(style) =>
+          onChange(
+            style
+              ? {
+                  ...(format?.style === style ? format : {}),
+                  style: style as ValueFormat["style"],
+                  ...(style === "currency" ? { currency: format?.currency ?? "USD" } : {}),
+                }
+              : undefined,
+          )
+        }
+      />
+      {format?.style === "currency" ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <TextField
+            label="Currency"
+            name={`currency-${name}`}
+            value={format.currency ?? "USD"}
+            maxLength={3}
+            onChange={(code) => onChange({ ...format, currency: code.toUpperCase() || "USD" })}
+          />
+          <CheckboxField
+            label="Kept in cents"
+            name={`cents-${name}`}
+            checked={format.minorUnits ?? false}
+            onChange={(minorUnits) => {
+              const next = { ...format };
+              if (minorUnits) next.minorUnits = true;
+              else delete next.minorUnits;
+              onChange(next);
+            }}
+          />
+        </div>
+      ) : null}
+      {format ? (
+        <SelectField
+          label="Decimal places"
+          name={`decimals-${name}`}
+          value={format.decimals === undefined ? "" : String(format.decimals)}
+          options={[
+            { value: "", label: "As usual" },
+            ...[0, 1, 2, 3].map((n) => ({ value: String(n), label: String(n) })),
+          ]}
+          onChange={(places) => {
+            const next = { ...format };
+            if (places === "") delete next.decimals;
+            else next.decimals = Number(places);
+            onChange(next);
+          }}
+        />
+      ) : null}
+      {example ? <p className="m-0 text-[12.5px] text-ink-muted">Shown as {example}</p> : null}
+    </div>
+  );
+}
 
 function WidgetSettings({
   widget,
@@ -556,7 +665,7 @@ function WidgetSettings({
                   ? "Along the bottom, or each slice"
                   : axis === "y"
                     ? "How much"
-                    : "A colour for each"
+                    : "A color for each"
               }
               name={axis}
               value={widget.options?.[axis] ?? ""}
@@ -573,6 +682,37 @@ function WidgetSettings({
               }
             />
           ))}
+          <FormatSettings
+            name="chart"
+            label="How much is written as"
+            format={widget.options?.format}
+            onChange={(format) =>
+              onChange((draft) => {
+                draft.options = { ...draft.options };
+                if (format) draft.options.format = format;
+                else delete draft.options.format;
+              })
+            }
+          />
+        </>
+      ) : null}
+
+      {widget.table && widget.type === "figure" ? (
+        <>
+          <h3 className={section}>Number</h3>
+          <FormatSettings
+            name="figure"
+            label="Written as"
+            format={widget.options?.format}
+            onChange={(format) =>
+              onChange((draft) => {
+                draft.options = { ...draft.options };
+                if (format) draft.options.format = format;
+                else delete draft.options.format;
+                if (Object.keys(draft.options).length === 0) delete draft.options;
+              })
+            }
+          />
         </>
       ) : null}
 
@@ -673,6 +813,31 @@ function WidgetSettings({
                         if (!one) return;
                         if (show) one.show = show;
                         else delete one.show;
+                      })
+                    }
+                  />
+                ) : null}
+                {widget.type !== "form" &&
+                (summary
+                  ? summary.aggregates.some(
+                      (aggregate) =>
+                        aggregate.as === field.column &&
+                        (aggregate.fn === "count" ||
+                          ["integer", "number"].includes(
+                            columns.find((one) => one.name === aggregate.column)?.type ?? "",
+                          )),
+                    )
+                  : column?.type === "integer" || column?.type === "number") ? (
+                  <FormatSettings
+                    name={field.column}
+                    label={`Written as (${field.column})`}
+                    format={field.format}
+                    onChange={(format) =>
+                      onChange((draft) => {
+                        const one = draft.fields?.[index];
+                        if (!one) return;
+                        if (format) one.format = format;
+                        else delete one.format;
                       })
                     }
                   />
@@ -820,6 +985,12 @@ function WidgetSettings({
               </div>
             );
           })}
+          {summary && conditions.length === 0 ? (
+            <p className="m-0 text-[12.5px] text-ink-muted">
+              A condition narrows what is counted or added up here, besides the page's filters: for
+              example, only the invoices whose status is unpaid.
+            </p>
+          ) : null}
           {conditions.length < 20 && columns.length > 0 ? (
             <Button
               size="small"
@@ -1006,7 +1177,16 @@ export function PageEditor({
   onChange: (apply: (page: InterfacePage) => void) => void;
 }) {
   const tableList = useLoad<{ items: { name: string; status: string }[] }>(`${root}/tables`);
-  const client = useMemo(() => clientFor(root), [root]);
+  const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("desktop");
+  const [asGroup, setAsGroup] = useState("");
+  const tenantBase = root.split("/workspaces/")[0] ?? "";
+  const memberGroups = useLoad<{ items: { id: string; name: string }[] }>(
+    `${tenantBase}/groups?limit=200`,
+  );
+  const endUserGroups = useLoad<{ items: { id: string; name: string }[] }>(
+    `${tenantBase}/end-user-groups?limit=200`,
+  );
+  const client = useMemo(() => clientFor(root, asGroup || undefined), [root, asGroup]);
   const [known, setKnown] = useState<Record<string, TableInfo>>({});
   const tables = useTables(root, tablesOf({ title: "", pages: [page] }, known));
   useEffect(() => setKnown(tables), [tables]);
@@ -1027,8 +1207,16 @@ export function PageEditor({
         id,
         type,
         title: TYPES.find((one) => one.type === type)?.label ?? type,
-        at: { x: 0, y: bottom, w: wide ? 12 : 6, h: type === "text" ? 3 : 8 },
+        at: {
+          x: 0,
+          y: bottom,
+          w: wide ? 12 : type === "figure" ? 3 : 6,
+          h: type === "text" || type === "figure" ? 3 : 8,
+        },
         ...(type === "text" ? { options: { text: "Write something here." } } : {}),
+        ...(type === "figure"
+          ? { summary: { groupBy: [], aggregates: [{ fn: "count" as const, as: "count" }] } }
+          : {}),
       });
     });
     onSelect(id);
@@ -1037,22 +1225,86 @@ export function PageEditor({
   return (
     <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
       <div className="min-w-0 flex-1">
-        <PageRenderer
-          page={page}
-          tables={known}
-          client={client}
-          editing={{
-            selected,
-            onSelect,
-            onMove: (id, to) =>
-              onChange((target) => {
-                const moved = target.widgets.find((one) => one.id === id);
-                if (moved) moved.at = to;
-                // Whatever it was dropped on moves out of its way.
-                settle(target.widgets, id);
-              }),
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div
+            role="radiogroup"
+            aria-label="Screen size"
+            className="flex rounded-control border border-line p-0.5"
+          >
+            {(Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[]).map((one) => {
+              const Icon = VIEWPORTS[one].icon;
+              return (
+                // biome-ignore lint/a11y/useSemanticElements: a segmented control of toggle buttons
+                <button
+                  key={one}
+                  type="button"
+                  role="radio"
+                  aria-checked={viewport === one}
+                  onClick={() => setViewport(one)}
+                  className={`flex items-center gap-1.5 rounded-[4px] px-2.5 py-1 text-meta ${
+                    viewport === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  <Icon aria-hidden="true" size={14} /> {VIEWPORTS[one].label}
+                  {VIEWPORTS[one].width ? (
+                    <span className="font-mono text-tag text-ink-subtle">
+                      {VIEWPORTS[one].width}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="w-64">
+            <SelectField
+              label="See it as"
+              name="as"
+              value={asGroup}
+              onChange={setAsGroup}
+              options={[
+                { value: "", label: "You, as you may read it" },
+                ...(endUserGroups.data?.items ?? []).map((group) => ({
+                  value: group.id,
+                  label: `End users in ${group.name}`,
+                })),
+                ...(memberGroups.data?.items ?? []).map((group) => ({
+                  value: group.id,
+                  label: `Members in ${group.name}`,
+                })),
+              ]}
+            />
+          </div>
+        </div>
+        {asGroup ? (
+          <p className="mt-0 mb-3 text-meta text-ink-muted">
+            Rows as someone in this group who owns none would see them. Owner rules show nothing
+            here.
+          </p>
+        ) : null}
+        <div
+          className="mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width]"
+          style={{
+            maxWidth: VIEWPORTS[viewport].width ? `${VIEWPORTS[viewport].width}px` : undefined,
           }}
-        />
+        >
+          <PageRenderer
+            page={page}
+            tables={known}
+            client={client}
+            editing={{
+              selected,
+              onSelect,
+              onMove: (id, to) =>
+                onChange((target) => {
+                  const moved = target.widgets.find((one) => one.id === id);
+                  if (moved) moved.at = to;
+                  // Whatever it was dropped on moves out of its way.
+                  settle(target.widgets, id);
+                }),
+            }}
+          />
+        </div>
+        <PageFilterSettings page={page} known={known} onChange={onChange} />
         {page.widgets.length < 12 ? (
           <fieldset className="mt-4 rounded-panel border border-line border-dashed p-3">
             <legend className="px-1 text-[13px] text-ink-muted">Add a widget</legend>
@@ -1109,6 +1361,133 @@ export function PageEditor({
     </div>
   );
 }
+
+/**
+ * Filters across the page for whoever reads it: a range of dates, or one value
+ * of a column. Each narrows every widget whose table has that column.
+ */
+function PageFilterSettings({
+  page,
+  known,
+  onChange,
+}: {
+  page: InterfacePage;
+  known: Record<string, TableInfo>;
+  onChange: (apply: (page: InterfacePage) => void) => void;
+}) {
+  const columns = [
+    ...new Set(
+      page.widgets.flatMap((widget) =>
+        widget.table ? (known[widget.table]?.columns ?? []).map((column) => column.name) : [],
+      ),
+    ),
+  ].sort();
+  const filters = page.filters ?? [];
+  return (
+    <fieldset className="mt-4 rounded-panel border border-line p-3">
+      <legend className="px-1 text-[13px] text-ink-muted">
+        Filters for whoever reads this page
+      </legend>
+      <div className="flex flex-col gap-2">
+        {filters.length === 0 ? (
+          <p className="m-0 text-[13px] text-ink-muted">
+            None. A filter narrows every widget whose table has its column.
+          </p>
+        ) : null}
+        {filters.map((one, index) => (
+          <div key={one.id} className="flex flex-wrap items-end gap-2">
+            <div className="w-40">
+              <TextField
+                label="Label"
+                name={`filter-${one.id}-label`}
+                value={one.label}
+                required={false}
+                onChange={(value) =>
+                  onChange((target) => {
+                    const found = target.filters?.[index];
+                    if (found) found.label = value || one.column;
+                  })
+                }
+              />
+            </div>
+            <div className="w-40">
+              <SelectField
+                label="Column"
+                name={`filter-${one.id}-column`}
+                value={one.column}
+                options={columns.map((name) => ({ value: name, label: name }))}
+                onChange={(value) =>
+                  onChange((target) => {
+                    const found = target.filters?.[index];
+                    if (found) found.column = value;
+                  })
+                }
+              />
+            </div>
+            <div className="w-36">
+              <SelectField
+                label="Kind"
+                name={`filter-${one.id}-type`}
+                value={one.type}
+                options={[
+                  { value: "date", label: "Range of dates" },
+                  { value: "value", label: "One value" },
+                ]}
+                onChange={(value) =>
+                  onChange((target) => {
+                    const found = target.filters?.[index];
+                    if (found) found.type = value === "date" ? "date" : "value";
+                  })
+                }
+              />
+            </div>
+            <Button
+              size="small"
+              variant="danger"
+              onClick={() => onChange((target) => target.filters?.splice(index, 1))}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+        {filters.length < 4 && columns.length > 0 ? (
+          <div>
+            <Button
+              size="small"
+              onClick={() =>
+                onChange((target) => {
+                  const column =
+                    columns.find((name) => name.endsWith("_at")) ?? (columns[0] as string);
+                  let id = "filter";
+                  for (let n = 2; (target.filters ?? []).some((one) => one.id === id); n += 1)
+                    id = `filter_${n}`;
+                  target.filters = [
+                    ...(target.filters ?? []),
+                    {
+                      id,
+                      label: heading(column),
+                      column,
+                      type: column.endsWith("_at") ? "date" : "value",
+                    },
+                  ];
+                })
+              }
+            >
+              <Plus size={14} aria-hidden="true" /> Add a filter
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </fieldset>
+  );
+}
+
+/** The sizes the preview can be drawn at. */
+const VIEWPORTS = {
+  desktop: { label: "Desktop", width: undefined, icon: Monitor },
+  tablet: { label: "Tablet", width: 768, icon: Tablet },
+  phone: { label: "Phone", width: 390, icon: Smartphone },
+} as const;
 
 // ----- The builder -----
 
@@ -1462,8 +1841,8 @@ export function Interfaces({
 
   return (
     <Page
-      title="Apps made here"
-      description="Screens over this workspace's tables, built without code: tables, cards, charts and forms, where choosing a row in one decides what another shows."
+      title="App Builder"
+      description="Apps over this workspace's tables, built without code: tables, cards, charts and forms, where choosing a row in one decides what another shows. A change is saved as you make it, and reaches people only when it is published."
       action={create}
     >
       {editable ? null : (
@@ -1501,18 +1880,34 @@ export function Interfaces({
               ),
             },
             {
+              header: "Pages",
+              cell: (row) => (
+                <span className="flex flex-col">
+                  <Mono>{row.pages ?? "—"}</Mono>
+                  {row.tables && row.tables.length > 0 ? (
+                    <span className="text-meta text-ink-subtle">reads {row.tables.join(", ")}</span>
+                  ) : null}
+                </span>
+              ),
+            },
+            {
               header: "State",
               cell: (row) => (
-                <span className="flex flex-wrap gap-1">
+                <span className="flex flex-wrap items-center gap-1.5">
                   {row.deployed ? (
-                    <Badge tone="success">Published</Badge>
+                    <Tag tone="live">Published{row.version ? ` v${row.version}` : ""}</Tag>
                   ) : (
-                    <Badge>Not published</Badge>
+                    <Tag tone="draft">Not published</Tag>
                   )}
                   {row.removing ? (
-                    <Badge tone="danger">Being removed</Badge>
+                    <Tag tone="danger">Being removed</Tag>
                   ) : row.draft && row.deployed ? (
-                    <Badge tone="attention">Changes not published</Badge>
+                    <Tag tone="production">Edits not published</Tag>
+                  ) : null}
+                  {row.editedAt ? (
+                    <span className="text-meta text-ink-subtle">
+                      edited {fromNow(row.editedAt)}
+                    </span>
                   ) : null}
                 </span>
               ),

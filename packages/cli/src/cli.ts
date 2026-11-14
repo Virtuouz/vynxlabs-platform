@@ -489,7 +489,7 @@ async function tenant(args: string[], io: Io) {
     );
     if (report.cancelled.runs + report.cancelled.flowRuns > 0) {
       io.out(
-        `${report.cancelled.runs} runs and ${report.cancelled.flowRuns} flow runs were unfinished in the export and are recorded as cancelled.`,
+        `${report.cancelled.runs} runs and ${report.cancelled.flowRuns} flow runs were unfinished in the export and are recorded as canceled.`,
       );
     }
     for (const line of report.notCarried) io.out(`Not carried: ${line}`);

@@ -44,6 +44,22 @@ export interface RepositoryInput {
   username?: string | undefined;
   /** An access token. Leave it out to keep the stored one. */
   token?: string | undefined;
+  /** Where promotions are mirrored, one branch per production workspace beneath it. Null turns it off. */
+  releaseBranch?: string | null | undefined;
+}
+
+/**
+ * What kind of token this is, from its shape alone. The token is never shown;
+ * this says whether it belongs to the repository or to a person, who may leave.
+ */
+export function credentialKind(token: string): string {
+  if (token.startsWith("github_pat_")) return "github-fine-grained";
+  if (token.startsWith("ghp_")) return "github-classic";
+  if (token.startsWith("ghs_") || token.startsWith("ghu_")) return "github-app";
+  if (token.startsWith("gldt-")) return "gitlab-deploy-token";
+  if (token.startsWith("glpat-")) return "gitlab-access-token";
+  if (token.startsWith("ATCTT") || token.startsWith("ATBB")) return "bitbucket-token";
+  return "token";
 }
 
 const FOLDER = /^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
@@ -352,6 +368,13 @@ export async function saveRepository(
       "The repository's address must start with https:// and carry no user name or token.",
     );
   }
+  if (input.releaseBranch && !BRANCH.test(input.releaseBranch)) {
+    throw new HttpError(
+      400,
+      "validation_failed",
+      "The release branch is not a branch name git accepts.",
+    );
+  }
   const folder = input.folder ?? "platform";
   if (!FOLDER.test(folder) || folder.split("/").includes("..")) {
     throw new HttpError(
@@ -405,6 +428,9 @@ export async function saveRepository(
       folder,
       username,
       credential,
+      credential_kind: credentialKind(token),
+      verified_at: new Date(),
+      ...(input.releaseBranch !== undefined ? { release_branch: input.releaseBranch } : {}),
       updated_at: new Date(),
     };
     const row = existing
@@ -513,7 +539,7 @@ export async function push(
   kernel: Kernel,
   actor: Actor,
   workspace: WorkspaceRef,
-  options: { message?: string | undefined } = {},
+  options: { message?: string | undefined; drafts?: boolean | undefined } = {},
 ) {
   const db = kernel.db;
   const remote = await remoteOf(kernel, db, workspace.tenantId);
@@ -527,7 +553,10 @@ export async function push(
   await linkOf(db, workspace);
   return withLease(db, workspace.id, async () => {
     const link = await linkOf(db, workspace);
-    const files = await localFiles(kernel, db, workspace);
+    // With drafts, what is saved and not yet deployed goes too, for a developer to pick up.
+    const files = options.drafts
+      ? await draftFiles(kernel, db, workspace)
+      : await localFiles(kernel, db, workspace);
     const local = await checksums(files);
     let tip: Tip;
     try {
@@ -911,4 +940,259 @@ export async function removeRepository(kernel: Kernel, actor: Actor, tenantId: s
       details: { url: removed.url },
     });
   });
+}
+
+/** Reaches the repository again with the stored token, and keeps when that worked. */
+export async function checkRepository(kernel: Kernel, actor: Actor, tenantId: string) {
+  const remote = await remoteOf(kernel, kernel.db, tenantId);
+  let problem: string | null = null;
+  try {
+    const tip = await fetchTip(remote, remote.defaultBranch);
+    await rm(tip.gitdir, { recursive: true, force: true });
+  } catch (error) {
+    problem = remoteProblem(error);
+  }
+  return mutate(kernel.db, actor, async (trx, audit) => {
+    const row = problem
+      ? await trx
+          .selectFrom("git_repository")
+          .selectAll()
+          .where("tenant_id", "=", tenantId)
+          .executeTakeFirstOrThrow()
+      : await trx
+          .updateTable("git_repository")
+          .set({ verified_at: new Date() })
+          .where("tenant_id", "=", tenantId)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+    await audit({
+      action: "git_repository.checked",
+      targetType: "git_repository",
+      targetId: tenantId,
+      tenantId,
+      details: { ok: problem === null, ...(problem ? { problem } : {}) },
+    });
+    return { ok: problem === null, problem, repository: row };
+  });
+}
+
+export interface CompareFile {
+  path: string;
+  /** Changed in the workspace since the last sync. */
+  here: boolean;
+  /** Changed on the branch since the last sync. */
+  branch: boolean;
+  /** Changed on both, differently: a pull would ask which to keep. */
+  conflict: boolean;
+  /** For a conflict, both versions, so they can be set side by side. */
+  mine?: string | null;
+  theirs?: string | null;
+}
+
+/**
+ * The workspace beside its branch, file by file, without changing either:
+ * what each side changed since they last agreed, and both versions of a file
+ * changed on both. With `drafts`, the workspace's side includes its drafts.
+ */
+export async function compareWithBranch(
+  kernel: Kernel,
+  workspace: WorkspaceRef,
+  options: { drafts?: boolean } = {},
+) {
+  const db = kernel.db;
+  const remote = await remoteOf(kernel, db, workspace.tenantId);
+  const link = await linkOf(db, workspace);
+  const tip = await fetchTip(remote, link.branch).catch((error) => {
+    throw new HttpError(409, "repository_unreachable", remoteProblem(error));
+  });
+  try {
+    const remoteFiles = tip.exists ? await readFolder(tip.gitdir, tip.commit, remote.folder) : [];
+    const mineFiles = options.drafts
+      ? await draftFiles(kernel, db, workspace)
+      : await localFiles(kernel, db, workspace);
+    const [theirs, mine] = [await checksums(remoteFiles), await checksums(mineFiles)];
+    const base = link.synced_files;
+    const files: CompareFile[] = [];
+    for (const path of [
+      ...new Set([...Object.keys(theirs), ...Object.keys(mine), ...Object.keys(base)]),
+    ].sort()) {
+      if (theirs[path] === mine[path]) continue;
+      const here = mine[path] !== base[path];
+      const branch = tip.exists && theirs[path] !== base[path];
+      const conflict = here && branch;
+      files.push({
+        path,
+        here,
+        branch,
+        conflict,
+        ...(conflict
+          ? {
+              mine: mineFiles.find((file) => file.path === path)?.content ?? null,
+              theirs: remoteFiles.find((file) => file.path === path)?.content ?? null,
+            }
+          : {}),
+      });
+    }
+    const head = tip.exists
+      ? await git.readCommit({ fs, gitdir: tip.gitdir, oid: tip.commit }).then((read) => ({
+          commit: tip.commit,
+          message: read.commit.message.split("\n")[0] ?? "",
+          author: read.commit.author.name,
+          at: new Date(read.commit.author.timestamp * 1000).toISOString(),
+        }))
+      : null;
+    return {
+      branch: link.branch,
+      exists: tip.exists,
+      head,
+      syncedCommit: link.synced_commit,
+      ahead: files.filter((file) => file.here).length,
+      behind: files.filter((file) => file.branch).length,
+      conflicts: files.filter((file) => file.conflict).length,
+      files,
+    };
+  } finally {
+    await rm(tip.gitdir, { recursive: true, force: true });
+  }
+}
+
+/** The files the workspace's console-managed resources make with its drafts laid over them. */
+async function draftFiles(
+  kernel: Kernel,
+  db: Db,
+  workspace: WorkspaceRef,
+): Promise<ResourceFile[]> {
+  const deployed = await activeConsoleManaged(kernel, db, workspace.id);
+  const drafts = await db
+    .selectFrom("resource_draft")
+    .selectAll()
+    .where("workspace_id", "=", workspace.id)
+    .execute();
+  const byPath = new Map(deployed.map((manifest) => [manifest.path, manifest]));
+  for (const draft of drafts) {
+    if (draft.deleted) byPath.delete(draft.path);
+    else
+      byPath.set(draft.path, {
+        kind: draft.kind,
+        schemaVersion: draft.schema_version,
+        path: draft.path,
+        ownership: "ui",
+        body: draft.body as Record<string, unknown>,
+      });
+  }
+  return renderResourceFiles([...byPath.values()], platformKinds);
+}
+
+/**
+ * Commits what a production workspace now runs to its release branch, after a
+ * promotion. Written, never read. A failure is recorded against the workspace
+ * and never undoes the promotion: it is shown with a way to try again.
+ */
+export async function pushRelease(
+  kernel: Kernel,
+  actor: Actor,
+  workspace: WorkspaceRef,
+  options: { version: number },
+): Promise<{
+  status: "done" | "nothing" | "failed" | "off";
+  branch: string | null;
+  problem?: string;
+}> {
+  const db = kernel.db;
+  const repository = await db
+    .selectFrom("git_repository")
+    .select(["release_branch", "paused"])
+    .where("tenant_id", "=", workspace.tenantId)
+    .executeTakeFirst();
+  if (!repository?.release_branch || repository.paused) return { status: "off", branch: null };
+  const branch = `${repository.release_branch}/${workspace.slug}`;
+  const remote = await remoteOf(kernel, db, workspace.tenantId);
+  let tip: Tip;
+  try {
+    tip = await fetchTip(remote, branch);
+  } catch (error) {
+    const problem = remoteProblem(error);
+    await record(db, workspace, actor, {
+      kind: "push",
+      status: "failed",
+      message: problem,
+      detail: { release: branch, version: options.version },
+    });
+    return { status: "failed", branch, problem };
+  }
+  try {
+    const files = await localFiles(kernel, db, workspace);
+    const { tree: rootTree } = await git
+      .readCommit({ fs, gitdir: tip.gitdir, oid: tip.commit })
+      .then((read) => read.commit);
+    const tree = await replaceAt(
+      tip.gitdir,
+      rootTree,
+      remote.folder.split("/"),
+      await writeFiles(tip.gitdir, files),
+    );
+    if (tip.exists && tree === rootTree) {
+      await record(db, workspace, actor, {
+        kind: "push",
+        status: "nothing",
+        commit: tip.commit,
+        detail: { release: branch, version: options.version },
+      });
+      return { status: "nothing", branch };
+    }
+    const author = await authorOf(db, actor);
+    const now = Math.floor(Date.now() / 1000);
+    const commit = await git.writeCommit({
+      fs,
+      gitdir: tip.gitdir,
+      commit: {
+        tree: tree ?? (await git.writeTree({ fs, gitdir: tip.gitdir, tree: [] })),
+        parent: [tip.commit],
+        message: `Promoted version ${options.version} to ${workspace.slug}\n\nWorkspace: ${workspace.slug}\n`,
+        author: { ...author, timestamp: now, timezoneOffset: 0 },
+        committer: {
+          name: "Platform",
+          email: "platform@localhost",
+          timestamp: now,
+          timezoneOffset: 0,
+        },
+      },
+    });
+    await git.writeRef({
+      fs,
+      gitdir: tip.gitdir,
+      ref: `refs/heads/${branch}`,
+      value: commit,
+      force: true,
+    });
+    try {
+      await git.push({
+        fs,
+        http,
+        gitdir: tip.gitdir,
+        url: remote.url,
+        ref: branch,
+        remoteRef: `refs/heads/${branch}`,
+        onAuth: remote.onAuth,
+      });
+    } catch (error) {
+      const problem = remoteProblem(error);
+      await record(db, workspace, actor, {
+        kind: "push",
+        status: "failed",
+        message: problem,
+        detail: { release: branch, version: options.version },
+      });
+      return { status: "failed", branch, problem };
+    }
+    await record(db, workspace, actor, {
+      kind: "push",
+      status: "done",
+      commit,
+      detail: { release: branch, version: options.version, files: files.length },
+    });
+    return { status: "done", branch };
+  } finally {
+    await rm(tip.gitdir, { recursive: true, force: true });
+  }
 }

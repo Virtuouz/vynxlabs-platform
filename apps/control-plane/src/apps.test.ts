@@ -355,12 +355,13 @@ describe("serving by path, on the instance's own address", () => {
     );
     expect(context).toMatchObject({
       api: "/api/v1",
-      tenant: { id: tenant, slug: "acme" },
+      // No logo is set yet, so an app knows not to show one.
+      tenant: { id: tenant, slug: "acme", logo: false },
       workspace: { id: prod, slug: "main" },
       app: { path: "portal", title: "Orders" },
       base: "/apps/acme/main/portal/",
       portal: "/portal/acme",
-      principal: { type: "member", email: "alice@acme.example" },
+      principal: { type: "member", email: "alice@acme.example", groups: [], attributes: {} },
     });
   });
 
@@ -508,7 +509,14 @@ describe("end users", () => {
     });
     expect(signedIn.status).toBe(200);
     expect((await api.get(`${base}/session`)).body).toEqual({
-      principal: { type: "end_user", id: ed.id, name: "Ed", email: "ed@customer.example" },
+      principal: {
+        type: "end_user",
+        id: ed.id,
+        name: "Ed",
+        email: "ed@customer.example",
+        groups: [],
+        attributes: {},
+      },
       signUp: false,
     });
     expect((await api.post(`${base}/end-user-auth/sign-out`)).status).toBe(204);
@@ -844,7 +852,7 @@ describe("groups of end users", () => {
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     finance = created.body.id;
     expect((await alice.post(groups(), { name: "finance" })).status).toBe(409);
-    expect((await alice.post(groups(), { name: "Not A Name" })).status).toBe(400);
+    expect((await alice.post(groups(), { name: "two\nlines" })).status).toBe(400);
 
     expect((await alice.put(`${groups()}/${finance}/members/${gil.id}`)).status).toBe(204);
     // Twice changes nothing.
@@ -937,6 +945,14 @@ describe("groups of end users", () => {
     // Renaming someone leaves their attributes alone.
     const renamed = await alice.patch(`/tenants/${tenant}/end-users/${gil.id}`, { name: "Gil" });
     expect(renamed.body.attributes).toEqual({ customer_id: "C-100", region: "north" });
+    // An app may read the person's own groups and attributes, to know which team is theirs.
+    expect(
+      (await gil.browser.get(`/api/v1/tenants/${tenant}/session`)).body.principal,
+    ).toMatchObject({
+      type: "end_user",
+      groups: ["finance"],
+      attributes: { customer_id: "C-100", region: "north" },
+    });
   });
 
   test("deleting a person or a group takes the memberships and what the group was given with it", async () => {
@@ -1034,6 +1050,15 @@ describe("rows ruled by group and by attribute", () => {
     };
     financeGroup = await group("finance", ivy.id);
     await group("sales", jon.id);
+    // A group of end users is named as a group of members is: any one-line name.
+    const spaced = await alice.post(`/tenants/${tenant}/end-user-groups`, { name: "Front desk" });
+    expect(spaced.status, JSON.stringify(spaced.body)).toBe(201);
+    expect(
+      (await alice.post(`/tenants/${tenant}/end-user-groups`, { name: " padded " })).status,
+    ).toBe(400);
+    expect(
+      (await alice.delete(`/tenants/${tenant}/end-user-groups/${spaced.body.id}`)).status,
+    ).toBe(204);
     await alice.patch(`/tenants/${tenant}/end-users/${ivy.id}`, {
       attributes: { customer_id: "C-200" },
     });
@@ -1226,7 +1251,7 @@ describe("branding", () => {
     expect(ofWorkspace).toContain("--vx-canvas: #fafafa;");
   });
 
-  test("a value that is more than a colour, a length or a font list is refused", async () => {
+  test("a value that is more than a color, a length or a font list is refused", async () => {
     for (const value of [
       "red; } body { display: none",
       "url(https://evil.example/x)",
@@ -1269,6 +1294,14 @@ describe("branding", () => {
       `/api/v1/tenants/${tenant}/portal/logo`,
     );
     expect((await alice.get(`/tenants/${tenant}/portal`)).body.logo).toBe(true);
+    // An app is told there is one now.
+    const staff = browser(t, MAIN);
+    await staff.signInMember("alice@acme.example", PASSWORD);
+    const page = (await staff.get("/apps/acme/main/portal/")).body;
+    const context = JSON.parse(
+      /<script type="application\/json" id="vx-context">(.*?)<\/script>/.exec(page)?.[1] as string,
+    );
+    expect(context.tenant.logo).toBe(true);
   });
 });
 
@@ -1504,6 +1537,50 @@ describe("a hostname of the tenant's own", () => {
     expect((await browser(t, DOMAIN).get("/apps/acme/main/status/")).body).toContain(
       "Order status",
     );
+  });
+
+  test("a hostname for the portal serves its home at the root and every app by path", async () => {
+    const hostname = "everything.acme.test";
+    const created = await alice.post(`/tenants/${tenant}/domains`, {
+      workspaceId: prod,
+      app: "",
+      hostname,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    expect(created.body).toMatchObject({ app: "", url: `http://${hostname}/` });
+    const grant = await t.admin.post(`/tenants/${tenant}/access-grants`, {
+      reason: "Internal name",
+      roleId: roles.tenant_admin,
+    });
+    await t.admin.patch(`/tenants/${tenant}/domains/${created.body.id}`, { enabled: true });
+    await t.admin.delete(`/tenants/${tenant}/access-grants/${grant.body.id}`);
+
+    const listed = (await alice.get(`${ws()}/apps`)).body.items;
+    expect(listed.find((app: { path: string }) => app.path === "status").domains).toContainEqual({
+      hostname,
+      url: `http://${hostname}/status/`,
+      enabled: true,
+    });
+
+    const visitor = browser(t, hostname);
+    expect((await visitor.get("/")).body).toContain('href="/_/sign-in"');
+    await visitor.form("/_/sign-in", {
+      email: "ed@customer.example",
+      password: PASSWORD,
+      return: "/",
+    });
+    const home = await visitor.get("/");
+    expect(home.status).toBe(200);
+    expect(home.body).toContain('href="/portal/"');
+    const status = await visitor.get("/status");
+    expect(status.status).toBe(308);
+    expect(status.location).toBe("/status/");
+    expect((await visitor.get("/status/")).body).toContain("Order status");
+    const app = await visitor.get("/portal/");
+    expect(app.body).toContain('<base href="/portal/">');
+    expect((await visitor.get("/nothing/")).status).toBe(404);
+
+    expect((await alice.delete(`/tenants/${tenant}/domains/${created.body.id}`)).status).toBe(204);
   });
 });
 

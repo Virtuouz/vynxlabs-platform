@@ -26,7 +26,8 @@ const ready = import(workerData.library).then(({ Environment }) =>
     unlistedVariablesAreDyn: true,
     homogeneousAggregateLiterals: false,
     limits: { maxAstNodes: 2000, maxDepth: 64, maxListElements: 200, maxMapEntries: 200, maxCallArguments: 16 },
-  }),
+  // A timestamp as text: ISO 8601 in UTC, so string(now).substring(0, 10) is today's date.
+  }).registerFunction("string(google.protobuf.Timestamp): string", (time) => time.toISOString()),
 );
 // CEL integers are 64-bit and maps are Maps. Results go back as plain JSON values.
 const plain = (value) => {

@@ -83,6 +83,37 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["workspace_id", "path"],
     export: "always",
   },
+  // Earlier versions of drafts travel with run history: useful, and never needed.
+  {
+    table: "resource_draft_history",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "history",
+  },
+  // A trigger paused on its own stays paused where the tenant goes.
+  {
+    table: "trigger_pause",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id", "path", "node_id"],
+    export: "always",
+  },
+  // What this instance saw: refused requests and how sources answered. Seen again there.
+  {
+    table: "webhook_refusal",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
+  {
+    table: "health_check",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id", "kind", "path"],
+    export: "never",
+  },
   // The token is encrypted under the tenant's key, which travels with the export.
   { table: "git_repository", ofTenant: own, key: ["tenant_id"], export: "always" },
   {
@@ -254,6 +285,7 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["group_id", "user_id"],
     export: "always",
   },
+  { table: "scim_refusal", ofTenant: own, key: ["id"], export: "never" },
   { table: "sso_state", ofTenant: own, key: ["id"], export: "never" },
   {
     table: "sso_assertion",
@@ -267,6 +299,17 @@ export const OWNED_TABLES: OwnedTable[] = [
     ofTenant: own,
     ofWorkspace: inWorkspace,
     key: ["id"],
+    export: "always",
+  },
+  { table: "worker_pool", ofTenant: own, key: ["id"], export: "always" },
+  // Where members were last; this instance's to remember, not the tenant's to carry.
+  { table: "member_recent_scope", ofTenant: own, key: ["member_id", "tenant_id"], export: "never" },
+  {
+    table: "dashboard_share",
+    ofTenant: own,
+    ofWorkspace: (id) =>
+      sql`t.dashboard_id in (select id from member_dashboard where workspace_id = ${id})`,
+    key: ["dashboard_id", "group_id"],
     export: "always",
   },
   // The record of what was done is never removed, even when what it describes is.
@@ -285,7 +328,13 @@ export const INSTANCE_TABLES = [
   "member_session",
   "member_account",
   "member_verification",
+  // A member's own, like their password: shared by every tenant they are in.
+  "member_recovery_code",
+  // An upload waiting to be imported belongs to no tenant yet.
+  "import_staging",
   "database_location",
+  // How the console looks on this instance. A tenant's branding is its portal's.
+  "instance_branding",
   // In the platform database these hold every shared tenant's catalog. They are
   // handled with the tables they describe, which may be in another database.
   "data_table",

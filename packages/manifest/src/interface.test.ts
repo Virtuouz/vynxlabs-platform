@@ -176,7 +176,7 @@ describe("an interface", () => {
           summary: { groupBy: [], aggregates: [{ fn: "count", as: "n" }] },
         }),
       ]).join("\n"),
-    ).toContain("only a table or a chart can show totals");
+    ).toContain("only a table, a chart or a figure can show totals");
     expect(problems([widget("c", { type: "chart" })]).join("\n")).toContain(
       "a chart needs a shape",
     );
@@ -185,6 +185,50 @@ describe("an interface", () => {
         widget("c", { type: "chart", options: { mark: "bar", x: "status", y: "nope" } }),
       ]).join("\n"),
     ).toContain('there is no column "nope"');
+  });
+
+  test("a figure narrows its own rows, and numbers are written in a format", () => {
+    expect(
+      problems([
+        widget("unpaid", {
+          type: "figure",
+          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "owed" }] },
+          filter: { column: "status", value: "unpaid" },
+          options: { format: { style: "currency", currency: "USD", minorUnits: true } },
+        }),
+        widget("list", {
+          fields: [
+            { column: "number" },
+            { column: "total", format: { style: "number", decimals: 1 } },
+          ],
+        }),
+      ]),
+    ).toEqual([]);
+    expect(
+      problems([
+        widget("bad", {
+          type: "figure",
+          summary: { groupBy: [], aggregates: [{ fn: "count", as: "n" }] },
+          filter: { column: "nothing", value: "x" },
+        }),
+        widget("words", { fields: [{ column: "status", format: { style: "currency" } }] }),
+        widget("table", { options: { format: { style: "percent" } } }),
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('no column "nothing"'),
+        expect.stringContaining('"status" holds text, not a number'),
+        expect.stringContaining("only a figure or a chart"),
+      ]),
+    );
+    // A currency is named by its ISO code.
+    expect(
+      problems([
+        widget("code", {
+          fields: [{ column: "total", format: { style: "currency", currency: "dollars" } }],
+        }),
+      ]),
+    ).toEqual([expect.stringContaining("format/currency must match pattern")]);
   });
 
   test("a link must be one that can be followed", () => {

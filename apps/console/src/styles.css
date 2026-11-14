@@ -1,3 +1,15 @@
 @import "@vynxlabs/ui/tokens.css";
 @source "./";
 @source "../../../packages/screens/src";
+
+/* The port: one corner cut, for the instance's mark. */
+@utility vx-port {
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
+}
+
+/* The console fills the window; each region scrolls on its own. */
+html,
+body,
+#app {
+  height: 100%;
+}

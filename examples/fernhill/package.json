@@ -1,0 +1,28 @@
+{
+  "name": "@vynxlabs/example-fernhill",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A fuller sample tenant: a veterinary group with three clinics, a front-desk app, a portal for pet owners, integrations, flows and an agent.",
+  "scripts": {
+    "stand-ins": "node stand-ins/server.mjs",
+    "setup": "node setup/setup.mjs",
+    "agent": "node setup/agent.mjs"
+  },
+  "dependencies": {
+    "@vynxlabs/sdk": "workspace:*",
+    "@vynxlabs/app": "workspace:*",
+    "@vynxlabs/ui": "workspace:*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@tailwindcss/vite": "^4.3.5",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.8",
+    "@vitejs/plugin-react": "^6.3.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}

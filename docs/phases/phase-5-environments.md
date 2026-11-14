@@ -69,7 +69,7 @@ Things the build and the verification turned up that the plan did not foresee.
 - **A tenant that comes back finds its audit entries waiting.** An instance keeps a deleted tenant's audit entries. Importing the same tenant again brings entries that are already there. They are the same entries, so those are skipped, and the count check allows more audit entries than the export brought.
 - **A clone dialog outlived its workspace.** In the console, "Open the copy" left the dialog open over the new workspace. Found in the browser, and fixed.
 - **The CLI crashed on a refused upload.** Node cannot retry a request whose body is a stream, so a key that was refused while a file was being sent surfaced as a broken connection. The CLI now checks the key before it sends the file.
-- **A paused workspace still finishes what is queued.** Pausing stops triggers. A run that is already queued, including one waiting out its retries, still runs. Deleting a workspace or a tenant is refused while runs are in progress, so such runs have to be cancelled or waited for.
+- **A paused workspace still finishes what is queued.** Pausing stops triggers. A run that is already queued, including one waiting out its retries, still runs. Deleting a workspace or a tenant is refused while runs are in progress, so such runs have to be canceled or waited for.
 - **Clones copy the current definition only.** Retired columns and tables stay with the source.
 - **Sign-in is rate limited, and scripts that sign in repeatedly run into it.** Working as intended. Automation should use an API key.
 
@@ -204,7 +204,7 @@ Checked on 2026-11-12 against the build on the `phase-5-environments` branch.
 
 | Check | Result |
 | --- | --- |
-| Lint, type check, schema, migration and licence checks | Passed |
+| Lint, type check, schema, migration and license checks | Passed |
 | Every test on Postgres 16 and 18 | Passed |
 | Promotion from the CLI on the Compose stack: preview, promote, promote again | Passed |
 | A clone of production with its data, safety on | Passed. Its webhook had a new address and answered 503, an event started nothing, and in eight seconds it ran nothing and called nothing. Resumed but unbound, its script failed saying the connection was not found. Bound to a test address, it called that address and no other |

@@ -98,7 +98,7 @@ A deploy that changes tables in a dedicated database commits there first and in 
 
 ## Workers in another network
 
-To run a tenant's scripts next to systems the instance cannot reach, run a worker there. A worker only makes outbound HTTPS requests to the instance, so nothing has to be opened towards it.
+To run a tenant's scripts next to systems the instance cannot reach, run a worker there. A worker only makes outbound HTTPS requests to the instance, so nothing has to be opened toward it.
 
 1. In the console, on the tenant's Workers page, create a credential. Give it a pool, for example `plant`, if only some scripts should run there.
 2. In the tenant's repository, give those scripts `worker: "plant"`.
@@ -284,7 +284,9 @@ The issuer is `http://localhost:8180/realms/acme`. For SAML, give `http://localh
 
 ## Branding
 
-A tenant sets its colours, corner radii, fonts and logo under **Branding**. They apply to its apps, its sign-in pages and the console while that tenant is open. A workspace can override them with a theme in its repository. Values are plain colours, lengths and font lists: nothing that could load a file from elsewhere.
+A tenant sets its colors, corner radii, fonts and logo under **Branding**. They apply to its apps, its portal and its sign-in pages. A workspace can override them with a theme in its repository. Values are plain colors, lengths and font lists: nothing that could load a file from elsewhere.
+
+The console keeps its own look whichever tenant is open. An operator brands it once for the instance under **Instance → Branding**, with a product name, a logo and the same tokens.
 
 ## Environments inside a tenant
 

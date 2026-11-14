@@ -16,6 +16,7 @@ import { errorHandler, notFoundHandler } from "./problem.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
 import { authoringRoutes } from "./routes/authoring.js";
+import { brandingRoutes } from "./routes/branding.js";
 import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
 import { endUserRoutes } from "./routes/endusers.js";
@@ -29,11 +30,14 @@ import { instanceRoutes } from "./routes/instance.js";
 import { interfaceRoutes } from "./routes/interfaces.js";
 import { locationRoutes } from "./routes/locations.js";
 import { mcpRoutes } from "./routes/mcp.js";
+import { operationsRoutes } from "./routes/operations.js";
 import { permissionRoutes } from "./routes/permissions.js";
+import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { scimRoutes } from "./routes/scim.js";
 import { sourceRoutes } from "./routes/sources.js";
 import { ssoRoutes } from "./routes/sso.js";
+import { summaryRoutes } from "./routes/summary.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -146,6 +150,7 @@ export async function buildApp(options: AppOptions) {
       installAccessControl(api, kernel);
       await api.register(healthRoutes(options));
       await api.register(instanceRoutes(options));
+      await api.register(brandingRoutes(kernel));
       await api.register(authRoutes(kernel));
       await api.register(identityRoutes(kernel));
       await api.register(tenantRoutes(kernel));
@@ -168,6 +173,9 @@ export async function buildApp(options: AppOptions) {
       await api.register(dashboardRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
+      await api.register(summaryRoutes(kernel));
+      await api.register(operationsRoutes(kernel));
+      await api.register(poolRoutes(kernel));
       api.get(
         "/openapi.json",
         {

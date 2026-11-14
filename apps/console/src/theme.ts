@@ -1,32 +1,26 @@
 import { useEffect, useState } from "react";
 
-const href = (tenantId: string) => `/api/v1/tenants/${tenantId}/theme.css`;
-const find = (tenantId: string) =>
-  [...document.head.querySelectorAll<HTMLLinkElement>("link[data-tenant-theme]")].find(
-    (link) => link.dataset.tenantTheme === tenantId,
-  );
+const INSTANCE_THEME = "/api/v1/instance/theme.css";
 
 /**
- * Shows the console in a tenant's colours while one of its screens is open. The
- * tenant's stylesheet is loaded after the kit's own, so its values replace the
- * kit's, and it is taken away again on leaving the tenant.
+ * Puts the instance's branding over the console's own look. The operator's
+ * stylesheet holds only the values they set, and is loaded after the console's,
+ * so those replace the console's and the rest stay. A tenant's branding is for
+ * its apps and portal and never reaches the console.
  */
-export function useTenantTheme(tenantId: string | undefined) {
-  useEffect(() => {
-    if (!tenantId) return;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = href(tenantId);
-    link.dataset.tenantTheme = tenantId;
-    document.head.append(link);
-    return () => link.remove();
-  }, [tenantId]);
+export function loadInstanceTheme() {
+  if (document.head.querySelector("link[data-instance-theme]")) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = INSTANCE_THEME;
+  link.dataset.instanceTheme = "";
+  document.head.append(link);
 }
 
-/** Loads the tenant's stylesheet again after its theme was saved. The browser may keep the old one for a minute otherwise. */
-export function refreshTenantTheme(tenantId: string) {
-  const link = find(tenantId);
-  if (link) link.href = `${href(tenantId)}?saved=${Date.now()}`;
+/** Loads the instance's stylesheet again after it was saved. The browser may keep the old one for a minute otherwise. */
+export function refreshInstanceTheme() {
+  const link = document.head.querySelector<HTMLLinkElement>("link[data-instance-theme]");
+  if (link) link.href = `${INSTANCE_THEME}?saved=${Date.now()}`;
 }
 
 export type ThemeChoice = "system" | "light" | "dark";

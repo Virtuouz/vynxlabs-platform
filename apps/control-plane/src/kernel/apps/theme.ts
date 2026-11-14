@@ -27,6 +27,13 @@ export const DEFAULT_THEME: { tokens: Tokens; dark: Tokens } = {
     "danger-soft": "#fbe9e7",
     success: "#1f7a4d",
     "success-soft": "#e1f3e9",
+    structure: "#e7ebf0",
+    raised: "#ffffff",
+    selected: "#e3eff4",
+    "line-strong": "#b4bfcb",
+    "ink-subtle": "#687485",
+    "code-bg": "#f5f7f9",
+    focus: "#0e5f7a",
     "radius-control": "6px",
     "radius-panel": "10px",
     font: 'ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
@@ -48,6 +55,13 @@ export const DEFAULT_THEME: { tokens: Tokens; dark: Tokens } = {
     "danger-soft": "#3d1b18",
     success: "#6fcf9a",
     "success-soft": "#153326",
+    structure: "#0c1118",
+    raised: "#1f2a38",
+    selected: "#172430",
+    "line-strong": "#3a4859",
+    "ink-subtle": "#7e8b9b",
+    "code-bg": "#0b1016",
+    focus: "#5cb8d6",
   },
 };
 
@@ -67,7 +81,7 @@ export function cleanTheme(input: ThemeValues): ThemeValues {
         throw badRequest("That is not a theme.", [
           {
             path: `/${where}/${token}`,
-            message: "must be a plain colour, length or font list",
+            message: "must be a plain color, length or font list",
           },
         ]);
       }

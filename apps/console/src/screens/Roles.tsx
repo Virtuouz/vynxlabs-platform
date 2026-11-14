@@ -1,16 +1,11 @@
-import {
-  Badge,
-  Button,
-  Dialog,
-  EmptyState,
-  Notice,
-  SelectField,
-  Table,
-  TextField,
-} from "@vynxlabs/ui";
+import { Badge, Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { Page, RemoveButton } from "../ListScreen.tsx";
+import { CollectionView } from "../kit/CollectionView.tsx";
+import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
+import { Mono, Tag } from "../kit/status.tsx";
+import { RemoveButton } from "../ListScreen.tsx";
+import { type Framed, toolbarOf } from "./Members.tsx";
 
 export interface Role {
   id: string;
@@ -370,87 +365,165 @@ function RoleDialog({
   );
 }
 
-export function Roles({ base }: { base: string }) {
+type Show = "all" | "own" | "builtin";
+
+/** What a role allows, in a few lines a person reads at a glance. */
+export function inShort(role: Role, kinds: readonly PermissionKind[]): string[] {
+  if (role.permissions.includes("*:*")) return ["Everything, everywhere it is given."];
+  const groups = [...new Set(kinds.map((entry) => entry.group))];
+  const lines: string[] = [];
+  for (const group of groups) {
+    const inGroup = kinds.filter((entry) => entry.group === group);
+    const changes = inGroup.filter(
+      (entry) =>
+        entry.verbs.some((verb) => verb.verb === "write") &&
+        allows(role.permissions, entry.kind, "write"),
+    );
+    const reads = inGroup.filter(
+      (entry) => allows(role.permissions, entry.kind, "read") && !changes.includes(entry),
+    );
+    if (changes.length === 0 && reads.length === 0) continue;
+    const names = (list: PermissionKind[]) =>
+      list.length === inGroup.length ? "all of it" : list.map((entry) => entry.label).join(", ");
+    const parts = [
+      changes.length > 0 ? `changes ${names(changes)}` : "",
+      reads.length > 0 ? `reads ${names(reads)}` : "",
+    ].filter(Boolean);
+    lines.push(`${group}: ${parts.join("; ")}.`);
+  }
+  return lines.length > 0 ? lines : ["Nothing yet."];
+}
+
+export function Roles({ base, framed }: { base: string; framed?: Framed }) {
   const roles = useLoad<{ items: Role[] }>(`${base}/roles`);
-  const catalogue = useLoad<{ items: PermissionKind[] }>("/permissions");
+  const catalog = useLoad<{ items: PermissionKind[] }>("/permissions");
   const [open, setOpen] = useState<Role | "new">();
-  const [show, setShow] = useState("all");
-  const kinds = catalogue.data?.items ?? [];
-  const failure = roles.error ?? catalogue.error;
-  const create = (
-    <Button variant="primary" onClick={() => setOpen("new")}>
-      Create role
-    </Button>
-  );
-  const rows = (roles.data?.items ?? []).filter(
-    (role) => show === "all" || (show === "own" ? !role.builtin : role.builtin),
-  );
+  const [selected, setSelected] = useState<string>();
+  const [show, setShow] = useState<Show>("all");
+  const kinds = catalog.data?.items ?? [];
+  const failure = roles.error ?? catalog.error;
+  const all = roles.data?.items;
+  const rows =
+    all && catalog.data
+      ? all.filter((role) => show === "all" || (show === "own" ? !role.builtin : role.builtin))
+      : undefined;
+  const chosen = all?.find((role) => role.id === selected);
+  const fixed = chosen ? chosen.builtin || chosen.managedByResource : false;
 
   return (
-    <Page
-      title="Roles"
-      description="A role is a named set of permissions. Give a role to a person, a group or a service account under Access."
-      action={create}
-    >
-      {failure ? <Notice tone="danger">{failure.message}</Notice> : null}
-      <div className="w-48">
-        <SelectField
-          name="show"
-          label="Show"
-          value={show}
-          options={[
-            { value: "all", label: "All roles" },
-            { value: "own", label: "Roles made here" },
-            { value: "builtin", label: "Built-in roles" },
-          ]}
-          onChange={setShow}
-        />
-      </div>
-      {roles.data && catalogue.data ? (
-        <Table
-          rows={rows}
-          rowKey={(row) => row.id}
-          empty={<EmptyState title="No roles" action={create} />}
-          columns={[
-            {
-              header: "Role",
-              cell: (row) => (
-                <span className="flex flex-wrap items-center gap-2">
-                  <code className="font-mono text-[13px]">{row.name}</code>
-                  {row.builtin ? <Badge>Built in</Badge> : null}
-                  {row.managedByResource ? <Badge tone="action">From repository</Badge> : null}
-                </span>
-              ),
-            },
-            {
-              header: "What it is for",
-              cell: (row) => <span className="text-ink-muted">{row.description}</span>,
-            },
-            { header: "Permissions", cell: (row) => <Summary role={row} kinds={kinds} /> },
-            {
-              header: "",
-              align: "end",
-              cell: (row) => (
-                <span className="inline-flex gap-1">
-                  <Button size="small" onClick={() => setOpen(row)}>
-                    {row.builtin || row.managedByResource ? "View" : "Change"}
+    <>
+      <CollectionView<Role>
+        title={framed?.title ?? "Roles"}
+        description="A role is a named set of permissions. Give a role to a person, a group or a service account under Access grants."
+        actions={
+          <Button variant="primary" onClick={() => setOpen("new")}>
+            Create role
+          </Button>
+        }
+        toolbar={toolbarOf(
+          framed,
+          <FilterChips<Show>
+            label="Show"
+            value={show}
+            onChange={setShow}
+            options={[
+              { value: "all", label: "All roles", count: all?.length ?? null },
+              {
+                value: "own",
+                label: "Made here",
+                count: all ? all.filter((role) => !role.builtin).length : null,
+              },
+              {
+                value: "builtin",
+                label: "Built in",
+                count: all ? all.filter((role) => role.builtin).length : null,
+              },
+            ]}
+          />,
+        )}
+        label="Roles"
+        rows={rows}
+        error={failure?.message}
+        rowKey={(row) => row.id}
+        selected={selected}
+        onSelect={(row) => setSelected(row.id)}
+        columns={[
+          {
+            header: "Role",
+            cell: (row) => (
+              <span className="flex flex-wrap items-center gap-2">
+                <Mono>{row.name}</Mono>
+                {row.builtin ? <Tag>Built in</Tag> : null}
+                {row.managedByResource ? <Tag tone="repository">From repository</Tag> : null}
+              </span>
+            ),
+          },
+          {
+            header: "What it is for",
+            priority: 2,
+            cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          },
+          {
+            header: "Permissions",
+            priority: 3,
+            cell: (row) => <Summary role={row} kinds={kinds} />,
+          },
+        ]}
+        empty={{ title: "No roles" }}
+        inspector={
+          <Inspector
+            open={chosen !== undefined}
+            label="Role"
+            eyebrow={chosen?.builtin ? "Built-in role" : "Role"}
+            title={chosen?.name}
+            onClose={() => setSelected(undefined)}
+            footer={
+              chosen ? (
+                <>
+                  <Button size="small" onClick={() => setOpen(chosen)}>
+                    {fixed ? "View" : "Change"}
                   </Button>
-                  {row.builtin || row.managedByResource ? null : (
+                  {fixed ? null : (
                     <RemoveButton
                       label="Delete"
-                      confirm={`The role ${row.name} is deleted. Whoever held it loses what it allowed.`}
-                      run={() => api.delete(`${base}/roles/${row.id}`)}
-                      onDone={roles.reload}
+                      confirm={`The role ${chosen.name} is deleted. Whoever held it loses what it allowed.`}
+                      run={() => api.delete(`${base}/roles/${chosen.id}`)}
+                      onDone={() => {
+                        setSelected(undefined);
+                        roles.reload();
+                      }}
                     />
                   )}
-                </span>
-              ),
-            },
-          ]}
-        />
-      ) : failure ? null : (
-        <p className="text-ink-muted">Loading…</p>
-      )}
+                </>
+              ) : null
+            }
+          >
+            {chosen ? (
+              <div className="flex flex-col gap-5">
+                {chosen.description ? (
+                  <p className="m-0 text-ink-muted">{chosen.description}</p>
+                ) : null}
+                <div className="flex flex-col gap-2">
+                  <SectionLabel>In short</SectionLabel>
+                  <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                    {inShort(chosen, kinds).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <SectionLabel>Permissions</SectionLabel>
+                  <p className="m-0 flex flex-wrap gap-1.5">
+                    {chosen.permissions.map((permission) => (
+                      <Mono key={permission}>{permission}</Mono>
+                    ))}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </Inspector>
+        }
+      />
       {open ? (
         <RoleDialog
           key={open === "new" ? "new" : open.id}
@@ -464,6 +537,6 @@ export function Roles({ base }: { base: string }) {
           }}
         />
       ) : null}
-    </Page>
+    </>
   );
 }

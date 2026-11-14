@@ -178,7 +178,7 @@ describe("form", () => {
           type: "object",
           properties: {
             size: { type: "integer", enum: [1, 2, 3] },
-            colour: { type: "string", enum: ["red", "blue"] },
+            color: { type: "string", enum: ["red", "blue"] },
           },
         }}
         onSubmit={onSubmit}

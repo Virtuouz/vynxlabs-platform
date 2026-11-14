@@ -26,5 +26,6 @@ export {
   staffSignInUrl,
   startFlow,
   table,
+  totalOf,
 } from "./client.ts";
 export { type Query, useQuery, useSession } from "./hooks.ts";

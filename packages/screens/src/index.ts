@@ -8,6 +8,7 @@ export {
   type TableInfo,
   type Totals,
 } from "./data.ts";
+export { axisFormat, formatValue } from "./format.ts";
 export { settle } from "./layout.ts";
 export {
   all,
@@ -21,6 +22,7 @@ export {
   summaryRows,
 } from "./links.ts";
 export {
+  FILTER_CHOICES,
   InterfaceRenderer,
   type InterfaceRendererProps,
   LOOKUP_BATCH,

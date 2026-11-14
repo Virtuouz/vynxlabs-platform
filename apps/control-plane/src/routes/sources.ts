@@ -5,6 +5,7 @@ import type {
 import { validateJson } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { MAX_FILE_BYTES, readFile, storeFile, toStoredFile } from "../kernel/data/files.js";
+import { checkSource } from "../kernel/data/health.js";
 import {
   deleteRow,
   findRows,
@@ -76,6 +77,44 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Bindings -----
 
+    app.post(
+      `${base}/data-source-checks/*`,
+      {
+        config: { access: access.workspace("data_source:read") },
+        schema: {
+          summary: "Reach a bound data source now, and keep how it went",
+          description:
+            "Asks the source the smallest question there is. An unreachable source is an " +
+            "answer with `ok` false, not an error.",
+          tags: ["data sources"],
+          params: WildParams,
+          response: {
+            200: Type.Object({
+              ok: Type.Boolean(),
+              problem: Type.Union([Type.String(), Type.Null()]),
+              latencyMs: Type.Union([Type.Integer(), Type.Null()]),
+              checkedAt: Time,
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        const path = wildPath(params);
+        const result = await checkSource(kernel, params.t, params.w, path);
+        await ctx.mutate(async (_trx, audit) =>
+          audit({
+            action: "data_source.checked",
+            targetType: "data_source",
+            targetId: null,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { path, ok: result.ok },
+          }),
+        );
+        return result;
+      },
+    );
+
     app.get(
       `${base}/data-source-bindings`,
       {
@@ -96,6 +135,18 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   config: Type.Union([AnyObject, Type.Null()]),
                   hasPassword: Type.Boolean(),
                   updatedAt: NullableTime,
+                  health: Type.Union([
+                    Type.Object(
+                      {
+                        ok: Type.Boolean(),
+                        problem: Type.Union([Type.String(), Type.Null()]),
+                        latencyMs: Type.Union([Type.Integer(), Type.Null()]),
+                        checkedAt: Time,
+                      },
+                      { description: "The last time it was reached, on a schedule or on request." },
+                    ),
+                    Type.Null(),
+                  ]),
                 }),
               ),
             }),
@@ -115,12 +166,19 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .execute();
         const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
+        const checks = await db
+          .selectFrom("health_check")
+          .selectAll()
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "data_source")
+          .execute();
         return {
           items: paths.map((path) => {
             const definition = definitions.find((row) => row.path === path)?.body as
               | { description?: string }
               | undefined;
             const binding = bindings.find((row) => row.path === path);
+            const check = binding ? checks.find((row) => row.path === path) : undefined;
             return {
               path,
               description: definition?.description ?? "",
@@ -129,6 +187,14 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               config: binding?.config ?? null,
               hasPassword: Boolean(binding?.credential),
               updatedAt: isoOrNull(binding?.updated_at ?? null),
+              health: check
+                ? {
+                    ok: check.ok,
+                    problem: check.problem,
+                    latencyMs: check.latency_ms,
+                    checkedAt: check.checked_at.toISOString(),
+                  }
+                : null,
             };
           }),
         };

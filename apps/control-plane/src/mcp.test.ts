@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { Worker } from "@vynxlabs/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { leanSchema } from "./routes/mcp.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
@@ -50,6 +51,53 @@ function bundle(): Bundle {
         input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
       }),
       script("orders/purge", "purge", { description: "Removes everything." }),
+      script("orders/call-back", "callBack", {
+        description: "Schedules a call to a customer.",
+        input: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          type: "object",
+          properties: {
+            at: {
+              type: "string",
+              format: "date-time",
+              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$",
+            },
+            idempotencyKey: { type: "string" },
+          },
+          required: ["at"],
+          additionalProperties: false,
+        },
+        output: {
+          type: "object",
+          properties: { scheduled: { type: "string" } },
+          required: ["scheduled"],
+        },
+      }),
+      script("orders/break", "fail", { description: "Always fails." }),
+      {
+        kind: "flow",
+        schemaVersion: 1,
+        path: "orders/escalate",
+        ownership: "code" as const,
+        body: {
+          description: "Escalates an order to a person.",
+          nodes: {
+            start: {
+              type: "trigger",
+              trigger: {
+                type: "manual",
+                input: {
+                  type: "object",
+                  properties: { order: { type: "string", description: "The order's number." } },
+                  required: ["order"],
+                },
+              },
+            },
+            done: { type: "set", values: { escalated: "trigger.order" } },
+          },
+          edges: [{ from: "start", to: "done" }],
+        },
+      },
       {
         kind: "flow",
         schemaVersion: 1,
@@ -61,6 +109,29 @@ function bundle(): Bundle {
             start: { type: "trigger", trigger: { type: "manual" } },
             ok: { type: "approval", title: "Refund the order", detail: "trigger" },
             done: { type: "set", values: { refunded: "trigger.order" } },
+          },
+          edges: [
+            { from: "start", to: "ok" },
+            { from: "ok", to: "done" },
+          ],
+        },
+      },
+      {
+        kind: "flow",
+        schemaVersion: 1,
+        path: "orders/write-off",
+        ownership: "code" as const,
+        body: {
+          description: "Writes off a debt once finance approves.",
+          nodes: {
+            start: { type: "trigger", trigger: { type: "manual" } },
+            ok: {
+              type: "approval",
+              title: "Write off the debt",
+              detail: "trigger",
+              approvers: { groups: ["Finance"] },
+            },
+            done: { type: "set", values: { written_off: "trigger.order" } },
           },
           edges: [
             { from: "start", to: "ok" },
@@ -84,7 +155,9 @@ function bundle(): Bundle {
     ],
     code:
       'export const greet = { execute: async (input) => ({ greeting: "Hello " + input.name }) };\n' +
-      "export const purge = { execute: async () => ({ purged: true }) };\n",
+      "export const purge = { execute: async () => ({ purged: true }) };\n" +
+      "export const callBack = { execute: async (input) => ({ scheduled: input.at }) };\n" +
+      'export const fail = { execute: async () => { throw new Error("The phone line is down."); } };\n',
   };
   return { ...unsigned, digest: bundleDigest(unsigned) };
 }
@@ -208,18 +281,25 @@ describe("an agent's tools", () => {
       "get_flow_run",
     ]);
     const greet = tools[0];
-    expect(greet?.description).toBe("Runs the script orders/greet. Greets someone by name.");
-    // The script's own input schema is the tool's.
+    expect(greet?.description).toBe(
+      "Runs the script orders/greet. Greets someone by name. Waits a short while for it to end. Pass idempotencyKey to make a retry safe.",
+    );
+    // The script's own input schema is the tool's, with the reserved key for a safe retry.
     expect(greet?.inputSchema).toEqual({
       type: "object",
-      properties: { name: { type: "string" } },
+      properties: {
+        name: { type: "string" },
+        idempotencyKey: expect.objectContaining({ type: "string" }),
+      },
       required: ["name"],
     });
 
     // With more access come more tools. A flow with no manual trigger is never one.
     expect((await wide.listTools()).tools.map((tool) => tool.name)).toEqual([
+      "start_orders__escalate",
       "run_orders__greet",
       "start_orders__refund",
+      "start_orders__write_off",
       "get_run",
       "get_flow_run",
       "list_approvals",
@@ -308,6 +388,36 @@ describe("an agent's tools", () => {
   }, 60_000);
 });
 
+describe("an approval that names its approvers", () => {
+  test("is neither shown to nor decided by an agent outside them, and a person among them decides it", async () => {
+    const started = answer(
+      await wide.callTool({ name: "start_orders__write_off", arguments: { order: "A-9" } }),
+    );
+    expect(started.flow).toBe("orders/write-off");
+
+    const listed = answer(await wide.callTool({ name: "list_approvals", arguments: {} })).approvals;
+    expect(listed.map((one: { flowRunId: string }) => one.flowRunId)).not.toContain(
+      started.flowRunId,
+    );
+    const refused = await wide.callTool({
+      name: "decide_approval",
+      arguments: { flowRunId: started.flowRunId, node: "ok", decision: "approve" },
+    });
+    expect(refused.isError).toBe(true);
+    expect(answer(refused).error).toContain("may decide this approval");
+    const still = (await alice.get(`${ws()}/flow-runs/${started.flowRunId}`)).body;
+    expect(still.status).toBe("running");
+
+    const finance = await alice.post(`/tenants/${tenant}/groups`, { name: "Finance" });
+    const me = (await alice.get("/me")).body;
+    await alice.put(`/tenants/${tenant}/groups/${finance.body.id}/members/${me.principal.id}`);
+    const decided = await alice.post(`${ws()}/flow-runs/${started.flowRunId}/approvals/ok`, {
+      decision: "approve",
+    });
+    expect(decided.status, JSON.stringify(decided.body)).toBeLessThan(300);
+  }, 60_000);
+});
+
 describe("what an agent would be offered, seen from the console", () => {
   const offered = (account: string, at = workspace) =>
     alice.get(`/tenants/${tenant}/service-accounts/${account}/tools?workspace=${at}`);
@@ -319,10 +429,11 @@ describe("what an agent would be offered, seen from the console", () => {
     expect(narrowly.body.reachable).toBe(true);
     // Alice may do everything here. The list is the account's all the same.
     expect(narrowly.body.tools).toEqual(
-      (await narrow.listTools()).tools.map(({ name, description, inputSchema }) => ({
+      (await narrow.listTools()).tools.map(({ name, description, inputSchema, outputSchema }) => ({
         name,
         description,
         inputSchema,
+        ...(outputSchema ? { outputSchema } : {}),
       })),
     );
     expect(
@@ -377,8 +488,10 @@ describe("who may connect", () => {
       details: { via?: string };
     }[];
     const byAgents = entries.filter((entry) => entry.details.via === "mcp");
+    // The refused decision left nothing: only what was done is recorded.
     expect(byAgents.map((entry) => entry.action).sort()).toEqual([
       "approval.approved",
+      "flow_run.started",
       "flow_run.started",
       "run.started",
     ]);
@@ -386,5 +499,167 @@ describe("who may connect", () => {
     expect(byAgents.find((entry) => entry.action === "approval.approved")?.actorLabel).toBe(
       "wide-agent",
     );
+  });
+});
+
+describe("what an agent is told, and what it can rely on", () => {
+  let careful: McpClient;
+
+  beforeAll(async () => {
+    const created = await alice.post(`/tenants/${tenant}/service-accounts`, {
+      name: "careful-agent",
+    });
+    const key = await alice.post(
+      `/tenants/${tenant}/service-accounts/${created.body.id}/api-keys`,
+      { name: "agent" },
+    );
+    const roleId = async (name: string, permissions: string[]) =>
+      (await alice.post(`/tenants/${tenant}/roles`, { name, description: name, permissions })).body
+        .id as string;
+    const see = await roleId("careful_sees", ["workspace:read"]);
+    const runs = await roleId("careful_runs", ["run:write", "run:read"]);
+    const flows = await roleId("careful_flows", ["flow_run:write", "flow_run:read"]);
+    const bind = (roleIdValue: string, path?: string) =>
+      (async () => {
+        const resourceId = path
+          ? ((await alice.get(`${ws()}/resources/${path}`)).body.id as string)
+          : undefined;
+        await alice.post(`/tenants/${tenant}/bindings`, {
+          workspaceId: workspace,
+          ...(resourceId ? { resourceId } : {}),
+          principalType: "service_account",
+          principalId: created.body.id,
+          roleId: roleIdValue,
+        });
+      })();
+    await bind(see);
+    await bind(runs, "orders/call-back");
+    await bind(runs, "orders/break");
+    await bind(flows, "orders/escalate");
+    careful = await connect(key.body.token);
+  });
+
+  test("tools carry lean input schemas, a safe-retry key, and the shape of their answers", async () => {
+    const { tools } = await careful.listTools();
+    const call = tools.find((tool) => tool.name === "run_orders__call_back");
+    const text = JSON.stringify(call?.inputSchema);
+    expect(text).not.toContain("$schema");
+    expect(text).not.toContain("pattern");
+    expect(call?.inputSchema.properties).toMatchObject({
+      at: { type: "string", format: "date-time" },
+      // The script's own input has an idempotencyKey, so the reserved argument steps aside.
+      _idempotencyKey: { type: "string" },
+    });
+    expect(call?.description).toContain("_idempotencyKey");
+    expect(call?.outputSchema).toMatchObject({
+      type: "object",
+      required: ["runId", "script", "status"],
+    });
+
+    const escalate = tools.find((tool) => tool.name === "start_orders__escalate");
+    expect(escalate?.inputSchema).toMatchObject({
+      type: "object",
+      properties: { order: { type: "string" }, idempotencyKey: { type: "string" } },
+      required: ["order"],
+    });
+    expect(escalate?.outputSchema).toMatchObject({ required: ["flowRunId", "flow", "status"] });
+  });
+
+  test("an answer comes as structured content too, and a failed run is an error result", async () => {
+    const done = await careful.callTool({
+      name: "run_orders__call_back",
+      arguments: { at: "2026-11-17T10:00:00Z" },
+    });
+    expect(done.isError).toBeFalsy();
+    expect(done.structuredContent).toMatchObject({
+      status: "succeeded",
+      output: { scheduled: "2026-11-17T10:00:00Z" },
+    });
+
+    const broken = await careful.callTool({ name: "run_orders__break", arguments: {} });
+    expect(broken.isError).toBe(true);
+    expect(answer(broken)).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("The phone line is down."),
+    });
+  }, 60_000);
+
+  test("input in the wrong format is explained in words, not with the format's pattern", async () => {
+    const bad = await careful.callTool({
+      name: "run_orders__call_back",
+      arguments: { at: "next tuesday at ten" },
+    });
+    expect(bad.isError).toBe(true);
+    expect(answer(bad).problems).toEqual([
+      {
+        path: "/input/at",
+        message: "must be a date and time in ISO 8601, such as 2026-11-17T10:00:00Z",
+      },
+    ]);
+    // The API says the same to anyone else who starts the script.
+    const direct = await alice.post(`${ws()}/runs`, {
+      script: "orders/call-back",
+      input: { at: "tomorrow" },
+    });
+    expect(direct.status).toBe(400);
+    expect(JSON.stringify(direct.body)).toContain("must be a date and time in ISO 8601");
+  });
+
+  test("a call repeated with the same key answers with the first run, and starts nothing", async () => {
+    const twice = async () =>
+      answer(
+        await careful.callTool({
+          name: "run_orders__call_back",
+          arguments: { at: "2026-11-18T09:00:00Z", _idempotencyKey: "ticket-41" },
+        }),
+      );
+    const first = await twice();
+    const second = await twice();
+    expect(second.runId).toBe(first.runId);
+    // The key's own name in the script's input is the script's, and reaches it untouched.
+    const own = await careful.callTool({
+      name: "run_orders__call_back",
+      arguments: { at: "2026-11-18T09:00:00Z", idempotencyKey: "the script's own" },
+    });
+    expect(answer(own).runId).not.toBe(first.runId);
+
+    const flowOnce = async () =>
+      answer(
+        await careful.callTool({
+          name: "start_orders__escalate",
+          arguments: { order: "A-12", idempotencyKey: "call-7" },
+        }),
+      );
+    const flowFirst = await flowOnce();
+    expect(flowFirst).toMatchObject({
+      status: "succeeded",
+      output: { done: { escalated: "A-12" } },
+    });
+    expect((await flowOnce()).flowRunId).toBe(flowFirst.flowRunId);
+  }, 60_000);
+});
+
+describe("a tool's schema, as an agent is given it", () => {
+  test("keeps what constrains the input and drops what only restates it", () => {
+    expect(
+      leanSchema({
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        properties: {
+          when: { type: "string", format: "date-time", pattern: "^\\d{4}-…$" },
+          code: { type: "string", pattern: "^[A-Z]{3}$" },
+          count: { type: "integer", minimum: -9007199254740991, maximum: 9007199254740991 },
+          quantity: { type: "integer", minimum: 1, maximum: 9007199254740991 },
+        },
+      }),
+    ).toEqual({
+      type: "object",
+      properties: {
+        when: { type: "string", format: "date-time" },
+        code: { type: "string", pattern: "^[A-Z]{3}$" },
+        count: { type: "integer" },
+        quantity: { type: "integer", minimum: 1 },
+      },
+    });
   });
 });

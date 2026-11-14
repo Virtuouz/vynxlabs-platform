@@ -71,6 +71,34 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
         },
+        "structure": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "raised": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "selected": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "line-strong": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "ink-subtle": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "code-bg": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "focus": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
         "radius-control": {
           "type": "string",
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
@@ -151,6 +179,34 @@
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
         },
         "success-soft": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "structure": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "raised": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "selected": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "line-strong": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "ink-subtle": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "code-bg": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "focus": {
           "type": "string",
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
         },

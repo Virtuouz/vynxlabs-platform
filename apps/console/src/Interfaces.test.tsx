@@ -384,8 +384,10 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
   }
   const { Apps } = await import("./screens/Apps.tsx");
   show(<Apps root={root} />);
+  // The app's inspector opens on choosing it, and sharing starts there.
+  fireEvent.click(await screen.findByText("Sales"));
   fireEvent.click(await screen.findByRole("button", { name: "Share" }));
-  const dialog = within(await screen.findByRole("dialog"));
+  const dialog = within(await screen.findByRole("dialog", { name: "Share Sales" }));
   await dialog.findByText("Nobody else yet.");
   // It says what comes with the app, so nobody is surprised by it.
   await dialog.findByText(/its tables customers, orders/);
@@ -412,3 +414,59 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
 
 // biome-ignore lint/suspicious/noExplicitAny: what was sent is inspected freely
 type Any = any;
+
+test("a figure is narrowed to some rows and its number written as dollars from cents", async () => {
+  let stored: InterfaceBody = {
+    title: "Sales",
+    pages: [
+      {
+        id: "main",
+        title: "Sales",
+        widgets: [
+          {
+            id: "owed",
+            type: "figure",
+            title: "Owed",
+            table: "orders",
+            summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "owed" }] },
+            at,
+          },
+        ],
+      },
+    ],
+  };
+  routes[`GET ${api}/drafts/screens/sales`] = () => [200, { revision: 1, body: stored }];
+  routes[`GET ${api}/interfaces`] = () => [200, { items: [] }];
+  routes[`GET ${api}/drafts`] = () => [200, { items: [{ path: "screens/sales" }] }];
+  routes[`PUT ${api}/drafts/screens/sales`] = (saved) => {
+    stored = (saved as Any).body;
+    return [200, { revision: 2, body: stored, problems: [] }];
+  };
+  routes[`GET ${api}/aggregate/orders`] = () => [
+    200,
+    { items: [{ by: {}, values: { "sum:total": 123456 } }], truncated: false },
+  ];
+  show(<InterfaceBuilder root={root} link="/t/t1/workspaces/w1" path="screens/sales" />);
+
+  const figure = within(await screen.findByRole("region", { name: "Owed" }));
+  fireEvent.click(figure.getByRole("button", { name: "Edit" }));
+  const settings = within(screen.getByRole("complementary", { name: "Settings" }));
+  // Totals can be narrowed, and the builder says what for.
+  expect(settings.getByText(/only the invoices whose status is unpaid/)).toBeTruthy();
+  fireEvent.click(settings.getByRole("button", { name: "Add a condition" }));
+  fireEvent.change(settings.getByLabelText("Written as"), { target: { value: "currency" } });
+  fireEvent.click(await settings.findByLabelText("Kept in cents"));
+  expect(await settings.findByText("Shown as $123,456.79")).toBeTruthy();
+  // The preview writes the total as dollars, and names the figure once.
+  expect(await figure.findByText("$1,234.56")).toBeTruthy();
+  expect(figure.getAllByText("Owed")).toHaveLength(1);
+
+  await waitFor(
+    () =>
+      expect(stored.pages[0]?.widgets[0]).toMatchObject({
+        filter: { column: "number", op: "eq" },
+        options: { format: { style: "currency", currency: "USD", minorUnits: true } },
+      }),
+    { timeout: 4000 },
+  );
+});

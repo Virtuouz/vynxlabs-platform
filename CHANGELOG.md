@@ -23,7 +23,7 @@ Authoring in the console (phase 7).
 - **Three new built-in roles' worth of access:** `app_maintainer` builds and deploys apps made in the console and no code; `portal_reader` opens apps and reads rows; `developer`, `workspace_admin` and `app_maintainer` may keep dashboards.
 - **Sharing an app with `viewer` shows every row.** That role reads everything, a table's every row included. Share with `portal_reader` or `portal_user`, which the Share button does.
 - **Single sign-on.** A tenant can connect an identity provider over OIDC or SAML, for its members or its end users, and operators can connect one for themselves under Instance. The control plane makes outbound requests to the provider. Nothing new has to run. See "Single sign-on" in the self-hosting guide.
-- **The console's sign-in asks for the email first,** then for a password or the organisation's sign-in.
+- **The console's sign-in asks for the email first,** then for a password or the organization's sign-in.
 - **A tenant can require single sign-on.** Passwords are then refused for the people a provider covers. Members bound at the instance keep theirs: keep one such account.
 - **An imported tenant's identity providers arrive paused,** with their domains to be proved again.
 - **End users have groups and attributes,** and a table's rows can be ruled by them. New permissions: `end_user_group` and `sso`, both held by `tenant_admin`.
@@ -84,7 +84,7 @@ Apps (phase 6): interfaces built from a tenant's repository and served by the in
 - `defineApp` declares an app from a directory with an `index.html`. `platform build` compiles it with the repository's own Vite: add `vite` and `@preact/preset-vite` to `devDependencies`. `platform dev` serves it with reload against a workspace.
 - `@vynxlabs/app` is the browser client: `table`, `runScript`, `useQuery`, `useSession`. `@vynxlabs/ui` is the component kit, with forms from a JSON Schema and charts from a Vega-Lite spec.
 - `defineBinding` and `defineRole` say who may open an app and read a table. Principals now include `{ type: "end_users" }`, every signed-in end user of the tenant, and `{ type: "end_user", email }`. The built-in `portal_user` role opens apps and reads and writes rows under each table's policy.
-- `defineTheme` sets a workspace's colours where they differ from the tenant's.
+- `defineTheme` sets a workspace's colors where they differ from the tenant's.
 - `ctx.run.startedBy` says who started a run. `ctx.table(t).as(ctx.run.startedBy.id)` reads and writes as that person.
 - A script can be started, and its run read, by someone who holds `run:write` at that script alone.
 - **Rebuild to deploy apps.** A bundle with an app is format 2 and needs the 0.4.0 SDK and CLI. A repository without apps still builds as format 1, and bundles built with 0.2.0 and 0.3.0 keep deploying.

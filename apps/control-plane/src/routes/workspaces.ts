@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { check } from "../kernel/authorize.js";
@@ -66,7 +66,16 @@ const toWorkspace = (row: WorkspaceRow) => ({
 });
 
 const SecretName = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 127 });
-const Secret = Type.Object({ name: Type.String(), createdAt: Time, updatedAt: Time });
+const Secret = Type.Object({
+  name: Type.String(),
+  createdAt: Time,
+  updatedAt: Time,
+  updatedBy: Type.Optional(
+    Type.Union([Type.String(), Type.Null()], {
+      description: "Who set it last, from the audit log: an email, an account's name, or null.",
+    }),
+  ),
+});
 
 const Resource = Type.Object({
   id: Id,
@@ -357,11 +366,24 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .orderBy("name")
           .execute();
+        // Who set each last is in the audit log, which every change goes through.
+        const setters = await sql<{ name: string; who: string | null }>`
+          select distinct on (a.target_id) a.target_id as name,
+            coalesce(m.email, m.name, s.name) as who
+          from audit_entry a
+          left join member m on a.actor_type = 'member' and m.id = a.actor_id
+          left join service_account s on a.actor_type = 'service_account' and s.id = a.actor_id
+          where a.workspace_id = ${params.w} and a.target_type = 'secret'
+            and a.action in ('secret.created', 'secret.updated')
+          order by a.target_id, a.occurred_at desc
+        `.execute(db);
+        const setBy = new Map(setters.rows.map((row) => [row.name, row.who]));
         return {
           items: rows.map((row) => ({
             name: row.name,
             createdAt: iso(row.created_at),
             updatedAt: iso(row.updated_at),
+            updatedBy: setBy.get(row.name) ?? null,
           })),
         };
       },

@@ -9,9 +9,11 @@ import {
   isCodeKind,
   saveDraft,
 } from "../kernel/authoring.js";
+import { describeChange } from "../kernel/describe.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { storeBundle } from "../kernel/execution/bundles.js";
 import { startRun } from "../kernel/execution/runs.js";
+import { kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -51,6 +53,11 @@ const DraftSummary = Type.Object({
   updatedByType: Type.String(),
   updatedById: NullableId,
   updatedAt: Time,
+  about: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "What deploying it changes, in a few plain sentences.",
+    }),
+  ),
 });
 const Draft = Type.Object({
   ...DraftSummary.properties,
@@ -77,6 +84,7 @@ const Summary = Type.Object({
   unchanged: Type.Integer(),
   deleted: Type.Integer(),
   data: Type.Array(Type.String()),
+  warnings: Type.Optional(Type.Array(Type.Object({ path: Type.String(), message: Type.String() }))),
   changes: Type.Array(
     Type.Object({ change: Type.String(), kind: Type.String(), path: Type.String() }),
   ),
@@ -234,7 +242,32 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspace.id,
           rows.map((row) => row.path),
         );
-        return { items: rows.map((row) => summarize(row, owned.get(row.path))) };
+        const deployed = new Map(
+          rows.length === 0
+            ? []
+            : (
+                await db
+                  .selectFrom("resource")
+                  .select(["path", "body"])
+                  .where("workspace_id", "=", workspace.id)
+                  .where(
+                    "path",
+                    "in",
+                    rows.map((row) => row.path),
+                  )
+                  .execute()
+              ).map((row) => [row.path, row.body as Record<string, unknown>]),
+        );
+        return {
+          items: rows.map((row) => ({
+            ...summarize(row, owned.get(row.path)),
+            about: describeChange(
+              row.kind,
+              deployed.get(row.path),
+              row.deleted ? undefined : (row.body as Record<string, unknown>),
+            ),
+          })),
+        };
       },
     );
 
@@ -317,6 +350,102 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }
             : {}),
         };
+      },
+    );
+
+    app.get(
+      `${base}/draft-history/*`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Earlier versions of a draft, newest first",
+          description:
+            "What each save replaced, and each draft that was set aside. The newest thirty " +
+            "are kept. Needs what reading the draft needs.",
+          tags: ["authoring"],
+          params: PathParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  id: Id,
+                  kind: Type.String(),
+                  revision: Type.Integer(),
+                  deleted: Type.Boolean(),
+                  reason: Type.String({ description: "`replaced` or `set_aside`." }),
+                  savedById: NullableId,
+                  savedAt: Time,
+                  keptAt: Time,
+                  body: AnyObject,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        const { workspace, full } = await enter(ctx, params, "resource:read");
+        const path = pathOf(params);
+        if (!full && !(await screenAt(workspace, path))) throw forbidden("resource:read");
+        const rows = await db
+          .selectFrom("resource_draft_history")
+          .selectAll()
+          .where("workspace_id", "=", workspace.id)
+          .where("path", "=", path)
+          .orderBy("kept_at", "desc")
+          .execute();
+        return {
+          items: rows.map((row) => ({
+            id: row.id,
+            kind: row.kind,
+            revision: row.revision,
+            deleted: row.deleted,
+            reason: row.reason,
+            savedById: row.saved_by_id,
+            savedAt: iso(row.saved_at),
+            keptAt: iso(row.kept_at),
+            body: row.body as Record<string, unknown>,
+          })),
+        };
+      },
+    );
+
+    app.post(
+      `${base}/draft-history/:id/restore`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Make an earlier version the draft again",
+          description:
+            "Saves it as the draft, as any save does: what the draft held before is kept in the " +
+            "history in turn. Needs what saving the draft needs.",
+          tags: ["authoring"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          response: { 200: DraftSummary },
+        },
+      },
+      async ({ ctx, params }) => {
+        const kept = await db
+          .selectFrom("resource_draft_history")
+          .selectAll()
+          .where("id", "=", params.id)
+          .where("workspace_id", "=", params.w)
+          .executeTakeFirst();
+        if (!kept) throw notFound("That earlier version");
+        const { workspace, full } = await enter(ctx, params, "resource:write");
+        if (!full && !(await screenAt(workspace, kept.path))) throw forbidden("resource:write");
+        if (isCodeKind(kept.kind)) await mayWriteCode(ctx, workspace);
+        const saved = await ctx.mutate((trx, audit) =>
+          saveDraft(kernel, trx, audit, workspace, ctx.principal, {
+            path: kept.path,
+            kind: kept.kind,
+            schemaVersion: kept.schema_version,
+            body: kept.body as Record<string, unknown>,
+            deleted: kept.deleted,
+          }),
+        );
+        const owned = await ownership(workspace.id, [kept.path]);
+        return summarize(saved.draft, owned.get(kept.path));
       },
     );
 
@@ -481,21 +610,81 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("run:write") },
         schema: {
-          summary: "Run a script as its draft has it",
+          summary: "Run a script or a flow as its draft has it",
           description:
             "Builds a bundle with the workspace's drafts in it, deploys nothing, and starts one " +
-            "run of the script from that bundle. Read the run as any other. Needs `code:write`.",
+            "run of the script, or of the flow from its manual trigger, from that bundle. Read " +
+            "the run as any other. A script needs `code:write`; a flow needs `flow_run:write`, " +
+            "and `code:write` too while code is among the drafts, since the flow may run it.",
           tags: ["authoring"],
           params: WorkspaceParams,
           body: Type.Object({
-            script: Type.String({ pattern: PATH_PATTERN, maxLength: 255 }),
+            script: Type.Optional(Type.String({ pattern: PATH_PATTERN, maxLength: 255 })),
+            flow: Type.Optional(Type.String({ pattern: PATH_PATTERN, maxLength: 255 })),
             input: Type.Optional(Type.Unknown()),
           }),
-          response: { 201: Type.Object({ runId: Id, bundleId: Id }) },
+          response: {
+            201: Type.Object({
+              runId: Id,
+              bundleId: Id,
+              kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
+            }),
+          },
         },
       },
       async ({ ctx, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
+        if ((body.script === undefined) === (body.flow === undefined)) {
+          throw badRequest("Give either a script or a flow to run.");
+        }
+        if (body.flow !== undefined) {
+          const flow = body.flow;
+          await ctx.authorize("flow_run:write", {
+            tenantId: workspace.tenantId,
+            workspaceId: workspace.id,
+          });
+          const code = await db
+            .selectFrom("resource_draft")
+            .select("path")
+            .where("workspace_id", "=", workspace.id)
+            .where("kind", "in", ["script", "connector", "trigger_source"])
+            .where("deleted", "=", false)
+            .executeTakeFirst();
+          if (code) await mayWriteCode(ctx, workspace);
+          const { bundle } = await composeDrafts(kernel, db, workspace);
+          const result = await ctx.mutate(async (trx, audit) => {
+            const stored = await storeBundle(
+              kernel,
+              trx,
+              audit,
+              workspace,
+              ctx.principal,
+              bundle,
+              "preview",
+            );
+            const started = await startFlowRun(kernel, trx, {
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+              flow,
+              input: body.input ?? {},
+              trigger: { type: "manual", detail: { draft: true } },
+              startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+              bundleId: stored.bundle.id,
+            });
+            await audit({
+              action: "flow_run.started",
+              targetType: "flow_run",
+              targetId: started.flowRun.id,
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+              details: { flow, draft: true, bundleId: stored.bundle.id },
+            });
+            return { runId: started.flowRun.id, bundleId: stored.bundle.id, kind: "flow" as const };
+          });
+          kickFlow(kernel, result.runId);
+          return reply.code(201).send(result);
+        }
+        const script = body.script as string;
         await mayWriteCode(ctx, workspace);
         const { bundle } = await composeDrafts(kernel, db, workspace);
         const result = await ctx.mutate(async (trx, audit) => {
@@ -511,7 +700,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const started = await startRun(kernel, trx, {
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
-            script: body.script,
+            script,
             input: body.input ?? {},
             trigger: { type: "manual", detail: { draft: true } },
             startedBy: { type: ctx.principal.type, id: ctx.principal.id },
@@ -523,9 +712,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetId: started.run.id,
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
-            details: { script: body.script, draft: true, bundleId: stored.bundle.id },
+            details: { script, draft: true, bundleId: stored.bundle.id },
           });
-          return { runId: started.run.id, bundleId: stored.bundle.id };
+          return { runId: started.run.id, bundleId: stored.bundle.id, kind: "script" as const };
         });
         return reply.code(201).send(result);
       },

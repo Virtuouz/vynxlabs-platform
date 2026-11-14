@@ -11,6 +11,7 @@ import {
   cleanEmail,
   createEndUser,
   createPasswordToken,
+  endUserIdentity,
   setPasswordWithToken,
   signUpAllowed,
 } from "../kernel/endusers.js";
@@ -93,6 +94,17 @@ const Session = Type.Object({
     id: Type.Union([Id, Type.Null()]),
     name: NullableString,
     email: NullableString,
+    groups: Type.Optional(
+      Type.Array(Type.String(), {
+        description: "The names of an end user's groups. Empty for anyone else.",
+      }),
+    ),
+    attributes: Type.Optional(
+      Type.Record(Type.String(), Type.String(), {
+        description:
+          "An end user's attributes, which tables' rules can match. Empty for anyone else.",
+      }),
+    ),
   }),
   signUp: Type.Boolean({
     description: "Whether people may make their own account in this tenant.",
@@ -442,7 +454,15 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Groups of end users -----
 
-    const GroupName = Type.String({ pattern: "^[a-z0-9][a-z0-9_-]{0,62}$" });
+    /**
+     * Any name, as a group of members takes. Rows match a group by its name in a
+     * text column, so it is trimmed and kept to one line.
+     */
+    const GroupName = Type.String({
+      minLength: 1,
+      maxLength: 100,
+      pattern: "^\\S(?:[^\\n]*\\S)?$",
+    });
     const Group = Type.Object({
       id: Id,
       name: Type.String(),
@@ -719,6 +739,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             id: principal.id,
             name: principal.name ?? null,
             email: principal.email ?? null,
+            ...(await endUserIdentity(db, params.t, principal)),
           },
           signUp: await signUpAllowed(db, params.t),
         };

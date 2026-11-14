@@ -45,11 +45,15 @@ export function useQuery<T>(load: () => Promise<T>, deps: readonly unknown[] = [
 
 /**
  * Who is using the app. It starts from who the page was served to, so the
- * first draw is already right, and `refresh` asks the server again.
+ * first draw is already right, and `refresh` asks the server again. For an end
+ * user, `groups` and `attributes` say which teams they are in and what the
+ * tables' rules know of them; both are empty for anyone else.
  */
 export function useSession(): {
   principal: Principal;
   signedIn: boolean;
+  groups: string[];
+  attributes: Record<string, string>;
   refresh(): Promise<Session>;
 } {
   const [principal, setPrincipal] = useState<Principal>(() => appContext().principal);
@@ -58,5 +62,11 @@ export function useSession(): {
     setPrincipal(current.principal);
     return current;
   }, []);
-  return { principal, signedIn: principal.type !== "anonymous", refresh };
+  return {
+    principal,
+    signedIn: principal.type !== "anonymous",
+    groups: principal.groups ?? [],
+    attributes: principal.attributes ?? {},
+    refresh,
+  };
 }

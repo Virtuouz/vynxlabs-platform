@@ -109,7 +109,7 @@ const { total: _total, note: _note, ...kept } = ordersV1;
 const ordersV2 = {
   ...kept,
   amount: { type: "number", renamedFrom: "total" },
-  currency: { type: "text", required: true, default: "EUR" },
+  currency: { type: "text", required: true, default: "USD" },
 };
 
 const ws = (id: string) => `/tenants/${tenant}/workspaces/${id}`;
@@ -636,7 +636,7 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
       );
       expect(here.length, entry.table).toBe(there.length);
       if (entry.table === "run") {
-        // The finished run is identical. The two that were queued are recorded as cancelled.
+        // The finished run is identical. The two that were queued are recorded as canceled.
         const finishedThere = there.filter((line) => line.includes('"status": "succeeded"'));
         expect(here.filter((line) => line.includes('"status": "succeeded"'))).toEqual(
           finishedThere,
@@ -750,7 +750,7 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
     expect(here).toEqual(JSON.parse(JSON.stringify(there).replaceAll(bob.id, bobOnB)));
     expect(here[0]).toMatchObject({
       amount: 110.25,
-      currency: "EUR",
+      currency: "USD",
       meta: { tags: ["x", "y"], nested: { n: 1 } },
       placed: "2026-03-01T10:15:30.123Z",
     });
@@ -873,6 +873,44 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
     expect(again.body.detail).toContain("already on this instance");
   });
 
+  test("an export can be uploaded once and looked at before it is imported", async () => {
+    const staged = await b.admin.upload(
+      "/instance/tenant-imports/staged?name=acme.tar",
+      archive,
+      "application/x-tar",
+      { "x-export-passphrase": "not the passphrase at all" },
+    );
+    expect(staged.status, JSON.stringify(staged.body)).toBe(201);
+    expect(staged.body.inspection).toMatchObject({
+      problem: null,
+      tenant: { slug: "acme" },
+      levelMatches: true,
+      passphraseOk: false,
+      tenantPresent: true,
+    });
+    expect(staged.body.inspection.rows).toBeGreaterThan(0);
+    const again = await b.admin.get(`/instance/tenant-imports/staged/${staged.body.id}`);
+    expect(again.body.inspection.passphraseOk).toBeNull();
+    // Here it is already, so importing it is refused, and nothing is written.
+    const refused = await b.admin.post(
+      `/instance/tenant-imports/staged/${staged.body.id}/import`,
+      {},
+    );
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect((await b.admin.delete(`/instance/tenant-imports/staged/${staged.body.id}`)).status).toBe(
+      204,
+    );
+    expect((await b.admin.get(`/instance/tenant-imports/staged/${staged.body.id}`)).status).toBe(
+      404,
+    );
+    const damaged = await b.admin.upload(
+      "/instance/tenant-imports/staged",
+      archive.subarray(0, 1000),
+      "application/x-tar",
+    );
+    expect(damaged.body.inspection.problem).toEqual(expect.any(String));
+  });
+
   test("the instance it left is untouched until the tenant is deleted there, which completes the move", async () => {
     expect((await alice.get(`${ws(main)}/rows/orders`)).body.items).toHaveLength(4);
     expect((await alice.get(ws(main))).body.triggersPaused).toBe(false);
@@ -974,5 +1012,11 @@ describe("guards", () => {
       ).toEqual([]);
     }
     expect(a.unexercised((route) => /\/(exports|tenant-imports)$/.test(route))).toEqual([]);
+    // Importing a staged upload runs the same import as the route above; here it was refused.
+    expect(
+      b.unexercised(
+        (route) => /\/tenant-imports\/staged/.test(route) && !route.endsWith("/import"),
+      ),
+    ).toEqual([]);
   });
 });

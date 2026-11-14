@@ -111,7 +111,7 @@ export interface ChartWidgetConfig {
   /**
    * In place of a spec: the chart's shape and the names of the values it draws.
    * `x` is what goes along the bottom, or what a pie is cut by. `y` is how much.
-   * `series` draws one line or one colour for each of its values.
+   * `series` draws one line or one color for each of its values.
    */
   mark?: "bar" | "line" | "area" | "pie";
   x?: string;
@@ -291,7 +291,7 @@ registerWidget<FormWidgetConfig>({
 /**
  * The Vega-Lite spec for a chart described by its shape and the values it
  * draws. A pie is cut by `x` and sized by `y`. Anything else puts `x` along
- * the bottom and `y` up the side, with a colour for each value of `series`.
+ * the bottom and `y` up the side, with a color for each value of `series`.
  */
 export function chartSpecFor(config: ChartWidgetConfig): object {
   const x = config.x ?? "";
@@ -344,7 +344,7 @@ registerWidget<ChartWidgetConfig>({
       mark: { enum: ["bar", "line", "area", "pie"], description: "The chart's shape." },
       x: { type: "string", description: "The value along the bottom, or what a pie is cut by." },
       y: { type: "string", description: "The value drawn: how tall, how far, how big a slice." },
-      series: { type: "string", description: "A value to draw one colour for each of." },
+      series: { type: "string", description: "A value to draw one color for each of." },
       xType: {
         type: "string",
         description: "What x holds. A timestamp or a date gets a time axis.",

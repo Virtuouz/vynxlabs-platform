@@ -34,7 +34,14 @@ export interface WebhookVerify {
 }
 
 export type FlowTrigger =
-  | { type: "manual" }
+  | {
+      type: "manual";
+      /**
+       * A JSON Schema the input must match when the flow is started this way: by
+       * hand, from the API, by an agent or as a sub-flow. Without one, any object.
+       */
+      input?: Record<string, unknown>;
+    }
   | { type: "schedule"; cron: string; timezone?: string; source?: string }
   | {
       type: "webhook";
@@ -83,12 +90,28 @@ export type FlowNode =
       allow?: string[];
       input?: string;
       concurrency?: number;
+      /**
+       * Whether a failed item lets the others carry on. Each failed item is then
+       * `{ error: { message } }` in the step's output, and the step succeeds.
+       */
+      continueOnError?: boolean;
       /** For a foreach that runs a script. */
       with?: FlowGrants;
     }
   | { type: "join" }
   | { type: "delay"; seconds: number }
-  | { type: "approval"; title: string; detail?: string; timeoutSeconds?: number }
+  | {
+      type: "approval";
+      title: string;
+      detail?: string;
+      timeoutSeconds?: number;
+      /**
+       * Who may decide, beyond holding `approval:write`: a member of one of these
+       * groups, or one bound to one of these roles. Nobody named means anyone
+       * who holds the permission.
+       */
+      approvers?: { groups?: string[]; roles?: string[] };
+    }
   | { type: "subflow"; flow?: string; flowFrom?: string; allow?: string[]; input?: string }
   | {
       type: "respond";

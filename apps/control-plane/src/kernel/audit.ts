@@ -17,7 +17,7 @@ export interface Principal {
   appTenantId?: string;
   /** The app sign-in this request came with, when it came with one. */
   appSessionId?: string;
-  /** Whether the caller was recognised by a cookie, which a browser sends by itself. */
+  /** Whether the caller was recognized by a cookie, which a browser sends by itself. */
   viaCookie?: boolean;
   apiKeyId?: string;
   name?: string;

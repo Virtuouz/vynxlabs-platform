@@ -1,6 +1,7 @@
 import type { InterfaceBody, InterfacePage, PageWidget, WidgetField } from "@vynxlabs/manifest";
 import {
   Button,
+  chartSpecFor,
   Dialog,
   DialogsProvider,
   type FormSchema,
@@ -14,6 +15,7 @@ import {
 import type React from "react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type DataClient, type Filter, failure, type Row, type TableInfo } from "./data.ts";
+import { axisFormat, formatValue } from "./format.ts";
 import { all, heading, linkDefaults, linkFilter, sortOf, summaryRows } from "./links.ts";
 
 const SYSTEM = new Set(["id", "created_at", "updated_at"]);
@@ -106,7 +108,10 @@ function WidgetView({
   onSelect,
   onChanged,
   onLooked,
+  narrowed,
 }: {
+  /** What the page's filters add, for this widget's table. */
+  narrowed?: Filter | undefined;
   widget: PageWidget;
   source: PageWidget | undefined;
   /** The row chosen in the widget this one follows. */
@@ -136,7 +141,9 @@ function WidgetView({
   const table = widget.table;
   const link = linkFilter(widget, source, chosen);
   const held = typeof link === "string" ? link : undefined;
-  const filter = held ? undefined : all([widget.filter as Filter | undefined, link as Filter]);
+  const filter = held
+    ? undefined
+    : all([widget.filter as Filter | undefined, link as Filter, narrowed]);
   const readable = widget.type !== "text" && widget.type !== "form" && info?.found && info.canRead;
   const fields = useMemo(() => fieldsOf(widget, info), [widget, info]);
   const limit = widget.type === "card" ? 1 : (widget.pageSize ?? 50);
@@ -223,6 +230,7 @@ function WidgetView({
   const display = useCallback(
     (column: string, value: unknown) => {
       const field = fields.find((candidate) => candidate.column === column);
+      if (field?.format) return formatValue(value, field.format);
       if (!field?.show || typeof value !== "string") return undefined;
       const target = info?.columns.find((candidate) => candidate.name === column)?.references;
       const shown = target ? lookups.get(target)?.get(value)?.[field.show] : undefined;
@@ -373,27 +381,74 @@ function WidgetView({
       : {}),
   };
 
+  if (widget.type === "figure") {
+    const first = widget.summary?.aggregates[0];
+    const value = first ? data.rows[0]?.[first.as] : undefined;
+    const format = widget.options?.format ?? { style: "number" as const };
+    const shown =
+      value === undefined || value === null ? "—" : (formatValue(value, format) ?? String(value));
+    return (
+      <div className="flex h-full flex-col justify-center gap-1">
+        {/* The widget's heading names it. Without one, the total's own name does. */}
+        {widget.title ? null : (
+          <span className="text-[13px] text-ink-muted">{heading(first?.as ?? "total")}</span>
+        )}
+        <span className="font-mono text-3xl font-semibold tabular-nums">
+          {data.loading && data.rows.length === 0 ? "…" : shown}
+        </span>
+        {data.error ? <span className="text-[13px] text-danger">{data.error}</span> : null}
+      </div>
+    );
+  }
+
   if (widget.type === "chart") {
     const options = widget.options ?? {};
     /** What a value is called: the name its field was given, or its own made readable. */
     const titleOf = (name: string) =>
       fields.find((field) => field.column === name)?.label ?? heading(name);
+    const shape = {
+      title: widget.title || "Chart",
+      mark: options.mark,
+      x: options.x,
+      y: options.y,
+      ...(options.series ? { series: options.series } : {}),
+      xType: typeOf(widget, info, options.x ?? ""),
+      ...(options.x ? { xTitle: titleOf(options.x) } : {}),
+      ...(options.y ? { yTitle: titleOf(options.y) } : {}),
+      ...(options.series ? { seriesTitle: titleOf(options.series) } : {}),
+      height: 220,
+    };
+    // The values up the side written as their format says: the chart's own, or its y field's.
+    const format = options.format ?? fields.find((field) => field.column === options.y)?.format;
+    if (!format || !options.mark || !options.x || !options.y) {
+      return <Widget name="chart" config={shape} context={{ rows: data.rows }} />;
+    }
+    const y = options.y;
+    const axis = axisFormat(format);
+    const rows = data.rows.map((row) => {
+      const value = Number(row[y]);
+      return Number.isFinite(value) ? { ...row, [y]: value / axis.divide } : row;
+    });
+    const spec = chartSpecFor({
+      ...shape,
+      mark: options.mark,
+      x: options.x,
+      y,
+      ...(axis.note ? { yTitle: `${shape.yTitle ?? y} (${axis.note})` } : {}),
+    }) as {
+      encoding: Record<string, Record<string, unknown>>;
+    };
+    const valueChannel = options.mark === "pie" ? "theta" : "y";
+    const channel = spec.encoding[valueChannel];
+    if (channel) {
+      channel.format = axis.format;
+      if (valueChannel === "y") channel.axis = { ...(channel.axis as object), format: axis.format };
+    }
     return (
       <Widget
         name="chart"
-        config={{
-          title: widget.title || "Chart",
-          mark: options.mark,
-          x: options.x,
-          y: options.y,
-          ...(options.series ? { series: options.series } : {}),
-          xType: typeOf(widget, info, options.x ?? ""),
-          ...(options.x ? { xTitle: titleOf(options.x) } : {}),
-          ...(options.y ? { yTitle: titleOf(options.y) } : {}),
-          ...(options.series ? { seriesTitle: titleOf(options.series) } : {}),
-          height: 220,
-        }}
-        context={{ rows: data.rows }}
+        config={{ title: shape.title, spec, height: shape.height }}
+        context={{ rows }}
       />
     );
   }
@@ -458,8 +513,187 @@ export interface PageRendererProps {
     | undefined;
 }
 
+/** What someone set in a page's filters: a range of dates, or one value. */
+type Narrow = { from?: string | undefined; to?: string | undefined; value?: string | undefined };
+
+/** The conditions a page's filters put on one table: only those whose column the table has. */
+function pageNarrowing(
+  page: InterfacePage,
+  values: Record<string, Narrow>,
+  info: TableInfo | undefined,
+): Filter | undefined {
+  const parts: Filter[] = [];
+  for (const one of page.filters ?? []) {
+    if (!info?.columns.some((column) => column.name === one.column)) continue;
+    const set = values[one.id];
+    if (!set) continue;
+    if (one.type === "date") {
+      if (set.from) parts.push({ column: one.column, op: "gte", value: set.from });
+      if (set.to) parts.push({ column: one.column, op: "lt", value: set.to });
+    } else if (set.value) {
+      parts.push({ column: one.column, op: "eq", value: set.value });
+    }
+  }
+  return parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : { and: parts };
+}
+
+/** The most values a value filter lists. With more, it takes typed text instead. */
+export const FILTER_CHOICES = 200;
+
+/**
+ * A filter on one value: a list of the values the column holds, read from the
+ * first table on the page that has it. A column with too many values to list,
+ * or that cannot be read, takes typed text.
+ */
+function ValueFilter({
+  label,
+  column,
+  table,
+  client,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  column: string;
+  table: string | undefined;
+  client: DataClient;
+  value: string | undefined;
+  onChange: (value: string | undefined) => void;
+  className: string;
+}) {
+  const [choices, setChoices] = useState<string[] | null>();
+  useEffect(() => {
+    if (!table) {
+      setChoices(null);
+      return;
+    }
+    let current = true;
+    client.aggregate(table, { group: [column], sort: [column], limit: FILTER_CHOICES + 1 }).then(
+      (totals) => {
+        if (!current) return;
+        const found = totals.items
+          .map((item) => item.by[column])
+          .filter((one) => one !== null && one !== undefined && one !== "")
+          .map(String);
+        setChoices(totals.truncated || found.length > FILTER_CHOICES ? null : found);
+      },
+      () => current && setChoices(null),
+    );
+    return () => {
+      current = false;
+    };
+  }, [table, column, client]);
+
+  if (choices === null) {
+    return (
+      <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+        {label}
+        <input
+          className={className}
+          placeholder="All"
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value || undefined)}
+        />
+      </label>
+    );
+  }
+  return (
+    <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+      {label}
+      <select
+        className={`${className} min-w-32`}
+        value={value ?? ""}
+        disabled={choices === undefined}
+        onChange={(event) => onChange(event.target.value || undefined)}
+      >
+        <option value="">All</option>
+        {(choices ?? []).map((one) => (
+          <option key={one} value={one}>
+            {one}
+          </option>
+        ))}
+        {/* A value set before the list arrived, or that no row holds any more, stays chosen. */}
+        {value && choices && !choices.includes(value) ? (
+          <option value={value}>{value}</option>
+        ) : null}
+      </select>
+    </label>
+  );
+}
+
+function PageFilters({
+  page,
+  values,
+  onChange,
+  tables,
+  client,
+}: {
+  page: InterfacePage;
+  values: Record<string, Narrow>;
+  onChange: (id: string, value: Narrow) => void;
+  tables: Record<string, TableInfo>;
+  client: DataClient;
+}) {
+  /** The first table on the page that has the column and may be read. */
+  const tableWith = (column: string) =>
+    page.widgets
+      .map((widget) => widget.table)
+      .find(
+        (table) =>
+          table !== undefined &&
+          tables[table]?.canRead &&
+          tables[table]?.columns.some((one) => one.name === column),
+      );
+  const input =
+    "h-8 rounded-control border border-line bg-surface px-2 text-ink placeholder:text-ink-muted/70";
+  return (
+    <search aria-label="Filters" className="mb-3 flex flex-wrap items-end gap-3">
+      {(page.filters ?? []).map((one) => {
+        const set = values[one.id] ?? {};
+        return one.type === "date" ? (
+          <fieldset key={one.id} className="m-0 flex items-end gap-1.5 border-0 p-0">
+            <legend className="mb-1 p-0 text-[13px] text-ink-muted">{one.label}</legend>
+            <input
+              type="date"
+              aria-label={`${one.label} from`}
+              className={input}
+              value={set.from ?? ""}
+              onChange={(event) =>
+                onChange(one.id, { ...set, from: event.target.value || undefined })
+              }
+            />
+            <span className="pb-1.5 text-ink-muted">–</span>
+            <input
+              type="date"
+              aria-label={`${one.label} until`}
+              className={input}
+              value={set.to ?? ""}
+              onChange={(event) =>
+                onChange(one.id, { ...set, to: event.target.value || undefined })
+              }
+            />
+          </fieldset>
+        ) : (
+          <ValueFilter
+            key={one.id}
+            label={one.label}
+            column={one.column}
+            table={tableWith(one.column)}
+            client={client}
+            value={set.value}
+            onChange={(value) => onChange(one.id, { value })}
+            className={input}
+          />
+        );
+      })}
+    </search>
+  );
+}
+
 function PageBody({ page, tables, client, editing }: PageRendererProps) {
   const [chosen, setChosen] = useState<Record<string, Row>>({});
+  const [narrow, setNarrow] = useState<Record<string, Narrow>>({});
   const [version, setVersion] = useState(0);
   const lookups = useRef<Lookups>(new Map()).current;
   const byId = useMemo(
@@ -544,81 +778,97 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
   }
   const movable = editing?.onMove !== undefined;
   return (
-    <div ref={grid} className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
-      {ordered.map((widget) => {
-        const source = widget.link ? byId.get(widget.link.from) : undefined;
-        const active = editing?.selected === widget.id;
-        const at = held?.id === widget.id ? held.at : widget.at;
-        return (
-          <section
-            key={widget.id}
-            aria-label={widget.title || widget.id}
-            style={
-              {
-                "--col": `${at.x + 1} / span ${at.w}`,
-                "--row": `${at.y + 1} / span ${at.h}`,
-              } as CSSProperties
-            }
-            className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
-              active ? "border-action ring-2 ring-action/30" : "border-line"
-            } ${held?.id === widget.id ? "z-10 opacity-90 shadow-lg" : ""}`}
-          >
-            {widget.title || editing ? (
-              <header
-                className={`flex items-center justify-between gap-2 border-line border-b px-3 py-2 ${
-                  movable ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
-                }`}
-                {...(movable
-                  ? {
-                      title: "Drag to move",
-                      onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
-                        grab(event, widget, "move"),
-                    }
-                  : {})}
-              >
-                <h2 className="m-0 truncate text-[14px] font-semibold">
-                  {widget.title || heading(widget.id)}
-                </h2>
-                {editing ? (
-                  <Button
-                    size="small"
-                    variant={active ? "primary" : "quiet"}
-                    onClick={() => editing.onSelect(widget.id)}
-                  >
-                    {active ? "Editing" : "Edit"}
-                  </Button>
-                ) : null}
-              </header>
-            ) : null}
-            {movable ? (
-              <span
-                aria-hidden="true"
-                title="Drag to change its size"
-                className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 md:block"
-                onPointerDown={(event) => grab(event, widget, "stretch")}
-              />
-            ) : null}
-            <div className="min-h-0 flex-1 overflow-auto p-3">
-              <WidgetView
-                widget={widget}
-                source={source}
-                chosen={source ? chosen[source.id] : undefined}
-                info={widget.table ? tables[widget.table] : undefined}
-                tables={tables}
-                client={client}
-                version={version}
-                lookups={lookups}
-                selected={chosen[widget.id]}
-                followed={followed.has(widget.id)}
-                onSelect={(row) => setChosen((before) => ({ ...before, [widget.id]: row }))}
-                onChanged={changed}
-                onLooked={looked}
-              />
-            </div>
-          </section>
-        );
-      })}
-    </div>
+    <>
+      {page.filters && page.filters.length > 0 ? (
+        <PageFilters
+          page={page}
+          tables={tables}
+          client={client}
+          values={narrow}
+          onChange={(id, value) => setNarrow((before) => ({ ...before, [id]: value }))}
+        />
+      ) : null}
+      <div ref={grid} className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
+        {ordered.map((widget) => {
+          const source = widget.link ? byId.get(widget.link.from) : undefined;
+          const active = editing?.selected === widget.id;
+          const at = held?.id === widget.id ? held.at : widget.at;
+          return (
+            <section
+              key={widget.id}
+              aria-label={widget.title || widget.id}
+              style={
+                {
+                  "--col": `${at.x + 1} / span ${at.w}`,
+                  "--row": `${at.y + 1} / span ${at.h}`,
+                } as CSSProperties
+              }
+              className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
+                active ? "border-action ring-2 ring-action/30" : "border-line"
+              } ${held?.id === widget.id ? "z-10 opacity-90 shadow-lg" : ""}`}
+            >
+              {widget.title || editing ? (
+                <header
+                  className={`flex items-center justify-between gap-2 border-line border-b px-3 py-2 ${
+                    movable ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
+                  }`}
+                  {...(movable
+                    ? {
+                        title: "Drag to move",
+                        onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
+                          grab(event, widget, "move"),
+                      }
+                    : {})}
+                >
+                  <h2 className="m-0 truncate text-[14px] font-semibold">
+                    {widget.title || heading(widget.id)}
+                  </h2>
+                  {editing ? (
+                    <Button
+                      size="small"
+                      variant={active ? "primary" : "quiet"}
+                      onClick={() => editing.onSelect(widget.id)}
+                    >
+                      {active ? "Editing" : "Edit"}
+                    </Button>
+                  ) : null}
+                </header>
+              ) : null}
+              {movable ? (
+                <span
+                  aria-hidden="true"
+                  title="Drag to change its size"
+                  className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 md:block"
+                  onPointerDown={(event) => grab(event, widget, "stretch")}
+                />
+              ) : null}
+              <div className="min-h-0 flex-1 overflow-auto p-3">
+                <WidgetView
+                  widget={widget}
+                  source={source}
+                  chosen={source ? chosen[source.id] : undefined}
+                  info={widget.table ? tables[widget.table] : undefined}
+                  tables={tables}
+                  client={client}
+                  version={version}
+                  lookups={lookups}
+                  selected={chosen[widget.id]}
+                  followed={followed.has(widget.id)}
+                  onSelect={(row) => setChosen((before) => ({ ...before, [widget.id]: row }))}
+                  onChanged={changed}
+                  onLooked={looked}
+                  narrowed={pageNarrowing(
+                    page,
+                    narrow,
+                    widget.table ? tables[widget.table] : undefined,
+                  )}
+                />
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

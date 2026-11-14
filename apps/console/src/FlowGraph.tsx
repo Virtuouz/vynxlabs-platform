@@ -54,7 +54,7 @@ const STATUS: Record<string, { stroke: string; label: string }> = {
   failed: { stroke: "var(--vx-danger)", label: "Failed" },
   running: { stroke: "var(--vx-action)", label: "Running" },
   waiting: { stroke: "var(--vx-attention)", label: "Waiting" },
-  cancelled: { stroke: "var(--vx-ink-muted)", label: "Cancelled" },
+  cancelled: { stroke: "var(--vx-ink-muted)", label: "Canceled" },
   skipped: { stroke: "var(--vx-line)", label: "Skipped" },
 };
 
@@ -176,16 +176,33 @@ export function FlowGraph({
           const [x1, y1, x2, y2] = [from.x + WIDTH, from.y + HEIGHT / 2, to.x, to.y + HEIGHT / 2];
           const bend = Math.max(32, Math.abs(x2 - x1) / 2);
           const label = edge.error ? "on error" : edge.output;
+          // In a run, the way it went is drawn strong and the rest recedes.
+          const reached = (id: string) => {
+            const status = statuses?.[id];
+            return status !== undefined && status !== "skipped";
+          };
+          const taken = statuses ? reached(edge.from) && reached(edge.to) : undefined;
           return (
             <g key={`${edge.from}-${edge.to}-${edge.output ?? ""}-${edge.error ? "e" : ""}`}>
               <path
                 d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
                 fill="none"
-                stroke={edge.error ? "var(--vx-danger)" : "var(--vx-ink-muted)"}
-                strokeWidth="1.5"
-                strokeDasharray={edge.error ? "5 4" : undefined}
+                stroke={
+                  edge.error
+                    ? "var(--vx-danger)"
+                    : taken
+                      ? "var(--vx-action)"
+                      : "var(--vx-ink-muted)"
+                }
+                strokeWidth={taken ? 2 : 1.5}
+                strokeDasharray={edge.error || taken === false ? "5 4" : undefined}
+                opacity={taken === false ? 0.4 : 1}
                 markerEnd={edge.error ? "url(#arrow-error)" : "url(#arrow)"}
-              />
+              >
+                {taken !== undefined ? (
+                  <title>{taken ? "Taken in this run" : "Not taken"}</title>
+                ) : null}
+              </path>
               {label ? (
                 <text
                   x={(x1 + x2) / 2}
@@ -233,7 +250,16 @@ export function FlowGraph({
                 }
               }}
             >
+              {isSelected ? (
+                <g stroke="var(--vx-action)" strokeWidth="2" fill="none">
+                  <polyline points="-5,5 -5,-5 5,-5" />
+                  <polyline
+                    points={`${WIDTH + 5},${HEIGHT - 5} ${WIDTH + 5},${HEIGHT + 5} ${WIDTH - 5},${HEIGHT + 5}`}
+                  />
+                </g>
+              ) : null}
               <rect
+                opacity={statuses && !status ? 0.5 : 1}
                 width={WIDTH}
                 height={HEIGHT}
                 rx={node.type === "trigger" ? HEIGHT / 2 : 8}

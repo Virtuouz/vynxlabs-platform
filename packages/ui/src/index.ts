@@ -1,5 +1,5 @@
 export { Badge, type BadgeTone } from "./Badge.tsx";
-export { Button } from "./Button.tsx";
+export { Button, type ButtonProps } from "./Button.tsx";
 export { Chart, type ChartProps } from "./Chart.tsx";
 export {
   ComboboxField,
@@ -26,6 +26,8 @@ export {
   SelectField,
   TextAreaField,
   TextField,
+  utcInputValue,
+  utcInstant,
 } from "./Fields.tsx";
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
@@ -35,6 +37,14 @@ export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";
+export {
+  DateStepper,
+  isoDay,
+  SegmentedControl,
+  type SegmentOption,
+} from "./Pickers.tsx";
+export { SideSheet, type SideSheetProps } from "./SideSheet.tsx";
+export { Avatar, Card, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
 export {

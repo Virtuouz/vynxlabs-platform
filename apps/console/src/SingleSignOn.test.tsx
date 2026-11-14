@@ -236,7 +236,7 @@ test("a SAML provider's settings say what lowering the bar means, and group mapp
   expect(sent("PUT")[0]?.body).toEqual({ items: [{ value: "*", groupId: "g1" }] });
 });
 
-test("signing in asks for the email first, then offers the organisation's sign-in", async () => {
+test("signing in asks for the email first, then offers the organization's sign-in", async () => {
   routes["GET /api/v1/sso/providers?email=alice%40acme.example"] = () => [
     200,
     {

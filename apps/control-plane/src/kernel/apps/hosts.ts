@@ -6,6 +6,7 @@ export interface AppDomain {
   id: string;
   tenantId: string;
   workspaceId: string;
+  /** Empty for a hostname that serves the portal and every app of the workspace. */
   appPath: string;
   hostname: string;
 }
@@ -19,7 +20,8 @@ export interface AppDomain {
  * - `apps`, the second address: apps by path and the API. No console, and a
  *   member's console sign-in is not accepted here.
  * - `domain`, a hostname a tenant registered for one app: that app at the root,
- *   and the API for that tenant only.
+ *   and the API for that tenant only. Registered with an empty app path, the
+ *   hostname serves the portal at the root and every app of its workspace by path.
  */
 export type Place = { kind: "main" } | { kind: "apps" } | { kind: "domain"; domain: AppDomain };
 

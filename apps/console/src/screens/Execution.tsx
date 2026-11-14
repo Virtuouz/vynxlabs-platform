@@ -16,8 +16,13 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { CollectionView } from "../kit/CollectionView.tsx";
+import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
+import { UsedBy, useReferences } from "../kit/references.tsx";
+import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
@@ -27,13 +32,10 @@ const STATUS: Record<Status, [BadgeTone, string]> = {
   running: ["action", "Running"],
   succeeded: ["success", "Succeeded"],
   failed: ["danger", "Failed"],
-  cancelled: ["neutral", "Cancelled"],
+  cancelled: ["neutral", "Canceled"],
 };
-const StatusBadge = ({ status }: { status: Status }) => (
-  <Badge tone={STATUS[status][0]}>{STATUS[status][1]}</Badge>
-);
 
-interface Run {
+export interface Run {
   id: string;
   script: string;
   status: Status;
@@ -47,19 +49,32 @@ interface Run {
   finishedAt: string | null;
 }
 
-function took(run: Run) {
+export function took(run: Pick<Run, "startedAt" | "finishedAt">) {
   if (!run.startedAt || !run.finishedAt) return "";
   const ms = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-const TRIGGER: Record<string, string> = {
+export const TRIGGER: Record<string, string> = {
   manual: "Started by hand",
   schedule: "Schedule",
   webhook: "Webhook",
   alert: "Failure handler",
 };
 
+interface ScriptRow {
+  path: string;
+  description: string;
+  timeoutSeconds: number;
+  inputSchema: Record<string, unknown>;
+  lastRun: { id: string; status: Status; createdAt: string; error: string | null } | null;
+  failedInARow: number;
+  ownership: string;
+  retries: number;
+  uses: { connections: string[]; secrets: string[]; variables: string[]; tables: string[] };
+}
+
+/** The code this workspace runs, with how each script last went and what it reaches. */
 export function Scripts({
   root,
   link,
@@ -71,70 +86,181 @@ export function Scripts({
   editable: boolean;
 }) {
   const runsLink = `${link}/runs`;
+  const list = useLoad<{ items: ScriptRow[] }>(`${root}/scripts`);
+  const [filter, setFilter] = useState<"all" | "failing" | "never">("all");
+  const [chosen, setChosen] = useState<string>();
+  const items = list.data?.items ?? [];
+  const rows = items.filter(
+    (row) =>
+      filter === "all" ||
+      (filter === "failing" && row.lastRun?.status === "failed") ||
+      (filter === "never" && !row.lastRun),
+  );
+  const open = items.find((row) => row.path === chosen);
+  const reaches = (row: ScriptRow) =>
+    [...row.uses.connections, ...row.uses.tables.map((table) => `table ${table}`)].join(", ");
+
   return (
-    <ListScreen<{
-      path: string;
-      description: string;
-      inputSchema: Record<string, unknown>;
-      lastRun: { id: string; status: Status; createdAt: string } | null;
-    }>
+    <CollectionView<ScriptRow>
       title="Scripts"
-      description="The scripts this workspace is running. Open one to read it, or to change it in a dev workspace."
-      action={
+      description="Code this workspace runs. Each script declares what it reaches, so a run can reach only that."
+      actions={
         editable ? (
           <Button variant="primary" onClick={() => navigate(`${link}/scripts/new`)}>
             New script
           </Button>
         ) : undefined
       }
-      path={`${root}/scripts`}
-      rowKey={(row) => row.path}
+      toolbar={
+        <FilterChips
+          label="Show"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "All", count: items.length },
+            {
+              value: "failing",
+              label: "Failing",
+              count: items.filter((row) => row.lastRun?.status === "failed").length,
+            },
+            {
+              value: "never",
+              label: "Never run",
+              count: items.filter((row) => !row.lastRun).length,
+            },
+          ]}
+        />
+      }
       columns={[
         {
           header: "Script",
           cell: (row) => (
-            <span>
+            <span className="flex min-w-0 flex-col">
               <Link
                 to={`${link}/scripts/edit/${row.path}`}
-                className="font-mono text-[13px] text-action"
+                className="truncate font-mono text-telemetry text-ink no-underline"
               >
                 {row.path}
               </Link>
-              {row.path.startsWith("core/") ? (
-                <span className="ml-2">
-                  <Badge>Comes with the platform</Badge>
-                </span>
-              ) : null}
+              <span className="truncate text-meta text-ink-subtle">
+                {row.description || "No description"}
+              </span>
             </span>
           ),
         },
         {
-          header: "What it does",
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          header: "Uses",
+          priority: 3,
+          cell: (row) => (
+            <span className="text-ink-muted">{reaches(row) || "Nothing outside"}</span>
+          ),
         },
         {
           header: "Last run",
+          priority: 2,
           cell: (row) =>
             row.lastRun ? (
-              <Link
-                to={`${runsLink}/${row.lastRun.id}`}
-                className="inline-flex items-center gap-2 no-underline"
-              >
-                <StatusBadge status={row.lastRun.status} />
-                <span className="text-ink-muted">{when(row.lastRun.createdAt)}</span>
+              <Link to={`${runsLink}/${row.lastRun.id}`} className="flex flex-col no-underline">
+                <StatePill
+                  state={stateOf(row.lastRun.status)}
+                  detail={fromNow(row.lastRun.createdAt)}
+                />
+                {row.failedInARow > 1 ? (
+                  <span className="text-meta text-danger">{row.failedInARow} in a row</span>
+                ) : null}
               </Link>
             ) : (
-              <span className="text-ink-muted">Never</span>
+              <span className="text-ink-subtle">Never run</span>
+            ),
+        },
+        {
+          header: "Source",
+          cell: (row) =>
+            row.path.startsWith("core/") ? (
+              <Tag>Platform</Tag>
+            ) : row.ownership === "ui" ? (
+              <Tag tone="draft">Console</Tag>
+            ) : (
+              <Tag tone="repository">Repository</Tag>
             ),
         },
       ]}
+      rows={list.data ? rows : undefined}
+      rowKey={(row) => row.path}
+      selected={chosen}
+      onSelect={(row) => setChosen(row.path)}
+      error={list.error?.message}
       empty={{
-        title: "No scripts yet",
-        text: "Scripts arrive with a deploy. From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
+        title: items.length > 0 ? "No script matches" : "No scripts yet",
+        text:
+          items.length > 0
+            ? "Show every script instead."
+            : "Scripts arrive with a deploy. From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
       }}
-      rowActions={(row) => (
-        <RunButton root={root} script={row.path} schema={row.inputSchema} runsLink={runsLink} />
-      )}
+      inspector={
+        open ? (
+          <Inspector
+            open
+            label="The chosen script"
+            title={open.path}
+            eyebrow="Script"
+            onClose={() => setChosen(undefined)}
+            footer={
+              <>
+                <Button
+                  variant="primary"
+                  onClick={() => navigate(`${link}/scripts/edit/${open.path}`)}
+                >
+                  Open editor
+                </Button>
+                <RunButton
+                  root={root}
+                  script={open.path}
+                  schema={open.inputSchema}
+                  runsLink={runsLink}
+                />
+              </>
+            }
+          >
+            <div className="flex flex-col gap-4">
+              {open.lastRun?.status === "failed" ? (
+                <Notice tone="danger">
+                  {open.failedInARow > 1
+                    ? `Failed ${open.failedInARow} times in a row. `
+                    : "Its last run failed. "}
+                  {open.lastRun.error ?? ""}
+                </Notice>
+              ) : null}
+              <p className="m-0 text-ink-muted">{open.description || "No description."}</p>
+              <KeyValues
+                rows={[
+                  { label: "Timeout", value: `${open.timeoutSeconds}s`, mono: true },
+                  { label: "Retries", value: String(open.retries), mono: true },
+                  {
+                    label: "Managed in",
+                    value: open.ownership === "ui" ? "The console" : "The repository",
+                  },
+                ]}
+              />
+              {(["connections", "tables", "secrets", "variables"] as const).map((kind) =>
+                open.uses[kind].length > 0 ? (
+                  <div key={kind} className="flex flex-col gap-1">
+                    <span className="text-label text-ink-subtle uppercase">{kind}</span>
+                    {open.uses[kind].map((name) => (
+                      <Mono key={name}>{name}</Mono>
+                    ))}
+                  </div>
+                ) : null,
+              )}
+              {open.lastRun ? (
+                <Link to={`${runsLink}/${open.lastRun.id}`} className="text-meta">
+                  Open the last run
+                </Link>
+              ) : null}
+            </div>
+          </Inspector>
+        ) : null
+      }
     />
   );
 }
@@ -171,54 +297,17 @@ function RunButton({
   );
 }
 
-export function Runs({ root, link }: { root: string; link: string }) {
-  return (
-    <ListScreen<Run>
-      title="Runs"
-      description="Every time a script ran in this workspace, newest first."
-      path={`${root}/runs?limit=100`}
-      rowKey={(row) => row.id}
-      columns={[
-        {
-          header: "Started",
-          cell: (row) => (
-            <Link to={`${link}/${row.id}`} className="whitespace-nowrap text-action">
-              {when(row.createdAt)}
-            </Link>
-          ),
-        },
-        { header: "Script", cell: (row) => code(row.script) },
-        { header: "Status", cell: (row) => <StatusBadge status={row.status} /> },
-        { header: "Started by", cell: (row) => TRIGGER[row.trigger.type] ?? row.trigger.type },
-        { header: "Took", cell: (row) => took(row), align: "end" },
-      ]}
-      empty={{
-        title: "Nothing has run yet",
-        text: "Start a script from the Scripts tab, or wait for a schedule or webhook.",
-      }}
-    />
-  );
-}
+export type LiveRun = Run & {
+  input: unknown;
+  output: unknown;
+  alert: Record<string, unknown> | null;
+  pool: string | null;
+  waitingFor: string | null;
+};
 
-/** One run, refreshed while it is in progress, with its log lines as they arrive. */
-export function RunDetail({
-  root,
-  runId,
-  backLink,
-}: {
-  root: string;
-  runId: string;
-  backLink: string;
-}) {
-  const [run, setRun] = useState<
-    Run & {
-      input: unknown;
-      output: unknown;
-      alert: Record<string, unknown> | null;
-      pool: string | null;
-      waitingFor: string | null;
-    }
-  >();
+/** A run and its log lines, asked for again while it is in progress. */
+export function useLiveRun(root: string, runId: string) {
+  const [run, setRun] = useState<LiveRun>();
   const [lines, setLines] = useState<LogLine[]>([]);
   const [error, setError] = useState<string>();
 
@@ -228,7 +317,7 @@ export function RunDetail({
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const current = await api.get<NonNullable<typeof run>>(`${root}/runs/${runId}`);
+        const current = await api.get<LiveRun>(`${root}/runs/${runId}`);
         const logs = await api.get<{ items: LogLine[]; done: boolean }>(
           `${root}/runs/${runId}/logs?after=${last}`,
         );
@@ -243,13 +332,29 @@ export function RunDetail({
         if (!stopped) setError((caught as Error).message);
       }
     };
+    setRun(undefined);
     setLines([]);
+    setError(undefined);
     poll();
     return () => {
       stopped = true;
       clearTimeout(timer);
     };
   }, [root, runId]);
+  return { run, lines, error };
+}
+
+/** One run, refreshed while it is in progress, with its log lines as they arrive. */
+export function RunDetail({
+  root,
+  runId,
+  backLink,
+}: {
+  root: string;
+  runId: string;
+  backLink: string;
+}) {
+  const { run, lines, error } = useLiveRun(root, runId);
 
   if (error) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
@@ -265,7 +370,7 @@ export function RunDetail({
       : run.status === "failed"
         ? `Failed${duration ? ` after ${duration}` : ""}`
         : run.status === "cancelled"
-          ? "Cancelled"
+          ? "Canceled"
           : run.status === "running"
             ? "Running"
             : "Waiting for a worker";
@@ -397,7 +502,7 @@ export function RunDetail({
 }
 
 /** A date and time to the second, in the same shape on every line so that they compare by eye. */
-const stamp = (iso: string) => {
+export const stamp = (iso: string) => {
   const date = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
@@ -633,6 +738,7 @@ function SetUpConnection({
 }
 
 export function Connections({ root }: { root: string }) {
+  const connectionUses = useReferences(root, "connection");
   return (
     <ListScreen<ConnectionRow>
       title="Connections"
@@ -641,6 +747,7 @@ export function Connections({ root }: { root: string }) {
       rowKey={(row) => row.path}
       columns={[
         { header: "Connection", cell: (row) => code(row.path) },
+        { header: "Used by", cell: (row) => <UsedBy uses={connectionUses(row.path)} /> },
         { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
         { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
@@ -740,6 +847,7 @@ export function Connections({ root }: { root: string }) {
 }
 
 export function Variables({ root }: { root: string }) {
+  const variableUses = useReferences(root, "variable");
   return (
     <ListScreen<{ path: string; description: string; default: string | null; value: string | null }>
       title="Variables"
@@ -748,6 +856,7 @@ export function Variables({ root }: { root: string }) {
       rowKey={(row) => row.path}
       columns={[
         { header: "Variable", cell: (row) => code(row.path) },
+        { header: "Read by", cell: (row) => <UsedBy uses={variableUses(row.path)} /> },
         { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Value here",
@@ -793,42 +902,124 @@ export function Variables({ root }: { root: string }) {
   );
 }
 
+interface WorkerPool {
+  id: string | null;
+  name: string | null;
+  description: string;
+  credentials: number;
+  online: number;
+  lastSeenAt: string | null;
+  workspaces: { id: string; name: string }[];
+  managed: boolean;
+}
+
+/** One place code runs: whether a worker is there now, and what runs on it. */
+function PoolCard({
+  pool,
+  remove,
+  onRemoved,
+}: {
+  pool: WorkerPool;
+  remove: (() => Promise<unknown>) | undefined;
+  onRemoved: () => void;
+}) {
+  const label = pool.name ?? "Default pool";
+  return (
+    <li className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h3 className="m-0 flex flex-wrap items-center gap-2 text-title">
+            {pool.name ? <Mono>{pool.name}</Mono> : label}
+            {pool.managed ? <Tag>Instance-run</Tag> : null}
+            {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
+          </h3>
+          {pool.description ? (
+            <p className="m-0 text-meta text-ink-muted">{pool.description}</p>
+          ) : null}
+        </div>
+        {pool.online > 0 ? (
+          <StatePill state="ok" detail={pool.lastSeenAt ? fromNow(pool.lastSeenAt) : undefined}>
+            {pool.online} online
+          </StatePill>
+        ) : (
+          <StatePill
+            state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "cancelled"}
+            detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
+          >
+            No worker online
+          </StatePill>
+        )}
+      </div>
+      <KeyValues
+        rows={[
+          {
+            label: "Runs code of",
+            value:
+              pool.workspaces.length > 0
+                ? pool.workspaces.map((workspace) => workspace.name).join(", ")
+                : "No workspace yet",
+          },
+          { label: "Credentials", value: <Mono>{pool.credentials}</Mono> },
+        ]}
+      />
+      {remove ? (
+        <div>
+          <RemoveButton
+            label="Remove pool"
+            confirm={`Remove the pool "${label}"? Scripts that name it wait until it is made again.`}
+            run={remove}
+            onDone={onRemoved}
+          />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 export function Workers({ base }: { base: string }) {
-  const live = useLoad<{
-    items: { id: string; credentialName: string; managed: boolean; lastSeenAt: string }[];
-  }>(`${base}/workers`);
+  const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
+  const [adding, setAdding] = useState(false);
+  const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
+  const poolOptions = [
+    { value: "", label: "Default pool: scripts that name no pool" },
+    ...made.map((pool) => ({ value: pool.name as string, label: pool.name as string })),
+  ];
   return (
     <div className="flex flex-col gap-8">
       <Page
         title="Workers"
-        description="Workers run this tenant's scripts. The instance starts one when there is work and stops it when there is none. A standalone worker is one you run yourself, for example inside your own network."
+        description="Workers run this tenant's scripts. A pool is one place code runs, such as inside a client's network: a script names its pool, and only workers started with a credential for that pool run it."
+        action={
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            Add pool
+          </Button>
+        }
       >
-        {live.data && live.data.items.length > 0 ? (
-          <ul className="m-0 flex list-none flex-col gap-1 p-0">
-            {live.data.items.map((worker) => (
-              <li key={worker.id} className="flex items-center gap-2">
-                <Badge tone="success">Running</Badge>
-                {worker.managed
-                  ? "Started by the instance"
-                  : `Standalone, using "${worker.credentialName}"`}
-                <span className="text-ink-muted">last heard from {when(worker.lastSeenAt)}</span>
-              </li>
+        {pools.error ? (
+          <Notice tone="danger">{pools.error.message}</Notice>
+        ) : !pools.data ? (
+          <p className="m-0 text-ink-muted">Loading…</p>
+        ) : (
+          <ul
+            aria-label="Worker pools"
+            className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2 2xl:grid-cols-3"
+          >
+            {pools.data.items.map((pool) => (
+              <PoolCard
+                key={pool.id ?? pool.name ?? "default"}
+                pool={pool}
+                remove={pool.id ? () => api.delete(`${base}/worker-pools/${pool.id}`) : undefined}
+                onRemoved={pools.reload}
+              />
             ))}
           </ul>
-        ) : (
-          <p className="m-0 text-ink-muted">
-            No worker is running right now.
-            {tenant.data?.managedWorkers === false
-              ? " This tenant runs on its own workers: start one with a credential from below."
-              : " One starts when a script needs to run."}
-          </p>
         )}
         {tenant.data ? (
           <div className="flex flex-wrap items-center gap-3">
             <span>
               {tenant.data.managedWorkers
-                ? "The instance starts workers for this tenant."
+                ? "The instance starts workers for the default pool when there is work."
                 : "The instance starts no workers for this tenant."}
             </span>
             <Button
@@ -844,6 +1035,33 @@ export function Workers({ base }: { base: string }) {
             </Button>
           </div>
         ) : null}
+        <CreateDialog
+          config={{
+            action: "Add pool",
+            description:
+              "Scripts name the pool with `worker`. Then make a credential for it and start a worker there.",
+            fields: [
+              {
+                name: "name",
+                label: "Name",
+                placeholder: "warehouse",
+                hint: "Lower case letters, digits and dashes.",
+              },
+              { name: "description", label: "Description", required: false },
+            ],
+            submit: ({ name, description }) =>
+              api.post(`${base}/worker-pools`, {
+                name,
+                ...(description ? { description } : {}),
+              }),
+          }}
+          open={adding}
+          onClose={() => setAdding(false)}
+          onCreated={() => {
+            setAdding(false);
+            pools.reload();
+          }}
+        />
       </Page>
       <ListScreen<{
         id: string;
@@ -854,6 +1072,7 @@ export function Workers({ base }: { base: string }) {
         revokedAt: string | null;
         createdAt: string;
       }>
+        as="section"
         title="Credentials for standalone workers"
         description="Start a worker with: platform-worker --url <this instance> --token <credential>"
         path={`${base}/worker-credentials`}
@@ -862,9 +1081,8 @@ export function Workers({ base }: { base: string }) {
           { header: "Name", cell: (row) => row.name },
           { header: "Credential", cell: (row) => code(`${row.prefix}…`) },
           {
-            header: "Runs",
-            cell: (row) =>
-              row.pool ? `Scripts of the pool "${row.pool}"` : "Scripts that name no pool",
+            header: "Pool",
+            cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
           },
           { header: "Created", cell: (row) => when(row.createdAt) },
           {
@@ -888,13 +1106,18 @@ export function Workers({ base }: { base: string }) {
             {
               name: "pool",
               label: "Pool",
-              required: false,
-              placeholder: "warehouse",
-              hint: "Leave empty to run scripts that name no pool. With a pool, the worker runs only the scripts that name it.",
+              options: poolOptions,
+              hint: "The worker runs only the scripts of this pool.",
             },
           ],
-          submit: ({ name, pool }) =>
-            api.post(`${base}/worker-credentials`, { name, ...(pool ? { pool } : {}) }),
+          submit: async ({ name, pool }) => {
+            const result = await api.post(`${base}/worker-credentials`, {
+              name,
+              ...(pool ? { pool } : {}),
+            });
+            pools.reload();
+            return result;
+          },
           afterCreate: (result) => (
             <span>
               Copy this credential now. It is not shown again:{" "}
@@ -910,7 +1133,10 @@ export function Workers({ base }: { base: string }) {
               label="Revoke"
               confirm={`Revoke "${row.name}"? A worker using it stops.`}
               run={() => api.delete(`${base}/worker-credentials/${row.id}`)}
-              onDone={reload}
+              onDone={() => {
+                reload();
+                pools.reload();
+              }}
             />
           )
         }

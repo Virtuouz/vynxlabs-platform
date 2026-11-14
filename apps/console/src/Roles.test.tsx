@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { allows, Roles, toggle } from "./screens/Roles.tsx";
 import { show } from "./testing.tsx";
@@ -94,10 +94,20 @@ test("a role is created by ticking boxes, with no permission typed", async () =>
 });
 
 test("an existing role is changed, keeps what the list does not know, and a built-in one is read-only", async () => {
+  // A wide screen: the inspector stands beside the list.
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
   show(<Roles base={base} />);
+  fireEvent.click(await screen.findByText("keeper"));
+  // The inspector says what the role allows in short, before anything is opened.
+  expect(await screen.findByText("In short")).toBeTruthy();
   fireEvent.click(await screen.findByRole("button", { name: "Change" }));
   expect(((await screen.findByLabelText("secret:write")) as HTMLInputElement).checked).toBe(true);
-  expect(screen.getByText("legacy:read")).toBeTruthy();
+  expect(within(screen.getByRole("dialog")).getByText("legacy:read")).toBeTruthy();
   fireEvent.click(screen.getByLabelText("data:read"));
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
@@ -108,6 +118,7 @@ test("an existing role is changed, keeps what the list does not know, and a buil
   );
   expect(calls.find((call) => call.method === "PATCH")?.url).toBe(`/api/v1${base}/roles/r1`);
 
+  fireEvent.click(await screen.findByText("viewer"));
   fireEvent.click(await screen.findByRole("button", { name: "View" }));
   expect(((await screen.findByLabelText("data:read")) as HTMLInputElement).checked).toBe(true);
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();

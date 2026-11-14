@@ -475,14 +475,15 @@ describe("someone who maintains apps made in the console, and is not a developer
     expect((await mona.get(`${devWs()}/drafts/limits/batch`)).status).toBe(404);
     expect((await alice.get(`${devWs()}/drafts`)).body.items).toHaveLength(3);
     expect((await mona.get(`${devWs()}/interfaces`)).body.items).toEqual([
-      {
+      expect.objectContaining({
         path: "screens/stock",
         title: "Stock",
         deployed: false,
         draft: true,
         removing: false,
         app: "stock-app",
-      },
+        pages: 1,
+      }),
     ]);
   });
 
@@ -509,14 +510,15 @@ describe("someone who maintains apps made in the console, and is not a developer
       ["limits/batch"],
     );
     expect((await mona.get(`${devWs()}/interfaces`)).body.items).toEqual([
-      {
+      expect.objectContaining({
         path: "screens/stock",
         title: "Stock",
         deployed: true,
         draft: false,
         removing: false,
         app: "stock-app",
-      },
+        pages: 1,
+      }),
     ]);
     // The app is there for her to open.
     const view = await mona.get(`${devWs()}/interfaces/screens/stock`);
@@ -628,6 +630,43 @@ describe("a member's own dashboards", () => {
       "dashboard.shared",
       "dashboard.unshared",
     ]);
+  });
+
+  test("it can be shown to some groups only, and a figure shows one total", async () => {
+    const group = await alice.post(`/tenants/${tenant}/groups`, { name: "Stock keepers" });
+    expect(group.status, JSON.stringify(group.body)).toBe(201);
+    const shared = await mona.put(`${base()}/${id}`, { sharedWith: [group.body.id] });
+    expect(shared.status, JSON.stringify(shared.body)).toBe(200);
+    expect(shared.body.sharedWith).toEqual([{ id: group.body.id, name: "Stock keepers" }]);
+    // Alice is not in the group, so she still does not see it.
+    expect((await alice.get(`${base()}/${id}`)).status).toBe(404);
+    const me = (await alice.get("/me")).body.principal.id;
+    await alice.put(`/tenants/${tenant}/groups/${group.body.id}/members/${me}`);
+    expect((await alice.get(`${base()}/${id}`)).status).toBe(200);
+    expect((await alice.get(base())).body.items[0].sharedWith).toHaveLength(1);
+    expect(
+      (await mona.put(`${base()}/${id}`, { sharedWith: ["00000000-0000-7000-8000-00000000dead"] }))
+        .status,
+    ).toBe(400);
+    await mona.put(`${base()}/${id}`, { sharedWith: [] });
+    expect((await alice.get(`${base()}/${id}`)).status).toBe(404);
+
+    const figure = { id: "total", type: "figure", table: "stock", at };
+    const missing = await mona.put(`${base()}/${id}`, { page: page([figure]) });
+    expect(missing.body.problems.map((problem: Any) => problem.message)).toContain(
+      "a figure needs a total to show",
+    );
+    const counted = await mona.put(`${base()}/${id}`, {
+      page: {
+        ...page([
+          { ...figure, summary: { groupBy: [], aggregates: [{ fn: "count", as: "items" }] } },
+        ]),
+        filters: [{ id: "when", label: "Added", column: "created_at", type: "date" }],
+      },
+    });
+    expect(counted.status, JSON.stringify(counted.body)).toBe(200);
+    expect(counted.body.problems).toEqual([]);
+    expect(counted.body.page.filters).toHaveLength(1);
   });
 
   test("a dashboard belongs to a member, there is a limit to them, and deleting one touches no table", async () => {

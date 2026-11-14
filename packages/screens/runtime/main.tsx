@@ -16,7 +16,7 @@ import { type DataClient, InterfaceRenderer, type InterfaceView } from "../src/i
 /** Rows through the app client, so every request is made as whoever is using the app. */
 const client: DataClient = {
   find: (name, options) =>
-    table(name).find({
+    table(name).page({
       ...(options.filter ? { filter: options.filter as AppFilter } : {}),
       ...(options.sort?.length ? { sort: options.sort } : {}),
       ...(options.limit !== undefined ? { limit: options.limit } : {}),

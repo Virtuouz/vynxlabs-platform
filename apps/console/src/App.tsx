@@ -1,11 +1,13 @@
 import { Notice } from "@vynxlabs/ui";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { api, type Me, useLoad } from "./api.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
 import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
+import { InstanceBranding } from "./screens/InstanceBranding.tsx";
+import { KitSheet } from "./screens/KitSheet.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 
@@ -14,7 +16,6 @@ const SingleSignOn = lazy(() =>
 );
 
 import { Tenants } from "./screens/Tenants.tsx";
-import { useTenantTheme } from "./theme.ts";
 
 const RETURN_TO = ["/apps/", "/portal/", "/api/v1/app-handoffs/start"];
 
@@ -29,15 +30,37 @@ export function returnTarget(search: string): string | null {
   return RETURN_TO.some((prefix) => value.startsWith(prefix)) ? value : null;
 }
 
+/**
+ * Tells the server which tenant and workspace the member is in, so "where you
+ * were" follows them to another device. Sent once the place has settled, and
+ * only when it changes; a failure changes nothing here.
+ */
+export function useRememberPlace(signedIn: boolean, path: string) {
+  const sent = useRef<string | undefined>(undefined);
+  const inWorkspace = match("/t/:t/workspaces/:w/*", path);
+  const tenantId = match("/t/:t/*", path)?.t;
+  const workspaceId = inWorkspace?.w;
+  useEffect(() => {
+    if (!signedIn || !tenantId) return;
+    const key = `${tenantId} ${workspaceId ?? ""}`;
+    if (sent.current === key) return;
+    const timer = setTimeout(() => {
+      sent.current = key;
+      api.put("/me/recent", { tenantId, workspaceId: workspaceId ?? null }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [signedIn, tenantId, workspaceId]);
+}
+
 export function App() {
   const me = useLoad<Me>("/me");
   const path = usePath();
+  useRememberPlace(me.data !== undefined && !me.error, path);
   const tenant = match("/t/:tenantId/*", path);
   const target = me.data ? returnTarget(location.search) : null;
   useEffect(() => {
     if (target) window.location.assign(target);
   }, [target]);
-  useTenantTheme(me.data ? tenant?.tenantId : undefined);
 
   if (me.loading && !me.data && !me.error) return null;
   if (me.error?.status === 401 || !me.data) {
@@ -69,6 +92,8 @@ export function App() {
   else if (path === "/instance/audit") screen = <InstanceAudit />;
   else if (path === "/instance/databases") screen = <DatabaseLocations />;
   else if (path === "/instance/import") screen = <TenantImport />;
+  else if (path === "/instance/branding") screen = <InstanceBranding />;
+  else if (path === "/instance/kit") screen = <KitSheet />;
 
   return (
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>

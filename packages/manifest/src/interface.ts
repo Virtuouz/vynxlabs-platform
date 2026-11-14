@@ -17,9 +17,23 @@ export interface InterfacePage {
   id: string;
   title: string;
   widgets: PageWidget[];
+  /**
+   * Filters over the whole page, set by whoever reads it: a range of dates, or
+   * one value. Each narrows every widget whose table has the column.
+   */
+  filters?: PageFilter[];
 }
 
-export const WIDGET_TYPES = ["table", "card", "cards", "chart", "form", "text"] as const;
+export const PAGE_FILTER_TYPES = ["date", "value"] as const;
+export interface PageFilter {
+  id: string;
+  label: string;
+  column: string;
+  type: (typeof PAGE_FILTER_TYPES)[number];
+}
+export const MAX_PAGE_FILTERS = 4;
+
+export const WIDGET_TYPES = ["table", "card", "cards", "chart", "figure", "form", "text"] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 export const SUMMARY_FUNCTIONS = ["count", "sum", "avg", "min", "max"] as const;
 export const SUMMARY_BUCKETS = ["day", "week", "month", "year"] as const;
@@ -34,8 +48,26 @@ export interface WidgetSummary {
   aggregates: { fn: (typeof SUMMARY_FUNCTIONS)[number]; column?: string; as: string }[];
 }
 
+export const VALUE_FORMAT_STYLES = ["number", "currency", "percent"] as const;
+
+/**
+ * How a number is written, in US English. Money is often kept in cents: with
+ * `minorUnits` the value is divided by 100 before it is shown.
+ */
+export interface ValueFormat {
+  style: (typeof VALUE_FORMAT_STYLES)[number];
+  /** An ISO 4217 code, for `currency`. Default `USD`. */
+  currency?: string;
+  /** The value is in hundredths, such as cents, and is divided by 100 to be shown. */
+  minorUnits?: boolean;
+  /** How many digits after the point. The style's own when left out. */
+  decimals?: number;
+}
+
 export interface WidgetField {
   column: string;
+  /** How a number in this column is written. */
+  format?: ValueFormat;
   label?: string;
   /** For a reference: the column of the row it points at to show in place of its ID. */
   show?: string;
@@ -71,6 +103,8 @@ export interface WidgetOptions {
   /** Whether rows can be added and deleted from a table or a list of cards. */
   allowAdd?: boolean;
   allowDelete?: boolean;
+  /** How a figure's number, or a chart's values up the side, are written. */
+  format?: ValueFormat;
 }
 
 export interface PageWidget {
@@ -99,10 +133,23 @@ export const MAX_FILTER_CONDITIONS = 20;
 const SLUG = "^[a-z][a-z0-9_-]{0,39}$";
 const COLUMN = "^[a-z][a-z0-9_]{0,62}$";
 
+const formatSchema = {
+  type: "object",
+  properties: {
+    style: { enum: [...VALUE_FORMAT_STYLES] },
+    currency: { type: "string", pattern: "^[A-Z]{3}$" },
+    minorUnits: { type: "boolean" },
+    decimals: { type: "integer", minimum: 0, maximum: 6 },
+  },
+  required: ["style"],
+  additionalProperties: false,
+};
+
 const fieldSchema = {
   type: "object",
   properties: {
     column: { type: "string", pattern: COLUMN },
+    format: formatSchema,
     label: { type: "string", minLength: 1, maxLength: 100 },
     show: { type: "string", pattern: COLUMN },
     editable: { type: "boolean" },
@@ -192,6 +239,7 @@ const widgetSchema = {
         success: { type: "string", maxLength: 300 },
         allowAdd: { type: "boolean" },
         allowDelete: { type: "boolean" },
+        format: formatSchema,
       },
       additionalProperties: false,
     },
@@ -218,6 +266,21 @@ export const interfacePageSchema = {
     id: { type: "string", pattern: SLUG },
     title: { type: "string", minLength: 1, maxLength: 100 },
     widgets: { type: "array", maxItems: MAX_WIDGETS, items: widgetSchema },
+    filters: {
+      type: "array",
+      maxItems: MAX_PAGE_FILTERS,
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string", pattern: SLUG },
+          label: { type: "string", minLength: 1, maxLength: 60 },
+          column: { type: "string", pattern: COLUMN },
+          type: { enum: [...PAGE_FILTER_TYPES] },
+        },
+        required: ["id", "label", "column", "type"],
+        additionalProperties: false,
+      },
+    },
   },
   required: ["id", "title", "widgets"],
   additionalProperties: false,
@@ -299,8 +362,16 @@ export function checkPage(
       problem("/table", `a ${widget.type} widget needs a table`);
       return;
     }
-    if (widget.summary && widget.type !== "table" && widget.type !== "chart") {
-      problem("/summary", `only a table or a chart can show totals, not a ${widget.type} widget`);
+    if (
+      widget.summary &&
+      widget.type !== "table" &&
+      widget.type !== "chart" &&
+      widget.type !== "figure"
+    ) {
+      problem(
+        "/summary",
+        `only a table, a chart or a figure can show totals, not a ${widget.type} widget`,
+      );
     }
 
     const summary = widget.summary;
@@ -362,6 +433,9 @@ export function checkPage(
       if (field.editable && summary) {
         problem(`/fields/${n}/editable`, "totals cannot be changed");
       }
+      if (field.format && type && !NUMERIC.has(type)) {
+        problem(`/fields/${n}/format`, `"${field.column}" holds ${type}, not a number`);
+      }
     });
     (widget.sort ?? []).forEach((entry, n) => {
       shown(`/sort/${n}/column`, entry.column);
@@ -406,6 +480,18 @@ export function checkPage(
     if (widget.type === "form") {
       if (!widget.fields?.length) problem("/fields", "a form needs at least one field");
     }
+    if (widget.options?.format && widget.type !== "figure" && widget.type !== "chart") {
+      problem(
+        "/options/format",
+        "only a figure or a chart has a number of its own to format; give a field its format",
+      );
+    }
+    if (widget.type === "figure") {
+      if (!summary || summary.aggregates.length === 0)
+        problem("/summary", "a figure needs a total to show");
+      else if (summary.groupBy.length > 0)
+        problem("/summary/groupBy", "a figure shows one total, not one per group");
+    }
     if (widget.type === "chart") {
       const options = widget.options ?? {};
       if (!options.mark) problem("/options/mark", "a chart needs a shape");
@@ -424,7 +510,12 @@ export function checkPage(
       problem("/link/from", `there is no other widget "${link.from}" on this page`);
       return;
     }
-    if (source.type === "form" || source.type === "text" || source.type === "chart") {
+    if (
+      source.type === "form" ||
+      source.type === "text" ||
+      source.type === "chart" ||
+      source.type === "figure"
+    ) {
       problem("/link/from", `a row cannot be chosen in a ${source.type} widget`);
       return;
     }

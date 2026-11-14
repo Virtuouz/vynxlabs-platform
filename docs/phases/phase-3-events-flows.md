@@ -93,7 +93,7 @@ The `flow` kind. Its body:
 
 ### Layout
 
-Node positions are kept in their own table, keyed by flow. They are not part of the manifest, so moving a node changes no version and no behaviour. A flow with no saved positions is laid out automatically.
+Node positions are kept in their own table, keyed by flow. They are not part of the manifest, so moving a node changes no version and no behavior. A flow with no saved positions is laid out automatically.
 
 ## Engine
 
@@ -101,7 +101,7 @@ Node positions are kept in their own table, keyed by flow. They are not part of 
 - A **step run** is one node's execution within a flow run, or one item of a `foreach`.
 - **Advancing** a flow run is one function, run in one transaction under a lock per flow run: find the nodes that are ready, start them, record results, repeat until nothing more can move.
 - A node is ready when one of its incoming edges has been taken. A `join` is ready when every incoming edge is settled and at least one was taken. A node whose incoming edges are all dead is skipped, and that passes downstream.
-- A failed step takes its error path if it has one. Otherwise the flow run fails and its other steps are cancelled.
+- A failed step takes its error path if it has one. Otherwise the flow run fails and its other steps are canceled.
 - Advancing is asked for at once when a flow run starts, when a code step's run ends, and when an approval is decided.
 - It does not depend on being asked. A sweep, every two seconds, finds every flow run that has something to do: one that just started, one whose step's run has ended, one whose child flow has ended, one whose wait is over. This is what makes a flow run survive a restart. Whatever was lost when the control plane stopped is found by the sweep when it starts again.
 - Advancing a flow run twice, or a hundred times, is harmless: it only acts on what the tables say.

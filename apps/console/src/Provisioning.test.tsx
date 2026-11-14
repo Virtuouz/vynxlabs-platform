@@ -43,6 +43,35 @@ beforeEach(() => {
       return new Response(null, { status: 204 });
     }
     if (method === "PUT") state = { ...state, settings: body };
+    if (address.endsWith("/pushed")) {
+      return json({
+        people: [
+          {
+            userName: "ana@acme.example",
+            email: "ana@acme.example",
+            displayName: "Ana Ruiz",
+            active: true,
+            updatedAt: "2026-11-12T10:00:00Z",
+          },
+          {
+            userName: "bo@acme.example",
+            email: "bo@acme.example",
+            displayName: null,
+            active: false,
+            updatedAt: "2026-11-11T10:00:00Z",
+          },
+        ],
+        refusals: [
+          {
+            method: "POST",
+            resource: "Users",
+            status: 409,
+            reason: "A member with that email is already in another directory.",
+            at: "2026-11-12T11:00:00Z",
+          },
+        ],
+      });
+    }
     return json(state);
   });
 });
@@ -107,4 +136,14 @@ test("the instance's own provider has no groups to push to", async () => {
   await screen.findByText(/has their account disabled everywhere/);
   expect(screen.queryByLabelText("A person's groups come from")).toBeNull();
   expect(screen.queryByText("Groups")).toBeNull();
+});
+
+test("the people pushed and the pushes refused are listed, with why", async () => {
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  expect(await screen.findByText("Ana Ruiz")).toBeTruthy();
+  expect(screen.getByText("POST Users")).toBeTruthy();
+  expect(screen.getByText(/already in another directory/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("radio", { name: /Turned off/ }));
+  await waitFor(() => expect(screen.queryByText("Ana Ruiz")).toBeNull());
+  expect(screen.getAllByText("bo@acme.example").length).toBeGreaterThan(0);
 });

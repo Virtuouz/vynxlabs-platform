@@ -2,8 +2,9 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@vynxlabs/db";
 import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
-import { badRequest, notFound } from "../kernel/errors.js";
+import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
+import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
 import { cancelFlowRun, decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
@@ -115,6 +116,27 @@ const Approval = Type.Object({
   detail: Type.Unknown(),
   waitingSince: Time,
   timesOutAt: NullableTime,
+  approvers: Type.Union([
+    Type.Object({
+      groups: Type.Array(Type.String()),
+      roles: Type.Array(Type.String()),
+      text: Type.String({ description: "Who may decide, in words." }),
+    }),
+    Type.Null(),
+  ]),
+});
+
+const DecidedApproval = Type.Object({
+  flowRunId: Id,
+  workspaceId: Id,
+  flow: Type.String(),
+  node: Type.String(),
+  title: Type.String(),
+  approved: Type.Boolean(),
+  comment: NullableString,
+  decidedBy: Type.Union([Type.Object({ id: Id, label: Type.String() }), Type.Null()]),
+  decidedAt: NullableTime,
+  waitedSeconds: Type.Union([Type.Number(), Type.Null()]),
 });
 
 const Position = Type.Object({ x: Type.Number(), y: Type.Number() });
@@ -146,6 +168,30 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Object({ id: Id, status: FlowRunStatus, createdAt: Time }),
                     Type.Null(),
                   ]),
+                  version: Type.Union([Type.Integer(), Type.Null()], {
+                    description: "The deployed version; null for a flow that is only a draft.",
+                  }),
+                  draft: Type.Union(
+                    [Type.Literal("changed"), Type.Literal("removed"), Type.Null()],
+                    {
+                      description: "Whether a draft changes or removes it, waiting to be deployed.",
+                    },
+                  ),
+                  starts: Type.Array(
+                    Type.Object({
+                      type: Type.String(),
+                      detail: NullableString,
+                    }),
+                    {
+                      description:
+                        "Each trigger with what it listens for: an event's name, a schedule.",
+                    },
+                  ),
+                  runs: Type.Object({
+                    lastDay: Type.Integer(),
+                    failedLastDay: Type.Integer(),
+                    waiting: Type.Integer(),
+                  }),
                 }),
               ),
             }),
@@ -171,22 +217,75 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           order by flow_path, id desc
         `.execute(db);
         const byFlow = new Map(latest.rows.map((row) => [row.flow_path, row]));
+        const versions = new Map(
+          (
+            await db
+              .selectFrom("resource")
+              .select(["path", "version"])
+              .where("workspace_id", "=", params.w)
+              .where("kind", "=", "flow")
+              .execute()
+          ).map((row) => [row.path, row.version]),
+        );
+        const drafts = await db
+          .selectFrom("resource_draft")
+          .select(["path", "body", "deleted"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "flow")
+          .execute();
+        const counts = await sql<{
+          flow_path: string;
+          day: string;
+          failed: string;
+          waiting: string;
+        }>`
+          select flow_path,
+            count(*) filter (where created_at > now() - interval '24 hours') as day,
+            count(*) filter (where created_at > now() - interval '24 hours' and status = 'failed') as failed,
+            count(*) filter (where status = 'running' and exists (
+              select 1 from step_run s where s.flow_run_id = flow_run.id and s.status = 'waiting'
+            )) as waiting
+          from flow_run where workspace_id = ${params.w} and parent_flow_run_id is null
+          group by flow_path
+        `.execute(db);
+        const countOf = new Map(counts.rows.map((row) => [row.flow_path, row]));
+        const describe = (path: string, body: FlowBody, version: number | null) => {
+          const last = byFlow.get(path);
+          const count = countOf.get(path);
+          const draft = drafts.find((one) => one.path === path);
+          return {
+            path,
+            description: body.description ?? "",
+            nodeCount: Object.keys(body.nodes ?? {}).length,
+            triggers: Object.values(body.nodes ?? {})
+              .flatMap((node) => (node.type === "trigger" ? [node.trigger.type] : []))
+              .sort(),
+            lastRun: last
+              ? { id: last.id, status: last.status, createdAt: iso(last.created_at) }
+              : null,
+            version,
+            draft: draft ? (draft.deleted ? ("removed" as const) : ("changed" as const)) : null,
+            starts: Object.values(body.nodes ?? {}).flatMap((node) => {
+              if (node.type !== "trigger") return [];
+              const trigger = node.trigger as { type: string; event?: string; cron?: string };
+              return [{ type: trigger.type, detail: trigger.event ?? trigger.cron ?? null }];
+            }),
+            runs: {
+              lastDay: Number(count?.day ?? 0),
+              failedLastDay: Number(count?.failed ?? 0),
+              waiting: Number(count?.waiting ?? 0),
+            },
+          };
+        };
+        const deployed = flows.map((flow) =>
+          describe(flow.path, flow.body as unknown as FlowBody, versions.get(flow.path) ?? null),
+        );
+        // A flow drawn in the console and not yet deployed is listed too, as a draft.
+        const onlyDrafts = drafts
+          .filter((draft) => !draft.deleted && !versions.has(draft.path))
+          .map((draft) => describe(draft.path, draft.body as unknown as FlowBody, null));
         return {
-          items: flows.map((flow) => {
-            const body = flow.body as unknown as FlowBody;
-            const last = byFlow.get(flow.path);
-            return {
-              path: flow.path,
-              description: body.description ?? "",
-              nodeCount: Object.keys(body.nodes).length,
-              triggers: Object.values(body.nodes)
-                .flatMap((node) => (node.type === "trigger" ? [node.trigger.type] : []))
-                .sort(),
-              lastRun: last
-                ? { id: last.id, status: last.status, createdAt: iso(last.created_at) }
-                : null,
-            };
-          }),
+          items: [...deployed, ...onlyDrafts].sort((a, b) => a.path.localeCompare(b.path)),
         };
       },
     );
@@ -281,7 +380,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Save where a flow's nodes are drawn",
           description:
-            "Positions are not part of the flow. Saving them changes no version and no behaviour.",
+            "Positions are not part of the flow. Saving them changes no version and no behavior.",
           tags: ["flows"],
           params: WildParams,
           body: Type.Object({ positions: Type.Record(Type.String(), Position) }),
@@ -548,7 +647,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return flowRun;
         });
-        // A cancelled sub-flow lets the flow that started it move on.
+        // A canceled sub-flow lets the flow that started it move on.
         if (cancelled.parent_flow_run_id) kickFlow(kernel, cancelled.parent_flow_run_id);
         return toFlowRun(
           await flowRuns(params.w).where("flow_run.id", "=", params.id).executeTakeFirstOrThrow(),
@@ -586,7 +685,93 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       detail: row.detail.detail ?? null,
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
+      approvers: (() => {
+        const named = approversOf(row.detail);
+        return named
+          ? {
+              groups: named.groups ?? [],
+              roles: named.roles ?? [],
+              text: describeApprovers(named) ?? "",
+            }
+          : null;
+      })(),
     });
+
+    /** Approvals someone decided, newest first. One that timed out with nobody deciding is left out. */
+    const decided = (tenantId: string) =>
+      db
+        .selectFrom("step_run")
+        .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
+        .leftJoin("member", "member.id", "step_run.decided_by")
+        .select([
+          "step_run.flow_run_id",
+          "step_run.node_id",
+          "step_run.detail",
+          "step_run.status",
+          "step_run.decided_by",
+          "step_run.decision_comment",
+          "step_run.started_at",
+          "step_run.finished_at",
+          "flow_run.flow_path",
+          "flow_run.workspace_id",
+          "member.email",
+          "member.name",
+        ])
+        .where("flow_run.tenant_id", "=", tenantId)
+        .where("step_run.decided_by", "is not", null)
+        .where(sql<boolean>`step_run.detail ? 'title'`)
+        .orderBy("step_run.finished_at", "desc")
+        .limit(100);
+    type DecidedRow = Awaited<ReturnType<ReturnType<typeof decided>["execute"]>>[number];
+    const toDecided = (row: DecidedRow) => ({
+      flowRunId: row.flow_run_id,
+      workspaceId: row.workspace_id,
+      flow: row.flow_path,
+      node: row.node_id,
+      title: String(row.detail.title),
+      approved: row.status === "succeeded",
+      comment: row.decision_comment,
+      decidedBy: row.decided_by
+        ? { id: row.decided_by, label: row.email ?? row.name ?? "A member" }
+        : null,
+      decidedAt: isoOrNull(row.finished_at),
+      waitedSeconds: row.finished_at
+        ? Math.round((row.finished_at.getTime() - row.started_at.getTime()) / 1000)
+        : null,
+    });
+
+    app.get(
+      "/tenants/:t/approvals/decided",
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Approvals decided across the tenant's workspaces, newest first",
+          description: "The last hundred, from the workspaces where the caller may read approvals.",
+          tags: ["flows"],
+          params: TenantParams,
+          response: { 200: Type.Object({ items: Type.Array(DecidedApproval) }) },
+        },
+      },
+      async ({ ctx, params }) => {
+        const rows = await decided(params.t).execute();
+        const allowed = new Map<string, boolean>();
+        const items = [];
+        for (const row of rows) {
+          if (!allowed.has(row.workspace_id)) {
+            allowed.set(
+              row.workspace_id,
+              await ctx.allowed("approval:read", {
+                tenantId: params.t,
+                workspaceId: row.workspace_id,
+              }),
+            );
+          }
+          if (allowed.get(row.workspace_id)) items.push(toDecided(row));
+        }
+        if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });
+        return { items };
+      },
+    );
 
     app.get(
       `${base}/approvals`,
@@ -622,6 +807,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const rows = await pending(params.t).execute();
         const allowed = new Map<string, boolean>();
         const items = [];
+        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
         for (const row of rows) {
           if (!allowed.has(row.workspace_id)) {
             allowed.set(
@@ -632,7 +818,20 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
             );
           }
-          if (allowed.get(row.workspace_id)) items.push(toApproval(row));
+          if (!allowed.get(row.workspace_id)) continue;
+          // A step that names its approvers is shown only to them.
+          const named = approversOf(row.detail);
+          if (
+            named &&
+            !(await isApprover(
+              db,
+              { tenantId: params.t, workspaceId: row.workspace_id },
+              memberId,
+              named,
+            ))
+          )
+            continue;
+          items.push(toApproval(row));
         }
         // With nothing to show, answer exactly as the permission check would.
         if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });
@@ -657,6 +856,30 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        const waiting = await db
+          .selectFrom("step_run")
+          .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
+          .select("step_run.detail")
+          .where("step_run.flow_run_id", "=", params.id)
+          .where("step_run.node_id", "=", params.node)
+          .where("step_run.item_key", "=", "")
+          .where("flow_run.workspace_id", "=", params.w)
+          .executeTakeFirst();
+        const named = waiting ? approversOf(waiting.detail) : undefined;
+        if (
+          !(await isApprover(
+            db,
+            { tenantId: params.t, workspaceId: params.w },
+            ctx.principal.type === "member" ? ctx.principal.id : null,
+            named,
+          ))
+        ) {
+          throw new HttpError(
+            403,
+            "not_an_approver",
+            `Only ${describeApprovers(named)} may decide this approval.`,
+          );
+        }
         await ctx.mutate(async (trx, audit) => {
           const decided = await decideApproval(trx, {
             workspaceId: params.w,
@@ -693,6 +916,18 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       payload: AnyObject,
       source: Type.Object({ type: Type.String(), id: NullableId }),
       occurredAt: Time,
+      publishedBy: Type.Union([Type.Object({ run: Id, script: Type.String() }), Type.Null()]),
+      started: Type.Array(
+        Type.Object({
+          kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
+          id: Id,
+          target: Type.String(),
+          status: Type.String(),
+        }),
+      ),
+      listeners: Type.Integer({
+        description: "How many deployed triggers here listen for an event of this name.",
+      }),
     });
 
     app.get(
@@ -703,7 +938,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Events published in a workspace, newest first",
           tags: ["events"],
           params: WorkspaceParams,
-          querystring: Type.Object({ ...PageQuery.properties, name: Type.Optional(Type.String()) }),
+          querystring: Type.Object({
+            ...PageQuery.properties,
+            name: Type.Optional(Type.String()),
+            run: Type.Optional(Id),
+          }),
           response: { 200: pageOf(Event) },
         },
       },
@@ -711,22 +950,80 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const args = pageArgs(query);
         let select = db.selectFrom("event").selectAll().where("workspace_id", "=", params.w);
         if (query.name) select = select.where("name", "=", query.name);
+        // What one script run published.
+        if (query.run)
+          select = select.where("source_type", "=", "script").where("source_id", "=", query.run);
         if (args.after) select = select.where("id", "<", args.after);
         const rows = await select
           .orderBy("id", "desc")
           .limit(args.limit + 1)
           .execute();
+        const ids = rows.map((row) => row.id);
+        const publishers = rows
+          .filter((row) => row.source_type === "script" && row.source_id)
+          .map((row) => row.source_id as string);
+        const scripts =
+          publishers.length === 0
+            ? []
+            : await db
+                .selectFrom("run")
+                .select(["id", "script_path"])
+                .where("id", "in", publishers)
+                .execute();
+        const started =
+          ids.length === 0
+            ? []
+            : (
+                await sql<{
+                  event: string;
+                  kind: "script" | "flow";
+                  id: string;
+                  target: string;
+                  status: string;
+                }>`
+                  select trigger_detail->>'eventId' as event, 'script' as kind, id, script_path as target, status::text as status
+                  from run where workspace_id = ${params.w} and trigger_detail ? 'eventId'
+                    and trigger_detail->>'eventId' in (${sql.join(ids)}) and flow_run_id is null
+                  union all
+                  select trigger_detail->>'eventId', 'flow', id, flow_path, status::text
+                  from flow_run where workspace_id = ${params.w} and trigger_detail ? 'eventId'
+                    and trigger_detail->>'eventId' in (${sql.join(ids)})
+                `.execute(db)
+              ).rows;
+        const names = [...new Set(rows.map((row) => row.name))];
+        const listening =
+          names.length === 0
+            ? []
+            : await db
+                .selectFrom("trigger_state")
+                .select((eb) => ["event_name", eb.fn.countAll<string>().as("n")])
+                .where("workspace_id", "=", params.w)
+                .where("type", "=", "event")
+                .where("event_name", "in", names)
+                .groupBy("event_name")
+                .execute();
         return toPage(
           rows,
           args,
           (row) => row.id,
-          (row) => ({
-            id: row.id,
-            name: row.name,
-            payload: row.payload,
-            source: { type: row.source_type, id: row.source_id },
-            occurredAt: iso(row.occurred_at),
-          }),
+          (row) => {
+            const script =
+              row.source_type === "script"
+                ? scripts.find((one) => one.id === row.source_id)
+                : undefined;
+            return {
+              id: row.id,
+              name: row.name,
+              payload: row.payload,
+              source: { type: row.source_type, id: row.source_id },
+              occurredAt: iso(row.occurred_at),
+              publishedBy: script ? { run: script.id, script: script.script_path } : null,
+              started: started
+                .filter((one) => one.event === row.id)
+                .map(({ kind, id, target, status }) => ({ kind, id, target, status })),
+              listeners: Number(listening.find((one) => one.event_name === row.name)?.n ?? 0),
+            };
+          },
         );
       },
     );

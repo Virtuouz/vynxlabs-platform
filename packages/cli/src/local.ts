@@ -132,6 +132,8 @@ export async function runLocally(args: string[], io: Io) {
         idempotencyKey: randomUUID(),
         trigger: { type: "local" },
         startedBy: { type: "system", id: null },
+        tag: async (...tags: string[]) =>
+          io.out(`tags ${tags.join(", ")} (not kept: this is a local run)`),
       },
       signal: abort.signal,
     });

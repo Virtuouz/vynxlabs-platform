@@ -3,15 +3,11 @@ import {
   type BadgeTone,
   Button,
   Dialog,
-  Facts,
   Form,
   type FormProperty,
-  JsonView,
   type LogLine,
-  LogViewer,
   Notice,
 } from "@vynxlabs/ui";
-import { Ban, Check, Clock, LoaderCircle, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -29,7 +25,7 @@ const code = (text: string) => <code className="font-mono text-[13px]">{text}</c
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 /** The badge tone of a run's state, for the run page's mark. */
-const TONE: Record<RunState, BadgeTone> = {
+const _TONE: Record<RunState, BadgeTone> = {
   queued: "neutral",
   running: "action",
   waiting_approval: "attention",
@@ -48,8 +44,12 @@ export interface Run {
   attempt: number;
   maxAttempts: number;
   trigger: { type: string; [detail: string]: unknown };
+  bundleId: string;
   bundleVersion: number;
   error: { message: string } | null;
+  errorSummary?: string | null;
+  tags?: string[];
+  rerunOf?: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -65,7 +65,12 @@ export const TRIGGER: Record<string, string> = {
   manual: "Started by hand",
   schedule: "Schedule",
   webhook: "Webhook",
+  event: "Event",
+  form: "Form",
+  flow: "A flow",
   alert: "Failure handler",
+  rerun: "Re-run",
+  retry: "Retry",
 };
 
 interface ScriptRow {
@@ -331,6 +336,7 @@ export type LiveRun = Run & {
   alert: Record<string, unknown> | null;
   pool: string | null;
   waitingFor: string | null;
+  reruns?: { id: string; state: RunState; createdAt: string }[];
 };
 
 /**
@@ -399,163 +405,6 @@ export function useLiveRun(root: string, runId: string) {
     return () => clearInterval(timer);
   }, [streaming, refresh]);
   return { run, lines, error };
-}
-
-/** One run, refreshed while it is in progress, with its log lines as they arrive. */
-export function RunDetail({
-  root,
-  runId,
-  backLink,
-}: {
-  root: string;
-  runId: string;
-  backLink: string;
-}) {
-  const { run, lines, error } = useLiveRun(root, runId);
-
-  if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p className="text-ink-muted">Loading…</p>;
-  const active = run.status === "queued" || run.status === "running";
-  const duration = took(run);
-  const waited =
-    run.startedAt && Date.parse(run.startedAt) - Date.parse(run.createdAt) >= 1000
-      ? `${((Date.parse(run.startedAt) - Date.parse(run.createdAt)) / 1000).toFixed(1)} s`
-      : "";
-  const outcome =
-    run.status === "succeeded"
-      ? `Succeeded${duration ? ` in ${duration}` : ""}`
-      : run.status === "failed"
-        ? `Failed${duration ? ` after ${duration}` : ""}`
-        : run.status === "cancelled"
-          ? "Canceled"
-          : run.status === "running"
-            ? "Running"
-            : "Waiting for a worker";
-  const Mark =
-    run.status === "succeeded"
-      ? Check
-      : run.status === "failed"
-        ? X
-        : run.status === "cancelled"
-          ? Ban
-          : run.status === "running"
-            ? LoaderCircle
-            : Clock;
-  const tone = TONE[run.state];
-  const markTone: Record<BadgeTone, string> = {
-    success: "bg-success-soft text-success",
-    danger: "bg-danger-soft text-danger",
-    action: "bg-action-soft text-action",
-    attention: "bg-attention-soft text-attention",
-    neutral: "bg-sunken text-ink-muted",
-  };
-  const failed = run.status === "failed";
-
-  return (
-    <section className="flex flex-col gap-4">
-      <Link to={backLink} className="text-[13px] text-action">
-        All runs
-      </Link>
-      <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-4">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span
-              className={`flex size-7 shrink-0 items-center justify-center rounded-control ${markTone[tone]}`}
-            >
-              <Mark
-                aria-hidden="true"
-                size={16}
-                strokeWidth={2.25}
-                className={run.status === "running" ? "animate-spin" : ""}
-              />
-            </span>
-            <h1 className="m-0 truncate font-mono text-base font-semibold">{run.script}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge tone={tone}>{outcome}</Badge>
-            {active ? (
-              <Button
-                size="small"
-                variant="danger"
-                onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: "Cancel this run?",
-                    action: "Cancel run",
-                    cancel: "Keep running",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await api.post(`${root}/runs/${runId}/cancel`).catch(notify.error);
-                }}
-              >
-                Cancel run
-              </Button>
-            ) : null}
-          </div>
-        </header>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge>{run.id.slice(-12)}</Badge>
-          <Badge>Version {run.bundleVersion}</Badge>
-          {run.pool ? <Badge tone="action">Pool: {run.pool}</Badge> : null}
-          {run.maxAttempts > 1 ? (
-            <Badge>
-              Attempt {Math.max(run.attempt, 1)} of {run.maxAttempts}
-            </Badge>
-          ) : null}
-        </div>
-        {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
-        <Facts
-          facts={[
-            { label: "Received", value: stamp(run.createdAt) },
-            { label: "Started", value: run.startedAt ? stamp(run.startedAt) : "" },
-            { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "" },
-            { label: "By", value: TRIGGER[run.trigger.type] ?? run.trigger.type },
-            { label: "Waited", value: waited },
-            { label: "Ran", value: duration || (run.status === "running" ? "In progress" : "") },
-            { label: "Run ID", value: run.id, code: true },
-            {
-              label: "Trigger",
-              value: typeof run.trigger.trigger === "string" ? run.trigger.trigger : "",
-              code: true,
-            },
-          ]}
-        />
-        {run.alert?.handlerRunId ? (
-          <p className="m-0 text-ink-muted">
-            A failure handler was started:{" "}
-            <Link to={`${backLink}/${run.alert.handlerRunId}`} className="text-action">
-              see its run
-            </Link>
-          </p>
-        ) : null}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Input</h2>
-            <JsonView label="Input" value={run.input} />
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Result</h2>
-            <JsonView
-              label="Result"
-              tone={failed ? "danger" : "plain"}
-              value={
-                failed ? { error: run.error } : run.status === "succeeded" ? run.output : undefined
-              }
-            />
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <h2 className="m-0 w-fit border-action border-b-2 pb-1 text-[13px] font-medium">Logs</h2>
-          <LogViewer
-            lines={lines}
-            live={active}
-            fileName={`${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`}
-            empty={active ? "Waiting for the first line…" : "The script logged nothing."}
-          />
-        </div>
-      </div>
-    </section>
-  );
 }
 
 /** A date and time to the second, in the same shape on every line so that they compare by eye. */

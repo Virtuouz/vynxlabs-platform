@@ -22,6 +22,12 @@ export interface RunInfo {
    * `ctx.table(orders).as(ctx.run.startedBy.id)`.
    */
   startedBy: { type: string; id: string | null };
+  /**
+   * Labels the run, so it can be found by them: `await ctx.run.tag("order:1234")`.
+   * At most 10 per run, each up to 64 characters of `a-z`, `0-9` and `_.:-`. A step
+   * of a flow labels its flow run too.
+   */
+  tag(...tags: string[]): Promise<void>;
 }
 
 /** What a script receives when it runs. */

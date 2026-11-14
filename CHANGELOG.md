@@ -15,6 +15,9 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Rate limits are shared across replicas,** counted in the database, and each tenant has at most one managed worker however many replicas run.
 - **Runs update live.** The console keeps one stream of run events open per tab (`GET /api/v1/tenants/<id>/stream`, server-sent events), and each replica one more database connection to listen for them. A proxy must not buffer that path; see the self-hosting guide. Migration 0048 adds the triggers that announce changes.
 - **Runs, flow runs and steps have a `state`** beside their `status`: `queued`, `running`, `waiting_approval`, `waiting_time`, `succeeded`, `failed`, `canceled` or `skipped`. A flow waiting for a person is no longer shown as running. `status` is unchanged.
+- **A run has a page of its own,** at `/t/<tenant>/workspaces/<workspace>/runs/<id>`, for script runs and flow runs alike. The old `/flow-runs/<id>` addresses send the browser there. The runs list opens a run beside it with `?run=<id>`.
+- **Runs are run again from their page.** A script run, with the same input or another, on the version it ran or the active one (`POST …/runs/<id>/rerun`). A flow run, from the start, or from its failed step (`POST …/flow-runs/<id>/retry`), which keeps what already succeeded, granted approvals included, and runs the rest; `GET …/flow-runs/<id>/retry-plan` says which steps are which.
+- **Runs can be searched and tagged.** `/activity` takes `q` (a path's start, a run ID, a tag, or words of the error) and `tag`, and pages with `cursor`. A script tags its run with `ctx.run.tag(...)`; a webhook, event or schedule trigger with `tags`, CEL expressions over what it was given. Migration 0049 adds the columns, and `pg_trgm` where the database allows it.
 - **Moving between workspaces is no longer audited.** It is remembered, and the console opens where the member last was.
 
 ## 0.5.0, not yet released

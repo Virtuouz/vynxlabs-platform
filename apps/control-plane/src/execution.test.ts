@@ -124,7 +124,12 @@ function bundle(
       cron: "0 * * * *",
       input: { name: "schedule" },
     }),
-    pure("trigger", "greet-hook", { type: "webhook", script: "greet" }),
+    pure("trigger", "greet-hook", {
+      type: "webhook",
+      script: "greet",
+      // One tag from the body, and one that cannot be worked out and is left out.
+      tags: ["'greeted:' + trigger.name", "trigger.missing.field"],
+    }),
   ]);
   const unsigned = {
     formatVersion: 1 as const,
@@ -583,6 +588,45 @@ describe("running", () => {
     });
   }, 30_000);
 
+  test("a run is run again with the same input or another, and says which run it repeats", async () => {
+    const first = await start("greet", { name: "Ada" });
+    const done = await finished(first);
+    expect(done.output).toMatchObject({ greeting: "Hello Ada" });
+    await t.db
+      .updateTable("run")
+      .set({ tags: ["order:7"] })
+      .where("id", "=", first)
+      .execute();
+
+    const same = await alice.post(`${ws()}/runs/${first}/rerun`, {});
+    expect(same.status, JSON.stringify(same.body)).toBe(201);
+    expect(same.body).toMatchObject({
+      rerunOf: first,
+      trigger: { type: "rerun", of: first },
+      bundleId: done.bundleId,
+      tags: ["order:7"],
+    });
+    expect((await finished(same.body.id)).output).toMatchObject({ greeting: "Hello Ada" });
+
+    const edited = await alice.post(`${ws()}/runs/${first}/rerun`, {
+      input: { name: "Grace" },
+      bundle: "active",
+    });
+    expect((await finished(edited.body.id)).output).toMatchObject({ greeting: "Hello Grace" });
+    expect(
+      (await alice.get(`${ws()}/runs/${first}`)).body.reruns.map((one: { id: string }) => one.id),
+    ).toEqual([edited.body.id, same.body.id]);
+    const audit = await alice.get(`/tenants/${tenant}/audit?action=run.rerun`);
+    expect(audit.body.items[0]).toMatchObject({
+      targetId: edited.body.id,
+      details: { of: first, inputChanged: true, bundle: "active" },
+    });
+    // Input the script does not take is refused, as for any start.
+    expect((await alice.post(`${ws()}/runs/${first}/rerun`, { input: { name: 5 } })).status).toBe(
+      400,
+    );
+  });
+
   test("a final failure starts the handler script and posts the notification", async () => {
     const id = await start("flaky", { succeedOn: 99 });
     const run = await until(
@@ -767,12 +811,13 @@ describe("triggers", () => {
     expect(viewer.url).toBeNull();
 
     const path = new URL(hook.url).pathname.replace("/api/v1", "");
-    const accepted = await t.anonymous.post(path, { name: "Webhook" });
+    const accepted = await t.anonymous.post(path, { name: "webhook" });
     expect(accepted.status).toBe(202);
     expect(await finished(accepted.body.runId)).toMatchObject({
       status: "succeeded",
-      output: { greeting: "Hello Webhook" },
+      output: { greeting: "Hello webhook" },
       trigger: { type: "webhook", trigger: "greet-hook" },
+      tags: ["greeted:webhook"],
     });
 
     expect((await t.anonymous.post("/hooks/vxh_not-a-real-token", {})).status).toBe(404);
@@ -993,6 +1038,27 @@ describe("the worker protocol", () => {
     const logs = (await alice.get(`${ws()}/runs/${id}/logs`)).body.items;
     expect(logs).toEqual([
       expect.objectContaining({ level: "warn", message: "7 log lines could not be saved." }),
+    ]);
+  });
+
+  test("a script labels its run, and the run is found by the label", async () => {
+    const ours = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "tagger" })).body.token,
+    );
+    const id = await start("flaky", { succeedOn: 1 });
+    expect((await ours.claim()).body.job).toMatchObject({ runId: id, attempt: 1 });
+    expect((await ours.post(`/runs/${id}/tags`, { attempt: 1, tags: ["Order 12"] })).status).toBe(
+      400,
+    );
+    const tagged = await ours.post(`/runs/${id}/tags`, {
+      attempt: 1,
+      tags: ["order:1234", "vip", "order:1234"],
+    });
+    expect(tagged.body).toEqual({ tags: ["order:1234", "vip"] });
+    await ours.post(`/runs/${id}/complete`, { attempt: 1, output: {} });
+    const found = (await alice.get(`${ws()}/activity?tag=order:1234`)).body.items;
+    expect(found.map((one: { id: string; tags: string[] }) => [one.id, one.tags])).toEqual([
+      [id, ["order:1234", "vip"]],
     ]);
   });
 

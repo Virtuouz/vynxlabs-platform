@@ -432,6 +432,9 @@ export interface RunTable {
   started_at: Date | null;
   finished_at: Date | null;
   last_heartbeat_at: Date | null;
+  tags: Generated<string[]>;
+  /** The first line of the error, kept by the database. */
+  error_summary: Generated<string | null>;
 }
 
 export interface RunLogTable {
@@ -508,6 +511,11 @@ export interface FlowRunTable {
   response: NullableJson;
   created_at: Generated<Date>;
   finished_at: Date | null;
+  tags: Generated<string[]>;
+  /** The first line of the error, kept by the database. */
+  error_summary: Generated<string | null>;
+  /** The flow run this one retries. */
+  retry_of: string | null;
 }
 
 export interface StepRunTable {

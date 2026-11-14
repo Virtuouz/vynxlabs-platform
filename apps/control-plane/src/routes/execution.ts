@@ -159,12 +159,18 @@ const Run = Type.Object({
   bundleId: Id,
   bundleVersion: Type.Integer(),
   error: Type.Union([Type.Object({ message: Type.String() }), Type.Null()]),
+  errorSummary: NullableString,
+  tags: Type.Array(Type.String()),
+  rerunOf: Type.Union([Id, Type.Null()], { description: "The run this one runs again." }),
   createdAt: Time,
   startedAt: NullableTime,
   finishedAt: NullableTime,
 });
 const RunDetail = Type.Object({
   ...Run.properties,
+  reruns: Type.Array(Type.Object({ id: Id, state: RunStateSchema, createdAt: Time }), {
+    description: "Runs started again from this one, newest first.",
+  }),
   pool: Type.Union([Type.String(), Type.Null()], {
     description: "The worker pool the run is for. Null for the default pool.",
   }),
@@ -189,6 +195,8 @@ interface RunRow {
   started_by_id: string | null;
   bundle_id: string;
   error: { message: string } | null;
+  error_summary: string | null;
+  tags: string[];
   created_at: Date;
   started_at: Date | null;
   finished_at: Date | null;
@@ -205,6 +213,12 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
   bundleId: row.bundle_id,
   bundleVersion,
   error: row.error ? { message: row.error.message } : null,
+  errorSummary: row.error_summary,
+  tags: row.tags,
+  rerunOf:
+    row.trigger_type === "rerun" && typeof row.trigger_detail.of === "string"
+      ? row.trigger_detail.of
+      : null,
   createdAt: iso(row.created_at),
   startedAt: isoOrNull(row.started_at),
   finishedAt: isoOrNull(row.finished_at),
@@ -941,6 +955,79 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.post(
+      `${base}/runs/:id/rerun`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Run a script run again, with the same input or another",
+          description:
+            "Starts a new run of the same script, on the version the run used (the default) " +
+            "or the active one, with the input given or the same input. The new run names the " +
+            "one it repeats and carries its tags. Needs what starting the script needs.",
+          tags: ["runs"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          body: Type.Object({
+            input: Type.Optional(Type.Unknown()),
+            bundle: Type.Optional(Type.Union([Type.Literal("original"), Type.Literal("active")])),
+          }),
+          response: { 201: Run },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const original = await findRun(params.w, params.id);
+        await ctx.authorize("run:write", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          resourceId: original.resource_id,
+        });
+        if (original.flow_run_id) {
+          throw new HttpError(
+            409,
+            "conflict",
+            "This run is a step of a flow run. Retry the flow run instead.",
+          );
+        }
+        const input =
+          body.input !== undefined
+            ? body.input
+            : await readPayload(kernel, original.input, original.input_ref);
+        const result = await ctx.mutate(async (trx, audit) => {
+          const started = await startRun(kernel, trx, {
+            tenantId: params.t,
+            workspaceId: params.w,
+            script: original.script_path,
+            input,
+            trigger: { type: "rerun", detail: { of: original.id } },
+            startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+            bundleId: body.bundle === "active" ? undefined : original.bundle_id,
+            tags: original.tags,
+          });
+          await audit({
+            action: "run.rerun",
+            targetType: "run",
+            targetId: started.run.id,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: {
+              script: original.script_path,
+              of: original.id,
+              bundle: body.bundle ?? "original",
+              inputChanged: body.input !== undefined,
+            },
+          });
+          return started;
+        });
+        const bundle = await db
+          .selectFrom("bundle")
+          .select("version")
+          .where("id", "=", result.run.bundle_id)
+          .executeTakeFirstOrThrow();
+        return reply.code(201).send(toRun(result.run, bundle.version));
+      },
+    );
+
     /** Why a queued run has nobody to take it, or null when a worker that could is connected. */
     const waitingFor = async (tenantId: string, workspaceId: string, pool: string | null) => {
       const serving = await sql`
@@ -1019,6 +1106,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           output: await readPayload(kernel, row.output, row.output_ref),
           alert: row.alert,
           idempotencyKey: row.idempotency_key,
+          reruns: (
+            await db
+              .selectFrom("run")
+              .select(["id", "status", "created_at"])
+              .where("workspace_id", "=", params.w)
+              .where("trigger_type", "=", "rerun")
+              .where(sql<boolean>`trigger_detail->>'of' = ${params.id}`)
+              .orderBy("id", "desc")
+              .limit(20)
+              .execute()
+          ).map((one) => ({
+            id: one.id,
+            state: runState(one.status),
+            createdAt: iso(one.created_at),
+          })),
         };
       },
     );

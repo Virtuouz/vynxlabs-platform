@@ -327,6 +327,7 @@ describe("what a script may ask its worker to call", () => {
     expect(allowedCall(job, "GET", "/runs/r1/connection-group-members/a%2Fb/crm")).toBe(true);
     expect(allowedCall(job, "POST", "/runs/r1/data")).toBe(true);
     expect(allowedCall(job, "POST", "/runs/r1/events")).toBe(true);
+    expect(allowedCall(job, "POST", "/runs/r1/tags")).toBe(true);
   });
   it("refuses another run, the run's own report, and anything that folds into a path elsewhere", () => {
     expect(allowedCall(job, "GET", "/runs/r2/secrets/key")).toBe(false);

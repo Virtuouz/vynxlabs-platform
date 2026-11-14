@@ -102,6 +102,35 @@ function bundle(
       script: "sink",
       event: "platform/run-failed",
     }),
+    // A step that fails until a moment given in the input: a retry after it succeeds.
+    flow(
+      "retrying",
+      {
+        start: manual,
+        a: run("double", "{'n': trigger.n}"),
+        b: run("risky", "{'fail': now < timestamp(trigger.failUntil)}"),
+        c: set({ total: "steps.a.output.n" }),
+      },
+      [
+        ["start", "a"],
+        ["a", "b"],
+        ["b", "c"],
+      ],
+    ),
+    flow(
+      "approved-then-fail",
+      {
+        start: manual,
+        gate: { type: "approval", title: "Go ahead?" },
+        b: run("risky", "{'fail': now < timestamp(trigger.failUntil)}"),
+        c: set({ done: "true" }),
+      },
+      [
+        ["start", "gate"],
+        ["gate", "b"],
+        ["b", "c"],
+      ],
+    ),
     flow(
       "linear",
       {
@@ -1070,6 +1099,111 @@ describe("waiting", () => {
     );
     expect(step(await read(id), "work").status).toBe("cancelled");
     expect((await alice.post(`${ws()}/flow-runs/${id}/cancel`)).status).toBe(409);
+  });
+});
+
+describe("retrying a flow run", () => {
+  const soon = () => new Date(Date.now() + 1500).toISOString();
+  const retry = (id: string, body: object) => alice.post(`${ws()}/flow-runs/${id}/retry`, body);
+
+  test("from the failed step, only it and what follows run again, on the same version", async () => {
+    const id = await start("retrying", { n: 21, failUntil: soon() });
+    const failed = await finished(id);
+    expect(failed.state).toBe("failed");
+    expect(step(failed, "b").status).toBe("failed");
+    expect(step(failed, "c")).toBeUndefined();
+
+    expect((await alice.get(`${ws()}/flow-runs/${id}/retry-plan`)).body).toEqual({
+      kept: ["a"],
+      again: ["b", "c"],
+      approvalsKept: [],
+    });
+    // The failure was over a moment ago.
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const started = await retry(id, { from: "failed" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect(started.body).toMatchObject({ retryOf: id, bundleId: failed.bundleId });
+    const done = await finished(started.body.id);
+    expect(done.state).toBe("succeeded");
+    // a was kept: copied with its output, not run again. c read that output.
+    expect(step(done, "a")).toMatchObject({
+      status: "succeeded",
+      runId: null,
+      output: { n: 42 },
+      copiedFrom: { flowRunId: id, runId: step(failed, "a").runId },
+    });
+    expect(step(done, "b").runId).not.toBe(step(failed, "b").runId);
+    expect(step(done, "b").copiedFrom).toBeNull();
+    expect(step(done, "c").output).toEqual({ total: 42 });
+    // The original says it was retried.
+    expect((await read(id)).retries).toEqual([
+      expect.objectContaining({ id: started.body.id, state: "succeeded" }),
+    ]);
+    const audit = await alice.get(`/tenants/${tenant}/audit?action=flow_run.retried`);
+    expect(audit.body.items[0]).toMatchObject({
+      targetId: started.body.id,
+      details: { of: id, from: "failed", bundle: "original" },
+    });
+  });
+
+  test("an approval already granted is kept, and not asked again", async () => {
+    const id = await start("approved-then-fail", { failUntil: soon() });
+    await until(
+      () => read(id),
+      (r) => step(r, "gate")?.status === "waiting",
+    );
+    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, { decision: "approve" });
+    expect((await finished(id)).state).toBe("failed");
+    expect((await alice.get(`${ws()}/flow-runs/${id}/retry-plan`)).body).toMatchObject({
+      kept: ["gate"],
+      again: ["b", "c"],
+      approvalsKept: [{ node: "gate", decidedBy: expect.any(String) }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const started = await retry(id, { from: "failed" });
+    const done = await finished(started.body.id);
+    expect(done.state).toBe("succeeded");
+    expect(step(done, "gate")).toMatchObject({
+      status: "succeeded",
+      output: { approved: true },
+      copiedFrom: { flowRunId: id },
+    });
+  });
+
+  test("an approval that was refused is asked again", async () => {
+    const id = await start("impatient");
+    await until(
+      () => read(id),
+      (r) => step(r, "gate")?.status === "waiting",
+    );
+    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, { decision: "reject" });
+    expect((await finished(id)).state).toBe("failed");
+    const started = await retry(id, { from: "failed" });
+    const asked = await until(
+      () => read(started.body.id),
+      (r) => step(r, "gate")?.status === "waiting",
+    );
+    expect(asked.state).toBe("waiting_approval");
+    expect(step(asked, "gate").copiedFrom).toBeNull();
+    await alice.post(`${ws()}/flow-runs/${asked.id}/cancel`);
+  });
+
+  test("from the start it runs whole, with new input if given; a step retry cannot change either", async () => {
+    const id = await start("retrying", { n: 1, failUntil: soon() });
+    await finished(id);
+    expect((await retry(id, { from: "failed", bundle: "active" })).status).toBe(409);
+    expect((await retry(id, { from: "failed", input: { n: 2 } })).status).toBe(409);
+    const again = await retry(id, {
+      from: "start",
+      input: { n: 5, failUntil: new Date(0).toISOString() },
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    const done = await finished(again.body.id);
+    expect(done.state).toBe("succeeded");
+    expect(step(done, "a").copiedFrom).toBeNull();
+    expect(step(done, "c").output).toEqual({ total: 10 });
+    // A flow run still going cannot be retried, and a succeeded one has nothing failed.
+    expect((await retry(again.body.id, { from: "failed" })).status).toBe(409);
   });
 });
 

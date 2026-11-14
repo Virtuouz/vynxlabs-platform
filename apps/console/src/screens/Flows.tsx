@@ -4,13 +4,14 @@ import {
   EmptyState,
   Facts,
   JsonView,
+  LogViewer,
   Notice,
   Table,
   Tabs,
   Timeline,
   type TimelineRow,
 } from "@vynxlabs/ui";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
@@ -22,6 +23,7 @@ import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
+import { useLiveRun } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
@@ -297,7 +299,7 @@ export function Flows({
                 )}
               </div>
               {open.lastRun ? (
-                <Link to={`${link}/flow-runs/${open.lastRun.id}`} className="text-meta">
+                <Link to={`${link}/runs/${open.lastRun.id}`} className="text-meta">
                   Open the last run
                 </Link>
               ) : null}
@@ -325,7 +327,7 @@ function StepChain({ count }: { count: number }) {
   );
 }
 
-interface FlowDetail {
+export interface FlowDetail {
   path: string;
   version: number;
   description: string;
@@ -391,7 +393,7 @@ export function FlowView({
             flow: data.path,
             input,
           });
-          navigate(`${link}/flow-runs/${started.id}`);
+          navigate(`${link}/runs/${started.id}`);
         }}
       />
       <span className="flex flex-wrap items-center gap-4">
@@ -467,7 +469,7 @@ export function FlowView({
             {
               header: "Started",
               cell: (row) => (
-                <Link to={`${link}/flow-runs/${row.id}`} className="text-action">
+                <Link to={`${link}/runs/${row.id}`} className="text-action">
                   {when(row.createdAt)}
                 </Link>
               ),
@@ -494,15 +496,22 @@ export interface StepRow {
   childFlowRunId: string | null;
   wakeAt: string | null;
   detail: { title?: string; detail?: unknown };
+  copiedFrom: { flowRunId: string; runId?: string; childFlowRunId?: string } | null;
   startedAt: string;
   pickedUpAt: string | null;
   finishedAt: string | null;
 }
-interface FlowRunDetail extends FlowRunRow {
+export interface FlowRunDetail extends FlowRunRow {
   flow: string;
   triggerNode: string;
+  bundleId: string;
   bundleVersion: number;
   error: { message: string } | null;
+  errorSummary: string | null;
+  tags: string[];
+  retryOf: string | null;
+  retries: { id: string; state: RunState; createdAt: string }[];
+  startedBy: { type: string; id: string | null };
   input: unknown;
   output: unknown;
   steps: StepRow[];
@@ -512,7 +521,19 @@ interface FlowRunDetail extends FlowRunRow {
  * A step as a row of the timeline. A step that runs a script waits for a worker
  * first. An approval or a delay is held on purpose for its whole length.
  */
-export function timelineRow(step: StepRow): TimelineRow {
+export function timelineRow(step: StepRow, runStartedAt?: string): TimelineRow {
+  // A step a retry kept was done in the run it retries. Here it took no time at all.
+  if (step.copiedFrom && runStartedAt) {
+    const at = Date.parse(runStartedAt);
+    return {
+      id: step.node,
+      label: `${step.node} · kept`,
+      start: at,
+      end: at,
+      tone: "muted",
+      segments: [],
+    };
+  }
   const start = Date.parse(step.startedAt);
   const end = step.finishedAt ? Date.parse(step.finishedAt) : undefined;
   const held = step.detail.title !== undefined || step.wakeAt !== null;
@@ -538,7 +559,18 @@ export function timelineRow(step: StepRow): TimelineRow {
 }
 
 /** One flow run, on a time axis and on the flow's graph, refreshed while it is in progress. */
-export function FlowRunView({ root, id, link }: { root: string; id: string; link: string }) {
+export function FlowRunView({
+  root,
+  id,
+  link,
+  header,
+}: {
+  root: string;
+  id: string;
+  link: string;
+  /** Drawn in place of the page's own title, with the run and a way to read it again. */
+  header?: (run: FlowRunDetail, refresh: () => void, flow: FlowDetail | undefined) => ReactNode;
+}) {
   const [run, setRun] = useState<FlowRunDetail>();
   const [error, setError] = useState<string>();
   const [selected, setSelected] = useState<string>();
@@ -575,7 +607,10 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
 
   if (error) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
-  const steps = run.steps.filter((step) => step.item === "");
+  // The trigger first, then the steps as they began.
+  const steps = run.steps
+    .filter((step) => step.item === "")
+    .sort((a, b) => Number(b.node === run.triggerNode) - Number(a.node === run.triggerNode));
   const statuses = Object.fromEntries(steps.map((step) => [step.node, step.state]));
   const chosen = steps.find((step) => step.node === selected);
   const items = run.steps.filter((step) => step.node === selected && step.item !== "");
@@ -602,41 +637,23 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
     }
   };
 
+  const refresh = () => setTick((value) => value + 1);
   return (
-    <Page
-      title={run.flow}
-      action={
-        run.status === "running" ? (
-          <Button
-            variant="danger"
-            onClick={async () => {
-              const sure = await ask.confirm({
-                title: "Cancel this flow run?",
-                text: "Steps in progress are canceled too.",
-                action: "Cancel flow run",
-                cancel: "Keep running",
-                danger: true,
-              });
-              if (!sure) return;
-              await api.post(`${root}/flow-runs/${id}/cancel`).catch(notify.error);
-              setTick((value) => value + 1);
-            }}
-          >
-            Cancel flow run
-          </Button>
-        ) : undefined
-      }
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <Link to={`${link}/flows/${run.flow}`} className="text-action">
-          {run.flow}
-        </Link>
-        <StatePill state={run.state} />
-        <span className="text-ink-muted">
-          Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`}, on
-          bundle version {run.bundleVersion}
-        </span>
-      </div>
+    <div className="flex flex-col gap-5">
+      {header ? (
+        header(run, refresh, flow.data)
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <Link to={`${link}/flows/${run.flow}`} className="text-action">
+            {run.flow}
+          </Link>
+          <StatePill state={run.state} />
+          <span className="text-ink-muted">
+            Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`},
+            on bundle version {run.bundleVersion}
+          </span>
+        </div>
+      )}
       {run.error ? (
         <Notice tone="danger">
           <strong>The flow failed.</strong> {run.error.message}
@@ -675,7 +692,7 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
                   <p className="m-0 text-ink-muted">No step has started yet.</p>
                 ) : (
                   <Timeline
-                    rows={steps.map((step) => timelineRow(step))}
+                    rows={steps.map((step) => timelineRow(step, run.createdAt))}
                     selected={selected}
                     onSelect={setSelected}
                     legend={{
@@ -747,16 +764,32 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
           {chosen.wakeAt && chosen.status === "waiting" ? (
             <p className="mt-0 text-ink-muted">Waits until {when(chosen.wakeAt)}.</p>
           ) : null}
-          {chosen.runId ? (
-            <p className="mt-0">
-              <Link to={`${link}/runs/${chosen.runId}`} className="text-action">
-                See this step's run and its log
+          {chosen.copiedFrom ? (
+            <Notice tone="plain">
+              Kept from{" "}
+              <Link to={`${link}/runs/${chosen.copiedFrom.flowRunId}`}>
+                the run this one retries
               </Link>
-            </p>
+              : it was not run again.
+              {chosen.copiedFrom.runId ? (
+                <>
+                  {" "}
+                  <Link to={`${link}/runs/${chosen.copiedFrom.runId}`}>Its script run</Link>.
+                </>
+              ) : null}
+            </Notice>
+          ) : null}
+          {chosen.runId ? (
+            <div className="mb-3 flex flex-col gap-2">
+              <StepLogs root={root} runId={chosen.runId} />
+              <Link to={`${link}/runs/${chosen.runId}`} className="text-meta">
+                Open this step's run
+              </Link>
+            </div>
           ) : null}
           {chosen.childFlowRunId ? (
             <p className="mt-0">
-              <Link to={`${link}/flow-runs/${chosen.childFlowRunId}`} className="text-action">
+              <Link to={`${link}/runs/${chosen.childFlowRunId}`} className="text-action">
                 See the flow run this step started
               </Link>
             </p>
@@ -774,6 +807,23 @@ export function FlowRunView({ root, id, link }: { root: string; id: string; link
       ) : (
         <p className="m-0 text-ink-muted">Choose a step to see what it produced.</p>
       )}
-    </Page>
+    </div>
+  );
+}
+
+/** The log of the script run a step started, where the step is shown. */
+function StepLogs({ root, runId }: { root: string; runId: string }) {
+  const { run, lines, error } = useLiveRun(root, runId);
+  if (error) return <Notice tone="danger">{error}</Notice>;
+  const active = run?.state === "queued" || run?.state === "running";
+  return (
+    <LogViewer
+      lines={lines}
+      live={active}
+      fileName={`${runId.slice(-12)}.log`}
+      empty={
+        !run ? "Loading…" : active ? "Waiting for the first line…" : "The step logged nothing."
+      }
+    />
   );
 }

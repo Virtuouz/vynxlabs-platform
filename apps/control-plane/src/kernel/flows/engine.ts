@@ -13,7 +13,7 @@ import {
 import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
-import { cancelRun, startRun, storePayload } from "../execution/runs.js";
+import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { ExpressionError } from "./expressions.js";
 
@@ -33,6 +33,12 @@ export interface StartFlowRun {
   /** Use the flow from this bundle, not the workspace's active one. For sub-flows. */
   bundleId?: string | undefined;
   parent?: { flowRunId: string; node: string; item: string } | undefined;
+  /** Tags the flow run starts with, from its trigger or the run it repeats. */
+  tags?: string[] | undefined;
+  /** The flow run this one retries. With `seed`, what it already did is kept. */
+  retryOf?: string | undefined;
+  /** Keep what the retried flow run already did, and run only what failed and what follows. */
+  seed?: boolean | undefined;
 }
 
 type StepRow = {
@@ -149,6 +155,8 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       started_by_type: request.startedBy.type,
       started_by_id: request.startedBy.id,
       idempotency_key: key,
+      tags: [...new Set(request.tags ?? [])].slice(0, MAX_TAGS),
+      retry_of: request.retryOf ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -164,7 +172,126 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       finished_at: new Date(),
     })
     .execute();
+  if (request.seed && request.retryOf) {
+    await seedRetry(kernel, trx, { from: request.retryOf, to: id, body, triggerNode });
+  }
   return { created: true, flowRun };
+}
+
+/**
+ * The nodes of a finished flow run that a retry keeps: done, skipped, or failed
+ * with the failure handled, and with everything before them kept too. The rest
+ * runs again. The trigger that fired is kept: the retry gets the same input.
+ */
+export function keptNodes(
+  body: FlowBody,
+  steps: { node_id: string; item_key: string; status: string; handled: boolean }[],
+  triggerNode: string,
+): Set<string> {
+  const top = new Map(
+    steps.filter((step) => step.item_key === "").map((one) => [one.node_id, one]),
+  );
+  const done = (node: string) => {
+    const step = top.get(node);
+    return (
+      step !== undefined &&
+      (step.status === "succeeded" ||
+        step.status === "skipped" ||
+        (step.status === "failed" && step.handled))
+    );
+  };
+  const kept = new Set([triggerNode]);
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const node of Object.keys(body.nodes)) {
+      if (kept.has(node) || !done(node)) continue;
+      // A node before it that never ran sent nothing this way; one that ran must be kept.
+      const before = body.edges.filter((edge) => edge.to === node).map((edge) => edge.from);
+      if (before.every((from) => kept.has(from) || !top.has(from))) {
+        kept.add(node);
+        changed = true;
+      }
+    }
+  }
+  return kept;
+}
+
+/**
+ * Copies what a retried flow run already did into its retry: the steps of every
+ * kept node, each with its output in the step itself, and anything stored copied
+ * to the retry's own keys. The retry then needs nothing of the run it retries,
+ * which may be removed by retention before the retry ends.
+ */
+async function seedRetry(
+  kernel: Kernel,
+  trx: Trx,
+  {
+    from,
+    to,
+    body,
+    triggerNode,
+  }: { from: string; to: string; body: FlowBody; triggerNode: string },
+) {
+  const steps = await trx
+    .selectFrom("step_run")
+    .selectAll()
+    .where("flow_run_id", "=", from)
+    .execute();
+  const kept = keptNodes(body, steps, triggerNode);
+  const copyStored = async (ref: string, name: string) => {
+    const key = `flow-runs/${to}/${name}.json`;
+    await kernel.storage.put(key, await kernel.storage.get(ref), "application/json");
+    return key;
+  };
+  for (const step of steps) {
+    if (step.node_id === triggerNode || !kept.has(step.node_id)) continue;
+    let output: unknown = step.output;
+    let outputRef = step.output_ref;
+    if (step.run_id) {
+      const run = await trx
+        .selectFrom("run")
+        .select(["output", "output_ref"])
+        .where("id", "=", step.run_id)
+        .executeTakeFirst();
+      output = run?.output ?? null;
+      outputRef = run?.output_ref ?? null;
+    } else if (step.child_flow_run_id) {
+      const child = await trx
+        .selectFrom("flow_run")
+        .select("output")
+        .where("id", "=", step.child_flow_run_id)
+        .executeTakeFirst();
+      output = child?.output ?? null;
+      outputRef = null;
+    }
+    const name = `${step.node_id}${step.item_key ? `-${step.item_key}` : ""}`;
+    await trx
+      .insertInto("step_run")
+      .values({
+        flow_run_id: to,
+        node_id: step.node_id,
+        item_key: step.item_key,
+        status: step.status,
+        output_name: step.output_name,
+        output: output === null || output === undefined ? null : JSON.stringify(output),
+        output_ref: outputRef ? await copyStored(outputRef, name) : null,
+        error: step.error ? JSON.stringify(step.error) : null,
+        handled: step.handled,
+        detail: JSON.stringify({
+          ...step.detail,
+          copiedFrom: {
+            flowRunId: from,
+            ...(step.run_id ? { runId: step.run_id } : {}),
+            ...(step.child_flow_run_id ? { childFlowRunId: step.child_flow_run_id } : {}),
+          },
+        }),
+        decided_by: step.decided_by,
+        decision_comment: step.decision_comment,
+        started_at: step.started_at,
+        finished_at: step.finished_at,
+      } as never)
+      .execute();
+  }
 }
 
 /** Moves a flow run on, without waiting for it and without ever throwing. */
@@ -290,6 +417,7 @@ type FlowRunRow = {
   trigger_node: string;
   trigger_detail: Record<string, unknown>;
   parent_flow_run_id: string | null;
+  tags: string[];
 };
 
 class Advance {
@@ -690,6 +818,8 @@ class Advance {
         idempotencyKey: `flow:${this.#flowRun.id}:${step.node_id}:${step.item_key}`,
         bundleId: this.#flowRun.bundle_id,
         step: { flowRunId: this.#flowRun.id, node: step.node_id, item: step.item_key },
+        // A step's run carries its flow run's tags, so a search by tag finds both.
+        tags: this.#flowRun.tags,
       });
       await this.#update(step, { status: "running", run_id: started.run.id });
     } catch (error) {
@@ -747,6 +877,7 @@ class Advance {
         idempotencyKey: `flow:${this.#flowRun.id}:${step.node_id}:${step.item_key}`,
         bundleId: this.#flowRun.bundle_id,
         parent: { flowRunId: this.#flowRun.id, node: step.node_id, item: step.item_key },
+        tags: this.#flowRun.tags,
       });
       await this.#update(step, { status: "waiting", child_flow_run_id: started.flowRun.id });
       this.#children.push(started.flowRun.id);

@@ -9,7 +9,7 @@ import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
 import { revealSecret } from "../secrets.js";
 import { decryptFor, encryptFor } from "./bindings.js";
-import { type Relay, startRun } from "./runs.js";
+import { type Relay, startRun, TAG_PATTERN } from "./runs.js";
 
 interface ScheduleConfig {
   cron: string;
@@ -21,6 +21,7 @@ interface ScheduleConfig {
 interface ScheduleBody extends ScheduleConfig {
   script: string;
   enabled?: boolean;
+  tags?: string[];
 }
 type TriggerBody =
   | {
@@ -30,8 +31,16 @@ type TriggerBody =
       input?: "body" | "request";
       verify?: WebhookVerify;
       source?: string;
+      tags?: string[];
     }
-  | { type: "event"; script: string; event: string; filter?: string; enabled?: boolean }
+  | {
+      type: "event";
+      script: string;
+      event: string;
+      filter?: string;
+      enabled?: boolean;
+      tags?: string[];
+    }
   | ({ type: "form"; script: string; enabled?: boolean } & FormTrigger);
 
 /** The built-in trigger sources, written against the SDK's extension interface. */
@@ -134,6 +143,8 @@ interface Registration {
   event?: { name: string; filter?: string | undefined };
   webhook?: WebhookConfig;
   form?: FormTrigger;
+  /** CEL expressions that tag each run the trigger starts. */
+  tags?: string[] | undefined;
 }
 
 /** What a webhook does with a request, as its trigger said. Kept with the registered trigger. */
@@ -272,9 +283,10 @@ async function register(
       next_fire_at: registration.schedule ? firstFire(registration.schedule, field) : null,
       event_name: registration.event?.name ?? null,
       filter: registration.event?.filter ?? null,
-      config: JSON.stringify(
-        registration.schedule ?? registration.webhook ?? registration.form ?? {},
-      ),
+      config: JSON.stringify({
+        ...(registration.schedule ?? registration.webhook ?? registration.form ?? {}),
+        ...(registration.tags?.length ? { tags: registration.tags } : {}),
+      }),
     };
     const current = existing.find(
       (row) => row.node_id === registration.node && row.type === registration.type,
@@ -360,6 +372,7 @@ export function registerExecutionHooks(kernel: Kernel) {
             type: "schedule",
             target: { kind: "script", path: body.script },
             enabled: body.enabled ?? true,
+            tags: body.tags,
             schedule: {
               cron: body.cron,
               ...(body.timezone ? { timezone: body.timezone } : {}),
@@ -380,6 +393,7 @@ export function registerExecutionHooks(kernel: Kernel) {
             type: body.type,
             target: { kind: "script", path: body.script },
             enabled: body.enabled ?? true,
+            tags: body.type === "form" ? undefined : body.tags,
             ...(body.type === "event" ? { event: { name: body.event, filter: body.filter } } : {}),
             ...(body.type === "webhook"
               ? { webhook: { input: body.input, verify: body.verify, source: body.source } }
@@ -402,6 +416,7 @@ export function registerExecutionHooks(kernel: Kernel) {
             type: trigger.type,
             target: { kind: "flow", path: resource.path },
             enabled: true,
+            tags: trigger.type === "form" ? undefined : trigger.tags,
             ...(trigger.type === "schedule"
               ? {
                   schedule: {
@@ -458,6 +473,7 @@ export async function startTarget(kernel: Kernel, trx: Trx, state: TriggerRow, f
     trigger: firing.trigger,
     startedBy: { type: "trigger", id: null },
     idempotencyKey: firing.idempotencyKey,
+    tags: await triggerTags(kernel, trx, state, firing.input),
   };
   if (state.target_kind === "flow") {
     const { startFlowRun } = await import("../flows/engine.js");
@@ -470,6 +486,39 @@ export async function startTarget(kernel: Kernel, trx: Trx, state: TriggerRow, f
   }
   const started = await startRun(kernel, trx, { ...common, script: state.target_path });
   return { kind: "script" as const, id: started.run.id };
+}
+
+/**
+ * The tags a trigger gives the run it starts: each of its expressions worked
+ * out over what it was given. One that fails, or gives something that is not a
+ * tag, is left out and logged; it never stops the run.
+ */
+async function triggerTags(
+  kernel: Kernel,
+  trx: Trx,
+  state: TriggerRow,
+  input: unknown,
+): Promise<string[]> {
+  const row = await trx
+    .selectFrom("trigger_state")
+    .select("config")
+    .where("resource_id", "=", state.resource_id)
+    .where("node_id", "=", state.node_id)
+    .executeTakeFirst();
+  const expressions = (row?.config as { tags?: unknown } | undefined)?.tags;
+  if (!Array.isArray(expressions)) return [];
+  const tags: string[] = [];
+  for (const expression of expressions) {
+    try {
+      const value = await kernel.expressions.evaluate(String(expression), { trigger: input });
+      const tag = String(value);
+      if (TAG_PATTERN.test(tag)) tags.push(tag);
+      else kernel.log.warn({ expression, tag }, "a trigger's tag is not a usable tag; left out");
+    } catch (error) {
+      kernel.log.warn({ err: error, expression }, "a trigger's tag could not be worked out");
+    }
+  }
+  return tags;
 }
 
 /** The most runs one answer of a trigger source may start. */

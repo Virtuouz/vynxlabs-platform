@@ -32,6 +32,7 @@ import { Overview } from "./Overview.tsx";
 import { Release } from "./Release.tsx";
 import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
 import { RetentionSettings } from "./Retention.tsx";
+import { RunPage, ToRunPage } from "./RunPage.tsx";
 import { RunsWorkbench } from "./Runs.tsx";
 
 // Screens that bring a library with them, or that few people open, are fetched when first
@@ -57,7 +58,7 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
-import { FlowRunView, Flows, FlowView } from "./Flows.tsx";
+import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups } from "./Groups.tsx";
 import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
@@ -187,7 +188,6 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
 
   const section = match("/t/:t/:section/*", path)?.section ?? "overview";
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
-  const runId = match("/t/:t/workspaces/:w/runs/:id", path)?.id;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       {mine ? (
@@ -216,7 +216,6 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
           workspaceId={workspace.w}
           tab={workspace.tab ?? "overview"}
           rest={path.split("/").slice(6).map(decodeURIComponent).join("/")}
-          runId={runId}
         />
       ) : section === "approvals" ? (
         <ApprovalsQueue base={base} tenantId={tenantId} />
@@ -374,7 +373,6 @@ function WorkspaceDetail({
   workspaceId,
   tab,
   rest,
-  runId,
 }: {
   base: string;
   tenantId: string;
@@ -382,7 +380,6 @@ function WorkspaceDetail({
   tab: string;
   /** What follows the tab in the address: a flow's path, or a flow run's ID. */
   rest: string;
-  runId: string | undefined;
 }) {
   const workspace = useLoad<Workspace>(`${base}/workspaces/${workspaceId}`);
   // An address may name the workspace by its slug, as people type it. When the
@@ -462,12 +459,8 @@ function WorkspaceDetail({
           editable={workspace.data.type === "dev"}
         />
       ) : tab === "flow-runs" && rest ? (
-        <FlowRunView
-          key={rest}
-          root={root}
-          id={rest}
-          link={`/t/${tenantId}/workspaces/${workspaceId}`}
-        />
+        // A flow run's page is the run page now; old links still arrive.
+        <ToRunPage to={`/t/${tenantId}/workspaces/${workspaceId}/runs/${rest}`} />
       ) : tab === "dashboards" && rest ? (
         <DashboardView
           key={rest}
@@ -555,12 +548,15 @@ function WorkspaceDetail({
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           editable={workspace.data.type === "dev"}
         />
-      ) : tab === "runs" ? (
-        <RunsWorkbench
+      ) : tab === "runs" && rest ? (
+        <RunPage
+          key={rest}
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
-          selected={runId}
+          id={rest}
         />
+      ) : tab === "runs" ? (
+        <RunsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "triggers" ? (
         <TriggersWorkbench
           root={root}

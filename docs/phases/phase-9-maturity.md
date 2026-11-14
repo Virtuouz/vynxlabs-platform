@@ -1,6 +1,6 @@
 # Phase 9: maturity
 
-Status: in progress. Milestones 1 to 4 built and tested locally (quick wins; execution isolation, also in the image on the dev stack; retention; one state vocabulary, the console cache and the run event stream). Milestones 5 to 7 not started.
+Status: in progress. Milestones 1 to 5 built and tested locally (quick wins; execution isolation, also in the image on the dev stack; retention; the state vocabulary, cache and run event stream; the run page, re-run and retry, search and tags). Milestones 6 and 7 not started.
 Last updated: 2026-11-14
 
 Phase 9 builds the P0 and P1 items of the [evolution roadmap](../evolution/07-roadmap.md). It changes no part of the platform's model. It makes what already exists dependable and connected:
@@ -104,4 +104,12 @@ Each item's acceptance criteria are in the roadmap and its spec. New suites this
 - **A flow whose sub-flow waits for a person shows `running`,** and the sub-flow `waiting_approval`. `waiting_time` is shown only while nothing but delays is waiting.
 - **The cache changed one test's timing, not its meaning.** A promotion test changed a select as soon as its label appeared; the options now arrive a tick later. The test waits for the option.
 - **A write outside any tenant invalidated every read,** and the console makes one itself: `PUT /me/recent`, when the member's place settles. In a browser on the dev stack it showed as one extra Runs request after each arrival. A write under `/me` now invalidates only `/me`. Checked in Chromium against the built console: a run inserted from outside appeared on an open Runs page in 92 ms, over one stream, with one list request on arrival and none in the next 12 seconds.
+- **A retry keeps its own copies of what it reuses.** The engine reads a code step's output from its script run and a sub-flow step's from its flow run, and retention removes the original tree after its period. A retry still waiting by then would read nothing. So a kept step's output, and any stored object behind it, is copied into the retry, and the step names where it came from instead of pointing at it.
+- **What a retry keeps:** a step that succeeded, was skipped, or failed with its failure handled, with every step before it kept too. A granted approval is a succeeded step; a pending or rejected one is not, and is asked again.
+- **The error summary is kept by a trigger, not a generated column.** An import, and the upgrade test, write rows whole, and Postgres refuses a value for a generated column.
+- **A run's address is its page now.** The list's inspector moved to `?run=<id>`, beside its filters. Every link to a run, from triggers, the overview and approvals, opens the page.
+- **Searching 5,000 runs:** the first page of the list answered in 15 ms in the test suite; S4 asked for under 150 ms.
+- **Walked in Chromium on a built instance, at 1440 and 390 px:** from the workspace to a failed script run's error and log line in 3 clicks at both widths (the header's failed-runs count at 1440, the overview's "Open failed runs" at 390, where the header has no room for it), the target S3 set. Retrying a failed flow from its failed step said what runs again and what is kept before it ran, and the new run showed "Succeeded" by itself within 1.3 s of its page opening. No page scrolls sideways at 390.
+- **The walk found two things the tests did not.** A kept step carried its original times, so the retry's timeline stretched back to the first run and listed it before the trigger; kept steps are now drawn at the retry's start, marked "kept", after the trigger. And the run page had no side margin on a phone; it has the console's gutter now.
+- **Open:** the timeline's axis labels overlap at 390 px. The timeline component predates this phase; left for the console polish in milestone 7.
 

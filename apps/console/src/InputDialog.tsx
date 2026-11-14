@@ -34,6 +34,7 @@ export function InputDialog({
   title,
   action,
   schema,
+  initial,
   onSubmit,
 }: {
   open: boolean;
@@ -42,10 +43,14 @@ export function InputDialog({
   /** The button that starts it: "Run", "Start flow". */
   action: string;
   schema?: Record<string, unknown> | undefined;
+  /** What the fields start with, such as the input of a run being run again. */
+  initial?: unknown;
   onSubmit: (input: unknown) => Promise<void>;
 }) {
   const fields = formSchema(schema);
-  const [text, setText] = useState("{}");
+  const [text, setText] = useState(() =>
+    initial === undefined ? "{}" : JSON.stringify(initial, null, 2),
+  );
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
 
@@ -92,7 +97,15 @@ export function InputDialog({
           id: "form",
           label: "Form",
           content: (
-            <Form schema={fields} submitLabel={action} disabled={busy} onSubmit={(v) => send(v)} />
+            <Form
+              schema={fields}
+              submitLabel={action}
+              disabled={busy}
+              onSubmit={(v) => send(v)}
+              {...(initial && typeof initial === "object" && !Array.isArray(initial)
+                ? { value: initial as Record<string, unknown> }
+                : {})}
+            />
           ),
         },
         { id: "json", label: "JSON", content: json },

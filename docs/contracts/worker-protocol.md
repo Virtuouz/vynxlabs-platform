@@ -151,6 +151,12 @@ Response: the stored file as above, plus `base64`. 404 when the workspace has no
 
 The data and file routes were added after version 1 was published. A worker that does not offer them to scripts needs no change.
 
+### `POST /runs/{runId}/tags`
+
+Labels the run, and its flow run when it is a step of one, so it can be found by them.
+
+Request: `attempt`, `tags`: up to 10 strings of `a-z`, `0-9` and `_.:-`, at most 64 characters each. Response: `{"tags"}`, every tag the run now has; a run keeps at most 10. A bad tag is answered 400 with the tag named.
+
 ### `POST /runs/{runId}/complete`
 
 Request: `attempt`, `output`, and optionally `logsLost`: how many log lines the worker held but could not deliver. A control plane that predates it ignores it. The run's log then says how many are missing. The run succeeds. 409 means the attempt was no longer in progress and the output was not recorded.

@@ -3,6 +3,8 @@ import { sql } from "@vynxlabs/db";
 import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { bundleManifest } from "../kernel/execution/bundles.js";
+import { readPayload } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
   type RunState,
@@ -11,7 +13,13 @@ import {
 } from "../kernel/execution/state.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
 import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
-import { cancelFlowRun, decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
+import {
+  cancelFlowRun,
+  decideApproval,
+  keptNodes,
+  kickFlow,
+  startFlowRun,
+} from "../kernel/flows/engine.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -59,6 +67,9 @@ const FlowRun = Type.Object({
   bundleId: Id,
   bundleVersion: Type.Integer(),
   error: ErrorShape,
+  errorSummary: NullableString,
+  tags: Type.Array(Type.String()),
+  retryOf: Type.Union([Id, Type.Null()], { description: "The flow run this one retries." }),
   parentFlowRunId: NullableId,
   createdAt: Time,
   finishedAt: NullableTime,
@@ -76,6 +87,9 @@ interface FlowRunRow {
   bundle_id: string;
   bundle_version: number;
   error: { message: string } | null;
+  error_summary: string | null;
+  tags: string[];
+  retry_of: string | null;
   parent_flow_run_id: string | null;
   created_at: Date;
   finished_at: Date | null;
@@ -91,6 +105,9 @@ const toFlowRun = (row: FlowRunRow) => ({
   bundleId: row.bundle_id,
   bundleVersion: row.bundle_version,
   error: row.error ? { message: row.error.message } : null,
+  errorSummary: row.error_summary,
+  tags: row.tags,
+  retryOf: row.retry_of,
   parentFlowRunId: row.parent_flow_run_id,
   createdAt: iso(row.created_at),
   finishedAt: isoOrNull(row.finished_at),
@@ -109,6 +126,17 @@ const Step = Type.Object({
   childFlowRunId: NullableId,
   wakeAt: NullableTime,
   detail: AnyObject,
+  copiedFrom: Type.Union(
+    [
+      Type.Object({
+        flowRunId: Id,
+        runId: Type.Optional(Id),
+        childFlowRunId: Type.Optional(Id),
+      }),
+      Type.Null(),
+    ],
+    { description: "For a step a retry kept: the flow run, and the run, it was done in." },
+  ),
   startedAt: Time,
   pickedUpAt: Type.Union([Time, Type.Null()], {
     description:
@@ -550,6 +578,169 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    // ----- Retrying a flow run -----
+
+    /** A finished flow run, with what a retry of it would keep and run again. */
+    const retryPlanOf = async (workspaceId: string, id: string) => {
+      const row = await flowRuns(workspaceId).where("flow_run.id", "=", id).executeTakeFirst();
+      if (!row) throw notFound("The flow run");
+      const bundle = await db
+        .selectFrom("bundle")
+        .select(["id", "storage_key"])
+        .where("id", "=", row.bundle_id)
+        .executeTakeFirstOrThrow();
+      const manifest = await bundleManifest(kernel, bundle, "flow", row.flow_path);
+      if (!manifest) throw notFound(`The flow ${row.flow_path}`);
+      const body = manifest.body as unknown as FlowBody;
+      const steps = await db
+        .selectFrom("step_run")
+        .leftJoin("member", "member.id", "step_run.decided_by")
+        .selectAll("step_run")
+        .select(["member.email as decided_by_email", "member.name as decided_by_name"])
+        .where("step_run.flow_run_id", "=", id)
+        .execute();
+      const kept = keptNodes(body, steps, row.trigger_node);
+      const nodes = Object.keys(body.nodes).filter(
+        (node) => node !== row.trigger_node && body.nodes[node]?.type !== "trigger",
+      );
+      return {
+        row,
+        plan: {
+          kept: nodes.filter((node) => kept.has(node)),
+          again: nodes.filter((node) => !kept.has(node)),
+          approvalsKept: steps
+            .filter(
+              (step) =>
+                step.item_key === "" &&
+                kept.has(step.node_id) &&
+                step.status === "succeeded" &&
+                "title" in step.detail,
+            )
+            .map((step) => ({
+              node: step.node_id,
+              decidedBy: step.decided_by_name ?? step.decided_by_email ?? null,
+            })),
+        },
+      };
+    };
+    const RetryPlan = Type.Object({
+      kept: Type.Array(Type.String(), { description: "Nodes whose steps are kept as they were." }),
+      again: Type.Array(Type.String(), {
+        description: "Nodes that run again, or for the first time.",
+      }),
+      approvalsKept: Type.Array(Type.Object({ node: Type.String(), decidedBy: NullableString }), {
+        description: "Approvals already granted, which are not asked again.",
+      }),
+    });
+
+    app.get(
+      `${base}/flow-runs/:id/retry-plan`,
+      {
+        config: { access: access.workspace("flow_run:read") },
+        schema: {
+          summary: "What retrying a flow run from its failed step would keep and run again",
+          description:
+            "A step is kept when it succeeded, was skipped, or failed with its failure " +
+            "handled, and every step before it is kept too. Granted approvals are kept; " +
+            "pending or rejected ones are asked again.",
+          tags: ["flows"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          response: { 200: RetryPlan },
+        },
+      },
+      async ({ params }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        return (await retryPlanOf(params.w, params.id)).plan;
+      },
+    );
+
+    app.post(
+      `${base}/flow-runs/:id/retry`,
+      {
+        config: { access: access.workspace("flow_run:write") },
+        schema: {
+          summary: "Run a finished flow run again, from its failed step or from the start",
+          description:
+            "From the failed step (`from: failed`), the steps a retry keeps are copied into a " +
+            "new flow run on the same version and with the same input, and only the rest " +
+            "runs. From the start, it runs whole, with the input given or the same one, on " +
+            "the version it ran or the active one. The new flow run names the one it retries.",
+          tags: ["flows"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          body: Type.Object({
+            from: Type.Union([Type.Literal("failed"), Type.Literal("start")]),
+            input: Type.Optional(Type.Unknown()),
+            bundle: Type.Optional(Type.Union([Type.Literal("original"), Type.Literal("active")])),
+          }),
+          response: { 201: FlowRun },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const { row } = await retryPlanOf(params.w, params.id);
+        if (row.status === "running") {
+          throw new HttpError(409, "conflict", "The flow run has not ended. Cancel it first.");
+        }
+        if (row.parent_flow_run_id) {
+          throw new HttpError(
+            409,
+            "conflict",
+            "This flow run was started by another flow. Retry the flow that started it.",
+          );
+        }
+        const fromFailed = body.from === "failed";
+        if (fromFailed && row.status === "succeeded") {
+          throw new HttpError(409, "conflict", "The flow run succeeded: nothing failed to retry.");
+        }
+        if (fromFailed && (body.bundle === "active" || body.input !== undefined)) {
+          throw new HttpError(
+            409,
+            "conflict",
+            "A retry from the failed step keeps what was done, so it runs on the same version " +
+              "with the same input. Retry from the start to change either.",
+          );
+        }
+        const input =
+          body.input !== undefined
+            ? body.input
+            : await readPayload(kernel, row.input, row.input_ref);
+        const started = await ctx.mutate(async (trx, audit) => {
+          const result = await startFlowRun(kernel, trx, {
+            tenantId: params.t,
+            workspaceId: params.w,
+            flow: row.flow_path,
+            triggerNode: row.trigger_node,
+            input,
+            trigger: { type: "retry", detail: { of: row.id, from: body.from } },
+            startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+            bundleId: fromFailed || body.bundle !== "active" ? row.bundle_id : undefined,
+            tags: row.tags,
+            retryOf: row.id,
+            seed: fromFailed,
+          });
+          await audit({
+            action: "flow_run.retried",
+            targetType: "flow_run",
+            targetId: result.flowRun.id,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: {
+              flow: row.flow_path,
+              of: row.id,
+              from: body.from,
+              bundle: fromFailed || body.bundle !== "active" ? "original" : "active",
+            },
+          });
+          return result;
+        });
+        kickFlow(kernel, started.flowRun.id);
+        const created = await flowRuns(params.w)
+          .where("flow_run.id", "=", started.flowRun.id)
+          .executeTakeFirstOrThrow();
+        return reply.code(201).send(toFlowRun(created));
+      },
+    );
+
     app.get(
       `${base}/flow-runs/:id`,
       {
@@ -568,6 +759,9 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               input: Type.Unknown(),
               output: Type.Unknown(),
               steps: Type.Array(Step),
+              retries: Type.Array(Type.Object({ id: Id, state: RunStateSchema, createdAt: Time }), {
+                description: "Flow runs that retried this one, newest first.",
+              }),
             }),
           },
         },
@@ -597,6 +791,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             input: row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
             output: row.output ?? null,
             steps: [],
+            retries: [],
           };
         }
         const steps = await db
@@ -612,10 +807,20 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("step_run.started_at")
           .orderBy("step_run.node_id")
           .execute();
+        const retries = await flowRuns(params.w)
+          .where("flow_run.retry_of", "=", params.id)
+          .orderBy("flow_run.id", "desc")
+          .limit(20)
+          .execute();
         return {
           ...toFlowRun(row),
           input: row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
           output: row.output ?? null,
+          retries: retries.map((one) => ({
+            id: one.id,
+            state: one.state,
+            createdAt: iso(one.created_at),
+          })),
           steps: steps.map((step) => ({
             node: step.node_id,
             item: step.item_key,
@@ -637,8 +842,14 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             wakeAt: isoOrNull(step.wake_at),
             // A foreach keeps its items here. They are shown through its item steps instead.
             detail: Object.fromEntries(
-              Object.entries(step.detail).filter(([name]) => name !== "items"),
+              Object.entries(step.detail).filter(
+                ([name]) => name !== "items" && name !== "copiedFrom",
+              ),
             ),
+            copiedFrom:
+              (step.detail.copiedFrom as
+                | { flowRunId: string; runId?: string; childFlowRunId?: string }
+                | undefined) ?? null,
             startedAt: iso(step.started_at),
             pickedUpAt: isoOrNull(step.run_started_at),
             finishedAt: isoOrNull(step.finished_at),

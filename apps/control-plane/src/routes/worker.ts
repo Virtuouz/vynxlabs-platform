@@ -27,9 +27,11 @@ import {
   claimRun,
   completeRun,
   failRun,
+  MAX_TAGS,
   queueName,
   readPayload,
   runnable,
+  TAG_PATTERN,
 } from "../kernel/execution/runs.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
 import { seeWorker } from "../kernel/execution/workers.js";
@@ -564,6 +566,48 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         );
         await kickStarted(kernel, published.started);
         return { eventId: published.event.id, started: published.started.length };
+      },
+    );
+
+    app.post(
+      "/worker/runs/:id/tags",
+      {
+        config,
+        schema: {
+          summary: "Label the running script's run",
+          description:
+            "Adds tags to the run, and to its flow run when it is a step of one. A run keeps " +
+            `at most ${MAX_TAGS}; past that, the newest are not kept, and the answer says so.`,
+          tags: ["worker protocol"],
+          params: RunParams,
+          body: Type.Object({
+            attempt: Attempt,
+            tags: Type.Array(Type.String(), { minItems: 1, maxItems: MAX_TAGS }),
+          }),
+          response: { 200: Type.Object({ tags: Type.Array(Type.String()) }) },
+        },
+      },
+      async ({ worker, params, body }) => {
+        const bad = body.tags.filter((tag) => !TAG_PATTERN.test(tag));
+        if (bad.length > 0) {
+          throw badRequest(
+            `A tag is up to 64 characters of a-z, 0-9 and _.:- only: ${bad.map((tag) => JSON.stringify(tag)).join(", ")}.`,
+          );
+        }
+        const run = await activeRun(db, worker, params.id, body.attempt);
+        const merged = async (table: "run" | "flow_run", id: string) => {
+          const current = await db
+            .selectFrom(table)
+            .select("tags")
+            .where("id", "=", id)
+            .executeTakeFirstOrThrow();
+          const tags = [...new Set([...current.tags, ...body.tags])].slice(0, MAX_TAGS);
+          await db.updateTable(table).set({ tags }).where("id", "=", id).execute();
+          return tags;
+        };
+        const tags = await merged("run", run.id);
+        if (run.flow_run_id) await merged("flow_run", run.flow_run_id);
+        return { tags };
       },
     );
 

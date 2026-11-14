@@ -54,8 +54,7 @@ const triggerKey = (row: Trigger) => (row.node ? `${row.path}#${row.node}` : row
 /** The page of what a trigger starts. */
 const targetLink = (link: string, row: Trigger) =>
   row.targetKind === "flow" ? `${link}/flows/${row.script}` : `${link}/scripts/edit/${row.script}`;
-const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) =>
-  run.kind === "flow" ? `${link}/flow-runs/${run.id}` : `${link}/runs/${run.id}`;
+const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) => `${link}/runs/${run.id}`;
 
 /** What starts work by itself, by kind, with each one's last firing and a way to pause just it. */
 export function TriggersWorkbench({
@@ -468,11 +467,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
                   {open.started.map((one) => (
                     <Link
                       key={one.id}
-                      to={
-                        one.kind === "flow"
-                          ? `${link}/flow-runs/${one.id}`
-                          : `${link}/runs/${one.id}`
-                      }
+                      to={one.kind === "flow" ? `${link}/runs/${one.id}` : `${link}/runs/${one.id}`}
                       className="flex items-center justify-between gap-2 no-underline"
                     >
                       <Mono className="text-ink">{one.target}</Mono>
@@ -596,7 +591,7 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
     />
   );
   const runLinkOf = (row: { workspaceId: string; flowRunId: string }) =>
-    `/t/${tenantId}/workspaces/${row.workspaceId}/flow-runs/${row.flowRunId}`;
+    `/t/${tenantId}/workspaces/${row.workspaceId}/runs/${row.flowRunId}`;
 
   if (state === "decided") {
     return (

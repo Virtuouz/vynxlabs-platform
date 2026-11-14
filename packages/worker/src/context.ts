@@ -213,6 +213,9 @@ export function buildContext({
       idempotencyKey: job.idempotencyKey,
       trigger: job.trigger,
       startedBy: job.startedBy ?? { type: "system", id: null },
+      tag: async (...tags: string[]) => {
+        await call("POST", `${runPath}/tags`, { attempt: job.attempt, tags });
+      },
     },
     signal,
   };
@@ -250,6 +253,6 @@ export function allowedCall(job: Job, method: string, path: string): boolean {
       "files",
     ].includes(first as string);
   }
-  if (method === "POST") return ["data", "files", "events"].includes(rest);
+  if (method === "POST") return ["data", "files", "events", "tags"].includes(rest);
   return false;
 }

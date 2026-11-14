@@ -84,6 +84,11 @@ export interface Relay {
   mode: "webhook" | "poll";
 }
 
+/** The most tags one run or flow run carries. */
+export const MAX_TAGS = 10;
+/** What a tag may look like: short, lower case, no spaces. */
+export const TAG_PATTERN = /^[a-z0-9_.:-]{1,64}$/;
+
 export interface StartRun {
   tenantId: string;
   workspaceId: string;
@@ -99,6 +104,8 @@ export interface StartRun {
   bundleId?: string | undefined;
   /** The flow step this run belongs to. */
   step?: { flowRunId: string; node: string; item: string } | undefined;
+  /** Tags the run starts with, from its trigger, the run it repeats, or its flow run. */
+  tags?: string[] | undefined;
   /**
    * Set when the run is of a trigger source, for a trigger. Only then may a
    * trigger source be run: nobody starts one by hand.
@@ -231,6 +238,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       input: input.inline,
       input_ref: input.ref,
       scheduled_for: request.startAfter ?? null,
+      tags: [...new Set(request.tags ?? [])].slice(0, MAX_TAGS),
     })
     .returningAll()
     .executeTakeFirstOrThrow();

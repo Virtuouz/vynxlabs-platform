@@ -1,6 +1,6 @@
-import { Button, JsonView, LogViewer, Notice, SelectField, Tabs } from "@vynxlabs/ui";
-import { ArrowUpRight, CircleX, Lightbulb, RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Button, JsonView, LogViewer, Notice, SelectField, Tabs, TextField } from "@vynxlabs/ui";
+import { ArrowUpRight, CircleX, Lightbulb, X } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
@@ -24,13 +24,15 @@ interface Activity {
   attempt: number;
   maxAttempts: number;
   error: string | null;
+  errorSummary: string | null;
+  tags: string[];
   bundleVersion: number;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
 }
 
-interface Insight {
+export interface Insight {
   attempts: { attempt: number; startedAt: string; endedAt: string; failed: boolean }[];
   worker: { id: string; name: string; pool: string | null } | null;
   timeoutSeconds: number | null;
@@ -63,24 +65,27 @@ function started(iso: string) {
   return age < 86_400_000 ? fromNow(iso) : stamp(iso).slice(0, 16);
 }
 
+interface Page {
+  items: Activity[];
+  nextCursor: string | null;
+  stateCounts: Record<string, number>;
+  keptDays?: number;
+}
+
 /**
  * Every run of the workspace, script and flow, in one list, with the chosen
  * one beside it: what happened, why it failed and what to do, its attempts
- * and its log. It refreshes while anything is in progress.
+ * and its log. Its filters, its search and the run chosen are in the address,
+ * so a reload, a shared link or the back button keeps them.
  */
 export function RunsWorkbench({
   root,
   link,
-  selected,
 }: {
   root: string;
   /** The workspace's console address. */
   link: string;
-  /** A run's ID from the address, when one is open. */
-  selected: string | undefined;
 }) {
-  // The status filter lives in the address, so a link can open the failed runs and a
-  // reload or a shared link keeps them.
   const [asked, ask] = useQueryValue("status");
   // An address from before the states, `?status=cancelled`, still works.
   const wanted = asked === "cancelled" ? "canceled" : asked;
@@ -88,9 +93,25 @@ export function RunsWorkbench({
     ? (wanted as Filter)
     : "all";
   const setStatus = (next: "all" | Filter) => ask(next === "all" ? null : next);
-  const [kind, setKind] = useState("all");
-  const [hours, setHours] = useState("24");
+  const [kindAsked, setKindAsked] = useQueryValue("kind");
+  const kind = kindAsked === "script" || kindAsked === "flow" ? kindAsked : "all";
+  const [whenAsked, setWhenAsked] = useQueryValue("when");
+  const hours = WINDOWS.some((one) => one.value === whenAsked) ? (whenAsked as string) : "24";
+  const [search, setSearch] = useQueryValue("q");
+  const [tag, setTag] = useQueryValue("tag");
+  const [selected, choose] = useQueryValue("run");
+  const [typed, setTyped] = useState(search ?? "");
   const [tick, setTick] = useState(0);
+  const [more, setMore] = useState<string[]>([]);
+  const [lastNext, setLastNext] = useState<string | null>(null);
+
+  // What is typed reaches the address, and the list, once typing pauses.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if ((search ?? "") !== typed.trim()) setSearch(typed.trim() || null);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [typed, search, setSearch]);
 
   // The window's start is fixed when the period is chosen or the list refreshes. Worked
   // out on each render, it would change the address every time and load without end.
@@ -103,12 +124,16 @@ export function RunsWorkbench({
   if (status !== "all") query.set("state", status);
   if (kind !== "all") query.set("kind", kind);
   if (from) query.set("from", from);
-  const listPath = `${root}/activity?${query}&tick=${tick}`;
-  const list = useLoad<{
-    items: Activity[];
-    stateCounts: Record<string, number>;
-    keptDays?: number;
-  }>(listPath);
+  if (search) query.set("q", search);
+  if (tag) query.set("tag", tag);
+  const base = `${root}/activity?${query}`;
+  const list = useLoad<Page>(`${base}&tick=${tick}`);
+  // Pages beyond the first start again whenever what is asked for changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `base` is what is asked for
+  useEffect(() => {
+    setMore([]);
+    setLastNext(null);
+  }, [base]);
   const items = list.data?.items ?? [];
   const live = items.some((one) => LIVE.includes(one.state));
 
@@ -121,10 +146,24 @@ export function RunsWorkbench({
     return () => clearInterval(timer);
   }, [live, streaming]);
 
-  const chosen = items.find((one) => one.id === selected);
+  const [chosen, setChosen] = useState<Activity>();
   const counts = list.data?.stateCounts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const close = () => navigate(`${link}/runs${location.search}`);
+  const next = more.length === 0 ? (list.data?.nextCursor ?? null) : lastNext;
+  const filtered = status !== "all" || Boolean(search) || Boolean(tag);
+  const row = (one: Activity) => (
+    <RunRow
+      key={one.id}
+      run={one}
+      link={link}
+      on={one.id === selected}
+      onChoose={() => {
+        setChosen(one);
+        choose(one.id);
+      }}
+      onTag={(value) => setTag(value)}
+    />
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -147,12 +186,22 @@ export function RunsWorkbench({
                 {streaming ? "Live" : "Live · updates every 5s"}
               </span>
             ) : null}
+            <div className="w-full sm:w-64">
+              <TextField
+                name="q"
+                label="Search"
+                value={typed}
+                required={false}
+                placeholder="A path, a run ID, a tag or an error"
+                onChange={setTyped}
+              />
+            </div>
             <div className="w-40">
               <SelectField
                 label="Kind"
                 name="kind"
                 value={kind}
-                onChange={setKind}
+                onChange={(value) => setKindAsked(value === "all" ? null : value)}
                 options={[
                   { value: "all", label: "Scripts and flows" },
                   { value: "script", label: "Scripts" },
@@ -165,23 +214,35 @@ export function RunsWorkbench({
                 label="When"
                 name="when"
                 value={hours}
-                onChange={setHours}
+                onChange={(value) => setWhenAsked(value === "24" ? null : value)}
                 options={WINDOWS}
               />
             </div>
           </div>
         </div>
-        <FilterChips
-          label="Status"
-          value={status}
-          onChange={setStatus}
-          options={FILTERS.map(({ value, label, states }) => ({
-            value,
-            label,
-            count:
-              value === "all" ? total : states.reduce((sum, one) => sum + (counts[one] ?? 0), 0),
-          }))}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <FilterChips
+            label="Status"
+            value={status}
+            onChange={setStatus}
+            options={FILTERS.map(({ value, label, states }) => ({
+              value,
+              label,
+              count:
+                value === "all" ? total : states.reduce((sum, one) => sum + (counts[one] ?? 0), 0),
+            }))}
+          />
+          {tag ? (
+            <button
+              type="button"
+              onClick={() => setTag(null)}
+              aria-label={`Stop showing only runs tagged ${tag}`}
+              className="flex items-center gap-1 rounded-control border border-line px-2 py-0.5 text-meta hover:bg-surface"
+            >
+              Tagged <Mono>{tag}</Mono> <X aria-hidden="true" size={12} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <MasterDetail
@@ -190,11 +251,11 @@ export function RunsWorkbench({
             <Inspector
               open
               label="The chosen run"
-              title={chosen?.target ?? "Run"}
-              eyebrow={chosen ? `${chosen.kind === "flow" ? "Flow" : "Script"} run` : "Run"}
-              onClose={close}
+              title={chosen?.id === selected ? chosen.target : "Run"}
+              eyebrow="Run"
+              onClose={() => choose(null)}
             >
-              {chosen?.kind === "flow" ? (
+              {chosen?.id === selected && chosen.kind === "flow" ? (
                 <FlowRunSummary run={chosen} link={link} />
               ) : (
                 <ScriptRunPanel root={root} link={link} runId={selected} />
@@ -211,65 +272,141 @@ export function RunsWorkbench({
           <p className="m-0 p-6 text-ink-muted">Loading…</p>
         ) : items.length === 0 ? (
           <p className="m-0 p-6 text-ink-muted">
-            {status === "all" ? "Nothing ran in this time." : "No runs like that in this time."}
+            {filtered ? "No runs like that in this time." : "Nothing ran in this time."}
           </p>
         ) : (
-          <table className="w-full table-fixed border-collapse text-left">
-            <thead className="sticky top-0 z-10 bg-canvas">
-              <tr className="border-line border-b text-meta text-ink-subtle">
-                <th className="w-32 px-4 py-2 font-medium md:w-40 md:pl-6">Status</th>
-                <th className="px-3 py-2 font-medium">What</th>
-                <th className="hidden w-44 px-3 py-2 font-medium lg:table-cell">Started by</th>
-                <th className="w-28 px-3 py-2 font-medium">Started</th>
-                <th className="hidden w-24 px-3 py-2 text-right font-medium sm:table-cell md:pr-6">
-                  Took
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row) => {
-                const on = row.id === selected;
-                return (
-                  <tr
-                    key={row.id}
-                    aria-selected={on}
-                    onClick={() => navigate(`${link}/runs/${row.id}${location.search}`)}
-                    className={`cursor-pointer border-line border-b ${on ? "bg-selected" : "hover:bg-surface"}`}
-                  >
-                    <td className="px-4 py-2.5 md:pl-6">
-                      <StatePill state={row.state} />
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Link
-                        to={`${link}/runs/${row.id}${location.search}`}
-                        className="block truncate font-mono text-telemetry text-ink no-underline"
-                      >
-                        {row.target}
-                      </Link>
-                      <span className="block truncate text-meta text-ink-subtle">
-                        {row.kind === "flow" ? "Flow" : "Script"}
-                        {row.maxAttempts > 1
-                          ? ` · attempt ${Math.max(row.attempt, 1)} of ${row.maxAttempts}`
-                          : ""}
-                      </span>
-                    </td>
-                    <td className="hidden px-3 py-2.5 text-ink-muted lg:table-cell">
-                      {TRIGGER[row.trigger] ?? row.trigger}
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-ink-muted">
-                      {started(row.createdAt)}
-                    </td>
-                    <td className="hidden px-3 py-2.5 text-right sm:table-cell md:pr-6">
-                      <Mono className="text-ink-muted">{took(row) || "—"}</Mono>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <>
+            <table className="w-full table-fixed border-collapse text-left">
+              <thead className="sticky top-0 z-10 bg-canvas">
+                <tr className="border-line border-b text-meta text-ink-subtle">
+                  <th className="w-32 px-4 py-2 font-medium md:w-40 md:pl-6">Status</th>
+                  <th className="px-3 py-2 font-medium">What</th>
+                  <th className="hidden w-44 px-3 py-2 font-medium lg:table-cell">Started by</th>
+                  <th className="w-28 px-3 py-2 font-medium">Started</th>
+                  <th className="hidden w-24 px-3 py-2 text-right font-medium sm:table-cell md:pr-6">
+                    Took
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(row)}
+                {more.map((cursor, index) => (
+                  <MoreRuns
+                    key={cursor}
+                    path={`${base}&cursor=${encodeURIComponent(cursor)}`}
+                    render={row}
+                    onNext={index === more.length - 1 ? setLastNext : undefined}
+                  />
+                ))}
+              </tbody>
+            </table>
+            {next ? (
+              <div className="flex justify-center p-4">
+                <Button onClick={() => setMore((pages) => [...pages, next])}>Load more</Button>
+              </div>
+            ) : null}
+          </>
         )}
       </MasterDetail>
     </div>
+  );
+}
+
+/** A further page of the list, read by its cursor and refreshed like the first. */
+function MoreRuns({
+  path,
+  render,
+  onNext,
+}: {
+  path: string;
+  render: (run: Activity) => ReactNode;
+  onNext: ((cursor: string | null) => void) | undefined;
+}) {
+  const page = useLoad<Page>(path);
+  useEffect(() => {
+    if (page.data) onNext?.(page.data.nextCursor);
+  }, [page.data, onNext]);
+  if (page.error) {
+    return (
+      <tr>
+        <td colSpan={5} className="p-4">
+          <Notice tone="danger">{page.error.message}</Notice>
+        </td>
+      </tr>
+    );
+  }
+  return <>{(page.data?.items ?? []).map(render)}</>;
+}
+
+function RunRow({
+  run,
+  link,
+  on,
+  onChoose,
+  onTag,
+}: {
+  run: Activity;
+  link: string;
+  on: boolean;
+  onChoose: () => void;
+  onTag: (tag: string) => void;
+}) {
+  return (
+    <tr
+      aria-selected={on}
+      onClick={onChoose}
+      className={`cursor-pointer border-line border-b ${on ? "bg-selected" : "hover:bg-surface"}`}
+    >
+      <td className="px-4 py-2.5 align-top md:pl-6">
+        <StatePill state={run.state} />
+      </td>
+      <td className="px-3 py-2.5">
+        <Link
+          to={`${link}/runs/${run.id}`}
+          className="block font-mono text-telemetry break-all text-ink no-underline sm:truncate"
+        >
+          {run.target}
+        </Link>
+        {run.errorSummary ? (
+          <span className="block truncate text-meta text-danger" title={run.errorSummary}>
+            {run.errorSummary}
+          </span>
+        ) : (
+          <span className="block truncate text-meta text-ink-subtle">
+            {run.kind === "flow" ? "Flow" : "Script"}
+            {run.maxAttempts > 1
+              ? ` · attempt ${Math.max(run.attempt, 1)} of ${run.maxAttempts}`
+              : ""}
+          </span>
+        )}
+        {run.tags.length > 0 ? (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {run.tags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onTag(tag);
+                }}
+                aria-label={`Show only runs tagged ${tag}`}
+              >
+                <Tag tone="neutral">{tag}</Tag>
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </td>
+      <td className="hidden px-3 py-2.5 align-top text-ink-muted lg:table-cell">
+        {TRIGGER[run.trigger] ?? run.trigger}
+      </td>
+      <td className="px-3 py-2.5 align-top whitespace-nowrap text-ink-muted">
+        {started(run.createdAt)}
+      </td>
+      <td className="hidden px-3 py-2.5 text-right align-top sm:table-cell md:pr-6">
+        <Mono className="text-ink-muted">{took(run) || "—"}</Mono>
+      </td>
+    </tr>
   );
 }
 
@@ -296,8 +433,8 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
           { label: "Run ID", value: <CopyableId value={run.id} label="Copy the run ID" /> },
         ]}
       />
-      <Button variant="primary" onClick={() => navigate(`${link}/flow-runs/${run.id}`)}>
-        Open the run's graph <ArrowUpRight aria-hidden="true" size={15} />
+      <Button variant="primary" onClick={() => navigate(`${link}/runs/${run.id}`)}>
+        Open full view <ArrowUpRight aria-hidden="true" size={15} />
       </Button>
     </div>
   );
@@ -343,24 +480,10 @@ export function ScriptRunPanel({
             >
               Cancel run
             </Button>
-          ) : (
-            <Button
-              size="small"
-              onClick={async () => {
-                try {
-                  const again = await api.post<{ id: string }>(`${root}/runs`, {
-                    script: run.script,
-                    input: run.input,
-                  });
-                  navigate(`${link}/runs/${again.id}`);
-                } catch (caught) {
-                  notify.error(caught);
-                }
-              }}
-            >
-              <RotateCcw aria-hidden="true" size={13} /> Run again
-            </Button>
-          )}
+          ) : null}
+          <Button size="small" onClick={() => navigate(`${link}/runs/${runId}`)}>
+            Open full view <ArrowUpRight aria-hidden="true" size={13} />
+          </Button>
           <CopyIcon
             value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
             label="Copy as curl: start this script again with the same input"

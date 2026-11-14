@@ -58,6 +58,8 @@ beforeEach(() => {
               attempt: 1,
               maxAttempts: 3,
               error: null,
+              errorSummary: null,
+              tags: [],
               bundleVersion: 1,
               createdAt: new Date().toISOString(),
               startedAt: new Date().toISOString(),
@@ -83,7 +85,7 @@ afterEach(() => {
 const lists = () => asked.filter((address) => address.includes("/activity"));
 
 test("the list of the last day is asked for once, not again on every render", async () => {
-  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" selected={undefined} />);
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
   await screen.findByText("reminders/send");
   // Long enough for a render loop to have asked many times over.
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -92,7 +94,7 @@ test("the list of the last day is asked for once, not again on every render", as
 });
 
 test("choosing another period asks again, once", async () => {
-  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" selected={undefined} />);
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
   await screen.findByText("reminders/send");
   fireEvent.change(screen.getByLabelText("When"), { target: { value: "all" } });
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -102,7 +104,7 @@ test("choosing another period asks again, once", async () => {
 
 test("the status filter is read from the address and written back to it", async () => {
   history.replaceState(null, "", "/t/t1/workspaces/w1/runs?status=failed");
-  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" selected={undefined} />);
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
   await screen.findByText("reminders/send");
   expect(lists()[0]).toContain("state=failed");
   fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
@@ -112,7 +114,8 @@ test("the status filter is read from the address and written back to it", async 
 });
 
 test("a run's details link to its script, the trigger that started it and its version", async () => {
-  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" selected="r1" />);
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?run=r1");
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
   await screen.findByText("The SMS gateway said no.");
   fireEvent.click(screen.getByRole("tab", { name: "Details" }));
   const href = (name: string | RegExp) => screen.getByRole("link", { name }).getAttribute("href");

@@ -64,6 +64,8 @@ beforeEach(() => {
             attempt: 1,
             maxAttempts: 1,
             error: null,
+            errorSummary: null,
+            tags: [],
             bundleVersion: 1,
             createdAt: new Date().toISOString(),
             startedAt: new Date().toISOString(),
@@ -125,11 +127,7 @@ test("a change in a workspace has what is shown of it read again, and nothing el
 test("the runs list stops polling while events arrive, and starts again when they stop", async () => {
   show(
     <Tab>
-      <RunsWorkbench
-        root="/tenants/t1/workspaces/w1"
-        link="/t/t1/workspaces/w1"
-        selected={undefined}
-      />
+      <RunsWorkbench root="/tenants/t1/workspaces/w1" link="/t/t1/workspaces/w1" />
     </Tab>,
   );
   await screen.findByText("orders/sync");

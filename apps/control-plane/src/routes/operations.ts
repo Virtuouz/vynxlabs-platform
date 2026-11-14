@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
+import { isId, sql } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { forbidden, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
@@ -45,6 +45,8 @@ const Activity = Type.Object({
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
   error: NullableString,
+  errorSummary: NullableString,
+  tags: Type.Array(Type.String()),
   bundleVersion: Type.Integer(),
   createdAt: Time,
   startedAt: NullableTime,
@@ -67,6 +69,8 @@ interface ActivityRow {
   attempt: number;
   max_attempts: number;
   error: string | null;
+  error_summary: string | null;
+  tags: string[];
   version: number;
   created_at: Date;
   started_at: Date | null;
@@ -103,9 +107,33 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const union = (
       w: string,
       may: { scripts: boolean; flows: boolean },
-      filters: { from?: Date | undefined; to?: Date | undefined; target?: string | undefined },
+      filters: {
+        from?: Date | undefined;
+        to?: Date | undefined;
+        target?: string | undefined;
+        q?: string | undefined;
+        tags?: string[] | undefined;
+      },
     ) => {
       const parts = [];
+      /** What a search matches: the start of the path, the exact ID or tag, or the error. */
+      const matching = (alias: "r" | "f", path: string) => {
+        const conditions = [];
+        if (filters.q) {
+          const q = filters.q;
+          const options = [
+            sql`${sql.ref(`${alias}.${path}`)} like ${`${q.replace(/[\\%_]/g, "\\$&")}%`}`,
+            sql`${q} = any(${sql.ref(`${alias}.tags`)})`,
+            sql`${sql.ref(`${alias}.error_summary`)} ilike ${`%${q.replace(/[\\%_]/g, "\\$&")}%`}`,
+          ];
+          if (isId(q)) options.push(sql`${sql.ref(`${alias}.id`)} = ${q}::uuid`);
+          conditions.push(sql`(${sql.join(options, sql` or `)})`);
+        }
+        for (const tag of filters.tags ?? []) {
+          conditions.push(sql`${tag} = any(${sql.ref(`${alias}.tags`)})`);
+        }
+        return conditions.length > 0 ? sql`and ${sql.join(conditions, sql` and `)}` : sql``;
+      };
       const window = (column: string) =>
         sql.join(
           [
@@ -119,10 +147,12 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         parts.push(sql`
           select 'script' as kind, r.id, r.script_path as target, r.status::text as status,
             ${runStateSql("r.status")} as state, r.trigger_type, r.attempt, r.max_attempts, r.error->>'message' as error,
+            r.error_summary, r.tags,
             b.version, r.created_at, r.started_at, r.finished_at
           from run r join bundle b on b.id = r.bundle_id
           where r.workspace_id = ${w} and r.flow_run_id is null and ${window("r.created_at")}
             ${filters.target ? sql`and r.script_path = ${filters.target}` : sql``}
+            ${matching("r", "script_path")}
         `);
       if (may.flows)
         parts.push(sql`
@@ -131,10 +161,12 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               select 1 from step_run s where s.flow_run_id = f.id and s.status = 'waiting'
             ) then 'waiting' else f.status::text end as status,
             ${flowStateSql("f")} as state, f.trigger_type, 1 as attempt, 1 as max_attempts, f.error->>'message' as error,
+            f.error_summary, f.tags,
             b.version, f.created_at, f.created_at as started_at, f.finished_at
           from flow_run f join bundle b on b.id = f.bundle_id
           where f.workspace_id = ${w} and f.parent_flow_run_id is null and ${window("f.created_at")}
             ${filters.target ? sql`and f.flow_path = ${filters.target}` : sql``}
+            ${matching("f", "flow_path")}
         `);
       return sql.join(parts, sql` union all `);
     };
@@ -163,6 +195,21 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ),
             kind: Type.Optional(Type.Union([Type.Literal("script"), Type.Literal("flow")])),
             target: Type.Optional(Type.String({ maxLength: 500 })),
+            q: Type.Optional(
+              Type.String({
+                maxLength: 200,
+                description:
+                  "Finds runs whose path starts with it, whose ID or a tag is it, or whose error contains it.",
+              }),
+            ),
+            tag: Type.Optional(
+              Type.Union(
+                [Type.String({ maxLength: 64 }), Type.Array(Type.String({ maxLength: 64 }))],
+                {
+                  description: "Only runs with this tag. Repeat for runs with every one of them.",
+                },
+              ),
+            ),
             from: Type.Optional(Time),
             to: Type.Optional(Time),
           }),
@@ -192,6 +239,8 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           from: query.from ? new Date(query.from) : undefined,
           to: query.to ? new Date(query.to) : undefined,
           target: query.target,
+          q: query.q?.trim() || undefined,
+          tags: query.tag === undefined ? undefined : ([] as string[]).concat(query.tag),
         };
         if (!may.scripts && !may.flows) {
           return { items: [], nextCursor: null, counts: {}, stateCounts: {}, keptDays };
@@ -233,6 +282,8 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               attempt: Number(row.attempt),
               maxAttempts: Number(row.max_attempts),
               error: row.error,
+              errorSummary: row.error_summary,
+              tags: row.tags,
               bundleVersion: Number(row.version),
               createdAt: iso(row.created_at),
               startedAt: row.started_at ? iso(row.started_at) : null,

@@ -669,7 +669,7 @@ export function FlowEditor({
         flow: path,
         input: {},
       });
-      navigate(`${link}/flow-runs/${started.runId}`);
+      navigate(`${link}/runs/${started.runId}`);
     } catch (error) {
       notify.error(error);
     }

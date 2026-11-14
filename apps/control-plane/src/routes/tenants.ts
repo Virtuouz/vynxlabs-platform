@@ -56,8 +56,17 @@ const toGroup = (row: { id: string; tenant_id: string; name: string; created_at:
   createdAt: iso(row.created_at),
 });
 
-const ServiceAccount = Group;
-const toServiceAccount = toGroup;
+const ServiceAccount = Type.Object({
+  ...Group.properties,
+  description: Type.String({ description: 'What it is for, in a sentence: "deploys from CI".' }),
+});
+const toServiceAccount = (row: {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description?: string;
+  created_at: Date;
+}) => ({ ...toGroup(row), description: row.description ?? "" });
 
 const GroupParams = Type.Object({ t: Id, g: Id });
 const GroupMemberParams = Type.Object({ t: Id, g: Id, memberId: Id });
@@ -676,7 +685,10 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Create a service account",
           tags: ["identity"],
           params: TenantParams,
-          body: Type.Object({ name: Name }),
+          body: Type.Object({
+            name: Name,
+            description: Type.Optional(Type.String({ maxLength: 300 })),
+          }),
           response: { 201: ServiceAccount },
         },
       },
@@ -684,7 +696,12 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const account = await ctx.mutate(async (trx, audit) => {
           const row = await trx
             .insertInto("service_account")
-            .values({ id: newId(), tenant_id: params.t, name: body.name })
+            .values({
+              id: newId(),
+              tenant_id: params.t,
+              name: body.name,
+              description: body.description?.trim() ?? "",
+            })
             .returningAll()
             .executeTakeFirstOrThrow();
           await audit({

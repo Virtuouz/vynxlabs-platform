@@ -69,6 +69,11 @@ export const ApiKey = Type.Object({
   id: Id,
   name: Type.String(),
   prefix: Type.String({ description: "The first characters of the key, to tell keys apart." }),
+  suffix: Type.Optional(
+    Type.Union([Type.String(), Type.Null()], {
+      description: "Its last four characters. Null for a key made before they were kept.",
+    }),
+  ),
   ownerType: Type.Union([Type.Literal("member"), Type.Literal("service_account")]),
   ownerId: Id,
   expiresAt: NullableTime,
@@ -86,6 +91,7 @@ interface ApiKeyRow {
   id: string;
   name: string;
   prefix: string;
+  suffix?: string | null;
   owner_type: "member" | "service_account";
   owner_id: string;
   expires_at: Date | null;
@@ -97,6 +103,7 @@ export const toApiKey = (row: ApiKeyRow) => ({
   id: row.id,
   name: row.name,
   prefix: row.prefix,
+  suffix: row.suffix ?? null,
   ownerType: row.owner_type,
   ownerId: row.owner_id,
   expiresAt: isoOrNull(row.expires_at),
@@ -122,6 +129,7 @@ export async function insertApiKey(
       owner_id: owner.id,
       name: input.name,
       prefix: key.prefix,
+      suffix: key.token.slice(-4),
       token_hash: key.hash,
       expires_at: expiresAt,
       last_used_at: null,
@@ -271,6 +279,127 @@ const InstanceBinding = Type.Object({
 
 export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
+    app.get(
+      "/me/recent",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Where the caller was last in each tenant",
+          description: "Kept by the server, so it follows a member from one device to the next.",
+          tags: ["identity"],
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  tenantId: Id,
+                  workspaceId: Type.Union([Id, Type.Null()]),
+                  visitedAt: Time,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx }) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id) return { items: [] };
+        const rows = await kernel.db
+          .selectFrom("member_recent_scope")
+          .selectAll()
+          .where("member_id", "=", ctx.principal.id)
+          .orderBy("visited_at", "desc")
+          .execute();
+        return {
+          items: rows.map((row) => ({
+            tenantId: row.tenant_id,
+            workspaceId: row.workspace_id,
+            visitedAt: iso(row.visited_at),
+          })),
+        };
+      },
+    );
+
+    app.put(
+      "/me/recent",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Remember where the caller is",
+          description:
+            "Kept only for a tenant the member belongs to, and written only when the workspace " +
+            "changes. It records where a person was, for them to come back to.",
+          tags: ["identity"],
+          body: Type.Object({
+            tenantId: Id,
+            workspaceId: Type.Optional(Type.Union([Id, Type.Null()])),
+          }),
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, body }, reply) => {
+        if (ctx.principal.type !== "member" || !ctx.principal.id) {
+          ctx.mutated = true;
+          return reply.code(204).send(null);
+        }
+        const memberId = ctx.principal.id;
+        const belongs = await kernel.db
+          .selectFrom("tenant_member")
+          .select("tenant_id")
+          .where("member_id", "=", memberId)
+          .where("tenant_id", "=", body.tenantId)
+          .executeTakeFirst();
+        if (!belongs) {
+          // Nothing is kept for a tenant the caller does not belong to: nothing changed.
+          ctx.mutated = true;
+          return reply.code(204).send(null);
+        }
+        const workspace = body.workspaceId
+          ? await kernel.db
+              .selectFrom("workspace")
+              .select("id")
+              .where("id", "=", body.workspaceId)
+              .where("tenant_id", "=", body.tenantId)
+              .executeTakeFirst()
+          : undefined;
+        const before = await kernel.db
+          .selectFrom("member_recent_scope")
+          .select("workspace_id")
+          .where("member_id", "=", memberId)
+          .where("tenant_id", "=", body.tenantId)
+          .executeTakeFirst();
+        const now = workspace?.id ?? null;
+        // Kept through the write path, and only when it moves: moving within one workspace
+        // writes nothing, and so leaves the audit log alone.
+        if (before && before.workspace_id === now) {
+          ctx.mutated = true;
+          return reply.code(204).send(null);
+        }
+        await ctx.mutate(async (trx, audit) => {
+          await trx
+            .insertInto("member_recent_scope")
+            .values({
+              member_id: memberId,
+              tenant_id: body.tenantId,
+              workspace_id: now,
+              visited_at: new Date(),
+            })
+            .onConflict((c) =>
+              c
+                .columns(["member_id", "tenant_id"])
+                .doUpdateSet({ workspace_id: now, visited_at: new Date() }),
+            )
+            .execute();
+          await audit({
+            action: "member.recent_set",
+            targetType: "tenant",
+            targetId: body.tenantId,
+            tenantId: body.tenantId,
+            details: { workspaceId: now },
+          });
+        });
+        return reply.code(204).send(null);
+      },
+    );
+
     app.get(
       "/me",
       {

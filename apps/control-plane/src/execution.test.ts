@@ -272,7 +272,9 @@ afterAll(async () => {
 
 describe("deploying", () => {
   test("a bundle is refused, by name, until everything it needs is bound", async () => {
-    const refused = await deploy(bundle(1));
+    // Production refuses it. A dev workspace takes it with a warning: see release.test.ts.
+    const production = `/tenants/${tenant}/workspaces/${prod}`;
+    const refused = await deploy(bundle(1), production);
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("bindings_missing");
     expect(refused.body.errors).toEqual([
@@ -284,8 +286,8 @@ describe("deploying", () => {
       { path: "/secrets/TOKEN", message: 'the secret "TOKEN" is not set in this workspace' },
     ]);
     // Nothing was deployed: the refusal left no resources behind.
-    expect((await alice.get(`${ws()}/resources`)).body.items).toEqual([]);
-    expect((await alice.get(`${ws()}/scripts`)).body.items).toEqual([]);
+    expect((await alice.get(`${production}/resources`)).body.items).toEqual([]);
+    expect((await alice.get(`${production}/scripts`)).body.items).toEqual([]);
   });
 
   test("connections, secrets and variables are bound per workspace", async () => {
@@ -331,13 +333,13 @@ describe("deploying", () => {
   });
 
   test("a developer uploads but cannot activate, a deployer can", async () => {
-    // The refused deploy above already stored this bundle, so uploading it again returns that one.
-    const stored = (await alice.get(`${ws()}/bundles`)).body.items;
-    expect(stored).toHaveLength(1);
+    // Nothing was uploaded here yet: the refused deploy above was to production.
+    expect((await alice.get(`${ws()}/bundles`)).body.items).toHaveLength(0);
     const uploaded = await bob.client.post(`${ws()}/bundles`, bundle(1));
-    expect(uploaded.status).toBe(200);
+    expect(uploaded.status).toBe(201);
+    // Uploading the same bundle again returns the one already stored.
+    expect((await bob.client.post(`${ws()}/bundles`, bundle(1))).body.id).toBe(uploaded.body.id);
     expect(uploaded.body).toMatchObject({
-      id: stored[0].id,
       version: 1,
       active: false,
       manifestCount: 12,
@@ -416,7 +418,8 @@ describe("deploying", () => {
       await alice.post(`/tenants/${tenant}/workspaces`, {
         slug: "compat",
         name: "Compat",
-        type: "dev",
+        // Production refuses for missing bindings, so nothing is deployed and nothing fires.
+        type: "production",
       })
     ).body.id;
     const at = `/tenants/${tenant}/workspaces/${apart}`;

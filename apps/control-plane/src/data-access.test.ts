@@ -232,10 +232,10 @@ afterAll(async () => {
 });
 
 describe("an external Postgres database as a data source", () => {
-  test("a bundle that uses a source is refused until the source is bound", async () => {
-    const refused = await deploy(bundle());
-    expect(refused.status).toBe(409);
-    expect(refused.body.errors).toEqual([
+  test("a dev workspace takes a bundle that uses a source not bound yet, and says so", async () => {
+    const deployed = await deploy(bundle());
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.summary.warnings).toEqual([
       { path: "/sources/erp", message: 'the data source "erp" is not bound in this workspace' },
     ]);
   });
@@ -257,7 +257,7 @@ describe("an external Postgres database as a data source", () => {
     ).toBe(204);
     const listed = (await alice.get(`${ws()}/data-source-bindings`)).body.items;
     expect(listed).toEqual([
-      expect.objectContaining({ path: "erp", bound: true, hasPassword: true, defined: false }),
+      expect.objectContaining({ path: "erp", bound: true, hasPassword: true, defined: true }),
     ]);
     // The local test password is an ordinary word that also appears in the user name, so look for the field, not the word.
     expect(JSON.stringify(listed)).not.toMatch(/"password"|"credential"/);

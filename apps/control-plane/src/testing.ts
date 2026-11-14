@@ -58,6 +58,7 @@ export interface Client {
     content: Buffer | string,
     contentType: string,
     extraHeaders?: Record<string, string>,
+    method?: "POST" | "PUT",
   ): Promise<ApiResponse>;
 }
 
@@ -163,8 +164,8 @@ export async function startTestApp(
       put: (url, body) => call("PUT", url, body),
       patch: (url, body) => call("PATCH", url, body ?? {}),
       delete: (url) => call("DELETE", url),
-      upload: (url, content, contentType, extraHeaders) =>
-        call("POST", url, content, contentType, extraHeaders),
+      upload: (url, content, contentType, extraHeaders, method = "POST") =>
+        call(method, url, content, contentType, extraHeaders),
     };
   }
 

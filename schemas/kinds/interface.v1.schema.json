@@ -49,6 +49,7 @@
                     "card",
                     "cards",
                     "chart",
+                    "figure",
                     "form",
                     "text"
                   ]
@@ -291,6 +292,41 @@
                 "id",
                 "type",
                 "at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "filters": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "column": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                },
+                "type": {
+                  "enum": [
+                    "date",
+                    "value"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "column",
+                "type"
               ],
               "additionalProperties": false
             }

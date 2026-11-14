@@ -601,6 +601,24 @@ export const flowKind: KindDefinition = {
                 title: { type: "string", minLength: 1, maxLength: 200 },
                 detail: expression,
                 timeoutSeconds: { type: "integer", minimum: 1, maximum: 2592000 },
+                approvers: {
+                  type: "object",
+                  description:
+                    "Who may decide, beyond holding approval:write: a member of one of these groups, or one bound to one of these roles.",
+                  properties: {
+                    groups: {
+                      type: "array",
+                      maxItems: 20,
+                      items: { type: "string", minLength: 1, maxLength: 100 },
+                    },
+                    roles: {
+                      type: "array",
+                      maxItems: 20,
+                      items: { type: "string", minLength: 1, maxLength: 100 },
+                    },
+                  },
+                  additionalProperties: false,
+                },
               },
               ["title"],
             ),
@@ -961,6 +979,13 @@ export const THEME_TOKENS = [
   "danger-soft",
   "success",
   "success-soft",
+  "structure",
+  "raised",
+  "selected",
+  "line-strong",
+  "ink-subtle",
+  "code-bg",
+  "focus",
   "radius-control",
   "radius-panel",
   "font",
@@ -1038,6 +1063,15 @@ export const appKind: KindDefinition = {
         description:
           "Whether an address under the app that names no file answers with the entry page, " +
           "for apps that route in the browser. Default true.",
+      },
+      reads: {
+        type: "array",
+        maxItems: 100,
+        uniqueItems: true,
+        items: { type: "string", pattern: PATH_PATTERN, maxLength: 255 },
+        description:
+          "The tables the app's code reads, so that whoever shares it can see what it reaches. " +
+          "It informs; the tables' policies and the app's bindings are what decide access.",
       },
     },
     required: ["title"],

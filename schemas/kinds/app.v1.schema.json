@@ -27,6 +27,17 @@
     "fallback": {
       "type": "boolean",
       "description": "Whether an address under the app that names no file answers with the entry page, for apps that route in the browser. Default true."
+    },
+    "reads": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+        "maxLength": 255
+      },
+      "description": "The tables the app's code reads, so that whoever shares it can see what it reaches. It informs; the tables' policies and the app's bindings are what decide access."
     }
   },
   "required": [

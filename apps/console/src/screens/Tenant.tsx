@@ -2,6 +2,7 @@ import { Badge, Button, EmptyState, Menu, Notice } from "@vynxlabs/ui";
 import { lazy, Suspense, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { UsedBy, useReferences } from "../kit/references.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -21,22 +22,16 @@ import { Sources, SourceView, Tables, TableView } from "./Data.tsx";
 import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
 import { Promotion, TenantExport, WorkspaceControls } from "./Environments.tsx";
-import {
-  ConnectionGroups,
-  Connections,
-  Deployments,
-  RunDetail,
-  Runs,
-  Scripts,
-  Triggers,
-  Variables,
-  Workers,
-} from "./Execution.tsx";
+import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
+import { GitSync } from "./GitSync.tsx";
+import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.tsx";
+import { Overview } from "./Overview.tsx";
+import { Release } from "./Release.tsx";
 import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
+import { RunsWorkbench } from "./Runs.tsx";
 
 // Screens that bring a library with them, or that few people open, are fetched when first
 // opened: the code editor, the screen builder with its charts, and single sign-on.
-const Changes = lazy(() => import("./Authoring.tsx").then((m) => ({ default: m.Changes })));
 const Extensions = lazy(() => import("./Authoring.tsx").then((m) => ({ default: m.Extensions })));
 const ScriptEditor = lazy(() =>
   import("./Authoring.tsx").then((m) => ({ default: m.ScriptEditor })),
@@ -58,7 +53,7 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
-import { Approvals, Events, FlowRunView, Flows, FlowView } from "./Flows.tsx";
+import { FlowRunView, Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups, Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
@@ -185,7 +180,7 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
   const runId = match("/t/:t/workspaces/:w/runs/:id", path)?.id;
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-5">
       {mine ? (
         <Notice
           tone="attention"
@@ -210,12 +205,12 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
           base={base}
           tenantId={tenantId}
           workspaceId={workspace.w}
-          tab={workspace.tab ?? "scripts"}
+          tab={workspace.tab ?? "overview"}
           rest={path.split("/").slice(6).map(decodeURIComponent).join("/")}
           runId={runId}
         />
       ) : section === "approvals" ? (
-        <Approvals base={base} tenantId={tenantId} />
+        <ApprovalsQueue base={base} tenantId={tenantId} />
       ) : section === "workers" ? (
         <Workers base={base} />
       ) : section === "members" ? (
@@ -223,7 +218,7 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
       ) : section === "end-users" ? (
         <EndUsers base={base} />
       ) : section === "branding" ? (
-        <Branding base={base} tenantId={tenantId} />
+        <Branding base={base} />
       ) : section === "domains" ? (
         <Domains base={base} />
       ) : section === "groups" ? (
@@ -273,7 +268,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           header: "Name",
           cell: (row) => (
             <Link
-              to={`/t/${tenantId}/workspaces/${row.id}/scripts`}
+              to={`/t/${tenantId}/workspaces/${row.id}/overview`}
               className="font-medium text-action"
             >
               {row.name}
@@ -356,10 +351,18 @@ function WorkspaceDetail({
 }) {
   const workspace = useLoad<Workspace>(`${base}/workspaces/${workspaceId}`);
   const root = `${base}/workspaces/${workspaceId}`;
+  const secretUses = useReferences(root, "secret", tab === "secrets");
   if (workspace.error) return <Notice tone="danger">{workspace.error.message}</Notice>;
   if (!workspace.data) return null;
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-5">
+      {tab === "overview" ? (
+        <Overview
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          workspace={workspace.data}
+        />
+      ) : null}
       {tab === "settings" ? (
         <Page
           title="Workspace settings"
@@ -372,6 +375,7 @@ function WorkspaceDetail({
             workspace={workspace.data}
             reload={workspace.reload}
           />
+          <Promotion base={base} workspace={workspace.data} reload={workspace.reload} />
         </Page>
       ) : null}
       {tab === "flows" && (rest === "new" || rest.startsWith("edit/")) ? (
@@ -434,7 +438,7 @@ function WorkspaceDetail({
           editable={workspace.data.type === "dev"}
         />
       ) : tab === "events" ? (
-        <Events root={root} />
+        <EventsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "tables" && rest ? (
         <TableView
           key={rest}
@@ -481,33 +485,36 @@ function WorkspaceDetail({
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           editable={workspace.data.type === "dev"}
         />
-      ) : tab === "changes" ? (
-        <Changes
+      ) : tab === "release" || tab === "changes" || tab === "deployments" ? (
+        <Release
+          base={base}
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
-          editable={workspace.data.type === "dev"}
+          workspace={workspace.data}
+          step={tab === "deployments" ? "deploy" : "review"}
+          reload={workspace.reload}
         />
+      ) : tab === "git" ? (
+        <GitSync root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "scripts" ? (
         <Scripts
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           editable={workspace.data.type === "dev"}
         />
-      ) : tab === "runs" && runId ? (
-        <RunDetail
-          root={root}
-          runId={runId}
-          backLink={`/t/${tenantId}/workspaces/${workspaceId}/runs`}
-        />
       ) : tab === "runs" ? (
-        <Runs root={root} link={`/t/${tenantId}/workspaces/${workspaceId}/runs`} />
+        <RunsWorkbench
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          selected={runId}
+        />
       ) : tab === "triggers" ? (
-        <Triggers root={root} />
-      ) : tab === "deployments" ? (
-        <div className="flex flex-col gap-6">
-          <Promotion base={base} workspace={workspace.data} reload={workspace.reload} />
-          <Deployments root={root} />
-        </div>
+        <TriggersWorkbench
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          workspacePaused={workspace.data.triggersPaused}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "connections" ? (
         <div className="flex flex-col gap-8">
           <Connections root={root} />
@@ -587,14 +594,25 @@ function WorkspaceDetail({
           }}
         />
       ) : tab === "secrets" ? (
-        <ListScreen<{ name: string; updatedAt: string }>
+        <ListScreen<{ name: string; updatedAt: string; updatedBy?: string | null }>
           title="Secrets"
           description="Values are encrypted with this tenant's own key. A value can be replaced but never read back here."
           path={`${root}/secrets`}
           rowKey={(row) => row.name}
           columns={[
             { header: "Name", cell: (row) => code(row.name) },
-            { header: "Last set", cell: (row) => when(row.updatedAt) },
+            { header: "Used by", cell: (row) => <UsedBy uses={secretUses(row.name)} /> },
+            {
+              header: "Last set",
+              cell: (row) => (
+                <span>
+                  {when(row.updatedAt)}
+                  {row.updatedBy ? (
+                    <span className="text-ink-muted"> by {row.updatedBy}</span>
+                  ) : null}
+                </span>
+              ),
+            },
           ]}
           empty={{
             title: "No secrets yet",

@@ -725,7 +725,7 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
   );
 }
 
-export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean>>> {
+export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>> {
   /** The table's name, for example `crm/orders`. */
   path: string;
   description?: string;
@@ -772,7 +772,7 @@ export interface TableDefinition<Row, Insert> extends ResourceDefinition {
  * new columns are added, and a column that is no longer declared is retired
  * with its data kept, never dropped.
  */
-export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean>>>(
+export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>>(
   options: TableOptions<C>,
 ): TableDefinition<RowOf<C>, InsertOf<C>> {
   const definition = resource("table", options.path, () =>

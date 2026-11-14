@@ -71,6 +71,29 @@ function bundle(): Bundle {
       {
         kind: "flow",
         schemaVersion: 1,
+        path: "orders/write-off",
+        ownership: "code" as const,
+        body: {
+          description: "Writes off a debt once finance approves.",
+          nodes: {
+            start: { type: "trigger", trigger: { type: "manual" } },
+            ok: {
+              type: "approval",
+              title: "Write off the debt",
+              detail: "trigger",
+              approvers: { groups: ["Finance"] },
+            },
+            done: { type: "set", values: { written_off: "trigger.order" } },
+          },
+          edges: [
+            { from: "start", to: "ok" },
+            { from: "ok", to: "done" },
+          ],
+        },
+      },
+      {
+        kind: "flow",
+        schemaVersion: 1,
         path: "orders/nightly",
         ownership: "code" as const,
         body: {
@@ -220,6 +243,7 @@ describe("an agent's tools", () => {
     expect((await wide.listTools()).tools.map((tool) => tool.name)).toEqual([
       "run_orders__greet",
       "start_orders__refund",
+      "start_orders__write_off",
       "get_run",
       "get_flow_run",
       "list_approvals",
@@ -308,6 +332,36 @@ describe("an agent's tools", () => {
   }, 60_000);
 });
 
+describe("an approval that names its approvers", () => {
+  test("is neither shown to nor decided by an agent outside them, and a person among them decides it", async () => {
+    const started = answer(
+      await wide.callTool({ name: "start_orders__write_off", arguments: { order: "A-9" } }),
+    );
+    expect(started.flow).toBe("orders/write-off");
+
+    const listed = answer(await wide.callTool({ name: "list_approvals", arguments: {} })).approvals;
+    expect(listed.map((one: { flowRunId: string }) => one.flowRunId)).not.toContain(
+      started.flowRunId,
+    );
+    const refused = await wide.callTool({
+      name: "decide_approval",
+      arguments: { flowRunId: started.flowRunId, node: "ok", decision: "approve" },
+    });
+    expect(refused.isError).toBe(true);
+    expect(answer(refused).error).toContain("may decide this approval");
+    const still = (await alice.get(`${ws()}/flow-runs/${started.flowRunId}`)).body;
+    expect(still.status).toBe("running");
+
+    const finance = await alice.post(`/tenants/${tenant}/groups`, { name: "Finance" });
+    const me = (await alice.get("/me")).body;
+    await alice.put(`/tenants/${tenant}/groups/${finance.body.id}/members/${me.principal.id}`);
+    const decided = await alice.post(`${ws()}/flow-runs/${started.flowRunId}/approvals/ok`, {
+      decision: "approve",
+    });
+    expect(decided.status, JSON.stringify(decided.body)).toBeLessThan(300);
+  }, 60_000);
+});
+
 describe("what an agent would be offered, seen from the console", () => {
   const offered = (account: string, at = workspace) =>
     alice.get(`/tenants/${tenant}/service-accounts/${account}/tools?workspace=${at}`);
@@ -377,8 +431,10 @@ describe("who may connect", () => {
       details: { via?: string };
     }[];
     const byAgents = entries.filter((entry) => entry.details.via === "mcp");
+    // The refused decision left nothing: only what was done is recorded.
     expect(byAgents.map((entry) => entry.action).sort()).toEqual([
       "approval.approved",
+      "flow_run.started",
       "flow_run.started",
       "run.started",
     ]);

@@ -86,17 +86,28 @@ export interface ColumnOptions<Required extends boolean = boolean> {
 }
 
 /** One column of a table definition. `Value` is its type in a row. */
-export interface ColumnSpec<Value, Required extends boolean> {
+export interface ColumnSpec<Value, Required extends boolean, Defaulted extends boolean = false> {
   readonly manifest: Record<string, unknown>;
   /** Only for type inference. Never set. */
   readonly __value?: Value;
   readonly __required?: Required;
+  /** Whether the column has a default, so a row may be written without it. */
+  readonly __defaulted?: Defaulted;
 }
 
+/**
+ * Whether a column's options make it required. Read from the options object
+ * itself: inferring `Required` from the call's expected type would widen it to
+ * `boolean` inside `defineTable`, and every column would read as nullable.
+ */
+type IsRequired<Options> = Options extends { required: true } ? true : false;
+/** Whether a column's options give it a default. */
+type IsDefaulted<Options> = Options extends { default: NonNullable<unknown> } ? true : false;
+
 function spec<Value>(type: string) {
-  return <Required extends boolean = false>(
-    options: ColumnOptions<Required> = {},
-  ): ColumnSpec<Value, Required> => ({
+  return <const Options extends ColumnOptions = Record<never, never>>(
+    options: Options = {} as Options,
+  ): ColumnSpec<Value, IsRequired<Options>, IsDefaulted<Options>> => ({
     manifest: Object.fromEntries(
       Object.entries({ type, ...options }).filter(([, value]) => value !== undefined),
     ),
@@ -119,10 +130,10 @@ export const column = {
   json: spec<unknown>("json"),
   uuid: spec<string>("uuid"),
   /** The ID of a row in another table. */
-  reference: <Required extends boolean = false>(
+  reference: <const Options extends ColumnOptions = Record<never, never>>(
     table: string | { path: string },
-    options: ColumnOptions<Required> = {},
-  ): ColumnSpec<string, Required> => ({
+    options: Options = {} as Options,
+  ): ColumnSpec<string, IsRequired<Options>, IsDefaulted<Options>> => ({
     manifest: Object.fromEntries(
       Object.entries({
         type: "reference",
@@ -135,10 +146,10 @@ export const column = {
   file: spec<string>("file"),
 };
 
-type Columns = Record<string, ColumnSpec<unknown, boolean>>;
-type ValueOf<Spec> = Spec extends ColumnSpec<infer Value, boolean> ? Value : never;
+type Columns = Record<string, ColumnSpec<unknown, boolean, boolean>>;
+type ValueOf<Spec> = Spec extends ColumnSpec<infer Value, boolean, boolean> ? Value : never;
 type RequiredKeys<C extends Columns> = {
-  [K in keyof C]: C[K] extends ColumnSpec<unknown, true> ? K : never;
+  [K in keyof C]: C[K] extends ColumnSpec<unknown, true, boolean> ? K : never;
 }[keyof C];
 
 /** A row as it is read: every declared column, null where it has no value. */
@@ -146,7 +157,17 @@ export type RowOf<C extends Columns> = SystemColumns & {
   [K in keyof C]: K extends RequiredKeys<C> ? ValueOf<C[K]> : ValueOf<C[K]> | null;
 };
 
-/** A row as it is written: required columns must be given, the rest may be. */
-export type InsertOf<C extends Columns> = { [K in RequiredKeys<C>]: ValueOf<C[K]> } & {
-  [K in Exclude<keyof C, RequiredKeys<C>>]?: ValueOf<C[K]> | null;
+/** Required columns with no default: a row cannot be written without them. */
+type MustGiveKeys<C extends Columns> = {
+  [K in keyof C]: C[K] extends ColumnSpec<unknown, true, false> ? K : never;
+}[keyof C];
+
+/**
+ * A row as it is written: required columns without a default must be given.
+ * A required column with a default may be left out, and takes its default.
+ */
+export type InsertOf<C extends Columns> = { [K in MustGiveKeys<C>]: ValueOf<C[K]> } & {
+  [K in Exclude<keyof C, MustGiveKeys<C>>]?: K extends RequiredKeys<C>
+    ? ValueOf<C[K]>
+    : ValueOf<C[K]> | null;
 };

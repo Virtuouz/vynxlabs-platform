@@ -9,6 +9,7 @@ import { Type } from "typebox";
 import { check } from "../kernel/authorize.js";
 import { HttpError, notFound } from "../kernel/errors.js";
 import { startRun } from "../kernel/execution/runs.js";
+import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
 import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -248,8 +249,16 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           .orderBy("step_run.started_at")
           .limit(100)
           .execute();
+        // A step that names its approvers is shown only to them, as in the console.
+        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+        const mine = [];
+        for (const row of rows) {
+          const named = approversOf(row.detail as Record<string, unknown>);
+          if (named && !(await isApprover(db, target, memberId, named))) continue;
+          mine.push(row);
+        }
         return {
-          approvals: rows.map((row) => ({
+          approvals: mine.map((row) => ({
             flowRunId: row.flow_run_id,
             node: row.node_id,
             flow: row.flow_path,
@@ -282,6 +291,25 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
         const flowRunId = String(input.flowRunId);
         const approve = input.decision === "approve";
         const comment = typeof input.comment === "string" ? input.comment : undefined;
+        // The step's approvers are checked here as the API route checks them.
+        const waiting = await db
+          .selectFrom("step_run")
+          .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
+          .select("step_run.detail")
+          .where("step_run.flow_run_id", "=", flowRunId)
+          .where("step_run.node_id", "=", String(input.node))
+          .where("step_run.item_key", "=", "")
+          .where("flow_run.workspace_id", "=", workspace.id)
+          .executeTakeFirst();
+        const named = waiting ? approversOf(waiting.detail as Record<string, unknown>) : undefined;
+        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+        if (!(await isApprover(db, target, memberId, named))) {
+          throw new HttpError(
+            403,
+            "not_an_approver",
+            `Only ${describeApprovers(named)} may decide this approval.`,
+          );
+        }
         const decided = await ctx.mutate(async (trx, audit) => {
           const result = await decideApproval(trx, {
             workspaceId: workspace.id,

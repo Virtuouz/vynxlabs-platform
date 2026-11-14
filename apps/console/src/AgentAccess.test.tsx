@@ -64,7 +64,7 @@ test("an account's tools are shown for a workspace, with what to give the agent"
   });
 
   fireEvent.change(screen.getByLabelText("In the workspace"), { target: { value: "w2" } });
-  expect(await screen.findByText(/has no access in this workspace/)).toBeTruthy();
+  expect(await screen.findByText(/An agent would be refused here/)).toBeTruthy();
   expect(screen.getByText("No tools")).toBeTruthy();
   expect(asked.at(-1)).toBe(`/api/v1${base}/service-accounts/a1/tools?workspace=w2`);
 });

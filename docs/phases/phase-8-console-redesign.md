@@ -88,6 +88,8 @@ The design is recorded in the mock-up `Console Redesign.dc.html` with its generi
 - **One hostname for everything** is a domain registered with an empty app path. It serves the portal's home at its root, the sign-in pages under `/_`, and each app of its workspace at `/<app path>/`, matched by the longest path. It serves one workspace, as a hostname for one app does, and its home lists that workspace's apps, a dev workspace's included.
 - **Recovery codes** are spent inside the sign-in check, before the password is accepted, so two sign-ins racing with one code cannot both pass.
 - **A staged import** is kept on the disk of the replica that received it, since the object store takes whole files and an import may be very large. Behind several replicas the confirmation must reach the same one: another answers `409 staged_elsewhere`. A staged file is removed after its time is up.
+- **An agent could decide an approval reserved for others.** Over MCP, `decide_approval` and `list_approvals` did not check a step's approvers, which the console's route does. Found by the Fernhill example's phone assistant approving a stock order meant for the Practice managers group. Both tools now check approvers.
+- **Required columns were typed as nullable** in scripts and apps, because `defineTable`'s expected type widened each column's `Required` to `boolean`. A required column with a default was also demanded on insert. Both fixed in the SDK, with a type test.
 - **Change descriptions** compare a draft with what is deployed. A promotion still lists changes by path: the descriptions need the two bundles' bodies side by side, which is left for milestone 8.
 
 ## Proposed deviations

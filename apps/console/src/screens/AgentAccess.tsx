@@ -87,8 +87,9 @@ export function AgentAccess({ base, account }: { base: string; account: string }
           </div>
           {offered.data.reachable ? null : (
             <Notice tone="attention">
-              This account has no access in this workspace, so an agent would be refused. Give it a
-              role there under Access.
+              An agent would be refused here: connecting needs the account to see the workspace,
+              which takes a role with the <code>workspace:read</code> permission there. Roles on
+              single scripts or flows are not enough on their own. Give it one under Access.
             </Notice>
           )}
           <Table<Tool>

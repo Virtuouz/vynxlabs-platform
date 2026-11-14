@@ -390,12 +390,12 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.put(
       "/me/recent",
       {
-        config: { access: access.signedIn },
+        config: { access: access.signedIn, preference: true },
         schema: {
           summary: "Remember where the caller is",
           description:
-            "Kept only for a tenant the member belongs to, and written only when the workspace " +
-            "changes. It records where a person was, for them to come back to.",
+            "Kept only for a tenant the member belongs to. It records where a person was, for " +
+            "them to come back to. A preference of their own, so it leaves no audit entry.",
           tags: ["identity"],
           body: Type.Object({
             tenantId: Id,
@@ -429,21 +429,10 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .where("tenant_id", "=", body.tenantId)
               .executeTakeFirst()
           : undefined;
-        const before = await kernel.db
-          .selectFrom("member_recent_scope")
-          .select("workspace_id")
-          .where("member_id", "=", memberId)
-          .where("tenant_id", "=", body.tenantId)
-          .executeTakeFirst();
         const now = workspace?.id ?? null;
-        // Kept through the write path, and only when it moves: moving within one workspace
-        // writes nothing, and so leaves the audit log alone.
-        if (before && before.workspace_id === now) {
-          ctx.mutated = true;
-          return reply.code(204).send(null);
-        }
-        await ctx.mutate(async (trx, audit) => {
-          await trx
+        // A preference of the member's own: kept, but not audited (see PREFERENCE_ROUTES).
+        await ctx.keepPreference((db) =>
+          db
             .insertInto("member_recent_scope")
             .values({
               member_id: memberId,
@@ -456,15 +445,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 .columns(["member_id", "tenant_id"])
                 .doUpdateSet({ workspace_id: now, visited_at: new Date() }),
             )
-            .execute();
-          await audit({
-            action: "member.recent_set",
-            targetType: "tenant",
-            targetId: body.tenantId,
-            tenantId: body.tenantId,
-            details: { workspaceId: now },
-          });
-        });
+            .execute(),
+        );
         return reply.code(204).send(null);
       },
     );

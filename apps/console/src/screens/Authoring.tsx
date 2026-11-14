@@ -17,10 +17,8 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
-import { Page, when } from "../ListScreen.tsx";
+import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
-import { GitPanel } from "./Git.tsx";
-import { isEditedKind } from "./ResourceEditor.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 
 const STARTER = `import type { ScriptContext } from "@vynxlabs/sdk";
@@ -602,8 +600,8 @@ export function ScriptEditor({
         </Notice>
       ) : fromRepository ? (
         <Notice tone="attention">
-          This {about.noun} is managed in the tenant's repository, and its source is not kept here.
-          Change it there, or write one of the same path here to take it over.
+          This {about.noun} is managed in the tenant's repository. Its source is shown here
+          read-only: change it there, or write one of the same path here to take it over.
         </Notice>
       ) : state === "repository" ? (
         <Notice tone="attention">
@@ -658,206 +656,6 @@ export function ScriptEditor({
         </section>
       ) : null}
     </section>
-  );
-}
-
-const CHANGE: Record<DraftRow["change"], [BadgeTone, string]> = {
-  create: ["success", "New"],
-  update: ["attention", "Changed"],
-  delete: ["danger", "Removed"],
-  take_over: ["action", "Taken over from the repository"],
-};
-
-interface Preview {
-  possible: boolean;
-  refusal: { code: string; detail: string; errors: { path: string; message: string }[] } | null;
-  summary: {
-    created: number;
-    updated: number;
-    deleted: number;
-    data: string[];
-    changes: { change: string; kind: string; path: string }[];
-  } | null;
-}
-
-/** The drafts of a workspace, what deploying them would do, and the button that does it. */
-export function Changes({
-  root,
-  link,
-  editable,
-}: {
-  root: string;
-  link: string;
-  editable: boolean;
-}) {
-  const drafts = useLoad<{ items: DraftRow[] }>(`${root}/drafts`);
-  const count = drafts.data?.items.length ?? 0;
-  const preview = useLoad<Preview>(count > 0 ? `${root}/changes/preview` : null);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string>();
-
-  if (!editable) {
-    return (
-      <Page title="Changes" description="What has been saved in the console and not yet deployed.">
-        <Notice tone="attention">
-          A production workspace has no drafts. Change a dev workspace, then promote it.
-        </Notice>
-      </Page>
-    );
-  }
-  const reload = () => {
-    drafts.reload();
-    preview.reload();
-  };
-  const editLink = (row: DraftRow) =>
-    row.deleted
-      ? undefined
-      : row.kind === "script" || row.kind === "connector" || row.kind === "trigger_source"
-        ? `${link}/${CODE_KINDS[row.kind].edit}/${row.path}`
-        : row.kind === "flow"
-          ? `${link}/flows/edit/${row.path}`
-          : isEditedKind(row.kind)
-            ? `${link}/resources/edit/${row.kind}/${row.path}`
-            : undefined;
-
-  return (
-    <Page
-      title="Changes"
-      description="What has been saved in the console and not yet deployed. Nothing here runs until you deploy it."
-    >
-      {drafts.error ? <Notice tone="danger">{drafts.error.message}</Notice> : null}
-      {done ? <Notice tone="success">{done}</Notice> : null}
-      {drafts.data ? (
-        <Table
-          rows={drafts.data.items}
-          rowKey={(row) => row.path}
-          empty={
-            <EmptyState title="Nothing waiting to be deployed">
-              Save a script or another resource in this workspace and it appears here.
-            </EmptyState>
-          }
-          columns={[
-            {
-              header: "Resource",
-              cell: (row) => {
-                const to = editLink(row);
-                return to ? (
-                  <Link to={to} className="font-mono text-[13px] text-action">
-                    {row.path}
-                  </Link>
-                ) : (
-                  <code className="font-mono text-[13px]">{row.path}</code>
-                );
-              },
-            },
-            { header: "Kind", cell: (row) => row.kind },
-            {
-              header: "Change",
-              cell: (row) => <Badge tone={CHANGE[row.change][0]}>{CHANGE[row.change][1]}</Badge>,
-            },
-            {
-              header: "Saved",
-              cell: (row) => <span className="text-ink-muted">{when(row.updatedAt)}</span>,
-            },
-            {
-              header: "",
-              align: "end",
-              cell: (row) => (
-                <Button
-                  size="small"
-                  variant="danger"
-                  onClick={async () => {
-                    const sure = await ask.confirm({
-                      title: `Discard the draft of ${row.path}?`,
-                      text: "It goes back to how it was last deployed.",
-                      action: "Discard",
-                      danger: true,
-                    });
-                    if (!sure) return;
-                    await api.delete(`${root}/drafts/${row.path}`).then(reload, notify.error);
-                  }}
-                >
-                  Discard
-                </Button>
-              ),
-            },
-          ]}
-        />
-      ) : (
-        <p className="text-ink-muted">Loading…</p>
-      )}
-      {count > 0 ? (
-        <section className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4">
-          <h2 className="m-0 text-base font-semibold">Deploy</h2>
-          {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
-          {preview.data?.refusal ? (
-            <Notice tone="danger">
-              <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
-              <ul className="mt-2 mb-0 pl-5">
-                {preview.data.refusal.errors.map((error) => (
-                  <li key={`${error.path} ${error.message}`}>
-                    <code className="font-mono text-[13px]">{error.path}</code> {error.message}
-                  </li>
-                ))}
-              </ul>
-            </Notice>
-          ) : preview.data?.summary ? (
-            <p className="m-0 text-ink-muted">
-              Deploying creates {preview.data.summary.created}, changes{" "}
-              {preview.data.summary.updated} and removes {preview.data.summary.deleted}.
-              {preview.data.summary.data.length > 0
-                ? ` ${preview.data.summary.data.join(" ")}`
-                : ""}
-            </p>
-          ) : (
-            <p className="m-0 text-ink-muted">Checking what a deploy would do…</p>
-          )}
-          <TextField
-            name="message"
-            label="What changed"
-            value={message}
-            required={false}
-            placeholder="Send large orders for approval"
-            hint="Kept with the deployment, and used as the commit message when the workspace is connected to a repository."
-            onChange={setMessage}
-          />
-          <div>
-            <Button
-              variant="primary"
-              disabled={busy || !preview.data?.possible}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  const result = await api.post<{ bundleVersion: number; applied: string[] }>(
-                    `${root}/changes/deploy`,
-                    message ? { message } : {},
-                  );
-                  setDone(
-                    `Deployed as version ${result.bundleVersion}: ${result.applied.join(", ")}.`,
-                  );
-                  setMessage("");
-                  drafts.reload();
-                } catch (error) {
-                  notify.error(error);
-                  preview.reload();
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              Deploy {count} {count === 1 ? "change" : "changes"}
-            </Button>
-          </div>
-        </section>
-      ) : null}
-      <GitPanel
-        root={root}
-        tenantLink={link.split("/workspaces/")[0] as string}
-        onPulled={drafts.reload}
-        key={done}
-      />
-    </Page>
   );
 }
 
@@ -1061,6 +859,7 @@ function RepositorySource({ root, path }: { root: string; path: string }) {
         readOnly
         height="34rem"
         onChange={() => {}}
+        revealLine={source.data.file === file ? (source.data.line ?? undefined) : undefined}
       />
     </div>
   );

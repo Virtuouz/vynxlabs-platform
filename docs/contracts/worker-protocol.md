@@ -152,11 +152,11 @@ The data and file routes were added after version 1 was published. A worker that
 
 ### `POST /runs/{runId}/complete`
 
-Request: `attempt`, `output`. The run succeeds. 409 means the attempt was no longer in progress and the output was not recorded.
+Request: `attempt`, `output`, and optionally `logsLost`: how many log lines the worker held but could not deliver. A control plane that predates it ignores it. The run's log then says how many are missing. The run succeeds. 409 means the attempt was no longer in progress and the output was not recorded.
 
 ### `POST /runs/{runId}/fail`
 
-Request: `attempt`, `error`: `{message, stack}`.
+Request: `attempt`, `error`: `{message, stack}`, and optionally `logsLost`, as for `complete`.
 
 Response: `{"final": false}` when the run will be retried, `{"final": true}` when it has no attempts left.
 
@@ -166,7 +166,7 @@ Response: `{"final": false}` when the run will be retried, `{"final": true}` whe
 2. Get the bundle for the job, by digest, from its cache or the control plane.
 3. Start sending heartbeats.
 4. Run the script named by `script.entry` with `input`, giving it a way to read its declared secrets, variables and connections, a logger, the run's details, and a signal that fires on cancellation or when `timeoutSeconds` has passed.
-5. Send any remaining logs, then report `complete` or `fail`.
+5. Send any remaining logs, then report `complete` or `fail`. Keep lines that could not be sent and try them again; report any that are finally given up as `logsLost`.
 6. On `cancelled: true` or a 409, stop and report nothing.
 
 ## Changes to this contract

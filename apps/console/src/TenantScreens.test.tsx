@@ -27,6 +27,7 @@ beforeEach(() => {
     const path = address.replace("/api/v1", "").split("?")[0] as string;
     const answer = routes[`${method} ${path}`];
     const value = answer ? answer(body) : method === "GET" ? { items: [] } : {};
+    if (value instanceof Response) return value;
     return new Response(JSON.stringify(value), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -73,6 +74,13 @@ test("the tenant's overview says what needs attention, and how each workspace st
         actorType: "member",
         action: "secret.set",
       },
+      {
+        id: "a0",
+        occurredAt: "2026-11-12T00:00:00Z",
+        actorLabel: "ada@acme.test",
+        actorType: "member",
+        action: "member.recent_set",
+      },
     ],
   });
   show(<TenantOverview base={base} tenantId="t1" />);
@@ -84,6 +92,61 @@ test("the tenant's overview says what needs attention, and how each workspace st
   expect(screen.getByText(/Running v7/)).toBeTruthy();
   expect(screen.getByText(/Nothing deployed · promotes to Main/)).toBeTruthy();
   expect(await screen.findByText("Secret set")).toBeTruthy();
+  // Moving between workspaces is not a change, even where an older entry says so.
+  expect(screen.queryByTitle("member.recent_set")).toBeNull();
+  expect(screen.getByTitle("secret.set")).toBeTruthy();
+});
+
+const me = {
+  principal: { type: "member", id: "m1", name: "Ada", email: "ada@acme.test" },
+  tenants: [{ id: "t1", name: "Acme", slug: "acme" }],
+  instancePermissions: [],
+} as never;
+
+test("an address with no page says so and offers the way back", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme" });
+  routes[`GET ${base}/workspaces/w1`] = () => ({
+    id: "w1",
+    slug: "main",
+    name: "Main",
+    type: "production",
+    linkedWorkspaceId: null,
+  });
+  const { unmount } = show(<Tenant tenantId="t1" me={me} path="/t/t1/nope" />);
+  expect(await screen.findByText("Nothing here")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Go to the tenant overview" }).getAttribute("href")).toBe(
+    "/t/t1",
+  );
+  unmount();
+
+  show(<Tenant tenantId="t1" me={me} path="/t/t1/workspaces/w1/nope" />);
+  expect(await screen.findByText("Nothing here")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Go to the Main overview" }).getAttribute("href")).toBe(
+    "/t/t1/workspaces/w1/overview",
+  );
+});
+
+test("a workspace named by its slug in the address opens, under its ID", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme" });
+  const refused = () =>
+    new Response(JSON.stringify({ status: 400, detail: "The request params is not valid." }), {
+      status: 400,
+    });
+  routes[`GET ${base}/workspaces/main`] = refused;
+  routes[`GET ${base}/workspaces`] = () => ({
+    items: [{ id: "w1", slug: "main", name: "Main", type: "production", linkedWorkspaceId: null }],
+  });
+  history.replaceState(null, "", "/t/t1/workspaces/main/runs?status=failed");
+  const { unmount } = show(<Tenant tenantId="t1" me={me} path="/t/t1/workspaces/main/runs" />);
+  await waitFor(() =>
+    expect(location.pathname + location.search).toBe("/t/t1/workspaces/w1/runs?status=failed"),
+  );
+  unmount();
+
+  // A slug no workspace has is no page.
+  routes[`GET ${base}/workspaces/gone`] = refused;
+  show(<Tenant tenantId="t1" me={me} path="/t/t1/workspaces/gone/runs" />);
+  expect(await screen.findByText("Nothing here")).toBeTruthy();
 });
 
 test("Members & access keeps one tab per old address, and a member opens beside the list", async () => {

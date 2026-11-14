@@ -193,9 +193,28 @@ export function Scripts({
       empty={{
         title: items.length > 0 ? "No script matches" : "No scripts yet",
         text:
-          items.length > 0
-            ? "Show every script instead."
-            : "Scripts arrive with a deploy. From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
+          items.length > 0 ? (
+            "Show every script instead."
+          ) : editable ? (
+            <>
+              Write one here, or deploy them from the tenant's repository with{" "}
+              <code className="font-mono">platform deploy</code>.
+            </>
+          ) : (
+            <>
+              Scripts reach production when a dev workspace is promoted here, or with{" "}
+              <code className="font-mono">platform deploy</code> from the tenant's repository.
+            </>
+          ),
+        ...(items.length === 0 && editable
+          ? {
+              action: (
+                <Button variant="primary" onClick={() => navigate(`${link}/scripts/new`)}>
+                  New script
+                </Button>
+              ),
+            }
+          : {}),
       }}
       inspector={
         open ? (
@@ -508,61 +527,6 @@ export const stamp = (iso: string) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 };
 
-export function Triggers({ root }: { root: string }) {
-  return (
-    <ListScreen<{
-      path: string;
-      type: string;
-      script: string;
-      enabled: boolean;
-      cron: string | null;
-      timezone: string | null;
-      nextFireAt: string | null;
-      lastFiredAt: string | null;
-      url: string | null;
-    }>
-      title="Triggers"
-      description="What starts scripts in this workspace without anyone asking: schedules and webhooks."
-      path={`${root}/triggers`}
-      rowKey={(row) => row.path}
-      columns={[
-        { header: "Trigger", cell: (row) => code(row.path) },
-        { header: "Starts", cell: (row) => code(row.script) },
-        {
-          header: "When",
-          cell: (row) =>
-            row.type === "schedule" ? (
-              <span>
-                {code(row.cron ?? "")} <span className="text-ink-muted">{row.timezone}</span>
-              </span>
-            ) : row.url ? (
-              <span className="font-mono text-[13px] break-all select-all">POST {row.url}</span>
-            ) : (
-              <span className="text-ink-muted">
-                A webhook. Its address is shown to those who manage triggers.
-              </span>
-            ),
-        },
-        {
-          header: "Next",
-          cell: (row) =>
-            !row.enabled ? (
-              <Badge>Off</Badge>
-            ) : row.nextFireAt ? (
-              when(row.nextFireAt)
-            ) : (
-              "On request"
-            ),
-        },
-      ]}
-      empty={{
-        title: "No triggers",
-        text: "Define a schedule or a webhook in the tenant's repository and deploy it.",
-      }}
-    />
-  );
-}
-
 interface BundleRow {
   id: string;
   version: number;
@@ -596,7 +560,7 @@ export function Deployments({ root }: { root: string }) {
       ]}
       empty={{
         title: "Nothing has been deployed",
-        text: "From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
+        text: "Deploy what was saved here from Release, promote a dev workspace into this one, or deploy from the tenant's repository with platform deploy.",
       }}
       rowActions={(row, reload) =>
         row.active ? null : (
@@ -1166,7 +1130,7 @@ export function ConnectionGroups({ root }: { root: string }) {
   const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
   const [adding, setAdding] = useState<string>();
   if (groups.error) return <Notice tone="danger">{groups.error.message}</Notice>;
-  if (!groups.data || groups.data.items.length === 0) return null;
+  if (!groups.data) return null;
 
   return (
     <section className="flex flex-col gap-4">
@@ -1178,6 +1142,12 @@ export function ConnectionGroups({ root }: { root: string }) {
           deploy.
         </p>
       </header>
+      {groups.data.items.length === 0 ? (
+        <p className="m-0 rounded-panel border border-line border-dashed px-4 py-3 text-ink-muted">
+          No groups here. A group is declared in the workspace's code with the connection kind it
+          holds; once deployed, its members are added here.
+        </p>
+      ) : null}
       {groups.data.items.map((group) => (
         <div key={group.path} className="rounded-panel border border-line bg-surface">
           <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">

@@ -86,9 +86,10 @@ test("a member is added with a key, an address and a credential, and removed aft
   );
 });
 
-test("a workspace with no groups shows nothing", async () => {
+test("a workspace with no groups says so, and how one is made", async () => {
   groups = [];
-  const { container } = show(<ConnectionGroups root={root} />);
-  await waitFor(() => expect(calls.length).toBe(1));
-  expect(container.textContent).toBe("");
+  show(<ConnectionGroups root={root} />);
+  expect(
+    await screen.findByText(/No groups here\. A group is declared in the workspace's code/),
+  ).toBeTruthy();
 });

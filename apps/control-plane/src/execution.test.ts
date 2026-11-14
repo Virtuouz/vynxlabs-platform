@@ -944,6 +944,21 @@ describe("the worker protocol", () => {
     });
   }, 60_000);
 
+  test("log lines a worker could not deliver are counted in the run's log", async () => {
+    const ours = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "lossy" })).body.token,
+    );
+    const id = await start("flaky", { succeedOn: 1 });
+    expect((await ours.claim()).body.job).toMatchObject({ runId: id, attempt: 1 });
+    expect(
+      (await ours.post(`/runs/${id}/complete`, { attempt: 1, output: {}, logsLost: 7 })).status,
+    ).toBe(204);
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs`)).body.items;
+    expect(logs).toEqual([
+      expect.objectContaining({ level: "warn", message: "7 log lines could not be saved." }),
+    ]);
+  });
+
   test("a run whose worker vanished shows as waiting again, so a worker is started for it", async () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
     const ours = protocol(

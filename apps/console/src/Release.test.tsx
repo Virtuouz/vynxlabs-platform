@@ -1,11 +1,29 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { Changes } from "./screens/Authoring.tsx";
+import { Release } from "./screens/Release.tsx";
 import { answer, show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 const link = "/t/t1/workspaces/w1";
+interface Place {
+  id: string;
+  name: string;
+  type: "dev" | "production";
+  linkedWorkspaceId: string | null;
+}
+const dev: Place = { id: "w1", name: "Clinics dev", type: "dev", linkedWorkspaceId: null };
+const production: Place = { ...dev, name: "Clinics", type: "production" };
+const review = (workspace = dev) => (
+  <Release
+    base="/tenants/t1"
+    root={root}
+    link={link}
+    workspace={workspace}
+    step="review"
+    reload={() => {}}
+  />
+);
 let calls: { method: string; url: string; body: unknown }[];
 let drafts: object[];
 let preview: object;
@@ -60,14 +78,12 @@ afterEach(() => {
 });
 
 test("drafts are listed with what deploying each would do, and deployed with a message", async () => {
-  show(<Changes root={root} link={link} editable />);
+  show(review());
   expect((await screen.findByRole("link", { name: "orders/sync" })).getAttribute("href")).toBe(
     `${link}/scripts/edit/orders/sync`,
   );
-  // A variable opens in the editor for settings.
-  expect(screen.getByRole("link", { name: "orders/size" }).getAttribute("href")).toBe(
-    `${link}/resources/edit/variable/orders/size`,
-  );
+  // A variable has no editor of its own to open.
+  expect(screen.getByText("orders/size")).toBeTruthy();
   expect(screen.getByText("Changed")).toBeTruthy();
   expect(screen.getByText("New")).toBeTruthy();
   await screen.findByText(/Deploying creates 1, changes 1 and removes 0\./);
@@ -80,7 +96,6 @@ test("drafts are listed with what deploying each would do, and deployed with a m
     url: `/api/v1${root}/changes/deploy`,
     body: { message: "Bigger batches" },
   });
-  await screen.findByText("Nothing waiting to be deployed");
 });
 
 test("changes that cannot be deployed say why, and offer no deploy", async () => {
@@ -93,23 +108,29 @@ test("changes that cannot be deployed say why, and offer no deploy", async () =>
     },
     summary: null,
   };
-  show(<Changes root={root} link={link} editable />);
-  expect((await screen.findByRole("alert")).textContent).toContain("orders/sync.script.ts:2");
+  show(review());
+  await screen.findByText("orders/sync.script.ts:2");
+  expect(screen.getByText(/These changes cannot be deployed yet\./)).toBeTruthy();
   expect(
     (screen.getByRole("button", { name: "Deploy 2 changes" }) as HTMLButtonElement).disabled,
   ).toBe(true);
 });
 
-test("a draft is discarded after asking, and a production workspace has none", async () => {
-  const { unmount } = show(<Changes root={root} link={link} editable />);
-  fireEvent.click((await screen.findAllByRole("button", { name: "Discard" }))[0] as HTMLElement);
-  expect(await answer("Discard")).toContain("It goes back to how it was last deployed.");
+test("a draft is set aside after asking, and a production workspace has no review step", async () => {
+  const { unmount } = show(review());
+  fireEvent.click((await screen.findAllByRole("button", { name: "Set aside" }))[0] as HTMLElement);
+  expect(await answer("Set aside")).toContain("It goes back to how it was last deployed.");
   await waitFor(() => expect(calls.some((call) => call.method === "DELETE")).toBe(true));
   expect(calls.find((call) => call.method === "DELETE")?.url).toBe(
     `/api/v1${root}/drafts/orders/sync`,
   );
   unmount();
+  const asked = () => calls.filter((call) => call.url.endsWith("/drafts")).length;
+  const before = asked();
 
-  show(<Changes root={root} link={link} editable={false} />);
-  expect(screen.getByText(/A production workspace has no drafts/)).toBeTruthy();
+  show(review(production));
+  await screen.findByRole("heading", { name: "Versions" });
+  expect(screen.queryByText("Review draft")).toBeNull();
+  // Production has no drafts, so they are not even asked for.
+  expect(asked()).toBe(before);
 });

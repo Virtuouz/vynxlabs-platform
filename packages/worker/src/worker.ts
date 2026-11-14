@@ -66,6 +66,14 @@ class AttemptOver extends Error {}
 
 const WORKER_VERSION = "0.5.0";
 
+/** Log lines kept while the control plane cannot be reached. Past this, the oldest go. */
+const MAX_PENDING_LOGS = 5000;
+/** The most lines the control plane takes in one request. */
+const LOG_BATCH = 500;
+/** How often the last send of an attempt is tried, and the first pause between tries. */
+const LOG_FINAL_TRIES = 3;
+const LOG_RETRY_MS = 250;
+
 /**
  * Runs a tenant's scripts. It only ever calls the control plane: it claims a
  * job, downloads the bundle the run is pinned to, runs the script, and reports
@@ -225,13 +233,51 @@ export class Worker {
     const abort = new AbortController();
     let over = false;
 
+    // Log lines wait here until the control plane has them. A line that cannot be
+    // sent stays for the next try; only past the limit, or at the very end, is it
+    // given up, and then it is counted so the run can say so.
     const pending: LogEntry[] = [];
-    const flush = async () => {
-      if (pending.length === 0) return;
-      const entries = pending.splice(0, pending.length);
-      await this.#call("POST", `${runPath}/logs`, { attempt: job.attempt, entries }).catch(
-        () => {},
-      );
+    let lost = 0;
+    const bound = () => {
+      const excess = pending.length - MAX_PENDING_LOGS;
+      if (excess > 0) {
+        pending.splice(0, excess);
+        lost += excess;
+      }
+    };
+    const send = async () => {
+      while (pending.length > 0) {
+        const entries = pending.splice(0, LOG_BATCH);
+        try {
+          await this.#call("POST", `${runPath}/logs`, { attempt: job.attempt, entries });
+        } catch (error) {
+          pending.unshift(...entries);
+          bound();
+          throw error;
+        }
+      }
+    };
+    // One send at a time, so lines arrive in the order they were written.
+    let sending: Promise<void> = Promise.resolve();
+    const flush = (tries = 1) => {
+      sending = sending.then(async () => {
+        for (let attempt = 0; attempt < tries; attempt += 1) {
+          try {
+            await send();
+            return;
+          } catch {
+            if (attempt + 1 < tries) await sleep(LOG_RETRY_MS * 2 ** attempt);
+          }
+        }
+      });
+      return sending;
+    };
+    /** The last send of the attempt: what still cannot be sent is counted as lost. */
+    const settle = async () => {
+      await flush(LOG_FINAL_TRIES);
+      lost += pending.length;
+      pending.length = 0;
+      return lost > 0 ? { logsLost: lost } : {};
     };
     const write =
       (level: LogEntry["level"]) => (message: string, fields?: Record<string, unknown>) => {
@@ -241,6 +287,7 @@ export class Worker {
           message: String(message),
           ...(fields ? { fields } : {}),
         });
+        bound();
       };
 
     const heartbeat = setInterval(async () => {
@@ -428,16 +475,17 @@ export class Worker {
         abort.signal.addEventListener("abort", () => reject(abort.signal.reason), { once: true });
       });
       const output = await Promise.race([script.execute(job.input, context), aborted]);
-      await flush();
-      await this.#call("POST", `${runPath}/complete`, { attempt: job.attempt, output });
+      const logs = await settle();
+      await this.#call("POST", `${runPath}/complete`, { attempt: job.attempt, output, ...logs });
     } catch (error) {
-      await flush();
+      const logs = await settle();
       if (error instanceof CredentialRefused) throw error;
       // A canceled or reclaimed attempt has nothing left to report.
       if (over || error instanceof AttemptOver) return;
       const failure = error instanceof Error ? error : new Error(String(error));
       await this.#call("POST", `${runPath}/fail`, {
         attempt: job.attempt,
+        ...logs,
         error: {
           message: failure.message.slice(0, 8000),
           ...(failure.stack ? { stack: failure.stack.slice(0, 32000) } : {}),

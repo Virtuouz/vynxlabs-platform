@@ -1,5 +1,5 @@
 import { Badge, Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -26,6 +26,7 @@ import { EndUsers } from "./EndUsers.tsx";
 import { TenantExport, WorkspaceSettings } from "./Environments.tsx";
 import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
 import { GitSync } from "./GitSync.tsx";
+import { NotFound } from "./NotFound.tsx";
 import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.tsx";
 import { Overview } from "./Overview.tsx";
 import { Release } from "./Release.tsx";
@@ -248,8 +249,10 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
           description="Every change in this tenant, and every request an operator made under an access grant."
           path={`${base}/audit`}
         />
-      ) : (
+      ) : section === "workspaces" ? (
         <Workspaces base={base} tenantId={tenantId} />
+      ) : (
+        <NotFound home={`/t/${tenantId}`} homeLabel="Go to the tenant overview" />
       )}
     </div>
   );
@@ -336,6 +339,32 @@ function ExportSection({ base }: { base: string }) {
   return <TenantExport base={base} slug={tenant.data.slug} />;
 }
 
+/** Every tab a workspace has. Any other address in a workspace has no page. */
+const WORKSPACE_TABS = new Set([
+  "apps",
+  "changes",
+  "connections",
+  "dashboards",
+  "deployments",
+  "events",
+  "extensions",
+  "flow-runs",
+  "flows",
+  "git",
+  "overview",
+  "release",
+  "resources",
+  "runs",
+  "screens",
+  "scripts",
+  "secrets",
+  "settings",
+  "sources",
+  "tables",
+  "triggers",
+  "variables",
+]);
+
 function WorkspaceDetail({
   base,
   tenantId,
@@ -353,10 +382,34 @@ function WorkspaceDetail({
   runId: string | undefined;
 }) {
   const workspace = useLoad<Workspace>(`${base}/workspaces/${workspaceId}`);
+  // An address may name the workspace by its slug, as people type it. When the
+  // ID is refused, the slug is looked up and the address replaced by the ID's.
+  const refused = workspace.error?.status === 400 || workspace.error?.status === 404;
+  const all = useLoad<{ items: Workspace[] }>(refused ? `${base}/workspaces` : null);
+  const named = all.data?.items.find((one) => one.slug === workspaceId);
+  useEffect(() => {
+    if (!named) return;
+    const from = `/workspaces/${encodeURIComponent(workspaceId)}`;
+    navigate(location.pathname.replace(from, `/workspaces/${named.id}`) + location.search, {
+      replace: true,
+    });
+  }, [named, workspaceId]);
   const root = `${base}/workspaces/${workspaceId}`;
   const secretUses = useReferences(root, "secret", tab === "secrets");
+  if (refused) {
+    if (named || (!all.data && !all.error)) return null;
+    return <NotFound home={`/t/${tenantId}/workspaces`} homeLabel="Go to the workspaces" />;
+  }
   if (workspace.error) return <Notice tone="danger">{workspace.error.message}</Notice>;
   if (!workspace.data) return null;
+  if (!WORKSPACE_TABS.has(tab)) {
+    return (
+      <NotFound
+        home={`/t/${tenantId}/workspaces/${workspaceId}/overview`}
+        homeLabel={`Go to the ${workspace.data.name} overview`}
+      />
+    );
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       {tab === "overview" ? (

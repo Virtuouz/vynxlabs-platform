@@ -66,6 +66,8 @@ const Job = Type.Object({
 
 const MAX_WAIT_SECONDS = 25;
 const MAX_LOG_MESSAGE = 8000;
+/** Log lines the worker held but could not deliver. The run says how many. */
+const LogsLost = Type.Optional(Type.Integer({ minimum: 0 }));
 
 /**
  * The worker protocol: the second language-neutral contract. A worker in any
@@ -75,6 +77,25 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
     const config = { access: access.worker };
+
+    /**
+     * A worker that could not deliver some log lines says how many, and the run's
+     * log says so in their place: a run never looks complete without its evidence.
+     */
+    async function recordLostLogs(runId: string, attempt: number, lost: number | undefined) {
+      if (!lost) return;
+      await db
+        .insertInto("run_log")
+        .values({
+          run_id: runId,
+          attempt,
+          logged_at: new Date(),
+          level: "warn",
+          message: `${lost} log ${lost === 1 ? "line" : "lines"} could not be saved.`,
+          fields: JSON.stringify({ logsLost: lost }),
+        })
+        .execute();
+    }
 
     /** The script manifest a run is pinned to, from the bundle it started on. */
     /** Whether an ID is someone a script may act for: a member or an end user of the tenant. */
@@ -734,12 +755,17 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Report that the run succeeded",
           tags: ["worker protocol"],
           params: RunParams,
-          body: Type.Object({ attempt: Attempt, output: Type.Optional(Type.Unknown()) }),
+          body: Type.Object({
+            attempt: Attempt,
+            output: Type.Optional(Type.Unknown()),
+            logsLost: LogsLost,
+          }),
           response: { 204: NoContent },
         },
       },
       async ({ worker, params, body }, reply) => {
         await completeRun(kernel, worker, params.id, body.attempt, body.output ?? null);
+        await recordLostLogs(params.id, body.attempt, body.logsLost);
         return reply.code(204).send(null);
       },
     );
@@ -759,15 +785,19 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               message: Type.String({ maxLength: 8000 }),
               stack: Type.Optional(Type.String({ maxLength: 32000 })),
             }),
+            logsLost: LogsLost,
           }),
           response: { 200: Type.Object({ final: Type.Boolean() }) },
         },
       },
-      async ({ worker, params, body }) =>
-        failRun(kernel, worker, params.id, body.attempt, {
+      async ({ worker, params, body }) => {
+        const result = await failRun(kernel, worker, params.id, body.attempt, {
           message: body.error.message,
           ...(body.error.stack ? { stack: body.error.stack } : {}),
-        }),
+        });
+        await recordLostLogs(params.id, body.attempt, body.logsLost);
+        return result;
+      },
     );
   };
 }

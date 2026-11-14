@@ -864,7 +864,7 @@ export function Shell({
             ) : null}
             {tenantId && workspaceId && failed > 0 ? (
               <Link
-                to={`/t/${tenantId}/workspaces/${workspaceId}/runs`}
+                to={`/t/${tenantId}/workspaces/${workspaceId}/runs?status=failed`}
                 className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-2.5 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
               >
                 <CircleX aria-hidden="true" size={13} className="text-danger" />

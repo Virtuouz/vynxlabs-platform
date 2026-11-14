@@ -3,10 +3,11 @@ import { ArrowUpRight, CircleX, Lightbulb, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useQueryValue } from "../router.tsx";
 import { stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
@@ -74,10 +75,13 @@ export function RunsWorkbench({
   /** A run's ID from the address, when one is open. */
   selected: string | undefined;
 }) {
-  const [status, setStatus] = useState<"all" | Status>(() => {
-    const asked = new URLSearchParams(location.search).get("status");
-    return STATUSES.some((one) => one.value === asked) ? (asked as Status) : "all";
-  });
+  // The status filter lives in the address, so a link can open the failed runs and a
+  // reload or a shared link keeps them.
+  const [asked, ask] = useQueryValue("status");
+  const status: "all" | Status = STATUSES.some((one) => one.value === asked)
+    ? (asked as Status)
+    : "all";
+  const setStatus = (next: "all" | Status) => ask(next === "all" ? null : next);
   const [kind, setKind] = useState("all");
   const [hours, setHours] = useState("24");
   const [tick, setTick] = useState(0);
@@ -219,7 +223,7 @@ export function RunsWorkbench({
                     </td>
                     <td className="px-3 py-2.5">
                       <Link
-                        to={`${link}/runs/${row.id}`}
+                        to={`${link}/runs/${row.id}${location.search}`}
                         className="block truncate font-mono text-telemetry text-ink no-underline"
                       >
                         {row.target}
@@ -261,8 +265,17 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
           { label: "Started", value: stamp(run.createdAt), mono: true },
           { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "—", mono: true },
           { label: "Started by", value: TRIGGER[run.trigger] ?? run.trigger },
-          { label: "Version", value: `v${run.bundleVersion}`, mono: true },
-          { label: "Run ID", value: run.id, mono: true },
+          {
+            label: "Flow",
+            value: <Link to={`${link}/flows/${run.target}`}>{run.target}</Link>,
+            mono: true,
+          },
+          {
+            label: "Version",
+            value: <Link to={`${link}/deployments`}>v{run.bundleVersion}</Link>,
+            mono: true,
+          },
+          { label: "Run ID", value: <CopyableId value={run.id} label="Copy the run ID" /> },
         ]}
       />
       <Button variant="primary" onClick={() => navigate(`${link}/flow-runs/${run.id}`)}>
@@ -330,6 +343,10 @@ export function ScriptRunPanel({
               <RotateCcw aria-hidden="true" size={13} /> Run again
             </Button>
           )}
+          <CopyIcon
+            value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
+            label="Copy as curl: start this script again with the same input"
+          />
         </div>
       </div>
 
@@ -433,8 +450,29 @@ export function ScriptRunPanel({
                       value: run.finishedAt ? stamp(run.finishedAt) : "—",
                       mono: true,
                     },
-                    { label: "Started by", value: TRIGGER[run.trigger.type] ?? run.trigger.type },
-                    { label: "Version", value: `v${run.bundleVersion}`, mono: true },
+                    {
+                      label: "Script",
+                      value: <Link to={`${link}/scripts/edit/${run.script}`}>{run.script}</Link>,
+                      mono: true,
+                    },
+                    {
+                      label: "Started by",
+                      value:
+                        typeof run.trigger.trigger === "string" ? (
+                          <Link
+                            to={`${link}/triggers?trigger=${encodeURIComponent(run.trigger.trigger)}`}
+                          >
+                            {TRIGGER[run.trigger.type] ?? run.trigger.type} {run.trigger.trigger}
+                          </Link>
+                        ) : (
+                          (TRIGGER[run.trigger.type] ?? run.trigger.type)
+                        ),
+                    },
+                    {
+                      label: "Version",
+                      value: <Link to={`${link}/deployments`}>v{run.bundleVersion}</Link>,
+                      mono: true,
+                    },
                     {
                       label: "Worker",
                       value: insight.data?.worker
@@ -446,7 +484,10 @@ export function ScriptRunPanel({
                       value: insight.data?.timeoutSeconds ? `${insight.data.timeoutSeconds}s` : "—",
                       mono: true,
                     },
-                    { label: "Run ID", value: run.id, mono: true },
+                    {
+                      label: "Run ID",
+                      value: <CopyableId value={run.id} label="Copy the run ID" />,
+                    },
                   ]}
                 />
                 {insight.data && insight.data.uses.length > 0 ? (

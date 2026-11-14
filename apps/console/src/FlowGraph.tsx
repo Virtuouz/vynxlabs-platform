@@ -104,6 +104,9 @@ export function FlowGraph({
   const positions: Positions = { ...automatic, ...layout, ...moved };
   const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
+  // A graph that cannot be moved opens fitted to its frame, so a wide flow is seen whole.
+  // One that can be moved keeps its true size, so a drag lands where the pointer is.
+  const [fitted, setFitted] = useState(!onMove);
 
   const ids = Object.keys(nodes).filter((id) => positions[id]);
   const width = Math.max(...ids.map((id) => (positions[id]?.x ?? 0) + WIDTH), 320) + 24;
@@ -115,12 +118,27 @@ export function FlowGraph({
   };
 
   return (
-    <div className="overflow-auto rounded-panel border border-line bg-surface">
+    <div className="relative overflow-auto rounded-panel border border-line bg-surface">
+      {onMove ? null : (
+        <button
+          type="button"
+          onClick={() => setFitted((on) => !on)}
+          className="absolute top-2 right-2 z-10 rounded-control border border-line bg-raised px-2 py-0.5 text-meta text-ink-muted hover:text-ink"
+        >
+          {fitted ? "Actual size" : "Fit to view"}
+        </button>
+      )}
       {/* biome-ignore lint/a11y/useSemanticElements: an SVG is grouped by role, it has no fieldset */}
       <svg
         ref={svg}
-        width={width}
-        height={height}
+        {...(fitted
+          ? {
+              viewBox: `0 0 ${width} ${height}`,
+              width: "100%",
+              preserveAspectRatio: "xMidYMin meet",
+              style: { maxWidth: width, maxHeight: "70vh", display: "block", margin: "0 auto" },
+            }
+          : { width, height })}
         role="group"
         aria-label="Flow graph"
         onPointerMove={(event) => {

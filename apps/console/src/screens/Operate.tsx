@@ -7,7 +7,7 @@ import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, StatePill, stateOf } from "../kit/status.tsx";
 import { CopyButton } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useQueryValue } from "../router.tsx";
 import { stamp } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
@@ -43,7 +43,11 @@ const REFUSED: Record<string, string> = {
   paused: "the trigger was paused",
 };
 
-const triggerKey = (row: Trigger) => `${row.path}#${row.node}`;
+/** A trigger as runs name it: its path, and the node for one inside a flow. */
+const triggerKey = (row: Trigger) => (row.node ? `${row.path}#${row.node}` : row.path);
+/** The page of what a trigger starts. */
+const targetLink = (link: string, row: Trigger) =>
+  row.targetKind === "flow" ? `${link}/flows/${row.script}` : `${link}/scripts/edit/${row.script}`;
 const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) =>
   run.kind === "flow" ? `${link}/flow-runs/${run.id}` : `${link}/runs/${run.id}`;
 
@@ -61,7 +65,9 @@ export function TriggersWorkbench({
 }) {
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const [type, setType] = useState("all");
-  const [chosen, setChosen] = useState<string>();
+  // The chosen trigger lives in the address, so a run can link straight to the trigger
+  // that started it.
+  const [chosen, choose] = useQueryValue("trigger");
   const items = list.data?.items ?? [];
   const types = [...new Set(items.map((one) => one.type))];
   const rows = items.filter((one) => type === "all" || one.type === type);
@@ -90,7 +96,9 @@ export function TriggersWorkbench({
       priority: 3,
       cell: (row) => (
         <span className="flex flex-col">
-          <Mono>{row.script}</Mono>
+          <Link to={targetLink(link, row)} className="font-mono text-telemetry">
+            {row.script}
+          </Link>
           <span className="text-meta text-ink-subtle">
             {row.targetKind === "flow" ? "Flow" : "Script"}
           </span>
@@ -168,8 +176,8 @@ export function TriggersWorkbench({
       columns={columns}
       rows={list.data ? rows : undefined}
       rowKey={triggerKey}
-      selected={chosen}
-      onSelect={(row) => setChosen(triggerKey(row))}
+      selected={chosen ?? undefined}
+      onSelect={(row) => choose(triggerKey(row))}
       error={list.error?.message}
       empty={{
         title: "Nothing starts by itself yet",
@@ -182,7 +190,7 @@ export function TriggersWorkbench({
             label="The chosen trigger"
             title={open.path}
             eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
-            onClose={() => setChosen(undefined)}
+            onClose={() => choose(null)}
             footer={
               open.paused ? (
                 <Button
@@ -247,7 +255,15 @@ export function TriggersWorkbench({
               ) : null}
               <KeyValues
                 rows={[
-                  { label: "Starts", value: `${open.script} (${open.targetKind})`, mono: true },
+                  {
+                    label: "Starts",
+                    value: (
+                      <Link to={targetLink(link, open)}>
+                        {open.script} ({open.targetKind})
+                      </Link>
+                    ),
+                    mono: true,
+                  },
                   ...(open.cron
                     ? [
                         {

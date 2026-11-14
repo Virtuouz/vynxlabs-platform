@@ -66,6 +66,12 @@ export const guestLimit = {
 declare module "fastify" {
   interface FastifyContextConfig {
     access?: Access;
+    /**
+     * The route keeps a person's own preference, such as where they were last.
+     * It writes without an audit entry, so only the routes in
+     * `PREFERENCE_ROUTES` may say so.
+     */
+    preference?: true;
   }
   interface FastifyRequest {
     ctx: RequestContext;
@@ -148,6 +154,20 @@ export class RequestContext {
     }
   }
 
+  /**
+   * Keeps one of the caller's own preferences, without an audit entry. Only a
+   * route in `PREFERENCE_ROUTES` may call it.
+   */
+  async keepPreference<T>(change: (db: Kernel["db"]) => Promise<T>): Promise<T> {
+    if (!this.#request.routeOptions.config.preference) {
+      throw new Error(
+        `${this.#request.method} ${this.#request.routeOptions.url} is not a preference route.`,
+      );
+    }
+    this.mutated = true;
+    return change(this.db);
+  }
+
   /** Runs a change through the one write path. */
   mutate<T>(change: (trx: Trx, audit: Audit) => Promise<T>): Promise<T> {
     this.mutated = true;
@@ -157,11 +177,29 @@ export class RequestContext {
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+/**
+ * The only routes that write without an audit entry. Each keeps a member's own
+ * preference, which changes nothing anyone else can see or do; auditing them
+ * buried real changes under every move between workspaces.
+ */
+export const PREFERENCE_ROUTES: ReadonlySet<string> = new Set(["PUT /api/v1/me/recent"]);
+
 /** Installs the hooks that resolve the caller and enforce each route's declared access. */
 export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
   app.decorateRequest("ctx", null as unknown as RequestContext);
   app.decorateRequest("worker", null as unknown as WorkerScope);
   app.decorateRequest("scim", null as unknown as ScimCaller);
+
+  // A route that writes without auditing must be one of the few that may.
+  app.addHook("onRoute", (route) => {
+    if (!route.config?.preference) return;
+    const methods = Array.isArray(route.method) ? route.method : [route.method];
+    for (const method of methods) {
+      if (!PREFERENCE_ROUTES.has(`${method} ${route.url}`)) {
+        throw new Error(`${method} ${route.url} may not write without an audit entry.`);
+      }
+    }
+  });
 
   app.addHook("preHandler", async (request) => {
     const declared = request.routeOptions.config.access;

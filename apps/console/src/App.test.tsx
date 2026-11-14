@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { App, returnTarget } from "./App.tsx";
+import { App, returnTarget, useReopenLastPlace } from "./App.tsx";
 import { match } from "./router.tsx";
 import { show } from "./testing.tsx";
 
@@ -135,4 +135,30 @@ test("a return address that is not an app's is ignored", async () => {
   expect(returnTarget("?return=/api/v1/tenants")).toBeNull();
   expect(returnTarget("?return=")).toBeNull();
   expect(returnTarget("")).toBeNull();
+});
+
+test("opening the console at its root goes back to the last workspace, once", async () => {
+  routes["GET /api/v1/me/recent"] = () => [
+    200,
+    { items: [{ tenantId: "t1", workspaceId: "w1", visitedAt: "2026-11-14T00:00:00.000Z" }] },
+  ];
+  const { rerender } = renderHook(({ on }) => useReopenLastPlace(on), {
+    initialProps: { on: false },
+  });
+  expect(location.pathname).toBe("/");
+  rerender({ on: true });
+  await waitFor(() => expect(location.pathname).toBe("/t/t1/workspaces/w1/overview"));
+  // Going back to the tenant list afterward stays there.
+  history.replaceState(null, "", "/");
+  rerender({ on: false });
+  rerender({ on: true });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(location.pathname).toBe("/");
+});
+
+test("a member with nowhere remembered stays on the tenant list", async () => {
+  routes["GET /api/v1/me/recent"] = () => [200, { items: [] }];
+  renderHook(() => useReopenLastPlace(true));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(location.pathname).toBe("/");
 });

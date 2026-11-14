@@ -1,6 +1,6 @@
 # Phase 9: maturity
 
-Status: planned. Nothing built yet.
+Status: in progress. Milestone 1 (quick wins) built and tested locally. Milestones 2 to 7 not started.
 Last updated: 2026-11-14
 
 Phase 9 builds the P0 and P1 items of the [evolution roadmap](../evolution/07-roadmap.md). It changes no part of the platform's model. It makes what already exists dependable and connected:
@@ -80,4 +80,6 @@ Each item's acceptance criteria are in the roadmap and its spec. New suites this
 
 ## Findings
 
-None yet.
+- **A worker sent at most 500 log lines per request, but sent everything it held at once.** A run that logged more than 500 lines between heartbeats had the whole batch refused, and the refusal was swallowed. Fixed with P0-3: lines are sent in batches of 500.
+- **A link inside a row that opens on click fired both.** Adding target links to Triggers rows showed it: the row's selection ran after the link's navigation and rewrote the address. `Link` now stops the click from reaching the row.
+- **The `Changes` screen was dead, but its tests covered behavior the live Release screen has.** They were moved to `Release.test.tsx` instead of being deleted.

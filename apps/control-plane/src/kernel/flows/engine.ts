@@ -568,7 +568,14 @@ class Advance {
           const detail = node.detail ? await this.#evaluate("detail", node.detail) : null;
           await this.#update(step, {
             status: "waiting",
-            detail: { title: node.title, detail },
+            detail: {
+              title: node.title,
+              detail,
+              ...(node.approvers &&
+              ((node.approvers.groups?.length ?? 0) > 0 || (node.approvers.roles?.length ?? 0) > 0)
+                ? { approvers: node.approvers }
+                : {}),
+            },
             wake_at: node.timeoutSeconds ? new Date(Date.now() + node.timeoutSeconds * 1000) : null,
           });
           break;

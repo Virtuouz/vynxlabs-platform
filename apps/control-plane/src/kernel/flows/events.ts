@@ -2,7 +2,7 @@ import { newId } from "@vynxlabs/db";
 import { PLATFORM_EVENT_PREFIX, validateJson } from "@vynxlabs/manifest";
 import type { Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
-import { kickStarted, startTarget } from "../execution/triggers.js";
+import { kickStarted, notPausedAlone, startTarget } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { ExpressionError } from "./expressions.js";
 
@@ -81,13 +81,15 @@ export async function publishEvent(kernel: Kernel, trx: Trx, event: PublishEvent
     ? []
     : await trx
         .selectFrom("trigger_state")
-        .selectAll()
-        .where("workspace_id", "=", event.workspaceId)
-        .where("type", "=", "event")
-        .where("event_name", "=", event.name)
-        .where("enabled", "=", true)
-        .orderBy("resource_id")
-        .orderBy("node_id")
+        .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+        .selectAll("trigger_state")
+        .where("trigger_state.workspace_id", "=", event.workspaceId)
+        .where("trigger_state.type", "=", "event")
+        .where("trigger_state.event_name", "=", event.name)
+        .where("trigger_state.enabled", "=", true)
+        .where(notPausedAlone)
+        .orderBy("trigger_state.resource_id")
+        .orderBy("trigger_state.node_id")
         .execute();
   const started: { kind: string; id: string }[] = [];
   for (const subscriber of subscribers) {
@@ -114,6 +116,12 @@ export async function publishEvent(kernel: Kernel, trx: Trx, event: PublishEvent
           idempotencyKey: `event:${id}:${subscriber.resource_id}:${subscriber.node_id}`,
         }),
       );
+      await trx
+        .updateTable("trigger_state")
+        .set({ last_fired_at: new Date() })
+        .where("resource_id", "=", subscriber.resource_id)
+        .where("node_id", "=", subscriber.node_id)
+        .execute();
     } catch (error) {
       // A payload the subscriber's script does not accept must not undo the publish.
       if (!(error instanceof HttpError)) throw error;
@@ -145,12 +153,14 @@ export async function publishPlatformEvent(
   const heard = await kernel.db
     .selectFrom("trigger_state")
     .innerJoin("workspace", "workspace.id", "trigger_state.workspace_id")
+    .innerJoin("resource", "resource.id", "trigger_state.resource_id")
     .select("trigger_state.resource_id")
     .where("trigger_state.workspace_id", "=", event.workspaceId)
     .where("trigger_state.type", "=", "event")
     .where("trigger_state.event_name", "=", event.name)
     .where("trigger_state.enabled", "=", true)
     .where("workspace.triggers_paused", "=", false)
+    .where(notPausedAlone)
     .limit(1)
     .executeTakeFirst();
   if (!heard) return;

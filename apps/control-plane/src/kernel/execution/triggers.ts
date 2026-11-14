@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { sql } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@vynxlabs/manifest";
 import type { TriggerSource } from "@vynxlabs/sdk";
 import { CronExpressionParser } from "cron-parser";
@@ -35,6 +35,64 @@ type TriggerBody =
   | ({ type: "form"; script: string; enabled?: boolean } & FormTrigger);
 
 /** The built-in trigger sources, written against the SDK's extension interface. */
+
+/**
+ * A condition on a `trigger_state` row joined to its `resource`: the trigger is
+ * not paused on its own. A workspace's pause is checked separately.
+ */
+export const notPausedAlone = sql<boolean>`not exists (
+  select 1 from trigger_pause p
+  where p.workspace_id = trigger_state.workspace_id
+    and p.path = resource.path
+    and p.node_id = trigger_state.node_id
+)`;
+
+/** Whether one trigger is paused on its own, apart from its workspace. */
+export async function pausedAlone(
+  kernel: Kernel,
+  state: { workspace_id: string; path: string; node_id: string },
+): Promise<boolean> {
+  const found = await kernel.db
+    .selectFrom("trigger_pause")
+    .select("path")
+    .where("workspace_id", "=", state.workspace_id)
+    .where("path", "=", state.path)
+    .where("node_id", "=", state.node_id)
+    .executeTakeFirst();
+  return found !== undefined;
+}
+
+/** How many refused requests are kept for one trigger. */
+const REFUSALS_KEPT = 20;
+
+/** Keeps a refused webhook request's reason, never its body, and only the latest few. */
+async function recordRefusal(
+  kernel: Kernel,
+  state: { tenant_id: string; workspace_id: string; path: string; node_id: string },
+  reason: "signature" | "body" | "paused",
+  problem = "",
+) {
+  await kernel.db
+    .insertInto("webhook_refusal")
+    .values({
+      id: newId(),
+      tenant_id: state.tenant_id,
+      workspace_id: state.workspace_id,
+      path: state.path,
+      node_id: state.node_id,
+      reason,
+      problem: problem.slice(0, 500),
+    })
+    .execute();
+  await sql`
+    delete from webhook_refusal where id in (
+      select id from webhook_refusal
+      where workspace_id = ${state.workspace_id} and path = ${state.path} and node_id = ${state.node_id}
+      order by occurred_at desc offset ${REFUSALS_KEPT}
+    )
+  `.execute(kernel.db);
+}
+
 export const scheduleSource: TriggerSource<ScheduleConfig> = {
   type: "schedule",
   script: () => "",
@@ -440,8 +498,9 @@ export async function relaySource(
     .where("trigger_state.resource_id", "=", relay.resourceId)
     .where("trigger_state.node_id", "=", relay.node)
     .executeTakeFirst();
-  // The trigger was removed or turned off while its source was running.
+  // The trigger was removed, turned off or paused while its source was running.
   if (!state?.enabled || state.triggers_paused) return;
+  if (await pausedAlone(kernel, state)) return;
   const answer = (typeof output === "object" && output !== null ? output : {}) as {
     accept?: unknown;
     input?: unknown;
@@ -556,6 +615,8 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         .where("trigger_state.enabled", "=", true)
         // A paused workspace keeps its due time. It fires once when resumed.
         .where("workspace.triggers_paused", "=", false)
+        // A trigger paused on its own keeps its due time too.
+        .where(notPausedAlone)
         .where("trigger_state.next_fire_at", "<=", now)
         .orderBy("trigger_state.next_fire_at")
         .limit(1)
@@ -646,7 +707,8 @@ export async function findForm(kernel: Kernel, tenantId: string, token: string) 
     .where("trigger_state.tenant_id", "=", tenantId)
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
-  return { state, form: state.config as unknown as FormTrigger, paused: state.triggers_paused };
+  const paused = state.triggers_paused || (await pausedAlone(kernel, state));
+  return { state, form: state.config as unknown as FormTrigger, paused };
 }
 
 /**
@@ -701,7 +763,10 @@ export async function fireWebhook(
     .where("trigger_state.type", "=", "webhook")
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
-  if (state.triggers_paused) return { refused: "paused" as const };
+  if (state.triggers_paused || (await pausedAlone(kernel, state))) {
+    await recordRefusal(kernel, state, "paused");
+    return { refused: "paused" as const };
+  }
   const config = state.config as WebhookConfig;
   if (config.verify) {
     const secret = await revealSecret(kernel.db, kernel.vault, {
@@ -714,12 +779,16 @@ export async function fireWebhook(
       secret === undefined
         ? "The signature does not match."
         : signatureProblem(config.verify, secret, request);
-    if (problem) return { refused: "signature" as const, problem };
+    if (problem) {
+      await recordRefusal(kernel, state, "signature", problem);
+      return { refused: "signature" as const, problem };
+    }
   }
   let body: unknown;
   try {
     body = parseWebhookBody(request);
   } catch {
+    await recordRefusal(kernel, state, "body", "The body is not valid JSON.");
     return { refused: "body" as const, problem: "The body is not valid JSON." };
   }
   const headers = Object.fromEntries(
@@ -771,6 +840,12 @@ export async function fireWebhook(
       idempotencyKey,
     }),
   );
+  await kernel.db
+    .updateTable("trigger_state")
+    .set({ last_fired_at: new Date() })
+    .where("resource_id", "=", state.resource_id)
+    .where("node_id", "=", state.node_id)
+    .execute();
   await kickStarted(kernel, [started]);
   return { started, awaits: config.respond === "flow" && started.kind === "flow" };
 }

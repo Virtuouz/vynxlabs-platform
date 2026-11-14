@@ -88,7 +88,18 @@ export type FlowNode =
     }
   | { type: "join" }
   | { type: "delay"; seconds: number }
-  | { type: "approval"; title: string; detail?: string; timeoutSeconds?: number }
+  | {
+      type: "approval";
+      title: string;
+      detail?: string;
+      timeoutSeconds?: number;
+      /**
+       * Who may decide, beyond holding `approval:write`: a member of one of these
+       * groups, or one bound to one of these roles. Nobody named means anyone
+       * who holds the permission.
+       */
+      approvers?: { groups?: string[]; roles?: string[] };
+    }
   | { type: "subflow"; flow?: string; flowFrom?: string; allow?: string[]; input?: string }
   | {
       type: "respond";

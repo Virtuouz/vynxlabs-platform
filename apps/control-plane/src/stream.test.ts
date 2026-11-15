@@ -315,6 +315,96 @@ describe("the run event stream", () => {
     expect(other).not.toBe(tenant);
   });
 
+  test("an end user follows the runs they started, and nobody else's", async () => {
+    const endUser = async (email: string) => {
+      const created = await alice.post(`/tenants/${tenant}/end-users`, { email, name: email });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      const token = new URL(created.body.invitation.url).searchParams.get("token") as string;
+      const set = await t.app.inject({
+        method: "POST",
+        url: "/portal/acme/set-password",
+        headers: {
+          host: "localhost:8080",
+          origin: "http://localhost:8080",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        payload: new URLSearchParams({ token, password: PASSWORD }).toString(),
+      });
+      expect(set.statusCode).toBe(303);
+      const cookie = ([] as string[])
+        .concat(set.headers["set-cookie"] ?? [])
+        .map((line) => line.split(";")[0])
+        .join("; ");
+      return {
+        id: created.body.endUser.id as string,
+        client: { headers: { cookie, host: "localhost:8080" } } as unknown as Client,
+      };
+    };
+    const ivy = await endUser("ivy@customer.example");
+    const jon = await endUser("jon@customer.example");
+    const stream = await open(ivy.client);
+    expect(stream.status).toBe(200);
+    await stream.next((one) => one.event === "ready");
+
+    const startedBy = async (table: "run" | "flow_run", id: string, by: string) => {
+      await t.db
+        .updateTable(table)
+        .set({ started_by_type: "end_user", started_by_id: by, status: "running" })
+        .where("id", "=", id)
+        .execute();
+    };
+    const hers = await run(a);
+    await startedBy("run", hers, ivy.id);
+    const his = await run(b);
+    await startedBy("run", his, jon.id);
+    const herFlow = await flowRun(b);
+    await t.db
+      .updateTable("flow_run")
+      .set({ started_by_type: "end_user", started_by_id: ivy.id, status: "succeeded" })
+      .where("id", "=", herFlow)
+      .execute();
+    const anyone = await run(a);
+
+    expect(await stream.next((one) => one.event === "run" && one.data.id === hers)).toMatchObject({
+      data: { s: "running" },
+    });
+    expect(
+      await stream.next((one) => one.event === "flow_run" && one.data.id === herFlow),
+    ).toBeTruthy();
+    await t.db
+      .insertInto("run_log")
+      .values({
+        run_id: hers,
+        attempt: 1,
+        logged_at: new Date(),
+        level: "info",
+        message: "hello",
+        fields: JSON.stringify({}),
+      })
+      .execute();
+    expect(await stream.next((one) => one.event === "log" && one.data.id === hers)).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(stream.events.some((one) => one.data.id === his || one.data.id === anyone)).toBe(false);
+    // Who started it decides who receives it, and is never sent.
+    expect(stream.events.some((one) => "by" in one.data)).toBe(false);
+
+    // Two streams at most, for someone following only their own.
+    const second = await open(ivy.client);
+    const third = await open(ivy.client);
+    expect([second.status, third.status]).toEqual([200, 429]);
+    second.close();
+    third.close();
+    stream.close();
+
+    // A member keeps the full stream, and is never sent who started a run either.
+    const full = await open(alice);
+    await full.next((one) => one.event === "ready");
+    const later = await run(a);
+    expect(await full.next((one) => one.data.id === later)).toBeTruthy();
+    expect(full.events.some((one) => "by" in one.data)).toBe(false);
+    full.close();
+  });
+
   test("a change made through one replica reaches a stream held on another", async () => {
     const replica = new StreamHub(t.database, t.kernel.log);
     const seen: unknown[] = [];

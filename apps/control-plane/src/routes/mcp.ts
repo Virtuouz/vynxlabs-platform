@@ -6,8 +6,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { sql } from "@vynxlabs/db";
 import type { FlowBody } from "@vynxlabs/manifest";
 import { Type } from "typebox";
-import { check } from "../kernel/authorize.js";
-import { HttpError, notFound } from "../kernel/errors.js";
+import { boundInside, check } from "../kernel/authorize.js";
+import { forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { startRun } from "../kernel/execution/runs.js";
 import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
 import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
@@ -529,8 +529,8 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "What `tools/list` would answer over the Model Context Protocol in one workspace, " +
             "worked out for the service account and not for the caller. Nothing is run. " +
             "`address` is where an agent connects, with one of the account's API keys. " +
-            "Connecting needs `workspace:read` in the workspace: an account bound only to " +
-            "single scripts or flows is refused, and `reachable` is false.",
+            "Connecting needs `workspace:read` in the workspace, or a binding to a script or " +
+            "flow in it; without either `reachable` is false.",
           tags: ["agents"],
           params: Type.Object({ t: Id, id: Id }),
           querystring: Type.Object({ workspace: Id }),
@@ -539,7 +539,7 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               address: Type.String(),
               reachable: Type.Boolean({
                 description:
-                  "Whether the account may see the workspace at all. Without that an agent is refused.",
+                  "Whether the account may connect to the workspace's tools at all. Without that an agent is refused.",
               }),
               tools: Type.Array(
                 Type.Object({
@@ -573,10 +573,9 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const never = async (): Promise<never> => {
           throw new Error("A tool is not run from its listing.");
         };
-        const reachable = await allowed("workspace:read", {
-          tenantId: params.t,
-          workspaceId: workspace.id,
-        });
+        const reachable =
+          (await allowed("workspace:read", { tenantId: params.t, workspaceId: workspace.id })) ||
+          (await boundInside(kernel.db, principal, params.t, workspace.id));
         const tools = reachable
           ? await toolsFor(
               kernel,
@@ -598,6 +597,113 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     );
 
     app.post(
+      "/tenants/:t/service-accounts/:id/tool-calls",
+      {
+        config: { access: access.tenant("service_account:write") },
+        schema: {
+          summary: "Calls one of a service account's tools, as the account",
+          description:
+            "What an agent's `tools/call` would do with the account's key, asked from the " +
+            "console to see that it works. The call is the account's: it is refused what the " +
+            "account may not do, and a script or flow it starts is started by the account. " +
+            "It is real work, with the effects the tool has. The audit log records the member " +
+            "who asked, with the account named.",
+          tags: ["agents"],
+          params: Type.Object({ t: Id, id: Id }),
+          body: Type.Object({
+            workspace: Id,
+            tool: Type.String({ minLength: 1, maxLength: 200 }),
+            arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+          }),
+          response: {
+            200: Type.Object({
+              tool: Type.String(),
+              isError: Type.Boolean({
+                description:
+                  "Whether the agent would be told the call failed: a refusal, or a run that failed.",
+              }),
+              result: Type.Unknown(),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const account = await kernel.db
+          .selectFrom("service_account")
+          .select(["id", "name"])
+          .where("id", "=", params.id)
+          .where("tenant_id", "=", params.t)
+          .executeTakeFirst();
+        if (!account) throw notFound("The service account");
+        const workspace = await findWorkspace(kernel, params.t, body.workspace);
+        const principal = {
+          type: "service_account" as const,
+          id: account.id,
+          name: account.name,
+          tenantId: params.t,
+        };
+        await ctx.mutate((_trx, audit) =>
+          audit({
+            action: "service_account.tool_tried",
+            targetType: "service_account",
+            targetId: account.id,
+            tenantId: params.t,
+            workspaceId: workspace.id,
+            details: { tool: body.tool },
+          }),
+        );
+        const allowed = async (permission: string, target: Parameters<typeof check>[3]) =>
+          (await check(kernel.db, principal, permission, target)).allowed;
+        const caller: Caller = {
+          principal,
+          allowed,
+          authorize: async (permission, target) => {
+            if (!(await allowed(permission, target))) throw forbidden(permission);
+          },
+          // The change is the member's to answer for, made as the account.
+          mutate: (change) =>
+            ctx.mutate((trx, audit) =>
+              change(trx, (input) =>
+                audit({
+                  ...input,
+                  details: { ...input.details, asServiceAccount: account.id, via: "console" },
+                }),
+              ),
+            ),
+        };
+        const reachable =
+          (await allowed("workspace:read", { tenantId: params.t, workspaceId: workspace.id })) ||
+          (await boundInside(kernel.db, principal, params.t, workspace.id));
+        const tool = reachable
+          ? (await toolsFor(kernel, caller, workspace)).find((one) => one.name === body.tool)
+          : undefined;
+        if (!tool) {
+          return {
+            tool: body.tool,
+            isError: true,
+            result: { error: `There is no tool ${body.tool}, or the account may not use it.` },
+          };
+        }
+        try {
+          const result = await tool.call(body.arguments ?? {});
+          return { tool: tool.name, isError: tool.failed?.(result) ?? false, result };
+        } catch (error) {
+          if (error instanceof HttpError && error.statusCode < 500) {
+            return {
+              tool: tool.name,
+              isError: true,
+              result: {
+                error: error.message,
+                ...(error.issues?.length ? { problems: error.issues } : {}),
+              },
+            };
+          }
+          throw error;
+        }
+      },
+    );
+
+    app.post(
       "/tenants/:t/workspaces/:w/mcp",
       {
         config: { access: access.custom },
@@ -609,8 +715,9 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "the caller may start, with `get_run`, `get_flow_run`, and the approval tools when " +
             "the caller may read and decide approvals. A script's tool takes the script's own " +
             "input schema, and a flow's tool the input its manual trigger declares. The caller " +
-            "needs `workspace:read` in the workspace to connect at all; roles bound only to " +
-            "single scripts or flows are not enough on their own.",
+            "needs `workspace:read` in the workspace to connect, or a binding to a script or " +
+            "flow in it, such as the `agent_runner` role an agent is offered one with; it is " +
+            "then offered those alone.",
           tags: ["agents"],
           params: Type.Object({ t: Id, w: Id }),
           body: Type.Unknown(),
@@ -631,8 +738,11 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Send an API key to use this workspace's tools.",
           );
         }
-        // Someone with nothing in this workspace is told nothing about it.
-        await ctx.authorize("workspace:read", { tenantId: params.t, workspaceId: params.w });
+        // Someone with nothing in this workspace is told nothing about it. Someone bound to
+        // single scripts or flows in it, as an agent offered them, reaches those.
+        if (!(await boundInside(kernel.db, ctx.principal, params.t, params.w))) {
+          await ctx.authorize("workspace:read", { tenantId: params.t, workspaceId: params.w });
+        }
 
         const server = new Server(
           { name: `platform:${workspace.slug}`, version: kernel.version },

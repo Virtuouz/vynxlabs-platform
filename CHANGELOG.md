@@ -2,6 +2,20 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 10, platform expansion
+
+### For operators
+
+- **Database changes.** Migration 0052 adds who started a run to the run events the database announces; the control plane uses it to choose who receives an event, and never passes it on. Migration 0053 adds the built-in role `agent_runner`.
+- **End users can follow their own runs live.** The run event stream (`GET /api/v1/tenants/<id>/stream`) now accepts someone who may read no runs in the tenant, such as an end user of an app, and sends them the events of the runs and flow runs they started, at most two streams each. A proxy must not buffer that path on the apps' address either.
+
+### For tenant developers
+
+- **Run output is shown by its shape.** A list of records is a table, `{ markdown }` is formatted text, and an address is a link, or an image once asked for, on the run page, beside a run in the list, and on a flow's steps. The JSON is one click away. Markdown is never read as HTML.
+- **`@vynxlabs/app` follows runs live.** `useRun(id)` and `useFlowRun(id)` keep a run or flow run up to date from the platform's stream, and look every two seconds where there is none. `runScript` and `runFlow` learn that a run ended as it happens. `scriptRun(id)` reads a run once.
+- **A script or flow can be offered to an AI agent.** **Offer to an agent…** on a script, and on a flow with a manual trigger, binds a service account to the new Agent runner role at that script or flow alone. An agent connecting with the account's key is offered it as a tool, and sees nothing else of the workspace: a binding to single scripts or flows now reaches a workspace's MCP server, for those tools only.
+- **A tool can be tried from the console.** On a service account's Agent access, **Try** calls a tool as the account would, with a form drawn from its input, and shows what the agent would be told (`POST /tenants/:t/service-accounts/:id/tool-calls`, with `service_account:write`). The call is real, made as the account, and the audit log names the member who asked.
+
 ## Unreleased: phase 9, maturity
 
 ### For operators

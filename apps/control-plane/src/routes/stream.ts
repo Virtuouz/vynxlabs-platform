@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import { HttpError, unauthenticated } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { MAX_STREAMS } from "../kernel/stream.js";
+import { MAX_OWN_STREAMS, MAX_STREAMS } from "../kernel/stream.js";
 import { TenantParams } from "./shared.js";
 
 /** A comment line now and then keeps proxies from closing a quiet stream. */
@@ -24,8 +24,11 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "run writes log lines (at most twice a second per run), and `snapshot` when " +
             "events may have been missed, after which everything shown should be read again. " +
             "Only what the caller may read is sent: script runs in workspaces where it holds " +
-            "`run:read`, flow runs and steps where it holds `flow_run:read`. At most five " +
-            "streams per caller. Proxies in front must not buffer the response.",
+            "`run:read`, flow runs and steps where it holds `flow_run:read`. A caller with " +
+            "neither anywhere in the tenant, such as an end user of an app, is sent the events " +
+            "of the runs and flow runs it started itself, and at most two such streams. " +
+            "Otherwise at most five streams per caller. Proxies in front must not buffer the " +
+            "response.",
           tags: ["runs"],
           params: TenantParams,
           response: {
@@ -55,8 +58,19 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ]);
           if (scripts || flows) may.set(id, { scripts, flows });
         }
-        // Someone with no standing in the tenant is told it is not there, as everywhere else.
-        if (may.size === 0) await ctx.authorize("run:read", { tenantId: params.t });
+        // Someone who may read no runs here follows their own, as `GET runs/:id` lets them
+        // read those. Someone with no standing in the tenant is told it is not there, as
+        // everywhere else.
+        let own: string | undefined;
+        if (may.size === 0) {
+          try {
+            await ctx.authorize("run:read", { tenantId: params.t });
+          } catch (error) {
+            const standing = error instanceof HttpError && error.statusCode === 403;
+            if (!standing || ctx.principal.id === null) throw error;
+            own = `${ctx.principal.type}:${ctx.principal.id}`;
+          }
+        }
 
         const raw = reply.raw;
         const send = (event: string, data: unknown) => {
@@ -67,13 +81,14 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tenantId: params.t,
           may,
           principal: `${ctx.principal.type}:${ctx.principal.id}`,
+          ...(own ? { own } : {}),
           send,
         });
         if (!unsubscribe) {
           throw new HttpError(
             429,
             "too_many_streams",
-            `At most ${MAX_STREAMS} streams may be open at once. Close one first.`,
+            `At most ${own ? MAX_OWN_STREAMS : MAX_STREAMS} streams may be open at once. Close one first.`,
           );
         }
 

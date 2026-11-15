@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ApiError,
@@ -8,14 +8,39 @@ import {
   logoUrl,
   RunError,
   runScript,
+  runStream,
   session,
   setAppContext,
   signInUrl,
   table,
   totalOf,
+  useFlowRun,
   useQuery,
+  useRun,
   useSession,
 } from "./index.ts";
+
+/** Stands in for the browser's EventSource: a test says what the stream sends. */
+class FakeStream extends EventTarget {
+  static readonly CLOSED = 2;
+  static opened: FakeStream[] = [];
+  readyState = 0;
+  constructor(readonly url: string) {
+    super();
+    FakeStream.opened.push(this);
+  }
+  send(event: string, data: unknown = {}) {
+    if (event === "ready") this.readyState = 1;
+    this.dispatchEvent(new MessageEvent(event, { data: JSON.stringify(data) }));
+  }
+  refuse() {
+    this.readyState = FakeStream.CLOSED;
+    this.dispatchEvent(new Event("error"));
+  }
+  close() {
+    this.readyState = FakeStream.CLOSED;
+  }
+}
 
 const context: AppContext = {
   api: "/api/v1",
@@ -34,6 +59,8 @@ beforeEach(() => {
   setAppContext(context);
   calls.length = 0;
   answers = [];
+  FakeStream.opened = [];
+  vi.stubGlobal("EventSource", FakeStream);
   vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
     calls.push({
       method: init.method ?? "GET",
@@ -47,6 +74,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  runStream.reset();
   vi.unstubAllGlobals();
   setAppContext(undefined);
   document.body.innerHTML = "";
@@ -176,6 +204,85 @@ test("a script is started and waited for, and a failed run is an error", async (
     },
   ];
   await expect(runScript("orders/place")).rejects.toThrow(RunError);
+});
+
+test("with the stream open, a run's end is learned as it happens, not by looking", async () => {
+  answers = [
+    { status: 201, body: { id: "r1", status: "queued", output: null, error: null } },
+    // Read again when the stream connects, in case something was missed.
+    { status: 200, body: { id: "r1", status: "running", output: null, error: null } },
+    { status: 200, body: { id: "r1", status: "succeeded", output: { total: 3 }, error: null } },
+  ];
+  const started = Date.now();
+  const result = runScript("orders/count");
+  await waitFor(() => expect(FakeStream.opened).toHaveLength(1));
+  const stream = FakeStream.opened[0] as FakeStream;
+  expect(stream.url).toBe("/api/v1/tenants/t1/stream");
+  stream.send("ready");
+  // Once connected, the wait is for the run's own change, which comes now, well before
+  // the next look would be taken; a log line is not a change.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  stream.send("log", { k: "log", id: "r1" });
+  stream.send("run", { k: "run", id: "r1", s: "succeeded" });
+  expect(await result).toEqual({ total: 3 });
+  expect(Date.now() - started).toBeLessThan(1000);
+  expect(calls.filter((call) => call.method === "GET")).toHaveLength(2);
+});
+
+test("useRun follows a run on the stream, and looks every two seconds without one", async () => {
+  answers = [
+    { status: 200, body: { id: "r1", status: "running", output: null, error: null } },
+    { status: 200, body: { id: "r1", status: "succeeded", output: "done", error: null } },
+  ];
+  function Show() {
+    const run = useRun<string>("r1");
+    return (
+      <p>
+        {run.data?.status ?? "…"} {run.live ? "live" : "polled"} {run.ended ? "ended" : ""}
+      </p>
+    );
+  }
+  render(<Show />);
+  await screen.findByText(/running/);
+  const stream = FakeStream.opened[0] as FakeStream;
+  act(() => stream.send("ready"));
+  await screen.findByText(/live/);
+  answers.unshift({
+    status: 200,
+    body: { id: "r1", status: "running", output: null, error: null },
+  });
+  act(() => stream.send("run", { k: "run", id: "r1", s: "succeeded" }));
+  await screen.findByText("succeeded live ended");
+});
+
+test("a refused stream leaves useFlowRun looking by itself until the flow ends", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    answers = [
+      { status: 200, body: { id: "f1", flow: "orders/handle", status: "running" } },
+      { status: 200, body: { id: "f1", flow: "orders/handle", status: "running" } },
+      { status: 200, body: { id: "f1", flow: "orders/handle", status: "succeeded" } },
+    ];
+    function Show() {
+      const run = useFlowRun("f1");
+      return <p>{`${run.data?.status ?? "…"} ${run.live ? "live" : "polled"}`}</p>;
+    }
+    render(<Show />);
+    await screen.findByText("running polled");
+    act(() => (FakeStream.opened[0] as FakeStream).refuse());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4500);
+    });
+    await screen.findByText("succeeded polled");
+    const reads = calls.filter((call) => call.url.endsWith("/flow-runs/f1")).length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    // An ended flow is not looked at again.
+    expect(calls.filter((call) => call.url.endsWith("/flow-runs/f1")).length).toBe(reads);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("the sign-in address sends the person back to where they were", () => {

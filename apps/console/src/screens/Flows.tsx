@@ -3,9 +3,9 @@ import {
   duration,
   EmptyState,
   Facts,
-  JsonView,
   LogViewer,
   Notice,
+  ResultView,
   Table,
   Tabs,
   Timeline,
@@ -24,6 +24,7 @@ import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { useLiveRun } from "./Execution.tsx";
+import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
@@ -381,9 +382,12 @@ export function FlowView({
       description={data.description}
       action={
         manual ? (
-          <Button variant="primary" onClick={() => setStarting(true)}>
-            Start flow
-          </Button>
+          <span className="flex flex-wrap gap-2">
+            <OfferButton root={root} kind="flow" path={data.path} />
+            <Button variant="primary" onClick={() => setStarting(true)}>
+              Start flow
+            </Button>
+          </span>
         ) : undefined
       }
     >
@@ -806,7 +810,7 @@ export function FlowRunView({
             </p>
           ) : null}
           {chosen.status === "succeeded" ? (
-            <JsonView label={`Output of ${chosen.node}`} value={chosen.output} />
+            <ResultView label={`Output of ${chosen.node}`} value={chosen.output} />
           ) : null}
         </section>
       ) : (

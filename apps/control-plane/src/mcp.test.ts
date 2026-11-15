@@ -663,3 +663,124 @@ describe("a tool's schema, as an agent is given it", () => {
     });
   });
 });
+
+describe("a script offered to an agent", () => {
+  let offered: { id: string; key: string };
+  let agent: McpClient;
+
+  beforeAll(async () => {
+    const roles = Object.fromEntries(
+      (
+        await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
+      ).map((role) => [role.name, role.id]),
+    );
+    const created = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "offered" });
+    const key = await alice.post(
+      `/tenants/${tenant}/service-accounts/${created.body.id}/api-keys`,
+      {
+        name: "agent",
+      },
+    );
+    offered = { id: created.body.id, key: key.body.token };
+    const greet = (await alice.get(`${ws()}/resources/orders/greet`)).body.id as string;
+    // What "Offer to an agent" makes: the runner role at the script, and nothing in the workspace.
+    const bound = await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: workspace,
+      resourceId: greet,
+      principalType: "service_account",
+      principalId: offered.id,
+      roleId: roles.agent_runner,
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    agent = await connect(offered.key);
+  });
+  afterAll(async () => {
+    await agent?.close();
+  });
+
+  test("reaches the workspace's tools for that script alone, without reading the workspace", async () => {
+    expect((await agent.listTools()).tools.map((tool) => tool.name)).toEqual([
+      "run_orders__greet",
+      "get_run",
+      "get_flow_run",
+    ]);
+    const listed = await alice.get(
+      `/tenants/${tenant}/service-accounts/${offered.id}/tools?workspace=${workspace}`,
+    );
+    expect(listed.body).toMatchObject({ reachable: true });
+    expect(listed.body.tools.map((tool: { name: string }) => tool.name)).toEqual([
+      "run_orders__greet",
+      "get_run",
+      "get_flow_run",
+    ]);
+    const result = answer(
+      await agent.callTool({ name: "run_orders__greet", arguments: { name: "Bo" } }),
+    );
+    expect(result).toMatchObject({ status: "succeeded", output: { greeting: "Hello Bo" } });
+    // It reads the run it started, and nothing else of the workspace.
+    expect(
+      answer(await agent.callTool({ name: "get_run", arguments: { runId: result.runId } })).status,
+    ).toBe("succeeded");
+    const asAgent = t.withKey(offered.key);
+    expect((await asAgent.get(`${ws()}/runs`)).status).toBe(403);
+    expect((await asAgent.get(`${ws()}/resources`)).status).toBe(403);
+  });
+
+  test("is tried from the console as the account, and the member who asked is on record", async () => {
+    const tried = await alice.post(`/tenants/${tenant}/service-accounts/${offered.id}/tool-calls`, {
+      workspace,
+      tool: "run_orders__greet",
+      arguments: { name: "Cy" },
+    });
+    expect(tried.status, JSON.stringify(tried.body)).toBe(200);
+    expect(tried.body).toMatchObject({
+      tool: "run_orders__greet",
+      isError: false,
+      result: { status: "succeeded", output: { greeting: "Hello Cy" } },
+    });
+    const run = (await alice.get(`${ws()}/runs/${tried.body.result.runId}`)).body;
+    expect(run.startedBy).toEqual({ type: "service_account", id: offered.id });
+
+    const entries = (await alice.get(`/tenants/${tenant}/audit?limit=50`)).body.items as {
+      action: string;
+      actorType: string;
+      targetId: string;
+      details: Record<string, unknown>;
+    }[];
+    expect(entries.find((entry) => entry.action === "service_account.tool_tried")).toMatchObject({
+      actorType: "member",
+      targetId: offered.id,
+      details: { tool: "run_orders__greet" },
+    });
+    expect(entries.find((entry) => entry.targetId === tried.body.result.runId)).toMatchObject({
+      action: "run.started",
+      actorType: "member",
+      details: { asServiceAccount: offered.id, via: "console" },
+    });
+  });
+
+  test("is refused what the account may not do, whoever asks, and only an admin may ask", async () => {
+    const call = (tool: string, args: Record<string, unknown> = {}) =>
+      alice.post(`/tenants/${tenant}/service-accounts/${offered.id}/tool-calls`, {
+        workspace,
+        tool,
+        arguments: args,
+      });
+    // Alice may start the flow. The account may not, so it has no such tool.
+    const flow = await call("start_orders__refund");
+    expect(flow.body).toMatchObject({ isError: true });
+    expect(flow.body.result.error).toContain("There is no tool start_orders__refund");
+    // Bad input is the tool's answer, as an agent would get it.
+    const bad = await call("run_orders__greet", { name: 7 });
+    expect(bad.body.isError).toBe(true);
+    // An agent cannot try another account's tools.
+    const asAgent = await t
+      .withKey(await keyOf(accounts.wide))
+      .post(`/tenants/${tenant}/service-accounts/${offered.id}/tool-calls`, {
+        workspace,
+        tool: "run_orders__greet",
+        arguments: { name: "x" },
+      });
+    expect(asAgent.status).toBe(403);
+  });
+});

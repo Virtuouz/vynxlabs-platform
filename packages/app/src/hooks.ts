@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { appContext, type Principal, type Session, session } from "./client.ts";
+import {
+  appContext,
+  type FlowRun,
+  flowRun,
+  type Principal,
+  type Run,
+  type Session,
+  scriptRun,
+  session,
+} from "./client.ts";
+import { runStream } from "./stream.ts";
 
 export interface Query<T> {
   data: T | undefined;
@@ -69,4 +79,90 @@ export function useSession(): {
     attributes: principal.attributes ?? {},
     refresh,
   };
+}
+
+const ENDED = new Set(["succeeded", "failed", "cancelled"]);
+/** Between looks, while there is no stream and the run has not ended. */
+const POLL_MS = 2000;
+
+export interface Followed<T> {
+  /** As last read. `undefined` until the first answer. */
+  data: T | undefined;
+  error: Error | undefined;
+  /** Whether it has ended: nothing more will change. */
+  ended: boolean;
+  /** Whether changes arrive as they happen; when not, it is looked at every two seconds. */
+  live: boolean;
+}
+
+function useFollowed<T extends { status: string }>(
+  id: string | undefined,
+  read: (id: string) => Promise<T>,
+): Followed<T> {
+  const [state, setState] = useState<{ data?: T; error?: Error; live: boolean }>({ live: false });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `read` is one of the module's own functions
+  useEffect(() => {
+    setState({ live: false });
+    if (!id) return;
+    let stopped = false;
+    let ended = false;
+    let asked = 0;
+    let poll: ReturnType<typeof setTimeout> | undefined;
+    const look = () => {
+      const mine = ++asked;
+      read(id).then(
+        (data) => {
+          if (stopped || mine !== asked) return;
+          ended = ENDED.has(data.status);
+          setState({ data, live: runStream.connected });
+          schedule();
+        },
+        (error: unknown) => {
+          if (stopped || mine !== asked) return;
+          setState((before) => ({
+            ...before,
+            error: error instanceof Error ? error : new Error(String(error)),
+          }));
+          schedule();
+        },
+      );
+    };
+    // Without a stream, it is looked at again until it ends.
+    const schedule = () => {
+      if (poll) clearTimeout(poll);
+      poll = undefined;
+      if (!ended && !runStream.connected) poll = setTimeout(look, POLL_MS);
+    };
+    const stop = runStream.listen(id, (change) => {
+      if (change !== "refresh" && change.k === "log") return;
+      if (change === "refresh") setState((before) => ({ ...before, live: runStream.connected }));
+      look();
+    });
+    look();
+    return () => {
+      stopped = true;
+      if (poll) clearTimeout(poll);
+      stop();
+    };
+  }, [id]);
+  return {
+    data: state.data,
+    error: state.error,
+    ended: state.data !== undefined && ENDED.has(state.data.status),
+    live: state.live,
+  };
+}
+
+/**
+ * A run this person started, kept up to date: it is read again each time the
+ * platform says it changed, and every two seconds where there is no stream,
+ * until it ends.
+ */
+export function useRun<Output = unknown>(id: string | undefined): Followed<Run<Output>> {
+  return useFollowed(id, (one) => scriptRun<Output>(one));
+}
+
+/** The same for a flow run: read again as it and its steps change. */
+export function useFlowRun<Output = unknown>(id: string | undefined): Followed<FlowRun<Output>> {
+  return useFollowed(id, (one) => flowRun<Output>(one));
 }

@@ -1,4 +1,4 @@
-import { Button, JsonView, LogViewer, Menu, Notice, Tabs } from "@vynxlabs/ui";
+import { Button, JsonView, LogViewer, Menu, Notice, ResultView, Tabs } from "@vynxlabs/ui";
 import { ChevronDown, CircleX, Lightbulb, RotateCcw } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -382,18 +382,16 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                 label: run.state === "failed" ? "Error" : "Output",
                 content: (
                   <div className="pt-3">
-                    <JsonView
-                      label={run.state === "failed" ? "Error" : "Output"}
-                      tone={run.state === "failed" ? "danger" : "plain"}
-                      maxHeight="24rem"
-                      value={
-                        run.state === "failed"
-                          ? { error: run.error }
-                          : run.state === "succeeded"
-                            ? run.output
-                            : undefined
-                      }
-                    />
+                    {run.state === "succeeded" ? (
+                      <ResultView label="Output" value={run.output} maxHeight="24rem" />
+                    ) : (
+                      <JsonView
+                        label={run.state === "failed" ? "Error" : "Output"}
+                        tone={run.state === "failed" ? "danger" : "plain"}
+                        maxHeight="24rem"
+                        value={run.state === "failed" ? { error: run.error } : undefined}
+                      />
+                    )}
                   </div>
                 ),
               },

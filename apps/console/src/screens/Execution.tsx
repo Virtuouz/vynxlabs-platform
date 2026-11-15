@@ -20,6 +20,7 @@ import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScree
 import { Link, navigate } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
+import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
@@ -253,6 +254,7 @@ export function Scripts({
                   schema={open.inputSchema}
                   runsLink={runsLink}
                 />
+                <OfferButton root={root} kind="script" path={open.path} size="small" />
               </>
             }
           >

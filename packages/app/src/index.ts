@@ -19,6 +19,7 @@ export {
   runFlow,
   runScript,
   type Session,
+  scriptRun,
   session,
   setAppContext,
   signInUrl,
@@ -28,4 +29,12 @@ export {
   table,
   totalOf,
 } from "./client.ts";
-export { type Query, useQuery, useSession } from "./hooks.ts";
+export {
+  type Followed,
+  type Query,
+  useFlowRun,
+  useQuery,
+  useRun,
+  useSession,
+} from "./hooks.ts";
+export { changeOf, type RunChange, runStream } from "./stream.ts";

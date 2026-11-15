@@ -1,4 +1,13 @@
-import { Button, JsonView, LogViewer, Notice, SelectField, Tabs, TextField } from "@vynxlabs/ui";
+import {
+  Button,
+  JsonView,
+  LogViewer,
+  Notice,
+  ResultView,
+  SelectField,
+  Tabs,
+  TextField,
+} from "@vynxlabs/ui";
 import { ArrowUpRight, CircleX, Lightbulb, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -558,18 +567,16 @@ export function ScriptRunPanel({
             content: (
               <div className="flex flex-col gap-3 pt-3">
                 <JsonView label="Input" value={run.input} maxHeight="16rem" />
-                <JsonView
-                  label="Result"
-                  tone={failed ? "danger" : "plain"}
-                  maxHeight="16rem"
-                  value={
-                    failed
-                      ? { error: run.error }
-                      : run.status === "succeeded"
-                        ? run.output
-                        : undefined
-                  }
-                />
+                {run.status === "succeeded" ? (
+                  <ResultView label="Result" value={run.output} maxHeight="16rem" />
+                ) : (
+                  <JsonView
+                    label="Result"
+                    tone={failed ? "danger" : "plain"}
+                    maxHeight="16rem"
+                    value={failed ? { error: run.error } : undefined}
+                  />
+                )}
               </div>
             ),
           },

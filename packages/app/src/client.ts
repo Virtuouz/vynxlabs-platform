@@ -1,3 +1,5 @@
+import { changeOf, runStream } from "./stream.ts";
+
 /** What the platform tells an app about where it is served and for whom. */
 export interface AppContext {
   /** The API's path on this address, for example `/api/v1`. */
@@ -305,7 +307,15 @@ export class RunError extends Error {
 }
 
 const ENDED = new Set(["succeeded", "failed", "cancelled"]);
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** With the stream open, a change ends the wait; this is only the look taken in case one was missed. */
+const BACKSTOP_MS = 5000;
+
+/** Waits for the next change of a run, then for longer and longer between looks when there is no stream. */
+async function nextLook(id: string, pause: number, deadline: number): Promise<number> {
+  const left = Math.max(0, deadline - Date.now());
+  await changeOf(id, Math.min(runStream.connected ? BACKSTOP_MS : pause, left + 1));
+  return Math.min(pause * 1.5, 2000);
+}
 
 /**
  * Starts a script and waits for what it returns. The script runs on a worker,
@@ -313,7 +323,9 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * that person. The person needs `run:write` on the script.
  *
  * Throws `RunError` when the run fails, and when it has not ended after
- * `timeoutMs` (default 60 seconds). The run itself goes on.
+ * `timeoutMs` (default 60 seconds). The run itself goes on. It learns that the
+ * run ended from the platform's stream as it happens, and looks now and then
+ * where there is no stream.
  */
 export async function runScript<Output = unknown>(
   script: string,
@@ -335,12 +347,16 @@ export async function runScript<Output = unknown>(
         error: { message: "The script is still running. Try again in a moment." },
       });
     }
-    await wait(pause);
-    pause = Math.min(pause * 1.5, 2000);
+    pause = await nextLook(run.id, pause, deadline);
     run = await api.get<Run<Output>>(`${runs}/${run.id}`);
   }
   if (run.status !== "succeeded") throw new RunError(run);
   return run.output as Output;
+}
+
+/** A run this person started: whether it has ended, and what it gave. */
+export async function scriptRun<Output = unknown>(id: string): Promise<Run<Output>> {
+  return api.get<Run<Output>>(`${workspacePath()}/runs/${id}`);
 }
 
 /** A flow run as an app sees it: how it ended and what it gave. */
@@ -403,8 +419,7 @@ export async function runFlow<Output = unknown>(
         error: { message: "The flow is still running. Look again in a moment." },
       });
     }
-    await wait(pause);
-    pause = Math.min(pause * 1.5, 2000);
+    pause = await nextLook(run.id, pause, deadline);
     run = await flowRun<Output>(run.id);
   }
   if (run.status !== "succeeded") throw new FlowRunError(run);

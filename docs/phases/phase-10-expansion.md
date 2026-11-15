@@ -1,0 +1,67 @@
+# Phase 10: platform expansion
+
+Status: in progress. Milestone 1 is built, on branch `phase-10-expansion`.
+Last updated: 2026-11-15
+
+Phase 10 builds the P2 items of the [evolution roadmap](../evolution/07-roadmap.md): all thirteen, in seven milestones. Phase 9 made what exists dependable. This phase widens what a tenant can do with it:
+- results read as tables and text, not only JSON;
+- apps and agents follow and start automation directly;
+- connections are set up and tested in one place, and OAuth providers are reachable;
+- flows are tested in their editor;
+- the CLI round-trips with the console;
+- promotion, drift and permissions are visible to those who need them;
+- approvals are decided from mail.
+
+**Exit criterion:** on a fresh instance, at 1440 px and on a phone-sized screen, a member can:
+- read a script's rows as a table on its run page;
+- offer a script to an agent, try it as the agent, and connect an agent that sees that script alone;
+- set up an OAuth connection, test it on a worker, and see its health;
+- run a draft flow from its editor and see each step's result on the graph;
+- pull console drafts with the CLI, change them, deploy, and see no difference;
+- ask for a promotion they may not make, and see it decided;
+- see what differs between dev and production, and why a member holds a permission;
+- approve a flow's step from a link in a mail.
+
+An app shows a run's progress without polling, two runs with the same concurrency key never overlap, and the master key can be rotated without losing a secret.
+
+## Owner decisions
+
+| Area | Decision |
+| --- | --- |
+| Shape | One branch, `phase-10-expansion`, in seven milestones, one commit each |
+| Scope | All thirteen P2 items |
+| OAuth token calls | The control plane exchanges codes and refreshes tokens, through the egress guard. "OAuth connection token endpoints" join decision 0001's named list |
+| Offer to an agent | A built-in `agent_runner` role (`run:write`, `flow_run:write`), bound at the one script or flow. A binding to a script or flow reaches the workspace's MCP server for those tools only |
+
+## Milestones
+
+| # | Milestone | Roadmap items |
+| --- | --- | --- |
+| 1 | Result renderers, `useRun` in apps, Offer to an agent and Try a tool | P2-8, P2-5, P2-12 |
+| 2 | Concurrency key, master key rotation | P2-7, P2-13 |
+| 3 | Connection wizard with Test, OAuth2 connections | P2-2, P2-9 |
+| 4 | Flow editor: test panel, expression preview, undo and redo | P2-1 |
+| 5 | CLI: `pull`, `run --remote`, `logs -f` | P2-4 |
+| 6 | Request promotion, drift view, effective permissions | P2-3, P2-10, P2-11 |
+| 7 | Approval mail, approve from a link | P2-6 |
+
+Each milestone ends with `pnpm typecheck`, `pnpm lint` and `pnpm test` passing, `pnpm e2e` for those that change the console, and a walk in a browser at 1440 and 390 px.
+
+## Findings
+
+### Milestone 1
+
+- **Output is shown by its shape, chosen from the value, not declared.** A list of records is a table, `{ markdown }` is text, and a lone address, or `{ url | file | image, name? }`, is a link or an image. Anything else, and a list mixing records with other values, is JSON. A declared output schema orders a table's columns. The table draws 500 rows and 12 columns, and says how many more the JSON holds.
+- **Markdown is drawn by a renderer of our own,** with React elements and never `innerHTML`: headings, paragraphs, lists, quotes, rules, fenced code, inline code, bold, italics and links. A link goes only to http, https or mailto; any other is left as its text. A dependency would have brought HTML passthrough to turn off.
+- **An image from another site is loaded only when asked for.** Loading it tells that site who is looking at the run, and when. An image carried in the value (`data:`) is shown at once.
+- **Only output is drawn by shape.** Input and errors stay JSON: input is what was sent, read to check it, and an error is short.
+- **The stream decides who receives an event by who started the run, and never sends it.** The announcement from the database names the starter (`by`); the control plane matches it to a subscriber that may read only its own runs, and strips it before anything is written. A member with `run:read` is sent the same events as before.
+- **Who follows only their own runs** is anyone the stream would otherwise refuse with 403: an end user, a member signed in to one tenant's apps, a member with no run rights. Someone with no standing in the tenant is still told it is not there. They get the runs and flow runs they started, those runs' log pings and those flow runs' steps; a script run a flow started is the flow's, started by `flow`, and is not sent.
+- **An app opens one stream per page, shared, and keeps it five seconds after the last run it followed,** for the next run a page starts at once. A stream that is refused (too many, or no stream on that address) is not tried again on that page, and everything polls as before.
+- **`runScript` and `runFlow` still look at the run,** every five seconds with the stream open, in case an event was missed, and as before without it. A connection or reconnection is itself a reason to look.
+- **Offer to an agent is on a deployed script's page and panel, and on the flow's page,** and not on a draft: a binding names a deployed resource, and a draft has none. The walk found the scripts list opens a script's page, not its panel, so the page has the button too.
+- **Reaching the MCP server by a binding to one script or flow** is a new rule beside `workspace:read`. It counts bindings to the member or the account itself, or a group of the member, never to anyone, and not for a suspended member or a sign-in to apps. Such an agent reads the runs it started with `get_run` and nothing else of the workspace: the runs list and the resources answer it 403.
+- **Try calls the tool as the account, and records the member.** The route writes a `service_account.tool_tried` entry first, and what the tool does is audited with the member as the actor, `asServiceAccount` naming the account and `via: "console"`, so it is not counted among what agents did. The run is started by the account.
+- **A table's columns are not in the order the script wrote them.** Output is kept as `jsonb`, which stores keys shortest first, so `invoice, client, amount` came back as `link, notes, amount, …`. Without a declared schema the table now puts plain values first and addresses and nested values after them; with one, its order wins. Found on the walk.
+- **Short values stay on one line and addresses are cut short** in a table, with the full address in its title: on the walk `INV-1000` broke at its hyphen and links wrapped mid-number. On a phone the table scrolls sideways inside its own box, and the page does not.
+- **Walked in Chromium on a built instance, at 1440 and 390 px:** a run's 40 rows showed as a table with the JSON a click away; a `{ markdown }` result showed its heading, list and link, with a `<script>` tag in it shown as text; an SVG chart carried in the output was drawn; `agent/find-client` was offered to a service account from its page, which showed the MCP address; the account's tools were that script, `get_run` and `get_flow_run`; and Try called it as the account and showed what the agent would be told. The flow's page offers it too. No page scrolled sideways, and no page threw. `pnpm e2e` passes (16), against an instance of its own.

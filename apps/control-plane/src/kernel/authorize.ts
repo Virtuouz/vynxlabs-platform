@@ -49,6 +49,62 @@ interface Held {
   access_grant_id: string | null;
 }
 
+/** The bindings that name `principal`, directly, through a group, or as anyone. `b` is the binding. */
+function matchPrincipal(principal: Principal) {
+  const id = principal.id;
+  return principal.type === "member"
+    ? sql`(
+        (b.principal_type = 'member' and b.principal_id = ${id})
+        or (b.principal_type = 'group' and b.principal_id in (
+          select group_id from group_member where member_id = ${id}
+        ))
+        or b.principal_type = 'anonymous'
+      )`
+    : principal.type === "service_account"
+      ? sql`(
+          (b.principal_type = 'service_account' and b.principal_id = ${id})
+          or b.principal_type = 'anonymous'
+        )`
+      : principal.type === "end_user"
+        ? sql`(
+            (b.principal_type = 'end_user' and b.principal_id = ${id})
+            or (b.principal_type = 'end_user_group' and b.principal_id in (
+              select group_id from end_user_group_member where end_user_id = ${id}
+            ))
+            or b.principal_type in ('end_users', 'anonymous')
+          )`
+        : sql`b.principal_type = 'anonymous'`;
+}
+
+/**
+ * Whether `principal` is bound to anything in a workspace by itself: a script or
+ * a flow there, but not the workspace. Such a binding lets an agent reach that
+ * workspace's MCP server for the tools it was given, without reading the rest.
+ */
+export async function boundInside(
+  db: Db | Trx,
+  principal: Principal,
+  tenantId: string,
+  workspaceId: string,
+): Promise<boolean> {
+  if (principal.type !== "member" && principal.type !== "service_account") return false;
+  if (principal.type === "service_account" && principal.tenantId !== tenantId) return false;
+  if (principal.appTenantId !== undefined) return false;
+  const found = await sql`
+    select 1 from binding b
+    join resource r on r.id = b.resource_id
+    where b.scope_type = 'resource' and b.tenant_id = ${tenantId} and r.workspace_id = ${workspaceId}
+      and b.principal_type <> 'anonymous' and ${matchPrincipal(principal)}
+      and not exists (
+        select 1 from tenant_member m
+        where m.tenant_id = ${tenantId} and m.member_id = ${principal.id}
+          and m.suspended_at is not null
+      )
+    limit 1
+  `.execute(db);
+  return found.rows.length > 0;
+}
+
 /**
  * The one authorization check. Every route goes through it.
  *
@@ -91,29 +147,7 @@ export async function check(
     suspended = membership.rows[0]?.suspended === true;
   }
 
-  const principalMatch =
-    principal.type === "member"
-      ? sql`(
-          (b.principal_type = 'member' and b.principal_id = ${id})
-          or (b.principal_type = 'group' and b.principal_id in (
-            select group_id from group_member where member_id = ${id}
-          ))
-          or b.principal_type = 'anonymous'
-        )`
-      : principal.type === "service_account"
-        ? sql`(
-            (b.principal_type = 'service_account' and b.principal_id = ${id})
-            or b.principal_type = 'anonymous'
-          )`
-        : principal.type === "end_user"
-          ? sql`(
-              (b.principal_type = 'end_user' and b.principal_id = ${id})
-              or (b.principal_type = 'end_user_group' and b.principal_id in (
-                select group_id from end_user_group_member where end_user_id = ${id}
-              ))
-              or b.principal_type in ('end_users', 'anonymous')
-            )`
-          : sql`b.principal_type = 'anonymous'`;
+  const principalMatch = matchPrincipal(principal);
 
   const held = await sql<Held>`
     select r.permissions, b.scope_type, null::uuid as access_grant_id

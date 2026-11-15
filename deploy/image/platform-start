@@ -1,0 +1,11 @@
+#!/bin/sh
+# Starts the control plane on node-cp, the copy of node that may switch users, so
+# that managed workers can run as their own user. Where the container may not
+# switch users (its capabilities dropped), the kernel refuses to run node-cp at
+# all: start on plain node instead. The control plane then sees it cannot switch
+# users, says so, and starts no managed worker for a tenant whose code is
+# written outside the operator.
+if node-cp -e "" 2>/dev/null; then
+  exec node-cp "$@"
+fi
+exec node "$@"

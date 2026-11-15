@@ -6,7 +6,14 @@ import {
   type TableBody,
 } from "@vynxlabs/manifest";
 import { type Static, Type } from "typebox";
-import { notFound } from "../kernel/errors.js";
+import {
+  actionsOf,
+  audienceMay,
+  audiencesOf,
+  targetKey,
+  targetResource,
+} from "../kernel/apps/actions.js";
+import { forbidden, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { wildPath } from "./data.js";
@@ -24,6 +31,17 @@ const TableView = Type.Object({
       references: Type.Union([Type.String(), Type.Null()]),
     }),
   ),
+});
+
+/** What an action's target is, to someone who may open the page it is on. */
+const TargetView = Type.Object({
+  canStart: Type.Boolean({
+    description: "Whether the caller may start it. An action the caller may not start is hidden.",
+  }),
+  description: Type.Union([Type.String(), Type.Null()]),
+  inputSchema: Type.Union([AnyObject, Type.Null()], {
+    description: "What it takes, as JSON Schema. Asked for when what the page maps is not all.",
+  }),
 });
 
 /**
@@ -235,6 +253,9 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               path: Type.String(),
               interface: AnyObject,
               tables: Type.Record(Type.String(), TableView),
+              targets: Type.Record(Type.String(), TargetView, {
+                description: "What each action starts, by `script:<path>` or `flow:<path>`.",
+              }),
             }),
           },
         },
@@ -320,11 +341,121 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ],
           };
         }
+        const targets: Record<string, Static<typeof TargetView>> = {};
+        for (const action of actionsOf(body)) {
+          const key = targetKey(action.target);
+          if (targets[key]) continue;
+          const found = await targetResource(db, params.w, action.target);
+          const canStart =
+            found?.startable === true &&
+            (await ctx.allowed(found.permission, { ...at, resourceId: found.id }));
+          // Someone who may not start it is told nothing about it.
+          targets[key] = canStart
+            ? { canStart, description: found.description, inputSchema: found.inputSchema }
+            : { canStart: false, description: null, inputSchema: null };
+        }
         return {
           path,
           interface: body as unknown as Record<string, unknown>,
           tables,
+          targets,
         };
+      },
+    );
+
+    app.get(
+      "/tenants/:t/workspaces/:w/interface-targets",
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "What the actions of an interface being built would start, and for whom",
+          description:
+            "For the builder. For each target: whether it is there and can be started from a " +
+            "page, what it takes, and which audiences of the apps serving `interface` may not " +
+            "start it, so would not see the action. Needs what reading the interface's draft needs.",
+          tags: ["apps"],
+          params: Type.Object({ t: Id, w: Id }),
+          querystring: Type.Object({
+            interface: Type.Optional(Type.String({ maxLength: 255 })),
+            targets: Type.String({
+              maxLength: 8000,
+              description: "Comma-separated: `script:<path>` or `flow:<path>`.",
+            }),
+          }),
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  key: Type.String(),
+                  found: Type.Boolean(),
+                  startable: Type.Boolean({
+                    description: "False for a flow with no manual trigger to start from.",
+                  }),
+                  description: Type.Union([Type.String(), Type.Null()]),
+                  inputSchema: Type.Union([AnyObject, Type.Null()]),
+                  notFor: Type.Array(Type.String(), {
+                    description: "The audiences that would not see the action.",
+                  }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const body = {
+          interface: query.interface,
+          targets: query.targets
+            .split(",")
+            .filter(Boolean)
+            .slice(0, 100)
+            .flatMap((one) => {
+              const [kind, ...rest] = one.split(":");
+              return kind === "script" || kind === "flow"
+                ? [{ kind: kind as "script" | "flow", path: rest.join(":") }]
+                : [];
+            }),
+        };
+        const workspace = await findWorkspace(kernel, params.t, params.w);
+        const at = { tenantId: params.t, workspaceId: params.w };
+        if (
+          !(await ctx.allowed("resource:read", at)) &&
+          !(await ctx.allowed("interface:read", at))
+        ) {
+          throw forbidden("interface:read");
+        }
+        const audiences = body.interface
+          ? await audiencesOf(db, { id: workspace.id, tenantId: params.t }, body.interface)
+          : [];
+        const items = [];
+        for (const target of body.targets) {
+          const found = await targetResource(db, params.w, target);
+          const notFor: string[] = [];
+          if (found) {
+            for (const audience of audiences) {
+              if (
+                !(await audienceMay(
+                  db,
+                  { id: workspace.id, tenantId: params.t },
+                  audience,
+                  found.permission,
+                  found.id,
+                ))
+              ) {
+                notFor.push(audience.name);
+              }
+            }
+          }
+          items.push({
+            key: targetKey(target),
+            found: found !== undefined,
+            startable: found?.startable ?? false,
+            description: found?.description ?? null,
+            inputSchema: found?.inputSchema ?? null,
+            notFor,
+          });
+        }
+        return { items };
       },
     );
   };

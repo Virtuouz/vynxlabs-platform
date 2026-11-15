@@ -12,37 +12,56 @@ export const smtpConnector: Connector<SmtpConfig, SmtpClient> = {
   name: "smtp",
   configSchema: smtpConfigSchema,
   create(config, credential, signal) {
-    const security = config.security ?? "starttls";
-    const transport = createTransport({
-      host: config.host,
-      port: config.port ?? 587,
-      secure: security === "tls",
-      // With STARTTLS asked for, a server that does not offer it is not sent anything.
-      requireTLS: security === "starttls",
-      ignoreTLS: security === "none",
-      ...(config.username ? { auth: { user: config.username, pass: credential ?? "" } } : {}),
-      connectionTimeout: 15_000,
-      greetingTimeout: 15_000,
-      socketTimeout: 60_000,
-    });
+    const transport = transportFor(config, credential);
     signal.addEventListener("abort", () => transport.close(), { once: true });
-    return {
-      async send(message: MailMessage) {
-        if (message.text === undefined && message.html === undefined) {
-          throw new Error("A message needs text or html.");
-        }
-        const sent = await transport.sendMail({
-          from: config.from,
-          to: message.to,
-          cc: message.cc,
-          bcc: message.bcc,
-          replyTo: message.replyTo,
-          subject: message.subject,
-          text: message.text,
-          html: message.html,
-        });
-        return { messageId: sent.messageId };
-      },
-    };
+    return client(config, transport);
+  },
+  /** Connects, says hello, and signs in, if the connection signs in. Sends nothing. */
+  async test(config, credential, signal) {
+    const transport = transportFor(config, credential);
+    signal.addEventListener("abort", () => transport.close(), { once: true });
+    try {
+      await transport.verify();
+      return { message: `${config.host} accepted the connection.` };
+    } finally {
+      transport.close();
+    }
   },
 };
+
+function transportFor(config: SmtpConfig, credential: string | undefined) {
+  const security = config.security ?? "starttls";
+  return createTransport({
+    host: config.host,
+    port: config.port ?? 587,
+    secure: security === "tls",
+    // With STARTTLS asked for, a server that does not offer it is not sent anything.
+    requireTLS: security === "starttls",
+    ignoreTLS: security === "none",
+    ...(config.username ? { auth: { user: config.username, pass: credential ?? "" } } : {}),
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 60_000,
+  });
+}
+
+function client(config: SmtpConfig, transport: ReturnType<typeof createTransport>): SmtpClient {
+  return {
+    async send(message: MailMessage) {
+      if (message.text === undefined && message.html === undefined) {
+        throw new Error("A message needs text or html.");
+      }
+      const sent = await transport.sendMail({
+        from: config.from,
+        to: message.to,
+        cc: message.cc,
+        bcc: message.bcc,
+        replyTo: message.replyTo,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+      });
+      return { messageId: sent.messageId };
+    },
+  };
+}

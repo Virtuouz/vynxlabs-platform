@@ -3,6 +3,7 @@ import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
 import { startBackground } from "./kernel/execution/background.js";
+import { setWorkerUserMode } from "./kernel/execution/isolation.js";
 import { WorkerSupervisor } from "./kernel/execution/supervisor.js";
 import { failInterruptedClones } from "./kernel/tenancy/clone.js";
 import { S3ObjectStore } from "./storage.js";
@@ -74,10 +75,15 @@ try {
   await app.listen({ host: config.host, port: config.port });
   // A clone that was running an hour ago, when this process was not, did not survive.
   await failInterruptedClones(app.kernel, new Date(Date.now() - 60 * 60 * 1000));
+  // In host mode a worker host of its own starts managed workers; this process starts none.
+  if (config.managedWorkers === "host") setWorkerUserMode("host");
   background = startBackground(
     app.kernel,
-    config.managedWorkers
-      ? new WorkerSupervisor(app.kernel, { url: `http://127.0.0.1:${config.port}` })
+    config.managedWorkers === "process"
+      ? new WorkerSupervisor(app.kernel, {
+          url: `http://127.0.0.1:${config.port}`,
+          user: config.managedWorkerUser,
+        })
       : undefined,
   );
   app.log.info({ version, managedWorkers: config.managedWorkers }, "control plane started");

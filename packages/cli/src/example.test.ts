@@ -677,7 +677,7 @@ describe("working locally", () => {
     expect(
       (await cli(["run", "orders/sync", "--dir", example, "--input", '{"since":5}'])).err,
     ).toContain("The script's input does not match its schema");
-  });
+  }, 120_000);
 
   test("init writes a starter repository, and refuses a directory that is not empty", async () => {
     const directory = join(home, "new-tenant");

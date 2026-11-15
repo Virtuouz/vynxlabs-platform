@@ -1,6 +1,7 @@
 import {
   Activity,
   AppWindow,
+  BellRing,
   Blocks,
   Bot,
   Boxes,
@@ -15,6 +16,7 @@ import {
   GitBranch,
   GitCompareArrows,
   Globe,
+  History,
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
@@ -125,6 +127,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "connections", label: "Connections", icon: Plug },
     { slug: "variables", label: "Variables", icon: Variable },
     { slug: "secrets", label: "Secrets", icon: KeyRound },
+    { slug: "alerts", label: "Alerts", icon: BellRing },
     { slug: "settings", label: "Workspace settings", icon: Settings },
   ],
 };
@@ -170,6 +173,7 @@ export const TENANT_GROUPS: readonly (readonly [label: string, sections: readonl
     "Governance",
     [
       { slug: "audit", label: "Audit log", icon: ScrollText },
+      { slug: "retention", label: "Retention", icon: History },
       { slug: "export", label: "Export", icon: Download },
     ],
   ],

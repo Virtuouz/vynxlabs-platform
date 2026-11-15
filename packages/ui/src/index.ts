@@ -43,6 +43,14 @@ export {
   SegmentedControl,
   type SegmentOption,
 } from "./Pickers.tsx";
+export {
+  checkValue,
+  cleaned as cleanedValue,
+  type JsonSchema,
+  SchemaForm,
+  type SchemaFormProps,
+  startValue,
+} from "./SchemaForm.tsx";
 export { SideSheet, type SideSheetProps } from "./SideSheet.tsx";
 export { Avatar, Card, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { type Column, Table } from "./Table.tsx";

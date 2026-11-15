@@ -102,6 +102,35 @@ function bundle(
       script: "sink",
       event: "platform/run-failed",
     }),
+    // A step that fails until a moment given in the input: a retry after it succeeds.
+    flow(
+      "retrying",
+      {
+        start: manual,
+        a: run("double", "{'n': trigger.n}"),
+        b: run("risky", "{'fail': now < timestamp(trigger.failUntil)}"),
+        c: set({ total: "steps.a.output.n" }),
+      },
+      [
+        ["start", "a"],
+        ["a", "b"],
+        ["b", "c"],
+      ],
+    ),
+    flow(
+      "approved-then-fail",
+      {
+        start: manual,
+        gate: { type: "approval", title: "Go ahead?" },
+        b: run("risky", "{'fail': now < timestamp(trigger.failUntil)}"),
+        c: set({ done: "true" }),
+      },
+      [
+        ["start", "gate"],
+        ["gate", "b"],
+        ["b", "c"],
+      ],
+    ),
     flow(
       "linear",
       {
@@ -932,6 +961,9 @@ describe("waiting", () => {
       (r) => step(r, "pause")?.status === "waiting",
     );
     expect(paused.status).toBe("running");
+    // It is not "running" to a person: it waits for its time.
+    expect(paused.state).toBe("waiting_time");
+    expect(step(paused, "pause").state).toBe("waiting_time");
     expect(Date.parse(step(paused, "pause").wakeAt)).toBeGreaterThan(Date.now() + 3000_000);
     // Whatever else is due on the instance, this flow is not: it stays where it is.
     await advanceDueFlows(t.kernel);
@@ -949,9 +981,26 @@ describe("waiting", () => {
 
   test("an approval waits for a person, and only someone permitted may decide", async () => {
     const id = await start("approving", { id: "1001", total: 1250 }, bob);
-    await until(
+    const waiting = await until(
       () => read(id),
       (r) => step(r, "gate")?.status === "waiting",
+    );
+    // Every list says the same: it waits for a person.
+    expect(waiting).toMatchObject({ status: "running", state: "waiting_approval" });
+    expect(step(waiting, "gate").state).toBe("waiting_approval");
+    const listed = (await alice.get(`${ws()}/activity?state=waiting_approval`)).body;
+    expect(listed.items.map((one: { id: string; state: string }) => [one.id, one.state])).toEqual([
+      [id, "waiting_approval"],
+    ]);
+    expect(listed.stateCounts.waiting_approval).toBe(1);
+    expect(
+      (await alice.get(`${ws()}/activity?state=waiting`)).body.items.map(
+        (one: { id: string }) => one.id,
+      ),
+    ).toContain(id);
+    const flows = (await alice.get(`${ws()}/flows`)).body.items;
+    expect(flows.find((one: { path: string }) => one.path === "approving").lastRun.state).toBe(
+      "waiting_approval",
     );
 
     const pending = (await alice.get(`${ws()}/approvals`)).body.items;
@@ -981,6 +1030,7 @@ describe("waiting", () => {
       ).status,
     ).toBe(204);
     const done = await finished(id);
+    expect(done.state).toBe("succeeded");
     expect(done.output).toEqual({ send: { sent: "1001" } });
     expect(step(done, "gate").output).toEqual({ approved: true, comment: "Known customer" });
     // Deciding twice is refused.
@@ -1049,6 +1099,111 @@ describe("waiting", () => {
     );
     expect(step(await read(id), "work").status).toBe("cancelled");
     expect((await alice.post(`${ws()}/flow-runs/${id}/cancel`)).status).toBe(409);
+  });
+});
+
+describe("retrying a flow run", () => {
+  const soon = () => new Date(Date.now() + 1500).toISOString();
+  const retry = (id: string, body: object) => alice.post(`${ws()}/flow-runs/${id}/retry`, body);
+
+  test("from the failed step, only it and what follows run again, on the same version", async () => {
+    const id = await start("retrying", { n: 21, failUntil: soon() });
+    const failed = await finished(id);
+    expect(failed.state).toBe("failed");
+    expect(step(failed, "b").status).toBe("failed");
+    expect(step(failed, "c")).toBeUndefined();
+
+    expect((await alice.get(`${ws()}/flow-runs/${id}/retry-plan`)).body).toEqual({
+      kept: ["a"],
+      again: ["b", "c"],
+      approvalsKept: [],
+    });
+    // The failure was over a moment ago.
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const started = await retry(id, { from: "failed" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect(started.body).toMatchObject({ retryOf: id, bundleId: failed.bundleId });
+    const done = await finished(started.body.id);
+    expect(done.state).toBe("succeeded");
+    // a was kept: copied with its output, not run again. c read that output.
+    expect(step(done, "a")).toMatchObject({
+      status: "succeeded",
+      runId: null,
+      output: { n: 42 },
+      copiedFrom: { flowRunId: id, runId: step(failed, "a").runId },
+    });
+    expect(step(done, "b").runId).not.toBe(step(failed, "b").runId);
+    expect(step(done, "b").copiedFrom).toBeNull();
+    expect(step(done, "c").output).toEqual({ total: 42 });
+    // The original says it was retried.
+    expect((await read(id)).retries).toEqual([
+      expect.objectContaining({ id: started.body.id, state: "succeeded" }),
+    ]);
+    const audit = await alice.get(`/tenants/${tenant}/audit?action=flow_run.retried`);
+    expect(audit.body.items[0]).toMatchObject({
+      targetId: started.body.id,
+      details: { of: id, from: "failed", bundle: "original" },
+    });
+  });
+
+  test("an approval already granted is kept, and not asked again", async () => {
+    const id = await start("approved-then-fail", { failUntil: soon() });
+    await until(
+      () => read(id),
+      (r) => step(r, "gate")?.status === "waiting",
+    );
+    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, { decision: "approve" });
+    expect((await finished(id)).state).toBe("failed");
+    expect((await alice.get(`${ws()}/flow-runs/${id}/retry-plan`)).body).toMatchObject({
+      kept: ["gate"],
+      again: ["b", "c"],
+      approvalsKept: [{ node: "gate", decidedBy: expect.any(String) }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const started = await retry(id, { from: "failed" });
+    const done = await finished(started.body.id);
+    expect(done.state).toBe("succeeded");
+    expect(step(done, "gate")).toMatchObject({
+      status: "succeeded",
+      output: { approved: true },
+      copiedFrom: { flowRunId: id },
+    });
+  });
+
+  test("an approval that was refused is asked again", async () => {
+    const id = await start("impatient");
+    await until(
+      () => read(id),
+      (r) => step(r, "gate")?.status === "waiting",
+    );
+    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, { decision: "reject" });
+    expect((await finished(id)).state).toBe("failed");
+    const started = await retry(id, { from: "failed" });
+    const asked = await until(
+      () => read(started.body.id),
+      (r) => step(r, "gate")?.status === "waiting",
+    );
+    expect(asked.state).toBe("waiting_approval");
+    expect(step(asked, "gate").copiedFrom).toBeNull();
+    await alice.post(`${ws()}/flow-runs/${asked.id}/cancel`);
+  });
+
+  test("from the start it runs whole, with new input if given; a step retry cannot change either", async () => {
+    const id = await start("retrying", { n: 1, failUntil: soon() });
+    await finished(id);
+    expect((await retry(id, { from: "failed", bundle: "active" })).status).toBe(409);
+    expect((await retry(id, { from: "failed", input: { n: 2 } })).status).toBe(409);
+    const again = await retry(id, {
+      from: "start",
+      input: { n: 5, failUntil: new Date(0).toISOString() },
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    const done = await finished(again.body.id);
+    expect(done.state).toBe("succeeded");
+    expect(step(done, "a").copiedFrom).toBeNull();
+    expect(step(done, "c").output).toEqual({ total: 10 });
+    // A flow run still going cannot be retried, and a succeeded one has nothing failed.
+    expect((await retry(again.body.id, { from: "failed" })).status).toBe(409);
   });
 });
 
@@ -1364,5 +1519,115 @@ describe("layout, isolation and guards", () => {
     expect(t.unaudited, JSON.stringify(t.unaudited)).toEqual([]);
     const flows = /\/(flow-runs|flow-layouts|events)(\/|$)/;
     expect(t.unexercised((route) => flows.test(route) && !route.includes("/worker/"))).toEqual([]);
+  });
+});
+
+describe("schedules that start flows", () => {
+  test("a schedule starts a flow from its manual trigger, can skip while its run goes, and can fire now", async () => {
+    const schedules = (manifests: BundleManifest[]) => [
+      ...manifests,
+      manifest("schedule", "typed-hourly", {
+        flow: "typed",
+        cron: "15 * * * *",
+        timezone: "Europe/London",
+        input: { sku: "A", quantity: 2 },
+      }),
+      manifest("schedule", "waiting-hourly", {
+        flow: "waiting",
+        cron: "0 * * * *",
+        overlap: "skip",
+      }),
+    ];
+    const deployed = await deploy(bundle("sched", schedules));
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+
+    const triggers = (await alice.get(`${ws()}/triggers`)).body.items as Any[];
+    const typed = triggers.find((x) => x.path === "typed-hourly");
+    expect(typed).toMatchObject({ targetKind: "flow", script: "typed", overlap: "allow" });
+    // The preview is worked out as the scheduler works it out.
+    const preview = await alice.get(
+      `${ws()}/schedule-preview?cron=${encodeURIComponent("15 * * * *")}&timezone=Europe/London`,
+    );
+    expect(preview.body.times).toHaveLength(5);
+    expect(preview.body.times[0]).toBe(typed.nextFireAt);
+    const refused = await alice.get(`${ws()}/schedule-preview?cron=nope`);
+    expect(refused.status).toBe(400);
+    expect(refused.body.errors[0].message).toContain('"nope" is not a usable cron expression');
+
+    // At its time it starts the flow from its manual trigger, with its input.
+    expect(
+      await fireDueSchedules(t.kernel, new Date(new Date(typed.nextFireAt).getTime() + 1000)),
+    ).toBeGreaterThanOrEqual(1);
+    const runs = await until(
+      async () => (await alice.get(`${ws()}/flow-runs?flow=typed`)).body.items as Any[],
+      (items) => items.some((r) => r.trigger?.type === "schedule"),
+    );
+    const scheduled = await finished(runs.find((r) => r.trigger?.type === "schedule").id);
+    expect(scheduled).toMatchObject({
+      status: "succeeded",
+      triggerNode: "start",
+      trigger: { type: "schedule", schedule: "typed-hourly" },
+    });
+
+    // Fire now: one run, said to be by hand, and the next time stays where it was.
+    const nextOf = async () =>
+      (await alice.get(`${ws()}/triggers`)).body.items.find((x: Any) => x.path === "typed-hourly")
+        .nextFireAt;
+    const before = await nextOf();
+    const fired = await alice.post(`${ws()}/schedule-firings`, { path: "typed-hourly" });
+    expect(fired.status, JSON.stringify(fired.body)).toBe(201);
+    expect(fired.body.kind).toBe("flow");
+    expect((await finished(fired.body.id)).trigger).toMatchObject({
+      type: "schedule",
+      manual: true,
+    });
+    expect(await nextOf()).toBe(before);
+    expect((await alice.post(`${ws()}/schedule-firings`, { path: "nothing" })).status).toBe(404);
+
+    // Skip: while the run it started waits, the next time starts nothing, and says so.
+    const waiting = triggers.find((x) => x.path === "waiting-hourly");
+    expect(waiting.overlap).toBe("skip");
+    const first = new Date(new Date(waiting.nextFireAt).getTime() + 1000);
+    await fireDueSchedules(t.kernel, first);
+    const going = (await alice.get(`${ws()}/flow-runs?flow=waiting`)).body.items.filter(
+      (r: Any) => r.trigger?.type === "schedule",
+    );
+    expect(going).toHaveLength(1);
+    await fireDueSchedules(t.kernel, new Date(first.getTime() + 3600_000));
+    expect(
+      (await alice.get(`${ws()}/flow-runs?flow=waiting`)).body.items.filter(
+        (r: Any) => r.trigger?.type === "schedule",
+      ),
+    ).toHaveLength(1);
+    const skipped = (await alice.get(`${ws()}/triggers`)).body.items.find(
+      (x: Any) => x.path === "waiting-hourly",
+    );
+    expect(skipped.lastSkippedAt).toEqual(expect.any(String));
+    expect(skipped.lastRun).toMatchObject({ kind: "flow", id: going[0].id });
+    await alice.post(`${ws()}/flow-runs/${going[0].id}/cancel`, {});
+  });
+
+  test("a schedule cannot start a flow with no manual trigger, nor name both a script and a flow", async () => {
+    const hookOnly = flow(
+      "hook-only",
+      { hook: { type: "trigger", trigger: { type: "webhook" } }, done: set({ x: "1" }) },
+      [["hook", "done"]],
+    );
+    const noManual = await deploy(
+      bundle("sched", (m) => [
+        ...m,
+        hookOnly,
+        manifest("schedule", "bad", { flow: "hook-only", cron: "0 * * * *" }),
+      ]),
+    );
+    expect(noManual.status).toBe(400);
+    expect(JSON.stringify(noManual.body)).toContain("has no manual trigger");
+    const both = await deploy(
+      bundle("sched", (m) => [
+        ...m,
+        manifest("schedule", "both", { flow: "typed", script: "double", cron: "0 * * * *" }),
+      ]),
+    );
+    expect(both.status).toBe(400);
   });
 });

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const listeners = new Set<() => void>();
 
@@ -21,6 +21,35 @@ export function usePath(): string {
     };
   }, []);
   return path;
+}
+
+/**
+ * One value of the address's query, kept in step as the address changes, and a
+ * way to change it in place. A filter kept here survives a reload and can be shared.
+ */
+export function useQueryValue(name: string): [string | null, (value: string | null) => void] {
+  const read = useCallback(() => new URLSearchParams(location.search).get(name), [name]);
+  const [value, setValue] = useState(read);
+  useEffect(() => {
+    const update = () => setValue(read());
+    listeners.add(update);
+    addEventListener("popstate", update);
+    return () => {
+      listeners.delete(update);
+      removeEventListener("popstate", update);
+    };
+  }, [read]);
+  const change = useCallback(
+    (next: string | null) => {
+      const query = new URLSearchParams(location.search);
+      if (next === null) query.delete(name);
+      else query.set(name, next);
+      const search = query.toString();
+      navigate(`${location.pathname}${search ? `?${search}` : ""}`, { replace: true });
+    },
+    [name],
+  );
+  return [value, change];
 }
 
 /** Matches `/t/:tenant/members` style patterns. A trailing `/*` matches any deeper path. */
@@ -57,6 +86,8 @@ export function Link({
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
         event.preventDefault();
+        // A link inside a row that opens on click goes where it says, not where the row does.
+        event.stopPropagation();
         navigate(to);
       }}
     >

@@ -46,14 +46,14 @@ test("nodes are buttons that say what they are and how they went, and saved posi
         start: "succeeded",
         check: "succeeded",
         route: "succeeded",
-        approve: "waiting",
+        approve: "waiting_approval",
         send: "skipped",
       }}
       selected="approve"
       onSelect={onSelect}
     />,
   );
-  const approve = screen.getByRole("button", { name: "Approval approve, Waiting" });
+  const approve = screen.getByRole("button", { name: "Approval approve, Waiting for approval" });
   expect(approve.getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByRole("button", { name: "Script send, Skipped" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Set values report" })).toBeTruthy();

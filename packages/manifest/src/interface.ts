@@ -33,7 +33,16 @@ export interface PageFilter {
 }
 export const MAX_PAGE_FILTERS = 4;
 
-export const WIDGET_TYPES = ["table", "card", "cards", "chart", "figure", "form", "text"] as const;
+export const WIDGET_TYPES = [
+  "table",
+  "card",
+  "cards",
+  "chart",
+  "figure",
+  "form",
+  "text",
+  "action",
+] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 export const SUMMARY_FUNCTIONS = ["count", "sum", "avg", "min", "max"] as const;
 export const SUMMARY_BUCKETS = ["day", "week", "month", "year"] as const;
@@ -107,6 +116,37 @@ export interface WidgetOptions {
   format?: ValueFormat;
 }
 
+/**
+ * Something a person can start from a page: a script, or a flow from its
+ * manual trigger, as whoever presses it. Its input is mapped from the page:
+ *
+ * - a path into what the page holds: `selection.<widget>.<column>` (the row
+ *   chosen in a widget), `row.<column>` (the row a row action is on), or
+ *   `filters.<filter>.value`, `.from` or `.to`;
+ * - or a constant, `{ value }`.
+ *
+ * What it takes and is not mapped is asked for when it is pressed.
+ */
+export interface WidgetAction {
+  label: string;
+  target: { kind: "script" | "flow"; path: string };
+  input?: Record<string, string | { value: unknown }>;
+  /** Asked before it starts. `{{path}}` is filled in from the page, as text. */
+  confirm?: string;
+  result?: {
+    /** `toast`, the default, says it went; `output` shows what it gave back. */
+    show?: "toast" | "output";
+    /** Widgets read again once it succeeds. */
+    refresh?: string[];
+  };
+  /** A path that must hold something for it to be pressed. */
+  enabledWhen?: string;
+}
+export const MAX_ROW_ACTIONS = 5;
+/** The roots a path into a page starts from. */
+export const ACTION_PATH =
+  /^(selection\.[a-z][a-z0-9_-]{0,39}\.[a-z][a-z0-9_]{0,62}|row\.[a-z][a-z0-9_]{0,62}|filters\.[a-z][a-z0-9_-]{0,39}\.(value|from|to))$/;
+
 export interface PageWidget {
   id: string;
   title?: string;
@@ -121,6 +161,10 @@ export interface PageWidget {
   link?: WidgetLink;
   pageSize?: number;
   options?: WidgetOptions;
+  /** An action widget's action. */
+  action?: WidgetAction;
+  /** A table's row actions: each is offered on every row. */
+  actions?: WidgetAction[];
   /** Where it sits, on a grid twelve columns wide. */
   at: { x: number; y: number; w: number; h: number };
 }
@@ -155,6 +199,50 @@ const fieldSchema = {
     editable: { type: "boolean" },
   },
   required: ["column"],
+  additionalProperties: false,
+};
+
+const actionPath = { type: "string", pattern: ACTION_PATH.source };
+const actionSchema = {
+  type: "object",
+  properties: {
+    label: { type: "string", minLength: 1, maxLength: 60 },
+    target: {
+      type: "object",
+      properties: {
+        kind: { enum: ["script", "flow"] },
+        path: { type: "string", minLength: 1, maxLength: 255 },
+      },
+      required: ["kind", "path"],
+      additionalProperties: false,
+    },
+    input: {
+      type: "object",
+      maxProperties: 50,
+      additionalProperties: {
+        oneOf: [
+          actionPath,
+          {
+            type: "object",
+            properties: { value: {} },
+            required: ["value"],
+            additionalProperties: false,
+          },
+        ],
+      },
+    },
+    confirm: { type: "string", maxLength: 300 },
+    result: {
+      type: "object",
+      properties: {
+        show: { enum: ["toast", "output"] },
+        refresh: { type: "array", maxItems: MAX_WIDGETS, items: { type: "string", pattern: SLUG } },
+      },
+      additionalProperties: false,
+    },
+    enabledWhen: actionPath,
+  },
+  required: ["label", "target"],
   additionalProperties: false,
 };
 
@@ -243,6 +331,8 @@ const widgetSchema = {
       },
       additionalProperties: false,
     },
+    action: actionSchema,
+    actions: { type: "array", maxItems: MAX_ROW_ACTIONS, items: actionSchema },
     at: {
       type: "object",
       properties: {
@@ -350,6 +440,67 @@ export function checkPage(
       }
       return type;
     };
+
+    // Every path an action reads must name what the page has.
+    const checkPath = (path: string, value: string, rowTable: string | undefined) => {
+      const [root, first, second] = value.split(".") as [string, string, string | undefined];
+      if (root === "row") {
+        if (rowTable === undefined) problem(path, "only a row action has a row");
+        else if (typeOf(rowTable, first) === undefined) {
+          problem(path, `there is no column "${first}" in the table "${rowTable}"`);
+        }
+      } else if (root === "selection") {
+        const source = byId.get(first);
+        if (!source || source.table === undefined || source.summary) {
+          problem(path, `there is no widget "${first}" on this page whose rows can be chosen`);
+        } else if (typeOf(source.table, second as string) === undefined) {
+          problem(path, `there is no column "${second}" in the table "${source.table}"`);
+        }
+      } else if (!(page.filters ?? []).some((filter) => filter.id === first)) {
+        problem(path, `there is no filter "${first}" on this page`);
+      }
+    };
+    const checkAction = (action: WidgetAction, path: string, rowTable: string | undefined) => {
+      for (const [name, mapped] of Object.entries(action.input ?? {})) {
+        if (typeof mapped === "string") checkPath(`${path}/input/${name}`, mapped, rowTable);
+      }
+      if (action.enabledWhen) checkPath(`${path}/enabledWhen`, action.enabledWhen, rowTable);
+      for (const [n, id] of (action.result?.refresh ?? []).entries()) {
+        if (!byId.has(id)) problem(`${path}/result/refresh/${n}`, `there is no widget "${id}"`);
+      }
+      for (const match of (action.confirm ?? "").matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) {
+        const named = match[1] as string;
+        if (!ACTION_PATH.test(named)) problem(`${path}/confirm`, `"${named}" is not a path`);
+        else checkPath(`${path}/confirm`, named, rowTable);
+      }
+    };
+
+    if (widget.type === "action") {
+      if (!widget.action) problem("/action", "an action widget needs its action");
+      else checkAction(widget.action, "/action", undefined);
+      for (const key of [
+        "table",
+        "summary",
+        "fields",
+        "sort",
+        "filter",
+        "link",
+        "actions",
+      ] as const) {
+        if (widget[key] !== undefined) problem(`/${key}`, "an action widget shows no table");
+      }
+      return;
+    }
+    if (widget.action !== undefined) problem("/action", "only an action widget has an action");
+    if (widget.actions !== undefined) {
+      if (widget.type !== "table" || widget.summary) {
+        problem("/actions", "only a table of rows has row actions");
+      } else {
+        widget.actions.forEach((action, n) => {
+          checkAction(action, `/actions/${n}`, widget.table);
+        });
+      }
+    }
 
     if (widget.type === "text") {
       if (!widget.options?.text) problem("/options/text", "a text widget needs its text");
@@ -513,6 +664,7 @@ export function checkPage(
     if (
       source.type === "form" ||
       source.type === "text" ||
+      source.type === "action" ||
       source.type === "chart" ||
       source.type === "figure"
     ) {

@@ -139,9 +139,24 @@ export async function* exportTenant(
     await sql`close ${cursor}`.execute(db);
   }
 
+  // The audit log travels as far back as the tenant keeps it, and no further.
+  // Read in the export's own transaction: it may hold the only connection there is.
+  const auditDays =
+    (
+      await trx
+        .selectFrom("tenant_retention")
+        .select("audit_days")
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirst()
+    )?.audit_days ?? kernel.config.retention.auditDays;
   const table = (entry: OwnedTable) =>
     sql`select to_jsonb(t)::text as line from ${sql.table(entry.table)} as t
         where ${entry.ofTenant(tenantId)}
+        ${
+          entry.table === "audit_entry"
+            ? sql`and t.occurred_at >= now() - make_interval(days => ${auditDays})`
+            : sql``
+        }
         order by ${sql.join(entry.key.map((column) => sql.ref(`t.${column}`)))}`;
 
   try {

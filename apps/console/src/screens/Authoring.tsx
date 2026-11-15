@@ -17,18 +17,23 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
-import { Page, when } from "../ListScreen.tsx";
+import { InputForm } from "../InputDialog.tsx";
+import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
-import { GitPanel } from "./Git.tsx";
-import { isEditedKind } from "./ResourceEditor.tsx";
+import { useTaskEnd } from "../tasks.ts";
 import { ScriptRunPanel } from "./Runs.tsx";
 
-const STARTER = `import type { ScriptContext } from "@vynxlabs/sdk";
+const STARTER = `import { type ScriptContext, z } from "@vynxlabs/sdk";
 
-/** What runs. The input is checked against the schema under Settings before this is called. */
-export default async function (input: { name?: string }, ctx: ScriptContext) {
+/** What it takes. Saving reads it, so a run's input is checked against it, and forms ask for it. */
+export const input = z.object({
+  name: z.string().describe("Who to greet"),
+});
+
+/** What runs. */
+export default async function (given: z.infer<typeof input>, ctx: ScriptContext) {
   ctx.log.info("Started", { by: ctx.run.trigger.type });
-  return { hello: input.name ?? "world" };
+  return { hello: given.name };
 }
 `;
 
@@ -95,6 +100,8 @@ interface ScriptBody {
   /** A script's. */
   input?: unknown;
   output?: unknown;
+  /** `code` when the input and output were read from the script's own exports. */
+  schemaSource?: "code";
   timeoutSeconds?: number;
   retries?: { limit: number; delaySeconds: number; backoff: boolean };
   uses?: {
@@ -191,6 +198,8 @@ interface DraftDetail {
   path: string;
   kind: string;
   revision: number;
+  /** For a script: the task in which a worker reads its schemas from the code. */
+  schemaTaskId?: string;
   change: "create" | "update" | "delete" | "take_over";
   deleted: boolean;
   body: ScriptBody;
@@ -242,11 +251,32 @@ export function ScriptEditor({
   const [fields, setFields] = useState<ApiError["fields"]>([]);
   const [busy, setBusy] = useState(false);
   const [schemaText, setSchemaText] = useState("");
-  const [testInput, setTestInput] = useState("{}");
+  // The last input it was tried with, kept while the editor is open.
+  const [testInput, setTestInput] = useState<unknown>({});
   const [testRun, setTestRun] = useState<string>();
+  const [reading, setReading] = useState<string>();
+  const [readingFailed, setReadingFailed] = useState<string>();
   const connections = useChoices(root, "connection-bindings", "path");
   const secrets = useChoices(root, "secrets", "name");
   const variables = useChoices(root, "variable-values", "path");
+  const schemaReading = useTaskEnd(root, reading, (task) => {
+    setReading(undefined);
+    if (task.status === "failed") {
+      setReadingFailed(task.error?.message ?? "The worker could not read it.");
+      return;
+    }
+    // What the worker read is on the draft now, if nobody saved since.
+    void api
+      .get<DraftDetail>(`${root}/drafts/${path}`)
+      .then((draft) => {
+        if (draft.revision !== revisionRef.current || dirtyRef.current) return;
+        setBody(draft.body);
+        setSchemaText(JSON.stringify(draft.body.input ?? {}, null, 2));
+      })
+      .catch(() => {});
+  });
+  const revisionRef = useRef<number>(undefined);
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
     let current = true;
@@ -294,6 +324,8 @@ export function ScriptEditor({
     return () => removeEventListener("keydown", onKey);
   }, [kind]);
 
+  revisionRef.current = revision;
+  dirtyRef.current = dirty;
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <p className="text-ink-muted">Loading…</p>;
 
@@ -329,13 +361,19 @@ export function ScriptEditor({
       const saved = await api.put<DraftDetail>(`${root}/drafts/${path}`, {
         kind,
         schemaVersion: 1,
-        body: about.schema ? { ...body, [about.schema.field]: schema } : body,
+        // A schema read from the code is the code's: what was read is sent back as it is.
+        body:
+          about.schema && body.schemaSource !== "code"
+            ? { ...body, [about.schema.field]: schema }
+            : body,
         ...(revision ? { revision } : {}),
       });
       setBody(saved.body);
       setRevision(saved.revision);
       setState("draft");
       setDirty(false);
+      setReadingFailed(undefined);
+      setReading(saved.schemaTaskId);
       if (!opened) navigate(`${link}/${about.edit}/${path}`, { replace: true });
       return true;
     } catch (error) {
@@ -347,14 +385,9 @@ export function ScriptEditor({
     }
   };
 
-  const test = async () => {
-    let input: unknown;
-    try {
-      input = JSON.parse(testInput);
-    } catch {
-      setProblem("The test input is not valid JSON.");
-      return;
-    }
+  /** Runs the draft with this input. What the server refuses is thrown, for the form to place. */
+  const test = async (input: unknown) => {
+    setTestInput(input);
     if ((dirty || state === "new") && !(await save())) return;
     setBusy(true);
     try {
@@ -363,14 +396,25 @@ export function ScriptEditor({
         input,
       });
       setTestRun(started.runId);
-    } catch (error) {
-      setProblem(failureText(error));
     } finally {
       setBusy(false);
     }
   };
 
-  runShortcut.current = readOnly ? () => {} : () => void test();
+  // The shortcut runs it again with the last input.
+  runShortcut.current = readOnly
+    ? () => {}
+    : () => void test(testInput).catch((error) => setProblem(failureText(error)));
+
+  /** The schema the input form is drawn from: the one read from the code, or the one written. */
+  const inputSchema = (() => {
+    if (body.schemaSource === "code") return body.input as Record<string, unknown> | undefined;
+    try {
+      return JSON.parse(schemaText) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  })();
 
   const STATE: Record<typeof state, [BadgeTone, string]> = {
     new: ["neutral", "Not saved"],
@@ -481,20 +525,48 @@ export function ScriptEditor({
           />
         </>
       )}
-      {about.schema ? (
+      {kind === "script" && body.schemaSource === "code" ? (
+        <div className="flex flex-col gap-1">
+          <TextAreaField
+            name="schema"
+            label="Input schema, read from your code"
+            value={JSON.stringify(body.input ?? {}, null, 2)}
+            rows={7}
+            disabled
+            hint="From the input export in the code. Change it there, and save."
+            onChange={() => {}}
+          />
+        </div>
+      ) : about.schema ? (
         <TextAreaField
           name="schema"
           label={about.schema.label}
           value={schemaText}
           rows={kind === "connector" ? 14 : 7}
           disabled={readOnly}
-          hint={about.schema.hint}
+          hint={
+            kind === "script"
+              ? `${about.schema.hint} Export an input schema made with z from the code, and it is read from there instead.`
+              : about.schema.hint
+          }
           error={fieldError(`/body/${about.schema.field}`)}
           onChange={(text) => {
             setSchemaText(text);
             setDirty(true);
           }}
         />
+      ) : null}
+      {kind === "script" && schemaReading.waiting ? (
+        <p className="m-0 text-[13px] text-ink-muted" role="status">
+          {schemaReading.slow
+            ? "Your schema will be read from the code once a worker is available."
+            : "Reading the schema from your code…"}
+        </p>
+      ) : null}
+      {kind === "script" && readingFailed ? (
+        <Notice tone="attention">
+          The schema could not be read from the code: {readingFailed}
+        </Notice>
       ) : null}
       {kind === "trigger_source" ? (
         <p className="m-0 text-[13px] text-ink-muted">
@@ -513,18 +585,18 @@ export function ScriptEditor({
 
   const trying = (
     <div className="flex flex-col gap-3">
-      <TextAreaField
-        name="test"
-        label="Input, as JSON"
-        value={testInput}
-        rows={5}
-        onChange={setTestInput}
-      />
-      <div>
-        <Button variant="primary" disabled={busy || readOnly} onClick={test}>
-          {dirty || state === "new" ? "Save and run" : "Run the draft"}
-        </Button>
-      </div>
+      {readOnly ? (
+        <p className="m-0 text-ink-muted">This script is not run from here.</p>
+      ) : (
+        <InputForm
+          // Drawn again when the schema changes, starting from the last input.
+          key={JSON.stringify(inputSchema ?? null)}
+          schema={inputSchema}
+          initial={testInput}
+          action={dirty || state === "new" ? "Save and run" : "Run the draft"}
+          onSubmit={test}
+        />
+      )}
       <p className="m-0 text-[13px] text-ink-muted">
         Runs the script as its draft has it, on a worker, without deploying anything.{" "}
         <kbd className="rounded-[4px] border border-line px-1 font-mono text-tag">⌘↵</kbd>
@@ -602,8 +674,8 @@ export function ScriptEditor({
         </Notice>
       ) : fromRepository ? (
         <Notice tone="attention">
-          This {about.noun} is managed in the tenant's repository, and its source is not kept here.
-          Change it there, or write one of the same path here to take it over.
+          This {about.noun} is managed in the tenant's repository. Its source is shown here
+          read-only: change it there, or write one of the same path here to take it over.
         </Notice>
       ) : state === "repository" ? (
         <Notice tone="attention">
@@ -658,206 +730,6 @@ export function ScriptEditor({
         </section>
       ) : null}
     </section>
-  );
-}
-
-const CHANGE: Record<DraftRow["change"], [BadgeTone, string]> = {
-  create: ["success", "New"],
-  update: ["attention", "Changed"],
-  delete: ["danger", "Removed"],
-  take_over: ["action", "Taken over from the repository"],
-};
-
-interface Preview {
-  possible: boolean;
-  refusal: { code: string; detail: string; errors: { path: string; message: string }[] } | null;
-  summary: {
-    created: number;
-    updated: number;
-    deleted: number;
-    data: string[];
-    changes: { change: string; kind: string; path: string }[];
-  } | null;
-}
-
-/** The drafts of a workspace, what deploying them would do, and the button that does it. */
-export function Changes({
-  root,
-  link,
-  editable,
-}: {
-  root: string;
-  link: string;
-  editable: boolean;
-}) {
-  const drafts = useLoad<{ items: DraftRow[] }>(`${root}/drafts`);
-  const count = drafts.data?.items.length ?? 0;
-  const preview = useLoad<Preview>(count > 0 ? `${root}/changes/preview` : null);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string>();
-
-  if (!editable) {
-    return (
-      <Page title="Changes" description="What has been saved in the console and not yet deployed.">
-        <Notice tone="attention">
-          A production workspace has no drafts. Change a dev workspace, then promote it.
-        </Notice>
-      </Page>
-    );
-  }
-  const reload = () => {
-    drafts.reload();
-    preview.reload();
-  };
-  const editLink = (row: DraftRow) =>
-    row.deleted
-      ? undefined
-      : row.kind === "script" || row.kind === "connector" || row.kind === "trigger_source"
-        ? `${link}/${CODE_KINDS[row.kind].edit}/${row.path}`
-        : row.kind === "flow"
-          ? `${link}/flows/edit/${row.path}`
-          : isEditedKind(row.kind)
-            ? `${link}/resources/edit/${row.kind}/${row.path}`
-            : undefined;
-
-  return (
-    <Page
-      title="Changes"
-      description="What has been saved in the console and not yet deployed. Nothing here runs until you deploy it."
-    >
-      {drafts.error ? <Notice tone="danger">{drafts.error.message}</Notice> : null}
-      {done ? <Notice tone="success">{done}</Notice> : null}
-      {drafts.data ? (
-        <Table
-          rows={drafts.data.items}
-          rowKey={(row) => row.path}
-          empty={
-            <EmptyState title="Nothing waiting to be deployed">
-              Save a script or another resource in this workspace and it appears here.
-            </EmptyState>
-          }
-          columns={[
-            {
-              header: "Resource",
-              cell: (row) => {
-                const to = editLink(row);
-                return to ? (
-                  <Link to={to} className="font-mono text-[13px] text-action">
-                    {row.path}
-                  </Link>
-                ) : (
-                  <code className="font-mono text-[13px]">{row.path}</code>
-                );
-              },
-            },
-            { header: "Kind", cell: (row) => row.kind },
-            {
-              header: "Change",
-              cell: (row) => <Badge tone={CHANGE[row.change][0]}>{CHANGE[row.change][1]}</Badge>,
-            },
-            {
-              header: "Saved",
-              cell: (row) => <span className="text-ink-muted">{when(row.updatedAt)}</span>,
-            },
-            {
-              header: "",
-              align: "end",
-              cell: (row) => (
-                <Button
-                  size="small"
-                  variant="danger"
-                  onClick={async () => {
-                    const sure = await ask.confirm({
-                      title: `Discard the draft of ${row.path}?`,
-                      text: "It goes back to how it was last deployed.",
-                      action: "Discard",
-                      danger: true,
-                    });
-                    if (!sure) return;
-                    await api.delete(`${root}/drafts/${row.path}`).then(reload, notify.error);
-                  }}
-                >
-                  Discard
-                </Button>
-              ),
-            },
-          ]}
-        />
-      ) : (
-        <p className="text-ink-muted">Loading…</p>
-      )}
-      {count > 0 ? (
-        <section className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4">
-          <h2 className="m-0 text-base font-semibold">Deploy</h2>
-          {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
-          {preview.data?.refusal ? (
-            <Notice tone="danger">
-              <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
-              <ul className="mt-2 mb-0 pl-5">
-                {preview.data.refusal.errors.map((error) => (
-                  <li key={`${error.path} ${error.message}`}>
-                    <code className="font-mono text-[13px]">{error.path}</code> {error.message}
-                  </li>
-                ))}
-              </ul>
-            </Notice>
-          ) : preview.data?.summary ? (
-            <p className="m-0 text-ink-muted">
-              Deploying creates {preview.data.summary.created}, changes{" "}
-              {preview.data.summary.updated} and removes {preview.data.summary.deleted}.
-              {preview.data.summary.data.length > 0
-                ? ` ${preview.data.summary.data.join(" ")}`
-                : ""}
-            </p>
-          ) : (
-            <p className="m-0 text-ink-muted">Checking what a deploy would do…</p>
-          )}
-          <TextField
-            name="message"
-            label="What changed"
-            value={message}
-            required={false}
-            placeholder="Send large orders for approval"
-            hint="Kept with the deployment, and used as the commit message when the workspace is connected to a repository."
-            onChange={setMessage}
-          />
-          <div>
-            <Button
-              variant="primary"
-              disabled={busy || !preview.data?.possible}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  const result = await api.post<{ bundleVersion: number; applied: string[] }>(
-                    `${root}/changes/deploy`,
-                    message ? { message } : {},
-                  );
-                  setDone(
-                    `Deployed as version ${result.bundleVersion}: ${result.applied.join(", ")}.`,
-                  );
-                  setMessage("");
-                  drafts.reload();
-                } catch (error) {
-                  notify.error(error);
-                  preview.reload();
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              Deploy {count} {count === 1 ? "change" : "changes"}
-            </Button>
-          </div>
-        </section>
-      ) : null}
-      <GitPanel
-        root={root}
-        tenantLink={link.split("/workspaces/")[0] as string}
-        onPulled={drafts.reload}
-        key={done}
-      />
-    </Page>
   );
 }
 
@@ -1061,6 +933,7 @@ function RepositorySource({ root, path }: { root: string; path: string }) {
         readOnly
         height="34rem"
         onChange={() => {}}
+        revealLine={source.data.file === file ? (source.data.line ?? undefined) : undefined}
       />
     </div>
   );

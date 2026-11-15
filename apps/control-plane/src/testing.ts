@@ -29,9 +29,17 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     masterKey: randomBytes(32),
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
+    workerHostToken: undefined,
+    metricsWorkspaceLabels: true,
+    managedWorkerUser: "same",
+    retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
+    // The tests' stand-in services listen on this machine.
+    egressAllow: { networks: ["127.0.0.0/8", "::1/128"], hosts: ["localhost"] },
     consoleDir: undefined,
     screensDir: undefined,
     appsUrl: undefined,
+    // Most suites serve apps at the one address they have. The default is tested on its own.
+    appsOnConsoleAddress: true,
     mail: undefined,
     ...overrides,
   };
@@ -60,6 +68,8 @@ export interface Client {
     extraHeaders?: Record<string, string>,
     method?: "POST" | "PUT",
   ): Promise<ApiResponse>;
+  /** The headers it sends, such as its session cookie, for requests made some other way. */
+  readonly headers: Record<string, string>;
 }
 
 /** A running app on a throwaway database, with the first operator admin created. */
@@ -166,6 +176,7 @@ export async function startTestApp(
       delete: (url) => call("DELETE", url),
       upload: (url, content, contentType, extraHeaders, method = "POST") =>
         call(method, url, content, contentType, extraHeaders),
+      headers,
     };
   }
 

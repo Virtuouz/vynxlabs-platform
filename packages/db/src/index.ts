@@ -16,6 +16,7 @@ export {
 } from "./errors.js";
 export { type ExternalPostgres, openExternalPostgres } from "./external.js";
 export { isId, newId } from "./id.js";
+export type { Listener, ListenOptions } from "./listener.js";
 export type { MigrationResult } from "./migrate.js";
 export {
   type ClaimedJob,

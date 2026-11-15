@@ -1,10 +1,12 @@
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { newId, sql } from "@vynxlabs/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { Worker } from "@vynxlabs/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { reapDeadRuns, requeueLostRuns } from "./kernel/execution/runs.js";
+import { sweepTasks } from "./kernel/execution/tasks.js";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -123,7 +125,12 @@ function bundle(
       cron: "0 * * * *",
       input: { name: "schedule" },
     }),
-    pure("trigger", "greet-hook", { type: "webhook", script: "greet" }),
+    pure("trigger", "greet-hook", {
+      type: "webhook",
+      script: "greet",
+      // One tag from the body, and one that cannot be worked out and is left out.
+      tags: ["'greeted:' + trigger.name", "trigger.missing.field"],
+    }),
   ]);
   const unsigned = {
     formatVersion: 1 as const,
@@ -176,8 +183,8 @@ function protocol(token: string) {
     return { status: response.statusCode, body: response.body ? response.json() : null };
   };
   return {
-    claim: (workerId = "018f0000-0000-7000-8000-000000000001") =>
-      call("POST", "/claim", { workerId, waitSeconds: 0 }),
+    claim: (workerId = "018f0000-0000-7000-8000-000000000001", kinds?: string[]) =>
+      call("POST", "/claim", { workerId, waitSeconds: 0, ...(kinds ? { kinds } : {}) }),
     get: (path: string) => call("GET", path),
     post: (path: string, body: object) => call("POST", path, body),
   };
@@ -200,6 +207,7 @@ beforeAll(async () => {
         body,
       });
       response.setHeader("content-type", "application/json");
+      if (request.url?.startsWith("/denied")) response.statusCode = 401;
       response.end(JSON.stringify({ pong: true }));
     });
   });
@@ -582,11 +590,51 @@ describe("running", () => {
     });
   }, 30_000);
 
+  test("a run is run again with the same input or another, and says which run it repeats", async () => {
+    const first = await start("greet", { name: "Ada" });
+    const done = await finished(first);
+    expect(done.output).toMatchObject({ greeting: "Hello Ada" });
+    await t.db
+      .updateTable("run")
+      .set({ tags: ["order:7"] })
+      .where("id", "=", first)
+      .execute();
+
+    const same = await alice.post(`${ws()}/runs/${first}/rerun`, {});
+    expect(same.status, JSON.stringify(same.body)).toBe(201);
+    expect(same.body).toMatchObject({
+      rerunOf: first,
+      trigger: { type: "rerun", of: first },
+      bundleId: done.bundleId,
+      tags: ["order:7"],
+    });
+    expect((await finished(same.body.id)).output).toMatchObject({ greeting: "Hello Ada" });
+
+    const edited = await alice.post(`${ws()}/runs/${first}/rerun`, {
+      input: { name: "Grace" },
+      bundle: "active",
+    });
+    expect((await finished(edited.body.id)).output).toMatchObject({ greeting: "Hello Grace" });
+    expect(
+      (await alice.get(`${ws()}/runs/${first}`)).body.reruns.map((one: { id: string }) => one.id),
+    ).toEqual([edited.body.id, same.body.id]);
+    const audit = await alice.get(`/tenants/${tenant}/audit?action=run.rerun`);
+    expect(audit.body.items[0]).toMatchObject({
+      targetId: edited.body.id,
+      details: { of: first, inputChanged: true, bundle: "active" },
+    });
+    // Input the script does not take is refused, as for any start.
+    expect((await alice.post(`${ws()}/runs/${first}/rerun`, { input: { name: 5 } })).status).toBe(
+      400,
+    );
+  });
+
   test("a final failure starts the handler script and posts the notification", async () => {
     const id = await start("flaky", { succeedOn: 99 });
     const run = await until(
       async () => (await alice.get(`${ws()}/runs/${id}`)).body,
-      (r) => ended(r) && r.alert !== null,
+      // The notification is posted by a worker, after the alert is recorded.
+      (r) => ended(r) && typeof r.alert?.notified === "boolean",
       30,
     );
     expect(run).toMatchObject({
@@ -610,6 +658,108 @@ describe("running", () => {
     });
   }, 45_000);
 
+  test("a connection is tried by a worker, which says what it found", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: task bodies are inspected freely
+    const tried = async (path: string): Promise<any> => {
+      const queued = await alice.post(`${ws()}/connection-tests`, { path });
+      expect(queued.status, JSON.stringify(queued.body)).toBe(202);
+      return until(
+        async () => (await alice.get(`${ws()}/tasks/${queued.body.id}`)).body,
+        (task) => task.status === "succeeded" || task.status === "failed",
+      );
+    };
+    const reached = await tried("api");
+    expect(reached).toMatchObject({
+      kind: "test-connection",
+      subject: "api",
+      status: "succeeded",
+      result: { ok: true, status: 200 },
+    });
+    expect(reached.result.latencyMs).toBeGreaterThanOrEqual(0);
+    // The worker asked with the connection's credential, as a script's client would.
+    expect(received.at(-1)?.headers.authorization).toBe("Bearer api-credential-123");
+
+    await alice.put(`${ws()}/connection-bindings/refusing`, {
+      config: { baseUrl: `${apiUrl}/denied` },
+    });
+    expect((await tried("refusing")).result).toMatchObject({
+      ok: false,
+      status: 401,
+      message: expect.stringContaining("answered 401"),
+    });
+    await alice.delete(`${ws()}/connection-bindings/refusing`);
+    expect((await alice.post(`${ws()}/connection-tests`, { path: "unbound" })).status).toBe(404);
+  });
+
+  test("failures of one script in the window are counted on its alert, and the next alert says how many", async () => {
+    const posts = () => received.filter((request) => request.url === "/chat-hook").length;
+    const first = (
+      await t.db
+        .selectFrom("run")
+        .select(["id"])
+        .where("script_path", "=", "flaky")
+        .where("alert", "is not", null)
+        .orderBy("id", "desc")
+        .executeTakeFirstOrThrow()
+    ).id;
+    const before = posts();
+    const burst = await Promise.all([1, 2, 3].map(() => start("flaky", { succeedOn: 99 })));
+    const done = await Promise.all(
+      burst.map((id) =>
+        until(
+          async () => (await alice.get(`${ws()}/runs/${id}`)).body,
+          (run) => ended(run) && run.alert !== null,
+          30,
+        ),
+      ),
+    );
+    for (const run of done) expect(run.alert).toEqual({ suppressed: true, sameAs: first });
+    // Nothing more was posted, nor was the handler started again.
+    await sleep(500);
+    expect(posts()).toBe(before);
+    const listed = (await alice.get(`${ws()}/alerts`)).body.items;
+    expect(listed[0]).toMatchObject({ kind: "run", id: first, name: "flaky", repeats: 3 });
+
+    // Past the window, the next failure is alerted, and says what was counted meanwhile.
+    await sql`update run set alert = alert || jsonb_build_object('alertedAt', (now() - interval '11 minutes')::text) where id = ${first}`.execute(
+      t.db,
+    );
+    const later = await start("flaky", { succeedOn: 99 });
+    await until(
+      async () => (await alice.get(`${ws()}/runs/${later}`)).body,
+      (run) => ended(run) && typeof run.alert?.notified === "boolean",
+      30,
+    );
+    const post = received.filter((request) => request.url === "/chat-hook").at(-1);
+    expect(JSON.parse(post?.body ?? "{}").text).toContain(
+      "(and 3 more failures since the last alert)",
+    );
+    expect((await alice.get(`${ws()}/alerts?limit=1`)).body).toMatchObject({
+      items: [{ id: later, repeats: 0, notified: true }],
+      nextBefore: expect.any(String),
+    });
+  }, 60_000);
+
+  test("the alert settings say where alerts are set, and a test alert goes through the connection", async () => {
+    const settings = (await alice.get(`${ws()}/alert-settings`)).body;
+    expect(settings.overrides).toContainEqual({
+      path: "flaky",
+      ownership: "code",
+      script: "on-failure",
+      notify: "chat",
+    });
+    const sent = await alice.post(`${ws()}/alert-tests`, { connection: "chat" });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(202);
+    const task = await until(
+      async () => (await alice.get(`${ws()}/tasks/${sent.body.id}`)).body,
+      (one) => one.status === "succeeded" || one.status === "failed",
+    );
+    expect(task.status).toBe("succeeded");
+    const post = received.filter((request) => request.url === "/chat-hook").at(-1);
+    expect(JSON.parse(post?.body ?? "{}")).toMatchObject({ test: true });
+    expect((await alice.post(`${ws()}/alert-tests`, { connection: "nothing" })).status).toBe(400);
+  });
+
   test("a waiting run and a running run can both be canceled", async () => {
     const running = await start("slow", { ms: 20_000 });
     await until(
@@ -621,7 +771,11 @@ describe("running", () => {
     await sleep(1500);
     expect((await alice.get(`${ws()}/runs/${waiting}`)).body.status).toBe("queued");
 
-    expect((await alice.post(`${ws()}/runs/${waiting}/cancel`)).body.status).toBe("cancelled");
+    expect((await alice.post(`${ws()}/runs/${waiting}/cancel`)).body).toMatchObject({
+      status: "cancelled",
+      // The status keeps its spelling for clients that read it; the state is in US English.
+      state: "canceled",
+    });
     expect((await alice.post(`${ws()}/runs/${running}/cancel`)).body.status).toBe("cancelled");
     expect((await alice.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);
     expect((await bob.client.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);
@@ -762,12 +916,13 @@ describe("triggers", () => {
     expect(viewer.url).toBeNull();
 
     const path = new URL(hook.url).pathname.replace("/api/v1", "");
-    const accepted = await t.anonymous.post(path, { name: "Webhook" });
+    const accepted = await t.anonymous.post(path, { name: "webhook" });
     expect(accepted.status).toBe(202);
     expect(await finished(accepted.body.runId)).toMatchObject({
       status: "succeeded",
-      output: { greeting: "Hello Webhook" },
+      output: { greeting: "Hello webhook" },
       trigger: { type: "webhook", trigger: "greet-hook" },
+      tags: ["greeted:webhook"],
     });
 
     expect((await t.anonymous.post("/hooks/vxh_not-a-real-token", {})).status).toBe(404);
@@ -795,6 +950,38 @@ describe("triggers", () => {
       );
     }
     expect([...statuses].sort()).toEqual([404, 429]);
+    // Counted in the database, not in this process.
+    const kept = await t.db.selectFrom("rate_limit").select(["key", "hits"]).execute();
+    expect(kept.some((row) => row.key.includes("/hooks/") && row.hits >= 121)).toBe(true);
+  });
+
+  test("two control planes on one database share one count per caller", async () => {
+    const { postgresRateLimitStore } = await import("./kernel/ratelimit.js");
+    const Store = postgresRateLimitStore(t.kernel);
+    const route = { routeInfo: { method: "POST", url: "/api/v1/hooks/:token" } };
+    // biome-ignore lint/suspicious/noExplicitAny: the plugin's own options type is not needed here
+    const one = new Store({} as any).child(route as any);
+    // biome-ignore lint/suspicious/noExplicitAny: as above
+    const two = new Store({} as any).child(route as any);
+    const hit = (store: typeof one) =>
+      new Promise<{ current: number; ttl: number }>((resolve, reject) =>
+        store.incr(
+          "198.51.100.7",
+          (error, result) =>
+            error ? reject(error) : resolve(result as { current: number; ttl: number }),
+          60_000,
+          120,
+        ),
+      );
+    let last = { current: 0, ttl: 0 };
+    for (let i = 0; i < 121; i++) last = await hit(i % 2 === 0 ? one : two);
+    expect(last.current).toBe(121);
+    expect(last.ttl).toBeGreaterThan(0);
+    expect(last.ttl).toBeLessThanOrEqual(60_000);
+    // Another route counts on its own.
+    // biome-ignore lint/suspicious/noExplicitAny: as above
+    const other = new Store({} as any).child({ routeInfo: { method: "GET", url: "/x" } } as any);
+    expect((await hit(other)).current).toBe(1);
   });
 });
 
@@ -884,6 +1071,95 @@ describe("the worker protocol", () => {
     expect((await protocol("vxk_an-api-key").claim()).status).toBe(401);
   });
 
+  test("a task goes only to a worker that takes its kind, in its own tenant and workspace", async () => {
+    const theirs = protocol(
+      (
+        await (
+          await t.signIn("gina@globex.example", PASSWORD)
+        ).post(`/tenants/${other}/worker-credentials`, { name: "theirs for tasks" })
+      ).body.token,
+    );
+    const prodOnly = protocol(
+      (
+        await alice.post(`/tenants/${tenant}/worker-credentials`, {
+          name: "prod only for tasks",
+          workspaceId: prod,
+        })
+      ).body.token,
+    );
+    const ours = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "ours for tasks" })).body
+        .token,
+    );
+    const queued = (await alice.post(`${ws()}/connection-tests`, { path: "api" })).body;
+
+    // A worker that does not say which kinds it takes is given runs only; one that takes
+    // other kinds is not given this one; nor is another tenant's or another workspace's.
+    expect((await ours.claim()).body).toEqual({ job: null });
+    expect((await ours.claim(undefined, ["run", "describe"])).body).toEqual({ job: null });
+    expect((await theirs.claim(undefined, ["test-connection"])).body).toEqual({ job: null });
+    expect((await prodOnly.claim(undefined, ["test-connection"])).body).toEqual({ job: null });
+
+    const job = (await ours.claim(undefined, ["run", "test-connection"])).body.job;
+    expect(job).toMatchObject({
+      kind: "test-connection",
+      taskId: queued.id,
+      workspaceId: dev,
+      request: { connection: "api" },
+    });
+    const taskPath = `/tasks/${job.taskId}`;
+    // The connection it names is readable for the task, and only by its holder.
+    expect((await ours.get(`${taskPath}/connection`)).body).toMatchObject({
+      connector: "http",
+      config: { baseUrl: apiUrl },
+      credential: "api-credential-123",
+    });
+    for (const stranger of [theirs, prodOnly]) {
+      expect((await stranger.get(`${taskPath}/connection`)).status).toBe(404);
+      expect((await stranger.post(`${taskPath}/heartbeat`, {})).status).toBe(404);
+      expect((await stranger.post(`${taskPath}/complete`, { result: {} })).status).toBe(404);
+    }
+    expect((await ours.post(`${taskPath}/heartbeat`, {})).status).toBe(204);
+    // A result too large to keep is refused, and the task stays the worker's to finish.
+    expect(
+      (await ours.post(`${taskPath}/complete`, { result: { big: "x".repeat(300 * 1024) } })).status,
+    ).toBe(400);
+    expect(
+      (await ours.post(`${taskPath}/complete`, { result: { ok: true, status: 204 } })).status,
+    ).toBe(204);
+    expect((await alice.get(`${ws()}/tasks/${job.taskId}`)).body).toMatchObject({
+      status: "succeeded",
+      result: { ok: true, status: 204 },
+    });
+    // Reporting twice changes nothing.
+    expect((await ours.post(`${taskPath}/complete`, { result: {} })).status).toBe(409);
+
+    // One nobody takes in time, or whose worker goes silent, is failed with the reason.
+    const unclaimed = (await alice.post(`${ws()}/connection-tests`, { path: "api" })).body;
+    const silent = (await alice.post(`${ws()}/connection-tests`, { path: "api" })).body;
+    const held = (await ours.claim(undefined, ["test-connection"])).body.job;
+    expect(held.taskId).toBe(unclaimed.id);
+    await t.db
+      .updateTable("task")
+      .set({ last_heartbeat_at: new Date(Date.now() - 120_000) })
+      .where("id", "=", unclaimed.id)
+      .execute();
+    await t.db
+      .updateTable("task")
+      .set({ expires_at: new Date(Date.now() - 1000) })
+      .where("id", "=", silent.id)
+      .execute();
+    await sweepTasks(t.kernel);
+    expect((await alice.get(`${ws()}/tasks/${unclaimed.id}`)).body).toMatchObject({
+      status: "failed",
+      error: { message: "Its worker stopped responding." },
+    });
+    expect((await alice.get(`${ws()}/tasks/${silent.id}`)).body).toMatchObject({
+      status: "failed",
+      error: { message: expect.stringContaining("No worker took it in time") },
+    });
+  });
+
   test("the script limit and the workspace limit both hold, and a busy workspace does not starve another", async () => {
     const ours = protocol(
       (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "limits" })).body.token,
@@ -944,6 +1220,42 @@ describe("the worker protocol", () => {
     });
   }, 60_000);
 
+  test("log lines a worker could not deliver are counted in the run's log", async () => {
+    const ours = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "lossy" })).body.token,
+    );
+    const id = await start("flaky", { succeedOn: 1 });
+    expect((await ours.claim()).body.job).toMatchObject({ runId: id, attempt: 1 });
+    expect(
+      (await ours.post(`/runs/${id}/complete`, { attempt: 1, output: {}, logsLost: 7 })).status,
+    ).toBe(204);
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs`)).body.items;
+    expect(logs).toEqual([
+      expect.objectContaining({ level: "warn", message: "7 log lines could not be saved." }),
+    ]);
+  });
+
+  test("a script labels its run, and the run is found by the label", async () => {
+    const ours = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "tagger" })).body.token,
+    );
+    const id = await start("flaky", { succeedOn: 1 });
+    expect((await ours.claim()).body.job).toMatchObject({ runId: id, attempt: 1 });
+    expect((await ours.post(`/runs/${id}/tags`, { attempt: 1, tags: ["Order 12"] })).status).toBe(
+      400,
+    );
+    const tagged = await ours.post(`/runs/${id}/tags`, {
+      attempt: 1,
+      tags: ["order:1234", "vip", "order:1234"],
+    });
+    expect(tagged.body).toEqual({ tags: ["order:1234", "vip"] });
+    await ours.post(`/runs/${id}/complete`, { attempt: 1, output: {} });
+    const found = (await alice.get(`${ws()}/activity?tag=order:1234`)).body.items;
+    expect(found.map((one: { id: string; tags: string[] }) => [one.id, one.tags])).toEqual([
+      [id, ["order:1234", "vip"]],
+    ]);
+  });
+
   test("a run whose worker vanished shows as waiting again, so a worker is started for it", async () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
     const ours = protocol(
@@ -968,7 +1280,11 @@ describe("the worker protocol", () => {
     });
 
     // Now the supervisor sees work for the tenant and starts a worker, which finishes the run.
-    const supervisor = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    const supervisor = new WorkerSupervisor(t.kernel, {
+      url,
+      idleExitSeconds: 2,
+      operatorCodeOnly: false,
+    });
     await supervisor.tick();
     expect(supervisor.tenants).toEqual([tenant]);
     expect(await finished(id, 30)).toMatchObject({ status: "succeeded", attempt: 2, error: null });
@@ -1021,6 +1337,56 @@ describe("operator health and guards", () => {
     expect(metrics.body).toMatch(/^platform_workers\{kind="standalone"\} \d+$/m);
   });
 
+  test("a backlog shows by workspace and pool on the queue and in the metrics, with what ran before", async () => {
+    // No worker is running now: these wait.
+    const waiting = [await start("greet", { name: "A" }), await start("greet", { name: "B" })];
+    try {
+      const queue = (await alice.get(`/tenants/${tenant}/queue`)).body;
+      expect(queue.items).toContainEqual(
+        expect.objectContaining({ workspaceId: dev, workspace: "main-dev", pool: null }),
+      );
+      const here = queue.items.find(
+        (item: { workspaceId: string; pool: string | null }) =>
+          item.workspaceId === dev && item.pool === null,
+      );
+      expect(here.due).toBeGreaterThanOrEqual(2);
+      expect(here.oldestSeconds).toBeGreaterThanOrEqual(0);
+
+      const metrics = (await t.admin.get("/metrics")).body as string;
+      const queued =
+        /^platform_workspace_runs_queued\{tenant="acme",workspace="main-dev",pool="default"\} (\d+)$/m.exec(
+          metrics,
+        );
+      expect(Number(queued?.[1])).toBeGreaterThanOrEqual(2);
+      expect(metrics).toMatch(
+        /^platform_workspace_queue_oldest_seconds\{tenant="acme",workspace="main-dev"\} \d+$/m,
+      );
+      // Runs that ended earlier in this file were counted, with their workspace named.
+      expect(metrics).toMatch(
+        /^platform_runs_finished_total\{tenant="acme",workspace="main-dev",state="succeeded"\} \d+$/m,
+      );
+      expect(metrics).toMatch(
+        /^platform_run_duration_seconds_bucket\{tenant="acme",workspace="main-dev",le="\+Inf"\} \d+$/m,
+      );
+      expect(metrics).toMatch(
+        /^platform_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
+      );
+      expect(metrics).toMatch(/^platform_alerts_total\{outcome="delivered"\} \d+$/m);
+
+      // Without workspace labels, the counted series carry none.
+      t.kernel.config.metricsWorkspaceLabels = false;
+      try {
+        const plain = (await t.admin.get("/metrics")).body as string;
+        expect(plain).not.toContain("platform_workspace_runs_queued");
+        expect(plain).toMatch(/^platform_runs_finished_total\{state="succeeded"\} \d+$/m);
+      } finally {
+        t.kernel.config.metricsWorkspaceLabels = true;
+      }
+    } finally {
+      for (const id of waiting) await alice.post(`${ws()}/runs/${id}/cancel`, {});
+    }
+  });
+
   test("large inputs and outputs are kept in file storage, not in the run row", async () => {
     const ours = protocol(
       (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "big" })).body.token,
@@ -1043,7 +1409,7 @@ describe("operator health and guards", () => {
   test("every change by a principal left an audit entry, and every such route was exercised", () => {
     expect(t.unaudited).toEqual([]);
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|connection-tests|variable-values|worker-credentials)(\/|$)/;
     // Worker protocol routes are not changes by a principal. The protocol tests cover them.
     expect(t.unexercised((route) => execution.test(route) && !route.includes("/worker/"))).toEqual(
       [],
@@ -1054,14 +1420,21 @@ describe("operator health and guards", () => {
 describe("managed workers", () => {
   test("one starts for a tenant with work, runs it, and exits when idle, holding no instance secrets", async () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
-    const supervisor = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    // Acme's code is written by its own people; the rule that keeps it off workers beside the
+    // control plane is tested below, and set aside here.
+    const supervisor = new WorkerSupervisor(t.kernel, {
+      url,
+      idleExitSeconds: 2,
+      operatorCodeOnly: false,
+    });
 
-    const environment = supervisor.environment("vxw_example");
+    // The credential is handed over on standard input, never in the environment.
+    const environment = supervisor.environment();
     expect(
       Object.keys(environment)
         .sort()
         .filter((name) => name.startsWith("PLATFORM_")),
-    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT", "PLATFORM_WORKER_TOKEN"]);
+    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT"]);
     for (const secret of [
       "DATABASE_URL",
       "MASTER_KEY",
@@ -1107,4 +1480,134 @@ describe("managed workers", () => {
     expect(credentials.every((row) => row.revoked_at !== null)).toBe(true);
     await supervisor.stop();
   }, 90_000);
+
+  test("code written only by the operator is not written outside it; a tenant admin's is", async () => {
+    const { hasOutsideCodeWriters } = await import("./kernel/execution/isolation.js");
+    const lone = (await t.admin.post("/tenants", { slug: "lone", name: "Lone" })).body.id;
+    expect(await hasOutsideCodeWriters(t.kernel, lone)).toBe(false);
+    const operator = (await t.admin.get("/me")).body.principal.id;
+    // The operator, made a member and a tenant admin of it, is still the operator.
+    await t.db
+      .insertInto("tenant_member")
+      .values({ tenant_id: lone, member_id: operator })
+      .execute();
+    await t.db
+      .insertInto("binding")
+      .values({
+        id: newId(),
+        scope_type: "tenant",
+        tenant_id: lone,
+        workspace_id: null,
+        resource_id: null,
+        principal_type: "member",
+        principal_id: operator,
+        role_id: roles.tenant_admin as string,
+        source_resource_id: null,
+      })
+      .execute();
+    expect(await hasOutsideCodeWriters(t.kernel, lone)).toBe(false);
+    // Alice is a tenant admin and no operator, and Bob a developer.
+    expect(await hasOutsideCodeWriters(t.kernel, tenant)).toBe(true);
+  });
+
+  test("beside the control plane, a tenant whose code is written outside the operator gets no worker", async () => {
+    const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
+    const { workerUserMode } = await import("./kernel/execution/isolation.js");
+    // Even as a user of its own, a worker beside the control plane is on its network.
+    const supervisor = new WorkerSupervisor(t.kernel, {
+      url,
+      idleExitSeconds: 2,
+      user: { uid: 10001, gid: 10001 },
+    });
+    // As root it can switch users; otherwise not. Either way the tenant gets none.
+    expect(["isolated", "unable"]).toContain(await supervisor.mode());
+    expect(workerUserMode()).toBe(await supervisor.mode());
+    const id = await start("greet", { name: "Refused" });
+    await supervisor.tick();
+    expect(supervisor.tenants).toEqual([]);
+    expect(await supervisor.allowed(tenant)).toBe(false);
+    // The tenant's people are told.
+    expect((await alice.get(`/tenants/${tenant}/managed-workers`)).body).toEqual({
+      state: "refused",
+    });
+    await supervisor.stop();
+    // A worker of the tenant's own still runs it.
+    const own = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "own" })).body.token,
+    );
+    const claimed = await until(
+      async () => (await own.claim()).body.job,
+      (job) => job?.runId === id,
+      20,
+    );
+    await own.post(`/runs/${id}/complete`, { attempt: claimed.attempt, output: {} });
+  }, 60_000);
+
+  test("two control planes on one database start one worker for a tenant", async () => {
+    const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
+    const options = { url, idleExitSeconds: 2, operatorCodeOnly: false };
+    const first = new WorkerSupervisor(t.kernel, options);
+    const second = new WorkerSupervisor(t.kernel, options);
+    const id = await start("greet", { name: "Once" });
+    await Promise.all([first.tick(), second.tick()]);
+    expect([...first.tenants, ...second.tenants]).toEqual([tenant]);
+    expect(await finished(id, 30)).toMatchObject({ status: "succeeded" });
+    await Promise.all([first.stop(), second.stop()]);
+  }, 90_000);
+  test("a worker host is leased one tenant with work at a time, with the instance's token only", async () => {
+    const { setWorkerUserMode } = await import("./kernel/execution/isolation.js");
+    const token = "h".repeat(40);
+    const lease = (as: string | undefined) =>
+      t.app.inject({
+        method: "POST",
+        url: "/api/v1/worker-host/lease",
+        headers: as ? { authorization: `Bearer ${as}` } : {},
+        payload: { waitSeconds: 0 },
+      });
+    // Without host mode the routes are not there at all.
+    expect((await lease(token)).statusCode).toBe(404);
+
+    const config = t.kernel.config;
+    const before = { mode: config.managedWorkers, token: config.workerHostToken };
+    Object.assign(config, { managedWorkers: "host", workerHostToken: token });
+    setWorkerUserMode("host");
+    try {
+      expect((await lease(undefined)).statusCode).toBe(401);
+      expect((await lease("x".repeat(40))).statusCode).toBe(401);
+      expect((await lease(token)).json()).toEqual({ lease: null });
+      // In a worker host, a tenant's code runs off the control plane's network, whoever writes it.
+      expect((await alice.get(`/tenants/${tenant}/managed-workers`)).body).toEqual({
+        state: "host",
+      });
+
+      const id = await start("greet", { name: "Hosted" });
+      const given = (await lease(token)).json().lease;
+      expect(given).toMatchObject({ tenantId: tenant, idleExitSeconds: 60 });
+      // One worker for a tenant: a second request gets nothing while the first is alive.
+      expect((await lease(token)).json()).toEqual({ lease: null });
+
+      // What the host hands its worker is an ordinary worker credential for that tenant.
+      const hosted = protocol(given.token);
+      const claimed = await until(
+        async () => (await hosted.claim()).body.job,
+        (job) => job?.runId === id,
+        10,
+      );
+      expect(
+        (await hosted.post(`/runs/${id}/complete`, { attempt: claimed.attempt, output: {} }))
+          .status,
+      ).toBe(204);
+
+      const ended = await t.app.inject({
+        method: "POST",
+        url: `/api/v1/worker-host/leases/${given.id}/ended`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(ended.statusCode).toBe(204);
+      expect((await hosted.claim()).status).toBe(401);
+    } finally {
+      Object.assign(config, { managedWorkers: before.mode, workerHostToken: before.token });
+      setWorkerUserMode("off");
+    }
+  });
 });

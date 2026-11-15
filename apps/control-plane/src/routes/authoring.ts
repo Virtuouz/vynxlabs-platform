@@ -5,6 +5,7 @@ import { mutate } from "../kernel/audit.js";
 import {
   composeDrafts,
   deployDrafts,
+  deriveSchemas,
   discardDraft,
   isCodeKind,
   saveDraft,
@@ -62,6 +63,13 @@ const DraftSummary = Type.Object({
 const Draft = Type.Object({
   ...DraftSummary.properties,
   body: AnyObject,
+  schemaTaskId: Type.Optional(
+    Type.String({
+      description:
+        "For a script: the task in which a worker reads the `input` and `output` its code " +
+        "exports. When it ends, the draft has them. Absent when the code does not build.",
+    }),
+  ),
   problems: Type.Optional(
     Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
       description:
@@ -337,9 +345,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           saveDraft(kernel, trx, audit, workspace, ctx.principal, { ...body, path }),
         );
         const owned = await ownership(workspace.id, [path]);
+        const schemaTaskId =
+          body.kind === "script" && !body.deleted
+            ? await deriveSchemas(kernel, workspace, ctx.principal, saved.draft)
+            : undefined;
         return {
           ...summarize(saved.draft, owned.get(path)),
           body: saved.draft.body,
+          ...(schemaTaskId ? { schemaTaskId } : {}),
           ...(body.kind === "interface" && !body.deleted
             ? {
                 problems: await interfaceProblems(

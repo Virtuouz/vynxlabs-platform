@@ -1,5 +1,5 @@
 import { Badge, Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -26,10 +26,13 @@ import { EndUsers } from "./EndUsers.tsx";
 import { TenantExport, WorkspaceSettings } from "./Environments.tsx";
 import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
 import { GitSync } from "./GitSync.tsx";
+import { NotFound } from "./NotFound.tsx";
 import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.tsx";
 import { Overview } from "./Overview.tsx";
 import { Release } from "./Release.tsx";
 import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
+import { RetentionSettings } from "./Retention.tsx";
+import { RunPage, ToRunPage } from "./RunPage.tsx";
 import { RunsWorkbench } from "./Runs.tsx";
 
 // Screens that bring a library with them, or that few people open, are fetched when first
@@ -55,7 +58,8 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
-import { FlowRunView, Flows, FlowView } from "./Flows.tsx";
+import { Alerts } from "./Alerts.tsx";
+import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups } from "./Groups.tsx";
 import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
@@ -185,7 +189,6 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
 
   const section = match("/t/:t/:section/*", path)?.section ?? "overview";
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
-  const runId = match("/t/:t/workspaces/:w/runs/:id", path)?.id;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       {mine ? (
@@ -214,7 +217,6 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
           workspaceId={workspace.w}
           tab={workspace.tab ?? "overview"}
           rest={path.split("/").slice(6).map(decodeURIComponent).join("/")}
-          runId={runId}
         />
       ) : section === "approvals" ? (
         <ApprovalsQueue base={base} tenantId={tenantId} />
@@ -242,14 +244,18 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <SingleSignOn base={base} />
       ) : section === "export" ? (
         <ExportSection base={base} />
+      ) : section === "retention" ? (
+        <RetentionSettings base={base} />
       ) : section === "audit" ? (
         <AuditTable
           title="Audit log"
           description="Every change in this tenant, and every request an operator made under an access grant."
           path={`${base}/audit`}
         />
-      ) : (
+      ) : section === "workspaces" ? (
         <Workspaces base={base} tenantId={tenantId} />
+      ) : (
+        <NotFound home={`/t/${tenantId}`} homeLabel="Go to the tenant overview" />
       )}
     </div>
   );
@@ -336,13 +342,39 @@ function ExportSection({ base }: { base: string }) {
   return <TenantExport base={base} slug={tenant.data.slug} />;
 }
 
+/** Every tab a workspace has. Any other address in a workspace has no page. */
+const WORKSPACE_TABS = new Set([
+  "alerts",
+  "apps",
+  "changes",
+  "connections",
+  "dashboards",
+  "deployments",
+  "events",
+  "extensions",
+  "flow-runs",
+  "flows",
+  "git",
+  "overview",
+  "release",
+  "resources",
+  "runs",
+  "screens",
+  "scripts",
+  "secrets",
+  "settings",
+  "sources",
+  "tables",
+  "triggers",
+  "variables",
+]);
+
 function WorkspaceDetail({
   base,
   tenantId,
   workspaceId,
   tab,
   rest,
-  runId,
 }: {
   base: string;
   tenantId: string;
@@ -350,13 +382,36 @@ function WorkspaceDetail({
   tab: string;
   /** What follows the tab in the address: a flow's path, or a flow run's ID. */
   rest: string;
-  runId: string | undefined;
 }) {
   const workspace = useLoad<Workspace>(`${base}/workspaces/${workspaceId}`);
+  // An address may name the workspace by its slug, as people type it. When the
+  // ID is refused, the slug is looked up and the address replaced by the ID's.
+  const refused = workspace.error?.status === 400 || workspace.error?.status === 404;
+  const all = useLoad<{ items: Workspace[] }>(refused ? `${base}/workspaces` : null);
+  const named = all.data?.items.find((one) => one.slug === workspaceId);
+  useEffect(() => {
+    if (!named) return;
+    const from = `/workspaces/${encodeURIComponent(workspaceId)}`;
+    navigate(location.pathname.replace(from, `/workspaces/${named.id}`) + location.search, {
+      replace: true,
+    });
+  }, [named, workspaceId]);
   const root = `${base}/workspaces/${workspaceId}`;
   const secretUses = useReferences(root, "secret", tab === "secrets");
+  if (refused) {
+    if (named || (!all.data && !all.error)) return null;
+    return <NotFound home={`/t/${tenantId}/workspaces`} homeLabel="Go to the workspaces" />;
+  }
   if (workspace.error) return <Notice tone="danger">{workspace.error.message}</Notice>;
   if (!workspace.data) return null;
+  if (!WORKSPACE_TABS.has(tab)) {
+    return (
+      <NotFound
+        home={`/t/${tenantId}/workspaces/${workspaceId}/overview`}
+        homeLabel={`Go to the ${workspace.data.name} overview`}
+      />
+    );
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       {tab === "overview" ? (
@@ -406,12 +461,8 @@ function WorkspaceDetail({
           editable={workspace.data.type === "dev"}
         />
       ) : tab === "flow-runs" && rest ? (
-        <FlowRunView
-          key={rest}
-          root={root}
-          id={rest}
-          link={`/t/${tenantId}/workspaces/${workspaceId}`}
-        />
+        // A flow run's page is the run page now; old links still arrive.
+        <ToRunPage to={`/t/${tenantId}/workspaces/${workspaceId}/runs/${rest}`} />
       ) : tab === "dashboards" && rest ? (
         <DashboardView
           key={rest}
@@ -499,12 +550,15 @@ function WorkspaceDetail({
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           editable={workspace.data.type === "dev"}
         />
-      ) : tab === "runs" ? (
-        <RunsWorkbench
+      ) : tab === "runs" && rest ? (
+        <RunPage
+          key={rest}
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
-          selected={runId}
+          id={rest}
         />
+      ) : tab === "runs" ? (
+        <RunsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "triggers" ? (
         <TriggersWorkbench
           root={root}
@@ -519,6 +573,13 @@ function WorkspaceDetail({
         </div>
       ) : tab === "variables" ? (
         <Variables root={root} />
+      ) : tab === "alerts" ? (
+        <Alerts
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          workspaceRoot={`${base}/workspaces/${workspaceId}`}
+          editable
+        />
       ) : null}
       {tab === "resources" && /^(new|edit)\//.test(rest) ? (
         (() => {

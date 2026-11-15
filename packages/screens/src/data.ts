@@ -22,6 +22,26 @@ export interface InterfaceView {
   path: string;
   interface: InterfaceBody;
   tables: Record<string, TableInfo>;
+  /** What each action starts, by `script:<path>` or `flow:<path>`. Absent from an older platform. */
+  targets?: Record<string, TargetInfo>;
+}
+
+/** What an action starts, as the person looking at the page may know it. */
+export interface TargetInfo {
+  canStart: boolean;
+  description: string | null;
+  inputSchema: Record<string, unknown> | null;
+}
+
+/** A run an action started, as far as it has gone. */
+export interface StartedRun {
+  kind: "script" | "flow";
+  id: string;
+}
+export interface RunState {
+  status: string;
+  output?: unknown;
+  error?: { message: string } | null;
 }
 
 export interface Page {
@@ -58,6 +78,10 @@ export interface DataClient {
   insert(table: string, row: Row): Promise<Row>;
   update(table: string, id: string, changes: Row): Promise<Row>;
   remove(table: string, id: string): Promise<void>;
+  /** Starts a script, or a flow from its manual trigger, as the person looking. */
+  start?(target: { kind: "script" | "flow"; path: string }, input: unknown): Promise<StartedRun>;
+  /** How a run it started is going. */
+  run?(started: StartedRun): Promise<RunState>;
 }
 
 /** What a refused request says, read from whatever the client threw. */

@@ -226,6 +226,54 @@ describe("small things the console shows", () => {
     });
     expect((await alice.get("/me/recent")).body.items[0].workspaceId).toBeNull();
   });
+
+  test("moving between workspaces is remembered but leaves no audit entry", async () => {
+    const audited = async () =>
+      Number(
+        (
+          await t.kernel.db
+            .selectFrom("audit_entry")
+            .select((eb) => eb.fn.countAll().as("n"))
+            .where("tenant_id", "=", tenant)
+            .executeTakeFirstOrThrow()
+        ).n,
+      );
+    const before = await audited();
+    for (let i = 0; i < 10; i += 1) {
+      const moved = await alice.put("/me/recent", {
+        tenantId: tenant,
+        workspaceId: i % 2 === 0 ? dev : prod,
+      });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(204);
+    }
+    expect(await audited()).toBe(before);
+    expect((await alice.get("/me/recent")).body.items[0].workspaceId).toBe(prod);
+  });
+
+  test("only the listed preference routes may write without an audit entry", async () => {
+    const { default: Fastify } = await import("fastify");
+    const { installAccessControl, PREFERENCE_ROUTES } = await import("./kernel/http.js");
+    expect([...PREFERENCE_ROUTES]).toEqual([
+      "PUT /api/v1/me/recent",
+      "PUT /api/v1/me/recent-items",
+    ]);
+    const app = Fastify();
+    const build = async () => {
+      await app.register(
+        async (api) => {
+          installAccessControl(api, t.kernel);
+          api.put(
+            "/me/other",
+            { config: { access: { kind: "signed-in" }, preference: true } },
+            async () => null,
+          );
+        },
+        { prefix: "/api/v1" },
+      );
+      await app.ready();
+    };
+    await expect(build()).rejects.toThrow(/may not write without an audit entry/);
+  });
 });
 
 describe("worker pools", () => {

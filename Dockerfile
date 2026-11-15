@@ -27,6 +27,25 @@ RUN pnpm build
 RUN pnpm --filter @vynxlabs/control-plane deploy --prod /out
 
 FROM node:24-slim
+# Managed workers run as vxrun, a user of their own, so a tenant's script can neither read
+# the control plane's environment nor signal it. Switching users needs CAP_SETUID and
+# CAP_SETGID. Only node-cp, the copy of node the control plane runs on, holds them: a
+# worker and its scripts run on plain node and hold none, so they cannot switch back.
+# Without those capabilities in the container, node-cp cannot start at all, and
+# platform-start runs the control plane on plain node instead: it then refuses managed
+# workers to tenants whose code is written outside the operator. See docs/self-hosting.md.
+#
+# The same image runs the worker host (platform-worker-host), which starts managed workers
+# in a container of its own; iptables lets it keep them from private addresses.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libcap2-bin iptables \
+  && cp /usr/local/bin/node /usr/local/bin/node-cp \
+  && setcap cap_setuid,cap_setgid+ep /usr/local/bin/node-cp \
+  && apt-get purge -y libcap2-bin \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system --gid 10001 vxrun \
+  && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin vxrun
 ENV NODE_ENV=production
 ENV CONSOLE_DIR=/app/console
 ENV SCREENS_DIR=/app/screens
@@ -36,4 +55,6 @@ COPY --from=build /repo/apps/console/dist ./console
 COPY --from=build /repo/packages/screens/runtime/dist ./screens
 USER node
 EXPOSE 8080
-CMD ["node", "dist/main.js"]
+COPY --chmod=755 deploy/image/platform-start /usr/local/bin/platform-start
+COPY --chmod=755 deploy/image/platform-worker-host /usr/local/bin/platform-worker-host
+CMD ["platform-start", "dist/main.js"]

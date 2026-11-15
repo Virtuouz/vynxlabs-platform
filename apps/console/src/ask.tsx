@@ -1,3 +1,4 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import {
   type Dialogs,
   DialogsProvider,
@@ -6,8 +7,8 @@ import {
   useDialogs,
   useToast,
 } from "@vynxlabs/ui";
-import type { ReactNode } from "react";
-import type { ApiError } from "./api.ts";
+import { type ReactNode, useState } from "react";
+import { type ApiError, makeQueryClient, setActiveClient } from "./api.ts";
 
 let dialogs: Dialogs | undefined;
 let toasts: Toasts | undefined;
@@ -24,13 +25,18 @@ function Bridge() {
  * `notify`, so a screen never falls back on the browser's own dialogs.
  */
 export function Providers({ children }: { children: ReactNode }) {
+  // One cache for this page, made once. A test that draws a screen gets a fresh one.
+  const [client] = useState(makeQueryClient);
+  setActiveClient(client);
   return (
-    <ToastProvider>
-      <DialogsProvider>
-        <Bridge />
-        {children}
-      </DialogsProvider>
-    </ToastProvider>
+    <QueryClientProvider client={client}>
+      <ToastProvider>
+        <DialogsProvider>
+          <Bridge />
+          {children}
+        </DialogsProvider>
+      </ToastProvider>
+    </QueryClientProvider>
   );
 }
 

@@ -1,3 +1,4 @@
+import { type EgressAllow, parseEgressAllow } from "./kernel/egress.js";
 export interface Config {
   databaseUrl: string;
   s3: {
@@ -18,8 +19,26 @@ export interface Config {
   masterKey: Buffer;
   /** Creates the first operator admin when the instance has no members. */
   bootstrapAdmin: { email: string; password: string } | undefined;
-  /** Whether the control plane starts worker processes itself, one per tenant with work. */
-  managedWorkers: boolean;
+  /**
+   * Whether the instance starts workers itself, one per tenant with work, and where:
+   * `host`, in a worker host container on a network of its own, which asks for leases;
+   * `process`, beside the control plane, only for tenants whose code only the operator
+   * writes (decision 0001); or not at all.
+   */
+  managedWorkers: "host" | "process" | false;
+  /** What a worker host presents to ask for leases. Set in `host` mode. */
+  workerHostToken: string | undefined;
+  /** Whether metrics carry tenant and workspace labels. Off for an instance with very many. */
+  metricsWorkspaceLabels: boolean;
+  /**
+   * The user managed workers run as: their own, so that a script cannot read the
+   * control plane's environment, or `same`, the control plane's, by the operator's choice.
+   */
+  managedWorkerUser: { uid: number; gid: number } | "same";
+  /** How many days each kind of history is kept, unless a tenant says otherwise. */
+  retention: RetentionDays;
+  /** Internal networks and hosts the instance may reach for a tenant despite the egress guard. */
+  egressAllow: EgressAllow;
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
   /** Where the built app that draws interfaces is. Without it, generated apps are not served. */
@@ -29,11 +48,34 @@ export interface Config {
    * instance's own address, so that an app never runs where the console's sign-in is.
    */
   appsUrl: string | undefined;
+  /**
+   * Serves apps written as code at the console's own address when there is no
+   * APPS_URL. Off by default: an app's code would then run where the console's
+   * sign-in is (decision 0001). Interfaces built in the console are served either way.
+   */
+  appsOnConsoleAddress: boolean;
   /** Where mail goes out, for invitations and password resets. Undefined when no mail is sent. */
   mail: { url: string; from: string } | undefined;
 }
 
 export const MIN_PASSWORD_LENGTH = 12;
+
+export interface RetentionDays {
+  /** Script runs and flow runs, with their logs, steps and stored payloads, after they end. */
+  runsDays: number;
+  eventsDays: number;
+  /** Refused webhook requests and SCIM pushes. */
+  refusalsDays: number;
+  auditDays: number;
+}
+
+/** The shortest and longest each kind may be kept, by an instance or a tenant. */
+export const RETENTION_BOUNDS = {
+  runsDays: { min: 1, max: 3650 },
+  eventsDays: { min: 1, max: 3650 },
+  refusalsDays: { min: 1, max: 3650 },
+  auditDays: { min: 90, max: 3650 },
+} as const;
 
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -121,9 +163,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     URL.canParse(publicUrl) &&
     new URL(appsUrl).host === new URL(publicUrl).host
   ) {
-    problems.push(
-      "APPS_URL must be a different host from PUBLIC_URL. Leave it unset to serve apps on PUBLIC_URL.",
-    );
+    problems.push("APPS_URL must be a different host from PUBLIC_URL.");
+  }
+  const appsOnConsole = value("APPS_ON_CONSOLE_ADDRESS") ?? "false";
+  if (appsOnConsole !== "true" && appsOnConsole !== "false") {
+    problems.push("APPS_ON_CONSOLE_ADDRESS must be true or false.");
   }
 
   const smtpUrl = value("SMTP_URL");
@@ -133,10 +177,51 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     problems.push("SMTP_URL and MAIL_FROM must be set together.");
   }
 
-  const managed = value("MANAGED_WORKERS") ?? "true";
-  if (managed !== "true" && managed !== "false") {
-    problems.push("MANAGED_WORKERS must be true or false.");
+  // `true` is read as `process`, as it was before there was a worker host.
+  const managedRaw = value("MANAGED_WORKERS") ?? "process";
+  const managed = managedRaw === "true" ? "process" : managedRaw;
+  if (managed !== "host" && managed !== "process" && managed !== "false") {
+    problems.push("MANAGED_WORKERS must be host, process or false.");
   }
+  const workerHostToken = value("WORKER_HOST_TOKEN");
+  const metricsLabels = value("METRICS_WORKSPACE_LABELS") ?? "true";
+  if (metricsLabels !== "true" && metricsLabels !== "false") {
+    problems.push("METRICS_WORKSPACE_LABELS must be true or false.");
+  }
+  if (managed === "host" && (workerHostToken === undefined || workerHostToken.length < 32)) {
+    problems.push("MANAGED_WORKERS=host needs WORKER_HOST_TOKEN, of at least 32 characters.");
+  }
+  const workerUser = value("MANAGED_WORKER_USER") ?? "own";
+  if (workerUser !== "own" && workerUser !== "same") {
+    problems.push("MANAGED_WORKER_USER must be own or same.");
+  }
+  const id = (name: string) => {
+    const raw = value(name) ?? "10001";
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      problems.push(`${name} must be a positive whole number.`);
+    }
+    return parsed;
+  };
+  const days = (name: string, fallback: number, bounds: { min: number; max: number }) => {
+    const raw = value(name);
+    if (raw === undefined) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < bounds.min || parsed > bounds.max) {
+      problems.push(`${name} must be a whole number of days from ${bounds.min} to ${bounds.max}.`);
+    }
+    return parsed;
+  };
+  const retention = {
+    runsDays: days("RETENTION_RUNS_DAYS", 30, RETENTION_BOUNDS.runsDays),
+    eventsDays: days("RETENTION_EVENTS_DAYS", 30, RETENTION_BOUNDS.eventsDays),
+    refusalsDays: days("RETENTION_REFUSALS_DAYS", 7, RETENTION_BOUNDS.refusalsDays),
+    auditDays: days("RETENTION_AUDIT_DAYS", 400, RETENTION_BOUNDS.auditDays),
+  };
+  const egress = parseEgressAllow(value("EGRESS_ALLOW"));
+  if (typeof egress === "string") problems.push(egress);
+  const workerUid = id("MANAGED_WORKER_UID");
+  const workerGid = id("MANAGED_WORKER_GID");
 
   const config: Config = {
     databaseUrl,
@@ -158,10 +243,16 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       bootstrapEmail !== undefined && bootstrapPassword !== undefined
         ? { email: bootstrapEmail.toLowerCase(), password: bootstrapPassword }
         : undefined,
-    managedWorkers: managed === "true",
+    managedWorkers: managed === "host" || managed === "process" ? managed : false,
+    workerHostToken: managed === "host" ? workerHostToken : undefined,
+    metricsWorkspaceLabels: metricsLabels === "true",
+    managedWorkerUser: workerUser === "same" ? "same" : { uid: workerUid, gid: workerGid },
+    retention,
+    egressAllow: typeof egress === "string" ? { networks: [], hosts: [] } : egress,
     consoleDir: value("CONSOLE_DIR"),
     screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),
+    appsOnConsoleAddress: appsOnConsole === "true",
     mail:
       smtpUrl !== undefined && mailFrom !== undefined
         ? { url: smtpUrl, from: mailFrom }

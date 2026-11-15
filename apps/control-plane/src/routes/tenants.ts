@@ -1,11 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { type DataLocation, newId } from "@vynxlabs/db";
 import { Type } from "typebox";
-import { MIN_PASSWORD_LENGTH } from "../config.js";
+import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { badRequest, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
+import { effectivePolicy } from "../kernel/retention.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   ApiKey,
@@ -269,6 +270,122 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           return updated;
         });
         return toTenant(row);
+      },
+    );
+
+    // ----- How long the tenant's history is kept -----
+
+    const Days = (bounds: { min: number; max: number }, about: string) =>
+      Type.Union([Type.Integer({ minimum: bounds.min, maximum: bounds.max }), Type.Null()], {
+        description: `${about} From ${bounds.min} to ${bounds.max} days. Null takes the instance's default.`,
+      });
+    const RetentionFields = {
+      runsDays: Days(
+        RETENTION_BOUNDS.runsDays,
+        "Script and flow runs, with their logs, after they end.",
+      ),
+      eventsDays: Days(RETENTION_BOUNDS.eventsDays, "Published events."),
+      refusalsDays: Days(
+        RETENTION_BOUNDS.refusalsDays,
+        "Refused webhook requests and SCIM pushes.",
+      ),
+      auditDays: Days(RETENTION_BOUNDS.auditDays, "The audit log."),
+    };
+    const PolicyDays = Type.Object({
+      runsDays: Type.Integer(),
+      eventsDays: Type.Integer(),
+      refusalsDays: Type.Integer(),
+      auditDays: Type.Integer(),
+    });
+    const Retention = Type.Object({
+      ...RetentionFields,
+      effective: PolicyDays,
+      defaults: PolicyDays,
+      bounds: Type.Object(
+        Object.fromEntries(
+          Object.keys(RETENTION_BOUNDS).map((key) => [
+            key,
+            Type.Object({ min: Type.Integer(), max: Type.Integer() }),
+          ]),
+        ),
+      ),
+    });
+    const retentionOf = async (tenantId: string) => {
+      const row = await db
+        .selectFrom("tenant_retention")
+        .selectAll()
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirst();
+      return {
+        runsDays: row?.runs_days ?? null,
+        eventsDays: row?.events_days ?? null,
+        refusalsDays: row?.refusals_days ?? null,
+        auditDays: row?.audit_days ?? null,
+        effective: await effectivePolicy(kernel, tenantId),
+        defaults: kernel.config.retention,
+        bounds: RETENTION_BOUNDS,
+      };
+    };
+
+    app.get(
+      "/tenants/:t/retention",
+      {
+        config: { access: access.tenantOrInstance("tenant:read") },
+        schema: {
+          summary: "How long the tenant's history is kept",
+          description:
+            "Each kind is the tenant's own number of days, or null for the instance's default. " +
+            "`effective` is what applies.",
+          tags: ["tenancy"],
+          params: TenantParams,
+          response: { 200: Retention },
+        },
+      },
+      async ({ params }) => retentionOf(params.t),
+    );
+
+    app.put(
+      "/tenants/:t/retention",
+      {
+        config: { access: access.tenantOrInstance("tenant:write") },
+        schema: {
+          summary: "Say how long the tenant's history is kept",
+          description:
+            "Only the kinds sent change. Null goes back to the instance's default. What is " +
+            "older than the new period is removed by the next retention pass, within minutes.",
+          tags: ["tenancy"],
+          params: TenantParams,
+          body: Type.Partial(Type.Object(RetentionFields)),
+          response: { 200: Retention },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const set = {
+          ...(body.runsDays !== undefined ? { runs_days: body.runsDays } : {}),
+          ...(body.eventsDays !== undefined ? { events_days: body.eventsDays } : {}),
+          ...(body.refusalsDays !== undefined ? { refusals_days: body.refusalsDays } : {}),
+          ...(body.auditDays !== undefined ? { audit_days: body.auditDays } : {}),
+        };
+        if (Object.keys(set).length === 0) {
+          throw badRequest("Send at least one of runsDays, eventsDays, refusalsDays, auditDays.");
+        }
+        await ctx.mutate(async (trx, audit) => {
+          await trx
+            .insertInto("tenant_retention")
+            .values({ tenant_id: params.t, ...set })
+            .onConflict((c) =>
+              c.column("tenant_id").doUpdateSet({ ...set, updated_at: new Date() }),
+            )
+            .execute();
+          await audit({
+            action: "tenant.retention_set",
+            targetType: "tenant",
+            targetId: params.t,
+            tenantId: params.t,
+            details: body,
+          });
+        });
+        return retentionOf(params.t);
       },
     );
 

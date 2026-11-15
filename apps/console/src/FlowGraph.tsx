@@ -1,5 +1,6 @@
 import dagre from "@dagrejs/dagre";
 import { useMemo, useRef, useState } from "react";
+import { type RunState, STATE_STROKE, stateLabel } from "./kit/status.tsx";
 
 export interface GraphNode {
   type: string;
@@ -49,15 +50,6 @@ export function describe(node: GraphNode): string {
 }
 
 /** A status changes a node's outline, never its fill, so the label stays readable. */
-const STATUS: Record<string, { stroke: string; label: string }> = {
-  succeeded: { stroke: "var(--vx-success)", label: "Succeeded" },
-  failed: { stroke: "var(--vx-danger)", label: "Failed" },
-  running: { stroke: "var(--vx-action)", label: "Running" },
-  waiting: { stroke: "var(--vx-attention)", label: "Waiting" },
-  cancelled: { stroke: "var(--vx-ink-muted)", label: "Canceled" },
-  skipped: { stroke: "var(--vx-line)", label: "Skipped" },
-};
-
 /** Lays the graph out left to right. Used for every node that has no saved position. */
 export function autoLayout(nodes: Record<string, GraphNode>, edges: GraphEdge[]): Positions {
   const graph = new dagre.graphlib.Graph();
@@ -81,8 +73,8 @@ export interface FlowGraphProps {
   edges: GraphEdge[];
   /** Saved positions. Nodes without one are laid out automatically. */
   layout: Positions;
-  /** A status per node, when showing a run. */
-  statuses?: Record<string, string>;
+  /** A state per node, when showing a run. */
+  statuses?: Record<string, RunState>;
   selected?: string | undefined;
   onSelect?: (node: string) => void;
   /** Called with every node's position after one is dragged. Omit to make the graph fixed. */
@@ -104,6 +96,9 @@ export function FlowGraph({
   const positions: Positions = { ...automatic, ...layout, ...moved };
   const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
+  // A graph that cannot be moved opens fitted to its frame, so a wide flow is seen whole.
+  // One that can be moved keeps its true size, so a drag lands where the pointer is.
+  const [fitted, setFitted] = useState(!onMove);
 
   const ids = Object.keys(nodes).filter((id) => positions[id]);
   const width = Math.max(...ids.map((id) => (positions[id]?.x ?? 0) + WIDTH), 320) + 24;
@@ -115,12 +110,27 @@ export function FlowGraph({
   };
 
   return (
-    <div className="overflow-auto rounded-panel border border-line bg-surface">
+    <div className="relative overflow-auto rounded-panel border border-line bg-surface">
+      {onMove ? null : (
+        <button
+          type="button"
+          onClick={() => setFitted((on) => !on)}
+          className="absolute top-2 right-2 z-10 rounded-control border border-line bg-raised px-2 py-0.5 text-meta text-ink-muted hover:text-ink"
+        >
+          {fitted ? "Actual size" : "Fit to view"}
+        </button>
+      )}
       {/* biome-ignore lint/a11y/useSemanticElements: an SVG is grouped by role, it has no fieldset */}
       <svg
         ref={svg}
-        width={width}
-        height={height}
+        {...(fitted
+          ? {
+              viewBox: `0 0 ${width} ${height}`,
+              width: "100%",
+              preserveAspectRatio: "xMidYMin meet",
+              style: { maxWidth: width, maxHeight: "70vh", display: "block", margin: "0 auto" },
+            }
+          : { width, height })}
         role="group"
         aria-label="Flow graph"
         onPointerMove={(event) => {
@@ -221,8 +231,10 @@ export function FlowGraph({
         {ids.map((id) => {
           const node = nodes[id] as GraphNode;
           const at = positions[id] as { x: number; y: number };
-          const status = statuses?.[id];
-          const look = status ? STATUS[status] : undefined;
+          const state = statuses?.[id];
+          const look = state
+            ? { stroke: STATE_STROKE[state], label: stateLabel(state) }
+            : undefined;
           const isSelected = selected === id;
           return (
             // biome-ignore lint/a11y/useSemanticElements: an SVG group cannot be a button element
@@ -259,14 +271,14 @@ export function FlowGraph({
                 </g>
               ) : null}
               <rect
-                opacity={statuses && !status ? 0.5 : 1}
+                opacity={statuses && !state ? 0.5 : 1}
                 width={WIDTH}
                 height={HEIGHT}
                 rx={node.type === "trigger" ? HEIGHT / 2 : 8}
-                fill={status === "skipped" ? "var(--vx-canvas)" : "var(--vx-surface)"}
+                fill={state === "skipped" ? "var(--vx-canvas)" : "var(--vx-surface)"}
                 stroke={isSelected ? "var(--vx-action)" : (look?.stroke ?? "var(--vx-line)")}
                 strokeWidth={isSelected ? 3 : look ? 2.5 : 1.5}
-                strokeDasharray={status === "skipped" ? "4 3" : undefined}
+                strokeDasharray={state === "skipped" ? "4 3" : undefined}
               />
               <text x={14} y={22} fontSize="13" fontWeight="600" fill="var(--vx-ink)">
                 {id.length > 20 ? `${id.slice(0, 19)}…` : id}

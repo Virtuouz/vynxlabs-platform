@@ -153,7 +153,7 @@ test("Ctrl+K opens a palette that finds a screen by part of its name and goes th
   );
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
   const search = await screen.findByRole("combobox", {
-    name: "Search screens, tenants and workspaces",
+    name: /Find anything/,
   });
   fireEvent.change(search, { target: { value: "secr" } });
   const options = await screen.findAllByRole("option");

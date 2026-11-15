@@ -219,8 +219,8 @@ export function Overview({
             title={`${failed} run${failed === 1 ? "" : "s"} failed in the last 24 hours`}
             detail="Open the failed runs to see which step and which log line."
             action={
-              <Button size="small" onClick={() => navigate(`${link}/runs`)}>
-                Open runs
+              <Button size="small" onClick={() => navigate(`${link}/runs?status=failed`)}>
+                Open failed runs
               </Button>
             }
           />

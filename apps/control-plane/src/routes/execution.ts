@@ -14,13 +14,28 @@ import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/con
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
-import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
+import {
+  flowStateSql,
+  type RunState,
+  RunStateSchema,
+  runState,
+  runStateSql,
+} from "../kernel/execution/state.js";
+import { queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
+import {
+  fireScheduleNow,
+  fireWebhook,
+  kickStarted,
+  nextFireTimes,
+  webhookToken,
+} from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { labelText } from "../kernel/metrics.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
@@ -40,12 +55,46 @@ import {
 } from "./shared.js";
 
 const pathPattern = new RegExp(PATH_PATTERN);
+
+/** The worker version that first takes tasks. An older one is shown as needing an update. */
+const TASKS_SINCE = "0.6.0";
+/** Whether a version is older than another, or unknown. */
+function olderThan(version: string | null, than: string): boolean {
+  if (!version) return true;
+  const parts = (text: string) =>
+    text
+      .split(/[.-]/)
+      .slice(0, 3)
+      .map((part) => Number(part) || 0);
+  const [a, b] = [parts(version), parts(than)];
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  }
+  return false;
+}
 const WildParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
 function wildPath(params: { "*": string }): string {
   const path = params["*"];
   if (!pathPattern.test(path) || path.length > 255) throw badRequest("The path is not valid.");
   return path;
 }
+
+/** Something a worker does for the platform, as the console follows it. */
+const Task = Type.Object({
+  id: Id,
+  kind: Type.String(),
+  subject: NullableString,
+  status: Type.Union([
+    Type.Literal("queued"),
+    Type.Literal("running"),
+    Type.Literal("succeeded"),
+    Type.Literal("failed"),
+  ]),
+  result: Type.Unknown({ description: "What it found, in the shape its kind gives." }),
+  error: Type.Union([Type.Object({ message: Type.String() }), Type.Null()]),
+  createdAt: Time,
+  finishedAt: NullableTime,
+});
 
 const Bundle = Type.Object({
   id: Id,
@@ -144,6 +193,7 @@ const Run = Type.Object({
   id: Id,
   script: Type.String(),
   status: RunStatus,
+  state: RunStateSchema,
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
   trigger: AnyObject,
@@ -151,12 +201,18 @@ const Run = Type.Object({
   bundleId: Id,
   bundleVersion: Type.Integer(),
   error: Type.Union([Type.Object({ message: Type.String() }), Type.Null()]),
+  errorSummary: NullableString,
+  tags: Type.Array(Type.String()),
+  rerunOf: Type.Union([Id, Type.Null()], { description: "The run this one runs again." }),
   createdAt: Time,
   startedAt: NullableTime,
   finishedAt: NullableTime,
 });
 const RunDetail = Type.Object({
   ...Run.properties,
+  reruns: Type.Array(Type.Object({ id: Id, state: RunStateSchema, createdAt: Time }), {
+    description: "Runs started again from this one, newest first.",
+  }),
   pool: Type.Union([Type.String(), Type.Null()], {
     description: "The worker pool the run is for. Null for the default pool.",
   }),
@@ -181,6 +237,8 @@ interface RunRow {
   started_by_id: string | null;
   bundle_id: string;
   error: { message: string } | null;
+  error_summary: string | null;
+  tags: string[];
   created_at: Date;
   started_at: Date | null;
   finished_at: Date | null;
@@ -189,6 +247,7 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
   id: row.id,
   script: row.script_path,
   status: row.status,
+  state: runState(row.status),
   attempt: row.attempt,
   maxAttempts: row.max_attempts,
   trigger: { type: row.trigger_type, ...row.trigger_detail },
@@ -196,6 +255,12 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
   bundleId: row.bundle_id,
   bundleVersion,
   error: row.error ? { message: row.error.message } : null,
+  errorSummary: row.error_summary,
+  tags: row.tags,
+  rerunOf:
+    row.trigger_type === "rerun" && typeof row.trigger_detail.of === "string"
+      ? row.trigger_detail.of
+      : null,
   createdAt: iso(row.created_at),
   startedAt: isoOrNull(row.started_at),
   finishedAt: isoOrNull(row.finished_at),
@@ -733,6 +798,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Object({
                       id: Id,
                       status: RunStatus,
+                      state: RunStateSchema,
                       createdAt: Time,
                       error: NullableString,
                     }),
@@ -804,6 +870,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? {
                     id: last.id,
                     status: last.status,
+                    state: runState(last.status),
                     createdAt: iso(last.created_at),
                     error: last.error,
                   }
@@ -930,6 +997,79 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.post(
+      `${base}/runs/:id/rerun`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Run a script run again, with the same input or another",
+          description:
+            "Starts a new run of the same script, on the version the run used (the default) " +
+            "or the active one, with the input given or the same input. The new run names the " +
+            "one it repeats and carries its tags. Needs what starting the script needs.",
+          tags: ["runs"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          body: Type.Object({
+            input: Type.Optional(Type.Unknown()),
+            bundle: Type.Optional(Type.Union([Type.Literal("original"), Type.Literal("active")])),
+          }),
+          response: { 201: Run },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const original = await findRun(params.w, params.id);
+        await ctx.authorize("run:write", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          resourceId: original.resource_id,
+        });
+        if (original.flow_run_id) {
+          throw new HttpError(
+            409,
+            "conflict",
+            "This run is a step of a flow run. Retry the flow run instead.",
+          );
+        }
+        const input =
+          body.input !== undefined
+            ? body.input
+            : await readPayload(kernel, original.input, original.input_ref);
+        const result = await ctx.mutate(async (trx, audit) => {
+          const started = await startRun(kernel, trx, {
+            tenantId: params.t,
+            workspaceId: params.w,
+            script: original.script_path,
+            input,
+            trigger: { type: "rerun", detail: { of: original.id } },
+            startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+            bundleId: body.bundle === "active" ? undefined : original.bundle_id,
+            tags: original.tags,
+          });
+          await audit({
+            action: "run.rerun",
+            targetType: "run",
+            targetId: started.run.id,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: {
+              script: original.script_path,
+              of: original.id,
+              bundle: body.bundle ?? "original",
+              inputChanged: body.input !== undefined,
+            },
+          });
+          return started;
+        });
+        const bundle = await db
+          .selectFrom("bundle")
+          .select("version")
+          .where("id", "=", result.run.bundle_id)
+          .executeTakeFirstOrThrow();
+        return reply.code(201).send(toRun(result.run, bundle.version));
+      },
+    );
+
     /** Why a queued run has nobody to take it, or null when a worker that could is connected. */
     const waitingFor = async (tenantId: string, workspaceId: string, pool: string | null) => {
       const serving = await sql`
@@ -1008,6 +1148,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           output: await readPayload(kernel, row.output, row.output_ref),
           alert: row.alert,
           idempotencyKey: row.idempotency_key,
+          reruns: (
+            await db
+              .selectFrom("run")
+              .select(["id", "status", "created_at"])
+              .where("workspace_id", "=", params.w)
+              .where("trigger_type", "=", "rerun")
+              .where(sql<boolean>`trigger_detail->>'of' = ${params.id}`)
+              .orderBy("id", "desc")
+              .limit(20)
+              .execute()
+          ).map((one) => ({
+            id: one.id,
+            state: runState(one.status),
+            createdAt: iso(one.created_at),
+          })),
         };
       },
     );
@@ -1127,6 +1282,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   enabled: Type.Boolean(),
                   cron: NullableString,
                   timezone: NullableString,
+                  overlap: Type.Union([Type.Literal("allow"), Type.Literal("skip"), Type.Null()], {
+                    description: "For a schedule: whether it skips a time while its last run goes.",
+                  }),
+                  lastSkippedAt: NullableTime,
                   nextFireAt: NullableTime,
                   lastFiredAt: NullableTime,
                   url: NullableString,
@@ -1139,6 +1298,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
                       id: Id,
                       status: Type.String(),
+                      state: RunStateSchema,
                       createdAt: Time,
                     }),
                     Type.Null(),
@@ -1195,25 +1355,35 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const match =
             row.type === "event"
               ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name}`
-              : sql`trigger_detail->>'trigger' = ${label}`;
+              : // A schedule names itself under `schedule`, every other trigger under `trigger`.
+                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label}`;
           const found = await sql<{
             kind: "script" | "flow";
             id: string;
             status: string;
+            state: RunState;
             created_at: Date;
           }>`
             select * from (
-              select 'script' as kind, id, status::text as status, created_at from run
+              select 'script' as kind, id, status::text as status,
+                ${runStateSql("status")} as state, created_at from run
               where workspace_id = ${params.w} and flow_run_id is null
                 and script_path = ${row.target_path} and ${match}
               union all
-              select 'flow' as kind, id, status::text as status, created_at from flow_run
-              where workspace_id = ${params.w} and flow_path = ${row.target_path} and ${match}
+              select 'flow' as kind, f.id, f.status::text as status,
+                ${flowStateSql("f")} as state, f.created_at from flow_run f
+              where f.workspace_id = ${params.w} and f.flow_path = ${row.target_path} and ${match}
             ) as fired order by id desc limit 1
           `.execute(db);
           const last = found.rows[0];
           return last
-            ? { kind: last.kind, id: last.id, status: last.status, createdAt: iso(last.created_at) }
+            ? {
+                kind: last.kind,
+                id: last.id,
+                status: last.status,
+                state: last.state,
+                createdAt: iso(last.created_at),
+              }
             : null;
         };
         return {
@@ -1255,6 +1425,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   : null,
                 cron: body.cron ?? null,
                 timezone: row.type === "schedule" ? (body.timezone ?? "UTC") : null,
+                overlap:
+                  row.type === "schedule"
+                    ? ((row.config as { overlap?: "skip" }).overlap ?? ("allow" as const))
+                    : null,
+                lastSkippedAt: (row.config as { lastSkippedAt?: string }).lastSkippedAt ?? null,
                 nextFireAt: isoOrNull(row.next_fire_at),
                 lastFiredAt: isoOrNull(row.last_fired_at),
                 url: token ? address : null,
@@ -1262,6 +1437,75 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           ),
         };
+      },
+    );
+
+    app.post(
+      `${base}/schedule-firings`,
+      {
+        config: { access: access.workspace("run:write") },
+        schema: {
+          summary: "Start a schedule's run now",
+          description:
+            "Starts one run as the schedule's next time would, with its input, and leaves that " +
+            "time where it is. The run's trigger says `manual: true`.",
+          tags: ["runs"],
+          params: WorkspaceParams,
+          body: Type.Object({ path: Type.String({ maxLength: 255 }) }),
+          response: {
+            201: Type.Object({
+              kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
+              id: Id,
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const path = wildPath({ "*": body.path });
+        const started = await ctx.mutate(async (trx, audit) => {
+          const made = await fireScheduleNow(kernel, trx, params.w, path);
+          await audit({
+            action: "schedule.fired",
+            targetType: "schedule",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { kind: made.kind, id: made.id },
+          });
+          return made;
+        });
+        await kickStarted(kernel, [started]);
+        return reply.code(201).send(started);
+      },
+    );
+
+    app.get(
+      `${base}/schedule-preview`,
+      {
+        config: { access: access.workspace("trigger:read") },
+        schema: {
+          summary: "When a cron expression would fire next",
+          description: "The next five times, worked out as the scheduler works them out.",
+          tags: ["runs"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            cron: Type.String({ maxLength: 120 }),
+            timezone: Type.Optional(Type.String({ maxLength: 64 })),
+          }),
+          response: { 200: Type.Object({ times: Type.Array(Time) }) },
+        },
+      },
+      async ({ query }) => {
+        try {
+          return { times: nextFireTimes(query.cron, query.timezone).map(iso) };
+        } catch (error) {
+          throw badRequest("The schedule is not valid.", [
+            {
+              path: "/cron",
+              message: `"${query.cron}" is not a usable cron expression${query.timezone ? ` in ${query.timezone}` : ""}: ${(error as Error).message}`,
+            },
+          ]);
+        }
       },
     );
 
@@ -1704,6 +1948,86 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.post(
+      `${base}/connection-tests`,
+      {
+        config: { access: access.workspace("connection:write") },
+        schema: {
+          summary: "Try a bound connection",
+          description:
+            "One of the workspace's workers tries it: an http connection asks its base URL, " +
+            "a mail server is connected to and signed in to, a connector of a bundle's own runs " +
+            "its `test`. Follow the task it returns.",
+          tags: ["bindings"],
+          params: WorkspaceParams,
+          body: Type.Object({ path: Type.String({ maxLength: 255 }) }),
+          response: { 202: Task },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const path = wildPath({ "*": body.path });
+        const bound = await db
+          .selectFrom("connection_binding")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("path", "=", path)
+          .executeTakeFirst();
+        if (!bound) throw notFound(`A binding for ${path}`);
+        // A connector that is not built in is run from the bundle the workspace runs now.
+        const bundle = await db
+          .selectFrom("workspace")
+          .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+          .select(["bundle.id", "bundle.digest"])
+          .where("workspace.id", "=", params.w)
+          .executeTakeFirst();
+        const task = await ctx.mutate(async (trx, audit) => {
+          const queued = await queueTask(trx, {
+            tenantId: params.t,
+            workspaceId: params.w,
+            kind: "test-connection",
+            subject: path,
+            request: {
+              connection: path,
+              ...(bundle ? { bundle: { id: bundle.id, digest: bundle.digest } } : {}),
+            },
+          });
+          await audit({
+            action: "connection.tested",
+            targetType: "connection",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { taskId: queued.id },
+          });
+          return queued;
+        });
+        return reply.code(202).send(toTask(task));
+      },
+    );
+
+    app.get(
+      `${base}/tasks/:id`,
+      {
+        config: { access: access.workspace("run:read") },
+        schema: {
+          summary: "A task a worker does for the platform",
+          tags: ["runs"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          response: { 200: Task },
+        },
+      },
+      async ({ params }) => {
+        const task = await db
+          .selectFrom("task")
+          .selectAll()
+          .where("id", "=", params.id)
+          .where("workspace_id", "=", params.w)
+          .executeTakeFirst();
+        if (!task) throw notFound("The task");
+        return toTask(task as TaskRow);
+      },
+    );
+
     // ----- Variable values -----
 
     app.get(
@@ -1981,8 +2305,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   credentialName: Type.String(),
                   managed: Type.Boolean(),
                   version: NullableString,
+                  outdated: Type.Boolean({
+                    description:
+                      "Older than the protocol this control plane speaks: it takes no tasks. Update it.",
+                  }),
                   startedAt: Time,
                   lastSeenAt: Time,
+                  running: Type.Array(
+                    Type.Object({
+                      runId: Id,
+                      workspaceId: Id,
+                      script: Type.String(),
+                      startedAt: NullableTime,
+                    }),
+                    { description: "The runs it holds now." },
+                  ),
                 }),
               ),
             }),
@@ -1990,6 +2327,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params }) => {
+        const holding = await db
+          .selectFrom("run")
+          .select(["id", "workspace_id", "script_path", "started_at", "worker_id"])
+          .where("tenant_id", "=", params.t)
+          .where("status", "=", "running")
+          .where("worker_id", "is not", null)
+          .orderBy("started_at")
+          .execute();
         const rows = await db
           .selectFrom("worker")
           .innerJoin("worker_credential", "worker_credential.id", "worker.credential_id")
@@ -2011,8 +2356,93 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             credentialName: row.name,
             managed: row.managed,
             version: row.version,
+            outdated: olderThan(row.version, TASKS_SINCE),
             startedAt: iso(row.started_at),
             lastSeenAt: iso(row.last_seen_at),
+            running: holding
+              .filter((run) => run.worker_id === row.id)
+              .map((run) => ({
+                runId: run.id,
+                workspaceId: run.workspace_id,
+                script: run.script_path,
+                startedAt: isoOrNull(run.started_at),
+              })),
+          })),
+        };
+      },
+    );
+
+    app.get(
+      "/tenants/:t/queue",
+      {
+        config: { access: access.tenant("worker:read") },
+        schema: {
+          summary: "What waits for a worker, by workspace and pool",
+          description:
+            "Runs due now, runs set for later, how long the oldest due one has waited, and " +
+            "how many are running, for each workspace and pool with any; and the tasks waiting.",
+          tags: ["workers"],
+          params: TenantParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  workspaceId: Id,
+                  workspace: Type.String(),
+                  pool: NullableString,
+                  due: Type.Integer(),
+                  later: Type.Integer(),
+                  running: Type.Integer(),
+                  oldestSeconds: Type.Union([Type.Integer(), Type.Null()]),
+                }),
+              ),
+              tasks: Type.Array(
+                Type.Object({ workspaceId: Id, kind: Type.String(), waiting: Type.Integer() }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const rows = await sql<{
+          workspace_id: string;
+          slug: string;
+          pool: string | null;
+          due: string;
+          later: string;
+          running: string;
+          oldest: string | null;
+        }>`
+          select r.workspace_id, w.slug, r.pool,
+            count(*) filter (where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now()) as due,
+            count(*) filter (where r.status = 'queued' and r.scheduled_for > now()) as later,
+            count(*) filter (where r.status = 'running') as running,
+            extract(epoch from now() - min(coalesce(r.scheduled_for, r.created_at))
+              filter (where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now())) as oldest
+          from run r join workspace w on w.id = r.workspace_id
+          where r.tenant_id = ${params.t} and r.status in ('queued', 'running')
+          group by r.workspace_id, w.slug, r.pool
+          order by due desc, w.slug
+        `.execute(db);
+        const tasks = await sql<{ workspace_id: string; kind: string; n: string }>`
+          select workspace_id, kind, count(*) as n from task
+          where tenant_id = ${params.t} and status = 'queued'
+          group by workspace_id, kind
+        `.execute(db);
+        return {
+          items: rows.rows.map((row) => ({
+            workspaceId: row.workspace_id,
+            workspace: row.slug,
+            pool: row.pool,
+            due: Number(row.due),
+            later: Number(row.later),
+            running: Number(row.running),
+            oldestSeconds: row.oldest === null ? null : Math.max(0, Math.round(Number(row.oldest))),
+          })),
+          tasks: tasks.rows.map((row) => ({
+            workspaceId: row.workspace_id,
+            kind: row.kind,
+            waiting: Number(row.n),
           })),
         };
       },
@@ -2164,7 +2594,96 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           `platform_workers{kind="managed"} ${workerCount(true)}`,
           `platform_workers{kind="standalone"} ${workerCount(false)}`,
         ];
-        return reply.type("text/plain; version=0.0.4").send(`${lines.join("\n")}\n`);
+
+        // Where the work waits, by workspace and pool: from the database, so every replica agrees.
+        const byPlace = kernel.config.metricsWorkspaceLabels;
+        const waiting = await sql<{
+          tenant: string;
+          workspace: string;
+          pool: string | null;
+          n: string;
+          oldest: string | null;
+        }>`
+          select t.slug as tenant, w.slug as workspace, r.pool, count(*) as n,
+            extract(epoch from now() - min(coalesce(r.scheduled_for, r.created_at))) as oldest
+          from run r
+          join workspace w on w.id = r.workspace_id
+          join tenant t on t.id = r.tenant_id
+          where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now()
+          group by t.slug, w.slug, r.pool
+        `.execute(db);
+        if (byPlace) {
+          lines.push(
+            "# HELP platform_workspace_runs_queued Runs due and waiting for a worker, by workspace and pool.",
+            "# TYPE platform_workspace_runs_queued gauge",
+            ...waiting.rows.map(
+              (row) =>
+                `platform_workspace_runs_queued${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
+            ),
+            "# HELP platform_workspace_queue_oldest_seconds How long the oldest due run of a workspace has waited.",
+            "# TYPE platform_workspace_queue_oldest_seconds gauge",
+          );
+          const oldestBy = new Map<
+            string,
+            { tenant: string; workspace: string; seconds: number }
+          >();
+          for (const row of waiting.rows) {
+            const key = `${row.tenant}/${row.workspace}`;
+            const seconds = Math.max(0, Math.round(Number(row.oldest ?? 0)));
+            if ((oldestBy.get(key)?.seconds ?? -1) < seconds) {
+              oldestBy.set(key, { tenant: row.tenant, workspace: row.workspace, seconds });
+            }
+          }
+          for (const one of oldestBy.values()) {
+            lines.push(
+              `platform_workspace_queue_oldest_seconds${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
+            );
+          }
+        }
+        const flows = await sql<{ state: string; n: string }>`
+          select ${flowStateSql("f")} as state, count(*) as n from flow_run f
+          where f.status = 'running' group by 1
+        `.execute(db);
+        lines.push(
+          "# HELP platform_flow_runs Flow runs in progress, by state.",
+          "# TYPE platform_flow_runs gauge",
+          ...flows.rows.map(
+            (row) => `platform_flow_runs${labelText({ state: row.state })} ${Number(row.n)}`,
+          ),
+        );
+        const tasks = await sql<{ kind: string; n: string }>`
+          select kind, count(*) as n from task where status = 'queued' group by kind
+        `.execute(db);
+        lines.push(
+          "# HELP platform_tasks_queued Tasks waiting for a worker, by kind.",
+          "# TYPE platform_tasks_queued gauge",
+          ...tasks.rows.map(
+            (row) => `platform_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
+          ),
+        );
+
+        // What this replica counted, with workspaces named by their slugs.
+        const ids = [...kernel.metrics.workspaceIds()];
+        const names = new Map(
+          (ids.length === 0
+            ? []
+            : await db
+                .selectFrom("workspace")
+                .innerJoin("tenant", "tenant.id", "workspace.tenant_id")
+                .select(["workspace.id", "workspace.slug", "tenant.slug as tenant"])
+                .where("workspace.id", "in", ids)
+                .execute()
+          ).map((row) => [row.id, { tenant: row.tenant, workspace: row.slug }]),
+        );
+        const counted = kernel.metrics.render((labels) => {
+          const { workspace, ...rest } = labels;
+          if (workspace === undefined) return labels;
+          if (!byPlace) return rest;
+          const named = names.get(workspace);
+          // Where it was first, then what it was.
+          return named ? { ...named, ...rest } : { tenant: "gone", workspace: "gone", ...rest };
+        });
+        return reply.type("text/plain; version=0.0.4").send(`${lines.join("\n")}\n${counted}`);
       },
     );
   };

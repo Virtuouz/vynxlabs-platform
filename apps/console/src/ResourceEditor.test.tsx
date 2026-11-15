@@ -34,6 +34,48 @@ beforeEach(() => {
       });
     }
     if (address.endsWith("/drafts")) return json({ items: [] });
+    if (address.endsWith("/scripts")) {
+      return json({
+        items: [
+          {
+            path: "orders/sync",
+            inputSchema: { type: "object", properties: { full: { type: "boolean" } } },
+          },
+        ],
+      });
+    }
+    if (address.endsWith("/flows")) {
+      return json({
+        items: [
+          {
+            path: "orders/restock",
+            triggers: ["manual"],
+            manualInput: {
+              type: "object",
+              properties: { sku: { type: "string" } },
+              required: ["sku"],
+            },
+          },
+        ],
+      });
+    }
+    if (address.includes("/schedule-preview")) {
+      const cron = new URL(address, "http://x").searchParams.get("cron");
+      if (cron === "nonsense") {
+        return json(
+          {
+            title: "Bad Request",
+            status: 400,
+            detail: "The schedule is not valid.",
+            errors: [{ path: "/cron", message: '"nonsense" is not a usable cron expression' }],
+          },
+          400,
+        );
+      }
+      return json({
+        times: [1, 2, 3, 4, 5].map((day) => `2026-12-0${day}T02:00:00.000Z`),
+      });
+    }
     if (address.endsWith("/secrets")) return json({ items: [{ name: "SHOP_SIGNING" }] });
     const drafted = /\/drafts\/(.+)$/.exec(address);
     if (drafted) return json({ title: "Not Found", status: 404, detail: "none" }, 404);
@@ -50,11 +92,6 @@ afterEach(() => {
 const saved = () => calls.find((call) => call.method === "PUT");
 
 test("what a resource still needs is said before the server is asked", () => {
-  expect(resourceProblems("schedule", { script: "", cron: " " }, { input: "[1]" })).toEqual([
-    "The input is not a JSON object.",
-    "Choose the script it starts.",
-    "Say when, as a cron line.",
-  ]);
   expect(resourceProblems("trigger", { type: "event", script: "a" }, {})).toEqual([
     "Choose the event it listens for.",
   ]);
@@ -109,16 +146,12 @@ test("a schedule from the repository opens with its settings, and saving takes i
     "0 2 * * *",
   );
   expect(screen.getByText(/managed in the tenant's repository/)).toBeTruthy();
-  // What is written as JSON is shown as JSON.
-  expect(
-    (screen.getByLabelText("Input for the script (optional), as JSON") as HTMLTextAreaElement)
-      .value,
-  ).toContain('"full": true');
+  // The input is a form drawn from the script's schema.
+  expect(((await screen.findByLabelText("Full")) as HTMLInputElement).checked).toBe(true);
+  // The next times are shown.
+  expect((await screen.findAllByRole("listitem")).length).toBe(5);
   // A source for schedules is offered because the workspace has one.
   expect(screen.getByText("Trigger source (optional)")).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Time zone (optional)"), {
-    target: { value: "America/Chicago" },
-  });
   fireEvent.click(screen.getByLabelText("Turned on"));
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   await waitFor(() => expect(saved()).toBeTruthy());
@@ -126,8 +159,47 @@ test("a schedule from the repository opens with its settings, and saving takes i
     script: "orders/sync",
     cron: "0 2 * * *",
     input: { full: true },
-    timezone: "America/Chicago",
     enabled: false,
+  });
+});
+
+test("a schedule can start a flow, with input drawn from its manual trigger, and a bad cron is refused before saving", async () => {
+  show(<ResourceEditor root={root} link={link} kind="schedule" path={undefined} editable />);
+  fireEvent.change(await screen.findByLabelText("Path of the new schedule"), {
+    target: { value: "orders/restock-nightly" },
+  });
+  // The first box on the form is what it starts.
+  const target = screen.getAllByRole("combobox")[0] as HTMLElement;
+  fireEvent.click(target);
+  fireEvent.keyDown(target, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: /orders\/restock/ }));
+  // The flow's input is asked for as fields, and what is required is said before saving.
+  const sku = await screen.findByLabelText("Sku");
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await screen.findByText(/The input does not fit what it starts/);
+  expect(saved()).toBeUndefined();
+  fireEvent.input(sku, { target: { value: "A-1" } });
+  fireEvent.input(screen.getByLabelText("When, as a cron line"), {
+    target: { value: "nonsense" },
+  });
+  // Said under the times, and among what stops it being saved.
+  expect(
+    (await screen.findAllByText(/"nonsense" is not a usable cron expression/)).length,
+  ).toBeGreaterThan(0);
+  fireEvent.input(screen.getByLabelText("When, as a cron line"), {
+    target: { value: "0 3 * * *" },
+  });
+  await waitFor(() =>
+    expect(screen.queryByText(/"nonsense" is not a usable cron expression/)).toBeNull(),
+  );
+  fireEvent.click(
+    screen.getByLabelText("Skip a time while the run it started last is still going"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(saved()).toBeTruthy());
+  expect(saved()?.body).toMatchObject({
+    kind: "schedule",
+    body: { flow: "orders/restock", cron: "0 3 * * *", input: { sku: "A-1" }, overlap: "skip" },
   });
 });
 

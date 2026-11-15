@@ -11,6 +11,8 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   /** A CSS length. */
   height?: string;
+  /** A line to scroll to and select when the document opens, such as where something is defined. */
+  revealLine?: number | undefined;
 }
 
 /**
@@ -26,11 +28,12 @@ export function CodeEditor({
   path,
   readOnly = false,
   height = "28rem",
+  revealLine,
 }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "plain">("loading");
-  const latest = useRef({ value, onChange });
-  latest.current = { value, onChange };
+  const latest = useRef({ value, onChange, revealLine });
+  latest.current = { value, onChange, revealLine };
   const editor = useRef<{
     getValue(): string;
     setValue(text: string): void;
@@ -62,6 +65,11 @@ export function CodeEditor({
           padding: { top: 10, bottom: 10 },
         });
         editor.current = created;
+        const line = latest.current.revealLine;
+        if (line && line <= model.getLineCount()) {
+          created.revealLineInCenter(line);
+          created.setSelection(new monaco.Range(line, 1, line, model.getLineMaxColumn(line)));
+        }
         const listening = created.onDidChangeModelContent(() =>
           latest.current.onChange?.(created.getValue()),
         );

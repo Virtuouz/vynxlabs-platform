@@ -67,6 +67,7 @@ jobs:
             echo "PUBLIC_URL=http://127.0.0.1:8080"
             echo "BOOTSTRAP_ADMIN_EMAIL=admin@example.com"
             echo "BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 12)"
+            echo "WORKER_HOST_TOKEN=$(openssl rand -hex 32)"
           } > deploy/compose/.env
       - name: Build the image and boot from clean
         run: docker compose -f deploy/compose/compose.yaml up -d --build --wait
@@ -74,6 +75,10 @@ jobs:
         run: |
           curl -fsS http://127.0.0.1:8080/api/v1/readyz
           test "$(curl -fsS http://127.0.0.1:8080/api/v1/instance | jq .migrationLevel)" -ge 1
+      - name: The worker host is up, with its rules
+        run: |
+          docker compose -f deploy/compose/compose.yaml ps --status running worker-host | grep -q worker-host
+          docker compose -f deploy/compose/compose.yaml logs worker-host | grep -q "worker host started"
       - name: The console is served, and the bootstrap admin can sign in
         run: |
           curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="app">'
@@ -119,7 +124,10 @@ jobs:
         run: docker build -t vynxlabs-platform:e2e .
       - name: Run the image beside them
         # On the host's network, so that the instance, the browser and the test's own git
-        # server all reach each other and Keycloak at localhost, as its realm expects.
+        # server all reach each other and Keycloak at localhost, as its realm expects. The
+        # instance refuses loopback addresses for tenants unless allowed, and starts workers
+        # beside itself only for code the operator writes unless told everyone is trusted:
+        # both are what a developer's machine sets, as .env.example does.
         run: |
           docker run -d --name platform --network host \
             -e DATABASE_URL=postgres://platform:platform@localhost:54329/platform \
@@ -128,7 +136,8 @@ jobs:
             -e S3_ACCESS_KEY_ID=platform -e S3_SECRET_ACCESS_KEY=platform-dev-secret \
             -e AUTH_SECRET="$(openssl rand -hex 32)" -e MASTER_KEY="$(openssl rand -base64 32)" \
             -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=change-me-please \
-            -e MANAGED_WORKERS=true \
+            -e MANAGED_WORKERS=process -e MANAGED_WORKER_USER=same \
+            -e EGRESS_ALLOW=127.0.0.0/8,::1,localhost \
             vynxlabs-platform:e2e
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/api/v1/readyz > /dev/null && exit 0

@@ -140,4 +140,16 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
       post: (path, json, options) => request(path, { ...options, method: "POST", json }),
     };
   },
+  /** Asks for the base URL. Any answer below 400 means it is reachable with this credential. */
+  async test(config, credential, signal) {
+    const response = await httpConnector
+      .create(config, credential, signal)
+      .get("", { allowFailure: true });
+    if (!response.ok) {
+      throw Object.assign(new Error(`${config.baseUrl} answered ${response.status}.`), {
+        status: response.status,
+      });
+    }
+    return { status: response.status };
+  },
 };

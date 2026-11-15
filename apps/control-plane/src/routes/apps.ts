@@ -12,6 +12,7 @@ import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
 import { writeAudit } from "../kernel/audit.js";
+import { guardedFetch } from "../kernel/egress.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
@@ -783,10 +784,13 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!verified) {
           problem = `No TXT record ${challenge.name} with the value ${challenge.value} was found.`;
         } else {
-          const reached = await fetch(`${domainUrl(kernel, domain.hostname)}api/v1/domain-check`, {
-            redirect: "manual",
-            signal: AbortSignal.timeout(5000),
-          })
+          const reached = await guardedFetch(
+            `${domainUrl(kernel, domain.hostname)}api/v1/domain-check`,
+            {
+              redirect: "manual",
+              timeoutMs: 5000,
+            },
+          )
             .then(async (response) => ((await response.json()) as { instance?: string }).instance)
             .catch(() => undefined);
           if (reached !== instanceMark) {

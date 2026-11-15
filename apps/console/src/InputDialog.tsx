@@ -1,32 +1,24 @@
-import {
-  Button,
-  Dialog,
-  Form,
-  type FormSchema,
-  Notice,
-  type TabItem,
-  Tabs,
-  TextAreaField,
-} from "@vynxlabs/ui";
+import { Dialog, type JsonSchema, Notice, SchemaForm } from "@vynxlabs/ui";
 import { useState } from "react";
+import type { ApiError } from "./api.ts";
 import { failureText } from "./ask.tsx";
 
-const SIMPLE = new Set(["string", "number", "integer", "boolean"]);
-
-/** The schema as the kit's form can draw it, or nothing when it has parts the form cannot. */
-export function formSchema(schema: Record<string, unknown> | undefined): FormSchema | undefined {
-  if (schema?.type !== "object") return undefined;
-  const properties = schema.properties as Record<string, { type?: unknown }> | undefined;
-  if (!properties || Object.keys(properties).length === 0) return undefined;
-  for (const property of Object.values(properties)) {
-    if (typeof property.type !== "string" || !SIMPLE.has(property.type)) return undefined;
+/**
+ * What the server refused, by place in the input: its `/input/...` paths made
+ * pointers into the value the form holds.
+ */
+export function inputErrors(error: unknown): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const field of (error as Partial<ApiError>).fields ?? []) {
+    if (!field.path.startsWith("/input")) continue;
+    errors[field.path.slice("/input".length)] = field.message;
   }
-  return schema as unknown as FormSchema;
+  return errors;
 }
 
 /**
- * Asks for the input of a script or a flow: as a form when its schema is a
- * flat list of fields, and always as JSON for everything else.
+ * Asks for the input of a script or a flow, as fields drawn from its schema,
+ * with JSON beside them. With no schema, as JSON.
  */
 export function InputDialog({
   open,
@@ -34,6 +26,7 @@ export function InputDialog({
   title,
   action,
   schema,
+  initial,
   onSubmit,
 }: {
   open: boolean;
@@ -42,69 +35,65 @@ export function InputDialog({
   /** The button that starts it: "Run", "Start flow". */
   action: string;
   schema?: Record<string, unknown> | undefined;
+  /** What the fields start with, such as the input of a run being run again. */
+  initial?: unknown;
   onSubmit: (input: unknown) => Promise<void>;
 }) {
-  const fields = formSchema(schema);
-  const [text, setText] = useState("{}");
-  const [problem, setProblem] = useState<string>();
-  const [busy, setBusy] = useState(false);
-
-  const send = async (input: unknown) => {
-    setBusy(true);
-    setProblem(undefined);
-    try {
-      await onSubmit(input);
-    } catch (error) {
-      setProblem(failureText(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const json = (
-    <form
-      className="flex flex-col gap-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        let input: unknown;
-        try {
-          input = JSON.parse(text);
-        } catch {
-          setProblem("That is not valid JSON.");
-          return;
-        }
-        void send(input);
-      }}
-    >
-      <TextAreaField name="input" label="Input, as JSON" value={text} rows={8} onChange={setText} />
-      <div className="flex justify-end gap-2">
-        <Button onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={busy}>
-          {action}
-        </Button>
-      </div>
-    </form>
-  );
-
-  const tabs: TabItem[] = fields
-    ? [
-        {
-          id: "form",
-          label: "Form",
-          content: (
-            <Form schema={fields} submitLabel={action} disabled={busy} onSubmit={(v) => send(v)} />
-          ),
-        },
-        { id: "json", label: "JSON", content: json },
-      ]
-    : [];
-
   return (
     <Dialog open={open} onClose={onClose} title={title}>
-      <div className="flex flex-col gap-3">
-        {fields ? <Tabs label="How to give the input" tabs={tabs} /> : json}
-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      </div>
+      {/* A new form each time it opens, from what it is given then. */}
+      {open ? (
+        <InputForm
+          schema={schema}
+          initial={initial}
+          action={action}
+          onCancel={onClose}
+          onSubmit={onSubmit}
+        />
+      ) : null}
     </Dialog>
+  );
+}
+
+/** The input form on its own, for a page that asks for input without a dialog. */
+export function InputForm({
+  schema,
+  initial,
+  action,
+  onCancel,
+  onSubmit,
+}: {
+  schema?: Record<string, unknown> | undefined;
+  initial?: unknown;
+  action: string;
+  onCancel?: () => void;
+  onSubmit: (input: unknown) => Promise<void>;
+}) {
+  const [problem, setProblem] = useState<string>();
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const drawn = schema && Object.keys(schema).length > 0 ? (schema as JsonSchema) : {};
+  return (
+    <div className="flex flex-col gap-3">
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      <SchemaForm
+        schema={drawn}
+        value={initial ?? (drawn.type === "object" || !schema ? {} : undefined)}
+        submitLabel={action}
+        errors={errors}
+        {...(onCancel ? { onCancel } : {})}
+        onSubmit={async (input) => {
+          setProblem(undefined);
+          setErrors({});
+          try {
+            await onSubmit(input ?? {});
+          } catch (error) {
+            const placed = inputErrors(error);
+            setErrors(placed);
+            if (Object.keys(placed).length === 0) setProblem(failureText(error));
+            else setProblem("Some of the input is not what it takes. See the fields below.");
+          }
+        }}
+      />
+    </div>
   );
 }

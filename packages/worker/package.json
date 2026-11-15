@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "platform-worker": "./dist/bin.js"
+    "platform-worker": "./dist/bin.js",
+    "platform-worker-host": "./dist/host-bin.js"
   },
   "exports": {
     ".": {

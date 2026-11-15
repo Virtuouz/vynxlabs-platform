@@ -93,6 +93,7 @@ describe("routes", () => {
       coreVersion: "1.2.3",
       apiVersion: "v1",
       migrationLevel: await database.migrationLevel(),
+      appsAddress: "console",
     });
     expect(response.json().migrationLevel).toBeGreaterThan(0);
   });

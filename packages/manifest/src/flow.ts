@@ -42,16 +42,18 @@ export type FlowTrigger =
        */
       input?: Record<string, unknown>;
     }
-  | { type: "schedule"; cron: string; timezone?: string; source?: string }
+  | { type: "schedule"; cron: string; timezone?: string; source?: string; tags?: string[] }
   | {
       type: "webhook";
+      /** CEL expressions over `trigger` that tag each run it starts. */
+      tags?: string[];
       input?: "body" | "request";
       verify?: WebhookVerify;
       source?: string;
       /** `flow` holds the request open for a respond step to answer. Default `now`. */
       respond?: "now" | "flow";
     }
-  | { type: "event"; event: string; filter?: string }
+  | { type: "event"; event: string; filter?: string; tags?: string[] }
   | ({ type: "form" } & FormTrigger);
 
 /**

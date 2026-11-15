@@ -9,6 +9,9 @@ import { when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import type { TenantCounts, WorkspaceCounts } from "../Shell.tsx";
 
+/** Actions that recorded a person's own preference, not a change. */
+const QUIET_ACTIONS = new Set(["member.recent_set"]);
+
 interface Workspace {
   id: string;
   slug: string;
@@ -45,7 +48,11 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   const tenant = useLoad<{ name: string; slug: string }>(base);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
-  const recent = useLoad<{ items: AuditEntry[] }>(`${base}/audit?limit=8`);
+  const recent = useLoad<{ items: AuditEntry[] }>(`${base}/audit?limit=24`);
+  // Entries from before moving between workspaces stopped being audited are no change to show.
+  const changes = recent.data?.items
+    .filter((entry) => !QUIET_ACTIONS.has(entry.action))
+    .slice(0, 8);
   const c = counts.data;
   const t = (slug: string) => `/t/${tenantId}/${slug}`;
 
@@ -211,11 +218,11 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                 </p>
               ) : !recent.data ? (
                 <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
-              ) : recent.data.items.length === 0 ? (
+              ) : !changes?.length ? (
                 <p className="m-0 px-4 py-3 text-ink-muted">Nothing has changed yet.</p>
               ) : (
                 <ol className="m-0 flex list-none flex-col p-0">
-                  {recent.data.items.map((entry) => (
+                  {changes.map((entry) => (
                     <li
                       key={entry.id}
                       className="flex flex-col gap-0.5 border-line border-b px-4 py-2.5 last:border-b-0"

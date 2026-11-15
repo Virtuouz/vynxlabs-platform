@@ -432,6 +432,9 @@ export interface RunTable {
   started_at: Date | null;
   finished_at: Date | null;
   last_heartbeat_at: Date | null;
+  tags: Generated<string[]>;
+  /** The first line of the error, kept by the database. */
+  error_summary: Generated<string | null>;
 }
 
 export interface RunLogTable {
@@ -508,6 +511,11 @@ export interface FlowRunTable {
   response: NullableJson;
   created_at: Generated<Date>;
   finished_at: Date | null;
+  tags: Generated<string[]>;
+  /** The first line of the error, kept by the database. */
+  error_summary: Generated<string | null>;
+  /** The flow run this one retries. */
+  retry_of: string | null;
 }
 
 export interface StepRunTable {
@@ -778,11 +786,59 @@ export interface DashboardShareTable {
   tenant_id: string;
 }
 
+/** An entity a member opened last in a tenant, for the command palette. */
+export interface MemberRecentItemTable {
+  member_id: string;
+  tenant_id: string;
+  kind: string;
+  ref: string;
+  workspace_id: string;
+  visited_at: Generated<Date>;
+}
+
 export interface MemberRecentScopeTable {
   member_id: string;
   tenant_id: string;
   workspace_id: string | null;
   visited_at: Generated<Date>;
+}
+
+/** How long a tenant's history is kept. A null column takes the instance's default. */
+export interface TenantRetentionTable {
+  tenant_id: string;
+  runs_days: number | null;
+  events_days: number | null;
+  refusals_days: number | null;
+  audit_days: number | null;
+  updated_at: Generated<Date>;
+}
+
+/** Work a worker does for the platform that is not a script run (decision 0001). */
+export interface TaskTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  pool: string | null;
+  kind: "describe" | "deliver" | "test-connection";
+  request: Json<Record<string, unknown>>;
+  subject: string | null;
+  status: Generated<"queued" | "running" | "succeeded" | "failed">;
+  result: NullableJson;
+  error: ColumnType<{ message: string } | null, string | null | undefined, string | null>;
+  attempt: Generated<number>;
+  worker_id: string | null;
+  created_at: Generated<Date>;
+  started_at: Date | null;
+  finished_at: Date | null;
+  last_heartbeat_at: Date | null;
+  expires_at: Date;
+}
+
+/** One rate-limited key's count in its current window, shared by every replica. */
+export interface RateLimitTable {
+  key: string;
+  hits: number;
+  window_ends: Date;
 }
 
 export interface WorkerPoolTable {
@@ -1016,6 +1072,10 @@ export interface PlatformSchema {
   scim_refusal: ScimRefusalTable;
   worker_pool: WorkerPoolTable;
   member_recent_scope: MemberRecentScopeTable;
+  member_recent_item: MemberRecentItemTable;
+  rate_limit: RateLimitTable;
+  tenant_retention: TenantRetentionTable;
+  task: TaskTable;
   dashboard_share: DashboardShareTable;
   health_check: HealthCheckTable;
   resource_draft_history: ResourceDraftHistoryTable;

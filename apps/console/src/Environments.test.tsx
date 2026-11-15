@@ -128,6 +128,8 @@ test("a workspace that is not linked offers no promotion, and a production works
     <Promotion base={base} workspace={{ ...dev, linkedWorkspaceId: null }} reload={() => {}} />,
   );
   await screen.findByLabelText("Promotes to");
+  // The workspaces it can be linked to arrive after the field itself.
+  await screen.findByRole("option", { name: "Main (production)" });
   expect(screen.queryByRole("button", { name: "Review and promote" })).toBeNull();
   routes[`PATCH /api/v1${base}/workspaces/w-dev`] = () => [200, {}];
   fireEvent.change(screen.getByLabelText("Promotes to"), { target: { value: "w-main" } });

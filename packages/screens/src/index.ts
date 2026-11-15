@@ -1,11 +1,22 @@
 export {
+  actionReady,
+  fillText,
+  mappedInput,
+  type PageScope,
+  readPath,
+  selectedBy,
+} from "./actions.tsx";
+export {
   type DataClient,
   type Filter,
   failure,
   type InterfaceView,
   type Page,
   type Row,
+  type RunState,
+  type StartedRun,
   type TableInfo,
+  type TargetInfo,
   type Totals,
 } from "./data.ts";
 export { axisFormat, formatValue } from "./format.ts";

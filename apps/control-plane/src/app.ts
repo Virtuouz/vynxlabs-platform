@@ -12,7 +12,9 @@ import { installFrontDoor } from "./kernel/apps/front.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
+import { postgresRateLimitStore } from "./kernel/ratelimit.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
+import { alertRoutes } from "./routes/alerts.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
 import { authoringRoutes } from "./routes/authoring.js";
@@ -35,11 +37,14 @@ import { permissionRoutes } from "./routes/permissions.js";
 import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { scimRoutes } from "./routes/scim.js";
+import { searchRoutes } from "./routes/search.js";
 import { sourceRoutes } from "./routes/sources.js";
 import { ssoRoutes } from "./routes/sso.js";
+import { streamRoutes } from "./routes/stream.js";
 import { summaryRoutes } from "./routes/summary.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { workerRoutes } from "./routes/worker.js";
+import { workerHostRoutes } from "./routes/worker-host.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 import type { ObjectStore } from "./storage.js";
 
@@ -90,6 +95,7 @@ export async function buildApp(options: AppOptions) {
   app.addHook("onClose", () => kernel.expressions.close());
   app.addHook("onClose", () => closeAllSources());
   app.addHook("onClose", () => kernel.data.close());
+  app.addHook("onClose", () => kernel.stream.close());
 
   app.setErrorHandler(errorHandler);
   app.addHook("onRequest", async (request, reply) => {
@@ -101,8 +107,9 @@ export async function buildApp(options: AppOptions) {
   // Apps and their sign-in pages, at whichever address the request came to.
   installFrontDoor(app, kernel);
 
-  // Applies only to routes that ask for it, such as public webhooks.
-  await app.register(rateLimit, { global: false });
+  // Applies only to routes that ask for it, such as public webhooks. Counted in Postgres,
+  // so a limit holds across every replica.
+  await app.register(rateLimit, { global: false, store: postgresRateLimitStore(kernel) });
 
   await app.register(swagger, {
     openapi: {
@@ -173,8 +180,12 @@ export async function buildApp(options: AppOptions) {
       await api.register(dashboardRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
+      await api.register(searchRoutes(kernel));
+      await api.register(alertRoutes(kernel));
+      await api.register(workerHostRoutes(kernel));
       await api.register(summaryRoutes(kernel));
       await api.register(operationsRoutes(kernel));
+      await api.register(streamRoutes(kernel));
       await api.register(poolRoutes(kernel));
       api.get(
         "/openapi.json",

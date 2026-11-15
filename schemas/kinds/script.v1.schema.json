@@ -20,10 +20,22 @@
       "type": "object",
       "description": "A JSON Schema (draft 2020-12)."
     },
+    "schemaSource": {
+      "enum": [
+        "code"
+      ],
+      "description": "Set when `input` and `output` were read from the script's own `input` and `output` exports, which the console then shows and does not let be edited by hand."
+    },
     "timeoutSeconds": {
       "type": "integer",
       "minimum": 1,
       "maximum": 3600
+    },
+    "memoryMb": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 4096,
+      "description": "The most memory the script may use, in MB. Default 512. Past it, the run fails."
     },
     "retries": {
       "type": "object",

@@ -59,6 +59,7 @@ export {
   readFormAnswer,
 } from "./form.js";
 export {
+  ACTION_PATH,
   CHART_MARKS,
   checkInterface,
   checkPage,
@@ -72,6 +73,7 @@ export {
   MAX_FILTER_CONDITIONS,
   MAX_PAGE_FILTERS,
   MAX_PAGES,
+  MAX_ROW_ACTIONS,
   MAX_WIDGETS,
   PAGE_FILTER_TYPES,
   type PageFilter,
@@ -82,6 +84,7 @@ export {
   VALUE_FORMAT_STYLES,
   type ValueFormat,
   WIDGET_TYPES,
+  type WidgetAction,
   type WidgetField,
   type WidgetLink,
   type WidgetOptions,

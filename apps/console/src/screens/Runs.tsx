@@ -1,33 +1,38 @@
-import { Button, JsonView, LogViewer, Notice, SelectField, Tabs } from "@vynxlabs/ui";
-import { ArrowUpRight, CircleX, Lightbulb, RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Button, JsonView, LogViewer, Notice, SelectField, Tabs, TextField } from "@vynxlabs/ui";
+import { ArrowUpRight, CircleX, Lightbulb, X } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
-import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Link, navigate, useQueryValue } from "../router.tsx";
+import { useStreamConnected } from "../stream.ts";
 import { stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
-type Status = "queued" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";
+/** What the list can be narrowed to: a state, or either kind of waiting. */
+type Filter = "queued" | "running" | "waiting" | "succeeded" | "failed" | "canceled";
 
 interface Activity {
   kind: "script" | "flow";
   id: string;
   target: string;
-  status: Status;
+  state: RunState;
   trigger: string;
   attempt: number;
   maxAttempts: number;
   error: string | null;
+  errorSummary: string | null;
+  tags: string[];
   bundleVersion: number;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
 }
 
-interface Insight {
+export interface Insight {
   attempts: { attempt: number; startedAt: string; endedAt: string; failed: boolean }[];
   worker: { id: string; name: string; pool: string | null } | null;
   timeoutSeconds: number | null;
@@ -39,18 +44,20 @@ const WINDOWS = [
   { value: "1", label: "Last hour" },
   { value: "24", label: "Last 24 hours" },
   { value: "168", label: "Last 7 days" },
-  { value: "all", label: "All time" },
+  { value: "all", label: "Everything kept" },
 ];
 
-const STATUSES: { value: "all" | Status; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "failed", label: "Failed" },
-  { value: "running", label: "Running" },
-  { value: "waiting", label: "Waiting" },
-  { value: "queued", label: "Queued" },
-  { value: "succeeded", label: "Succeeded" },
-  { value: "cancelled", label: "Canceled" },
+const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = [
+  { value: "all", label: "All", states: [] },
+  { value: "failed", label: "Failed", states: ["failed"] },
+  { value: "running", label: "Running", states: ["running"] },
+  { value: "waiting", label: "Waiting", states: ["waiting_approval", "waiting_time"] },
+  { value: "queued", label: "Queued", states: ["queued"] },
+  { value: "succeeded", label: "Succeeded", states: ["succeeded"] },
+  { value: "canceled", label: "Canceled", states: ["canceled"] },
 ];
+/** States in which a run may still change. */
+const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
 
 /** How long ago, or the date when it is older than a day. */
 function started(iso: string) {
@@ -58,29 +65,53 @@ function started(iso: string) {
   return age < 86_400_000 ? fromNow(iso) : stamp(iso).slice(0, 16);
 }
 
+interface Page {
+  items: Activity[];
+  nextCursor: string | null;
+  stateCounts: Record<string, number>;
+  keptDays?: number;
+}
+
 /**
  * Every run of the workspace, script and flow, in one list, with the chosen
  * one beside it: what happened, why it failed and what to do, its attempts
- * and its log. It refreshes while anything is in progress.
+ * and its log. Its filters, its search and the run chosen are in the address,
+ * so a reload, a shared link or the back button keeps them.
  */
 export function RunsWorkbench({
   root,
   link,
-  selected,
 }: {
   root: string;
   /** The workspace's console address. */
   link: string;
-  /** A run's ID from the address, when one is open. */
-  selected: string | undefined;
 }) {
-  const [status, setStatus] = useState<"all" | Status>(() => {
-    const asked = new URLSearchParams(location.search).get("status");
-    return STATUSES.some((one) => one.value === asked) ? (asked as Status) : "all";
-  });
-  const [kind, setKind] = useState("all");
-  const [hours, setHours] = useState("24");
+  const [asked, ask] = useQueryValue("status");
+  // An address from before the states, `?status=cancelled`, still works.
+  const wanted = asked === "cancelled" ? "canceled" : asked;
+  const status: "all" | Filter = FILTERS.some((one) => one.value === wanted)
+    ? (wanted as Filter)
+    : "all";
+  const setStatus = (next: "all" | Filter) => ask(next === "all" ? null : next);
+  const [kindAsked, setKindAsked] = useQueryValue("kind");
+  const kind = kindAsked === "script" || kindAsked === "flow" ? kindAsked : "all";
+  const [whenAsked, setWhenAsked] = useQueryValue("when");
+  const hours = WINDOWS.some((one) => one.value === whenAsked) ? (whenAsked as string) : "24";
+  const [search, setSearch] = useQueryValue("q");
+  const [tag, setTag] = useQueryValue("tag");
+  const [selected, choose] = useQueryValue("run");
+  const [typed, setTyped] = useState(search ?? "");
   const [tick, setTick] = useState(0);
+  const [more, setMore] = useState<string[]>([]);
+  const [lastNext, setLastNext] = useState<string | null>(null);
+
+  // What is typed reaches the address, and the list, once typing pauses.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if ((search ?? "") !== typed.trim()) setSearch(typed.trim() || null);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [typed, search, setSearch]);
 
   // The window's start is fixed when the period is chosen or the list refreshes. Worked
   // out on each render, it would change the address every time and load without end.
@@ -90,24 +121,49 @@ export function RunsWorkbench({
     [hours, tick],
   );
   const query = new URLSearchParams({ limit: "100" });
-  if (status !== "all") query.set("status", status);
+  if (status !== "all") query.set("state", status);
   if (kind !== "all") query.set("kind", kind);
   if (from) query.set("from", from);
-  const listPath = `${root}/activity?${query}&tick=${tick}`;
-  const list = useLoad<{ items: Activity[]; counts: Record<string, number> }>(listPath);
-  const items = list.data?.items ?? [];
-  const live = items.some((one) => ["queued", "running", "waiting"].includes(one.status));
-
-  // While anything is in progress, the list asks again every few seconds.
+  if (search) query.set("q", search);
+  if (tag) query.set("tag", tag);
+  const base = `${root}/activity?${query}`;
+  const list = useLoad<Page>(`${base}&tick=${tick}`);
+  // Pages beyond the first start again whenever what is asked for changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `base` is what is asked for
   useEffect(() => {
-    if (!live) return;
+    setMore([]);
+    setLastNext(null);
+  }, [base]);
+  const items = list.data?.items ?? [];
+  const live = items.some((one) => LIVE.includes(one.state));
+
+  // While anything is in progress, changes arrive as events. Without them, the list asks
+  // again every few seconds.
+  const streaming = useStreamConnected();
+  useEffect(() => {
+    if (!live || streaming) return;
     const timer = setInterval(() => setTick((n) => n + 1), 5000);
     return () => clearInterval(timer);
-  }, [live]);
+  }, [live, streaming]);
 
-  const chosen = items.find((one) => one.id === selected);
-  const total = Object.values(list.data?.counts ?? {}).reduce((a, b) => a + b, 0);
-  const close = () => navigate(`${link}/runs${location.search}`);
+  const [chosen, setChosen] = useState<Activity>();
+  const counts = list.data?.stateCounts ?? {};
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const next = more.length === 0 ? (list.data?.nextCursor ?? null) : lastNext;
+  const filtered = status !== "all" || Boolean(search) || Boolean(tag);
+  const row = (one: Activity) => (
+    <RunRow
+      key={one.id}
+      run={one}
+      link={link}
+      on={one.id === selected}
+      onChoose={() => {
+        setChosen(one);
+        choose(one.id);
+      }}
+      onTag={(value) => setTag(value)}
+    />
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -118,21 +174,34 @@ export function RunsWorkbench({
             <p className="m-0 text-ink-muted">
               Every script and flow that ran here, newest first. A step of a flow is part of its
               flow's run.
+              {list.data?.keptDays
+                ? ` History is kept for ${list.data.keptDays} day${list.data.keptDays === 1 ? "" : "s"}.`
+                : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {live ? (
               <span className="flex items-center gap-1.5 text-meta text-ink-muted">
                 <Junction kind="here" size={5} />
-                Live · updates every 5s
+                {streaming ? "Live" : "Live · updates every 5s"}
               </span>
             ) : null}
+            <div className="w-full sm:w-64">
+              <TextField
+                name="q"
+                label="Search"
+                value={typed}
+                required={false}
+                placeholder="A path, a run ID, a tag or an error"
+                onChange={setTyped}
+              />
+            </div>
             <div className="w-40">
               <SelectField
                 label="Kind"
                 name="kind"
                 value={kind}
-                onChange={setKind}
+                onChange={(value) => setKindAsked(value === "all" ? null : value)}
                 options={[
                   { value: "all", label: "Scripts and flows" },
                   { value: "script", label: "Scripts" },
@@ -145,21 +214,35 @@ export function RunsWorkbench({
                 label="When"
                 name="when"
                 value={hours}
-                onChange={setHours}
+                onChange={(value) => setWhenAsked(value === "24" ? null : value)}
                 options={WINDOWS}
               />
             </div>
           </div>
         </div>
-        <FilterChips
-          label="Status"
-          value={status}
-          onChange={setStatus}
-          options={STATUSES.map((one) => ({
-            ...one,
-            count: one.value === "all" ? total : (list.data?.counts[one.value] ?? 0),
-          }))}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <FilterChips
+            label="Status"
+            value={status}
+            onChange={setStatus}
+            options={FILTERS.map(({ value, label, states }) => ({
+              value,
+              label,
+              count:
+                value === "all" ? total : states.reduce((sum, one) => sum + (counts[one] ?? 0), 0),
+            }))}
+          />
+          {tag ? (
+            <button
+              type="button"
+              onClick={() => setTag(null)}
+              aria-label={`Stop showing only runs tagged ${tag}`}
+              className="flex items-center gap-1 rounded-control border border-line px-2 py-0.5 text-meta hover:bg-surface"
+            >
+              Tagged <Mono>{tag}</Mono> <X aria-hidden="true" size={12} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <MasterDetail
@@ -168,11 +251,11 @@ export function RunsWorkbench({
             <Inspector
               open
               label="The chosen run"
-              title={chosen?.target ?? "Run"}
-              eyebrow={chosen ? `${chosen.kind === "flow" ? "Flow" : "Script"} run` : "Run"}
-              onClose={close}
+              title={chosen?.id === selected ? chosen.target : "Run"}
+              eyebrow="Run"
+              onClose={() => choose(null)}
             >
-              {chosen?.kind === "flow" ? (
+              {chosen?.id === selected && chosen.kind === "flow" ? (
                 <FlowRunSummary run={chosen} link={link} />
               ) : (
                 <ScriptRunPanel root={root} link={link} runId={selected} />
@@ -189,84 +272,169 @@ export function RunsWorkbench({
           <p className="m-0 p-6 text-ink-muted">Loading…</p>
         ) : items.length === 0 ? (
           <p className="m-0 p-6 text-ink-muted">
-            {status === "all" ? "Nothing ran in this time." : "No runs like that in this time."}
+            {filtered ? "No runs like that in this time." : "Nothing ran in this time."}
           </p>
         ) : (
-          <table className="w-full table-fixed border-collapse text-left">
-            <thead className="sticky top-0 z-10 bg-canvas">
-              <tr className="border-line border-b text-meta text-ink-subtle">
-                <th className="w-32 px-4 py-2 font-medium md:w-40 md:pl-6">Status</th>
-                <th className="px-3 py-2 font-medium">What</th>
-                <th className="hidden w-44 px-3 py-2 font-medium lg:table-cell">Started by</th>
-                <th className="w-28 px-3 py-2 font-medium">Started</th>
-                <th className="hidden w-24 px-3 py-2 text-right font-medium sm:table-cell md:pr-6">
-                  Took
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row) => {
-                const on = row.id === selected;
-                return (
-                  <tr
-                    key={row.id}
-                    aria-selected={on}
-                    onClick={() => navigate(`${link}/runs/${row.id}${location.search}`)}
-                    className={`cursor-pointer border-line border-b ${on ? "bg-selected" : "hover:bg-surface"}`}
-                  >
-                    <td className="px-4 py-2.5 md:pl-6">
-                      <StatePill state={stateOf(row.status)} />
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Link
-                        to={`${link}/runs/${row.id}`}
-                        className="block truncate font-mono text-telemetry text-ink no-underline"
-                      >
-                        {row.target}
-                      </Link>
-                      <span className="block truncate text-meta text-ink-subtle">
-                        {row.kind === "flow" ? "Flow" : "Script"}
-                        {row.maxAttempts > 1
-                          ? ` · attempt ${Math.max(row.attempt, 1)} of ${row.maxAttempts}`
-                          : ""}
-                      </span>
-                    </td>
-                    <td className="hidden px-3 py-2.5 text-ink-muted lg:table-cell">
-                      {TRIGGER[row.trigger] ?? row.trigger}
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-ink-muted">
-                      {started(row.createdAt)}
-                    </td>
-                    <td className="hidden px-3 py-2.5 text-right sm:table-cell md:pr-6">
-                      <Mono className="text-ink-muted">{took(row) || "—"}</Mono>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <>
+            <table className="w-full table-fixed border-collapse text-left">
+              <thead className="sticky top-0 z-10 bg-canvas">
+                <tr className="border-line border-b text-meta text-ink-subtle">
+                  <th className="w-32 px-4 py-2 font-medium md:w-40 md:pl-6">Status</th>
+                  <th className="px-3 py-2 font-medium">What</th>
+                  <th className="hidden w-44 px-3 py-2 font-medium lg:table-cell">Started by</th>
+                  <th className="w-28 px-3 py-2 font-medium">Started</th>
+                  <th className="hidden w-24 px-3 py-2 text-right font-medium sm:table-cell md:pr-6">
+                    Took
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(row)}
+                {more.map((cursor, index) => (
+                  <MoreRuns
+                    key={cursor}
+                    path={`${base}&cursor=${encodeURIComponent(cursor)}`}
+                    render={row}
+                    onNext={index === more.length - 1 ? setLastNext : undefined}
+                  />
+                ))}
+              </tbody>
+            </table>
+            {next ? (
+              <div className="flex justify-center p-4">
+                <Button onClick={() => setMore((pages) => [...pages, next])}>Load more</Button>
+              </div>
+            ) : null}
+          </>
         )}
       </MasterDetail>
     </div>
   );
 }
 
+/** A further page of the list, read by its cursor and refreshed like the first. */
+function MoreRuns({
+  path,
+  render,
+  onNext,
+}: {
+  path: string;
+  render: (run: Activity) => ReactNode;
+  onNext: ((cursor: string | null) => void) | undefined;
+}) {
+  const page = useLoad<Page>(path);
+  useEffect(() => {
+    if (page.data) onNext?.(page.data.nextCursor);
+  }, [page.data, onNext]);
+  if (page.error) {
+    return (
+      <tr>
+        <td colSpan={5} className="p-4">
+          <Notice tone="danger">{page.error.message}</Notice>
+        </td>
+      </tr>
+    );
+  }
+  return <>{(page.data?.items ?? []).map(render)}</>;
+}
+
+function RunRow({
+  run,
+  link,
+  on,
+  onChoose,
+  onTag,
+}: {
+  run: Activity;
+  link: string;
+  on: boolean;
+  onChoose: () => void;
+  onTag: (tag: string) => void;
+}) {
+  return (
+    <tr
+      aria-selected={on}
+      onClick={onChoose}
+      className={`cursor-pointer border-line border-b ${on ? "bg-selected" : "hover:bg-surface"}`}
+    >
+      <td className="px-4 py-2.5 align-top md:pl-6">
+        <StatePill state={run.state} />
+      </td>
+      <td className="px-3 py-2.5">
+        <Link
+          to={`${link}/runs/${run.id}`}
+          className="block font-mono text-telemetry break-all text-ink no-underline sm:truncate"
+        >
+          {run.target}
+        </Link>
+        {run.errorSummary ? (
+          <span className="block truncate text-meta text-danger" title={run.errorSummary}>
+            {run.errorSummary}
+          </span>
+        ) : (
+          <span className="block truncate text-meta text-ink-subtle">
+            {run.kind === "flow" ? "Flow" : "Script"}
+            {run.maxAttempts > 1
+              ? ` · attempt ${Math.max(run.attempt, 1)} of ${run.maxAttempts}`
+              : ""}
+          </span>
+        )}
+        {run.tags.length > 0 ? (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {run.tags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onTag(tag);
+                }}
+                aria-label={`Show only runs tagged ${tag}`}
+              >
+                <Tag tone="neutral">{tag}</Tag>
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </td>
+      <td className="hidden px-3 py-2.5 align-top text-ink-muted lg:table-cell">
+        {TRIGGER[run.trigger] ?? run.trigger}
+      </td>
+      <td className="px-3 py-2.5 align-top whitespace-nowrap text-ink-muted">
+        {started(run.createdAt)}
+      </td>
+      <td className="hidden px-3 py-2.5 text-right align-top sm:table-cell md:pr-6">
+        <Mono className="text-ink-muted">{took(run) || "—"}</Mono>
+      </td>
+    </tr>
+  );
+}
+
 function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
   return (
     <div className="flex flex-col gap-4">
-      <StatePill state={stateOf(run.status)} />
+      <StatePill state={run.state} />
       {run.error ? <Notice tone="danger">{run.error}</Notice> : null}
       <KeyValues
         rows={[
           { label: "Started", value: stamp(run.createdAt), mono: true },
           { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "—", mono: true },
           { label: "Started by", value: TRIGGER[run.trigger] ?? run.trigger },
-          { label: "Version", value: `v${run.bundleVersion}`, mono: true },
-          { label: "Run ID", value: run.id, mono: true },
+          {
+            label: "Flow",
+            value: <Link to={`${link}/flows/${run.target}`}>{run.target}</Link>,
+            mono: true,
+          },
+          {
+            label: "Version",
+            value: <Link to={`${link}/deployments`}>v{run.bundleVersion}</Link>,
+            mono: true,
+          },
+          { label: "Run ID", value: <CopyableId value={run.id} label="Copy the run ID" /> },
         ]}
       />
-      <Button variant="primary" onClick={() => navigate(`${link}/flow-runs/${run.id}`)}>
-        Open the run's graph <ArrowUpRight aria-hidden="true" size={15} />
+      <Button variant="primary" onClick={() => navigate(`${link}/runs/${run.id}`)}>
+        Open full view <ArrowUpRight aria-hidden="true" size={15} />
       </Button>
     </div>
   );
@@ -294,7 +462,7 @@ export function ScriptRunPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatePill state={stateOf(run.status)} detail={took(run) || undefined} />
+        <StatePill state={run.state} detail={took(run) || undefined} />
         <div className="flex gap-2">
           {active ? (
             <Button
@@ -312,24 +480,14 @@ export function ScriptRunPanel({
             >
               Cancel run
             </Button>
-          ) : (
-            <Button
-              size="small"
-              onClick={async () => {
-                try {
-                  const again = await api.post<{ id: string }>(`${root}/runs`, {
-                    script: run.script,
-                    input: run.input,
-                  });
-                  navigate(`${link}/runs/${again.id}`);
-                } catch (caught) {
-                  notify.error(caught);
-                }
-              }}
-            >
-              <RotateCcw aria-hidden="true" size={13} /> Run again
-            </Button>
-          )}
+          ) : null}
+          <Button size="small" onClick={() => navigate(`${link}/runs/${runId}`)}>
+            Open full view <ArrowUpRight aria-hidden="true" size={13} />
+          </Button>
+          <CopyIcon
+            value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
+            label="Copy as curl: start this script again with the same input"
+          />
         </div>
       </div>
 
@@ -433,8 +591,29 @@ export function ScriptRunPanel({
                       value: run.finishedAt ? stamp(run.finishedAt) : "—",
                       mono: true,
                     },
-                    { label: "Started by", value: TRIGGER[run.trigger.type] ?? run.trigger.type },
-                    { label: "Version", value: `v${run.bundleVersion}`, mono: true },
+                    {
+                      label: "Script",
+                      value: <Link to={`${link}/scripts/edit/${run.script}`}>{run.script}</Link>,
+                      mono: true,
+                    },
+                    {
+                      label: "Started by",
+                      value:
+                        typeof run.trigger.trigger === "string" ? (
+                          <Link
+                            to={`${link}/triggers?trigger=${encodeURIComponent(run.trigger.trigger)}`}
+                          >
+                            {TRIGGER[run.trigger.type] ?? run.trigger.type} {run.trigger.trigger}
+                          </Link>
+                        ) : (
+                          (TRIGGER[run.trigger.type] ?? run.trigger.type)
+                        ),
+                    },
+                    {
+                      label: "Version",
+                      value: <Link to={`${link}/deployments`}>v{run.bundleVersion}</Link>,
+                      mono: true,
+                    },
                     {
                       label: "Worker",
                       value: insight.data?.worker
@@ -446,7 +625,10 @@ export function ScriptRunPanel({
                       value: insight.data?.timeoutSeconds ? `${insight.data.timeoutSeconds}s` : "—",
                       mono: true,
                     },
-                    { label: "Run ID", value: run.id, mono: true },
+                    {
+                      label: "Run ID",
+                      value: <CopyableId value={run.id} label="Copy the run ID" />,
+                    },
                   ]}
                 />
                 {insight.data && insight.data.uses.length > 0 ? (

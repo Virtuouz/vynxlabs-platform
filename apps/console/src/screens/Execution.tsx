@@ -3,47 +3,54 @@ import {
   type BadgeTone,
   Button,
   Dialog,
-  Facts,
   Form,
   type FormProperty,
-  JsonView,
   type LogLine,
-  LogViewer,
   Notice,
 } from "@vynxlabs/ui";
-import { Ban, Check, Clock, LoaderCircle, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { UsedBy, useReferences } from "../kit/references.tsx";
-import { Mono, StatePill, stateOf, Tag } from "../kit/status.tsx";
+import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { useStreamConnected, useStreamEvents } from "../stream.ts";
+import { type TaskState, useTaskEnd } from "../tasks.ts";
 import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-const STATUS: Record<Status, [BadgeTone, string]> = {
-  queued: ["neutral", "Waiting"],
-  running: ["action", "Running"],
-  succeeded: ["success", "Succeeded"],
-  failed: ["danger", "Failed"],
-  cancelled: ["neutral", "Canceled"],
+/** The badge tone of a run's state, for the run page's mark. */
+const _TONE: Record<RunState, BadgeTone> = {
+  queued: "neutral",
+  running: "action",
+  waiting_approval: "attention",
+  waiting_time: "attention",
+  succeeded: "success",
+  failed: "danger",
+  canceled: "neutral",
+  skipped: "neutral",
 };
 
 export interface Run {
   id: string;
   script: string;
   status: Status;
+  state: RunState;
   attempt: number;
   maxAttempts: number;
   trigger: { type: string; [detail: string]: unknown };
+  bundleId: string;
   bundleVersion: number;
   error: { message: string } | null;
+  errorSummary?: string | null;
+  tags?: string[];
+  rerunOf?: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -59,7 +66,12 @@ export const TRIGGER: Record<string, string> = {
   manual: "Started by hand",
   schedule: "Schedule",
   webhook: "Webhook",
+  event: "Event",
+  form: "Form",
+  flow: "A flow",
   alert: "Failure handler",
+  rerun: "Re-run",
+  retry: "Retry",
 };
 
 interface ScriptRow {
@@ -67,7 +79,13 @@ interface ScriptRow {
   description: string;
   timeoutSeconds: number;
   inputSchema: Record<string, unknown>;
-  lastRun: { id: string; status: Status; createdAt: string; error: string | null } | null;
+  lastRun: {
+    id: string;
+    status: Status;
+    state: RunState;
+    createdAt: string;
+    error: string | null;
+  } | null;
   failedInARow: number;
   ownership: string;
   retries: number;
@@ -161,10 +179,7 @@ export function Scripts({
           cell: (row) =>
             row.lastRun ? (
               <Link to={`${runsLink}/${row.lastRun.id}`} className="flex flex-col no-underline">
-                <StatePill
-                  state={stateOf(row.lastRun.status)}
-                  detail={fromNow(row.lastRun.createdAt)}
-                />
+                <StatePill state={row.lastRun.state} detail={fromNow(row.lastRun.createdAt)} />
                 {row.failedInARow > 1 ? (
                   <span className="text-meta text-danger">{row.failedInARow} in a row</span>
                 ) : null}
@@ -193,9 +208,28 @@ export function Scripts({
       empty={{
         title: items.length > 0 ? "No script matches" : "No scripts yet",
         text:
-          items.length > 0
-            ? "Show every script instead."
-            : "Scripts arrive with a deploy. From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
+          items.length > 0 ? (
+            "Show every script instead."
+          ) : editable ? (
+            <>
+              Write one here, or deploy them from the tenant's repository with{" "}
+              <code className="font-mono">platform deploy</code>.
+            </>
+          ) : (
+            <>
+              Scripts reach production when a dev workspace is promoted here, or with{" "}
+              <code className="font-mono">platform deploy</code> from the tenant's repository.
+            </>
+          ),
+        ...(items.length === 0 && editable
+          ? {
+              action: (
+                <Button variant="primary" onClick={() => navigate(`${link}/scripts/new`)}>
+                  New script
+                </Button>
+              ),
+            }
+          : {}),
       }}
       inspector={
         open ? (
@@ -303,202 +337,75 @@ export type LiveRun = Run & {
   alert: Record<string, unknown> | null;
   pool: string | null;
   waitingFor: string | null;
+  reruns?: { id: string; state: RunState; createdAt: string }[];
 };
 
-/** A run and its log lines, asked for again while it is in progress. */
+/**
+ * A run and its log lines, asked for again whenever the run changes or logs: on
+ * the run event stream, or every second and a half while the stream is down.
+ */
 export function useLiveRun(root: string, runId: string) {
   const [run, setRun] = useState<LiveRun>();
   const [lines, setLines] = useState<LogLine[]>([]);
   const [error, setError] = useState<string>();
+  const streaming = useStreamConnected();
+  const shown = useRef(runId);
+  const last = useRef(0);
+  const done = useRef(false);
+  const busy = useRef(false);
+  const again = useRef(false);
 
-  useEffect(() => {
-    let stopped = false;
-    let last = 0;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
+  const refresh = useCallback(async () => {
+    // One read at a time; one asked for meanwhile is made right after.
+    if (busy.current) {
+      again.current = true;
+      return;
+    }
+    busy.current = true;
+    try {
+      do {
+        again.current = false;
         const current = await api.get<LiveRun>(`${root}/runs/${runId}`);
         const logs = await api.get<{ items: LogLine[]; done: boolean }>(
-          `${root}/runs/${runId}/logs?after=${last}`,
+          `${root}/runs/${runId}/logs?after=${last.current}`,
         );
-        if (stopped) return;
+        if (shown.current !== runId) return;
         setRun(current);
         if (logs.items.length > 0) {
-          last = logs.items.at(-1)?.seq ?? last;
+          last.current = logs.items.at(-1)?.seq ?? last.current;
           setLines((existing) => [...existing, ...logs.items]);
         }
-        if (!logs.done) timer = setTimeout(poll, 1500);
-      } catch (caught) {
-        if (!stopped) setError((caught as Error).message);
-      }
-    };
+        done.current = logs.done;
+      } while (again.current);
+    } catch (caught) {
+      if (shown.current === runId) setError((caught as Error).message);
+    } finally {
+      busy.current = false;
+    }
+  }, [root, runId]);
+
+  useEffect(() => {
+    shown.current = runId;
+    last.current = 0;
+    done.current = false;
     setRun(undefined);
     setLines([]);
     setError(undefined);
-    poll();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  }, [root, runId]);
-  return { run, lines, error };
-}
+    void refresh();
+  }, [runId, refresh]);
 
-/** One run, refreshed while it is in progress, with its log lines as they arrive. */
-export function RunDetail({
-  root,
-  runId,
-  backLink,
-}: {
-  root: string;
-  runId: string;
-  backLink: string;
-}) {
-  const { run, lines, error } = useLiveRun(root, runId);
-
-  if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p className="text-ink-muted">Loading…</p>;
-  const active = run.status === "queued" || run.status === "running";
-  const duration = took(run);
-  const waited =
-    run.startedAt && Date.parse(run.startedAt) - Date.parse(run.createdAt) >= 1000
-      ? `${((Date.parse(run.startedAt) - Date.parse(run.createdAt)) / 1000).toFixed(1)} s`
-      : "";
-  const outcome =
-    run.status === "succeeded"
-      ? `Succeeded${duration ? ` in ${duration}` : ""}`
-      : run.status === "failed"
-        ? `Failed${duration ? ` after ${duration}` : ""}`
-        : run.status === "cancelled"
-          ? "Canceled"
-          : run.status === "running"
-            ? "Running"
-            : "Waiting for a worker";
-  const Mark =
-    run.status === "succeeded"
-      ? Check
-      : run.status === "failed"
-        ? X
-        : run.status === "cancelled"
-          ? Ban
-          : run.status === "running"
-            ? LoaderCircle
-            : Clock;
-  const tone = STATUS[run.status][0];
-  const markTone: Record<BadgeTone, string> = {
-    success: "bg-success-soft text-success",
-    danger: "bg-danger-soft text-danger",
-    action: "bg-action-soft text-action",
-    attention: "bg-attention-soft text-attention",
-    neutral: "bg-sunken text-ink-muted",
-  };
-  const failed = run.status === "failed";
-
-  return (
-    <section className="flex flex-col gap-4">
-      <Link to={backLink} className="text-[13px] text-action">
-        All runs
-      </Link>
-      <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-4">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span
-              className={`flex size-7 shrink-0 items-center justify-center rounded-control ${markTone[tone]}`}
-            >
-              <Mark
-                aria-hidden="true"
-                size={16}
-                strokeWidth={2.25}
-                className={run.status === "running" ? "animate-spin" : ""}
-              />
-            </span>
-            <h1 className="m-0 truncate font-mono text-base font-semibold">{run.script}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge tone={tone}>{outcome}</Badge>
-            {active ? (
-              <Button
-                size="small"
-                variant="danger"
-                onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: "Cancel this run?",
-                    action: "Cancel run",
-                    cancel: "Keep running",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await api.post(`${root}/runs/${runId}/cancel`).catch(notify.error);
-                }}
-              >
-                Cancel run
-              </Button>
-            ) : null}
-          </div>
-        </header>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge>{run.id.slice(-12)}</Badge>
-          <Badge>Version {run.bundleVersion}</Badge>
-          {run.pool ? <Badge tone="action">Pool: {run.pool}</Badge> : null}
-          {run.maxAttempts > 1 ? (
-            <Badge>
-              Attempt {Math.max(run.attempt, 1)} of {run.maxAttempts}
-            </Badge>
-          ) : null}
-        </div>
-        {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
-        <Facts
-          facts={[
-            { label: "Received", value: stamp(run.createdAt) },
-            { label: "Started", value: run.startedAt ? stamp(run.startedAt) : "" },
-            { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "" },
-            { label: "By", value: TRIGGER[run.trigger.type] ?? run.trigger.type },
-            { label: "Waited", value: waited },
-            { label: "Ran", value: duration || (run.status === "running" ? "In progress" : "") },
-            { label: "Run ID", value: run.id, code: true },
-            {
-              label: "Trigger",
-              value: typeof run.trigger.trigger === "string" ? run.trigger.trigger : "",
-              code: true,
-            },
-          ]}
-        />
-        {run.alert?.handlerRunId ? (
-          <p className="m-0 text-ink-muted">
-            A failure handler was started:{" "}
-            <Link to={`${backLink}/${run.alert.handlerRunId}`} className="text-action">
-              see its run
-            </Link>
-          </p>
-        ) : null}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Input</h2>
-            <JsonView label="Input" value={run.input} />
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <h2 className="m-0 text-[13px] font-medium text-ink-muted">Result</h2>
-            <JsonView
-              label="Result"
-              tone={failed ? "danger" : "plain"}
-              value={
-                failed ? { error: run.error } : run.status === "succeeded" ? run.output : undefined
-              }
-            />
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <h2 className="m-0 w-fit border-action border-b-2 pb-1 text-[13px] font-medium">Logs</h2>
-          <LogViewer
-            lines={lines}
-            live={active}
-            fileName={`${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`}
-            empty={active ? "Waiting for the first line…" : "The script logged nothing."}
-          />
-        </div>
-      </div>
-    </section>
+  useStreamEvents(
+    (event) => (event.k === "run" || event.k === "log") && event.id === runId,
+    () => void refresh(),
   );
+  useEffect(() => {
+    if (streaming) return;
+    const timer = setInterval(() => {
+      if (!done.current) void refresh();
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [streaming, refresh]);
+  return { run, lines, error };
 }
 
 /** A date and time to the second, in the same shape on every line so that they compare by eye. */
@@ -507,61 +414,6 @@ export const stamp = (iso: string) => {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 };
-
-export function Triggers({ root }: { root: string }) {
-  return (
-    <ListScreen<{
-      path: string;
-      type: string;
-      script: string;
-      enabled: boolean;
-      cron: string | null;
-      timezone: string | null;
-      nextFireAt: string | null;
-      lastFiredAt: string | null;
-      url: string | null;
-    }>
-      title="Triggers"
-      description="What starts scripts in this workspace without anyone asking: schedules and webhooks."
-      path={`${root}/triggers`}
-      rowKey={(row) => row.path}
-      columns={[
-        { header: "Trigger", cell: (row) => code(row.path) },
-        { header: "Starts", cell: (row) => code(row.script) },
-        {
-          header: "When",
-          cell: (row) =>
-            row.type === "schedule" ? (
-              <span>
-                {code(row.cron ?? "")} <span className="text-ink-muted">{row.timezone}</span>
-              </span>
-            ) : row.url ? (
-              <span className="font-mono text-[13px] break-all select-all">POST {row.url}</span>
-            ) : (
-              <span className="text-ink-muted">
-                A webhook. Its address is shown to those who manage triggers.
-              </span>
-            ),
-        },
-        {
-          header: "Next",
-          cell: (row) =>
-            !row.enabled ? (
-              <Badge>Off</Badge>
-            ) : row.nextFireAt ? (
-              when(row.nextFireAt)
-            ) : (
-              "On request"
-            ),
-        },
-      ]}
-      empty={{
-        title: "No triggers",
-        text: "Define a schedule or a webhook in the tenant's repository and deploy it.",
-      }}
-    />
-  );
-}
 
 interface BundleRow {
   id: string;
@@ -596,7 +448,7 @@ export function Deployments({ root }: { root: string }) {
       ]}
       empty={{
         title: "Nothing has been deployed",
-        text: "From the tenant's repository, run: platform deploy --tenant <slug> --workspace <slug>",
+        text: "Deploy what was saved here from Release, promote a dev workspace into this one, or deploy from the tenant's repository with platform deploy.",
       }}
       rowActions={(row, reload) =>
         row.active ? null : (
@@ -737,6 +589,71 @@ function SetUpConnection({
   );
 }
 
+/** What trying a connection found. */
+interface ConnectionTestResult {
+  ok: boolean;
+  status?: number;
+  message?: string;
+  latencyMs?: number;
+}
+
+/**
+ * Has one of the workspace's workers try a connection, from where scripts run,
+ * and says what it found.
+ */
+function TestConnection({ root, path }: { root: string; path: string }) {
+  const [taskId, setTaskId] = useState<string>();
+  const [found, setFound] = useState<{ tone: "success" | "danger"; text: string }>();
+  const following = useTaskEnd(root, taskId, (task: TaskState) => {
+    setTaskId(undefined);
+    const result = task.result as ConnectionTestResult | null;
+    if (task.status === "failed" || !result) {
+      setFound({ tone: "danger", text: task.error?.message ?? "The test did not finish." });
+      return;
+    }
+    const took = result.latencyMs !== undefined ? ` in ${result.latencyMs} ms` : "";
+    setFound(
+      result.ok
+        ? {
+            tone: "success",
+            text: `Reached${result.status ? `, ${result.status}` : ""}${took}.${result.message ? ` ${result.message}` : ""}`,
+          }
+        : {
+            tone: "danger",
+            text: `${result.message ?? "Not reached."}${took ? ` (${took.trim()})` : ""}`,
+          },
+    );
+  });
+  return (
+    <span className="inline-flex items-center gap-2">
+      {following.waiting ? (
+        <span className="text-[13px] text-ink-muted" role="status">
+          {following.slow ? "Waiting for a worker…" : "Testing…"}
+        </span>
+      ) : found ? (
+        <span title={found.text} className="max-w-[16rem] truncate">
+          <Badge tone={found.tone}>{found.text}</Badge>
+        </span>
+      ) : null}
+      <Button
+        size="small"
+        disabled={following.waiting}
+        onClick={async () => {
+          setFound(undefined);
+          try {
+            const task = await api.post<{ id: string }>(`${root}/connection-tests`, { path });
+            setTaskId(task.id);
+          } catch (error) {
+            setFound({ tone: "danger", text: (error as Error).message });
+          }
+        }}
+      >
+        Test
+      </Button>
+    </span>
+  );
+}
+
 export function Connections({ root }: { root: string }) {
   const connectionUses = useReferences(root, "connection");
   return (
@@ -828,7 +745,8 @@ export function Connections({ root }: { root: string }) {
           }),
       }}
       rowActions={(row, reload) => (
-        <span className="flex justify-end gap-2">
+        <span className="flex flex-wrap justify-end gap-2">
+          {row.bound ? <TestConnection root={root} path={row.path} /> : null}
           {row.connector !== "http" ? (
             <SetUpConnection root={root} row={row} onDone={reload} />
           ) : null}
@@ -976,9 +894,141 @@ function PoolCard({
   );
 }
 
+interface QueueRow {
+  workspaceId: string;
+  workspace: string;
+  pool: string | null;
+  due: number;
+  later: number;
+  running: number;
+  oldestSeconds: number | null;
+}
+interface WorkerRow {
+  id: string;
+  credentialName: string;
+  managed: boolean;
+  version: string | null;
+  outdated: boolean;
+  running: { runId: string; workspaceId: string; script: string; startedAt: string | null }[];
+}
+
+/** A wait in words: "40s", "3m", "2h 5m". */
+export function waitWords(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+/**
+ * What waits for a worker, by workspace and pool, and what each worker holds:
+ * a backlog is seen here before anyone asks why their run has not started.
+ */
+export function QueuePanel({ base }: { base: string }) {
+  const queue = useLoad<{
+    items: QueueRow[];
+    tasks: { workspaceId: string; kind: string; waiting: number }[];
+  }>(`${base}/queue`);
+  const workers = useLoad<{ items: WorkerRow[] }>(`${base}/workers`);
+  const tenantLink = base.replace(/^\/tenants\//, "/t/");
+  const rows = queue.data?.items ?? [];
+  const backlog = rows.filter((row) => row.due > 0);
+  const tasks = queue.data?.tasks.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
+  return (
+    <section aria-label="Queue" className="flex flex-col gap-3">
+      <h2 className="m-0 text-base font-semibold">Queue</h2>
+      {queue.error ? (
+        <Notice tone="danger">{queue.error.message}</Notice>
+      ) : !queue.data ? (
+        <p className="m-0 text-ink-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="m-0 text-ink-muted">Nothing is waiting, and nothing is running.</p>
+      ) : (
+        <>
+          {backlog.length > 0 ? (
+            <Notice tone="attention">
+              {backlog.length === 1
+                ? `Runs are waiting in ${backlog[0]?.workspace}`
+                : `Runs are waiting in ${backlog.length} places`}
+              {(() => {
+                const oldest = Math.max(...backlog.map((row) => row.oldestSeconds ?? 0));
+                return `, the oldest for ${waitWords(oldest)}.`;
+              })()}
+            </Notice>
+          ) : null}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[32rem] border-collapse text-left text-[14px]">
+              <thead>
+                <tr className="text-[13px] text-ink-muted">
+                  <th className="py-1.5 pr-3 font-medium">Workspace</th>
+                  <th className="py-1.5 pr-3 font-medium">Pool</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Waiting</th>
+                  <th className="py-1.5 pr-3 font-medium">Oldest</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Later</th>
+                  <th className="py-1.5 text-right font-medium">Running</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.workspaceId}:${row.pool ?? ""}`} className="border-line border-t">
+                    <td className="py-1.5 pr-3">
+                      <Link to={`${tenantLink}/workspaces/${row.workspaceId}/runs?status=queued`}>
+                        {row.workspace}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-telemetry">
+                      {row.pool ?? "default"}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{row.due}</td>
+                    <td className="py-1.5 pr-3">
+                      {row.oldestSeconds === null ? "—" : waitWords(row.oldestSeconds)}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{row.later}</td>
+                    <td className="py-1.5 text-right tabular-nums">{row.running}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {tasks > 0 ? (
+            <p className="m-0 text-meta text-ink-muted">
+              {tasks} task{tasks === 1 ? "" : "s"} for the platform waiting too: reading schemas,
+              sending alerts, trying connections.
+            </p>
+          ) : null}
+        </>
+      )}
+      {(workers.data?.items.length ?? 0) > 0 ? (
+        <ul aria-label="Workers online" className="m-0 flex list-none flex-col gap-1.5 p-0">
+          {workers.data?.items.map((worker) => (
+            <li key={worker.id} className="flex flex-wrap items-center gap-2 text-[14px]">
+              <span className="font-medium">{worker.credentialName}</span>
+              <span className="font-mono text-telemetry text-ink-muted">
+                {worker.version ?? "version unknown"}
+              </span>
+              {worker.outdated ? (
+                <Badge tone="attention">Older version: takes no tasks</Badge>
+              ) : null}
+              <span className="text-ink-muted">
+                {worker.running.length === 0
+                  ? "idle"
+                  : `running ${worker.running.map((run) => run.script).join(", ")}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 export function Workers({ base }: { base: string }) {
   const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
+  const managed = useLoad<{ state: "off" | "host" | "isolated" | "shared" | "refused" }>(
+    `${base}/managed-workers`,
+  );
   const [adding, setAdding] = useState(false);
   const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
   const poolOptions = [
@@ -996,6 +1046,7 @@ export function Workers({ base }: { base: string }) {
           </Button>
         }
       >
+        <QueuePanel base={base} />
         {pools.error ? (
           <Notice tone="danger">{pools.error.message}</Notice>
         ) : !pools.data ? (
@@ -1015,6 +1066,19 @@ export function Workers({ base }: { base: string }) {
             ))}
           </ul>
         )}
+        {managed.data?.state === "refused" ? (
+          <Notice tone="attention">
+            <strong>This tenant's code runs on standalone workers only.</strong> People outside the
+            instance's operators write its code, and the workers this instance starts run beside its
+            control plane, on its network, so it starts none for this tenant. Make a credential
+            below and start a worker with it, or ask the operator to run a worker host: see "Workers
+            the instance starts" in the self-hosting guide.
+          </Notice>
+        ) : managed.data?.state === "shared" && tenant.data?.managedWorkers ? (
+          <p className="m-0 text-meta text-ink-muted">
+            Workers the instance starts run as the control plane's own user.
+          </p>
+        ) : null}
         {tenant.data ? (
           <div className="flex flex-wrap items-center gap-3">
             <span>
@@ -1166,7 +1230,7 @@ export function ConnectionGroups({ root }: { root: string }) {
   const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
   const [adding, setAdding] = useState<string>();
   if (groups.error) return <Notice tone="danger">{groups.error.message}</Notice>;
-  if (!groups.data || groups.data.items.length === 0) return null;
+  if (!groups.data) return null;
 
   return (
     <section className="flex flex-col gap-4">
@@ -1178,6 +1242,12 @@ export function ConnectionGroups({ root }: { root: string }) {
           deploy.
         </p>
       </header>
+      {groups.data.items.length === 0 ? (
+        <p className="m-0 rounded-panel border border-line border-dashed px-4 py-3 text-ink-muted">
+          No groups here. A group is declared in the workspace's code with the connection kind it
+          holds; once deployed, its members are added here.
+        </p>
+      ) : null}
       {groups.data.items.map((group) => (
         <div key={group.path} className="rounded-panel border border-line bg-surface">
           <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">

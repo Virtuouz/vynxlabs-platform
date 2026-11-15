@@ -14,7 +14,16 @@ import {
 } from "@vynxlabs/ui";
 import type React from "react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type DataClient, type Filter, failure, type Row, type TableInfo } from "./data.ts";
+import { ActionButton, type PageScope, selectedBy, useActions } from "./actions.tsx";
+import {
+  type DataClient,
+  type Filter,
+  failure,
+  type Row,
+  type StartedRun,
+  type TableInfo,
+  type TargetInfo,
+} from "./data.ts";
 import { axisFormat, formatValue } from "./format.ts";
 import { all, heading, linkDefaults, linkFilter, sortOf, summaryRows } from "./links.ts";
 
@@ -109,7 +118,12 @@ function WidgetView({
   onChanged,
   onLooked,
   narrowed,
+  scope,
+  actions,
 }: {
+  /** What the page holds that an action can read. */
+  scope: PageScope;
+  actions: ReturnType<typeof useActions>;
   /** What the page's filters add, for this widget's table. */
   narrowed?: Filter | undefined;
   widget: PageWidget;
@@ -242,6 +256,13 @@ function WidgetView({
   if (widget.type === "text") {
     return <p className="m-0 whitespace-pre-wrap">{widget.options?.text}</p>;
   }
+  if (widget.type === "action") {
+    if (!widget.action) return null;
+    if (!actions.canStart(widget.action)) {
+      return <p className="m-0 text-[13px] text-ink-muted">You may not do this here.</p>;
+    }
+    return <ActionButton action={widget.action} scope={scope} actions={actions} />;
+  }
   if (!info?.found) {
     return (
       <Notice tone="attention">
@@ -358,6 +379,16 @@ function WidgetView({
               throw new Error(failure(error).message);
             }
           },
+        }
+      : {}),
+    ...(widget.actions?.some((action) => actions.canStart(action))
+      ? {
+          rowActions: widget.actions
+            .filter((action) => actions.canStart(action))
+            .map((action) => ({
+              label: action.label,
+              onRun: (row: Row) => void actions.run(action, { ...scope, row }),
+            })),
         }
       : {}),
     ...(canWrite && widget.options?.allowDelete
@@ -499,6 +530,14 @@ export interface PageRendererProps {
   /** What each table the page shows holds, and what the person may do with it. */
   tables: Record<string, TableInfo>;
   client: DataClient;
+  /** What each action starts, and whether the person may start it. */
+  targets?: Record<string, TargetInfo> | undefined;
+  /** Where a run's page is, for a member who may open it. */
+  runLink?: ((run: StartedRun) => string) | undefined;
+  /** Actions say what they would send and start nothing: a preview outside a dev workspace. */
+  dryRun?: boolean | undefined;
+  /** Whether the person is staff, told why an action failed. */
+  member?: boolean | undefined;
   /** For the builder: the widget being worked on, and how another is picked. */
   editing?:
     | {
@@ -691,7 +730,16 @@ function PageFilters({
   );
 }
 
-function PageBody({ page, tables, client, editing }: PageRendererProps) {
+function PageBody({
+  page,
+  tables,
+  client,
+  editing,
+  targets,
+  runLink,
+  dryRun,
+  member,
+}: PageRendererProps) {
   const [chosen, setChosen] = useState<Record<string, Row>>({});
   const [narrow, setNarrow] = useState<Record<string, Narrow>>({});
   const [version, setVersion] = useState(0);
@@ -701,8 +749,13 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
     [page.widgets],
   );
   const followed = useMemo(
-    () => new Set(page.widgets.map((widget) => widget.link?.from).filter(Boolean)),
-    [page.widgets],
+    () =>
+      new Set([
+        ...page.widgets.map((widget) => widget.link?.from).filter(Boolean),
+        // A widget whose chosen row an action reads lets a row be chosen.
+        ...selectedBy(page),
+      ]),
+    [page],
   );
   const [, setLooked] = useState(0);
   const looked = useCallback(() => setLooked((count) => count + 1), []);
@@ -711,6 +764,15 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
     lookups.clear();
     setVersion((before) => before + 1);
   }, [lookups]);
+  const actions = useActions({
+    client,
+    targets: targets ?? {},
+    runLink,
+    onDone: changed,
+    ...(dryRun ? { dryRun } : {}),
+    ...(member !== undefined ? { member } : {}),
+  });
+  const scope: PageScope = { selection: chosen, filters: narrow };
   // Top to bottom and left to right, so the page reads in order without the grid.
   const ordered = [...page.widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
 
@@ -788,6 +850,7 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
           onChange={(id, value) => setNarrow((before) => ({ ...before, [id]: value }))}
         />
       ) : null}
+      {actions.shown}
       <div ref={grid} className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
         {ordered.map((widget) => {
           const source = widget.link ? byId.get(widget.link.from) : undefined;
@@ -857,6 +920,8 @@ function PageBody({ page, tables, client, editing }: PageRendererProps) {
                   onSelect={(row) => setChosen((before) => ({ ...before, [widget.id]: row }))}
                   onChanged={changed}
                   onLooked={looked}
+                  scope={scope}
+                  actions={actions}
                   narrowed={pageNarrowing(
                     page,
                     narrow,
@@ -886,6 +951,10 @@ export interface InterfaceRendererProps {
   body: InterfaceBody;
   tables: Record<string, TableInfo>;
   client: DataClient;
+  targets?: Record<string, TargetInfo> | undefined;
+  runLink?: ((run: StartedRun) => string) | undefined;
+  dryRun?: boolean | undefined;
+  member?: boolean | undefined;
   /** The page that is open. The first, when left out. */
   pageId?: string | undefined;
   onPage?: (id: string) => void;
@@ -898,11 +967,25 @@ export function InterfaceRenderer({
   client,
   pageId,
   onPage,
+  targets,
+  runLink,
+  dryRun,
+  member,
 }: InterfaceRendererProps) {
   const [open, setOpen] = useState<string | undefined>(pageId);
   const current = body.pages.find((page) => page.id === (pageId ?? open)) ?? body.pages[0];
   if (!current) return <p className="m-0 text-ink-muted">This app has no pages yet.</p>;
-  const drawn = <PageRenderer page={current} tables={tables} client={client} />;
+  const drawn = (
+    <PageRenderer
+      page={current}
+      tables={tables}
+      client={client}
+      targets={targets}
+      runLink={runLink}
+      dryRun={dryRun}
+      member={member}
+    />
+  );
   if (body.pages.length === 1) return drawn;
   return (
     <Tabs

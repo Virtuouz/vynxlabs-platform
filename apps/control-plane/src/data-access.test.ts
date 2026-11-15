@@ -353,6 +353,15 @@ describe("an external Postgres database as a data source", () => {
     expect((await alice.delete(`${ws()}/data-source-bindings/nowhere`)).status).toBe(204);
     expect((await alice.delete(`${ws()}/data-source-bindings/nowhere`)).status).toBe(404);
     expect((await alice.get(`${ws()}/data-source-tables/nowhere`)).status).toBe(404);
+
+    // An internal address the operator did not allow is never connected to.
+    await alice.put(`${ws()}/data-source-bindings/metadata`, {
+      config: { ...sourceConfig, host: "169.254.169.254", port: 5432 },
+    });
+    const guarded = await alice.get(`${ws()}/data-source-tables/metadata`);
+    expect(guarded.status).toBe(400);
+    expect(guarded.body).toMatchObject({ code: "egress_refused" });
+    expect(guarded.body.detail).toMatch(/169\.254\.169\.254 is a private or internal address/);
   });
 });
 

@@ -3,6 +3,7 @@ import type {
   InterfacePage,
   PageWidget,
   ValueFormat,
+  WidgetAction,
   WidgetLink,
   WidgetType,
 } from "@vynxlabs/manifest";
@@ -14,6 +15,7 @@ import {
   PageRenderer,
   settle,
   type TableInfo,
+  type TargetInfo,
 } from "@vynxlabs/screens";
 import {
   Button,
@@ -44,6 +46,7 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { ActionSettings, RowActionsSettings, type TargetFacts } from "./ActionSettings.tsx";
 import { fromNow } from "./Overview.tsx";
 
 interface Listed {
@@ -84,6 +87,7 @@ const TYPES: { type: WidgetType; label: string; about: string }[] = [
   { type: "figure", label: "Figure", about: "One total, large: a count, a sum" },
   { type: "form", label: "Form", about: "Adds a row" },
   { type: "text", label: "Text", about: "Words on the page" },
+  { type: "action", label: "Action", about: "A button that starts a script or a flow" },
 ];
 const FUNCTIONS = [
   { value: "count", label: "Count" },
@@ -159,8 +163,27 @@ function clientFor(root: string, asGroup?: string): DataClient {
     remove: async (table, id) => {
       await api.delete(`${root}/row/${id}/${table}`);
     },
+    // In the builder an action starts for real, as the member building: in a dev workspace.
+    start: async (target, input) => {
+      const started =
+        target.kind === "script"
+          ? await api.post<{ id: string }>(`${root}/runs`, { script: target.path, input })
+          : await api.post<{ id: string }>(`${root}/flow-runs`, { flow: target.path, input });
+      return { kind: target.kind, id: started.id };
+    },
+    run: (started) =>
+      api.get(`${root}/${started.kind === "script" ? "runs" : "flow-runs"}/${started.id}`),
   };
 }
+
+/** Every action on a page, with the widget it is on. */
+function pageActions(page: InterfacePage): WidgetAction[] {
+  return page.widgets.flatMap((widget) => [
+    ...(widget.action ? [widget.action] : []),
+    ...(widget.actions ?? []),
+  ]);
+}
+const keyOf = (action: WidgetAction) => `${action.target.kind}:${action.target.path}`;
 
 /** What each of the named tables holds, fetched once each and kept. */
 function useTables(root: string, names: string[]): Record<string, TableInfo> {
@@ -375,6 +398,8 @@ function FormatSettings({
 }
 
 function WidgetSettings({
+  root,
+  factsOf,
   widget,
   page,
   tables,
@@ -382,6 +407,8 @@ function WidgetSettings({
   onChange,
   onRemove,
 }: {
+  root: string;
+  factsOf: (action: WidgetAction) => TargetFacts | undefined;
   widget: PageWidget;
   page: InterfacePage;
   tables: Record<string, TableInfo>;
@@ -430,7 +457,21 @@ function WidgetSettings({
           })
         }
       />
-      {widget.type === "text" ? (
+      {widget.type === "action" ? (
+        <ActionSettings
+          root={root}
+          action={widget.action}
+          page={page}
+          tables={tables}
+          facts={widget.action ? factsOf(widget.action) : undefined}
+          onChange={(action) =>
+            onChange((draft) => {
+              if (action) draft.action = action;
+              else delete draft.action;
+            })
+          }
+        />
+      ) : widget.type === "text" ? (
         <TextAreaField
           label="Text"
           name="text"
@@ -1138,6 +1179,24 @@ function WidgetSettings({
           />
         ))}
       </div>
+      {widget.type === "table" && widget.table && !summary ? (
+        <>
+          <h3 className={section}>Row actions</h3>
+          <RowActionsSettings
+            root={root}
+            widget={widget}
+            page={page}
+            tables={tables}
+            factsOf={factsOf}
+            onChange={(actions) =>
+              onChange((draft) => {
+                if (actions) draft.actions = actions;
+                else delete draft.actions;
+              })
+            }
+          />
+        </>
+      ) : null}
       <div className="mt-2">
         <Button variant="danger" onClick={onRemove}>
           Remove this widget
@@ -1169,8 +1228,11 @@ export function PageEditor({
   selected,
   onSelect,
   onChange,
+  interfacePath,
 }: {
   root: string;
+  /** The interface the page is of, so the builder can say who would not see an action. */
+  interfacePath?: string | undefined;
   page: InterfacePage;
   selected: string | undefined;
   onSelect: (widget: string | undefined) => void;
@@ -1195,6 +1257,30 @@ export function PageEditor({
     .map((table) => table.name);
   const widget = page.widgets.find((candidate) => candidate.id === selected);
 
+  // What the page's actions start, and who would not see them.
+  const keys = [...new Set(pageActions(page).map(keyOf))].sort();
+  const facts = useLoad<{ items: TargetFacts[] }>(
+    keys.length > 0
+      ? `${root}/interface-targets?targets=${encodeURIComponent(keys.join(","))}${
+          interfacePath ? `&interface=${encodeURIComponent(interfacePath)}` : ""
+        }`
+      : null,
+  );
+  const factsOf = (action: WidgetAction) =>
+    facts.data?.items.find((one) => one.key === keyOf(action));
+  const targets: Record<string, TargetInfo> = Object.fromEntries(
+    (facts.data?.items ?? []).map((one) => [
+      one.key,
+      {
+        canStart: one.found && one.startable,
+        description: one.description,
+        inputSchema: one.inputSchema,
+      },
+    ]),
+  );
+  const workspace = useLoad<{ type: string }>(root);
+  const consoleBase = root.replace(/^\/tenants\//, "/t/");
+
   const addWidget = (type: WidgetType) => {
     let id: string = type;
     for (let count = 2; page.widgets.some((one) => one.id === id); count += 1) {
@@ -1210,8 +1296,8 @@ export function PageEditor({
         at: {
           x: 0,
           y: bottom,
-          w: wide ? 12 : type === "figure" ? 3 : 6,
-          h: type === "text" || type === "figure" ? 3 : 8,
+          w: wide ? 12 : type === "figure" || type === "action" ? 3 : 6,
+          h: type === "text" || type === "figure" ? 3 : type === "action" ? 2 : 8,
         },
         ...(type === "text" ? { options: { text: "Write something here." } } : {}),
         ...(type === "figure"
@@ -1291,6 +1377,11 @@ export function PageEditor({
             page={page}
             tables={known}
             client={client}
+            targets={targets}
+            member
+            runLink={(run) => `${consoleBase}/runs/${run.id}`}
+            // Outside a dev workspace the preview says what an action would send, and starts nothing.
+            dryRun={workspace.data?.type !== "dev"}
             editing={{
               selected,
               onSelect,
@@ -1325,6 +1416,8 @@ export function PageEditor({
         {widget ? (
           <WidgetSettings
             key={widget.id}
+            root={root}
+            factsOf={factsOf}
             widget={widget}
             page={page}
             tables={known}
@@ -1796,6 +1889,7 @@ export function InterfaceBuilder({
       {page ? (
         <PageEditor
           root={root}
+          interfacePath={path}
           page={page}
           selected={selected}
           onSelect={setSelected}

@@ -111,6 +111,28 @@ describe("containment", () => {
     expect(await evaluate("size(n)", big)).toBe(3000);
   });
 
+  test("the thread starting, and the wait for its turn, do not count against an expression", async () => {
+    // A limit shorter than the thread takes to start: the first expression still runs.
+    const quick = new Expressions({ timeoutMs: 40 });
+    try {
+      expect(await quick.evaluate("1 + 1", {})).toBe(2);
+      // One that runs too long fails alone. Those queued behind it are asked of the new thread.
+      const results = await Promise.allSettled([
+        quick.evaluate("n.all(a, n.all(b, n.all(c, a + b + c >= 0.0)))", big),
+        quick.evaluate("size(n)", big),
+        quick.evaluate("2 * 3", {}),
+      ]);
+      expect(results[0]).toMatchObject({
+        status: "rejected",
+        reason: { message: "The expression took longer than 40 ms and was stopped." },
+      });
+      expect(results[1]).toEqual({ status: "fulfilled", value: 3000 });
+      expect(results[2]).toEqual({ status: "fulfilled", value: 6 });
+    } finally {
+      await quick.close();
+    }
+  });
+
   test("an expression that would exhaust memory is stopped, and the next one works", async () => {
     const roomy = new Expressions({ timeoutMs: 10_000, memoryMb: 32 });
     try {

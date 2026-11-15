@@ -118,7 +118,20 @@ export const scriptKind: KindDefinition = {
       description: { type: "string", maxLength: 500 },
       input: jsonSchema,
       output: jsonSchema,
+      schemaSource: {
+        enum: ["code"],
+        description:
+          "Set when `input` and `output` were read from the script's own `input` and `output` " +
+          "exports, which the console then shows and does not let be edited by hand.",
+      },
       timeoutSeconds: { type: "integer", minimum: 1, maximum: 3600 },
+      memoryMb: {
+        type: "integer",
+        minimum: 64,
+        maximum: 4096,
+        description:
+          "The most memory the script may use, in MB. Default 512. Past it, the run fails.",
+      },
       retries: {
         type: "object",
         properties: {
@@ -229,20 +242,42 @@ const triggerSourceRef = {
     "A trigger source to hand each request or each tick to first. What it returns is what starts the script or flow.",
 };
 
+/** Labels for each run a trigger starts, worked out from what it was given. */
+const tagExpressions = {
+  type: "array",
+  maxItems: 10,
+  items: { type: "string", minLength: 1, maxLength: 500 },
+  description:
+    "CEL expressions over `trigger`, what the trigger was given. Each gives one tag for the " +
+    "run it starts, such as `'order:' + string(trigger.id)`. A tag is up to 64 characters of " +
+    "a-z, 0-9 and _.:-; an expression that fails or gives anything else is left out.",
+};
+
 export const scheduleKind: KindDefinition = {
   kind: "schedule",
   schemaVersion: 1,
   body: {
     type: "object",
     properties: {
-      script: path,
+      script: { ...path, description: "The script it starts. Give this or `flow`." },
+      flow: {
+        ...path,
+        description: "The flow it starts, from the flow's manual trigger. Give this or `script`.",
+      },
       cron: { type: "string", maxLength: 120, description: "Five-field cron expression." },
       timezone: { type: "string", maxLength: 64, description: "IANA time zone. Default UTC." },
       input: { type: "object" },
       enabled: { type: "boolean" },
+      overlap: {
+        enum: ["allow", "skip"],
+        description:
+          "`skip` passes over a time when the run it started last is still going. Default `allow`.",
+      },
       source: triggerSourceRef,
+      tags: tagExpressions,
     },
-    required: ["script", "cron"],
+    required: ["cron"],
+    oneOf: [{ required: ["script"] }, { required: ["flow"] }],
     additionalProperties: false,
   },
 };
@@ -378,6 +413,7 @@ export const triggerKind: KindDefinition = {
           type: { const: "webhook" },
           script: path,
           enabled: { type: "boolean" },
+          tags: tagExpressions,
           ...webhookOptions,
         },
         required: ["type", "script"],
@@ -394,6 +430,7 @@ export const triggerKind: KindDefinition = {
             description: "CEL over `event`. The script runs only when it is true.",
           },
           enabled: { type: "boolean" },
+          tags: tagExpressions,
         },
         required: ["type", "script", "event"],
         additionalProperties: false,
@@ -497,6 +534,7 @@ export const flowKind: KindDefinition = {
                     }),
                     node("webhook", {
                       ...webhookOptions,
+                      tags: tagExpressions,
                       respond: {
                         enum: ["now", "flow"],
                         description:
@@ -510,10 +548,13 @@ export const flowKind: KindDefinition = {
                         cron: { type: "string", maxLength: 120 },
                         timezone: { type: "string", maxLength: 64 },
                         source: triggerSourceRef,
+                        tags: tagExpressions,
                       },
                       ["cron"],
                     ),
-                    node("event", { event: path, filter: expression }, ["event"]),
+                    node("event", { event: path, filter: expression, tags: tagExpressions }, [
+                      "event",
+                    ]),
                     node("form", formOptions, ["title", "fields"]),
                   ],
                 },

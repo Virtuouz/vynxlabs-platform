@@ -1,6 +1,7 @@
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 import { type DataStore, openDataStore } from "./datastore.js";
+import { type Listener, type ListenOptions, listen } from "./listener.js";
 import { type MigrationResult, runMigrations } from "./migrate.js";
 import { JobQueue, type QueueTuning } from "./queue.js";
 import { TenantRouter } from "./router.js";
@@ -65,6 +66,14 @@ export class Database {
     this.queue = new JobQueue(this.#queuePool, options.queue, (error) =>
       options.onConnectionError?.(error),
     );
+  }
+
+  /**
+   * Listens on Postgres channels on a connection of its own, outside the pool,
+   * made again when it is lost.
+   */
+  listen(options: Omit<ListenOptions, "connectionString">): Promise<Listener> {
+    return listen({ ...options, connectionString: this.#options.connectionString });
   }
 
   /** Applies pending migrations. Call once at start, before serving. */

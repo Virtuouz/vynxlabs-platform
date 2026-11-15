@@ -5,18 +5,31 @@ import {
   CirclePause,
   CircleX,
   Clock,
+  Hourglass,
   Info,
   Lock,
   type LucideIcon,
   TriangleAlert,
+  UserRoundCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type State =
+/**
+ * What a run, a flow run or a step is doing, as the server says it (`state`):
+ * one vocabulary for every screen.
+ */
+export type RunState =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "waiting_time"
   | "succeeded"
   | "failed"
-  | "running"
-  | "queued"
+  | "canceled"
+  | "skipped";
+
+export type State =
+  | RunState
   | "waiting"
   | "paused"
   | "cancelled"
@@ -27,11 +40,17 @@ export type State =
   | "ok";
 
 const STATES: Record<State, [label: string, icon: LucideIcon, tone: string]> = {
-  succeeded: ["Succeeded", CircleCheck, "text-success"],
-  ok: ["OK", CircleCheck, "text-success"],
-  failed: ["Failed", CircleX, "text-danger"],
-  running: ["Running", CircleDot, "text-action"],
+  // A run's states: the one map every screen uses.
   queued: ["Queued", Clock, "text-ink-muted"],
+  running: ["Running", CircleDot, "text-action"],
+  waiting_approval: ["Waiting for approval", UserRoundCheck, "text-attention"],
+  waiting_time: ["Waiting", Hourglass, "text-attention"],
+  succeeded: ["Succeeded", CircleCheck, "text-success"],
+  failed: ["Failed", CircleX, "text-danger"],
+  canceled: ["Canceled", CircleDashed, "text-ink-subtle"],
+  skipped: ["Skipped", CircleDashed, "text-ink-subtle"],
+  // Other things' states.
+  ok: ["OK", CircleCheck, "text-success"],
   waiting: ["Waiting", CirclePause, "text-attention"],
   paused: ["Paused", CirclePause, "text-attention"],
   cancelled: ["Canceled", CircleDashed, "text-ink-subtle"],
@@ -65,6 +84,21 @@ export function StatePill({
 }
 
 export const stateOf = (status: string): State => (status in STATES ? status : "info") as State;
+
+/** A run state's word, for places that show no icon, such as a node's accessible name. */
+export const stateLabel = (state: State) => STATES[state][0];
+
+/** The color of a run state, as a token, for drawings such as a flow's graph. */
+export const STATE_STROKE: Record<RunState, string> = {
+  queued: "var(--vx-ink-muted)",
+  running: "var(--vx-action)",
+  waiting_approval: "var(--vx-attention)",
+  waiting_time: "var(--vx-attention)",
+  succeeded: "var(--vx-success)",
+  failed: "var(--vx-danger)",
+  canceled: "var(--vx-ink-muted)",
+  skipped: "var(--vx-line)",
+};
 
 export type TagTone = "dev" | "production" | "draft" | "repository" | "live" | "neutral" | "danger";
 

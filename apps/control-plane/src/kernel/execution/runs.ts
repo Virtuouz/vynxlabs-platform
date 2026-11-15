@@ -4,6 +4,7 @@ import { validateJson } from "@vynxlabs/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { observe } from "../metrics.js";
 import { bundleManifest } from "./bundles.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
@@ -18,6 +19,8 @@ export interface ScriptBody {
   input: object;
   output: object;
   timeoutSeconds: number;
+  /** The most memory the script may use, in MB. */
+  memoryMb?: number;
   retries: { limit: number; delaySeconds: number; backoff: boolean };
   concurrency?: number;
   /** The worker pool the script runs on. */
@@ -82,6 +85,11 @@ export interface Relay {
   mode: "webhook" | "poll";
 }
 
+/** The most tags one run or flow run carries. */
+export const MAX_TAGS = 10;
+/** What a tag may look like: short, lower case, no spaces. */
+export const TAG_PATTERN = /^[a-z0-9_.:-]{1,64}$/;
+
 export interface StartRun {
   tenantId: string;
   workspaceId: string;
@@ -97,6 +105,8 @@ export interface StartRun {
   bundleId?: string | undefined;
   /** The flow step this run belongs to. */
   step?: { flowRunId: string; node: string; item: string } | undefined;
+  /** Tags the run starts with, from its trigger, the run it repeats, or its flow run. */
+  tags?: string[] | undefined;
   /**
    * Set when the run is of a trigger source, for a trigger. Only then may a
    * trigger source be run: nobody starts one by hand.
@@ -229,6 +239,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       input: input.inline,
       input_ref: input.ref,
       scheduled_for: request.startAfter ?? null,
+      tags: [...new Set(request.tags ?? [])].slice(0, MAX_TAGS),
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -322,6 +333,13 @@ export async function claimRun(
             .executeTakeFirstOrThrow();
           // Checked last, inside the transaction: rolling back leaves the job unclaimed.
           if (abandoned()) throw new ClaimAbandoned();
+          // A first attempt waited from when it was due; a retry's wait is its backoff.
+          if (!run.started_at) {
+            observe.runClaimed(kernel.metrics, {
+              workspace_id: run.workspace_id,
+              due: run.scheduled_for ?? run.created_at,
+            });
+          }
           return { run: updated, timeoutSeconds: job.timeoutSeconds };
         })
         .catch((error) => {
@@ -367,6 +385,7 @@ export async function completeRun(
   );
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
   const stored = await storePayload(kernel, run.id, "output", output);
+  const finishedAt = new Date();
   await kernel.db
     .updateTable("run")
     .set({
@@ -374,10 +393,11 @@ export async function completeRun(
       output: stored.inline,
       output_ref: stored.ref,
       error: null,
-      finished_at: new Date(),
+      finished_at: finishedAt,
     })
     .where("id", "=", run.id)
     .execute();
+  observe.runEnded(kernel.metrics, { ...run, finished_at: finishedAt }, "succeeded");
   await afterRun(kernel, run, "succeeded", output);
 }
 
@@ -467,6 +487,7 @@ export async function finishFailed(kernel: Kernel, runId: string, error: RunFail
     .returningAll()
     .executeTakeFirst();
   if (!run) return;
+  observe.runEnded(kernel.metrics, run, "failed");
   await afterRun(kernel, run, "failed", error);
   // Inside a flow, the flow decides what a failed step means.
   if (run.flow_run_id) return;
@@ -492,12 +513,14 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
   if (run.queue_job_id) {
     await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id);
   }
-  return trx
+  const cancelled = await trx
     .updateTable("run")
     .set({ status: "cancelled", finished_at: new Date() })
     .where("id", "=", runId)
     .returningAll()
     .executeTakeFirstOrThrow();
+  observe.runEnded(kernel.metrics, cancelled, "cancelled");
+  return cancelled;
 }
 
 /**

@@ -33,7 +33,23 @@ const client: DataClient = {
   insert: (name, row) => table(name).insert(row),
   update: (name, id, changes) => table(name).update(id, changes),
   remove: (name, id) => table(name).delete(id),
+  // Actions start what they start as whoever is using the app.
+  start: async (target, input) => {
+    const at = workspaceApi();
+    const started =
+      target.kind === "script"
+        ? await api.post<{ id: string }>(`${at}/runs`, { script: target.path, input })
+        : await api.post<{ id: string }>(`${at}/flow-runs`, { flow: target.path, input });
+    return { kind: target.kind, id: started.id };
+  },
+  run: (started) =>
+    api.get(`${workspaceApi()}/${started.kind === "script" ? "runs" : "flow-runs"}/${started.id}`),
 };
+
+function workspaceApi() {
+  const context = appContext();
+  return `/tenants/${context.tenant.id}/workspaces/${context.workspace.id}`;
+}
 
 function App() {
   const context = appContext();
@@ -99,6 +115,8 @@ function App() {
           body={view.interface}
           tables={view.tables}
           client={client}
+          targets={view.targets}
+          member={who.type === "member"}
           pageId={pageId}
           onPage={(id) => {
             setPageId(id);

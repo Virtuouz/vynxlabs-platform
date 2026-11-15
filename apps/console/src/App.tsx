@@ -8,6 +8,7 @@ import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { InstanceBranding } from "./screens/InstanceBranding.tsx";
 import { KitSheet } from "./screens/KitSheet.tsx";
+import { NotFound } from "./screens/NotFound.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 
@@ -52,10 +53,43 @@ export function useRememberPlace(signedIn: boolean, path: string) {
   }, [signedIn, tenantId, workspaceId]);
 }
 
+/**
+ * Opening the console at its root goes back to where the member was last: the
+ * workspace, or the tenant, kept by `useRememberPlace`. Only on opening, so the
+ * tenant list stays one click away afterward.
+ */
+export function useReopenLastPlace(signedIn: boolean) {
+  const opening = useRef(location.pathname === "/" && returnTarget(location.search) === null);
+  useEffect(() => {
+    if (!signedIn || !opening.current) return;
+    opening.current = false;
+    let live = true;
+    api
+      .get<{ items: { tenantId: string; workspaceId: string | null }[] }>("/me/recent")
+      .then(({ items }) => {
+        const last = items[0];
+        // The member may have gone somewhere else while this was asked.
+        if (!live || !last || location.pathname !== "/") return;
+        navigate(
+          last.workspaceId
+            ? `/t/${last.tenantId}/workspaces/${last.workspaceId}/overview`
+            : `/t/${last.tenantId}`,
+          { replace: true },
+        );
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [signedIn]);
+}
+
 export function App() {
   const me = useLoad<Me>("/me");
   const path = usePath();
-  useRememberPlace(me.data !== undefined && !me.error, path);
+  const signedIn = me.data !== undefined && !me.error;
+  useRememberPlace(signedIn, path);
+  useReopenLastPlace(signedIn);
   const tenant = match("/t/:tenantId/*", path);
   const target = me.data ? returnTarget(location.search) : null;
   useEffect(() => {
@@ -82,8 +116,9 @@ export function App() {
     me.reload();
   };
 
-  let screen = <Tenants me={me.data} />;
-  if (tenant?.tenantId)
+  let screen = <NotFound home="/" homeLabel="Go to your tenants" />;
+  if (path === "/") screen = <Tenants me={me.data} />;
+  else if (tenant?.tenantId)
     screen = <Tenant key={tenant.tenantId} tenantId={tenant.tenantId} me={me.data} path={path} />;
   else if (path === "/account/api-keys") screen = <Account />;
   else if (path === "/instance/members") screen = <InstanceMembers />;

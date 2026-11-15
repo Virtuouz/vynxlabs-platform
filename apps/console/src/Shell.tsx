@@ -16,7 +16,12 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { isOperator, type Me, useLoad } from "./api.ts";
 import { BrandMark, useBrand } from "./kit/brand.tsx";
-import { CommandPalette, type Destination, useCommandKey } from "./kit/CommandPalette.tsx";
+import {
+  CommandPalette,
+  type Destination,
+  ShortcutSheet,
+  useCommandKey,
+} from "./kit/CommandPalette.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { EnvTag, Tag } from "./kit/status.tsx";
 import {
@@ -34,7 +39,9 @@ import {
   WORKSPACE_SECTIONS,
   whereIs,
 } from "./nav.ts";
+import { openedAt, useRecordRecent } from "./recent.ts";
 import { Link, navigate } from "./router.tsx";
+import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
 // Kept for screens that list a tenant's sections.
@@ -467,6 +474,8 @@ export function Shell({
   const operator = isOperator(me);
   const where = whereIs(path, operator);
   const workspaceId = where.workspaceId;
+  // One stream of run events for the tenant on screen, for every screen of the tab.
+  useTenantStream(tenantId);
 
   const known = me.tenants.find((candidate) => candidate.id === tenantId);
   // An operator is not a member of most tenants, so the name comes from the tenant record.
@@ -476,6 +485,8 @@ export function Shell({
     tenantId ? `/tenants/${tenantId}/workspaces` : null,
   );
   const workspace = workspaces.data?.items.find((candidate) => candidate.id === workspaceId);
+  const opened = openedAt(path);
+  useRecordRecent(tenantId ?? undefined, workspaceId ?? undefined, opened?.kind, opened?.ref);
   const wsCounts = useLoad<WorkspaceCounts>(
     tenantId && workspaceId ? `/tenants/${tenantId}/workspaces/${workspaceId}/summary` : null,
   );
@@ -864,7 +875,7 @@ export function Shell({
             ) : null}
             {tenantId && workspaceId && failed > 0 ? (
               <Link
-                to={`/t/${tenantId}/workspaces/${workspaceId}/runs`}
+                to={`/t/${tenantId}/workspaces/${workspaceId}/runs?status=failed`}
                 className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-2.5 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
               >
                 <CircleX aria-hidden="true" size={13} className="text-danger" />
@@ -936,7 +947,12 @@ export function Shell({
         open={palette}
         onClose={() => setPalette(false)}
         destinations={destinations}
+        tenantId={tenantId ?? undefined}
+        workspaceId={workspaceId ?? undefined}
+        workspaceType={workspace?.type}
+        workspaces={(workspaces.data?.items ?? []).map((one) => ({ id: one.id, name: one.name }))}
       />
+      <ShortcutSheet />
     </div>
   );
 }

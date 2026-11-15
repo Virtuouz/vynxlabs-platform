@@ -388,139 +388,155 @@ export function Apps({ root }: { root: string }) {
 
 function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) => void }) {
   const list = useLoad<{ items: AppSummary[] }>(`${root}/apps`);
+  const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
   const [chosen, setChosen] = useState<string>();
   const open = list.data?.items.find((row) => row.id === chosen);
+  const unserved =
+    instance.data?.appsAddress === "none" &&
+    (list.data?.items ?? []).some((row) => row.builtWith !== "builder" && !row.interface);
   return (
-    <CollectionView<AppSummary>
-      title="Published apps"
-      description="What end users and staff can open: apps built in the repository, and apps made in the App Builder. Each has an address here, and can have hostnames of the tenant's own under Domains."
-      columns={[
-        {
-          header: "App",
-          cell: (row) => (
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium">{row.title}</span>
-              <Mono className="truncate text-ink-subtle">{row.path}</Mono>
-            </span>
-          ),
-        },
-        {
-          header: "Address",
-          priority: 2,
-          cell: (row) => (
-            <span className="flex min-w-0 flex-col">
-              {external(row.url, row.url.replace(/^https?:\/\//, ""))}
-              {row.domains
-                .filter((domain) => domain.enabled)
-                .map((domain) => (
-                  <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
-                ))}
-            </span>
-          ),
-        },
-        {
-          header: "Open to",
-          priority: 3,
-          cell: (row) =>
-            row.access.length > 0 ? (
-              <span className={row.access.includes("anyone") ? "text-attention" : ""}>
-                {row.access.join(", ")}
+    <>
+      {unserved ? (
+        <div className="mb-3">
+          <Notice tone="attention">
+            Apps built in the repository are not served on this instance yet. They run only at an
+            address of their own for apps, so that their code never runs where the console's sign-in
+            is, and this instance has none. Ask whoever runs it to set APPS_URL. Apps made in the
+            App Builder are served as usual.
+          </Notice>
+        </div>
+      ) : null}
+      <CollectionView<AppSummary>
+        title="Published apps"
+        description="What end users and staff can open: apps built in the repository, and apps made in the App Builder. Each has an address here, and can have hostnames of the tenant's own under Domains."
+        columns={[
+          {
+            header: "App",
+            cell: (row) => (
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{row.title}</span>
+                <Mono className="truncate text-ink-subtle">{row.path}</Mono>
               </span>
-            ) : (
-              <span className="text-ink-subtle">Staff only</span>
             ),
-        },
-        {
-          header: "Built",
-          cell: (row) =>
-            row.builtWith === "builder" ? (
-              <Tag tone="draft">App Builder</Tag>
-            ) : (
-              <Tag tone="repository">Repository</Tag>
+          },
+          {
+            header: "Address",
+            priority: 2,
+            cell: (row) => (
+              <span className="flex min-w-0 flex-col">
+                {external(row.url, row.url.replace(/^https?:\/\//, ""))}
+                {row.domains
+                  .filter((domain) => domain.enabled)
+                  .map((domain) => (
+                    <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
+                  ))}
+              </span>
             ),
-        },
-      ]}
-      rows={list.data?.items}
-      rowKey={(row) => row.id}
-      selected={chosen}
-      onSelect={(row) => setChosen(row.id)}
-      error={list.error?.message}
-      empty={{
-        title: "No apps yet",
-        text: "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
-      }}
-      inspector={
-        open ? (
-          <Inspector
-            open
-            label="The chosen app"
-            title={open.title}
-            eyebrow={open.path}
-            onClose={() => setChosen(undefined)}
-            footer={
-              <>
-                <Button variant="primary" onClick={() => onShare(open)}>
-                  Share
-                </Button>
-                <a
-                  href={open.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-meta"
-                >
-                  Open the live app <ArrowUpRight aria-hidden="true" size={13} />
-                </a>
-              </>
-            }
-          >
-            <div className="flex flex-col gap-4">
-              {open.description ? <p className="m-0 text-ink-muted">{open.description}</p> : null}
-              {open.access.includes("anyone") ? (
-                <Notice tone="attention">
-                  Anyone with the address can open it, without signing in.
-                </Notice>
-              ) : null}
-              <KeyValues
-                rows={[
-                  { label: "Address", value: external(open.url, open.url) },
-                  ...open.domains.map((domain) => ({
-                    label: domain.enabled ? "Hostname" : "Hostname (off)",
-                    value: external(domain.url, domain.hostname),
-                  })),
-                  {
-                    label: "Built",
-                    value:
-                      open.builtWith === "builder"
-                        ? `In the App Builder (${open.interface})`
-                        : "In the repository",
-                  },
-                  ...(open.builtWith !== "builder"
-                    ? [
-                        {
-                          label: "Files",
-                          value: `${open.files.toLocaleString()}, ${size(open.bytes)}`,
-                          mono: true,
-                        },
-                      ]
-                    : []),
-                  {
-                    label: "Reads",
-                    value: open.reads?.length ? open.reads.join(", ") : "Nothing declared",
-                    mono: true,
-                  },
-                  {
-                    label: "Open to",
-                    value:
-                      open.access.length > 0
-                        ? open.access.join(", ")
-                        : "Staff whose role lets them read this workspace",
-                  },
-                ]}
-              />
-            </div>
-          </Inspector>
-        ) : null
-      }
-    />
+          },
+          {
+            header: "Open to",
+            priority: 3,
+            cell: (row) =>
+              row.access.length > 0 ? (
+                <span className={row.access.includes("anyone") ? "text-attention" : ""}>
+                  {row.access.join(", ")}
+                </span>
+              ) : (
+                <span className="text-ink-subtle">Staff only</span>
+              ),
+          },
+          {
+            header: "Built",
+            cell: (row) =>
+              row.builtWith === "builder" ? (
+                <Tag tone="draft">App Builder</Tag>
+              ) : (
+                <Tag tone="repository">Repository</Tag>
+              ),
+          },
+        ]}
+        rows={list.data?.items}
+        rowKey={(row) => row.id}
+        selected={chosen}
+        onSelect={(row) => setChosen(row.id)}
+        error={list.error?.message}
+        empty={{
+          title: "No apps yet",
+          text: "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
+        }}
+        inspector={
+          open ? (
+            <Inspector
+              open
+              label="The chosen app"
+              title={open.title}
+              eyebrow={open.path}
+              onClose={() => setChosen(undefined)}
+              footer={
+                <>
+                  <Button variant="primary" onClick={() => onShare(open)}>
+                    Share
+                  </Button>
+                  <a
+                    href={open.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-meta"
+                  >
+                    Open the live app <ArrowUpRight aria-hidden="true" size={13} />
+                  </a>
+                </>
+              }
+            >
+              <div className="flex flex-col gap-4">
+                {open.description ? <p className="m-0 text-ink-muted">{open.description}</p> : null}
+                {open.access.includes("anyone") ? (
+                  <Notice tone="attention">
+                    Anyone with the address can open it, without signing in.
+                  </Notice>
+                ) : null}
+                <KeyValues
+                  rows={[
+                    { label: "Address", value: external(open.url, open.url) },
+                    ...open.domains.map((domain) => ({
+                      label: domain.enabled ? "Hostname" : "Hostname (off)",
+                      value: external(domain.url, domain.hostname),
+                    })),
+                    {
+                      label: "Built",
+                      value:
+                        open.builtWith === "builder"
+                          ? `In the App Builder (${open.interface})`
+                          : "In the repository",
+                    },
+                    ...(open.builtWith !== "builder"
+                      ? [
+                          {
+                            label: "Files",
+                            value: `${open.files.toLocaleString()}, ${size(open.bytes)}`,
+                            mono: true,
+                          },
+                        ]
+                      : []),
+                    {
+                      label: "Reads",
+                      value: open.reads?.length ? open.reads.join(", ") : "Nothing declared",
+                      mono: true,
+                    },
+                    {
+                      label: "Open to",
+                      value:
+                        open.access.length > 0
+                          ? open.access.join(", ")
+                          : "Staff whose role lets them read this workspace",
+                    },
+                  ]}
+                />
+              </div>
+            </Inspector>
+          ) : null
+        }
+      />
+    </>
   );
 }

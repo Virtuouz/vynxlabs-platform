@@ -13,7 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useQueryValue } from "../router.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -21,6 +21,7 @@ import {
   WebhookSettings,
   type WebhookTrigger,
 } from "./FlowSteps.tsx";
+import { ScheduleFields } from "./ScheduleForm.tsx";
 
 /** The kinds of resource this editor makes and changes: the ones that are settings, with no code. */
 export const EDITED_KINDS = [
@@ -67,7 +68,7 @@ const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; f
   schedule: {
     noun: "schedule",
     example: "orders/nightly",
-    says: "Starts a script at times given as a cron line.",
+    says: "Starts a script or a flow at times given as a cron line.",
     fresh: { script: "", cron: "0 8 * * *" },
   },
   trigger: {
@@ -100,11 +101,7 @@ export function resourceProblems(kind: EditedKind, body: Body, json: Record<stri
     }
   };
   if (kind === "event") parses("payload", "The payload schema");
-  if (kind === "schedule") {
-    parses("input", "The input");
-    if (!body.script) problems.push("Choose the script it starts.");
-    if (!String(body.cron ?? "").trim()) problems.push("Say when, as a cron line.");
-  }
+  // A schedule's problems are its form's to say: see ScheduleFields.
   if (kind === "trigger") {
     if (!body.script) problems.push("Choose the script it starts.");
     if (body.type === "event" && !body.event) problems.push("Choose the event it listens for.");
@@ -145,6 +142,12 @@ export function ResourceEditor({
   const [body, setBody] = useState<Body>();
   /** The parts of the body that are written as JSON, as text. */
   const [json, setJson] = useState<Record<string, string>>({});
+  const [scheduleProblems, setScheduleProblems] = useState<string[]>([]);
+  const [typeAsked] = useQueryValue("type");
+  const askedType =
+    typeAsked === "webhook" || typeAsked === "event" || typeAsked === "form"
+      ? typeAsked
+      : undefined;
   const [revision, setRevision] = useState<number>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
   const [dirty, setDirty] = useState(false);
@@ -166,7 +169,8 @@ export function ResourceEditor({
       setBody(next);
       setJson({
         ...(next.payload ? { payload: JSON.stringify(next.payload, null, 2) } : {}),
-        ...(next.input && typeof next.input === "object"
+        // A schedule's input is a form of its own.
+        ...(next.input && typeof next.input === "object" && about.noun !== "schedule"
           ? { input: JSON.stringify(next.input, null, 2) }
           : {}),
       });
@@ -174,7 +178,11 @@ export function ResourceEditor({
       setRevision(at);
     };
     if (!opened) {
-      open(about.fresh, "new");
+      // The Triggers page says which kind of trigger it wants.
+      open(
+        about.noun === "trigger" && askedType ? { ...about.fresh, type: askedType } : about.fresh,
+        "new",
+      );
       return;
     }
     (async () => {
@@ -192,7 +200,7 @@ export function ResourceEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about]);
+  }, [root, opened, about, askedType]);
 
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <p className="text-ink-muted">Loading…</p>;
@@ -216,7 +224,10 @@ export function ResourceEditor({
     }
     return [...known].map(([value, hint]) => ({ value, label: value, ...(hint ? { hint } : {}) }));
   };
-  const found = resourceProblems(kind, body, json);
+  const found = [
+    ...resourceProblems(kind, body, json),
+    ...(kind === "schedule" ? scheduleProblems : []),
+  ];
 
   const save = async () => {
     setProblem(undefined);
@@ -438,39 +449,14 @@ export function ResourceEditor({
           </>
         ) : null}
         {kind === "schedule" ? (
-          <>
-            {script}
-            <TextField
-              name="cron"
-              label="When, as a cron line"
-              value={text("cron")}
-              disabled={readOnly}
-              hint="Minute, hour, day of month, month, day of week. 0 8 * * * is every day at 8."
-              onChange={(value) => change({ cron: value })}
-            />
-            <TextField
-              name="timezone"
-              label="Time zone (optional)"
-              value={text("timezone")}
-              required={false}
-              disabled={readOnly}
-              placeholder="UTC"
-              hint="An IANA name, such as America/Chicago."
-              onChange={(value) => change({ timezone: value })}
-            />
-            {ofKind("trigger_source", "poll").length > 0 || body.source ? (
-              <ComboboxField
-                label="Trigger source (optional)"
-                options={ofKind("trigger_source", "poll")}
-                value={text("source") || undefined}
-                disabled={readOnly}
-                hint="Each tick runs it, and the script starts once for each thing it finds."
-                onChange={(value) => change({ source: value })}
-              />
-            ) : null}
-            {jsonField("input", "Input for the script (optional), as JSON", "A JSON object.", 4)}
-            {enabled}
-          </>
+          <ScheduleFields
+            root={root}
+            body={body}
+            change={change}
+            readOnly={readOnly}
+            sources={ofKind("trigger_source", "poll")}
+            onProblems={setScheduleProblems}
+          />
         ) : null}
         {kind === "trigger" ? (
           <>

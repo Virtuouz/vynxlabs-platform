@@ -32,6 +32,8 @@ Fill in `deploy/compose/.env`:
 | `AUTH_SECRET` | `openssl rand -hex 32`. Signs session cookies |
 | `MASTER_KEY` | `openssl rand -base64 32`. Wraps every tenant's encryption key. **Keep a copy somewhere safe.** Without it no stored secret can be read again |
 | `PUBLIC_URL` | The address people will type, for example `https://platform.example.com` |
+| `WORKER_HOST_TOKEN` | `openssl rand -hex 32`. Lets the worker host, which starts tenants' workers, ask for work |
+| `APPS_URL` | A second hostname for apps written as code, for example `https://apps.example.com`. Optional, but without it they are not served |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | The first operator. At least 12 characters. Remove both after the first start |
 | `PLATFORM_BIND` | Where it listens on the host. Default `127.0.0.1:8080` |
 
@@ -45,7 +47,10 @@ The database is created and migrated on the first start. Open the address, sign 
 
 - Put a reverse proxy that terminates TLS in front of it. The control plane speaks plain HTTP and listens on localhost by default for that reason.
 - Set `PUBLIC_URL` to the address behind the proxy. Sign-in checks requests against it.
-- If the instance will hold more than one tenant's apps, set `APPS_URL` as well. See [Apps, and the addresses they are served at](#apps-and-the-addresses-they-are-served-at).
+- Let the proxy pass the run event stream through as it comes. The console keeps one long request open per tab, `GET /api/v1/tenants/<id>/stream`, answered as `text/event-stream`. The response says `X-Accel-Buffering: no`, which nginx honors; elsewhere, turn response buffering off for that path, and allow an idle time of at least 30 seconds (a heartbeat is sent every 20). A stream that a proxy cuts or holds back costs nothing but freshness: the console falls back to asking every few seconds.
+- Each replica holds one more database connection than its pool, to listen for changes to runs.
+- Give apps written as code their own address with `APPS_URL`. See [Apps, and the addresses they are served at](#apps-and-the-addresses-they-are-served-at).
+- If the instance runs in a cloud, check that the worker host started with its firewall rules: its log says so. See [Workers the instance starts](#workers-the-instance-starts).
 - Remove the two `BOOTSTRAP_ADMIN_` lines and restart.
 
 ### Using your own Postgres or object store
@@ -69,6 +74,46 @@ The platform makes no network call you did not configure: no telemetry, no updat
 Take the Postgres and object store backups close together. A database that names a file the store does not have will say so when the file is asked for, and not before.
 
 A tenant can also be backed up by itself, as an export. See below.
+
+## Retention
+
+History is removed once it is older than its period. A pass runs every ten minutes, on one replica at a time, and removes a little at a time so that nothing waits on it.
+
+| Kind | Default | Variable | Shortest | Longest |
+| --- | --- | --- | --- | --- |
+| Runs: script runs and flow runs, after they end, with their logs, steps and stored inputs and outputs | 30 days | `RETENTION_RUNS_DAYS` | 1 | 3650 |
+| Events | 30 days | `RETENTION_EVENTS_DAYS` | 1 | 3650 |
+| Refused webhook requests and SCIM pushes | 7 days | `RETENTION_REFUSALS_DAYS` | 1 | 3650 |
+| The audit log | 400 days | `RETENTION_AUDIT_DAYS` | 90 | 3650 |
+
+A tenant's admins can set the tenant's own periods under Retention, within the same bounds. A flow run is removed whole, with everything it started, once all of it has ended and its top run is past the period. A run still going is never removed.
+
+### The audit log
+
+The audit log is kept a month to a partition (`audit_entry_y2026m11`), made three months ahead. A month is removed only when it is older than every tenant's period, and only after it is exported to the object store:
+
+```
+audit/2025-07/manifest.json          rows, parts, and the sha256 of each part
+audit/2025-07/part-0001.jsonl.gz     up to 50,000 entries, one JSON object a line
+```
+
+A tenant with a shorter period sees no further back in its log or its export, though the month is kept for others. Deleting a tenant does not delete its entries: they leave with their months.
+
+To read an exported month back into the database, as a table of its own beside the log:
+
+```sh
+aws s3 cp --recursive s3://<bucket>/audit/2025-07/ ./audit-2025-07/
+gunzip -c ./audit-2025-07/part-*.jsonl.gz > audit-2025-07.jsonl
+psql "$DATABASE_URL" <<'SQL'
+create table audit_restored_2025_07 (like audit_entry);
+create temporary table lines (line jsonb);
+-- CSV with characters no line holds as quote and delimiter: each line is read as it is.
+\copy lines from 'audit-2025-07.jsonl' with (format csv, quote e'\x01', delimiter e'\x02')
+insert into audit_restored_2025_07 select (jsonb_populate_record(null::audit_entry, line)).* from lines;
+SQL
+```
+
+Compare the row count with `manifest.json`. A restored table is not part of the log, and is not removed by the next pass: drop it when done.
 
 ## Upgrading
 
@@ -112,6 +157,51 @@ docker compose -f deploy/worker/compose.yaml up -d
 A script that names a pool runs only on a worker of that pool. A script that names none runs on the workers the instance starts. To have a tenant run nothing on the instance at all, choose "Run only on our own workers" on its Workers page.
 
 A run that is waiting with no worker connected that could take it says so on its page.
+
+A worker's credential is best handed to it on its standard input, `platform-worker --url … --token-stdin < credential`, rather than in `PLATFORM_WORKER_TOKEN` or `--token`. A script's process runs as the worker's own user, and that user can read a process's environment and command line. Whatever way it arrives, the credential is never given to the process a script runs in.
+
+## Workers the instance starts
+
+For a tenant with work and no worker of its own, the instance starts one. Each attempt of a script runs in a process of its own, ended at its time limit or when canceled, and limited to the script's `memoryMb` (512 by default).
+
+Where those workers run is set by `MANAGED_WORKERS`.
+
+### `host`: in a worker host (the default in `deploy/compose`)
+
+A worker host is the same image, started as `platform-worker-host`, in a container of its own. It asks the control plane for a tenant with work, gets a credential for it, and starts a worker with it, as `vxrun` (uid and gid 10001). The compose file puts it on a network, `execution`, with the control plane and nothing else of the instance's: the database and the object store are on another network, `data`, which it is not on. A tenant's script can reach the control plane and the internet, and not the database, the object store, or the control plane's environment.
+
+The host runs as root in its container, holding only `CAP_SETUID` and `CAP_SETGID`, to start workers as `vxrun`, and `CAP_NET_ADMIN`. With `NET_ADMIN` it adds firewall rules at start that refuse `vxrun` loopback, private and link-local addresses, cloud metadata among them, other than the control plane and the container's name servers. Without it, it says so in its log, and only the network keeps workers from the instance's services: block `169.254.169.254` at the machine if the instance runs in a cloud. The rules are made once, at start, for the control plane's address then; restart the worker host if the control plane's container is recreated with another address.
+
+The control plane and the host share a secret, `WORKER_HOST_TOKEN` (`openssl rand -hex 32`, at least 32 characters). The host never gives it to a worker.
+
+### `process`: beside the control plane
+
+Without a worker host, the control plane starts workers itself, on its own machine and its own network. They can reach whatever the control plane reaches, so it starts them only for tenants whose code only the operators write. A tenant whose code is written by anyone else, a member or a group with `code:write` who holds no instance-wide role, or any service account, gets none, and its Workers page says it runs on standalone workers only. `true`, from before there was a worker host, means `process`.
+
+These workers run as `vxrun` too, where the container may switch users, so that a script can neither read the control plane's environment nor signal it. The control plane runs on a copy of node, `node-cp`, that may switch users, and workers run on plain node, which may not. Switching users needs the container's `CAP_SETUID` and `CAP_SETGID`, which Docker gives by default. Without them the image starts the control plane on plain node, says so, and workers run as the control plane's own user.
+
+This is the mode for development, and for a single site where only the operator writes code.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MANAGED_WORKERS` | `process` (`host` in `deploy/compose`) | `host`, `process`, or `false` to start none |
+| `WORKER_HOST_TOKEN` | | What the worker host presents. Required with `host` |
+| `MANAGED_WORKER_USER` | `own` | In `process` mode: `own` runs workers as their own user; `same` as the control plane's, for every tenant, by which you say everyone who writes code works for you. Only for development, or a site where that is so |
+| `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` | `10001` | The user and group workers run as. The worker host reads them too |
+
+Rate limits on webhooks, sign-ins and guests are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas or worker hosts run.
+
+## What the instance reaches for a tenant
+
+The control plane reaches a few addresses a tenant chooses: an identity provider's settings and endpoints, a Git remote, a data source, and a hostname the tenant registers, to check it. It refuses any whose address is loopback, private, link-local (cloud metadata included), shared or reserved, and says so. Everything else a tenant's systems are asked, such as posting a failure alert or trying a connection, a worker does.
+
+To let it reach an internal Git server, an identity provider or a database on your network, list them in `EGRESS_ALLOW`, comma-separated, as networks or host names:
+
+```sh
+EGRESS_ALLOW=10.20.0.0/16,git.internal,192.168.1.40
+```
+
+A name in the list is allowed whatever it resolves to. A network is allowed for any name that resolves into it.
 
 ## Moving a tenant
 
@@ -162,9 +252,9 @@ An app is a tenant's own interface, built from its repository and served by the 
 
 ### By path, on the instance's address
 
-With nothing configured, an app is at `PUBLIC_URL/apps/<tenant>/<workspace>/<app>/`, and a tenant's sign-in pages at `PUBLIC_URL/portal/<tenant>/`. One hostname and one certificate serve everything, which is what a single machine on a plant network wants.
+With nothing configured, a tenant's sign-in pages are at `PUBLIC_URL/portal/<tenant>/`, and an app made in the App Builder at `PUBLIC_URL/apps/<tenant>/<workspace>/<app>/`. An app written as code is not served there: its page says the instance has no address for apps. Its code would otherwise run at the same address as the console, where a member who opens it is already signed in.
 
-An app is JavaScript written by whoever writes that tenant's code, and here it runs at the same address as the console. A member who opens it is already signed in to the console there. That is fine where everyone who writes code works for you. Where it is not, use a second address.
+Set `APPS_URL`, below. Or, where everyone who writes code works for you, as on a single machine on a plant network, set `APPS_ON_CONSOLE_ADDRESS=true` to serve apps written as code at `PUBLIC_URL` too, knowingly.
 
 ### A second address for every app
 
@@ -201,7 +291,7 @@ The proxy must pass the `Host` header through unchanged, and say whether the req
 
 | At | The console | The API | A member's console session | Apps |
 | --- | --- | --- | --- | --- |
-| `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set |
+| `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set. Apps written as code only with `APPS_ON_CONSOLE_ADDRESS=true` |
 | `APPS_URL` | No | All of it, by API key or app sign-in | Ignored | By path |
 | A registered hostname | No | That tenant only | Ignored | The one app, at the root |
 
@@ -294,6 +384,37 @@ The console keeps its own look whichever tenant is open. An operator brands it o
 - A workspace can be cloned into a new dev workspace, with or without its rows and files. By default the clone gets no connection, data source or secret value and its triggers are paused, so it cannot act on a real system. Turning that safety off is recorded in the audit log.
 - A workspace's triggers can be paused at any time.
 
+## Metrics
+
+`GET /api/v1/metrics` answers in the Prometheus text format, to an operator (`instance:read`). Scrape it with an API key of an operator's.
+
+What waits, read from the database at each scrape, so every replica says the same:
+
+| Series | What it is |
+| --- | --- |
+| `platform_runs_queued`, `platform_runs_running` | Runs waiting, and in progress, on the whole instance |
+| `platform_queue_oldest_seconds` | How long the oldest due run has waited |
+| `platform_workspace_runs_queued{tenant,workspace,pool}` | Due runs waiting, by workspace and pool |
+| `platform_workspace_queue_oldest_seconds{tenant,workspace}` | The oldest wait, by workspace |
+| `platform_flow_runs{state}` | Flow runs in progress: `running`, `waiting_approval`, `waiting_time` |
+| `platform_tasks_queued{kind}` | Tasks waiting for a worker |
+| `platform_workers{kind}` | Workers heard from in the last minute, `managed` or `standalone` |
+
+What happened, counted by the replica that saw it. Each replica answers for its own; add them up across replicas, as Prometheus does with `sum`:
+
+| Series | What it is |
+| --- | --- |
+| `platform_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
+| `platform_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
+| `platform_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
+| `platform_flow_runs_finished_total{state}` | Flow runs that ended |
+| `platform_webhook_refusals_total{reason}` | Refused webhook requests: `signature`, `body`, `paused` |
+| `platform_alerts_total{outcome}` | Failure alerts `delivered`, `failed`, or `suppressed` as a repeat |
+
+Workspaces are labeled by their slugs. On an instance with very many tenants, set `METRICS_WORKSPACE_LABELS=false`: the per-workspace queue series are left out, and the counted ones carry no tenant or workspace.
+
+The Workers page of each tenant shows the same queue: what waits where, the oldest wait, and what each worker holds.
+
 ## When something is wrong
 
 | What you see | What to look at |
@@ -302,7 +423,7 @@ The console keeps its own look whichever tenant is open. An operator brands it o
 | `/api/v1/readyz` answers 503 | The body says whether Postgres or the object store is unreachable |
 | "The database is newer than this version" | An older image was started on a newer database. Start the newer image |
 | A tenant's tables answer 503 | Its dedicated database. See the Database locations page |
-| Runs stay queued | The run's page says what it is waiting for. Otherwise the instance log, for the worker it tried to start |
+| Runs stay queued | The run's page says what it is waiting for, and the tenant's Workers page what waits where. Otherwise the instance log, for the worker it tried to start |
 | An import is refused | The message names the reason: the passphrase, the version, a damaged file, or a slug already taken |
 | An app's address answers "Nothing here" | Whether the workspace has a deployed bundle with that app, under the workspace's Apps tab |
 | A registered hostname shows the console | It is not enabled, or the proxy rewrites the `Host` header |

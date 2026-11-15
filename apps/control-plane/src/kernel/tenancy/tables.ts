@@ -302,8 +302,25 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "always",
   },
   { table: "worker_pool", ofTenant: own, key: ["id"], export: "always" },
+  // Work handed to workers that is not a run. Short-lived, and the instance's own business.
+  {
+    table: "task",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
+  // How long the tenant's history is kept. It travels with the tenant.
+  { table: "tenant_retention", ofTenant: own, key: ["tenant_id"], export: "always" },
   // Where members were last; this instance's to remember, not the tenant's to carry.
   { table: "member_recent_scope", ofTenant: own, key: ["member_id", "tenant_id"], export: "never" },
+  {
+    table: "member_recent_item",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["member_id", "tenant_id", "workspace_id", "kind", "ref"],
+    export: "never",
+  },
   {
     table: "dashboard_share",
     ofTenant: own,
@@ -335,6 +352,8 @@ export const INSTANCE_TABLES = [
   "database_location",
   // How the console looks on this instance. A tenant's branding is its portal's.
   "instance_branding",
+  // Rate-limit counters, keyed by route and caller, shared by every replica.
+  "rate_limit",
   // In the platform database these hold every shared tenant's catalog. They are
   // handled with the tables they describe, which may be in another database.
   "data_table",

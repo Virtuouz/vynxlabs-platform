@@ -7,7 +7,9 @@ export default defineConfig({
     // Each test file makes a database of its own and holds a few connections to it. On a
     // machine with many cores, running them all at once asks Postgres for more connections
     // than its default of 100 allows.
-    maxWorkers: 8,
+    // A CI runner has four cores: more files at once than that only makes each slower, and
+    // tests that wait on processes, builds and threads then pass on time or not by luck.
+    maxWorkers: process.env.CI ? 4 : 8,
     testTimeout: 30_000,
     hookTimeout: 30_000,
   },

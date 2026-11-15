@@ -44,6 +44,8 @@ const plain = (value) => {
 parentPort.on("message", async ({ id, expression, data, parseOnly }) => {
   try {
     const environment = await ready;
+    // The clock starts now: not while the thread was starting, nor while this waited its turn.
+    parentPort.postMessage({ id, started: true });
     const program = environment.parse(expression);
     parentPort.postMessage({ id, value: parseOnly ? null : plain(program(data)) });
   } catch (error) {
@@ -55,8 +57,16 @@ parentPort.on("message", async ({ id, expression, data, parseOnly }) => {
 interface Waiting {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
+  /** What was asked, to ask a new thread when this one is replaced before it started. */
+  message: { id: number; expression: string; data: unknown; parseOnly: boolean };
+  /** Set once the thread has started on it. */
+  timer?: NodeJS.Timeout | undefined;
+  /** How long it may wait to be started at all: a thread that cannot start is given up on. */
+  patience: NodeJS.Timeout;
 }
+
+/** How long a thread may take to start, and an expression to wait for its turn. */
+const PATIENCE_MS = 15_000;
 
 function explain(message: string): string {
   const first = (message.split("\n")[0] ?? message).trim();
@@ -98,14 +108,24 @@ export class Expressions {
       },
     });
     worker.unref();
-    worker.on("message", (message: { id: number; value?: unknown; error?: string }) => {
-      const waiting = this.#waiting.get(message.id);
-      if (!waiting) return;
-      this.#waiting.delete(message.id);
-      clearTimeout(waiting.timer);
-      if (message.error !== undefined) waiting.reject(new ExpressionError(explain(message.error)));
-      else waiting.resolve(message.value);
-    });
+    worker.on(
+      "message",
+      (message: { id: number; started?: boolean; value?: unknown; error?: string }) => {
+        const waiting = this.#waiting.get(message.id);
+        if (!waiting) return;
+        if (message.started) {
+          clearTimeout(waiting.patience);
+          waiting.timer = setTimeout(() => this.#stuck(message.id), this.#timeoutMs);
+          return;
+        }
+        this.#waiting.delete(message.id);
+        clearTimeout(waiting.timer);
+        clearTimeout(waiting.patience);
+        if (message.error !== undefined)
+          waiting.reject(new ExpressionError(explain(message.error)));
+        else waiting.resolve(message.value);
+      },
+    );
     worker.on("error", (error: Error & { code?: string }) => {
       // The thread died, almost always from running out of memory. Everything it held fails.
       if (this.#worker === worker) this.#worker = undefined;
@@ -122,9 +142,29 @@ export class Expressions {
   #failAll(reason: string) {
     for (const waiting of this.#waiting.values()) {
       clearTimeout(waiting.timer);
+      clearTimeout(waiting.patience);
       waiting.reject(new ExpressionError(reason));
     }
     this.#waiting.clear();
+  }
+
+  /**
+   * An expression ran past its limit. The thread is busy and cannot be
+   * interrupted, so it is replaced: that expression fails, and those that were
+   * only waiting their turn are asked of the new thread.
+   */
+  #stuck(id: number) {
+    const waiting = this.#waiting.get(id);
+    if (!waiting) return;
+    this.#waiting.delete(id);
+    clearTimeout(waiting.patience);
+    waiting.reject(
+      new ExpressionError(`The expression took longer than ${this.#timeoutMs} ms and was stopped.`),
+    );
+    const stuck = this.#worker;
+    this.#worker = undefined;
+    void stuck?.terminate();
+    for (const other of this.#waiting.values()) this.#thread().postMessage(other.message);
   }
 
   #send(expression: string, data: unknown, parseOnly: boolean): Promise<unknown> {
@@ -132,15 +172,18 @@ export class Expressions {
       return Promise.reject(new ExpressionError("The expression evaluator is closed."));
     return new Promise((resolve, reject) => {
       const id = ++this.#next;
-      const timer = setTimeout(() => {
-        // The thread is busy and cannot be interrupted, so it is replaced.
+      const message = { id, expression, data, parseOnly };
+      const patience = setTimeout(() => {
+        // Not started in all this time: the thread itself is wrong. It is replaced, and
+        // everything it held fails.
         const stuck = this.#worker;
         this.#worker = undefined;
-        this.#failAll(`The expression took longer than ${this.#timeoutMs} ms and was stopped.`);
+        this.#failAll("The expression could not be evaluated: the evaluator did not respond.");
         void stuck?.terminate();
-      }, this.#timeoutMs);
-      this.#waiting.set(id, { resolve, reject, timer });
-      this.#thread().postMessage({ id, expression, data, parseOnly });
+      }, PATIENCE_MS);
+      patience.unref();
+      this.#waiting.set(id, { resolve, reject, message, patience });
+      this.#thread().postMessage(message);
     });
   }
 

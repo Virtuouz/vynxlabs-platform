@@ -188,10 +188,15 @@ The timeout kill (2) and retention (3) are tested. It has not been walked as one
 **Upgrading** needs the operator steps in the changelog: `WORKER_HOST_TOKEN` and the worker host, `APPS_URL` or `APPS_ON_CONSOLE_ADDRESS=true`, `EGRESS_ALLOW` for internal addresses, and retention periods to keep longer than the defaults. Migrations 0046 to 0051 run on start.
 
 **Open:**
-- two tests that each failed once under the full parallel run and passed after (milestones 6 and 7);
 - the timeline's axis labels at 390 px (milestone 5);
 - the Fly worker-host setup, written and not run (6);
 - per-workspace permissions in `/me`, which would let the palette hide what a member may not do (8).
 
 **Next:** the P2 items, as client work asks for them.
+
+### Found in CI after the pull request was opened
+
+- **The expression time limit counted the evaluator's own start-up.** An expression's 250 ms began when it was sent, so loading the expression library in a new thread, and waiting behind other expressions, counted against it. One timeout replaced the thread, and the next expression paid for its start-up again. On a busy machine, valid expressions were refused at upload and trigger tags were left off. The two tests noted as flaky in milestones 6 and 7, and the one failing on `main` since phase 7, were all this. The clock now starts when the thread begins an expression, and those waiting behind one that runs too long are asked of the new thread.
+- **CI ran eight test files at once on four cores,** and a CLI test that builds the example repository four times ran past its 30 s. CI now runs four at once, and that test has the 120 s its neighbours have.
+- **CI's own stack configuration predated milestone 6:** it had no `WORKER_HOST_TOKEN`, and the browser test's instance did not allow the loopback addresses of Keycloak and its Git server. Both are set as `.env.example` sets them.
 

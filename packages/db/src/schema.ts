@@ -233,6 +233,13 @@ export interface TenantKeyTable {
   created_at: Generated<Date>;
 }
 
+/** A secret of the instance itself, sealed with the master key under `instance:instance-secret:<name>`. */
+export interface InstanceSecretTable {
+  name: string;
+  sealed: Buffer;
+  created_at: Generated<Date>;
+}
+
 export interface SecretTable {
   id: string;
   tenant_id: string;
@@ -435,6 +442,8 @@ export interface RunTable {
   tags: Generated<string[]>;
   /** The first line of the error, kept by the database. */
   error_summary: Generated<string | null>;
+  /** The value of the script's concurrency key in this run's input, when it has one. */
+  concurrency_key: Generated<string | null>;
 }
 
 export interface RunLogTable {
@@ -1019,6 +1028,7 @@ export interface PlatformSchema {
   binding: BindingTable;
   access_grant: AccessGrantTable;
   tenant_key: TenantKeyTable;
+  instance_secret: InstanceSecretTable;
   secret: SecretTable;
   audit_entry: AuditEntryTable;
   bundle: BundleTable;

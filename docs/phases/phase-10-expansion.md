@@ -1,6 +1,6 @@
 # Phase 10: platform expansion
 
-Status: in progress. Milestone 1 is built, on branch `phase-10-expansion`.
+Status: in progress. Milestones 1 and 2 are built, on branch `phase-10-expansion`.
 Last updated: 2026-11-15
 
 Phase 10 builds the P2 items of the [evolution roadmap](../evolution/07-roadmap.md): all thirteen, in seven milestones. Phase 9 made what exists dependable. This phase widens what a tenant can do with it:
@@ -32,6 +32,7 @@ An app shows a run's progress without polling, two runs with the same concurrenc
 | Scope | All thirteen P2 items |
 | OAuth token calls | The control plane exchanges codes and refreshes tokens, through the egress guard. "OAuth connection token endpoints" join decision 0001's named list |
 | Offer to an agent | A built-in `agent_runner` role (`run:write`, `flow_run:write`), bound at the one script or flow. A binding to a script or flow reaches the workspace's MCP server for those tools only |
+| Master key rotation | A second key, `MASTER_KEY_SECONDARY`, that the instance opens with and never seals with. Named for what it is rather than "previous": with several replicas it holds the next key first, then the old one |
 
 ## Milestones
 
@@ -65,3 +66,18 @@ Each milestone ends with `pnpm typecheck`, `pnpm lint` and `pnpm test` passing, 
 - **A table's columns are not in the order the script wrote them.** Output is kept as `jsonb`, which stores keys shortest first, so `invoice, client, amount` came back as `link, notes, amount, …`. Without a declared schema the table now puts plain values first and addresses and nested values after them; with one, its order wins. Found on the walk.
 - **Short values stay on one line and addresses are cut short** in a table, with the full address in its title: on the walk `INV-1000` broke at its hyphen and links wrapped mid-number. On a phone the table scrolls sideways inside its own box, and the page does not.
 - **Walked in Chromium on a built instance, at 1440 and 390 px:** a run's 40 rows showed as a table with the JSON a click away; a `{ markdown }` result showed its heading, list and link, with a `<script>` tag in it shown as text; an SVG chart carried in the output was drawn; `agent/find-client` was offered to a service account from its page, which showed the MCP address; the account's tools were that script, `get_run` and `get_flow_run`; and Try called it as the account and showed what the agent would be told. The flow's page offers it too. No page scrolled sideways, and no page threw. `pnpm e2e` passes (16), against an instance of its own.
+
+### Milestone 2
+
+- **A concurrency key is a lane in the queue the script already had.** pg-boss limits jobs per group across all workers; a script's group was its resource, and is now its resource and the key's value. A script names either a limit for itself or one per key, not both: a job has one group.
+- **A run with no value for its key is not refused.** It shares one lane, the empty key, with the others that have none, at the same limit. Refusing it would have made the key a second input schema.
+- **A key naming a field the input schema does not list is refused at deploy,** unless the schema lists no fields or says it takes more. zod's input schemas leave `additionalProperties` out, so the check reads an absent one as "these fields", where JSON Schema would read it as "anything": the check is for misspellings, which otherwise put every run in the empty lane silently.
+- **A long value is kept as its hash,** past 200 characters, so a lane is a name and not a payload. The run page shortens it.
+- **"Waiting for 1 run with the same key" is said only when a worker is there.** A run with no worker to take it says that instead, as before: it is the reason that needs doing something about.
+- **Only five kinds of value are sealed with the master key:** tenant keys, database locations' addresses, the instance's identity providers' secrets, sign-ins in progress, and the new instance secrets. Everything of a tenant's is under its tenant key. A rotation on the walk instance rewrapped three values.
+- **The data role's password no longer comes from the master key.** It was made from it on every start, so a rotation would have changed it, and a replica not yet restarted would have been refused by every database it had not yet connected to. It comes from a secret kept in `instance_secret`, which starts as the master key the instance had, so upgrading changes nothing. The cost: a rotation does not change that password. Someone holding an old key and the database's address could still sign in as the data role, which reads rows under row-level security. Changing it is a separate step, not built.
+- **The rewrap needs no lock of its own.** Each batch takes its rows `for update`; a second pass at the same time waits row by row and finds each done. Two replicas starting together, and the `rekey` command run beside a running instance, were both tried.
+- **The ciphertext format did not change.** With at most two keys, trying both costs nothing worth a key ID in every value, and old values need no migration.
+- **`--env-file` does not override what the shell already set.** On the walk, `rekey` refused to start because the shell had the old key exported, so both settings held it, which the configuration check refuses. Worth knowing when running it by hand; the docs give the `docker compose exec` form.
+- **Rotated on a local instance:** with the old key, a tenant secret, a dedicated database location and a deployed script; `rekey` with the keys swapped moved a tenant key, the location and the data role's secret and exited 0; the status said the second key could go; restarted with the new key alone, the location answered and a script read its secret. Run again beside a running instance, `rekey` found nothing left.
+- **Walked in Chromium at 1440 and 390 px:** a queued run of `billing/charge` behind another for the same client said "Waiting for 1 run with the same key (brooks-family) to finish." and showed "brooks-family · one at a time"; the run for another client had already succeeded. No page scrolled sideways, and no page threw. `pnpm e2e` passes (16).

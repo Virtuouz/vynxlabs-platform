@@ -3,6 +3,7 @@ import { checkDueSources } from "../data/health.js";
 import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { pruneRateLimits } from "../ratelimit.js";
+import { rekeyIfRotating } from "../rekey.js";
 import { pruneOnce } from "../retention.js";
 import { removeExpiredSso } from "../sso/flow.js";
 import { removeExpiredImports } from "../tenancy/staging.js";
@@ -49,6 +50,13 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     const result = await pruneOnce(kernel);
     if (result !== "busy") kernel.log.info({ pruned: result }, "retention pass");
   };
+  let rekeyed = Date.now();
+  /** During a rotation, what a replica still sealing with the old key wrote since is moved. */
+  const masterKey = async () => {
+    if (Date.now() - rekeyed < RETENTION_EVERY_MS) return;
+    rekeyed = Date.now();
+    await rekeyIfRotating(kernel);
+  };
   const steps: [string, () => Promise<unknown>][] = [
     ["schedules", () => fireDueSchedules(kernel)],
     ["lost runs", () => requeueLostRuns(kernel)],
@@ -58,6 +66,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     ["expired sign-ins", sweep],
     ["health", health],
     ["retention", retention],
+    ["master key", masterKey],
     ...(supervisor
       ? ([["managed workers", () => supervisor.tick()]] as [string, () => Promise<unknown>][])
       : []),

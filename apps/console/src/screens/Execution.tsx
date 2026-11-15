@@ -339,6 +339,8 @@ export type LiveRun = Run & {
   alert: Record<string, unknown> | null;
   pool: string | null;
   waitingFor: string | null;
+  /** Set when the script limits its runs per value of a key in their input. */
+  concurrency?: { key: string; value: string; limit: number } | null;
   reruns?: { id: string; state: RunState; createdAt: string }[];
 };
 

@@ -17,6 +17,11 @@ export interface Config {
   authSecret: string;
   /** 32 bytes. Wraps each tenant's data key. */
   masterKey: Buffer;
+  /**
+   * A second key the instance opens with, and never seals with: the next key
+   * before a rotation, the old one during it. See "Rotating the master key".
+   */
+  masterKeySecondary: Buffer | undefined;
   /** Creates the first operator admin when the instance has no members. */
   bootstrapAdmin: { email: string; password: string } | undefined;
   /**
@@ -146,6 +151,17 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     );
   }
 
+  const secondaryText = value("MASTER_KEY_SECONDARY");
+  const masterKeySecondary =
+    secondaryText === undefined ? undefined : Buffer.from(secondaryText, "base64");
+  if (masterKeySecondary && masterKeySecondary.length !== 32) {
+    problems.push("MASTER_KEY_SECONDARY must be 32 bytes, base64 encoded, as MASTER_KEY is.");
+  } else if (masterKeySecondary?.equals(masterKey)) {
+    problems.push(
+      "MASTER_KEY_SECONDARY is the same as MASTER_KEY. Remove it, or set it to the other key of the rotation.",
+    );
+  }
+
   const bootstrapEmail = value("BOOTSTRAP_ADMIN_EMAIL");
   const bootstrapPassword = value("BOOTSTRAP_ADMIN_PASSWORD");
   if ((bootstrapEmail === undefined) !== (bootstrapPassword === undefined)) {
@@ -239,6 +255,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     publicUrl: publicUrl.replace(/\/+$/, ""),
     authSecret,
     masterKey,
+    masterKeySecondary,
     bootstrapAdmin:
       bootstrapEmail !== undefined && bootstrapPassword !== undefined
         ? { email: bootstrapEmail.toLowerCase(), password: bootstrapPassword }

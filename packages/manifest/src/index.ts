@@ -16,6 +16,7 @@ export {
   CORE_PREFIX,
   checkBundleAssets,
   checkBundleManifests,
+  keyMissing,
   PLATFORM_EVENT_PREFIX,
 } from "./bundle-check.js";
 export {
@@ -96,6 +97,7 @@ export {
   BUILTIN_CONNECTORS,
   bindingKind,
   COLUMN_TYPES,
+  CONCURRENCY_KEY,
   type ColumnType,
   connectionGroupKind,
   connectionKind,

@@ -1,6 +1,7 @@
 import { newId } from "@vynxlabs/db";
 import type { Db, Trx } from "../audit.js";
 import type { Kernel } from "../kernel.js";
+import { tenantKey } from "../tenant-keys.js";
 
 export interface BindingName {
   tenantId: string;
@@ -15,21 +16,6 @@ const credentialName = (id: BindingName) => ({
   name: `connection:${id.path}`,
 });
 
-async function tenantKey(db: Db | Trx, kernel: Kernel, tenantId: string): Promise<Buffer> {
-  const fresh = kernel.vault.newTenantKey(tenantId);
-  await db
-    .insertInto("tenant_key")
-    .values({ tenant_id: tenantId, wrapped_key: fresh.wrapped })
-    .onConflict((oc) => oc.column("tenant_id").doNothing())
-    .execute();
-  const row = await db
-    .selectFrom("tenant_key")
-    .select("wrapped_key")
-    .where("tenant_id", "=", tenantId)
-    .executeTakeFirstOrThrow();
-  return kernel.vault.unwrapTenantKey(tenantId, row.wrapped_key);
-}
-
 export async function encryptFor(
   kernel: Kernel,
   db: Db | Trx,
@@ -38,7 +24,7 @@ export async function encryptFor(
   name: string,
   value: string,
 ) {
-  const key = await tenantKey(db, kernel, tenantId);
+  const key = await tenantKey(db, kernel.vault, tenantId);
   return kernel.vault.encrypt(key, { tenantId, workspaceId, name }, value);
 }
 
@@ -50,7 +36,7 @@ export async function decryptFor(
   name: string,
   ciphertext: Buffer,
 ) {
-  const key = await tenantKey(db, kernel, tenantId);
+  const key = await tenantKey(db, kernel.vault, tenantId);
   return kernel.vault.decrypt(key, { tenantId, workspaceId, name }, ciphertext);
 }
 

@@ -105,6 +105,9 @@ const sourceCode = {
   additionalProperties: false,
 };
 
+/** Where a script's concurrency key is read from: a path into its input, up to five fields deep. */
+export const CONCURRENCY_KEY = /^input(\.[A-Za-z_][A-Za-z0-9_]*){1,5}$/;
+
 export const scriptKind: KindDefinition = {
   kind: "script",
   schemaVersion: 1,
@@ -143,10 +146,31 @@ export const scriptKind: KindDefinition = {
         additionalProperties: false,
       },
       concurrency: {
-        type: "integer",
-        minimum: 1,
-        maximum: 64,
-        description: "How many runs of this script may be in progress at once.",
+        oneOf: [
+          {
+            type: "integer",
+            minimum: 1,
+            maximum: 64,
+            description: "How many runs of this script may be in progress at once.",
+          },
+          {
+            type: "object",
+            description:
+              "How many runs of this script may be in progress at once for each value of `key`, such as one per customer. Runs with other values go ahead.",
+            properties: {
+              key: {
+                type: "string",
+                pattern: CONCURRENCY_KEY.source,
+                maxLength: 200,
+                description:
+                  "Where the value is in the input, as `input.<field>` or `input.<field>.<field>`. A run whose input has no value there shares one lane with the others that have none.",
+              },
+              limit: { type: "integer", minimum: 1, maximum: 64 },
+            },
+            required: ["key", "limit"],
+            additionalProperties: false,
+          },
+        ],
       },
       worker: {
         type: "string",

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { newId, sql } from "@vynxlabs/db";
 import { validateJson } from "@vynxlabs/manifest";
 import type { Db, Trx } from "../audit.js";
@@ -22,7 +22,8 @@ export interface ScriptBody {
   /** The most memory the script may use, in MB. */
   memoryMb?: number;
   retries: { limit: number; delaySeconds: number; backoff: boolean };
-  concurrency?: number;
+  /** A number for the script as a whole, or a limit for each value of a key in the input. */
+  concurrency?: number | { key: string; limit: number };
   /** The worker pool the script runs on. */
   worker?: string;
   uses: {
@@ -143,6 +144,41 @@ export async function readPayload(
  * Creates a run and queues it, in the caller's transaction. Starting again
  * with the same idempotency key returns the first run.
  */
+/** A key value longer than this is replaced by its hash: a lane is a name, not a payload. */
+const MAX_KEY_LENGTH = 200;
+
+/**
+ * Which lane a run waits in, when its script limits how many run at once: the
+ * script's own, or the script's for one value of a key in the input. The key's
+ * value is kept on the run, to be shown; a missing one is the empty key, a lane
+ * shared by every run without one.
+ */
+export function laneOf(
+  resourceId: string,
+  concurrency: ScriptBody["concurrency"],
+  input: unknown,
+): { group: string; limit: number; key?: string } | undefined {
+  if (!concurrency) return undefined;
+  if (typeof concurrency === "number") return { group: resourceId, limit: concurrency };
+  let value: unknown = { input };
+  for (const field of concurrency.key.split(".")) {
+    value =
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)[field]
+        : undefined;
+  }
+  let key =
+    value === undefined || value === null
+      ? ""
+      : typeof value === "object"
+        ? JSON.stringify(value)
+        : String(value);
+  if (key.length > MAX_KEY_LENGTH) {
+    key = `sha256:${createHash("sha256").update(key).digest("hex")}`;
+  }
+  return { group: `${resourceId}:${key}`, limit: concurrency.limit, key };
+}
+
 export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
   const workspace = await trx
     .selectFrom("workspace")
@@ -195,6 +231,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     if (earlier) return { created: false, run: earlier };
   }
 
+  const lane = laneOf(resourceId, body.concurrency, request.input ?? {});
   const id = newId();
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(
@@ -207,7 +244,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       backoff: body.retries.backoff,
       timeoutSeconds: body.timeoutSeconds,
       ...(request.startAfter ? { startAfter: request.startAfter } : {}),
-      ...(body.concurrency ? { group: { id: resourceId, limit: body.concurrency } } : {}),
+      ...(lane ? { group: { id: lane.group, limit: lane.limit } } : {}),
     },
     trx,
   );
@@ -240,6 +277,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       input_ref: input.ref,
       scheduled_for: request.startAfter ?? null,
       tags: [...new Set(request.tags ?? [])].slice(0, MAX_TAGS),
+      concurrency_key: lane?.key ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();

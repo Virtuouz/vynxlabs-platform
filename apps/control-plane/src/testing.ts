@@ -27,6 +27,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     publicUrl: "http://localhost:8080",
     authSecret: randomBytes(32).toString("hex"),
     masterKey: randomBytes(32),
+    masterKeySecondary: undefined,
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
     workerHostToken: undefined,

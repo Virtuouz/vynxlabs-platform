@@ -218,8 +218,22 @@ const RunDetail = Type.Object({
   }),
   waitingFor: Type.Union([Type.String(), Type.Null()], {
     description:
-      "For a run that is queued with no worker connected that could take it: what it is waiting for.",
+      "For a queued run: what it is waiting for, when it is not simply its turn. No worker connected that could take it, or a run with the same concurrency key still going.",
   }),
+  concurrency: Type.Union(
+    [
+      Type.Object({
+        key: Type.String({ description: "Where the value is read from: `input.customerId`." }),
+        value: Type.String({
+          description:
+            "This run's value. Empty when its input had none. A long value is shown as its hash.",
+        }),
+        limit: Type.Integer({ description: "How many runs with the same value may go at once." }),
+      }),
+      Type.Null(),
+    ],
+    { description: "Set when the script limits its runs per value of a key in their input." },
+  ),
   input: Type.Unknown(),
   output: Type.Unknown(),
   alert: Type.Union([AnyObject, Type.Null()]),
@@ -1095,6 +1109,57 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         : "This tenant runs on its own workers, and none is connected. Start one with a worker credential.";
     };
 
+    /**
+     * What a run waits for and, for a script that limits its runs per key, the key: a queued
+     * run whose worker is there is held back only by runs with the same value still going.
+     */
+    const keyed = async (
+      tenantId: string,
+      workspaceId: string,
+      row: {
+        id: string;
+        status: string;
+        pool: string | null;
+        resource_id: string;
+        concurrency_key: string | null;
+      },
+    ) => {
+      let concurrency: { key: string; value: string; limit: number } | null = null;
+      if (row.concurrency_key !== null) {
+        const resource = await db
+          .selectFrom("resource")
+          .select("body")
+          .where("id", "=", row.resource_id)
+          .executeTakeFirst();
+        const declared = (resource?.body as { concurrency?: unknown } | undefined)?.concurrency;
+        if (declared && typeof declared === "object") {
+          const { key, limit } = declared as { key: string; limit: number };
+          concurrency = { key, value: row.concurrency_key, limit };
+        }
+      }
+      if (row.status !== "queued") return { waitingFor: null, concurrency };
+      const absent = await waitingFor(tenantId, workspaceId, row.pool);
+      if (absent || row.concurrency_key === null) return { waitingFor: absent, concurrency };
+      const ahead = await db
+        .selectFrom("run")
+        .select(db.fn.countAll<string>().as("count"))
+        .where("workspace_id", "=", workspaceId)
+        .where("resource_id", "=", row.resource_id)
+        .where("concurrency_key", "=", row.concurrency_key)
+        .where("status", "=", "running")
+        .where("id", "<>", row.id)
+        .executeTakeFirstOrThrow();
+      const going = Number(ahead.count);
+      if (going === 0 || (concurrency && going < concurrency.limit)) {
+        return { waitingFor: null, concurrency };
+      }
+      const value = row.concurrency_key === "" ? "none" : row.concurrency_key;
+      return {
+        waitingFor: `Waiting for ${going} run${going === 1 ? "" : "s"} with the same key (${value}) to finish.`,
+        concurrency,
+      };
+    };
+
     const findRun = async (workspaceId: string, id: string) => {
       const row = await db
         .selectFrom("run")
@@ -1142,8 +1207,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           ...toRun(row, row.bundle_version),
           pool: row.pool,
-          waitingFor:
-            row.status === "queued" ? await waitingFor(params.t, params.w, row.pool) : null,
+          ...(await keyed(params.t, params.w, row)),
           input: await readPayload(kernel, row.input, row.input_ref),
           output: await readPayload(kernel, row.output, row.output_ref),
           alert: row.alert,

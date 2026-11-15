@@ -73,14 +73,20 @@ export class DataStores {
   readonly #database: Database;
   readonly #db: Db;
   readonly #vault: Vault;
-  readonly #secret: Buffer;
+  /** The seed of the data role's password, read once from the database. */
+  readonly #secret: () => Promise<Buffer>;
   readonly #log: FastifyBaseLogger;
   #platform: Promise<DataStore> | undefined;
   readonly #dedicated = new Map<string, Promise<DataStore>>();
   /** A tenant's location never changes, so it is looked up once. */
   readonly #locations = new Map<string, string | null>();
 
-  constructor(database: Database, vault: Vault, secret: Buffer, log: FastifyBaseLogger) {
+  constructor(
+    database: Database,
+    vault: Vault,
+    secret: () => Promise<Buffer>,
+    log: FastifyBaseLogger,
+  ) {
     this.#database = database;
     this.#db = database.router.platform();
     this.#vault = vault;
@@ -93,10 +99,12 @@ export class DataStores {
    * opened once at start, before any request can ask for it from inside a transaction.
    */
   platform(): Promise<DataStore> {
-    this.#platform ??= this.#database.openDataStore(this.#secret).catch((error) => {
-      this.#platform = undefined;
-      throw error;
-    });
+    this.#platform ??= this.#secret()
+      .then((secret) => this.#database.openDataStore(secret))
+      .catch((error) => {
+        this.#platform = undefined;
+        throw error;
+      });
     return this.#platform;
   }
 
@@ -106,10 +114,10 @@ export class DataStores {
   }
 
   /** Opens a connection string as a data store, setting it up if it is new. Does not remember it. */
-  connect(connectionString: string): Promise<DataStore> {
+  async connect(connectionString: string): Promise<DataStore> {
     return openDataStore({
       connectionString,
-      secret: this.#secret,
+      secret: await this.#secret(),
       maxConnections: 5,
       onConnectionError: (error) =>
         this.#log.warn({ err: error }, "a connection to a dedicated database failed"),

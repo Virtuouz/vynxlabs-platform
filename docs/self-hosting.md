@@ -30,7 +30,7 @@ Fill in `deploy/compose/.env`:
 | --- | --- |
 | `POSTGRES_PASSWORD`, `OBJECTSTORE_SECRET` | Long random values: `openssl rand -hex 24` |
 | `AUTH_SECRET` | `openssl rand -hex 32`. Signs session cookies |
-| `MASTER_KEY` | `openssl rand -base64 32`. Wraps every tenant's encryption key. **Keep a copy somewhere safe.** Without it no stored secret can be read again |
+| `MASTER_KEY` | `openssl rand -base64 32`. Wraps every tenant's encryption key. **Keep a copy somewhere safe.** Without it no stored secret can be read again. It can be rotated: see "Rotating the master key" |
 | `PUBLIC_URL` | The address people will type, for example `https://platform.example.com` |
 | `WORKER_HOST_TOKEN` | `openssl rand -hex 32`. Lets the worker host, which starts tenants' workers, ask for work |
 | `APPS_URL` | A second hostname for apps written as code, for example `https://apps.example.com`. Optional, but without it they are not served |
@@ -69,11 +69,34 @@ The platform makes no network call you did not configure: no telemetry, no updat
 
 - **Postgres**: everything. Use your provider's point-in-time recovery, or `pg_dump` on a schedule.
 - **The object store**: bundles and files.
-- **`MASTER_KEY`**: once, somewhere that is not the same disk.
+- **`MASTER_KEY`**: once, somewhere that is not the same disk, and again after each rotation, with the old one kept for older backups.
 
 Take the Postgres and object store backups close together. A database that names a file the store does not have will say so when the file is asked for, and not before.
 
 A tenant can also be backed up by itself, as an export. See below.
+
+## Rotating the master key
+
+`MASTER_KEY` wraps one key per tenant, and seals a few things of the instance's own: database locations' addresses, the instance's identity providers' secrets, sign-ins in progress, and the seed of the data role's password. Tenants' secrets and credentials are sealed with their tenant's key, so rotating the master key rewraps only those few values, in seconds even on a large instance.
+
+The instance can hold a second key, `MASTER_KEY_SECONDARY`. It opens what either key sealed, and seals only with `MASTER_KEY`. While the second key is set, the instance seals again with `MASTER_KEY` whatever the second key sealed: at start, every ten minutes, and when asked with `docker compose exec control-plane node dist/main.js rekey` (from a source checkout, `node apps/control-plane/dist/main.js rekey`), which prints what it did and exits 1 if a value opened with neither key.
+
+With one replica:
+
+1. Generate the new key: `openssl rand -base64 32`. Keep it with the old one.
+2. Restart with the new key as `MASTER_KEY` and the old one as `MASTER_KEY_SECONDARY`. The values move at start.
+3. `GET /api/v1/instance/master-key`, as an operator, says `secondaryRemovable: true` when nothing is left under the old key.
+4. Restart without `MASTER_KEY_SECONDARY`.
+
+With several replicas, a replica that knows only the old key cannot open what a replica with the new one has sealed. Add the new key before using it:
+
+1. Restart every replica with the old key as `MASTER_KEY` and the **new** one as `MASTER_KEY_SECONDARY`. Nothing moves yet; every replica can now open both.
+2. Restart every replica with the two swapped. Values move to the new key as replicas start, and the ten-minute pass catches any sealed meanwhile by a replica not yet restarted.
+3. When the status says `secondaryRemovable`, restart without the second key.
+
+The data role's password does not change in a rotation: it is made from a secret kept in the database, which was the master key the instance had when it upgraded to this version, and is sealed with whichever key is current.
+
+**Backups taken before a rotation need the old key.** Keep each key for as long as the backups it sealed. A value no key opens is reported by the status and the `rekey` command, by place and row, and never changed.
 
 ## Retention
 

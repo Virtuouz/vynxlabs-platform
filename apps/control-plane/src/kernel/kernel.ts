@@ -13,6 +13,7 @@ import { DataStores } from "./data/stores.js";
 import { configureEgress } from "./egress.js";
 import { registerExecutionHooks } from "./execution/triggers.js";
 import { Expressions } from "./flows/expressions.js";
+import { DATA_ROLE_SECRET, instanceSecret } from "./instance-secrets.js";
 import { type KindHook, registerDataHooks, registerKernelKinds } from "./kinds.js";
 import { Mailer } from "./mail.js";
 import { Metrics } from "./metrics.js";
@@ -60,13 +61,23 @@ export function createKernel(
   const kinds = new KindRegistry();
   const hooks = new Map<string, KindHook>();
   registerKernelKinds(kinds, hooks);
-  const vault = new Vault(config.masterKey);
+  const vault = new Vault(config.masterKey, config.masterKeySecondary);
+  let roleSecret: Promise<Buffer> | undefined;
+  const dataRoleSecret = () => {
+    roleSecret ??= instanceSecret(db, vault, DATA_ROLE_SECRET, () => config.masterKey).catch(
+      (error) => {
+        roleSecret = undefined;
+        throw error;
+      },
+    );
+    return roleSecret;
+  };
   const kernel: Kernel = {
     db,
     router: database.router,
     auth: createAuth(db, config, log),
     vault,
-    data: new DataStores(database, vault, config.masterKey, log),
+    data: new DataStores(database, vault, dataRoleSecret, log),
     kinds,
     hooks,
     config,

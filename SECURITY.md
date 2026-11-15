@@ -19,7 +19,7 @@ Decision 0001 (`docs/evolution/decisions/0001-execution-boundary.md`) sets where
 | --- | --- |
 | A tenant from another tenant | Every platform row carries its tenant's ID, and every request is checked against it by one authorization function. A request for another tenant's ID answers 404 |
 | A tenant from the operator | An operator has no access inside a tenant by default. Access is a time-limited grant with a reason, which the tenant's admins can see and end, and everything done under it is audited |
-| Secrets at rest | Each tenant has its own key, wrapped by the instance master key. Secret values, connection credentials, data source passwords and webhook tokens are encrypted with it, bound to the tenant, workspace and name they belong to |
+| Secrets at rest | Each tenant has its own key, wrapped by the instance master key. Secret values, connection credentials, data source passwords and webhook tokens are encrypted with it, bound to the tenant, workspace and name they belong to. The master key can be rotated without downtime; a rotation rewraps the tenants' keys and the instance's own sealed values, never tenants' secrets one by one |
 | A person's rows from another person | Postgres row-level security on every custom table. Requests for rows run on a database sign-in that owns nothing and cannot become the role that does |
 | The console from a tenant's app | A member's console session counts only at the instance's own address. At an app's own address a member has a separate sign-in, good for that tenant and for what apps use, and nothing else |
 | A tenant's staff from its customers | End users are a pool of each tenant's own. Whatever role an end user is bound to, the authorization check gives them only the kinds of permission apps use |

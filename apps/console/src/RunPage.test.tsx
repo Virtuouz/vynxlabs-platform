@@ -160,6 +160,29 @@ test("a script run's page names everything it came from, each as a link", async 
   );
 });
 
+test("a run held back by its concurrency key says by what, and shows the key", async () => {
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      status: "queued",
+      state: "queued",
+      error: null,
+      errorSummary: null,
+      finishedAt: null,
+      startedAt: null,
+      concurrency: { key: "input.customer", value: "c-17", limit: 1 },
+      waitingFor: "Waiting for 1 run with the same key (c-17) to finish.",
+    },
+  ];
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(
+    await screen.findByText("Waiting for 1 run with the same key (c-17) to finish."),
+  ).toBeTruthy();
+  expect(screen.getByText("Concurrency key")).toBeTruthy();
+  expect(screen.getByText("c-17 · one at a time")).toBeTruthy();
+});
+
 test("a script run is run again with the same input, and the page moves to the new run", async () => {
   show(<RunPage root={root} link={link} id="r1" />);
   fireEvent.click(await screen.findByRole("button", { name: /Re-run/ }));

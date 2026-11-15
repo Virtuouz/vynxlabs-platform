@@ -31,6 +31,7 @@ import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { interfaceRoutes } from "./routes/interfaces.js";
 import { locationRoutes } from "./routes/locations.js";
+import { masterKeyRoutes } from "./routes/master-key.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { operationsRoutes } from "./routes/operations.js";
 import { permissionRoutes } from "./routes/permissions.js";
@@ -187,6 +188,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(operationsRoutes(kernel));
       await api.register(streamRoutes(kernel));
       await api.register(poolRoutes(kernel));
+      await api.register(masterKeyRoutes(kernel));
       api.get(
         "/openapi.json",
         {

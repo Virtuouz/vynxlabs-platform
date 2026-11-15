@@ -293,6 +293,26 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                 label: "Time limit",
                 value: insight.data?.timeoutSeconds ? `${insight.data.timeoutSeconds} s` : "—",
               },
+              ...(run.concurrency
+                ? [
+                    {
+                      label: "Concurrency key",
+                      // A long value is kept as its hash; its start is enough to tell two apart.
+                      value: `${
+                        run.concurrency.value === ""
+                          ? "(none)"
+                          : run.concurrency.value.length > 40
+                            ? `${run.concurrency.value.slice(0, 19)}…`
+                            : run.concurrency.value
+                      } · ${
+                        run.concurrency.limit === 1
+                          ? "one at a time"
+                          : `${run.concurrency.limit} at a time`
+                      }`,
+                      mono: true,
+                    },
+                  ]
+                : []),
             ]}
           />
           {insight.data && insight.data.uses.length > 0 ? (

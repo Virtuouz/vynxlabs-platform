@@ -90,6 +90,12 @@ function compact<T extends Record<string, unknown>>(value: T): Record<string, un
 const pathOf = (target: string | { path: string }) =>
   typeof target === "string" ? target : target.path;
 
+/** A path into a script's input, as a concurrency key names it: `input.customerId`, or deeper. */
+export type InputKey<I> =
+  I extends Record<string, unknown>
+    ? `input.${Extract<keyof I, string>}` | `input.${Extract<keyof I, string>}.${string}`
+    : `input.${string}`;
+
 export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType> {
   /** Unique within the workspace, for example `orders/sync`. */
   path: string;
@@ -119,8 +125,13 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
    * retries, so a script must be safe to run twice.
    */
   retries?: { limit: number; delaySeconds?: number; backoff?: boolean };
-  /** How many runs of this script may be in progress at once. */
-  concurrency?: number;
+  /**
+   * How many runs of this script may be in progress at once: a number for the
+   * script as a whole, or `{ key, limit }` for each value of a field of its
+   * input, such as `{ key: "input.customerId", limit: 1 }` for one run at a
+   * time per customer. Runs for other customers go ahead.
+   */
+  concurrency?: number | { key: InputKey<z.input<Input>>; limit: number };
   /**
    * The worker pool this script runs on. Use it for a script that must run in
    * a particular place, such as inside a client's network, and give that

@@ -78,3 +78,47 @@ export function describeApprovers(approvers: Approvers | undefined): string | nu
     ? (parts[0] as string)
     : `${parts.slice(0, -1).join(", ")} or ${parts.at(-1)}`;
 }
+
+/** The most approvers one step's mail goes to. */
+export const MAX_ASKED = 50;
+
+/**
+ * The members who may decide a step now, with where to write to them: those
+ * the approve route would let decide it. Members of the tenant who are not
+ * suspended or disabled, who hold `approval:write` in the workspace and, when
+ * the step names approvers, are among them. At most `MAX_ASKED`.
+ */
+export async function approverMembers(
+  db: Db | Trx,
+  at: { tenantId: string; workspaceId: string },
+  approvers: Approvers | undefined,
+): Promise<{ members: { id: string; name: string; email: string }[]; more: boolean }> {
+  const { check } = await import("../authorize.js");
+  const candidates = await db
+    .selectFrom("tenant_member")
+    .innerJoin("member", "member.id", "tenant_member.member_id")
+    .select(["member.id", "member.name", "member.email"])
+    .where("tenant_member.tenant_id", "=", at.tenantId)
+    .where("tenant_member.suspended_at", "is", null)
+    .where("member.disabled_at", "is", null)
+    .orderBy("member.email")
+    .limit(2000)
+    .execute();
+  const members: { id: string; name: string; email: string }[] = [];
+  let more = false;
+  for (const candidate of candidates) {
+    const may = await check(db, { type: "member", id: candidate.id }, "approval:write", at);
+    if (!may.allowed || may.accessGrantId) continue;
+    if (!(await isApprover(db, at, candidate.id, approvers))) continue;
+    if (members.length >= MAX_ASKED) {
+      more = true;
+      break;
+    }
+    members.push({
+      id: candidate.id,
+      name: candidate.name || candidate.email,
+      email: candidate.email,
+    });
+  }
+  return { members, more };
+}

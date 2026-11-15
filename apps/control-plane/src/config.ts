@@ -61,6 +61,11 @@ export interface Config {
   appsOnConsoleAddress: boolean;
   /** Where mail goes out, for invitations and password resets. Undefined when no mail is sent. */
   mail: { url: string; from: string } | undefined;
+  /**
+   * For development only: each message is written to a file here instead of
+   * being sent. Never in production.
+   */
+  mailCaptureDir: string | undefined;
 }
 
 export const MIN_PASSWORD_LENGTH = 12;
@@ -192,6 +197,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if ((smtpUrl === undefined) !== (mailFrom === undefined)) {
     problems.push("SMTP_URL and MAIL_FROM must be set together.");
   }
+  // For development and tests: the instance says so loudly when it starts.
+  const mailCaptureDir = value("MAIL_CAPTURE_DIR");
 
   // `true` is read as `process`, as it was before there was a worker host.
   const managedRaw = value("MANAGED_WORKERS") ?? "process";
@@ -270,6 +277,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),
     appsOnConsoleAddress: appsOnConsole === "true",
+    mailCaptureDir,
     mail:
       smtpUrl !== undefined && mailFrom !== undefined
         ? { url: smtpUrl, from: mailFrom }

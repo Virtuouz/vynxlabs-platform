@@ -1,6 +1,6 @@
 # Phase 10: platform expansion
 
-Status: in progress. Milestones 1 to 6 are built, on branch `phase-10-expansion`.
+Status: built. All seven milestones are on branch `phase-10-expansion`, not yet merged.
 Last updated: 2026-11-15
 
 Phase 10 builds the P2 items of the [evolution roadmap](../evolution/07-roadmap.md): all thirteen, in seven milestones. Phase 9 made what exists dependable. This phase widens what a tenant can do with it:
@@ -143,4 +143,36 @@ Each milestone ends with `pnpm typecheck`, `pnpm lint` and `pnpm test` passing, 
 - **An operator with an access grant is no member,** and the access page answered 404 for one at first. It now finds anyone the tenant gave something.
 - **"Yes" needed a where.** On the walk, checking `promotion:write` for a developer whose group held the deployer role in dev said Yes, while promoting is checked in production. The answer now says where: "only in: Clinics dev workspace".
 - **Walked in Chromium on a built instance, at 1440 and 390 px,** with a developer and an operator in one tenant: the developer asked for a promotion with a note and saw it waiting; drift listed the changed flow, the new variable and the one removed, and the flow's sheet showed its changed and added lines; the operator saw the request on the overview, reviewed and promoted it; the developer then saw it promoted; the developer's access page listed what developer and deployer give them, through the group Engineers; following deployer opened the access list with that binding marked. No page scrolled sideways, and no page threw. `pnpm e2e` passes (18), with a new test of this.
+
+### Milestone 7
+
+- **Who is mailed is who the approve route lets decide.** Each member of the tenant, not suspended or disabled, is checked with the permission check itself for `approval:write` in the workspace, and against the step's named groups and roles. An operator on an access grant is not a member and is not mailed. At most fifty per step.
+- **The link alone is enough** (an owner decision, asked at planning). It opens a page that needs no sign-in. The trade-off, written in the self-hosting guide and `SECURITY.md`: a forwarded link can be used once by whoever holds it, as the approver it was sent to.
+- **Opening a link decides nothing.** The page reads with GET and decides with POST, so a mail scanner that fetches links does no harm. Reading twice still works.
+- **A link works once, for 48 hours, never past the step's timeout,** and every link to a step stops working when it is decided, however it was decided: `decideApproval` ends them in the same transaction, so the console's and MCP's decisions do it too.
+- **Rights are checked again when a link is used,** in the transaction that decides: a member suspended since, or no longer an approver, is refused, and the link is left as it was.
+- **Taking the link, deciding and the audit entry are one transaction.** The first version recorded the audit entry after the decision had committed; a failure between the two would have left a decision with no entry.
+- **"Decided from the mail"** is kept on the link that decided (`decided_at`), and the Decided list reads it. The list now shows each decision's comment, which it did not before, under the decision itself: the walk at 390 px showed the "By" column, where it was first put, is one a phone hides.
+- **Mail is sent after the step's transaction commits,** like flow runs a step starts: the engine collects the approval steps that began to wait in a pass.
+- **`MAIL_CAPTURE_DIR` keeps mail as files.** The plan refused it in production. The image sets `NODE_ENV=production`, and CI runs the browser tests against the image, so the refusal would have kept the test of this out of CI. It is allowed anywhere instead, and the instance says loudly in its log that nothing is sent. CI mounts a folder for it, and the files are readable by the test that runs beside the container.
+- **A flow's test run needs a draft in the workspace.** A test run builds a bundle from the drafts, and refuses with "There are no drafts to deploy" when there are none. Known since milestone 4; the console's Test panel always has one.
+- **Walked in Chromium on a built instance, at 1440 and 390 px,** with mail kept as files: a flow paused for "Refund £120 to the Brooks family" with two approvers; each was mailed a link of their own, naming the flow, workspace and tenant; Priya opened hers with no session, read what was asked, and approved with a comment; Tom's link then said there was nothing to decide; the flow ran on; the console's Approvals named the decision, the comment and that it was decided from the mail; the tenant's overview said approvers were emailed. No page scrolled sideways, and no page threw. `pnpm e2e` passes (19), with a new test of this that CI runs.
+
+## Exit criterion
+
+Each part was walked or tested on a fresh instance, at 1440 and 390 px where there is a screen, in the milestone that built it. It was not walked again as one sitting.
+
+| Part | Where it was shown |
+| --- | --- |
+| A script's rows as a table on its run page | Milestone 1's walk |
+| Offer a script to an agent, try it as the agent, connect an agent that sees that script alone | Milestone 1's walk; `mcp.test.ts` |
+| Set up an OAuth connection, test it on a worker, see its health | Milestone 3's walk, against a stand-in provider; `connections.test.ts` |
+| Run a draft flow from its editor and see each step's result on the graph | Milestone 4's walk; `e2e/flow-editor.spec.ts` |
+| Pull console drafts with the CLI, change them, deploy, and see no difference | Milestone 5, by hand against a built instance; `packages/cli/src/remote.test.ts` |
+| Ask for a promotion one may not make, and see it decided | Milestone 6's walk; `e2e/release.spec.ts` |
+| See what differs between dev and production, and why a member holds a permission | Milestone 6's walk; `e2e/release.spec.ts` |
+| Approve a flow's step from a link in a mail | Milestone 7's walk; `e2e/approval-mail.spec.ts` |
+| An app shows a run's progress without polling | Milestone 1: `packages/app` tests over a stream |
+| Two runs with the same concurrency key never overlap | Milestone 2: `execution.test.ts` and its walk |
+| The master key is rotated without losing a secret | Milestone 2: a rotation on a local instance |
 

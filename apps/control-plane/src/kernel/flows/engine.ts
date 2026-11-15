@@ -16,6 +16,7 @@ import { bundleManifest } from "../execution/bundles.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
+import { expireLinks, mailApprovers } from "./approval-links.js";
 import { buildContext, type ContextStep, readOutput } from "./context.js";
 import { ExpressionError } from "./expressions.js";
 
@@ -325,6 +326,7 @@ interface Finished {
  */
 export async function advance(kernel: Kernel, flowRunId: string): Promise<void> {
   const started: string[] = [];
+  const asking: string[] = [];
   const finished = await kernel.db.transaction().execute(async (trx) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${flowRunId}, 1))`.execute(trx);
     const flowRun = await trx
@@ -343,10 +345,19 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
     const pass = new Advance(kernel, trx, flowRun, manifest.body as unknown as FlowBody);
     const result = await pass.run();
     started.push(...pass.started);
+    asking.push(...pass.asking);
     return result;
   });
   // Flow runs started as steps take their own first step now that they are committed.
   for (const child of started) kickFlow(kernel, child);
+  // Approvers are told of a step that waits for them once it is committed, and never twice.
+  if (asking.length > 0) {
+    for (const node of asking) {
+      mailApprovers(kernel, flowRunId, node).catch((error) =>
+        kernel.log.error({ err: error, flowRunId, node }, "approvers could not be told"),
+      );
+    }
+  }
   if (finished) await afterFlowRun(kernel, finished);
 }
 
@@ -700,6 +711,7 @@ class Advance {
             },
             wake_at: node.timeoutSeconds ? new Date(Date.now() + node.timeoutSeconds * 1000) : null,
           });
+          this.#asking.push(step.node_id);
           break;
         }
         case "subflow": {
@@ -861,6 +873,8 @@ class Advance {
 
   /** Flow runs started during this pass. They take their first step once this transaction commits. */
   readonly #children: string[] = [];
+  /** Approval steps that began to wait in this pass: their approvers are told after it commits. */
+  readonly #asking: string[] = [];
 
   // ----- Settling a step whose work may have ended -----
 
@@ -1030,6 +1044,10 @@ class Advance {
   get started(): string[] {
     return this.#children;
   }
+
+  get asking(): string[] {
+    return this.#asking;
+  }
 }
 
 /** A step that failed for a reason its author can fix. It fails the step, not the engine. */
@@ -1142,6 +1160,8 @@ export async function decideApproval(
     .where("node_id", "=", request.node)
     .where("item_key", "=", "")
     .execute();
+  // However it was decided, the links mailed for it stop working.
+  await expireLinks(trx, request.flowRunId, request.node);
   return { flow: step.flow_path, title: step.detail.title };
 }
 

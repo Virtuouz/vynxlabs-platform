@@ -601,6 +601,8 @@ interface Decided {
   comment: string | null;
   decidedBy: { id: string; label: string } | null;
   decidedAt: string | null;
+  /** Where it was decided: the console or the API, or a link in the mail. */
+  via?: "console" | "email";
   waitedSeconds: number | null;
 }
 
@@ -676,6 +678,16 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
                 <StatePill state={row.approved ? "succeeded" : "failed"}>
                   {row.approved ? "Approved" : "Rejected"}
                 </StatePill>
+                {row.comment || row.via === "email" ? (
+                  <span className="max-w-[28rem] text-meta text-ink-muted break-words">
+                    {row.comment ? `“${row.comment}”` : ""}
+                    {row.via === "email" ? (
+                      <span className="text-ink-subtle">
+                        {row.comment ? " · " : ""}decided from the mail
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </span>
             ),
           },
@@ -689,7 +701,15 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
               </span>
             ),
           },
-          { header: "By", priority: 3, cell: (row) => row.decidedBy?.label ?? "—" },
+          {
+            header: "By",
+            priority: 3,
+            cell: (row) => (
+              <span className="flex min-w-0 flex-col">
+                <span>{row.decidedBy?.label ?? "—"}</span>
+              </span>
+            ),
+          },
           {
             header: "When",
             cell: (row) => (

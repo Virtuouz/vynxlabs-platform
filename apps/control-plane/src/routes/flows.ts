@@ -176,6 +176,9 @@ const DecidedApproval = Type.Object({
   comment: NullableString,
   decidedBy: Type.Union([Type.Object({ id: Id, label: Type.String() }), Type.Null()]),
   decidedAt: NullableTime,
+  via: Type.Union([Type.Literal("console"), Type.Literal("email")], {
+    description: "Where it was decided: the console or the API, or a link in the mail.",
+  }),
   waitedSeconds: Type.Union([Type.Number(), Type.Null()]),
 });
 
@@ -1053,6 +1056,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           "flow_run.workspace_id",
           "member.email",
           "member.name",
+          sql<boolean>`exists (
+            select 1 from approval_link l
+            where l.flow_run_id = step_run.flow_run_id and l.node_id = step_run.node_id
+              and l.decided_at is not null
+          )`.as("by_link"),
         ])
         .where("flow_run.tenant_id", "=", tenantId)
         .where("step_run.decided_by", "is not", null)
@@ -1072,6 +1080,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         ? { id: row.decided_by, label: row.email ?? row.name ?? "A member" }
         : null,
       decidedAt: isoOrNull(row.finished_at),
+      via: row.by_link ? ("email" as const) : ("console" as const),
       waitedSeconds: row.finished_at
         ? Math.round((row.finished_at.getTime() - row.started_at.getTime()) / 1000)
         : null,

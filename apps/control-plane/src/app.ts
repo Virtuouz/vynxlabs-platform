@@ -16,6 +16,7 @@ import { postgresRateLimitStore } from "./kernel/ratelimit.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
 import { alertRoutes } from "./routes/alerts.js";
+import { approvalLinkRoutes } from "./routes/approval-links.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
 import { authoringRoutes } from "./routes/authoring.js";
@@ -195,6 +196,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(promotionRequestRoutes(kernel));
       await api.register(driftRoutes(kernel));
       await api.register(accessRoutes(kernel));
+      await api.register(approvalLinkRoutes(kernel));
       api.get(
         "/openapi.json",
         {

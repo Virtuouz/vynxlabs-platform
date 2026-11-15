@@ -42,6 +42,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     // Most suites serve apps at the one address they have. The default is tested on its own.
     appsOnConsoleAddress: true,
     mail: undefined,
+    mailCaptureDir: undefined,
     ...overrides,
   };
 }

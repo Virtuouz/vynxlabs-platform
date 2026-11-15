@@ -140,6 +140,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["id"],
     export: "always",
   },
+  // A link in a mail this instance sent: nowhere else would it lead.
+  {
+    table: "approval_link",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
   // A request names this instance's bundles and members: it means nothing elsewhere.
   {
     table: "promotion_request",

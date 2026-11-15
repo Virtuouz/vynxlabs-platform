@@ -4,6 +4,7 @@ import { api, type Me, useLoad } from "./api.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
+import { ApproveLink } from "./screens/ApproveLink.tsx";
 import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { InstanceBranding } from "./screens/InstanceBranding.tsx";
@@ -96,6 +97,9 @@ export function App() {
     if (target) window.location.assign(target);
   }, [target]);
 
+  // An approval mail's link needs no sign-in: the link is the approver's own.
+  const approving = match("/approve/:token", path);
+  if (approving?.token) return <ApproveLink token={approving.token} />;
   if (me.loading && !me.data && !me.error) return null;
   if (me.error?.status === 401 || !me.data) {
     if (me.error && me.error.status !== 401) {

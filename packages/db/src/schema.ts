@@ -438,6 +438,20 @@ export interface PromotionRequestTable {
   created_at: Generated<Date>;
 }
 
+export interface ApprovalLinkTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  flow_run_id: string;
+  node_id: string;
+  member_id: string;
+  token_hash: string;
+  expires_at: Timestamp;
+  used_at: Date | null;
+  decided_at: Date | null;
+  created_at: Generated<Date>;
+}
+
 export interface VariableValueTable {
   id: string;
   tenant_id: string;
@@ -753,6 +767,7 @@ export interface EndUserTokenTable {
   token_hash: string;
   expires_at: Timestamp;
   used_at: Date | null;
+  decided_at: Date | null;
   created_at: Generated<Date>;
 }
 
@@ -1089,6 +1104,7 @@ export interface PlatformSchema {
   connection_binding: ConnectionBindingTable;
   connection_oauth_state: ConnectionOAuthStateTable;
   promotion_request: PromotionRequestTable;
+  approval_link: ApprovalLinkTable;
   connection_group_member: ConnectionGroupMemberTable;
   variable_value: VariableValueTable;
   run: RunTable;

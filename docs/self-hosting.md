@@ -337,6 +337,21 @@ A tenant's end users are its customers and portal users. They are a pool of the 
 
 Someone who is not signed in reaches only what is bound to `anonymous`, and is limited in how often they may ask. The limit is counted by address, in each replica.
 
+## Approval mail
+
+When a flow waits for an approval and the instance sends mail (`SMTP_URL` and `MAIL_FROM`), each member who may decide it is sent a mail with a link of their own: the members of the tenant who hold `approval:write` in the workspace and, when the step names groups or roles, are among them. Suspended and disabled members are not mailed, nor is an operator inside the tenant on an access grant. At most fifty are mailed for one step; the rest see it in the console.
+
+What a link is:
+- **The approver's own, and enough by itself.** It opens a page with what is asked and Approve and Reject, with no sign-in. Opening it decides nothing, so a mail scanner that fetches links does no harm. A forwarded link can be used, once, by whoever holds it: it decides as the approver it was sent to.
+- **Used once,** and only until 48 hours have passed, the step's own timeout comes, or anyone decides the approval, by link or in the console. Then every link to it stops working.
+- **Checked again when used.** A member suspended, or no longer allowed to decide, since the mail went out is refused.
+
+The decision is recorded as that member's, with the comment, `via: "email"` in the audit log, and "decided from the mail" in the console's Approvals.
+
+### Trying mail without a mail server
+
+`MAIL_CAPTURE_DIR=/some/folder` writes each message the instance would send to a file there instead, readable, and sends nothing. The instance says so in its log when it starts. It is for development and tests, never for an instance people use: the files hold one-time links.
+
 ## Groups, attributes and row rules for end users
 
 End users have groups of their own, under **End-user groups**. Bind a role to a group once instead of to each person. An end user also has attributes, such as `customer_id`, edited from their row under **End users**.

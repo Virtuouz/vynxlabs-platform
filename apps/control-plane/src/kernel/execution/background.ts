@@ -1,5 +1,6 @@
 import { removeExpiredAppSessions } from "../apps/sessions.js";
 import { checkDueSources } from "../data/health.js";
+import { removeOldLinks } from "../flows/approval-links.js";
 import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { pruneRateLimits } from "../ratelimit.js";
@@ -40,6 +41,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     await removeExpiredAppSessions(kernel.db);
     await removeExpiredSso(kernel.db);
     await removeExpiredAuthorizations(kernel.db);
+    await removeOldLinks(kernel.db);
     await removeOldPreviews(kernel);
     await removeExpiredImports(kernel);
     await pruneRateLimits(kernel);

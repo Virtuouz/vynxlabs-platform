@@ -184,3 +184,8 @@ describe("configuration", () => {
     ]);
   });
 });
+
+test("mail can be kept as files instead of sent, for development", () => {
+  expect(loadConfig({ ...valid, MAIL_CAPTURE_DIR: "/tmp/mail" }).mailCaptureDir).toBe("/tmp/mail");
+  expect(loadConfig(valid).mailCaptureDir).toBeUndefined();
+});

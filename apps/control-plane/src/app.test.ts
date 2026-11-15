@@ -94,6 +94,7 @@ describe("routes", () => {
       apiVersion: "v1",
       migrationLevel: await database.migrationLevel(),
       appsAddress: "console",
+      mail: false,
     });
     expect(response.json().migrationLevel).toBeGreaterThan(0);
   });

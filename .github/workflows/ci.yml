@@ -129,6 +129,7 @@ jobs:
         # beside itself only for code the operator writes unless told everyone is trusted:
         # both are what a developer's machine sets, as .env.example does.
         run: |
+          mkdir -p /tmp/vx-mail && chmod 777 /tmp/vx-mail
           docker run -d --name platform --network host \
             -e DATABASE_URL=postgres://platform:platform@localhost:54329/platform \
             -e PORT=8080 -e PUBLIC_URL=http://localhost:8080 \
@@ -138,6 +139,7 @@ jobs:
             -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=change-me-please \
             -e MANAGED_WORKERS=process -e MANAGED_WORKER_USER=same \
             -e EGRESS_ALLOW=127.0.0.0/8,::1,localhost \
+            -e MAIL_CAPTURE_DIR=/mail -v /tmp/vx-mail:/mail \
             vynxlabs-platform:e2e
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/api/v1/readyz > /dev/null && exit 0
@@ -146,6 +148,9 @@ jobs:
           docker logs platform
           exit 1
       - name: Walk the exit criterion
+        # Approval mail is kept as files the test reads, as a developer's machine can.
+        env:
+          E2E_MAIL_DIR: /tmp/vx-mail
         run: pnpm e2e
       - name: Logs
         if: failure()

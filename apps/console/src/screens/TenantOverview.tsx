@@ -48,6 +48,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export function TenantOverview({ base, tenantId }: { base: string; tenantId: string }) {
   const tenant = useLoad<{ name: string; slug: string }>(base);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
+  const instance = useLoad<{ mail?: boolean }>("/instance");
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
   const recent = useLoad<{ items: AuditEntry[] }>(`${base}/audit?limit=24`);
   // Entries from before moving between workspaces stopped being audited are no change to show.
@@ -65,7 +66,11 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         tone="attention"
         icon={<CirclePause aria-hidden="true" size={15} />}
         title={`${plural(c.approvalsWaiting, "approval")} waiting`}
-        detail="A flow is paused until someone decides."
+        detail={
+          instance.data?.mail === false
+            ? "A flow is paused until someone decides. Mail is not set up on this instance, so approvers are not told."
+            : "A flow is paused until someone decides. Those who may decide were emailed a link."
+        }
         action={<Go to={t("approvals")}>Decide</Go>}
       />,
     );

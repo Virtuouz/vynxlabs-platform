@@ -1,6 +1,6 @@
 # Phase 9: maturity
 
-Status: in progress. Milestones 1 to 5 built and tested locally (quick wins; execution isolation, also in the image on the dev stack; retention; the state vocabulary, cache and run event stream; the run page, re-run and retry, search and tags). Milestones 6 and 7 not started.
+Status: in progress. Milestones 1 to 5 built and tested locally (quick wins; execution isolation, also in the image on the dev stack; retention; the state vocabulary, cache and run event stream; the run page, re-run and retry, search and tags). Milestones 6 to 8 not started. Milestone 6 was inserted on 2026-11-14 by [decision 0001](../evolution/decisions/0001-execution-boundary.md).
 Last updated: 2026-11-14
 
 Phase 9 builds the P0 and P1 items of the [evolution roadmap](../evolution/07-roadmap.md). It changes no part of the platform's model. It makes what already exists dependable and connected:
@@ -39,12 +39,15 @@ A script that ignores its timeout is killed, and nothing older than the retentio
 
 | Area | Decision |
 | --- | --- |
-| Shape | One branch, `phase-9-maturity`, in seven milestones, one commit each |
+| Shape | One branch, `phase-9-maturity`, in eight milestones, one commit each (seven planned; the execution plane added by decision 0001) |
 | Scope | P0 and P1 of the roadmap. P2 and P3 wait |
 | Retention defaults | Runs and logs 30 days, events 30, refused webhooks 7, audit 400 (exported to S3 before it is dropped). Instance default, tenant override within instance bounds |
 | Managed workers | Run as an unprivileged `vxrun` user, which needs `CAP_SETUID` and `CAP_SETGID` on the container. Without them, managed workers are refused for tenants whose `code:write` is held outside the operator, and those tenants use standalone workers |
 | Flow retry and approvals | Granted approvals upstream of the failure are copied like other succeeded steps, keeping who approved. Pending or rejected approvals are asked again |
 | App action input | Dotted-path mapping from page state, or constants. CEL later, if needed |
+| The execution boundary ([decision 0001](../evolution/decisions/0001-execution-boundary.md)) | The control plane never executes tenant code, and reaches tenant-chosen destinations only on a named list behind an egress guard. Work that looks inside code or talks to a tenant's system is a task kind on the tenant's worker |
+| Managed workers' network | A worker host container beside the control plane, on a network of its own. Where none is deployed, in-process managed workers only for tenants whose code only the operator writes |
+| Apps' address | A separate app address by default; code apps on the console's address only by the operator's explicit choice |
 
 ## Design in brief
 
@@ -66,8 +69,9 @@ The specs in [`docs/evolution/specs/`](../evolution/specs/) hold the design. In 
 | 3 | Retention: tenant policy, the pruner, monthly audit partitions | P0-2 | [S2](../evolution/specs/S2-retention.md) |
 | 4 | One state vocabulary, the console query cache, the run event stream | P0-5, P1-9, P1-4 | [S5](../evolution/specs/S5-run-event-stream.md) |
 | 5 | The operational loop: full run page, re-run and retry, runs search, tags and paging | P1-1, P1-2, P1-3 | [S3](../evolution/specs/S3-run-page-and-retry.md), [S4](../evolution/specs/S4-runs-search-tags-paging.md) |
-| 6 | The build loop: SchemaForm everywhere, triggers from Triggers, app actions | P1-5, P1-6, P1-7 | [S6](../evolution/specs/S6-schema-form.md), [S7](../evolution/specs/S7-app-actions.md) |
-| 7 | Alerts in the console, palette entities and actions, the queue panel and RED metrics | P1-8, P1-10, P1-12 | [S8](../evolution/specs/S8-command-palette.md) |
+| 6 | The execution plane: the egress guard, task kinds on the worker protocol (`describe`, `deliver`, `test-connection`), the worker host for managed workers, a separate apps address by default | Decision 0001; part of P2-7 | [0001](../evolution/decisions/0001-execution-boundary.md) |
+| 7 | The build loop: SchemaForm everywhere, schemas derived from zod through `describe`, triggers from Triggers, app actions | P1-5, P1-6, P1-7 | [S6](../evolution/specs/S6-schema-form.md), [S7](../evolution/specs/S7-app-actions.md) |
+| 8 | Alerts in the console, palette entities and actions, the queue panel and RED metrics | P1-8, P1-10, P1-12 | [S8](../evolution/specs/S8-command-palette.md) |
 
 Each milestone ends with `pnpm typecheck`, `pnpm lint` and `pnpm test` passing, and `pnpm e2e` for the milestones that change the console.
 

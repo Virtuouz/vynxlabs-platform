@@ -36,6 +36,7 @@ export type {
   Ownership,
   PlatformSchema,
   PrincipalType,
+  PromotionRequestTable,
   RunStatus,
   ScopeType,
   StepStatus,

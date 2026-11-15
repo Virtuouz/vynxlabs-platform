@@ -418,6 +418,26 @@ export interface ConnectionOAuthStateTable {
   created_at: Generated<Date>;
 }
 
+export interface PromotionRequestTable {
+  id: string;
+  tenant_id: string;
+  source_workspace_id: string;
+  target_workspace_id: string;
+  bundle_id: string;
+  digest: string;
+  version: number;
+  note: string | null;
+  requested_by_type: string;
+  requested_by_id: string | null;
+  status: Generated<"pending" | "promoted" | "declined" | "withdrawn" | "superseded">;
+  decided_by_type: string | null;
+  decided_by_id: string | null;
+  decided_at: Date | null;
+  comment: string | null;
+  deployment_id: string | null;
+  created_at: Generated<Date>;
+}
+
 export interface VariableValueTable {
   id: string;
   tenant_id: string;
@@ -1068,6 +1088,7 @@ export interface PlatformSchema {
   git_operation: GitOperationTable;
   connection_binding: ConnectionBindingTable;
   connection_oauth_state: ConnectionOAuthStateTable;
+  promotion_request: PromotionRequestTable;
   connection_group_member: ConnectionGroupMemberTable;
   variable_value: VariableValueTable;
   run: RunTable;

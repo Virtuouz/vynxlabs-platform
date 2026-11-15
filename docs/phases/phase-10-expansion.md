@@ -1,6 +1,6 @@
 # Phase 10: platform expansion
 
-Status: in progress. Milestones 1 to 5 are built, on branch `phase-10-expansion`.
+Status: in progress. Milestones 1 to 6 are built, on branch `phase-10-expansion`.
 Last updated: 2026-11-15
 
 Phase 10 builds the P2 items of the [evolution roadmap](../evolution/07-roadmap.md): all thirteen, in seven milestones. Phase 9 made what exists dependable. This phase widens what a tenant can do with it:
@@ -129,4 +129,18 @@ Each milestone ends with `pnpm typecheck`, `pnpm lint` and `pnpm test` passing, 
 - **Exit codes:** 0 succeeded, 1 failed, 3 canceled, 130 stopped with Ctrl+C. The run goes on after Ctrl+C, and the CLI says how to follow it again.
 - **`CliError` moved out of `cli.ts`.** The new modules subclass it, and with `cli.ts` and them importing each other it was not yet defined when they loaded.
 - **Checked by hand on a built instance with a worker:** the walk workspace's flow draft was pulled, its branch edited from 500.0 to 400.0 in the YAML and deployed; the deploy said the draft it carried was cleared, the console had no drafts, the deployed flow had 400.0, and a second pull found nothing to change. `run orders/quote --remote` ran the flow from the local build, its foreach's two items priced by the script with their lines streamed, and printed the output. `logs -f` of a run started from the API was stopped with Ctrl+C and then followed to "Succeeded in 1.6 s".
+
+### Milestone 6
+
+- **The console offered a Promote button that could only fail.** It knew nothing of permissions, so a developer saw Promote to production and got a 403. The preview now says `canPromote`, and one who may not sees Request promotion in its place.
+- **A request pins the version asked for.** Promoting it promotes that bundle, even after dev deployed again; the reviewer is told "dev is now at v14". `promote()` takes a bundle of the source's other than the active one for this.
+- **One request waits per pair of workspaces.** Asking again marks the last one superseded. Declining needs a comment, which the one who asked reads on the promote step. Only the one who asked may withdraw.
+- **Decided in place.** The tenant summary counts requests waiting on the one looking (null when they decide none), and the overview lists them with Review: the preview of the pinned bundle in a side sheet, with Promote and Decline.
+- **A dialog opened from a side sheet came up behind it.** Dialogs had no layer of their own, and a side sheet is layer 50, so the confirmation of Promote could not be clicked. Found by the new e2e test. Dialogs are above side sheets now, and menus, pickers and messages above dialogs.
+- **Drift compares resources, not bundles.** Each resource of dev and of the workspace it promotes to, by path, with the equality deploy uses: changed, only in dev, only there, or in sync. What changed is said with the sentences the Changes screen already uses, and shown line by line as sorted JSON, folded away from the changes. One only in production that was made in its console and its bundle does not carry is marked as left by a promotion.
+- **The diff is one column at every width,** with − for production and + for dev, rather than two columns on a wide screen: a long line reads the same either way, and the two columns would need lining up.
+- **Effective permissions read the rows the permission check reads.** `explainAccess` uses the same match as `check()` and returns what each row is: the role, where, and whether it comes through a group or is given to anyone; an operator's access grant with its end. A test checks the two agree for each permission at each place. A suspended member's rows are shown as not counting.
+- **An operator with an access grant is no member,** and the access page answered 404 for one at first. It now finds anyone the tenant gave something.
+- **"Yes" needed a where.** On the walk, checking `promotion:write` for a developer whose group held the deployer role in dev said Yes, while promoting is checked in production. The answer now says where: "only in: Clinics dev workspace".
+- **Walked in Chromium on a built instance, at 1440 and 390 px,** with a developer and an operator in one tenant: the developer asked for a promotion with a note and saw it waiting; drift listed the changed flow, the new variable and the one removed, and the flow's sheet showed its changed and added lines; the operator saw the request on the overview, reviewed and promoted it; the developer then saw it promoted; the developer's access page listed what developer and deployer give them, through the group Engineers; following deployer opened the access list with that binding marked. No page scrolled sideways, and no page threw. `pnpm e2e` passes (18), with a new test of this.
 

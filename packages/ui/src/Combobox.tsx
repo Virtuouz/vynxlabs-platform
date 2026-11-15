@@ -55,7 +55,7 @@ function Frame({
 function Items({ empty }: { empty: string }) {
   return (
     <Base.Portal>
-      <Base.Positioner sideOffset={4} className="z-50">
+      <Base.Positioner sideOffset={4} className="z-[70]">
         <Base.Popup className={popup}>
           <Base.Empty className="px-2 py-1.5 text-ink-muted empty:hidden">{empty}</Base.Empty>
           <Base.List>

@@ -54,5 +54,6 @@
   "0053_agent_runner.sql": "dadfbd96d6a552e12e7abdc0a8a486ed9f1379e84c7e8a3ce8673a121b13924a",
   "0054_concurrency_key.sql": "c74032f631750c388d7524d7e30fe26f0d0b61121e96d6b716baf3dcbcc76486",
   "0055_instance_secret.sql": "62056de30a469635b5de5f70bf313a2055a4b2eca64b1ef5bc6be2683a1165ba",
-  "0056_connection_oauth.sql": "6b4706bd14186322b1dce397a14f1dd5484769e51d99382c6d9c6bd7d6695dcd"
+  "0056_connection_oauth.sql": "6b4706bd14186322b1dce397a14f1dd5484769e51d99382c6d9c6bd7d6695dcd",
+  "0057_promotion_request.sql": "1ae6891fd46b83df644a541016611bd7fc50f8abd71c48bbdbae27d68fb14e14"
 }

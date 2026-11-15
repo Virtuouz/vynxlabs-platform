@@ -81,8 +81,11 @@ export async function adoptBundle(
   return row;
 }
 
-/** The workspace a dev workspace promotes to, and the bundle it would send. */
-export async function promotionOf(db: Db | Trx, source: WorkspaceRef) {
+/**
+ * The workspace a dev workspace promotes to, and the bundle it would send: the
+ * one active, or `bundleId`, one of the workspace's own pinned by a request.
+ */
+export async function promotionOf(db: Db | Trx, source: WorkspaceRef, bundleId?: string) {
   const row = await db
     .selectFrom("workspace as source")
     .leftJoin("workspace as target", "target.id", "source.linked_workspace_id")
@@ -107,10 +110,21 @@ export async function promotionOf(db: Db | Trx, source: WorkspaceRef) {
   if (!row.active_bundle_id || !row.digest) {
     throw conflict("This workspace has nothing deployed, so there is nothing to promote.");
   }
+  let pinned = { id: row.active_bundle_id, digest: row.digest, version: row.version as number };
+  if (bundleId && bundleId !== row.active_bundle_id) {
+    const other = await db
+      .selectFrom("bundle")
+      .select(["id", "digest", "version"])
+      .where("id", "=", bundleId)
+      .where("workspace_id", "=", source.id)
+      .executeTakeFirst();
+    if (!other) throw conflict("The bundle asked for is not this workspace's any more.");
+    pinned = other;
+  }
   return {
-    bundleId: row.active_bundle_id,
-    digest: row.digest,
-    version: row.version as number,
+    bundleId: pinned.id,
+    digest: pinned.digest,
+    version: pinned.version,
     target: { id: row.target_id, tenantId: source.tenantId, slug: row.target_slug },
     targetName: row.target_name as string,
     targetType: row.target_type as string,
@@ -128,9 +142,9 @@ export async function promote(
   audit: Audit,
   source: WorkspaceRef,
   principal: Principal,
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; bundleId?: string } = {},
 ) {
-  const promotion = await promotionOf(trx, source);
+  const promotion = await promotionOf(trx, source, options.bundleId);
   const bundle = await adoptBundle(
     kernel,
     trx,
@@ -153,8 +167,13 @@ class DryRun extends Error {}
  * answer is therefore exactly what the promotion would then do, including
  * every refusal.
  */
-export async function previewPromotion(kernel: Kernel, actor: Actor, source: WorkspaceRef) {
-  const promotion = await promotionOf(kernel.db, source);
+export async function previewPromotion(
+  kernel: Kernel,
+  actor: Actor,
+  source: WorkspaceRef,
+  bundleId?: string,
+) {
+  const promotion = await promotionOf(kernel.db, source, bundleId);
   const about = {
     target: {
       id: promotion.target.id,
@@ -167,8 +186,12 @@ export async function previewPromotion(kernel: Kernel, actor: Actor, source: Wor
   let summary: Awaited<ReturnType<typeof deployBundle>>["summary"] | undefined;
   try {
     await mutate(kernel.db, actor, async (trx, audit) => {
-      summary = (await promote(kernel, trx, audit, source, actor.principal, { dryRun: true }))
-        .summary;
+      summary = (
+        await promote(kernel, trx, audit, source, actor.principal, {
+          dryRun: true,
+          ...(bundleId ? { bundleId } : {}),
+        })
+      ).summary;
       throw new DryRun();
     });
   } catch (error) {

@@ -46,6 +46,7 @@ import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/
 import type { Kernel } from "../kernel/kernel.js";
 import { labelText } from "../kernel/metrics.js";
 import { PageQuery, pageOf } from "../pagination.js";
+import { describeRequests, PromotionRequest } from "./promotion-requests.js";
 import {
   AnyObject,
   Id,
@@ -709,6 +710,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               triggers: Type.Integer({
                 description: "Triggers that stay running in the workspace promoted to.",
               }),
+              canPromote: Type.Boolean({
+                description:
+                  "Whether the caller may promote it. One who may not can ask: promotion-requests.",
+              }),
+              request: Type.Union([PromotionRequest, Type.Null()], {
+                description: "This workspace's latest request for a promotion, of anyone's.",
+              }),
             }),
           },
         },
@@ -754,6 +762,22 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             flowRunsFailed: flowRuns.failed,
           },
           triggers: Number(triggers?.n ?? 0),
+          canPromote: await ctx.allowed("promotion:write", {
+            tenantId: target.tenantId,
+            workspaceId: target.id,
+          }),
+          request: await (async () => {
+            const latest = await db
+              .selectFrom("promotion_request")
+              .selectAll()
+              .where("source_workspace_id", "=", workspace.id)
+              .where("target_workspace_id", "=", target.id)
+              .where("status", "<>", "superseded")
+              .orderBy("created_at", "desc")
+              .limit(1)
+              .execute();
+            return (await describeRequests(kernel, ctx, latest))[0] ?? null;
+          })(),
         };
       },
     );

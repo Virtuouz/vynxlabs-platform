@@ -8,6 +8,7 @@ import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import type { TenantCounts, WorkspaceCounts } from "../Shell.tsx";
+import { PromotionRequests } from "./Promotion.tsx";
 
 /** Actions that recorded a person's own preference, not a change. */
 const QUIET_ACTIONS = new Set(["member.recent_set"]);
@@ -126,20 +127,25 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
             <SectionLabel>
               <span id="attention">Needs attention</span>
             </SectionLabel>
-            <Panel className="divide-y divide-line">
-              {!c ? (
-                <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
-              ) : attention.length > 0 ? (
-                attention
-              ) : (
-                <NextStep
-                  tone="success"
-                  icon={<CircleCheck aria-hidden="true" size={15} />}
-                  title="Nothing needs you"
-                  detail="No approvals waiting, every hostname works, and workers are online."
-                />
-              )}
-            </Panel>
+            {c?.promotionRequests && attention.length === 0 ? null : (
+              <Panel className="divide-y divide-line">
+                {!c ? (
+                  <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                ) : attention.length > 0 ? (
+                  attention
+                ) : (
+                  <NextStep
+                    tone="success"
+                    icon={<CircleCheck aria-hidden="true" size={15} />}
+                    title="Nothing needs you"
+                    detail="No approvals or promotions waiting, every hostname works, and workers are online."
+                  />
+                )}
+              </Panel>
+            )}
+            {c?.promotionRequests ? (
+              <PromotionRequests tenantId={tenantId} onDecided={counts.reload} />
+            ) : null}
           </section>
 
           <section aria-labelledby="workspaces" className="flex flex-col gap-2">

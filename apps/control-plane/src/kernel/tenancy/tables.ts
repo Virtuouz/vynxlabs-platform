@@ -140,6 +140,15 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["id"],
     export: "always",
   },
+  // A request names this instance's bundles and members: it means nothing elsewhere.
+  {
+    table: "promotion_request",
+    ofTenant: own,
+    ofWorkspace: (id: string) =>
+      sql`(t.source_workspace_id = ${id} or t.target_workspace_id = ${id})`,
+    key: ["id"],
+    export: "never",
+  },
   // An authorization in progress lasts minutes, and answers to this instance's address.
   {
     table: "connection_oauth_state",

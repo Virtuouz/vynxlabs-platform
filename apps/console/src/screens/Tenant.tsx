@@ -14,6 +14,7 @@ import {
   when,
 } from "../ListScreen.tsx";
 import { Link, match, navigate } from "../router.tsx";
+import { EffectiveAccess, MemberPage } from "./Access.tsx";
 import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
 import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
@@ -224,6 +225,12 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
         <Workers base={base} />
       ) : section === "overview" ? (
         <TenantOverview base={base} tenantId={tenantId} />
+      ) : section === "members" && match("/t/:t/members/:id", path) ? (
+        <MemberPage
+          base={base}
+          tenantId={tenantId}
+          id={match("/t/:t/members/:id", path)?.id as string}
+        />
       ) : isAccessTab(section) ? (
         <MembersAndAccess base={base} tenantId={tenantId} tab={section} />
       ) : section === "end-users" ? (
@@ -742,6 +749,17 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
           description="What an AI agent gets when it connects with one of these keys."
         >
           <AgentAccess base={base} account={selected} />
+        </Page>
+        <Page
+          title="Access"
+          description="Everything this account may do in the tenant, where, and what gives it."
+        >
+          <EffectiveAccess
+            base={base}
+            tenantId={base.split("/")[2] as string}
+            principalType="service_account"
+            id={selected}
+          />
         </Page>
       </>
     );

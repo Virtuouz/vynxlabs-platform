@@ -1,12 +1,12 @@
 import { Button, TextField } from "@vynxlabs/ui";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
-import { Link } from "../router.tsx";
+import { Link, navigate, useQueryValue } from "../router.tsx";
 import { Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 
@@ -227,6 +227,13 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
             footer={
               chosen ? (
                 <>
+                  <Button
+                    size="small"
+                    variant="primary"
+                    onClick={() => navigate(`/t/${base.split("/")[2]}/members/${chosen.id}`)}
+                  >
+                    View access
+                  </Button>
                   <Button size="small" onClick={() => suspend(chosen)}>
                     {chosen.suspended ? "Resume" : "Suspend"}
                   </Button>
@@ -344,7 +351,18 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
   const workspaces = useLoad<{ items: WorkspaceRef[] }>(`${base}/workspaces`);
   const [who, setWho] = useState<Who>("all");
   const [giving, setGiving] = useState(false);
+  // Linked to from someone's access: the binding is shown, whatever the filter, and marked.
+  const [linked] = useQueryValue("binding");
   const all = bindings.data?.items;
+  useEffect(() => {
+    if (!linked || !all?.some((row) => row.id === linked)) return;
+    setWho("all");
+    const timer = setTimeout(
+      () => document.querySelector(`[data-row="${linked}"]`)?.scrollIntoView({ block: "center" }),
+      50,
+    );
+    return () => clearTimeout(timer);
+  }, [linked, all]);
   const rows = all?.filter((row) => who === "all" || WHO_OF[row.principalType] === who);
   const countOf = (kind: Who) =>
     all ? all.filter((row) => WHO_OF[row.principalType] === kind).length : null;
@@ -402,6 +420,7 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
         )}
         label="Access grants"
         rows={rows}
+        selected={linked ?? undefined}
         error={bindings.error?.message}
         rowKey={(row) => row.id}
         columns={[

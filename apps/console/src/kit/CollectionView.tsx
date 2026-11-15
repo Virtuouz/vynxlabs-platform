@@ -104,6 +104,8 @@ export function CollectionView<Row>({
                 return (
                   <tr
                     key={key}
+                    data-row={key}
+                    aria-current={on && !onSelect ? "true" : undefined}
                     aria-selected={onSelect ? on : undefined}
                     tabIndex={onSelect ? 0 : undefined}
                     onClick={onSelect ? () => onSelect(row) : undefined}

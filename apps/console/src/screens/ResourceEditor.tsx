@@ -411,6 +411,16 @@ export function ResourceEditor({
               options={[
                 { value: "http", label: "HTTP", hint: "An API with an address and a key." },
                 { value: "smtp", label: "Mail (SMTP)", hint: "A mail server to send through." },
+                // A group's members would each need authorizing in a browser.
+                ...(kind === "connection"
+                  ? [
+                      {
+                        value: "oauth2",
+                        label: "OAuth 2.0",
+                        hint: "An account at a provider such as Google or Microsoft, authorized once.",
+                      },
+                    ]
+                  : []),
                 ...ofKind("connector").map((one) => ({
                   ...one,
                   hint: one.hint ?? "A connector of this workspace.",

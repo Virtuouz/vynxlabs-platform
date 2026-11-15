@@ -530,7 +530,8 @@ function Node(props: NodeProps): ReactNode {
     return (
       <div className="flex flex-col gap-3">
         {choice}
-        {rest ? (
+        {/* An option that is nothing but its name, such as a bearer token, has nothing more to ask. */}
+        {rest && Object.keys(rest.properties).length > 0 ? (
           <Node
             {...props}
             schema={rest}

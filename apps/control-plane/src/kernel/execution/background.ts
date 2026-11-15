@@ -8,6 +8,7 @@ import { pruneOnce } from "../retention.js";
 import { removeExpiredSso } from "../sso/flow.js";
 import { removeExpiredImports } from "../tenancy/staging.js";
 import { removeOldPreviews } from "./bundles.js";
+import { removeExpiredAuthorizations } from "./oauth.js";
 import { reapDeadRuns, requeueLostRuns } from "./runs.js";
 import type { WorkerSupervisor } from "./supervisor.js";
 import { sweepTasks } from "./tasks.js";
@@ -38,6 +39,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     swept = Date.now();
     await removeExpiredAppSessions(kernel.db);
     await removeExpiredSso(kernel.db);
+    await removeExpiredAuthorizations(kernel.db);
     await removeOldPreviews(kernel);
     await removeExpiredImports(kernel);
     await pruneRateLimits(kernel);

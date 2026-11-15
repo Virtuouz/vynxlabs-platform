@@ -216,7 +216,7 @@ Rate limits on webhooks, sign-ins and guests are counted in the database, so the
 
 ## What the instance reaches for a tenant
 
-The control plane reaches a few addresses a tenant chooses: an identity provider's settings and endpoints, a Git remote, a data source, and a hostname the tenant registers, to check it. It refuses any whose address is loopback, private, link-local (cloud metadata included), shared or reserved, and says so. Everything else a tenant's systems are asked, such as posting a failure alert or trying a connection, a worker does.
+The control plane reaches a few addresses a tenant chooses: an identity provider's settings and endpoints, a Git remote, a data source, the token address of an OAuth connection, and a hostname the tenant registers, to check it. It refuses any whose address is loopback, private, link-local (cloud metadata included), shared or reserved, and says so. Everything else a tenant's systems are asked, such as posting a failure alert or trying a connection, a worker does.
 
 To let it reach an internal Git server, an identity provider or a database on your network, list them in `EGRESS_ALLOW`, comma-separated, as networks or host names:
 
@@ -225,6 +225,14 @@ EGRESS_ALLOW=10.20.0.0/16,git.internal,192.168.1.40
 ```
 
 A name in the list is allowed whatever it resolves to. A network is allowed for any name that resolves into it.
+
+### OAuth connections
+
+An OAuth 2.0 connection is authorized once by a member in the console, and the instance keeps its tokens and refreshes them. Two things follow for the operator:
+- **The provider sends members back to one address,** `<PUBLIC_URL>/api/v1/oauth/connections/callback`. Each app a tenant registers with Google, Microsoft or another provider must list it, so `PUBLIC_URL` must be the address members' browsers use. The connection wizard shows it.
+- **The control plane calls the provider's token address,** to exchange the code and to refresh. It goes through the guard above: a provider inside your network must be listed in `EGRESS_ALLOW`.
+
+Workers are handed the current access token, never the refresh token or the client's secret.
 
 ## Moving a tenant
 

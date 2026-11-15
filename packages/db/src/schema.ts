@@ -385,8 +385,37 @@ export interface ConnectionBindingTable {
   path: string;
   config: Json<Record<string, unknown>>;
   credential: Buffer | null;
+  /** An OAuth connection's tokens, sealed with the tenant's key. */
+  oauth_tokens: Buffer | null;
+  /** Where an OAuth connection's authorization stands. No secret. */
+  oauth: Json<ConnectionOAuth> | null;
   created_at: Generated<Date>;
   updated_at: Timestamp;
+}
+
+export interface ConnectionOAuth {
+  status: "connected" | "needs_reconnect";
+  /** When the access token stops working. */
+  expiresAt: string | null;
+  scopes: string[];
+  connectedBy: string;
+  connectedAt: string;
+  /** Why it needs reconnecting. */
+  problem?: string;
+}
+
+export interface ConnectionOAuthStateTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  path: string;
+  state_hash: string;
+  secrets: Buffer;
+  started_by: string;
+  return_to: string | null;
+  answered_at: Date | null;
+  expires_at: Timestamp;
+  created_at: Generated<Date>;
 }
 
 export interface VariableValueTable {
@@ -1038,6 +1067,7 @@ export interface PlatformSchema {
   workspace_git: WorkspaceGitTable;
   git_operation: GitOperationTable;
   connection_binding: ConnectionBindingTable;
+  connection_oauth_state: ConnectionOAuthStateTable;
   connection_group_member: ConnectionGroupMemberTable;
   variable_value: VariableValueTable;
   run: RunTable;

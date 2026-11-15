@@ -19,6 +19,7 @@ export {
   type HttpResponse,
   httpConnector,
 } from "./http.js";
+export { type OAuth2Config, oauth2Connector } from "./oauth2.js";
 export { type MailMessage, type SmtpClient, type SmtpConfig, smtpConfigSchema } from "./smtp.js";
 export {
   type Aggregated,
@@ -493,7 +494,7 @@ export function defineConnector<Config, Client>(
 
 export interface ConnectionOptions {
   path: string;
-  /** The connector to use: `http` or `smtp`, which are built in, or one of your own. */
+  /** The connector to use: `http`, `smtp` or `oauth2`, which are built in, or one of your own. */
   connector?: string | { path: string };
   description?: string;
 }

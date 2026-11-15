@@ -1,5 +1,11 @@
 import type { BundleManifest } from "@vynxlabs/manifest";
-import { type Connector, httpConnector, type ScriptContext, type TableClient } from "@vynxlabs/sdk";
+import {
+  type Connector,
+  httpConnector,
+  oauth2Connector,
+  type ScriptContext,
+  type TableClient,
+} from "@vynxlabs/sdk";
 import { smtpConnector } from "./smtp.js";
 
 /** A run as the control plane hands it out. */
@@ -82,6 +88,7 @@ export type Call = <T>(method: "GET" | "POST", path: string, body?: unknown) => 
 const BUILTIN = new Map<string, Connector<unknown, unknown>>([
   ["http", httpConnector as Connector<unknown, unknown>],
   ["smtp", smtpConnector as Connector<unknown, unknown>],
+  ["oauth2", oauth2Connector as Connector<unknown, unknown>],
 ]);
 
 export interface Bound {

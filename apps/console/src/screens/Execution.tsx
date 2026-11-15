@@ -1,13 +1,4 @@
-import {
-  Badge,
-  type BadgeTone,
-  Button,
-  Dialog,
-  Form,
-  type FormProperty,
-  type LogLine,
-  Notice,
-} from "@vynxlabs/ui";
+import { Badge, type BadgeTone, Button, type LogLine, Notice } from "@vynxlabs/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -17,9 +8,16 @@ import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useQueryValue } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
+import {
+  CONNECTOR_NAMES,
+  type ConnectionRow,
+  ConnectionWizard,
+  startConnect,
+  testText,
+} from "./ConnectionWizard.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
@@ -481,290 +479,184 @@ export function Deployments({ root }: { root: string }) {
   );
 }
 
-interface ConnectionRow {
-  path: string;
-  connector: string;
-  description: string;
-  defined: boolean;
-  bound: boolean;
-  config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
-  configSchema: {
-    properties?: Record<
-      string,
-      { type?: unknown; enum?: unknown[]; maxLength?: number; [more: string]: unknown }
-    >;
-    required?: string[];
-  };
-  hasCredential: boolean;
-}
-
-const CONNECTOR_NAMES: Record<string, string> = { http: "HTTP", smtp: "Mail (SMTP)" };
-const SIMPLE = new Set(["string", "number", "integer", "boolean"]);
-
-/** The part of a connector's schema a form can be drawn from, and what it leaves out. */
-export function connectionForm(row: Pick<ConnectionRow, "configSchema" | "hasCredential">) {
-  const properties: Record<string, FormProperty> = {};
-  const left: string[] = [];
-  for (const [name, property] of Object.entries(row.configSchema.properties ?? {})) {
-    // A list of values to choose from says what it is without naming a type.
-    const type =
-      property.type ??
-      (property.enum?.every((value) => typeof value === "string") ? "string" : undefined);
-    if (!SIMPLE.has(String(type))) {
-      left.push(name);
-      continue;
-    }
-    // An address or a name is one line, however long the connector lets it be. The server holds the limit.
-    const { maxLength, ...rest } = property;
-    properties[name] = {
-      ...rest,
-      type,
-      ...(maxLength !== undefined && maxLength > 1000 ? { maxLength } : {}),
-    } as unknown as FormProperty;
-  }
-  const secret = "secret" in properties ? "connection_secret" : "secret";
-  properties[secret] = {
-    type: "string",
-    title: "Secret",
-    format: "password",
-    description: row.hasCredential
-      ? "Leave empty to keep the stored one."
-      : "The password or key, when the system asks for one. It is stored encrypted and never shown.",
-  };
-  return {
-    secret,
-    left,
-    schema: {
-      type: "object" as const,
-      properties,
-      required: (row.configSchema.required ?? []).filter((name) => name in properties),
-    },
-  };
-}
-
-/** Sets up a connection of a kind other than HTTP, with a form drawn from its connector's schema. */
-function SetUpConnection({
+/**
+ * Has one of the workspace's workers try a connection, from where scripts run,
+ * and says what it found. What it found is kept, as the list's health.
+ */
+function TestConnection({
   root,
-  row,
+  path,
   onDone,
 }: {
   root: string;
-  row: ConnectionRow;
+  path: string;
   onDone: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const form = connectionForm(row);
+  const [taskId, setTaskId] = useState<string>();
+  const following = useTaskEnd(root, taskId, (task: TaskState) => {
+    setTaskId(undefined);
+    const said = testText(task);
+    if (said.ok) notify.success(`${path}: ${said.text}`);
+    else notify.error(new Error(`${path}: ${said.text}`));
+    onDone();
+  });
   return (
-    <>
-      <Button size="small" onClick={() => setOpen(true)}>
-        {row.bound ? "Change" : "Set up"}
-      </Button>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title={`Set up ${row.path}`}
-        description={`A ${CONNECTOR_NAMES[row.connector] ?? row.connector} connection. What is set here applies to this workspace only.`}
-      >
-        {form.left.length > 0 ? (
-          <div className="mb-3">
-            <Notice tone="attention">
-              This connector also takes {form.left.join(", ")}, which cannot be set here. Set them
-              through the API.
-            </Notice>
-          </div>
-        ) : null}
-        <Form
-          key={String(open)}
-          schema={form.schema}
-          value={row.config ?? {}}
-          submitLabel="Save"
-          onSubmit={async (values) => {
-            const { [form.secret]: secret, ...config } = values;
-            await api.put(`${root}/connection-bindings/${row.path}`, {
-              config,
-              ...(secret ? { credential: secret } : {}),
-            });
-            setOpen(false);
-            onDone();
-          }}
-        />
-      </Dialog>
-    </>
+    <Button
+      size="small"
+      disabled={following.waiting}
+      onClick={async () => {
+        try {
+          const task = await api.post<{ id: string }>(`${root}/connection-tests`, { path });
+          setTaskId(task.id);
+        } catch (error) {
+          notify.error(error);
+        }
+      }}
+    >
+      {following.waiting ? (following.slow ? "Waiting for a worker…" : "Testing…") : "Test"}
+    </Button>
   );
 }
 
-/** What trying a connection found. */
-interface ConnectionTestResult {
-  ok: boolean;
-  status?: number;
-  message?: string;
-  latencyMs?: number;
-}
-
-/**
- * Has one of the workspace's workers try a connection, from where scripts run,
- * and says what it found.
- */
-function TestConnection({ root, path }: { root: string; path: string }) {
-  const [taskId, setTaskId] = useState<string>();
-  const [found, setFound] = useState<{ tone: "success" | "danger"; text: string }>();
-  const following = useTaskEnd(root, taskId, (task: TaskState) => {
-    setTaskId(undefined);
-    const result = task.result as ConnectionTestResult | null;
-    if (task.status === "failed" || !result) {
-      setFound({ tone: "danger", text: task.error?.message ?? "The test did not finish." });
-      return;
-    }
-    const took = result.latencyMs !== undefined ? ` in ${result.latencyMs} ms` : "";
-    setFound(
-      result.ok
-        ? {
-            tone: "success",
-            text: `Reached${result.status ? `, ${result.status}` : ""}${took}.${result.message ? ` ${result.message}` : ""}`,
-          }
-        : {
-            tone: "danger",
-            text: `${result.message ?? "Not reached."}${took ? ` (${took.trim()})` : ""}`,
-          },
+/** What the last Test found, or why the connection cannot be used. */
+export function ConnectionHealth({ root, row }: { root: string; row: ConnectionRow }) {
+  if (!row.bound) return null;
+  // What a member must do is beside what is wrong, where a phone shows it.
+  if (row.oauth && row.oauth.status !== "connected") {
+    const again = row.oauth.status === "needs_reconnect";
+    return (
+      <span className="flex flex-wrap items-center gap-2" title={row.oauth.problem ?? undefined}>
+        <StatePill state={again ? "failed" : "waiting"}>
+          {again ? "Needs reconnecting" : "Not connected"}
+        </StatePill>
+        <Button
+          size="small"
+          variant="primary"
+          onClick={() => startConnect(root, row.path).catch((error) => notify.error(error))}
+        >
+          {again ? "Reconnect" : "Connect"}
+        </Button>
+      </span>
     );
-  });
+  }
+  if (!row.health) return <StatePill state="queued">Not tested</StatePill>;
+  const when = `Tested ${new Date(row.health.checkedAt).toLocaleString()}`;
   return (
-    <span className="inline-flex items-center gap-2">
-      {following.waiting ? (
-        <span className="text-[13px] text-ink-muted" role="status">
-          {following.slow ? "Waiting for a worker…" : "Testing…"}
-        </span>
-      ) : found ? (
-        <span title={found.text} className="max-w-[16rem] truncate">
-          <Badge tone={found.tone}>{found.text}</Badge>
-        </span>
-      ) : null}
-      <Button
-        size="small"
-        disabled={following.waiting}
-        onClick={async () => {
-          setFound(undefined);
-          try {
-            const task = await api.post<{ id: string }>(`${root}/connection-tests`, { path });
-            setTaskId(task.id);
-          } catch (error) {
-            setFound({ tone: "danger", text: (error as Error).message });
-          }
-        }}
-      >
-        Test
-      </Button>
+    <span
+      title={row.health.ok ? when : `${row.health.problem ?? ""}\n${when}`}
+      className="block max-w-[18rem]"
+    >
+      {row.health.ok ? (
+        <StatePill
+          state="ok"
+          detail={row.health.latencyMs !== null ? `${row.health.latencyMs} ms` : undefined}
+        >
+          Reached
+        </StatePill>
+      ) : (
+        <StatePill state="failed">{`Failed: ${row.health.problem ?? "not reached"}`}</StatePill>
+      )}
     </span>
   );
 }
 
 export function Connections({ root }: { root: string }) {
   const connectionUses = useReferences(root, "connection");
+  const list = useLoad<{ items: ConnectionRow[] }>(`${root}/connection-bindings`);
+  const [editing, setEditing] = useState<{ row?: ConnectionRow | undefined } | null>(null);
+  // Back from an OAuth provider: the connection's sheet opens again with what it said.
+  const [oauth, setOauth] = useQueryValue("oauth");
+  const [oauthError, setOauthError] = useQueryValue("oauth_error");
+  const [returnedPath, setReturnedPath] = useQueryValue("connection");
+  const [returned, setReturned] = useState<{ connected: boolean; problem?: string | undefined }>();
+  useEffect(() => {
+    if (!list.data || (!oauth && !oauthError)) return;
+    const row = list.data.items.find((item) => item.path === returnedPath);
+    setReturned({ connected: oauth === "connected", problem: oauthError ?? undefined });
+    if (row) setEditing({ row });
+    else if (oauthError) notify.error(new Error(oauthError));
+    setOauth(null);
+    setOauthError(null);
+    setReturnedPath(null);
+  }, [list.data, oauth, oauthError, returnedPath, setOauth, setOauthError, setReturnedPath]);
+  // The list below reads the same address, from the same cache: reading it here reads it there.
+  const reload = () => list.reload();
+  const newButton = (
+    <Button variant="primary" onClick={() => setEditing({})}>
+      New connection
+    </Button>
+  );
   return (
-    <ListScreen<ConnectionRow>
-      title="Connections"
-      description="Where each connection points in this workspace. Addresses and credentials are set here, never in the repository, so dev and production can differ."
-      path={`${root}/connection-bindings`}
-      rowKey={(row) => row.path}
-      columns={[
-        { header: "Connection", cell: (row) => code(row.path) },
-        { header: "Used by", cell: (row) => <UsedBy uses={connectionUses(row.path)} /> },
-        { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
-        {
-          header: "Points to",
-          cell: (row) =>
-            row.bound ? (
-              (row.config?.baseUrl ?? row.config?.host ?? "")
-            ) : (
-              <Badge tone="attention">Not bound</Badge>
-            ),
-        },
-        {
-          header: "Credential",
-          cell: (row) => (row.hasCredential ? "Set" : row.bound ? "None" : ""),
-        },
-      ]}
-      empty={{
-        title: "No connections yet",
-        text: "A connection is an external system a script talks to. Bind one here before deploying the bundle that uses it.",
-      }}
-      create={{
-        action: "Bind an HTTP connection",
-        description:
-          "Binding a path that is already bound replaces it. Leave the credential empty to keep the stored one. A connection of another kind is set up from its row.",
-        fields: [
+    <>
+      <ListScreen<ConnectionRow>
+        title="Connections"
+        description="Where each connection points in this workspace. Addresses and credentials are set here, never in the repository, so dev and production can differ."
+        path={`${root}/connection-bindings`}
+        rowKey={(row) => row.path}
+        action={newButton}
+        columns={[
+          { header: "Connection", cell: (row) => code(row.path) },
+          // Second, so a phone shows it without scrolling the table.
+          { header: "Health", cell: (row) => <ConnectionHealth root={root} row={row} /> },
+          { header: "Used by", cell: (row) => <UsedBy uses={connectionUses(row.path)} /> },
+          { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
           {
-            name: "path",
-            label: "Connection",
-            hint: "The HTTP connections this workspace's resources declare.",
-            choose: {
-              path: `${root}/connection-bindings`,
-              option: (item: {
-                path: string;
-                connector: string;
-                description: string;
-                bound: boolean;
-              }) => ({
-                value: item.path,
-                label: item.path,
-                hint:
-                  item.connector !== "http"
-                    ? "Not an HTTP connection. Set it up from its row."
-                    : item.bound
-                      ? `${item.description} Bound: this replaces it.`
-                      : item.description,
-                ...(item.connector !== "http" ? { disabled: true } : {}),
-              }),
-            },
+            header: "Points to",
+            cell: (row) =>
+              row.bound ? (
+                <span
+                  className="block max-w-[16rem] truncate"
+                  title={row.config?.baseUrl ?? row.config?.host ?? ""}
+                >
+                  {row.config?.baseUrl ?? row.config?.host ?? ""}
+                </span>
+              ) : (
+                <Badge tone="attention">Not bound</Badge>
+              ),
           },
-          { name: "baseUrl", label: "Address", placeholder: "https://api.example.com" },
-          {
-            name: "auth",
-            label: "How the credential is sent",
-            options: [
-              { value: "none", label: "No credential" },
-              { value: "bearer", label: "Authorization: Bearer" },
-              { value: "header", label: "In a header of your choice" },
-            ],
-          },
-          {
-            name: "header",
-            label: "Header name",
-            placeholder: "x-api-key",
-            when: (values) => values.auth === "header",
-          },
-          { name: "credential", label: "Credential", type: "password", required: false },
-        ],
-        submit: ({ path = "", baseUrl, auth, header, credential }) =>
-          api.put(`${root}/connection-bindings/${path}`, {
-            config: {
-              baseUrl,
-              ...(auth === "bearer" ? { auth: { type: "bearer" } } : {}),
-              ...(auth === "header"
-                ? { auth: { type: "header", name: header || "x-api-key" } }
-                : {}),
-            },
-            ...(credential ? { credential } : {}),
-          }),
-      }}
-      rowActions={(row, reload) => (
-        <span className="flex flex-wrap justify-end gap-2">
-          {row.bound ? <TestConnection root={root} path={row.path} /> : null}
-          {row.connector !== "http" ? (
-            <SetUpConnection root={root} row={row} onDone={reload} />
-          ) : null}
-          {row.bound ? (
-            <RemoveButton
-              label="Unbind"
-              confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
-              run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
-              onDone={reload}
-            />
-          ) : null}
-        </span>
-      )}
-    />
+        ]}
+        empty={{
+          title: "No connections yet",
+          text: "A connection is an external system a script talks to: an API, a mail server, an account at an OAuth provider. Set one up here before deploying the bundle that uses it.",
+        }}
+        rowActions={(row, reloadList) => {
+          const done = () => reloadList();
+          return (
+            <span className="flex flex-wrap justify-end gap-2">
+              {row.bound && (!row.oauth || row.oauth.status === "connected") ? (
+                <TestConnection root={root} path={row.path} onDone={done} />
+              ) : null}
+              <Button size="small" onClick={() => setEditing({ row })}>
+                {row.bound ? "Change" : "Set up"}
+              </Button>
+              {row.bound ? (
+                <RemoveButton
+                  label="Unbind"
+                  confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
+                  run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
+                  onDone={done}
+                />
+              ) : null}
+            </span>
+          );
+        }}
+      />
+      {editing ? (
+        <ConnectionWizard
+          key={editing.row?.path ?? "new"}
+          root={root}
+          open
+          row={editing.row}
+          rows={list.data?.items ?? []}
+          returned={returned}
+          onClose={() => {
+            setEditing(null);
+            setReturned(undefined);
+          }}
+          onSaved={reload}
+        />
+      ) : null}
+    </>
   );
 }
 

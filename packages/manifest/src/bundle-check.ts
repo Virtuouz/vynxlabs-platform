@@ -161,6 +161,12 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       if (connector !== undefined && !BUILTIN_CONNECTORS.includes(connector)) {
         expect(manifest, "connector", connector, "connector");
       }
+      // Each member of a group would need someone to authorize it in a browser.
+      if (manifest.kind === "connection_group" && connector === "oauth2") {
+        problems.push(
+          `${manifest.path} (connection_group): /body/connector is oauth2, which a group cannot use yet. Declare a connection for each account.`,
+        );
+      }
     }
     if (manifest.kind === "connector") {
       // A schema that cannot be compiled would fail every binding later, with no word of why.

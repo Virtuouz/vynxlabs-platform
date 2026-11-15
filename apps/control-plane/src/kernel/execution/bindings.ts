@@ -2,6 +2,7 @@ import { newId } from "@vynxlabs/db";
 import type { Db, Trx } from "../audit.js";
 import type { Kernel } from "../kernel.js";
 import { tenantKey } from "../tenant-keys.js";
+import { authorizationChanged, sameJson } from "./oauth.js";
 
 export interface BindingName {
   tenantId: string;
@@ -53,7 +54,7 @@ export async function bindConnection(
 ) {
   const existing = await trx
     .selectFrom("connection_binding")
-    .select(["id", "credential"])
+    .select(["id", "config", "credential"])
     .where("workspace_id", "=", id.workspaceId)
     .where("path", "=", id.path)
     .executeTakeFirst();
@@ -65,12 +66,23 @@ export async function bindConnection(
         ? null
         : await encryptFor(kernel, trx, name.tenantId, name.workspaceId, name.name, credential);
   if (existing) {
+    // Tokens an OAuth connection holds belong to the client and scopes they were given
+    // for: pointing it at another forgets them.
+    const reauthorize = authorizationChanged(existing.config, config);
     await trx
       .updateTable("connection_binding")
-      .set({ config: JSON.stringify(config), credential: encrypted, updated_at: new Date() })
+      .set({
+        config: JSON.stringify(config),
+        credential: encrypted,
+        updated_at: new Date(),
+        ...(reauthorize ? { oauth_tokens: null, oauth: null } : {}),
+      })
       .where("id", "=", existing.id)
       .execute();
-    return { created: false };
+    return {
+      created: false,
+      changed: credential !== undefined || !sameJson(existing.config, config),
+    };
   }
   await trx
     .insertInto("connection_binding")
@@ -84,7 +96,7 @@ export async function bindConnection(
       updated_at: new Date(),
     })
     .execute();
-  return { created: true };
+  return { created: true, changed: true };
 }
 
 export interface MemberName {
@@ -178,7 +190,7 @@ export async function readGroupMember(kernel: Kernel, db: Db | Trx, id: MemberNa
 export async function readConnection(kernel: Kernel, db: Db | Trx, id: BindingName) {
   const row = await db
     .selectFrom("connection_binding")
-    .select(["config", "credential"])
+    .select(["config", "credential", "oauth"])
     .where("workspace_id", "=", id.workspaceId)
     .where("tenant_id", "=", id.tenantId)
     .where("path", "=", id.path)
@@ -187,6 +199,7 @@ export async function readConnection(kernel: Kernel, db: Db | Trx, id: BindingNa
   const name = credentialName(id);
   return {
     config: row.config,
+    oauth: row.oauth,
     credential: row.credential
       ? await decryptFor(kernel, db, name.tenantId, name.workspaceId, name.name, row.credential)
       : undefined,

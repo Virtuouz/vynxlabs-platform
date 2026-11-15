@@ -739,14 +739,14 @@ export const flowKind: KindDefinition = {
 };
 
 /** The connectors every worker has. A connection names one of these, or a connector resource. */
-export const BUILTIN_CONNECTORS: readonly string[] = ["http", "smtp"];
+export const BUILTIN_CONNECTORS: readonly string[] = ["http", "smtp", "oauth2"];
 
 const connectorName = {
   type: "string",
   pattern: PATH_PATTERN,
   maxLength: 255,
   description:
-    "The connector: `http` or `smtp`, which every worker has, or the path of a connector resource.",
+    "The connector: `http`, `smtp` or `oauth2`, which every worker has, or the path of a connector resource.",
 };
 
 export const connectorKind: KindDefinition = {

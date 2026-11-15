@@ -78,7 +78,8 @@ Read what the running script needs. Each answers only for a name the script decl
 
 - A secret or variable returns `{"value": "..."}`.
 - A connection returns `{"connector", "config", "credential"}`. `credential` is absent when the connection has none.
-- `connector` is `http` or `smtp`, which a worker builds itself, or, since 0.5.0, the path of a `connector` resource in the run's bundle. For those the worker calls the export named by that connector's `entry` as `create(config, credential, signal)` and hands the script what it returns. A worker that does not know a connector must fail the run with a message that names it.
+- Since 0.6.0, an `oauth2` connection's `credential` is its current access token, refreshed by the control plane when it is about to run out, and `expiresAt` says when it does. The refresh token and the client's secret are never sent. A connection nobody has authorized, or whose provider refused a refresh, answers 422 with a message for the script to fail with.
+- `connector` is `http`, `smtp` or, since 0.6.0, `oauth2`, which a worker builds itself (an `oauth2` client is an `http` client that sends the access token as a bearer token), or, since 0.5.0, the path of a `connector` resource in the run's bundle. For those the worker calls the export named by that connector's `entry` as `create(config, credential, signal)` and hands the script what it returns. A worker that does not know a connector must fail the run with a message that names it.
 
 Fetch these when the script asks, not ahead of time. Do not write the values to logs or to disk.
 

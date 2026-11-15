@@ -140,6 +140,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["id"],
     export: "always",
   },
+  // An authorization in progress lasts minutes, and answers to this instance's address.
+  {
+    table: "connection_oauth_state",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
   {
     table: "connection_group_member",
     ofTenant: own,

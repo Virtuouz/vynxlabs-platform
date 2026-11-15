@@ -7,8 +7,17 @@ import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
 import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
+import { forgetHealth } from "../kernel/data/health.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
+import {
+  AuthorizationRefused,
+  beginAuthorization,
+  callbackAddress,
+  finishAuthorization,
+} from "../kernel/execution/oauth.js";
+// A Test's result is kept as the connection's health, by whichever replica sees it end.
+import "../kernel/execution/connection-health.js";
 import { loadBundle, MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
@@ -1697,6 +1706,33 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       ),
       hasCredential: Type.Boolean(),
       updatedAt: NullableTime,
+      health: Type.Union([
+        Type.Object({
+          ok: Type.Boolean(),
+          problem: Type.Union([Type.String(), Type.Null()]),
+          latencyMs: Type.Union([Type.Integer(), Type.Null()]),
+          checkedAt: Time,
+        }),
+        Type.Null(),
+      ]),
+      oauth: Type.Union(
+        [
+          Type.Object({
+            status: Type.Union([
+              Type.Literal("not_connected"),
+              Type.Literal("connected"),
+              Type.Literal("needs_reconnect"),
+            ]),
+            expiresAt: NullableTime,
+            scopes: Type.Array(Type.String()),
+            connectedBy: Type.Union([Type.String(), Type.Null()]),
+            connectedAt: NullableTime,
+            problem: Type.Union([Type.String(), Type.Null()]),
+          }),
+          Type.Null(),
+        ],
+        { description: "For an OAuth connection: whether it is authorized. Null for any other." },
+      ),
     });
 
     app.get(
@@ -1718,32 +1754,115 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "connection")
           .execute();
+        // A connection declared in a draft is shown as what the draft says it is, until it is deployed.
+        const drafted = await db
+          .selectFrom("resource_draft")
+          .select(["path", "body"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection")
+          .where("deleted", "=", false)
+          .execute();
         const bindings = await db
           .selectFrom("connection_binding")
-          .selectAll()
+          .select(["path", "config", "credential", "oauth", "updated_at"])
           .where("workspace_id", "=", params.w)
+          .execute();
+        const health = await db
+          .selectFrom("health_check")
+          .select(["path", "ok", "problem", "latency_ms", "checked_at"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection")
           .execute();
         const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
         const connectors = await deployedConnectors(params.w);
+        type Declared = { connector?: string; description?: string } | undefined;
         return {
           items: paths.map((path) => {
-            const definition = definitions.find((row) => row.path === path)?.body as
-              | { connector?: string; description?: string }
-              | undefined;
+            const deployed = definitions.find((row) => row.path === path)?.body as Declared;
+            const definition =
+              deployed ?? (drafted.find((row) => row.path === path)?.body as Declared);
             const binding = bindings.find((row) => row.path === path);
+            const checked = health.find((row) => row.path === path);
+            const connector = definition?.connector ?? "http";
             return {
               path,
-              connector: definition?.connector ?? "http",
+              connector,
               description: definition?.description ?? "",
-              defined: definition !== undefined,
+              defined: deployed !== undefined,
               bound: binding !== undefined,
               config: binding?.config ?? null,
-              configSchema: (connectorSchema(definition?.connector ?? "http", connectors) ??
+              configSchema: (connectorSchema(connector, connectors) ??
                 BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
               hasCredential: Boolean(binding?.credential),
               updatedAt: isoOrNull(binding?.updated_at ?? null),
+              health:
+                binding && checked
+                  ? {
+                      ok: checked.ok,
+                      problem: checked.problem,
+                      latencyMs: checked.latency_ms,
+                      checkedAt: iso(checked.checked_at),
+                    }
+                  : null,
+              oauth:
+                connector === "oauth2" || binding?.oauth
+                  ? {
+                      status: binding?.oauth?.status ?? ("not_connected" as const),
+                      expiresAt: binding?.oauth?.expiresAt ?? null,
+                      scopes: binding?.oauth?.scopes ?? [],
+                      connectedBy: binding?.oauth?.connectedBy ?? null,
+                      connectedAt: binding?.oauth?.connectedAt ?? null,
+                      problem: binding?.oauth?.problem ?? null,
+                    }
+                  : null,
             };
           }),
+        };
+      },
+    );
+
+    app.get(
+      `${base}/connectors`,
+      {
+        config: { access: access.workspace("connection:read") },
+        schema: {
+          summary: "The kinds of connection this workspace can have",
+          description:
+            "The connectors every worker has, then the workspace's own as deployed, each with " +
+            "the JSON Schema its settings must fit.",
+          tags: ["bindings"],
+          params: WorkspaceParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  name: Type.String(),
+                  builtin: Type.Boolean(),
+                  configSchema: AnyObject,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const own = await deployedConnectors(params.w);
+        return {
+          items: [
+            ...Object.entries(BUILTIN_CONFIG_SCHEMAS).map(([name, configSchema]) => ({
+              name,
+              builtin: true,
+              configSchema: configSchema as Record<string, unknown>,
+            })),
+            ...own.map((row) => ({
+              name: row.path,
+              builtin: false,
+              configSchema: ((row.body as { configSchema?: object }).configSchema ?? {}) as Record<
+                string,
+                unknown
+              >,
+            })),
+          ],
         };
       },
     );
@@ -1954,13 +2073,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (issues.length > 0)
           throw badRequest("The connection's configuration is not valid.", issues);
         await ctx.mutate(async (trx, audit) => {
-          const { created } = await bindConnection(
+          const { created, changed } = await bindConnection(
             kernel,
             trx,
             { tenantId: params.t, workspaceId: params.w, path },
             body.config,
             body.credential,
           );
+          // What a Test found says nothing about settings it did not try.
+          if (changed) await forgetHealth(trx, params.w, path);
           await audit({
             action: created ? "connection.bound" : "connection.rebound",
             targetType: "connection",
@@ -2000,6 +2121,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .returning("id")
             .executeTakeFirst();
           if (!removed) throw notFound("The connection binding");
+          await forgetHealth(trx, params.w, path);
           await audit({
             action: "connection.unbound",
             targetType: "connection",
@@ -2066,6 +2188,90 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           return queued;
         });
         return reply.code(202).send(toTask(task));
+      },
+    );
+
+    // ----- OAuth connections: authorized once by a member, refreshed here -----
+
+    app.post(
+      `${base}/connection-oauth`,
+      {
+        config: { access: access.workspace("connection:write") },
+        schema: {
+          summary: "Begin authorizing an OAuth connection",
+          description:
+            "For a member in a browser: send it to the `url` returned. The provider sends it " +
+            "back to this instance, which keeps the tokens, and then on to `returnTo`. The " +
+            "connection must be bound first, with its client's settings and secret.",
+          tags: ["bindings"],
+          params: WorkspaceParams,
+          body: Type.Object({
+            path: Type.String({ maxLength: 255 }),
+            returnTo: Type.Optional(Type.String({ maxLength: 2000, pattern: "^/(?![/\\\\])" })),
+          }),
+          response: { 200: Type.Object({ url: Type.String(), callback: Type.String() }) },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const path = wildPath({ "*": body.path });
+        const startedBy = ctx.memberId;
+        const begun = await ctx.mutate(async (trx, audit) => {
+          const started = await beginAuthorization(
+            kernel,
+            trx,
+            { tenantId: params.t, workspaceId: params.w, path },
+            { startedBy, returnTo: body.returnTo },
+          );
+          await audit({
+            action: "connection.oauth_started",
+            targetType: "connection",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+          });
+          return started;
+        });
+        return { url: begun.url, callback: callbackAddress(kernel) };
+      },
+    );
+
+    app.get(
+      "/oauth/connections/callback",
+      {
+        // Anyone may arrive here; who they are is read, to check they began it.
+        config: { access: access.custom, rateLimit: { max: 60, timeWindow: "1 minute" } },
+        schema: {
+          summary: "Where an OAuth provider sends a member back",
+          description:
+            "For browsers. The answer is taken once, only from the member who began it, and " +
+            "the code is exchanged for tokens. The browser is sent back to the console.",
+          tags: ["bindings"],
+          response: { 302: Type.Null() },
+        },
+      },
+      async (request, reply) => {
+        if ((await kernel.hosts.place(request)).kind !== "main") throw notFound("The page");
+        const query = new URL(request.url, kernel.hosts.mainOrigin).searchParams;
+        const back = (returnTo: string | null, said: Record<string, string>) => {
+          const target = new URL(returnTo ?? "/", kernel.hosts.mainOrigin);
+          for (const [name, value] of Object.entries(said)) target.searchParams.set(name, value);
+          return reply
+            .code(302)
+            .header("location", `${target.pathname}${target.search}`)
+            .header("cache-control", "no-store")
+            .send(null);
+        };
+        try {
+          const done = await finishAuthorization(kernel, query, request.ctx.actor);
+          return back(done.returnTo, { oauth: "connected", connection: done.connection.path });
+        } catch (error) {
+          if (!(error instanceof AuthorizationRefused)) throw error;
+          request.log.info({ reason: error.message }, "an OAuth connection was not authorized");
+          return back(error.returnTo, {
+            oauth_error: error.message,
+            ...(error.connection ? { connection: error.connection.path } : {}),
+          });
+        }
       },
     );
 

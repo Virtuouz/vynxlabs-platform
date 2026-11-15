@@ -1,10 +1,11 @@
 import { type BundleManifest, validateJson } from "@vynxlabs/manifest";
-import { httpConnector, smtpConfigSchema } from "@vynxlabs/sdk";
+import { httpConnector, oauth2Connector, smtpConfigSchema } from "@vynxlabs/sdk";
 
 /** What the configuration of a connection must fit, for the connectors every worker has. */
 export const BUILTIN_CONFIG_SCHEMAS: Record<string, object> = {
   http: httpConnector.configSchema,
   smtp: smtpConfigSchema,
+  oauth2: oauth2Connector.configSchema,
 };
 
 /**

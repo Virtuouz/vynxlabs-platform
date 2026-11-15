@@ -28,6 +28,7 @@ export {
 } from "./queue.js";
 export { type TenantHandle, TenantRouter } from "./router.js";
 export type {
+  ConnectionOAuth,
   DataLocation,
   FailureAlert,
   FlowRunStatus,

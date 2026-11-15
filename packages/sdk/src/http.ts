@@ -55,25 +55,39 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
   configSchema: {
     type: "object",
     properties: {
-      baseUrl: { type: "string", pattern: "^https?://" },
-      headers: { type: "object", additionalProperties: { type: "string" } },
+      baseUrl: { type: "string", pattern: "^https?://", title: "Address" },
+      headers: {
+        type: "object",
+        additionalProperties: { type: "string" },
+        title: "Headers sent with every request",
+      },
       auth: {
+        title: "How the credential is sent",
         oneOf: [
           {
             type: "object",
+            title: "Authorization: Bearer",
             properties: { type: { const: "bearer" } },
             required: ["type"],
             additionalProperties: false,
           },
           {
             type: "object",
-            properties: { type: { const: "header" }, name: { type: "string", minLength: 1 } },
+            title: "In a header of your choice",
+            properties: {
+              type: { const: "header" },
+              name: { type: "string", minLength: 1, title: "Header name" },
+            },
             required: ["type", "name"],
             additionalProperties: false,
           },
           {
             type: "object",
-            properties: { type: { const: "basic" }, username: { type: "string" } },
+            title: "HTTP Basic",
+            properties: {
+              type: { const: "basic" },
+              username: { type: "string", title: "User name" },
+            },
             required: ["type", "username"],
             additionalProperties: false,
           },

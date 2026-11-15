@@ -445,18 +445,48 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Upload a bundle",
           description:
-            "Stores the bundle as the workspace's next version. It does not run until it is deployed.",
+            "Stores the bundle as the workspace's next version. It does not run until it is " +
+            "deployed. With `preview`, it is stored to be tried with a test run and never " +
+            "offered for deploying: the workspace's console resources are kept on it, and it " +
+            "is removed after a week, as the console's own tries are.",
           tags: ["deploys"],
           params: WorkspaceParams,
+          querystring: Type.Object({ preview: Type.Optional(Type.Boolean()) }),
           body: AnyObject,
           response: { 200: Bundle, 201: Bundle },
         },
       },
-      async ({ ctx, params, body }, reply) => {
+      async ({ ctx, params, query, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
-        const result = await ctx.mutate((trx, audit) =>
-          storeBundle(kernel, trx, audit, workspace, ctx.principal, body),
-        );
+        const result = await ctx.mutate(async (trx, audit) => {
+          if (!query.preview)
+            return storeBundle(kernel, trx, audit, workspace, ctx.principal, body);
+          const stored = await storeBundle(
+            kernel,
+            trx,
+            audit,
+            workspace,
+            ctx.principal,
+            body,
+            "preview",
+          );
+          const kept = await keepConsoleManaged(
+            kernel,
+            trx,
+            audit,
+            workspace,
+            ctx.principal,
+            stored.bundle.id,
+            "preview",
+          );
+          if (kept === stored.bundle.id) return stored;
+          const composed = await trx
+            .selectFrom("bundle")
+            .selectAll()
+            .where("id", "=", kept)
+            .executeTakeFirstOrThrow();
+          return { created: true, bundle: composed };
+        });
         return reply
           .code(result.created ? 201 : 200)
           .send(toBundle(result.bundle, await activeBundle(params.w)));
@@ -571,6 +601,17 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             message: Type.Optional(
               Type.String({ maxLength: 500, description: "What changed, in a few words." }),
             ),
+            settleDrafts: Type.Optional(
+              Type.Array(
+                Type.Object({ path: Type.String({ maxLength: 255 }), revision: Type.Integer() }),
+                {
+                  maxItems: 1000,
+                  description:
+                    "Drafts this bundle carries, as `platform pull` took them: each is removed " +
+                    "if it is still at that revision. A draft changed in the console since is kept.",
+                },
+              ),
+            ),
           }),
           response: {
             201: Type.Object({
@@ -578,6 +619,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               bundleId: Id,
               bundleVersion: Type.Integer(),
               summary: Summary,
+              draftsSettled: Type.Array(Type.String(), {
+                description: "The drafts the deploy made true, and so removed.",
+              }),
             }),
           },
         },
@@ -593,7 +637,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ctx.principal,
             // A bundle that says nothing about console-managed resources keeps the workspace's.
             await keepConsoleManaged(kernel, trx, audit, workspace, ctx.principal, body.bundleId),
-            body.message ? { message: body.message } : {},
+            {
+              ...(body.message ? { message: body.message } : {}),
+              ...(body.settleDrafts ? { settle: body.settleDrafts } : {}),
+            },
           ),
         );
         await publishPlatformEvent(kernel, {
@@ -611,6 +658,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           bundleId: result.bundle.id,
           bundleVersion: result.bundle.version,
           summary: result.summary,
+          draftsSettled: result.draftsSettled,
         });
       },
     );

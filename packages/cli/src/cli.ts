@@ -7,7 +7,12 @@ import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { startDevServer } from "./dev.js";
+import { CliError } from "./errors.js";
+import { type Followed, followRun, Stopped } from "./follow.js";
 import { init, runLocally } from "./local.js";
+import { pull, pulledFile, readPulled } from "./pull.js";
+
+export { CliError };
 
 export interface Io {
   out: (line: string) => void;
@@ -15,7 +20,7 @@ export interface Io {
   env: Record<string, string | undefined>;
 }
 
-interface Settings {
+export interface Settings {
   url: string;
   token: string;
 }
@@ -31,6 +36,13 @@ Work on a tenant repository
   init [directory]                      Write a starter repository
   build                                 Build the bundle and list what it contains
   run <script> [--input <json>]         Run one script on this machine
+  run <script|flow> --remote --tenant <slug> --workspace <slug> [--input <json>|@file]
+                                        Run it on the platform, from this build, in a dev
+                                        workspace, and follow it. Nothing is deployed
+  pull --tenant <slug> --workspace <slug> [--deployed] [--force]
+                                        Write the workspace's console resources, drafts
+                                        included, into platform/. A file changed here is
+                                        kept unless --force
   dev [app] --tenant <slug> --workspace <slug> [--port <n>]
                                         Serve an app from its source, with reload, against
                                         that workspace's data, as yourself
@@ -50,20 +62,20 @@ Move a tenant
 See what ran
   runs --tenant <slug> --workspace <slug> [run id]
                                         List recent runs, or show one with its logs
+  logs <run id> --tenant <slug> --workspace <slug> [-f]
+                                        A run's or flow run's logs; with -f, follow it to its
+                                        end. Exits 0 when it succeeded, 1 failed, 3 canceled
 
-build, run, dev and deploy read the repository in the current directory, or --dir <path>.
+build, run, dev, deploy and pull read the repository in the current directory, or --dir <path>.
 Create an API key in the console under your account menu.
 PLATFORM_URL and PLATFORM_TOKEN override the saved settings.`;
-
-/** A failure with a message meant for the person at the terminal. */
-export class CliError extends Error {}
 
 export function settingsPath(env: Io["env"]): string {
   const base = env.XDG_CONFIG_HOME ?? join(env.HOME ?? homedir(), ".config");
   return join(base, "vynxlabs-platform", "config.json");
 }
 
-async function loadSettings(env: Io["env"]): Promise<Settings> {
+export async function loadSettings(env: Io["env"]): Promise<Settings> {
   let saved: Partial<Settings> = {};
   try {
     saved = JSON.parse(await readFile(settingsPath(env), "utf8"));
@@ -78,13 +90,13 @@ async function loadSettings(env: Io["env"]): Promise<Settings> {
   return { url, token };
 }
 
-interface ApiReply {
+export interface ApiReply {
   status: number;
   // biome-ignore lint/suspicious/noExplicitAny: replies are read field by field by each command
   body: any;
 }
 
-async function request(
+export async function request(
   url: string,
   path: string,
   token?: string,
@@ -114,7 +126,7 @@ async function request(
 }
 
 /** Explains a refused request in the server's own words, including each named problem. */
-function refusal(reply: ApiReply, doing: string): CliError {
+export function refusal(reply: ApiReply, doing: string): CliError {
   if (reply.status === 401) {
     return new CliError("The API key was not accepted. Create a new one and run login again.");
   }
@@ -179,7 +191,7 @@ async function build(args: string[], io: Io) {
 }
 
 /** Finds a tenant and workspace by their slugs. */
-async function locate(
+export async function locate(
   settings: Settings,
   tenantSlug: string | undefined,
   workspaceSlug: string | undefined,
@@ -255,9 +267,16 @@ async function deploy(args: string[], io: Io) {
     body: bundle,
   });
   if (uploaded.status >= 300) throw refusal(uploaded, "upload the bundle");
+  // The drafts the last pull took into platform/ are deployed with it: the console can let them go.
+  const directory = resolve(values.dir ?? ".");
+  const pulled = await readPulled(directory);
+  const carried =
+    pulled?.workspace === workspace.id
+      ? Object.entries(pulled.drafts ?? {}).map(([path, revision]) => ({ path, revision }))
+      : [];
   const deployed = await request(settings.url, `${base}/deployments`, settings.token, {
     method: "POST",
-    body: { bundleId: uploaded.body.id },
+    body: { bundleId: uploaded.body.id, ...(carried.length > 0 ? { settleDrafts: carried } : {}) },
   });
   if (deployed.status >= 300) throw refusal(deployed, `deploy to ${values.workspace}`);
   const { created, updated, unchanged, deleted } = deployed.body.summary;
@@ -266,6 +285,18 @@ async function deploy(args: string[], io: Io) {
       `${created} created, ${updated} updated, ${deleted} deleted, ${unchanged} unchanged.`,
   );
   for (const line of (deployed.body.summary.data ?? []) as string[]) io.out(`  ${line}`);
+  const settled = (deployed.body.draftsSettled ?? []) as string[];
+  if (settled.length > 0) {
+    io.out(
+      `${settled.length} console ${settled.length === 1 ? "draft" : "drafts"} it carried ${settled.length === 1 ? "is" : "are"} cleared: ${settled.join(", ")}.`,
+    );
+  }
+  if (pulled && carried.length > 0) {
+    await writeFile(
+      pulledFile(directory),
+      `${JSON.stringify({ ...pulled, drafts: {} }, null, 2)}\n`,
+    );
+  }
 }
 
 interface DeploySummary {
@@ -498,7 +529,7 @@ async function tenant(args: string[], io: Io) {
   throw new CliError("Use: platform tenant export ..., or: platform tenant import <file>");
 }
 
-const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);
+export const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);
 
 async function runs(args: string[], io: Io) {
   const { values, positionals } = parseArgs({
@@ -573,6 +604,134 @@ async function runs(args: string[], io: Io) {
     const fields = Object.keys(line.fields).length > 0 ? ` ${JSON.stringify(line.fields)}` : "";
     io.out(`  ${clock(line.time)} ${line.level.padEnd(5)} ${line.message}${fields}`);
   }
+  if (run.status === "queued" || run.status === "running") {
+    io.out(
+      `To follow it: platform logs ${id} -f --tenant ${values.tenant} --workspace ${values.workspace}`,
+    );
+  }
+}
+
+/** Stops following on Ctrl+C, leaving the run to go on. */
+function interruptible(): { signal: AbortSignal; done: () => void } {
+  const stop = new AbortController();
+  const onSignal = () => stop.abort();
+  process.once("SIGINT", onSignal);
+  return { signal: stop.signal, done: () => process.off("SIGINT", onSignal) };
+}
+
+async function logs(args: string[], io: Io): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { ...targetOptions, follow: { type: "boolean", short: "f" } },
+  });
+  const [id] = positionals;
+  if (!id)
+    throw new CliError("Say which run: platform logs <run id> --tenant <slug> --workspace <slug>");
+  const settings = await loadSettings(io.env);
+  const { base, tenant } = await locate(settings, values.tenant, values.workspace);
+  const watch = interruptible();
+  try {
+    const followed = await followRun(settings, { base, tenantId: tenant.id }, id, io, {
+      follow: values.follow === true,
+      signal: watch.signal,
+    });
+    return followed.exitCode;
+  } finally {
+    watch.done();
+  }
+}
+
+/** The input a run is given: JSON on the command line, or a file of it with @. */
+async function inputOf(text: string | undefined): Promise<unknown> {
+  if (text === undefined) return {};
+  const raw = text.startsWith("@")
+    ? await readFile(resolve(text.slice(1)), "utf8").catch(() => {
+        throw new CliError(`There is no file at ${resolve(text.slice(1))}.`);
+      })
+    : text;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new CliError(
+      `--input must be JSON, or @ and a file of JSON, for example --input '{"customer":"ada"}'`,
+    );
+  }
+}
+
+/** Runs a script or flow on the platform from this build, in a dev workspace, and follows it. */
+async function runRemote(args: string[], io: Io): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      ...directoryOption,
+      ...targetOptions,
+      remote: { type: "boolean" },
+      input: { type: "string" },
+      script: { type: "boolean" },
+      flow: { type: "boolean" },
+    },
+  });
+  const [path] = positionals;
+  if (!path) throw new CliError("Say what to run: platform run <script or flow path> --remote ...");
+  const input = await inputOf(values.input);
+  const settings = await loadSettings(io.env);
+  const { base, workspace, tenant } = await locate(settings, values.tenant, values.workspace);
+  if (workspace.type !== "dev") {
+    throw new CliError(
+      `${values.workspace} is a ${workspace.type} workspace. A local build is tried in a dev workspace.`,
+    );
+  }
+  const built = await buildRepository({ directory: resolve(values.dir ?? ".") });
+  const found = built.bundle.manifests.filter(
+    (manifest) =>
+      manifest.path === path &&
+      (manifest.kind === "script" || manifest.kind === "flow") &&
+      (!values.script || manifest.kind === "script") &&
+      (!values.flow || manifest.kind === "flow"),
+  );
+  if (found.length === 0) {
+    const known = built.bundle.manifests
+      .filter((manifest) => manifest.kind === "script" || manifest.kind === "flow")
+      .map((manifest) => `${manifest.path} (${manifest.kind})`);
+    throw new CliError(
+      `There is no script or flow "${path}" in this build. It has: ${known.join(", ") || "neither"}.`,
+    );
+  }
+  if (found.length > 1) {
+    throw new CliError(
+      `"${path}" is both a script and a flow here. Say which with --script or --flow.`,
+    );
+  }
+  const kind = (found[0] as { kind: "script" | "flow" }).kind;
+  await uploadFiles(settings, base, built, io);
+  const uploaded = await request(settings.url, `${base}/bundles?preview=true`, settings.token, {
+    method: "POST",
+    body: built.bundle,
+  });
+  if (uploaded.status >= 300) throw refusal(uploaded, "upload this build");
+  const started = await request(settings.url, `${base}/test-runs`, settings.token, {
+    method: "POST",
+    body: { [kind]: path, bundleId: uploaded.body.id, input },
+  });
+  if (started.status >= 300) throw refusal(started, `start ${path}`);
+  io.out(
+    `Test run ${started.body.runId} of ${path} in ${values.workspace}, from this build (preview, version ${uploaded.body.version}). Nothing was deployed.`,
+  );
+  const watch = interruptible();
+  let followed: Followed;
+  try {
+    followed = await followRun(settings, { base, tenantId: tenant.id }, started.body.runId, io, {
+      follow: true,
+      signal: watch.signal,
+    });
+  } finally {
+    watch.done();
+  }
+  if (followed.status === "succeeded")
+    io.out(`Output: ${JSON.stringify(followed.output, null, 2)}`);
+  return followed.exitCode;
 }
 
 /** Runs the command line. Returns the process exit code. */
@@ -620,8 +779,13 @@ export async function run(argv: string[], io: Io): Promise<number> {
         await build(rest, io);
         return 0;
       case "run":
+        if (rest.includes("--remote")) return await runRemote(rest, io);
         await runLocally(rest, io);
         return 0;
+      case "logs":
+        return await logs(rest, io);
+      case "pull":
+        return await pull(rest, io);
       case "dev":
         await dev(rest, io);
         return 0;
@@ -648,6 +812,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 2;
     }
   } catch (error) {
+    if (error instanceof Stopped) {
+      io.err(error.message);
+      return 130;
+    }
     if (error instanceof CliError || error instanceof BuildError) {
       io.err(
         error instanceof BuildError

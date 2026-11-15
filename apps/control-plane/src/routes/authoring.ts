@@ -1,8 +1,14 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { type InterfaceBody, PATH_PATTERN } from "@vynxlabs/manifest";
+import {
+  type InterfaceBody,
+  PATH_PATTERN,
+  platformKinds,
+  renderResourceFiles,
+} from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { mutate } from "../kernel/audit.js";
 import {
+  activeConsoleManaged,
   composeDrafts,
   deployDrafts,
   deriveSchemas,
@@ -15,7 +21,7 @@ import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js"
 import { storeBundle } from "../kernel/execution/bundles.js";
 import { startRun } from "../kernel/execution/runs.js";
 import { kickFlow, startFlowRun } from "../kernel/flows/engine.js";
-import { markAhead } from "../kernel/git.js";
+import { draftFiles, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { interfaceProblems } from "./interfaces.js";
@@ -275,6 +281,73 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               row.deleted ? undefined : (row.body as Record<string, unknown>),
             ),
           })),
+        };
+      },
+    );
+
+    app.get(
+      `${base}/resource-files`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "The workspace's console resources as repository files",
+          description:
+            "Every resource made in the console, with the drafts laid over what is deployed, " +
+            "as the files `platform/` holds in a repository: what `platform pull` writes, and " +
+            "what Git sync commits. The whole set: a bundle with a `platform/` folder replaces " +
+            "the workspace's console resources with it. With `drafts=false`, what is deployed only.",
+          tags: ["authoring"],
+          params: WorkspaceParams,
+          querystring: Type.Object({ drafts: Type.Optional(Type.Boolean({ default: true })) }),
+          response: {
+            200: Type.Object({
+              files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() })),
+              bundleVersion: Type.Union([Type.Integer(), Type.Null()]),
+              drafts: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  revision: Type.Integer(),
+                  deleted: Type.Boolean(),
+                }),
+                {
+                  description:
+                    "The drafts laid over it. A deploy that carries them can say so, to have " +
+                    "them removed: `settleDrafts` on a deployment.",
+                },
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const { workspace, full } = await enter(ctx, params, "resource:read");
+        // Part of the set would be read as all of it, and a deploy would remove the rest.
+        if (!full) throw forbidden("resource:read");
+        const withDrafts = query.drafts !== false;
+        const files = withDrafts
+          ? await draftFiles(kernel, db, workspace)
+          : renderResourceFiles(
+              await activeConsoleManaged(kernel, db, workspace.id),
+              platformKinds,
+            );
+        const drafts = withDrafts
+          ? await db
+              .selectFrom("resource_draft")
+              .select(["path", "revision", "deleted"])
+              .where("workspace_id", "=", workspace.id)
+              .orderBy("path")
+              .execute()
+          : [];
+        const active = await db
+          .selectFrom("workspace")
+          .leftJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+          .select("bundle.version")
+          .where("workspace.id", "=", workspace.id)
+          .executeTakeFirst();
+        return {
+          files: files.map((file) => ({ path: file.path, content: file.content })),
+          bundleVersion: active?.version ?? null,
+          drafts,
         };
       },
     );
@@ -635,6 +708,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             script: Type.Optional(Type.String({ pattern: PATH_PATTERN, maxLength: 255 })),
             flow: Type.Optional(Type.String({ pattern: PATH_PATTERN, maxLength: 255 })),
             input: Type.Optional(Type.Unknown()),
+            bundleId: Type.Optional(
+              Type.String({
+                format: "uuid",
+                description:
+                  "A bundle uploaded to this workspace with `preview`, such as a local build " +
+                  "(`platform run --remote`): run from it as it is, in a dev workspace only.",
+              }),
+            ),
           }),
           response: {
             201: Type.Object({
@@ -650,39 +731,68 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if ((body.script === undefined) === (body.flow === undefined)) {
           throw badRequest("Give either a script or a flow to run.");
         }
-        if (body.flow !== undefined) {
-          const flow = body.flow;
+        const kind = body.flow !== undefined ? ("flow" as const) : ("script" as const);
+        const path = (body.flow ?? body.script) as string;
+        if (body.bundleId !== undefined) {
+          // Code from a developer's machine, not yet reviewed: tried in a dev workspace only.
+          const row = await db
+            .selectFrom("workspace")
+            .select("type")
+            .where("id", "=", workspace.id)
+            .executeTakeFirstOrThrow();
+          if (row.type !== "dev") {
+            throw new HttpError(
+              409,
+              "production_workspace",
+              "A local build is tried in a dev workspace. Production runs what was promoted to it.",
+            );
+          }
+          const uploaded = await db
+            .selectFrom("bundle")
+            .select("id")
+            .where("id", "=", body.bundleId)
+            .where("workspace_id", "=", workspace.id)
+            .executeTakeFirst();
+          if (!uploaded) throw notFound("The bundle");
+          await mayWriteCode(ctx, workspace);
+        }
+        if (kind === "flow") {
           await ctx.authorize("flow_run:write", {
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
           });
-          const code = await db
-            .selectFrom("resource_draft")
-            .select("path")
-            .where("workspace_id", "=", workspace.id)
-            .where("kind", "in", ["script", "connector", "trigger_source"])
-            .where("deleted", "=", false)
-            .executeTakeFirst();
-          if (code) await mayWriteCode(ctx, workspace);
-          const { bundle } = await composeDrafts(kernel, db, workspace);
-          const result = await ctx.mutate(async (trx, audit) => {
-            const stored = await storeBundle(
-              kernel,
-              trx,
-              audit,
-              workspace,
-              ctx.principal,
-              bundle,
-              "preview",
-            );
+          if (body.bundleId === undefined) {
+            const code = await db
+              .selectFrom("resource_draft")
+              .select("path")
+              .where("workspace_id", "=", workspace.id)
+              .where("kind", "in", ["script", "connector", "trigger_source"])
+              .where("deleted", "=", false)
+              .executeTakeFirst();
+            if (code) await mayWriteCode(ctx, workspace);
+          }
+        } else if (body.bundleId === undefined) {
+          await mayWriteCode(ctx, workspace);
+        }
+        // The drafts, made into a bundle; or the bundle given, as it is.
+        const composed =
+          body.bundleId === undefined ? (await composeDrafts(kernel, db, workspace)).bundle : null;
+        const result = await ctx.mutate(async (trx, audit) => {
+          const bundleId = composed
+            ? (await storeBundle(kernel, trx, audit, workspace, ctx.principal, composed, "preview"))
+                .bundle.id
+            : (body.bundleId as string);
+          const detail = { draft: true, ...(composed ? {} : { local: true }) };
+          const startedBy = { type: ctx.principal.type, id: ctx.principal.id };
+          if (kind === "flow") {
             const started = await startFlowRun(kernel, trx, {
               tenantId: workspace.tenantId,
               workspaceId: workspace.id,
-              flow,
+              flow: path,
               input: body.input ?? {},
-              trigger: { type: "manual", detail: { draft: true } },
-              startedBy: { type: ctx.principal.type, id: ctx.principal.id },
-              bundleId: stored.bundle.id,
+              trigger: { type: "manual", detail },
+              startedBy,
+              bundleId,
             });
             await audit({
               action: "flow_run.started",
@@ -690,34 +800,18 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               targetId: started.flowRun.id,
               tenantId: workspace.tenantId,
               workspaceId: workspace.id,
-              details: { flow, draft: true, bundleId: stored.bundle.id },
+              details: { flow: path, ...detail, bundleId },
             });
-            return { runId: started.flowRun.id, bundleId: stored.bundle.id, kind: "flow" as const };
-          });
-          kickFlow(kernel, result.runId);
-          return reply.code(201).send(result);
-        }
-        const script = body.script as string;
-        await mayWriteCode(ctx, workspace);
-        const { bundle } = await composeDrafts(kernel, db, workspace);
-        const result = await ctx.mutate(async (trx, audit) => {
-          const stored = await storeBundle(
-            kernel,
-            trx,
-            audit,
-            workspace,
-            ctx.principal,
-            bundle,
-            "preview",
-          );
+            return { runId: started.flowRun.id, bundleId, kind };
+          }
           const started = await startRun(kernel, trx, {
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
-            script,
+            script: path,
             input: body.input ?? {},
-            trigger: { type: "manual", detail: { draft: true } },
-            startedBy: { type: ctx.principal.type, id: ctx.principal.id },
-            bundleId: stored.bundle.id,
+            trigger: { type: "manual", detail },
+            startedBy,
+            bundleId,
           });
           await audit({
             action: "run.started",
@@ -725,10 +819,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetId: started.run.id,
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
-            details: { script, draft: true, bundleId: stored.bundle.id },
+            details: { script: path, ...detail, bundleId },
           });
-          return { runId: started.run.id, bundleId: stored.bundle.id, kind: "script" as const };
+          return { runId: started.run.id, bundleId, kind };
         });
+        if (result.kind === "flow") kickFlow(kernel, result.runId);
         return reply.code(201).send(result);
       },
     );

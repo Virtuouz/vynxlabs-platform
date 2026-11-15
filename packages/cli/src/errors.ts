@@ -7,3 +7,6 @@ export class BuildError extends Error {
     this.problems = problems;
   }
 }
+
+/** A failure with a message meant for the person at the terminal. */
+export class CliError extends Error {}

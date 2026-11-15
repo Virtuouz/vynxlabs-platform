@@ -399,6 +399,8 @@ export async function keepConsoleManaged(
   workspace: WorkspaceRef,
   principal: Principal,
   bundleId: string,
+  /** A preview stays a preview with the console's resources on it. */
+  origin: "compose" | "preview" = "compose",
 ): Promise<string> {
   const row = await trx
     .selectFrom("bundle")
@@ -423,8 +425,7 @@ export async function keepConsoleManaged(
   const kept = managed.filter((manifest) => !defined.has(manifest.path));
   if (kept.length === 0) return bundleId;
   const composite = await composeBundle(uploaded, kept, { sdkEntry });
-  return (await storeBundle(kernel, trx, audit, workspace, principal, composite, "compose")).bundle
-    .id;
+  return (await storeBundle(kernel, trx, audit, workspace, principal, composite, origin)).bundle.id;
 }
 
 /** The largest schema read from code that a draft keeps. */

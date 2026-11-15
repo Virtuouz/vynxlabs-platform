@@ -4,6 +4,8 @@ import {
   bundleCompatibility,
   type FlowBody,
   flowGrants,
+  platformKinds,
+  renderResourceFiles,
 } from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences } from "../data/apply.js";
@@ -170,6 +172,12 @@ export async function deployBundle(
     allowMissingBindings?: boolean;
     /** What whoever deployed said about it. */
     message?: string;
+    /**
+     * Drafts the deployed bundle carries, as a pull from the console took them:
+     * each is removed if it is still at the revision taken. One changed in the
+     * console since is kept.
+     */
+    settle?: { path: string; revision: number }[];
   } = {},
 ) {
   const current = await trx
@@ -347,6 +355,7 @@ export async function deployBundle(
     })
     .returningAll()
     .executeTakeFirstOrThrow();
+  const draftsSettled = await settleDrafts(trx, workspace.id, content.manifests, options.settle);
   await audit({
     action: "deployment.created",
     targetType: "deployment",
@@ -363,9 +372,65 @@ export async function deployBundle(
       unchanged: summary.unchanged,
       deleted: summary.deleted,
       data: summary.data,
+      ...(draftsSettled.length > 0 ? { draftsSettled } : {}),
     },
   });
-  return { deployment, bundle, summary };
+  return { deployment, bundle, summary, draftsSettled };
+}
+
+/**
+ * Removes the workspace's drafts that a deploy made true: one whose files are
+ * the files of what is now deployed at its path, and a removal whose path is
+ * no longer there. Compared as the files the repository would hold, so how a
+ * draft keeps its code does not matter. A deploy from the CLI or from Git of
+ * what was pulled from the console leaves nothing behind on the Changes screen.
+ */
+export async function settleDrafts(
+  trx: Trx,
+  workspaceId: string,
+  manifests: BundleManifest[],
+  carried: { path: string; revision: number }[] = [],
+): Promise<string[]> {
+  const drafts = await trx
+    .selectFrom("resource_draft")
+    .select(["path", "kind", "schema_version", "body", "deleted", "revision"])
+    .where("workspace_id", "=", workspaceId)
+    .execute();
+  if (drafts.length === 0) return [];
+  const deployed = new Map(
+    manifests
+      .filter((manifest) => manifest.ownership === "ui")
+      .map((manifest) => [manifest.path, manifest]),
+  );
+  const filesOf = (manifest: BundleManifest) =>
+    JSON.stringify(renderResourceFiles([manifest], platformKinds));
+  const taken = new Map(carried.map((one) => [one.path, one.revision]));
+  const settled = drafts
+    .filter((draft) => {
+      if (taken.get(draft.path) === draft.revision) return true;
+      const there = deployed.get(draft.path);
+      if (draft.deleted) return !manifests.some((manifest) => manifest.path === draft.path);
+      if (!there || there.kind !== draft.kind) return false;
+      return (
+        filesOf(there) ===
+        filesOf({
+          kind: draft.kind,
+          schemaVersion: draft.schema_version,
+          path: draft.path,
+          ownership: "ui",
+          body: draft.body as Record<string, unknown>,
+        })
+      );
+    })
+    .map((draft) => draft.path);
+  if (settled.length > 0) {
+    await trx
+      .deleteFrom("resource_draft")
+      .where("workspace_id", "=", workspaceId)
+      .where("path", "in", settled)
+      .execute();
+  }
+  return settled;
 }
 
 const KIND_ORDER = [

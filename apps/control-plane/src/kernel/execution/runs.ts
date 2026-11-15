@@ -312,7 +312,20 @@ export async function claimRun(
     .selectFrom("workspace")
     .select(["id", "concurrency_limit"])
     .where("tenant_id", "=", scope.tenantId)
-    .where("active_bundle_id", "is not", null);
+    // A workspace runs what it deployed; one with nothing deployed yet may still have test
+    // runs of drafts or of a local build, which run from a bundle of their own.
+    .where((eb) =>
+      eb.or([
+        eb("active_bundle_id", "is not", null),
+        eb.exists(
+          eb
+            .selectFrom("run")
+            .select(sql`1`.as("one"))
+            .whereRef("run.workspace_id", "=", "workspace.id")
+            .where("run.status", "=", "queued"),
+        ),
+      ]),
+    );
   if (scope.workspaceId) query = query.where("id", "=", scope.workspaceId);
   const workspaces = await query.orderBy("id").execute();
   // Start from a different workspace each time, so none waits behind a busy one.

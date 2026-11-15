@@ -1,6 +1,6 @@
 # Phase 10: platform expansion
 
-Status: in progress. Milestones 1 to 4 are built, on branch `phase-10-expansion`.
+Status: in progress. Milestones 1 to 5 are built, on branch `phase-10-expansion`.
 Last updated: 2026-11-15
 
 Phase 10 builds the P2 items of the [evolution roadmap](../evolution/07-roadmap.md): all thirteen, in seven milestones. Phase 9 made what exists dependable. This phase widens what a tenant can do with it:
@@ -112,4 +112,21 @@ Each milestone ends with `pnpm typecheck`, `pnpm lint` and `pnpm test` passing, 
 - **The canvas spilled over the test panel** at 1440 px: its least height left no room for the panel. It may be shorter on a wide screen now, the graph is fitted again when the panel opens or closes, and the minimap is hidden while the panel is open, where it covered steps.
 - **A running instance serves only the console it found at start.** Rebuilding the console under a running instance gave a blank page until it was restarted. Worth knowing when building in place.
 - **Walked in Chromium on a built instance, at 1440 and 390 px,** with a draft flow that runs a script for each line of an order: tested from the panel, the steps filled in on the graph (the foreach took 0.9 to 1.9 s on a worker); the summary step's Last test showed `{count: 2, total: 525, customer: "Brooks family"}`; its expressions previewed `525` and `2`, and `No such key: totl` when misspelt; the foreach's input previewed its first item; a case giving `525` said a case must give true or false; a removed step came back with Undo, went with ⇧⌘Z and came back with ⌘Z, and after a reload the draft had it. No page scrolled sideways, and no page threw. `pnpm e2e` passes (17), with a new test of the editor.
+
+### Milestone 5
+
+- **`pull` writes the whole set, always.** A bundle with any console resource replaces the workspace's whole console set with what it has, so a pull of part of it, deployed, would remove the rest. `GET …/resource-files` gives every console resource with the drafts laid over it, rendered as Git sync renders them, and the CLI writes all of it.
+- **A file changed here is never overwritten without `--force`.** The CLI keeps what it last wrote in `.platform/pulled.json`, by hash. A file still as pulled is updated or removed with the console; one changed since is listed, and pull exits 1.
+- **A deploy did not clear the drafts it carried.** Only the console's own deploy deleted the drafts it applied, so after pull, edit, deploy the Changes screen still listed each pulled draft, and deploying it from there would have undone the repository's edit. Two rules close it:
+  - `pull` records the revision of each draft it took, and `deploy` sends them (`settleDrafts`): each is removed if it is still at that revision, and one changed in the console since is kept;
+  - any deploy, from the CLI, Git or a promotion, removes a draft whose rendered files are what is now deployed, and a removal whose path is gone.
+- **The first version cleared only drafts equal to what was deployed.** The CLI's round-trip test edits the pulled file before deploying, and the draft stayed. That is why `pull` now records revisions.
+- **A local build is uploaded as a preview** (`POST …/bundles?preview=true`), never offered for deploying, removed after a week, with the workspace's console resources kept on it so a local flow can call a console-made script. A test run takes it by `bundleId`, in a dev workspace only, and needs `code:write`. Its run says `local: true`.
+- **Fixed: a test run in a dev workspace with nothing deployed waited for ever.** Workers were given runs only from workspaces with a deployed bundle, so a first try of a draft, or of a local build, in a new workspace was never claimed. Found by the CLI's first test. A workspace with queued runs now counts too.
+- **Following uses the tenant's event stream as a doorbell.** The stream carries no log text: on an event about the run, the CLI reads the lines after the last it printed. Without the stream (refused, or dropped), it looks every two seconds; it is tested with the stream refused.
+- **A foreach's items are followed too,** each item's lines prefixed with its number. The first walk showed a foreach step with no lines under it.
+- **Steps that finish in one pass of the engine show in name order.** They share a start time, which is the transaction's. The run page has the same order.
+- **Exit codes:** 0 succeeded, 1 failed, 3 canceled, 130 stopped with Ctrl+C. The run goes on after Ctrl+C, and the CLI says how to follow it again.
+- **`CliError` moved out of `cli.ts`.** The new modules subclass it, and with `cli.ts` and them importing each other it was not yet defined when they loaded.
+- **Checked by hand on a built instance with a worker:** the walk workspace's flow draft was pulled, its branch edited from 500.0 to 400.0 in the YAML and deployed; the deploy said the draft it carried was cleared, the console had no drafts, the deployed flow had 400.0, and a second pull found nothing to change. `run orders/quote --remote` ran the flow from the local build, its foreach's two items priced by the script with their lines streamed, and printed the output. `logs -f` of a run started from the API was stopped with Ctrl+C and then followed to "Succeeded in 1.6 s".
 

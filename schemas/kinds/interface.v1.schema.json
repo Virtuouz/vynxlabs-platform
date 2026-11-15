@@ -51,7 +51,8 @@
                     "chart",
                     "figure",
                     "form",
-                    "text"
+                    "text",
+                    "action"
                   ]
                 },
                 "table": {
@@ -310,6 +311,182 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "action": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 60
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "script",
+                            "flow"
+                          ]
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "path"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "input": {
+                      "type": "object",
+                      "maxProperties": 50,
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^(selection\\.[a-z][a-z0-9_-]{0,39}\\.[a-z][a-z0-9_]{0,62}|row\\.[a-z][a-z0-9_]{0,62}|filters\\.[a-z][a-z0-9_-]{0,39}\\.(value|from|to))$"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {}
+                            },
+                            "required": [
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "confirm": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "show": {
+                          "enum": [
+                            "toast",
+                            "output"
+                          ]
+                        },
+                        "refresh": {
+                          "type": "array",
+                          "maxItems": 12,
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "enabledWhen": {
+                      "type": "string",
+                      "pattern": "^(selection\\.[a-z][a-z0-9_-]{0,39}\\.[a-z][a-z0-9_]{0,62}|row\\.[a-z][a-z0-9_]{0,62}|filters\\.[a-z][a-z0-9_-]{0,39}\\.(value|from|to))$"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                "actions": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "script",
+                              "flow"
+                            ]
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "input": {
+                        "type": "object",
+                        "maxProperties": 50,
+                        "additionalProperties": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^(selection\\.[a-z][a-z0-9_-]{0,39}\\.[a-z][a-z0-9_]{0,62}|row\\.[a-z][a-z0-9_]{0,62}|filters\\.[a-z][a-z0-9_-]{0,39}\\.(value|from|to))$"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "value": {}
+                              },
+                              "required": [
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "confirm": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "result": {
+                        "type": "object",
+                        "properties": {
+                          "show": {
+                            "enum": [
+                              "toast",
+                              "output"
+                            ]
+                          },
+                          "refresh": {
+                            "type": "array",
+                            "maxItems": 12,
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "enabledWhen": {
+                        "type": "string",
+                        "pattern": "^(selection\\.[a-z][a-z0-9_-]{0,39}\\.[a-z][a-z0-9_]{0,62}|row\\.[a-z][a-z0-9_]{0,62}|filters\\.[a-z][a-z0-9_-]{0,39}\\.(value|from|to))$"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "target"
+                    ],
+                    "additionalProperties": false
+                  }
                 },
                 "at": {
                   "type": "object",

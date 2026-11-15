@@ -1521,3 +1521,113 @@ describe("layout, isolation and guards", () => {
     expect(t.unexercised((route) => flows.test(route) && !route.includes("/worker/"))).toEqual([]);
   });
 });
+
+describe("schedules that start flows", () => {
+  test("a schedule starts a flow from its manual trigger, can skip while its run goes, and can fire now", async () => {
+    const schedules = (manifests: BundleManifest[]) => [
+      ...manifests,
+      manifest("schedule", "typed-hourly", {
+        flow: "typed",
+        cron: "15 * * * *",
+        timezone: "Europe/London",
+        input: { sku: "A", quantity: 2 },
+      }),
+      manifest("schedule", "waiting-hourly", {
+        flow: "waiting",
+        cron: "0 * * * *",
+        overlap: "skip",
+      }),
+    ];
+    const deployed = await deploy(bundle("sched", schedules));
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+
+    const triggers = (await alice.get(`${ws()}/triggers`)).body.items as Any[];
+    const typed = triggers.find((x) => x.path === "typed-hourly");
+    expect(typed).toMatchObject({ targetKind: "flow", script: "typed", overlap: "allow" });
+    // The preview is worked out as the scheduler works it out.
+    const preview = await alice.get(
+      `${ws()}/schedule-preview?cron=${encodeURIComponent("15 * * * *")}&timezone=Europe/London`,
+    );
+    expect(preview.body.times).toHaveLength(5);
+    expect(preview.body.times[0]).toBe(typed.nextFireAt);
+    const refused = await alice.get(`${ws()}/schedule-preview?cron=nope`);
+    expect(refused.status).toBe(400);
+    expect(refused.body.errors[0].message).toContain('"nope" is not a usable cron expression');
+
+    // At its time it starts the flow from its manual trigger, with its input.
+    expect(
+      await fireDueSchedules(t.kernel, new Date(new Date(typed.nextFireAt).getTime() + 1000)),
+    ).toBeGreaterThanOrEqual(1);
+    const runs = await until(
+      async () => (await alice.get(`${ws()}/flow-runs?flow=typed`)).body.items as Any[],
+      (items) => items.some((r) => r.trigger?.type === "schedule"),
+    );
+    const scheduled = await finished(runs.find((r) => r.trigger?.type === "schedule").id);
+    expect(scheduled).toMatchObject({
+      status: "succeeded",
+      triggerNode: "start",
+      trigger: { type: "schedule", schedule: "typed-hourly" },
+    });
+
+    // Fire now: one run, said to be by hand, and the next time stays where it was.
+    const nextOf = async () =>
+      (await alice.get(`${ws()}/triggers`)).body.items.find((x: Any) => x.path === "typed-hourly")
+        .nextFireAt;
+    const before = await nextOf();
+    const fired = await alice.post(`${ws()}/schedule-firings`, { path: "typed-hourly" });
+    expect(fired.status, JSON.stringify(fired.body)).toBe(201);
+    expect(fired.body.kind).toBe("flow");
+    expect((await finished(fired.body.id)).trigger).toMatchObject({
+      type: "schedule",
+      manual: true,
+    });
+    expect(await nextOf()).toBe(before);
+    expect((await alice.post(`${ws()}/schedule-firings`, { path: "nothing" })).status).toBe(404);
+
+    // Skip: while the run it started waits, the next time starts nothing, and says so.
+    const waiting = triggers.find((x) => x.path === "waiting-hourly");
+    expect(waiting.overlap).toBe("skip");
+    const first = new Date(new Date(waiting.nextFireAt).getTime() + 1000);
+    await fireDueSchedules(t.kernel, first);
+    const going = (await alice.get(`${ws()}/flow-runs?flow=waiting`)).body.items.filter(
+      (r: Any) => r.trigger?.type === "schedule",
+    );
+    expect(going).toHaveLength(1);
+    await fireDueSchedules(t.kernel, new Date(first.getTime() + 3600_000));
+    expect(
+      (await alice.get(`${ws()}/flow-runs?flow=waiting`)).body.items.filter(
+        (r: Any) => r.trigger?.type === "schedule",
+      ),
+    ).toHaveLength(1);
+    const skipped = (await alice.get(`${ws()}/triggers`)).body.items.find(
+      (x: Any) => x.path === "waiting-hourly",
+    );
+    expect(skipped.lastSkippedAt).toEqual(expect.any(String));
+    expect(skipped.lastRun).toMatchObject({ kind: "flow", id: going[0].id });
+    await alice.post(`${ws()}/flow-runs/${going[0].id}/cancel`, {});
+  });
+
+  test("a schedule cannot start a flow with no manual trigger, nor name both a script and a flow", async () => {
+    const hookOnly = flow(
+      "hook-only",
+      { hook: { type: "trigger", trigger: { type: "webhook" } }, done: set({ x: "1" }) },
+      [["hook", "done"]],
+    );
+    const noManual = await deploy(
+      bundle("sched", (m) => [
+        ...m,
+        hookOnly,
+        manifest("schedule", "bad", { flow: "hook-only", cron: "0 * * * *" }),
+      ]),
+    );
+    expect(noManual.status).toBe(400);
+    expect(JSON.stringify(noManual.body)).toContain("has no manual trigger");
+    const both = await deploy(
+      bundle("sched", (m) => [
+        ...m,
+        manifest("schedule", "both", { flow: "typed", script: "double", cron: "0 * * * *" }),
+      ]),
+    );
+    expect(both.status).toBe(400);
+  });
+});

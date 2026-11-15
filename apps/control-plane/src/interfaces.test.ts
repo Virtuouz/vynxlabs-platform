@@ -91,7 +91,12 @@ function bundle(): Bundle {
 /** A browser at the instance's address: it keeps the cookies it is given. */
 function browser(app: TestApp = t) {
   const jar = new Map<string, string>();
-  const call = async (method: "GET" | "POST", url: string, form?: Record<string, string>) => {
+  const call = async (
+    method: "GET" | "POST",
+    url: string,
+    form?: Record<string, string>,
+    json?: object,
+  ) => {
     const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
     const response = await app.app.inject({
       method,
@@ -102,8 +107,10 @@ function browser(app: TestApp = t) {
         ...(form
           ? { origin: `http://${MAIN}`, "content-type": "application/x-www-form-urlencoded" }
           : {}),
+        ...(json ? { origin: `http://${MAIN}`, "content-type": "application/json" } : {}),
       },
       ...(form ? { payload: new URLSearchParams(form).toString() } : {}),
+      ...(json ? { payload: JSON.stringify(json) } : {}),
     });
     for (const line of ([] as string[]).concat(response.headers["set-cookie"] ?? [])) {
       const [pair = ""] = line.split(";");
@@ -118,6 +125,7 @@ function browser(app: TestApp = t) {
   return {
     get: (url: string) => call("GET", url),
     form: (url: string, form: Record<string, string>) => call("POST", url, form),
+    post: (url: string, json: object) => call("POST", url, undefined, json),
   };
 }
 
@@ -186,9 +194,9 @@ afterAll(async () => {
   rmSync(runtime, { recursive: true, force: true });
 });
 
+let ivy: Awaited<ReturnType<typeof endUser>>;
+let jon: Awaited<ReturnType<typeof endUser>>;
 describe("an app that serves an interface", () => {
-  let ivy: Awaited<ReturnType<typeof endUser>>;
-  let jon: Awaited<ReturnType<typeof endUser>>;
   const view = (who: { browser: ReturnType<typeof browser> }, path = "screens/invoices") =>
     who.browser.get(`/api/v1${ws()}/interfaces/${path}`);
 
@@ -360,6 +368,137 @@ describe("an app that serves an interface", () => {
       await bare.stop();
       rmSync(empty, { recursive: true, force: true });
     }
+  });
+});
+
+describe("actions on a page", () => {
+  test("an action is offered to those who may start what it starts, runs as them, and the builder names who would not see it", async () => {
+    const base = bundle();
+    const { digest: _digest, ...rest } = base;
+    const withActions = {
+      ...rest,
+      code: "export const remind = { execute: async () => ({}) };",
+      manifests: [
+        ...rest.manifests,
+        manifest("role", "roles/reminders", { name: "reminder", permissions: ["run:write"] }),
+        manifest("script", "invoices/remind", {
+          entry: "remind",
+          description: "A reminder is on its way.",
+          input: {
+            type: "object",
+            properties: { number: { type: "string" }, note: { type: "string" } },
+            required: ["number"],
+          },
+          output: { type: "object" },
+          timeoutSeconds: 30,
+          retries: { limit: 0, delaySeconds: 0, backoff: false },
+          uses: { connections: [], secrets: [], variables: [] },
+        }),
+        manifest("interface", "screens/chase", {
+          title: "Chase",
+          pages: [
+            {
+              id: "main",
+              title: "Chase",
+              widgets: [
+                {
+                  id: "list",
+                  type: "table",
+                  table: "invoices",
+                  at,
+                  actions: [
+                    {
+                      label: "Remind",
+                      target: { kind: "script", path: "invoices/remind" },
+                      input: { number: "row.number" },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+        manifest("app", "chase", { title: "Chase", interface: "screens/chase" }),
+        manifest("binding", "bindings/chase", {
+          role: "portal_user",
+          principal: { type: "end_users" },
+          resource: "chase",
+        }),
+        manifest("binding", "bindings/remind", {
+          role: "reminder",
+          principal: { type: "end_user_group", name: "finance" },
+          resource: "invoices/remind",
+        }),
+      ],
+    };
+    const signed = { ...withActions, digest: bundleDigest(withActions as never) } as Bundle;
+    const uploaded = await alice.post(`${ws()}/bundles`, signed);
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(201);
+    const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+
+    const seenBy = async (who: { browser: ReturnType<typeof browser> }) =>
+      (await who.browser.get(`/api/v1${ws()}/interfaces/screens/chase`)).body.targets;
+    // Finance may start it, and is told what it takes; sales may not, and is told nothing of it.
+    expect(await seenBy(ivy)).toEqual({
+      "script:invoices/remind": {
+        canStart: true,
+        description: "A reminder is on its way.",
+        inputSchema: {
+          type: "object",
+          properties: { number: { type: "string" }, note: { type: "string" } },
+          required: ["number"],
+        },
+      },
+    });
+    expect(await seenBy(jon)).toEqual({
+      "script:invoices/remind": { canStart: false, description: null, inputSchema: null },
+    });
+
+    // The builder says the app's audience at large would not all see it.
+    const facts = await alice.get(
+      `${ws()}/interface-targets?targets=${encodeURIComponent("script:invoices/remind,flow:nope")}&interface=screens/chase`,
+    );
+    expect(facts.status, JSON.stringify(facts.body)).toBe(200);
+    expect(facts.body.items).toEqual([
+      {
+        key: "script:invoices/remind",
+        found: true,
+        startable: true,
+        description: "A reminder is on its way.",
+        inputSchema: expect.any(Object),
+        notFor: ["every end user"],
+      },
+      {
+        key: "flow:nope",
+        found: false,
+        startable: false,
+        description: null,
+        inputSchema: null,
+        notFor: [],
+      },
+    ]);
+
+    // Pressed in the app, it starts as the end user, not as the app.
+    const started = await ivy.browser.post(`/api/v1${ws()}/runs`, {
+      script: "invoices/remind",
+      input: { number: "INV-1" },
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const run = await t.db
+      .selectFrom("run")
+      .select(["started_by_type", "started_by_id"])
+      .where("id", "=", started.body.id)
+      .executeTakeFirstOrThrow();
+    expect(run).toEqual({ started_by_type: "end_user", started_by_id: ivy.id });
+    expect(
+      (
+        await jon.browser.post(`/api/v1${ws()}/runs`, {
+          script: "invoices/remind",
+          input: { number: "INV-1" },
+        })
+      ).status,
+    ).toBe(403);
   });
 });
 

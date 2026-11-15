@@ -41,7 +41,7 @@ export function grants(permissions: readonly string[], permission: string): bool
  * a binding made too wide cannot hand a portal user the tenant's settings or secrets.
  */
 const APP_FACING = new Set(APP_FACING_KINDS);
-const appFacing = (permission: string) => APP_FACING.has(permission.split(":")[0] as string);
+export const appFacing = (permission: string) => APP_FACING.has(permission.split(":")[0] as string);
 
 interface Held {
   permissions: string[];

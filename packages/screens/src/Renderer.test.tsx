@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { InterfacePage, PageWidget } from "@vynxlabs/manifest";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { DataClient, Filter, Row, TableInfo } from "./data.ts";
 import { InterfaceRenderer, LOOKUP_BATCH, PageRenderer } from "./Renderer.tsx";
 
@@ -526,5 +526,120 @@ test("a filter on one value lists the values the column holds, and narrows every
     column: "status",
     op: "eq",
     value: "done",
+  });
+});
+
+describe("actions", () => {
+  const remind = {
+    label: "Remind",
+    target: { kind: "script" as const, path: "orders/remind" },
+    input: { order: "selection.orders.number", channel: { value: "sms" } },
+    confirm: "Send a reminder for {{selection.orders.number}}?",
+    enabledWhen: "selection.orders.id",
+  };
+  const targets = {
+    "script:orders/remind": {
+      canStart: true,
+      description: "A reminder is on its way.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          order: { type: "string" },
+          channel: { type: "string" },
+          note: { type: "string", title: "Note" },
+        },
+        required: ["order", "channel", "note"],
+      },
+    },
+    "flow:orders/refund": { canStart: false, description: null, inputSchema: null },
+  };
+  const starting = () => {
+    const { client, asked } = fake();
+    const started: { target: unknown; input: unknown }[] = [];
+    client.start = vi.fn(async (target, input) => {
+      started.push({ target, input });
+      return { kind: target.kind, id: "run-1" };
+    });
+    client.run = vi.fn(async () => ({ status: "succeeded", output: { sent: true } }));
+    return { client, asked, started };
+  };
+
+  test("an action maps the chosen row, asks for what is missing, confirms with the row's value, starts, and reads the page again", async () => {
+    const { client, asked, started } = starting();
+    render(
+      <PageRenderer
+        tables={tables}
+        client={client}
+        targets={targets}
+        page={page([
+          widget("orders", { title: "Orders", fields: [{ column: "number" }] }),
+          { id: "remind", type: "action", title: "Remind", at, action: remind },
+        ])}
+      />,
+    );
+    const orders = within(await screen.findByRole("region", { name: "Orders" }));
+    await orders.findByText("A-1");
+    // Nothing chosen yet: the action waits for a row.
+    const button = screen.getByRole("button", { name: "Remind" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    // The orders widget lets a row be chosen, because the action reads it.
+    fireEvent.click(orders.getAllByRole("radio", { name: "Choose this row" })[1] as HTMLElement);
+    await waitFor(() => expect(button.disabled).toBe(false));
+    const reads = asked.length;
+
+    fireEvent.click(button);
+    // "note" is required and not mapped, so it is asked for, with the mapped values in place.
+    const dialog = within(await screen.findByRole("dialog"));
+    expect((dialog.getByLabelText("Order") as HTMLInputElement).value).toBe("A-2");
+    fireEvent.input(dialog.getByLabelText("Note"), { target: { value: "Tomorrow at 9" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Remind" }));
+    // Then the confirmation, with the row's value in it.
+    expect(await screen.findByText("Send a reminder for A-2?")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Remind" }).at(-1) as HTMLElement);
+
+    await waitFor(() => expect(started).toHaveLength(1), { timeout: 3000 });
+    expect(started[0]).toEqual({
+      target: { kind: "script", path: "orders/remind" },
+      input: { order: "A-2", channel: "sms", note: "Tomorrow at 9" },
+    });
+    // An end user is told what the script says it does; the page reads its rows again.
+    expect(
+      await screen.findByText("A reminder is on its way.", {}, { timeout: 3000 }),
+    ).toBeTruthy();
+    await waitFor(() => expect(asked.length).toBeGreaterThan(reads));
+  });
+
+  test("row actions run on their row, and one the person may not start is not offered", async () => {
+    const { client, started } = starting();
+    render(
+      <PageRenderer
+        tables={tables}
+        client={client}
+        targets={{
+          ...targets,
+          "script:orders/remind": { ...targets["script:orders/remind"], inputSchema: null },
+        }}
+        page={page([
+          widget("orders", {
+            title: "Orders",
+            fields: [{ column: "number" }],
+            actions: [
+              {
+                ...remind,
+                input: { order: "row.number" },
+                confirm: undefined,
+                enabledWhen: undefined,
+              } as never,
+              { label: "Refund", target: { kind: "flow", path: "orders/refund" } },
+            ],
+          }),
+        ])}
+      />,
+    );
+    const orders = within(await screen.findByRole("region", { name: "Orders" }));
+    await orders.findByText("A-3");
+    expect(orders.queryByRole("button", { name: "Refund" })).toBeNull();
+    fireEvent.click(orders.getAllByRole("button", { name: "Remind" })[2] as HTMLElement);
+    await waitFor(() => expect(started[0]?.input).toEqual({ order: "A-3" }), { timeout: 3000 });
   });
 });

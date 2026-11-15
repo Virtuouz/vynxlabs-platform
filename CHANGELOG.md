@@ -27,6 +27,15 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **A connection can be tested** from its row on the Connections page (`POST …/connection-tests`), by one of the workspace's workers.
 - **A console script's schema is read from its code.** Saving a script that exports `input` or `output`, made with `z`, has a worker read them as JSON Schema onto the draft. The schema is then shown, not edited by hand.
 
+### For tenant developers
+
+- **Input is asked for as fields everywhere a schema is known:** running a script, starting a flow, the flow editor's Run by hand (it no longer sends `{}`), running again with other input, a schedule's input, and an action's. Nested objects, lists, choices, dates and unions are drawn as fields; a part the form cannot draw is asked for as JSON on its own, and the whole form can be switched to JSON and back.
+- **A new console script exports its input with zod.** The starter now declares `export const input = z.object(...)`, and Try it draws its form from it.
+- **A schedule can start a flow**, from its manual trigger: `flow:` in place of `script:` in the `schedule` kind. A flow with no manual trigger is refused at deploy. **`overlap: skip`** passes over a time while the run it started last is still going; the Triggers page says when it last skipped. Both are additions to schema version 1, and need this core.
+- **Triggers are made from the Triggers page.** **New trigger** opens a schedule form with the next five times as the scheduler works them out, a time zone list, and its input drawn from what it starts; webhooks, forms and events open their editors. **Fire now** starts one run of a schedule, marked `manual: true`, without moving its next time (`POST …/schedule-firings`). `GET …/schedule-preview?cron=&timezone=` gives the next times.
+- **Interfaces have actions.** An `action` widget is a button, and a table can have up to five row actions. Each starts a script, or a flow from its manual trigger, as whoever presses it, with input mapped from the page (`row.<column>`, `selection.<widget>.<column>`, `filters.<filter>.value`) or constants; what is required and not mapped is asked for, and a confirmation can show the row's values. An action is hidden from anyone who may not start its target, and the builder names the audiences who would not see it. Interfaces without actions are unchanged.
+- **Resources apply flows before schedules**, so that a schedule can name a flow in the same bundle.
+
 ## 0.5.0, not yet released
 
 Authoring in the console (phase 7).

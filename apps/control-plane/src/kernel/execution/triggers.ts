@@ -4,7 +4,7 @@ import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@vynxlab
 import type { TriggerSource } from "@vynxlabs/sdk";
 import { CronExpressionParser } from "cron-parser";
 import type { Trx } from "../audit.js";
-import { badRequest, HttpError } from "../errors.js";
+import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
 import { revealSecret } from "../secrets.js";
@@ -17,9 +17,12 @@ interface ScheduleConfig {
   input?: Record<string, unknown>;
   /** A trigger source that is run on each tick, and gives back what is new. */
   source?: string | undefined;
+  /** `skip` passes over a time while the last run it started is still going. */
+  overlap?: "allow" | "skip" | undefined;
 }
 interface ScheduleBody extends ScheduleConfig {
-  script: string;
+  script?: string;
+  flow?: string;
   enabled?: boolean;
   tags?: string[];
 }
@@ -345,6 +348,34 @@ function formOf(body: FormTrigger): FormTrigger {
   };
 }
 
+/** The flow a schedule starts: it must be there, and have a manual trigger to start from. */
+async function needFlow(trx: Trx, resource: AppliedResource, flow: string) {
+  const found = await trx
+    .selectFrom("resource")
+    .select("body")
+    .where("workspace_id", "=", resource.workspaceId)
+    .where("kind", "=", "flow")
+    .where("path", "=", flow)
+    .executeTakeFirst();
+  if (!found) {
+    throw badRequest("The schedule refers to a flow that does not exist.", [
+      { path: "/body/flow", message: `no flow has the path "${flow}" in this workspace` },
+    ]);
+  }
+  const nodes = (found.body as unknown as FlowBody).nodes ?? {};
+  const manual = Object.values(nodes).some(
+    (node) => node.type === "trigger" && node.trigger.type === "manual",
+  );
+  if (!manual) {
+    throw badRequest("The schedule's flow cannot be started by a schedule.", [
+      {
+        path: "/body/flow",
+        message: `the flow "${flow}" has no manual trigger, which is what a schedule starts it from`,
+      },
+    ]);
+  }
+}
+
 async function needScript(trx: Trx, resource: AppliedResource, script: string) {
   const found = await trx
     .selectFrom("resource")
@@ -365,12 +396,16 @@ export function registerExecutionHooks(kernel: Kernel) {
     schedule: {
       async apply(trx, resource) {
         const body = resource.body as unknown as ScheduleBody;
-        await needScript(trx, resource, body.script);
+        const target = body.flow
+          ? { kind: "flow" as const, path: body.flow }
+          : { kind: "script" as const, path: body.script as string };
+        if (target.kind === "flow") await needFlow(trx, resource, target.path);
+        else await needScript(trx, resource, target.path);
         await register(kernel, trx, resource, [
           {
             node: "",
             type: "schedule",
-            target: { kind: "script", path: body.script },
+            target,
             enabled: body.enabled ?? true,
             tags: body.tags,
             schedule: {
@@ -378,6 +413,7 @@ export function registerExecutionHooks(kernel: Kernel) {
               ...(body.timezone ? { timezone: body.timezone } : {}),
               ...(body.input ? { input: body.input } : {}),
               ...(body.source ? { source: body.source } : {}),
+              ...(body.overlap === "skip" ? { overlap: "skip" as const } : {}),
             },
           },
         ]);
@@ -480,7 +516,8 @@ export async function startTarget(kernel: Kernel, trx: Trx, state: TriggerRow, f
     const started = await startFlowRun(kernel, trx, {
       ...common,
       flow: state.target_path,
-      triggerNode: state.node_id,
+      // A schedule resource is no node of the flow: the flow starts from its manual trigger.
+      triggerNode: state.node_id || undefined,
     });
     return { kind: "flow" as const, id: started.flowRun.id };
   }
@@ -715,6 +752,18 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
           });
           return { kind: "script" as const, id: made.run.id };
         }
+        const label = due.node_id ? `${due.path}#${due.node_id}` : due.path;
+        if (config.overlap === "skip" && (await stillGoing(trx, due, label))) {
+          await trx
+            .updateTable("trigger_state")
+            .set({
+              config: sql`config || jsonb_build_object('lastSkippedAt', ${fireTime.toISOString()}::text)`,
+            })
+            .where("resource_id", "=", due.resource_id)
+            .where("node_id", "=", due.node_id)
+            .execute();
+          return { kind: "none" as const, id: "" };
+        }
         return await startTarget(kernel, trx, due, {
           input: config.input ?? {},
           trigger: {
@@ -740,6 +789,59 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
     await kickStarted(kernel, [started]);
     fired += 1;
   }
+}
+
+/** Whether the last run a schedule started is still queued or going. */
+async function stillGoing(trx: Trx, state: TriggerRow, label: string): Promise<boolean> {
+  const table = state.target_kind === "flow" ? "flow_run" : "run";
+  const going =
+    state.target_kind === "flow" ? sql`status = 'running'` : sql`status in ('queued', 'running')`;
+  const found = await sql<{ id: string }>`
+    select id from ${sql.table(table)}
+    where workspace_id = ${state.workspace_id} and trigger_type = 'schedule'
+      and trigger_detail->>'schedule' = ${label} and ${going}
+    limit 1
+  `.execute(trx);
+  return found.rows.length > 0;
+}
+
+/**
+ * Starts one run of a schedule now, as its next time would, without moving
+ * that time. The run says it was started by hand.
+ */
+export async function fireScheduleNow(kernel: Kernel, trx: Trx, workspaceId: string, path: string) {
+  const state = await trx
+    .selectFrom("trigger_state")
+    .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+    .selectAll("trigger_state")
+    .where("trigger_state.workspace_id", "=", workspaceId)
+    .where("trigger_state.type", "=", "schedule")
+    .where("trigger_state.node_id", "=", "")
+    .where("resource.path", "=", path)
+    .executeTakeFirst();
+  if (!state) throw notFound(`The schedule ${path}`);
+  const config = state.config as unknown as ScheduleConfig;
+  return startTarget(kernel, trx, state, {
+    input: config.input ?? {},
+    trigger: {
+      type: "schedule",
+      detail: { schedule: path, scheduledFor: new Date().toISOString(), manual: true },
+    },
+  });
+}
+
+/** The next times a schedule fires, as the scheduler works them out. Throws on a bad cron. */
+export function nextFireTimes(cron: string, timezone: string | undefined, count = 5): Date[] {
+  if (cron.trim().split(/\s+/).length !== 5) throw new Error("it must have five fields");
+  const times: Date[] = [];
+  let after = new Date();
+  for (let i = 0; i < count; i += 1) {
+    const next = scheduleSource.nextFire?.({ cron, ...(timezone ? { timezone } : {}) }, after);
+    if (!next) break;
+    times.push(next);
+    after = next;
+  }
+  return times;
 }
 
 /** A form trigger as its page needs it. Undefined for an address that is no form of this tenant's. */

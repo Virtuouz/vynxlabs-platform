@@ -7,7 +7,14 @@
     "script": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-      "maxLength": 255
+      "maxLength": 255,
+      "description": "The script it starts. Give this or `flow`."
+    },
+    "flow": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255,
+      "description": "The flow it starts, from the flow's manual trigger. Give this or `script`."
     },
     "cron": {
       "type": "string",
@@ -24,6 +31,13 @@
     },
     "enabled": {
       "type": "boolean"
+    },
+    "overlap": {
+      "enum": [
+        "allow",
+        "skip"
+      ],
+      "description": "`skip` passes over a time when the run it started last is still going. Default `allow`."
     },
     "source": {
       "type": "string",
@@ -43,8 +57,19 @@
     }
   },
   "required": [
-    "script",
     "cron"
+  ],
+  "oneOf": [
+    {
+      "required": [
+        "script"
+      ]
+    },
+    {
+      "required": [
+        "flow"
+      ]
+    }
   ],
   "additionalProperties": false
 }

@@ -1,5 +1,5 @@
-import { Button, JsonView, Notice, TextField } from "@vynxlabs/ui";
-import { CirclePause, CirclePlay, ShieldAlert } from "lucide-react";
+import { Button, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { CirclePause, CirclePlay, Plus, ShieldAlert, Zap } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -10,6 +10,7 @@ import { CopyButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue } from "../router.tsx";
 import { stamp } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
+import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 // ----- Triggers -----
 
@@ -23,6 +24,9 @@ interface Trigger {
   enabled: boolean;
   cron: string | null;
   timezone: string | null;
+  /** For a schedule: whether it skips a time while its last run goes. */
+  overlap?: "allow" | "skip" | null;
+  lastSkippedAt?: string | null;
   nextFireAt: string | null;
   lastFiredAt: string | null;
   url: string | null;
@@ -78,6 +82,40 @@ export function TriggersWorkbench({
   const rows = items.filter((one) => type === "all" || one.type === type);
   const open = items.find((one) => triggerKey(one) === chosen);
   const pausedCount = items.filter((one) => one.paused).length;
+  const [creating, setCreating] = useState(false);
+  const fireNow = async (row: Trigger) => {
+    try {
+      const started = await api.post<{ id: string }>(`${root}/schedule-firings`, {
+        path: row.path,
+      });
+      // The run's page is where it goes on.
+      navigate(`${link}/runs/${started.id}`);
+    } catch (caught) {
+      notify.error(caught);
+    }
+  };
+  const newTrigger = production ? (
+    <Button disabled title="Triggers change in a dev workspace and reach production by promotion.">
+      <Plus aria-hidden="true" size={15} /> New trigger
+    </Button>
+  ) : (
+    <Menu
+      label={
+        <span className="inline-flex items-center gap-1.5">
+          <Plus aria-hidden="true" size={15} /> New trigger
+        </span>
+      }
+      align="end"
+      triggerClassName="inline-flex h-9 items-center gap-1.5 rounded-control bg-action px-3 font-medium text-action-ink hover:brightness-110"
+      items={[
+        { label: "Schedule", onSelect: () => setCreating(true) },
+        ...(["webhook", "form", "event"] as const).map((type) => ({
+          label: { webhook: "Webhook", form: "Form", event: "Event" }[type],
+          onSelect: () => navigate(`${link}/resources/new/trigger?type=${type}`),
+        })),
+      ]}
+    />
+  );
 
   const columns: CollectionColumn<Trigger>[] = [
     {
@@ -148,177 +186,207 @@ export function TriggersWorkbench({
   ];
 
   return (
-    <CollectionView
-      title="Triggers"
-      description="What starts work here without anyone asking. Pause one to stop just it, in any workspace; the pause lasts through deploys until it is resumed."
-      toolbar={
-        <div className="flex flex-col gap-3">
-          {workspacePaused ? (
-            <Notice tone="attention">
-              Every trigger in this workspace is paused. Resume them under Workspace settings.
-            </Notice>
-          ) : null}
-          {production && pausedCount > 0 ? (
-            <Notice tone="attention">
-              {pausedCount} trigger{pausedCount === 1 ? " is" : "s are"} paused in production.
-            </Notice>
-          ) : null}
-          <FilterChips
-            label="Kind"
-            value={type}
-            onChange={setType}
-            options={[
-              { value: "all", label: "All", count: items.length },
-              ...types.map((one) => ({
-                value: one,
-                label: TYPE_LABEL[one] ?? one,
-                count: items.filter((item) => item.type === one).length,
-              })),
-            ]}
-          />
-        </div>
-      }
-      columns={columns}
-      rows={list.data ? rows : undefined}
-      rowKey={triggerKey}
-      selected={chosen ?? undefined}
-      onSelect={(row) => choose(triggerKey(row))}
-      error={list.error?.message}
-      empty={{
-        title: "Nothing starts by itself yet",
-        text: "A schedule, a webhook, a form or an event in a flow or a script starts work here once it is deployed.",
-      }}
-      inspector={
-        open ? (
-          <Inspector
-            open
-            label="The chosen trigger"
-            title={open.path}
-            eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
-            onClose={() => choose(null)}
-            footer={
-              open.paused ? (
-                <Button
-                  variant="primary"
-                  onClick={async () => {
-                    try {
-                      await api.delete(
-                        `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
-                      );
-                      list.reload();
-                    } catch (caught) {
-                      notify.error(caught);
-                    }
-                  }}
-                >
-                  <CirclePlay aria-hidden="true" size={15} /> Resume
-                </Button>
-              ) : (
-                <Button
-                  onClick={async () => {
-                    const reason = await ask.prompt({
-                      title: `Pause ${open.path}?`,
-                      label: "Why (shown to everyone here)",
-                      action: "Pause",
-                      danger: production,
-                      required: false,
-                    });
-                    if (reason === null) return;
-                    try {
-                      await api.put(
-                        `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
-                        reason ? { reason } : {},
-                      );
-                      list.reload();
-                    } catch (caught) {
-                      notify.error(caught);
-                    }
-                  }}
-                >
-                  <CirclePause aria-hidden="true" size={15} /> Pause this trigger
-                </Button>
-              )
-            }
-          >
-            <div className="flex flex-col gap-4">
-              {open.paused ? (
-                <Notice tone="attention">
-                  Paused {fromNow(open.paused.at)}
-                  {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start is
-                  started until it is resumed.
-                </Notice>
-              ) : null}
-              {open.lastRefusal ? (
-                <div className="rounded-panel border border-line">
-                  <NextStep
-                    tone="danger"
-                    icon={<ShieldAlert aria-hidden="true" size={15} />}
-                    title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
-                    detail={open.lastRefusal.problem || undefined}
-                  />
-                </div>
-              ) : null}
-              <KeyValues
-                rows={[
-                  {
-                    label: "Starts",
-                    value: (
-                      <Link to={targetLink(link, open)}>
-                        {open.script} ({open.targetKind})
-                      </Link>
-                    ),
-                    mono: true,
-                  },
-                  ...(open.cron
-                    ? [
-                        {
-                          label: "Schedule",
-                          value: `${open.cron} · ${open.timezone ?? "UTC"}`,
-                          mono: true,
-                        },
-                      ]
-                    : []),
-                  ...(open.event ? [{ label: "Event", value: open.event, mono: true }] : []),
-                  {
-                    label: "Next",
-                    value: open.nextFireAt
-                      ? `${stamp(open.nextFireAt)} (${fromNow(open.nextFireAt)})`
-                      : "On request",
-                  },
-                  {
-                    label: "Last fired",
-                    value: open.lastFiredAt
-                      ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
-                      : "Not fired yet. Runs started by hand are not counted.",
-                  },
-                ]}
-              />
-              {open.lastRun ? (
-                <Link to={runLink(link, open.lastRun)} className="text-meta">
-                  Open the last run it started
-                </Link>
-              ) : null}
-              {open.url ? (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-label text-ink-subtle uppercase">
-                    {open.type === "form" ? "Form address" : "Webhook address"}
+    <>
+      <NewScheduleSheet
+        key={String(creating)}
+        root={root}
+        link={link}
+        open={creating}
+        onClose={() => {
+          setCreating(false);
+          list.reload();
+        }}
+      />
+      <CollectionView
+        actions={newTrigger}
+        title="Triggers"
+        description="What starts work here without anyone asking. Pause one to stop just it, in any workspace; the pause lasts through deploys until it is resumed."
+        toolbar={
+          <div className="flex flex-col gap-3">
+            {workspacePaused ? (
+              <Notice tone="attention">
+                Every trigger in this workspace is paused. Resume them under Workspace settings.
+              </Notice>
+            ) : null}
+            {production && pausedCount > 0 ? (
+              <Notice tone="attention">
+                {pausedCount} trigger{pausedCount === 1 ? " is" : "s are"} paused in production.
+              </Notice>
+            ) : null}
+            <FilterChips
+              label="Kind"
+              value={type}
+              onChange={setType}
+              options={[
+                { value: "all", label: "All", count: items.length },
+                ...types.map((one) => ({
+                  value: one,
+                  label: TYPE_LABEL[one] ?? one,
+                  count: items.filter((item) => item.type === one).length,
+                })),
+              ]}
+            />
+          </div>
+        }
+        columns={columns}
+        rows={list.data ? rows : undefined}
+        rowKey={triggerKey}
+        selected={chosen ?? undefined}
+        onSelect={(row) => choose(triggerKey(row))}
+        error={list.error?.message}
+        empty={{
+          title: "Nothing starts by itself yet",
+          text: "A schedule, a webhook, a form or an event in a flow or a script starts work here once it is deployed.",
+        }}
+        inspector={
+          open ? (
+            <Inspector
+              open
+              label="The chosen trigger"
+              title={open.path}
+              eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
+              onClose={() => choose(null)}
+              footer={
+                open.paused ? (
+                  <Button
+                    variant="primary"
+                    onClick={async () => {
+                      try {
+                        await api.delete(
+                          `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
+                        );
+                        list.reload();
+                      } catch (caught) {
+                        notify.error(caught);
+                      }
+                    }}
+                  >
+                    <CirclePlay aria-hidden="true" size={15} /> Resume
+                  </Button>
+                ) : (
+                  <span className="flex flex-wrap gap-2">
+                    {open.type === "schedule" && !open.node ? (
+                      <Button variant="primary" onClick={() => void fireNow(open)}>
+                        <Zap aria-hidden="true" size={15} /> Fire now
+                      </Button>
+                    ) : null}
+                    <Button
+                      onClick={async () => {
+                        const reason = await ask.prompt({
+                          title: `Pause ${open.path}?`,
+                          label: "Why (shown to everyone here)",
+                          action: "Pause",
+                          danger: production,
+                          required: false,
+                        });
+                        if (reason === null) return;
+                        try {
+                          await api.put(
+                            `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
+                            reason ? { reason } : {},
+                          );
+                          list.reload();
+                        } catch (caught) {
+                          notify.error(caught);
+                        }
+                      }}
+                    >
+                      <CirclePause aria-hidden="true" size={15} /> Pause this trigger
+                    </Button>
                   </span>
-                  <code className="rounded-control bg-code-bg p-2 font-mono text-telemetry break-all select-all">
-                    {open.type === "form" ? "" : "POST "}
-                    {open.url}
-                  </code>
-                  <CopyButton value={open.url} label="Copy address" />
-                </div>
-              ) : open.type === "webhook" || open.type === "form" ? (
-                <p className="m-0 text-meta text-ink-subtle">
-                  The address is shown to those who manage triggers.
-                </p>
-              ) : null}
-            </div>
-          </Inspector>
-        ) : null
-      }
-    />
+                )
+              }
+            >
+              <div className="flex flex-col gap-4">
+                {open.paused ? (
+                  <Notice tone="attention">
+                    Paused {fromNow(open.paused.at)}
+                    {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start is
+                    started until it is resumed.
+                  </Notice>
+                ) : null}
+                {open.lastRefusal ? (
+                  <div className="rounded-panel border border-line">
+                    <NextStep
+                      tone="danger"
+                      icon={<ShieldAlert aria-hidden="true" size={15} />}
+                      title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
+                      detail={open.lastRefusal.problem || undefined}
+                    />
+                  </div>
+                ) : null}
+                <KeyValues
+                  rows={[
+                    {
+                      label: "Starts",
+                      value: (
+                        <Link to={targetLink(link, open)}>
+                          {open.script} ({open.targetKind})
+                        </Link>
+                      ),
+                      mono: true,
+                    },
+                    ...(open.cron
+                      ? [
+                          {
+                            label: "Schedule",
+                            value: `${open.cron} · ${open.timezone ?? "UTC"}`,
+                            mono: true,
+                          },
+                        ]
+                      : []),
+                    ...(open.event ? [{ label: "Event", value: open.event, mono: true }] : []),
+                    ...(open.overlap === "skip"
+                      ? [
+                          {
+                            label: "Overlap",
+                            value: open.lastSkippedAt
+                              ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
+                              : "Skips a time while its last run goes.",
+                          },
+                        ]
+                      : []),
+                    {
+                      label: "Next",
+                      value: open.nextFireAt
+                        ? `${stamp(open.nextFireAt)} (${fromNow(open.nextFireAt)})`
+                        : "On request",
+                    },
+                    {
+                      label: "Last fired",
+                      value: open.lastFiredAt
+                        ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
+                        : "Not fired yet. Runs started by hand are not counted.",
+                    },
+                  ]}
+                />
+                {open.lastRun ? (
+                  <Link to={runLink(link, open.lastRun)} className="text-meta">
+                    Open the last run it started
+                  </Link>
+                ) : null}
+                {open.url ? (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-label text-ink-subtle uppercase">
+                      {open.type === "form" ? "Form address" : "Webhook address"}
+                    </span>
+                    <code className="rounded-control bg-code-bg p-2 font-mono text-telemetry break-all select-all">
+                      {open.type === "form" ? "" : "POST "}
+                      {open.url}
+                    </code>
+                    <CopyButton value={open.url} label="Copy address" />
+                  </div>
+                ) : open.type === "webhook" || open.type === "form" ? (
+                  <p className="m-0 text-meta text-ink-subtle">
+                    The address is shown to those who manage triggers.
+                  </p>
+                ) : null}
+              </div>
+            </Inspector>
+          ) : null
+        }
+      />
+    </>
   );
 }
 

@@ -29,6 +29,8 @@ export interface WidgetContext {
   onDelete?(row: Record<string, unknown>): Promise<void>;
   /** What to show in place of a value: the name of the row a reference points at. */
   display?(column: string, value: unknown): string | undefined;
+  /** Things a person can do to one row, offered on each: a label, and what pressing it does. */
+  rowActions?: { label: string; onRun(row: Record<string, unknown>): void }[];
   /** True while the rows are being fetched. */
   loading?: boolean;
 }
@@ -209,6 +211,7 @@ registerWidget<TableWidgetConfig>({
     const remove = context.onDelete;
     const edit = context.onEdit;
     const display = context.display;
+    const actions = context.rowActions ?? [];
     return (
       <>
         <Grid
@@ -231,10 +234,20 @@ registerWidget<TableWidgetConfig>({
                   display(column.name, row[column.name]),
               }
             : {})}
-          {...(open || remove
+          {...(open || remove || actions.length > 0
             ? {
                 rowActions: (row: Record<string, unknown>) => (
                   <>
+                    {actions.map((action) => (
+                      <Button
+                        key={action.label}
+                        size="small"
+                        variant="quiet"
+                        onClick={() => action.onRun(row)}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
                     {open ? (
                       <Button size="small" variant="quiet" onClick={() => open(row)}>
                         Open

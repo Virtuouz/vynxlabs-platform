@@ -22,7 +22,13 @@ import {
   runStateSql,
 } from "../kernel/execution/state.js";
 import { queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
-import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
+import {
+  fireScheduleNow,
+  fireWebhook,
+  kickStarted,
+  nextFireTimes,
+  webhookToken,
+} from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
@@ -1258,6 +1264,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   enabled: Type.Boolean(),
                   cron: NullableString,
                   timezone: NullableString,
+                  overlap: Type.Union([Type.Literal("allow"), Type.Literal("skip"), Type.Null()], {
+                    description: "For a schedule: whether it skips a time while its last run goes.",
+                  }),
+                  lastSkippedAt: NullableTime,
                   nextFireAt: NullableTime,
                   lastFiredAt: NullableTime,
                   url: NullableString,
@@ -1327,7 +1337,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const match =
             row.type === "event"
               ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name}`
-              : sql`trigger_detail->>'trigger' = ${label}`;
+              : // A schedule names itself under `schedule`, every other trigger under `trigger`.
+                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label}`;
           const found = await sql<{
             kind: "script" | "flow";
             id: string;
@@ -1396,6 +1407,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   : null,
                 cron: body.cron ?? null,
                 timezone: row.type === "schedule" ? (body.timezone ?? "UTC") : null,
+                overlap:
+                  row.type === "schedule"
+                    ? ((row.config as { overlap?: "skip" }).overlap ?? ("allow" as const))
+                    : null,
+                lastSkippedAt: (row.config as { lastSkippedAt?: string }).lastSkippedAt ?? null,
                 nextFireAt: isoOrNull(row.next_fire_at),
                 lastFiredAt: isoOrNull(row.last_fired_at),
                 url: token ? address : null,
@@ -1403,6 +1419,75 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           ),
         };
+      },
+    );
+
+    app.post(
+      `${base}/schedule-firings`,
+      {
+        config: { access: access.workspace("run:write") },
+        schema: {
+          summary: "Start a schedule's run now",
+          description:
+            "Starts one run as the schedule's next time would, with its input, and leaves that " +
+            "time where it is. The run's trigger says `manual: true`.",
+          tags: ["runs"],
+          params: WorkspaceParams,
+          body: Type.Object({ path: Type.String({ maxLength: 255 }) }),
+          response: {
+            201: Type.Object({
+              kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
+              id: Id,
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const path = wildPath({ "*": body.path });
+        const started = await ctx.mutate(async (trx, audit) => {
+          const made = await fireScheduleNow(kernel, trx, params.w, path);
+          await audit({
+            action: "schedule.fired",
+            targetType: "schedule",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { kind: made.kind, id: made.id },
+          });
+          return made;
+        });
+        await kickStarted(kernel, [started]);
+        return reply.code(201).send(started);
+      },
+    );
+
+    app.get(
+      `${base}/schedule-preview`,
+      {
+        config: { access: access.workspace("trigger:read") },
+        schema: {
+          summary: "When a cron expression would fire next",
+          description: "The next five times, worked out as the scheduler works them out.",
+          tags: ["runs"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            cron: Type.String({ maxLength: 120 }),
+            timezone: Type.Optional(Type.String({ maxLength: 64 })),
+          }),
+          response: { 200: Type.Object({ times: Type.Array(Time) }) },
+        },
+      },
+      async ({ query }) => {
+        try {
+          return { times: nextFireTimes(query.cron, query.timezone).map(iso) };
+        } catch (error) {
+          throw badRequest("The schedule is not valid.", [
+            {
+              path: "/cron",
+              message: `"${query.cron}" is not a usable cron expression${query.timezone ? ` in ${query.timezone}` : ""}: ${(error as Error).message}`,
+            },
+          ]);
+        }
       },
     );
 

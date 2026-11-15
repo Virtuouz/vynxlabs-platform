@@ -337,4 +337,69 @@ describe("an interface", () => {
       }),
     ).not.toEqual([]);
   });
+
+  test("an action and row actions map what the page holds, and each path must name what is there", () => {
+    const refund = {
+      label: "Refund",
+      target: { kind: "script" as const, path: "orders/refund" },
+      input: { orderId: "row.number", reason: { value: "asked" } },
+      confirm: "Refund {{row.number}} for {{row.total}}?",
+      result: { refresh: ["orders"] },
+    };
+    expect(
+      problems([
+        widget("orders", { actions: [refund] }),
+        {
+          id: "chase",
+          type: "action",
+          at,
+          action: {
+            label: "Chase the customer",
+            target: { kind: "flow", path: "orders/chase" },
+            input: { order: "selection.orders.number" },
+            enabledWhen: "selection.orders.id",
+          },
+        },
+      ]),
+    ).toEqual([]);
+
+    const issues = problems([
+      widget("orders", {
+        actions: [
+          {
+            ...refund,
+            input: { orderId: "row.nothing", other: "selection.nobody.number" },
+            confirm: "For {{ filters.missing.value }}?",
+            result: { refresh: ["gone"] },
+          },
+        ],
+      }),
+      {
+        id: "bad",
+        type: "action",
+        at,
+        action: { label: "Go", target: { kind: "script", path: "go" }, input: { x: "row.number" } },
+      },
+      widget("totals", {
+        summary: { groupBy: [{ column: "status" }], aggregates: [{ fn: "count", as: "n" }] },
+        actions: [refund],
+      }),
+      { id: "lost", type: "action", at },
+    ]).join("\n");
+    for (const expected of [
+      '/0/actions/0/input/orderId there is no column "nothing" in the table "orders"',
+      '/0/actions/0/input/other there is no widget "nobody" on this page whose rows can be chosen',
+      '/0/actions/0/result/refresh/0 there is no widget "gone"',
+      '/0/actions/0/confirm there is no filter "missing" on this page',
+      "/1/action/input/x only a row action has a row",
+      "/2/actions only a table of rows has row actions",
+      "/3/action an action widget needs its action",
+    ]) {
+      expect(issues).toContain(expected);
+    }
+  });
+
+  test("an interface written before actions still holds together", () => {
+    expect(problems([widget("orders", {})])).toEqual([]);
+  });
 });

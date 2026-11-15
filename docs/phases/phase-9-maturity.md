@@ -131,3 +131,21 @@ Each item's acceptance criteria are in the roadmap and its spec. New suites this
 - **Checked in the image, with `deploy/compose` and the worker host:** a script on a managed worker ran as uid 10001, reached the control plane and `example.com`, could not resolve `postgres` or `objectstore`, and was refused `169.254.169.254`. A connection test through the worker answered 200 in 76 ms. The tenant's Workers state said `host`.
 - **Docker's name server broke the first firewall rules.** Docker rewrites DNS to 127.0.0.11 on a port of its own before the filter table sees the packet, so a rule for port 53 never matched and every worker lookup was refused as loopback. The rule now allows the name server's address on any port.
 - **One webhook test failed once under the full parallel run** and passed alone and on the next full run. Left as noted.
+- **The kit's `Form` was left as it was.** It serves flat forms: a row's fields, a connection's settings. `SchemaForm` is new beside it and serves input. Rebuilding `Form` on it, as the plan had it, would have changed every row form for nothing they need.
+- **SchemaForm checks what it draws itself, not with Ajv.** Ajv builds validators with `new Function`, which the app pages' content security policy forbids, and an action's form runs there. The server checks every input fully, and its `/input/...` errors are put on the fields they name.
+- **A form that started as JSON started empty**, and one whose schema arrived after it was drawn stayed JSON: both found by the schedule editor's tests. The form now shows what it was given, and is drawn again when its schema arrives.
+- **The Triggers page's "last run" never matched a schedule.** A schedule names itself in its run's trigger as `schedule`, every other trigger as `trigger`, and the list looked for `trigger` only. Both are looked for now.
+- **A schedule resource could not name a flow in its own bundle,** because flows were applied after schedules. Flows go first now; nothing a flow refers to comes after it.
+- **Starting a flow from a resource-level schedule passed `""` as the trigger node,** which the engine read as a node named nothing. It passes none, and the flow starts from its manual trigger.
+- **Action paths name widgets, not tables,** as planned. A widget whose chosen row an action reads lets rows be chosen even when nothing else follows it.
+- **After an action succeeds the whole page reads again,** not only the widgets named in `result.refresh`, which is kept for later. The result is said in a notice on the page rather than a toast: the app runtime has no toasts.
+- **Who would not see an action** is worked out from the bindings that hold the app's audiences (groups, end-user groups, every end user, anyone) and those that grant starting the target, at the tenant, the workspace or the target. A single person bound to an app is not checked one by one.
+- **`GET …/interface-targets` is a GET,** with the targets in the query: as a POST it would have been refused by the guard that every change goes through the write path, though it changes nothing.
+- **One flow test failed once under the full parallel run** (an approval decided 34 ms in) and passed alone and on the next run. Noted with the webhook one from milestone 6.
+- **Walked in Chromium on a built instance, at 1440 and 390 px:**
+  - Start flow on a flow whose manual trigger takes a product code, a quantity, a choice and a list of notes showed them as fields, and the run got typed input (`quantity: 10`, `lines: [{text: …}]`);
+  - a schedule for that flow was made from Triggers in 5 clicks (New trigger, Schedule, the target box, the flow, Save draft), and once deployed its first time matched the preview;
+  - an end user in the finance group pressed Remind on a row of an interface app, was asked for the note the action does not map, confirmed "Send a reminder for INV-102 to Fernhill Clinic?", and was told what the script does; both runs say `started_by: end_user`.
+  
+  No page scrolled sideways, and no page threw. `pnpm e2e` passes (16), against an instance of its own.
+

@@ -202,6 +202,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   description: Type.String(),
                   nodeCount: Type.Integer(),
                   triggers: Type.Array(Type.String()),
+                  manualInput: Type.Union([AnyObject, Type.Null()], {
+                    description:
+                      "What the flow's manual trigger takes, as JSON Schema. Null when it has no " +
+                      "manual trigger, or one that says nothing of its input.",
+                  }),
                   lastRun: Type.Union([
                     Type.Object({
                       id: Id,
@@ -305,6 +310,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             triggers: Object.values(body.nodes ?? {})
               .flatMap((node) => (node.type === "trigger" ? [node.trigger.type] : []))
               .sort(),
+            manualInput:
+              Object.values(body.nodes ?? {}).flatMap((node) =>
+                node.type === "trigger" && node.trigger.type === "manual" && node.trigger.input
+                  ? [node.trigger.input as Record<string, unknown>]
+                  : [],
+              )[0] ?? null,
             lastRun: last
               ? {
                   id: last.id,

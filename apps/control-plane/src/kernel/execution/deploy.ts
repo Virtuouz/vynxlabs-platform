@@ -379,9 +379,10 @@ const KIND_ORDER = [
   "event",
   "script",
   "trigger_source",
+  // Before the schedules that start them.
+  "flow",
   "schedule",
   "trigger",
-  "flow",
   "theme",
   "interface",
   "app",

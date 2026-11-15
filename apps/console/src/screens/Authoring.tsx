@@ -17,17 +17,23 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
+import { InputForm } from "../InputDialog.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { ScriptRunPanel } from "./Runs.tsx";
 
-const STARTER = `import type { ScriptContext } from "@vynxlabs/sdk";
+const STARTER = `import { type ScriptContext, z } from "@vynxlabs/sdk";
 
-/** What runs. The input is checked against the schema under Settings before this is called. */
-export default async function (input: { name?: string }, ctx: ScriptContext) {
+/** What it takes. Saving reads it, so a run's input is checked against it, and forms ask for it. */
+export const input = z.object({
+  name: z.string().describe("Who to greet"),
+});
+
+/** What runs. */
+export default async function (given: z.infer<typeof input>, ctx: ScriptContext) {
   ctx.log.info("Started", { by: ctx.run.trigger.type });
-  return { hello: input.name ?? "world" };
+  return { hello: given.name };
 }
 `;
 
@@ -245,7 +251,8 @@ export function ScriptEditor({
   const [fields, setFields] = useState<ApiError["fields"]>([]);
   const [busy, setBusy] = useState(false);
   const [schemaText, setSchemaText] = useState("");
-  const [testInput, setTestInput] = useState("{}");
+  // The last input it was tried with, kept while the editor is open.
+  const [testInput, setTestInput] = useState<unknown>({});
   const [testRun, setTestRun] = useState<string>();
   const [reading, setReading] = useState<string>();
   const [readingFailed, setReadingFailed] = useState<string>();
@@ -378,14 +385,9 @@ export function ScriptEditor({
     }
   };
 
-  const test = async () => {
-    let input: unknown;
-    try {
-      input = JSON.parse(testInput);
-    } catch {
-      setProblem("The test input is not valid JSON.");
-      return;
-    }
+  /** Runs the draft with this input. What the server refuses is thrown, for the form to place. */
+  const test = async (input: unknown) => {
+    setTestInput(input);
     if ((dirty || state === "new") && !(await save())) return;
     setBusy(true);
     try {
@@ -394,14 +396,25 @@ export function ScriptEditor({
         input,
       });
       setTestRun(started.runId);
-    } catch (error) {
-      setProblem(failureText(error));
     } finally {
       setBusy(false);
     }
   };
 
-  runShortcut.current = readOnly ? () => {} : () => void test();
+  // The shortcut runs it again with the last input.
+  runShortcut.current = readOnly
+    ? () => {}
+    : () => void test(testInput).catch((error) => setProblem(failureText(error)));
+
+  /** The schema the input form is drawn from: the one read from the code, or the one written. */
+  const inputSchema = (() => {
+    if (body.schemaSource === "code") return body.input as Record<string, unknown> | undefined;
+    try {
+      return JSON.parse(schemaText) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  })();
 
   const STATE: Record<typeof state, [BadgeTone, string]> = {
     new: ["neutral", "Not saved"],
@@ -572,18 +585,18 @@ export function ScriptEditor({
 
   const trying = (
     <div className="flex flex-col gap-3">
-      <TextAreaField
-        name="test"
-        label="Input, as JSON"
-        value={testInput}
-        rows={5}
-        onChange={setTestInput}
-      />
-      <div>
-        <Button variant="primary" disabled={busy || readOnly} onClick={test}>
-          {dirty || state === "new" ? "Save and run" : "Run the draft"}
-        </Button>
-      </div>
+      {readOnly ? (
+        <p className="m-0 text-ink-muted">This script is not run from here.</p>
+      ) : (
+        <InputForm
+          // Drawn again when the schema changes, starting from the last input.
+          key={JSON.stringify(inputSchema ?? null)}
+          schema={inputSchema}
+          initial={testInput}
+          action={dirty || state === "new" ? "Save and run" : "Run the draft"}
+          onSubmit={test}
+        />
+      )}
       <p className="m-0 text-[13px] text-ink-muted">
         Runs the script as its draft has it, on a worker, without deploying anything.{" "}
         <kbd className="rounded-[4px] border border-line px-1 font-mono text-tag">⌘↵</kbd>

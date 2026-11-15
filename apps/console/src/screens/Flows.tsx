@@ -367,9 +367,13 @@ export function FlowView({
   if (flow.error) return <Notice tone="danger">{flow.error.message}</Notice>;
   if (!flow.data) return <p className="text-ink-muted">Loading…</p>;
   const data = flow.data;
-  const manual = Object.values(data.nodes).some(
+  const manualNode = Object.values(data.nodes).find(
     (node) => node.type === "trigger" && (node.trigger as { type: string }).type === "manual",
   );
+  const manual = manualNode !== undefined;
+  // What the manual trigger says its input is, for the form that starts the flow.
+  const manualInput = (manualNode?.trigger as { input?: Record<string, unknown> } | undefined)
+    ?.input;
 
   return (
     <Page
@@ -388,6 +392,7 @@ export function FlowView({
         onClose={() => setStarting(false)}
         title={`Start ${data.path}`}
         action="Start flow"
+        schema={manualInput}
         onSubmit={async (input) => {
           const started = await api.post<{ id: string }>(`${root}/flow-runs`, {
             flow: data.path,

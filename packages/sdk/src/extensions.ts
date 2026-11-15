@@ -70,6 +70,8 @@ export interface WidgetContext {
   onDelete?(row: Record<string, unknown>): Promise<void>;
   /** What to show in place of a value: the name of the row a reference points at. */
   display?(column: string, value: unknown): string | undefined;
+  /** Things a person can do to one row, offered on each: a label, and what pressing it does. */
+  rowActions?: { label: string; onRun(row: Record<string, unknown>): void }[];
   /** True while the rows are being fetched. */
   loading?: boolean;
 }

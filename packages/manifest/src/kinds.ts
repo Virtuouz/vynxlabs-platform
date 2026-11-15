@@ -259,15 +259,25 @@ export const scheduleKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      script: path,
+      script: { ...path, description: "The script it starts. Give this or `flow`." },
+      flow: {
+        ...path,
+        description: "The flow it starts, from the flow's manual trigger. Give this or `script`.",
+      },
       cron: { type: "string", maxLength: 120, description: "Five-field cron expression." },
       timezone: { type: "string", maxLength: 64, description: "IANA time zone. Default UTC." },
       input: { type: "object" },
       enabled: { type: "boolean" },
+      overlap: {
+        enum: ["allow", "skip"],
+        description:
+          "`skip` passes over a time when the run it started last is still going. Default `allow`.",
+      },
       source: triggerSourceRef,
       tags: tagExpressions,
     },
-    required: ["script", "cron"],
+    required: ["cron"],
+    oneOf: [{ required: ["script"] }, { required: ["flow"] }],
     additionalProperties: false,
   },
 };

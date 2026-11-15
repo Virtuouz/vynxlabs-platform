@@ -34,6 +34,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
+import { InputDialog } from "../InputDialog.tsx";
 import { Tag } from "../kit/status.tsx";
 import { Link, navigate } from "../router.tsx";
 import {
@@ -381,6 +382,7 @@ export function FlowEditor({
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [askingInput, setAskingInput] = useState(false);
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<number>();
@@ -659,20 +661,23 @@ export function FlowEditor({
     const timer = setInterval(() => setTick((n) => n + 1), 10_000);
     return () => clearInterval(timer);
   }, []);
-  const hasManual = nodes.some((one) => {
-    const step = one.data.node as { type: string; trigger?: { type?: string } };
-    return step.type === "trigger" && step.trigger?.type === "manual";
-  });
-  const runDraft = async () => {
-    try {
-      const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
-        flow: path,
-        input: {},
-      });
-      navigate(`${link}/runs/${started.runId}`);
-    } catch (error) {
-      notify.error(error);
-    }
+  const manualStep = nodes
+    .map(
+      (one) =>
+        one.data.node as {
+          type: string;
+          trigger?: { type?: string; input?: Record<string, unknown> };
+        },
+    )
+    .find((step) => step.type === "trigger" && step.trigger?.type === "manual");
+  const hasManual = manualStep !== undefined;
+  // Errors are the dialog's to show, by field.
+  const runDraft = async (input: unknown) => {
+    const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
+      flow: path,
+      input,
+    });
+    navigate(`${link}/runs/${started.runId}`);
   };
 
   if (!loaded)
@@ -769,10 +774,18 @@ export function FlowEditor({
             Tidy up
           </Button>
           {state === "draft" && !dirty && hasManual ? (
-            <Button size="small" onClick={runDraft}>
+            <Button size="small" onClick={() => setAskingInput(true)}>
               <Play aria-hidden="true" size={13} /> Run by hand
             </Button>
           ) : null}
+          <InputDialog
+            open={askingInput}
+            onClose={() => setAskingInput(false)}
+            title={`Run ${path} by hand`}
+            action="Run"
+            schema={manualStep?.trigger?.input}
+            onSubmit={runDraft}
+          />
           <Button
             size="small"
             variant={state === "draft" && !dirty ? "secondary" : "primary"}

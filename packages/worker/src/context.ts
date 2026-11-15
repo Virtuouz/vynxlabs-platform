@@ -2,8 +2,10 @@ import type { BundleManifest } from "@vynxlabs/manifest";
 import { type Connector, httpConnector, type ScriptContext, type TableClient } from "@vynxlabs/sdk";
 import { smtpConnector } from "./smtp.js";
 
-/** A job as the control plane hands it out. */
+/** A run as the control plane hands it out. */
 export interface Job {
+  /** Absent from a control plane older than 0.6.0. */
+  kind?: "run";
   runId: string;
   attempt: number;
   workspaceId: string;
@@ -18,6 +20,46 @@ export interface Job {
   startedBy?: { type: string; id: string | null };
   /** The most memory the script may use. Absent from an older control plane. */
   memoryMb?: number;
+}
+
+/** The kinds of task this worker does for the control plane (decision 0001). */
+export const TASK_KINDS = ["describe", "deliver", "test-connection"] as const;
+export type TaskKind = (typeof TASK_KINDS)[number];
+
+/** A bundle a task loads code from. */
+export interface TaskBundle {
+  id: string;
+  digest: string;
+}
+
+/**
+ * Work the control plane asks of a worker that is not a run: reading what a
+ * script's code declares, sending through a connection, trying a connection.
+ */
+export interface TaskJob {
+  kind: TaskKind;
+  taskId: string;
+  workspaceId: string;
+  request: {
+    /** `describe`: the bundle and the script in it. */
+    bundle?: TaskBundle;
+    entry?: string;
+    /** `deliver`, `test-connection`: the connection, by path. */
+    connection?: string;
+    /** `deliver`: what is posted. */
+    payload?: unknown;
+    [field: string]: unknown;
+  };
+  timeoutSeconds: number;
+  memoryMb: number;
+  heartbeatSeconds: number;
+}
+
+/** Whatever a claim hands out. */
+export type Claimed = Job | TaskJob;
+
+export function isTask(job: Claimed): job is TaskJob {
+  return job.kind !== undefined && job.kind !== "run";
 }
 
 export interface LogEntry {
@@ -42,10 +84,35 @@ const BUILTIN = new Map<string, Connector<unknown, unknown>>([
   ["smtp", smtpConnector as Connector<unknown, unknown>],
 ]);
 
-interface Bound {
+export interface Bound {
   connector: string;
   config: unknown;
   credential?: string;
+}
+
+/**
+ * The connector a connection names: one every worker has, or one the bundle in
+ * hand carries, so code uses the connector it was deployed with.
+ */
+export function connectorFor(
+  loaded: Loaded | undefined,
+  name: string,
+): Connector<unknown, unknown> {
+  const builtin = BUILTIN.get(name);
+  if (builtin) return builtin;
+  const manifest = loaded?.manifests.find(
+    (candidate) => candidate.kind === "connector" && candidate.path === name,
+  );
+  const entry = (manifest?.body as { entry?: string } | undefined)?.entry;
+  const own = entry
+    ? (loaded?.exports[entry] as Partial<Connector<unknown, unknown>> | undefined)
+    : undefined;
+  if (typeof own?.create !== "function") {
+    throw new Error(
+      `There is no connector "${name}": it is not one every worker has, and this bundle does not carry it.`,
+    );
+  }
+  return own as Connector<unknown, unknown>;
 }
 
 /**
@@ -123,23 +190,8 @@ export function buildContext({
    * or one the run's own bundle carries, so a run uses the connector code it
    * was deployed with.
    */
-  const connect = (bound: Bound) => {
-    const builtin = BUILTIN.get(bound.connector);
-    if (builtin) return builtin.create(bound.config, bound.credential, signal);
-    const manifest = loaded.manifests.find(
-      (candidate) => candidate.kind === "connector" && candidate.path === bound.connector,
-    );
-    const entry = (manifest?.body as { entry?: string } | undefined)?.entry;
-    const own = entry
-      ? (loaded.exports[entry] as Partial<Connector<unknown, unknown>> | undefined)
-      : undefined;
-    if (typeof own?.create !== "function") {
-      throw new Error(
-        `There is no connector "${bound.connector}": it is not one every worker has, and this run's bundle does not carry it.`,
-      );
-    }
-    return own.create(bound.config, bound.credential, signal);
-  };
+  const connect = (bound: Bound) =>
+    connectorFor(loaded, bound.connector).create(bound.config, bound.credential, signal);
 
   return {
     connection: async <Client>(path: string) =>

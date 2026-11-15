@@ -14,6 +14,7 @@ export interface Pruned {
   events: number;
   refusals: number;
   payloads: number;
+  tasks: number;
   auditMonths: string[];
 }
 
@@ -26,6 +27,8 @@ const BUDGET_MS = 30_000;
 const AUDIT_PART_ROWS = 50_000;
 /** Months of audit partitions made ahead of time. */
 const AUDIT_MONTHS_AHEAD = 3;
+/** Days a finished task is kept: long enough to read what it found, no longer. */
+const TASK_DAYS = 7;
 /** The one lock that lets a single replica prune at a time. */
 const LOCK = "retention";
 
@@ -110,6 +113,7 @@ export async function pruneOnce(
         events: 0,
         refusals: 0,
         payloads: 0,
+        tasks: 0,
         auditMonths: [],
       };
       const all = await policies(kernel);
@@ -124,6 +128,13 @@ export async function pruneOnce(
           and occurred_at < now() - make_interval(days => ${kernel.config.retention.refusalsDays})
           order by occurred_at limit ${batch}`,
         "scim_refusal",
+        deadline,
+      );
+      pruned.tasks += await prune(
+        kernel,
+        sql`select id from task where finished_at < now() - make_interval(days => ${TASK_DAYS})
+          order by finished_at limit ${batch}`,
+        "task",
         deadline,
       );
       const longest = Math.max(
@@ -142,7 +153,7 @@ export async function pruneOnce(
 async function prune(
   kernel: Kernel,
   select: ReturnType<typeof sql>,
-  table: "event" | "webhook_refusal" | "scim_refusal",
+  table: "event" | "webhook_refusal" | "scim_refusal" | "task",
   deadline: number,
 ): Promise<number> {
   let total = 0;

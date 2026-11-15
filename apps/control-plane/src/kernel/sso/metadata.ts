@@ -1,4 +1,5 @@
 import { DOMParser } from "@xmldom/xmldom";
+import { EgressRefused, guardedFetch } from "../egress.js";
 import { badRequest } from "../errors.js";
 
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -54,11 +55,16 @@ export async function readIdpMetadata(
   let xml: string;
   if ("xml" in source) xml = source.xml;
   else {
-    const response = await fetch(source.url, {
+    // An address a tenant gave: reached through the egress guard.
+    let refused: EgressRefused | undefined;
+    const response = await guardedFetch(source.url, {
       redirect: "error",
-      signal: AbortSignal.timeout(10_000),
       headers: { accept: "application/samlmetadata+xml, application/xml, text/xml" },
-    }).catch(() => undefined);
+    }).catch((error) => {
+      if (error instanceof EgressRefused) refused = error;
+      return undefined;
+    });
+    if (refused) throw badRequest(`The metadata cannot be read from there: ${refused.message}`);
     if (!response?.ok) {
       throw badRequest(
         `The metadata could not be read from ${source.url}. Check the address, or paste the metadata instead.`,

@@ -776,6 +776,26 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       fallback?: boolean;
     };
     const generated = typeof body.interface === "string";
+    // An app written as code runs only at an address of its own, never where the console's
+    // sign-in is, unless the operator knowingly allowed it (decision 0001).
+    if (
+      !generated &&
+      place.kind === "main" &&
+      !kernel.hosts.hasAppsAddress &&
+      !kernel.config.appsOnConsoleAddress
+    ) {
+      return html(
+        reply,
+        503,
+        messagePage(look, {
+          title: "This app is not served at this address",
+          text:
+            "Apps written as code run at a separate address for apps, so that they never run " +
+            "where the console's sign-in is. This instance has none yet: whoever runs it sets " +
+            "APPS_URL.",
+        }),
+      );
+    }
     const entry = generated ? "index.html" : (body.entry as string);
     const base = appBasePath(place, {
       tenantSlug: tenant.slug,

@@ -1,6 +1,7 @@
 import { STATUS_CODES } from "node:http";
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { type Static, Type } from "typebox";
+import { EgressRefused } from "./kernel/egress.js";
 import { HttpError } from "./kernel/errors.js";
 
 /** RFC 9457 problem details, plus a stable code and the request ID. */
@@ -79,6 +80,10 @@ export function errorHandler(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
+  // A destination a tenant gave that the egress guard refused: the tenant's to change.
+  if (error instanceof EgressRefused) {
+    return sendProblem(request, reply, 400, { code: "egress_refused", detail: error.message });
+  }
   if (error instanceof HttpError) {
     return sendProblem(request, reply, error.statusCode, {
       code: error.problemCode,

@@ -1,6 +1,6 @@
 # Worker protocol
 
-Version 1. Last updated: 2026-11-12
+Version 1. Last updated: 2026-11-14
 
 This is one of the platform's two language-neutral contracts. The other is the manifest format in `schemas/`. A worker written in any language that follows this document can run a workspace's code. The control plane needs no change for it.
 
@@ -32,9 +32,9 @@ All under `/api/v1/worker`.
 
 Asks for the next job. The control plane holds the request for up to `waitSeconds` (at most 25) and answers as soon as there is a job.
 
-Request: `workerId` (a UUID the worker chooses once, at start), optional `version`, optional `waitSeconds`.
+Request: `workerId` (a UUID the worker chooses once, at start), optional `version`, optional `waitSeconds`, and optional `kinds`: the kinds of job the worker takes, `run` and any [task kinds](#tasks) it knows. A worker that sends no `kinds` is given runs only. Added in 0.6.0.
 
-Response: `{"job": null}`, or a job:
+Response: `{"job": null}`, a run, or a [task](#tasks). A run has `kind: "run"`, absent from a control plane older than 0.6.0, and:
 
 | Field | Meaning |
 | --- | --- |
@@ -167,6 +167,46 @@ Request: `attempt`, `error`: `{message, stack}`, and optionally `logsLost`, as f
 
 Response: `{"final": false}` when the run will be retried, `{"final": true}` when it has no attempts left.
 
+## Tasks
+
+Added in 0.6.0. A task is work the platform needs done in the tenant's execution context that is not a run of a script: reading what code declares, sending through a tenant's connection, trying a connection. The control plane never runs a tenant's code, and never reaches a tenant's systems, to do these itself (decision 0001). It queues a task, and a worker that takes its kind claims it.
+
+A task is offered before a run: each is short, and a person is often waiting on it. It goes to a worker of the tenant, workspace and pool it belongs to, as a run does. A task nobody takes in time, or whose worker stops sending heartbeats for a minute, is failed with the reason.
+
+A task job:
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `describe`, `deliver` or `test-connection` |
+| `taskId` | Identifies the task in every later request |
+| `workspaceId` | The workspace it belongs to |
+| `request` | What to do, by kind, below |
+| `timeoutSeconds`, `memoryMb`, `heartbeatSeconds` | As for a run |
+
+A task runs as a run does, in a process of its own with the same limits, but it is given what it needs at its start and may ask the control plane for nothing more.
+
+| Kind | `request` | `result` |
+| --- | --- | --- |
+| `describe` | `bundle` (`id`, `digest`), `entry` | The script's `input` and `output` as JSON Schema, either or both, or `{}` when its code declares neither. A bundle composed by the control plane exports `__vx_describe(entry)`, which returns exactly this |
+| `deliver` | `connection` (a path), `payload` | `status`: what the connection's API answered. The connection must be `http`; the payload is posted to its base URL |
+| `test-connection` | `connection` (a path), and `bundle` when the workspace has one, for a connector the bundle carries | `ok`, and `status`, `message` and `latencyMs` when known. A connector's own `test` is called when it has one: `http` asks its base URL and treats an answer below 400 as reached, `smtp` connects and signs in. A connection that could not be reached is still a result, with `ok: false`: the task failed only if it could not be tried at all |
+
+### `POST /tasks/{taskId}/heartbeat`
+
+No body. 204. 409 means the task is no longer in progress; stop.
+
+### `GET /tasks/{taskId}/connection`
+
+For `deliver` and `test-connection`: the connection the task names, as for a run, with `connector`, `config` and `credential`. Any other connection, or any other kind, is refused.
+
+### `POST /tasks/{taskId}/complete`
+
+Request: `result`, JSON of at most 256 KB in the shape its kind gives. 409 means the task was no longer in progress.
+
+### `POST /tasks/{taskId}/fail`
+
+Request: `error`: `{message}`.
+
 ## What a worker must do
 
 1. Claim. On `null`, claim again.
@@ -175,6 +215,8 @@ Response: `{"final": false}` when the run will be retried, `{"final": true}` whe
 4. Run the script named by `script.entry` with `input`, giving it a way to read its declared secrets, variables and connections, a logger, the run's details, and a signal that fires on cancellation or when `timeoutSeconds` has passed. A script that does not stop when the signal fires must be stopped anyway: the reference worker runs each attempt in a process of its own, ends it a few seconds after the signal, and never gives that process the worker credential.
 5. Send any remaining logs, then report `complete` or `fail`. Keep lines that could not be sent and try them again; report any that are finally given up as `logsLost`.
 6. On `cancelled: true` or a 409, stop and report nothing.
+
+A worker that takes tasks does the same for a task job, with the task's routes. A worker that knows no task kinds sends no `kinds`, and is never given one.
 
 ## Changes to this contract
 

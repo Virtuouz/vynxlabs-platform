@@ -19,6 +19,7 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { useTaskEnd } from "../tasks.ts";
 import { ScriptRunPanel } from "./Runs.tsx";
 
 const STARTER = `import type { ScriptContext } from "@vynxlabs/sdk";
@@ -93,6 +94,8 @@ interface ScriptBody {
   /** A script's. */
   input?: unknown;
   output?: unknown;
+  /** `code` when the input and output were read from the script's own exports. */
+  schemaSource?: "code";
   timeoutSeconds?: number;
   retries?: { limit: number; delaySeconds: number; backoff: boolean };
   uses?: {
@@ -189,6 +192,8 @@ interface DraftDetail {
   path: string;
   kind: string;
   revision: number;
+  /** For a script: the task in which a worker reads its schemas from the code. */
+  schemaTaskId?: string;
   change: "create" | "update" | "delete" | "take_over";
   deleted: boolean;
   body: ScriptBody;
@@ -242,9 +247,29 @@ export function ScriptEditor({
   const [schemaText, setSchemaText] = useState("");
   const [testInput, setTestInput] = useState("{}");
   const [testRun, setTestRun] = useState<string>();
+  const [reading, setReading] = useState<string>();
+  const [readingFailed, setReadingFailed] = useState<string>();
   const connections = useChoices(root, "connection-bindings", "path");
   const secrets = useChoices(root, "secrets", "name");
   const variables = useChoices(root, "variable-values", "path");
+  const schemaReading = useTaskEnd(root, reading, (task) => {
+    setReading(undefined);
+    if (task.status === "failed") {
+      setReadingFailed(task.error?.message ?? "The worker could not read it.");
+      return;
+    }
+    // What the worker read is on the draft now, if nobody saved since.
+    void api
+      .get<DraftDetail>(`${root}/drafts/${path}`)
+      .then((draft) => {
+        if (draft.revision !== revisionRef.current || dirtyRef.current) return;
+        setBody(draft.body);
+        setSchemaText(JSON.stringify(draft.body.input ?? {}, null, 2));
+      })
+      .catch(() => {});
+  });
+  const revisionRef = useRef<number>(undefined);
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
     let current = true;
@@ -292,6 +317,8 @@ export function ScriptEditor({
     return () => removeEventListener("keydown", onKey);
   }, [kind]);
 
+  revisionRef.current = revision;
+  dirtyRef.current = dirty;
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <p className="text-ink-muted">Loading…</p>;
 
@@ -327,13 +354,19 @@ export function ScriptEditor({
       const saved = await api.put<DraftDetail>(`${root}/drafts/${path}`, {
         kind,
         schemaVersion: 1,
-        body: about.schema ? { ...body, [about.schema.field]: schema } : body,
+        // A schema read from the code is the code's: what was read is sent back as it is.
+        body:
+          about.schema && body.schemaSource !== "code"
+            ? { ...body, [about.schema.field]: schema }
+            : body,
         ...(revision ? { revision } : {}),
       });
       setBody(saved.body);
       setRevision(saved.revision);
       setState("draft");
       setDirty(false);
+      setReadingFailed(undefined);
+      setReading(saved.schemaTaskId);
       if (!opened) navigate(`${link}/${about.edit}/${path}`, { replace: true });
       return true;
     } catch (error) {
@@ -479,20 +512,48 @@ export function ScriptEditor({
           />
         </>
       )}
-      {about.schema ? (
+      {kind === "script" && body.schemaSource === "code" ? (
+        <div className="flex flex-col gap-1">
+          <TextAreaField
+            name="schema"
+            label="Input schema, read from your code"
+            value={JSON.stringify(body.input ?? {}, null, 2)}
+            rows={7}
+            disabled
+            hint="From the input export in the code. Change it there, and save."
+            onChange={() => {}}
+          />
+        </div>
+      ) : about.schema ? (
         <TextAreaField
           name="schema"
           label={about.schema.label}
           value={schemaText}
           rows={kind === "connector" ? 14 : 7}
           disabled={readOnly}
-          hint={about.schema.hint}
+          hint={
+            kind === "script"
+              ? `${about.schema.hint} Export an input schema made with z from the code, and it is read from there instead.`
+              : about.schema.hint
+          }
           error={fieldError(`/body/${about.schema.field}`)}
           onChange={(text) => {
             setSchemaText(text);
             setDirty(true);
           }}
         />
+      ) : null}
+      {kind === "script" && schemaReading.waiting ? (
+        <p className="m-0 text-[13px] text-ink-muted" role="status">
+          {schemaReading.slow
+            ? "Your schema will be read from the code once a worker is available."
+            : "Reading the schema from your code…"}
+        </p>
+      ) : null}
+      {kind === "script" && readingFailed ? (
+        <Notice tone="attention">
+          The schema could not be read from the code: {readingFailed}
+        </Notice>
       ) : null}
       {kind === "trigger_source" ? (
         <p className="m-0 text-[13px] text-ink-muted">

@@ -9,15 +9,48 @@ import {
   type ResourceFile,
   renderResourceFiles,
 } from "@vynxlabs/manifest";
+import type { HttpClient } from "isomorphic-git";
 import git from "isomorphic-git";
-import http from "isomorphic-git/http/node";
 import type { Actor, Db } from "./audit.js";
 import { mutate } from "./audit.js";
 import { activeConsoleManaged, deployConsoleManaged } from "./authoring.js";
+import { guardedFetch } from "./egress.js";
 import { conflict, HttpError, notFound } from "./errors.js";
 import { decryptFor, encryptFor } from "./execution/bindings.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
+
+/**
+ * isomorphic-git's HTTP client, through the egress guard: a repository is an
+ * address a tenant gave, so the instance reaches it as it reaches any other.
+ */
+const http: HttpClient = {
+  async request({ url, method = "GET", headers = {}, body }) {
+    let payload: Buffer | undefined;
+    if (body) {
+      const parts: Uint8Array[] = [];
+      for await (const part of body) parts.push(part);
+      payload = Buffer.concat(parts);
+    }
+    const response = await guardedFetch(url, {
+      method,
+      headers,
+      ...(payload ? { body: payload } : {}),
+      timeoutMs: 60_000,
+    });
+    const reader = response.body;
+    return {
+      url: response.url,
+      method,
+      statusCode: response.status,
+      statusMessage: response.statusText,
+      headers: Object.fromEntries(response.headers),
+      body: (async function* () {
+        if (reader) for await (const chunk of reader) yield chunk as Uint8Array;
+      })(),
+    };
+  },
+};
 
 /**
  * Keeping a dev workspace's console-managed resources in a git repository.

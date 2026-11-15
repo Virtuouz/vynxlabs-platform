@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { TenantNotFoundError } from "@vynxlabs/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
@@ -27,6 +28,8 @@ export type Access =
   | { kind: "custom" }
   /** Called by a worker with a worker credential, under the worker protocol. */
   | { kind: "worker" }
+  /** Called by the instance's worker host with WORKER_HOST_TOKEN, to be given leases. */
+  | { kind: "worker-host" }
   /** Called by an identity provider with a token made for it, under SCIM. */
   | { kind: "scim" }
   | { kind: "permission"; permission: string; scope: Scope };
@@ -36,6 +39,7 @@ export const access = {
   signedIn: { kind: "signed-in" } as Access,
   custom: { kind: "custom" } as Access,
   worker: { kind: "worker" } as Access,
+  workerHost: { kind: "worker-host" } as Access,
   scim: { kind: "scim" } as Access,
   instance: (permission: string): Access => ({ kind: "permission", permission, scope: "instance" }),
   tenant: (permission: string): Access => ({ kind: "permission", permission, scope: "tenant" }),
@@ -210,6 +214,10 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       request.worker = await resolveWorker(kernel, request);
       return;
     }
+    if (declared.kind === "worker-host") {
+      checkWorkerHost(kernel, request);
+      return;
+    }
     if (declared.kind === "scim") {
       const { provider } = request.params as { provider: string };
       request.scim = await resolveScimCaller(kernel, request, provider);
@@ -268,6 +276,7 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       declared &&
       declared.kind !== "public" &&
       declared.kind !== "worker" &&
+      declared.kind !== "worker-host" &&
       // A push that asks for what already holds changes nothing, and is still a success.
       declared.kind !== "scim" &&
       !READ_METHODS.has(request.method) &&
@@ -294,4 +303,18 @@ export async function findWorkspace(
     .executeTakeFirst();
   if (!workspace) throw notFound("The workspace");
   return { id: workspace.id, tenantId: workspace.tenant_id, slug: workspace.slug };
+}
+
+/**
+ * The worker host presents the instance's WORKER_HOST_TOKEN. Without host mode
+ * these routes do not exist, as far as a caller can tell.
+ */
+function checkWorkerHost(kernel: Kernel, request: FastifyRequest) {
+  const expected = kernel.config.workerHostToken;
+  if (kernel.config.managedWorkers !== "host" || !expected) throw notFound("This route");
+  const given = /^Bearer (.+)$/.exec(request.headers.authorization ?? "")?.[1] ?? "";
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  if (!timingSafeEqual(digest(given), digest(expected))) {
+    throw unauthenticated("Send the instance's worker host token.");
+  }
 }

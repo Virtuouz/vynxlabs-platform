@@ -302,6 +302,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "always",
   },
   { table: "worker_pool", ofTenant: own, key: ["id"], export: "always" },
+  // Work handed to workers that is not a run. Short-lived, and the instance's own business.
+  {
+    table: "task",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
   // How long the tenant's history is kept. It travels with the tenant.
   { table: "tenant_retention", ofTenant: own, key: ["tenant_id"], export: "always" },
   // Where members were last; this instance's to remember, not the tenant's to carry.

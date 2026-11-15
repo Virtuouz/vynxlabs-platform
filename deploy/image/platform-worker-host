@@ -1,0 +1,43 @@
+#!/bin/sh
+# Starts the worker host (decision 0001). It runs as root in a container of its
+# own, holding only CAP_SETUID and CAP_SETGID, to start each worker as vxrun,
+# and CAP_NET_ADMIN, if given, for the rules below.
+#
+# The container's network is the first boundary: it reaches the control plane
+# and the internet, and not the database or the object store. With NET_ADMIN,
+# these rules are the second: a worker may not reach a private, loopback or
+# link-local address (cloud metadata included), except the control plane and
+# the container's name servers. They match the worker's user, so the host
+# itself is not held to them.
+set -u
+uid="${MANAGED_WORKER_UID:-10001}"
+log() {
+  printf '{"time":"%s","level":"%s","message":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2"
+}
+
+if command -v iptables >/dev/null 2>&1 && iptables -n -L OUTPUT >/dev/null 2>&1; then
+  plane_host=$(printf '%s' "${PLATFORM_URL:-}" | sed -E 's#^[a-z]+://(\[[^]]+\]|[^/:]+).*#\1#')
+  for address in $(getent ahostsv4 "$plane_host" 2>/dev/null | awk '{print $1}' | sort -u); do
+    iptables -A OUTPUT -m owner --uid-owner "$uid" -d "$address" -j ACCEPT
+  done
+  # Any port: Docker's name server at 127.0.0.11 is reached on a port it rewrites 53 to,
+  # before these rules see the packet.
+  for server in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf); do
+    case "$server" in *:*) continue ;; esac
+    iptables -A OUTPUT -m owner --uid-owner "$uid" -d "$server" -j ACCEPT
+  done
+  for network in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
+    172.16.0.0/12 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4; do
+    iptables -A OUTPUT -m owner --uid-owner "$uid" -d "$network" -j REJECT
+  done
+  if command -v ip6tables >/dev/null 2>&1 && ip6tables -n -L OUTPUT >/dev/null 2>&1; then
+    for network in ::1/128 fc00::/7 fe80::/10 ::ffff:0:0/96; do
+      ip6tables -A OUTPUT -m owner --uid-owner "$uid" -d "$network" -j REJECT
+    done
+  fi
+  log info "workers may not reach private, loopback or link-local addresses, other than the control plane"
+else
+  log warn "no NET_ADMIN: workers are kept from the instance's services by the container network alone, and may reach link-local addresses such as cloud metadata"
+fi
+
+exec node /app/node_modules/@vynxlabs/worker/dist/host-bin.js "$@"

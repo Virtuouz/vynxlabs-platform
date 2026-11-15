@@ -10,6 +10,7 @@ import type { Db } from "./audit.js";
 import { type Auth, createAuth } from "./auth.js";
 import { Vault } from "./crypto.js";
 import { DataStores } from "./data/stores.js";
+import { configureEgress } from "./egress.js";
 import { registerExecutionHooks } from "./execution/triggers.js";
 import { Expressions } from "./flows/expressions.js";
 import { type KindHook, registerDataHooks, registerKernelKinds } from "./kinds.js";
@@ -80,6 +81,7 @@ export function createKernel(
         fileURLToPath(new URL("../../../../packages/screens/runtime/dist", import.meta.url)),
     ),
   };
+  configureEgress(config.egressAllow);
   registerDataHooks(hooks, kernel.data);
   registerExecutionHooks(kernel);
   return kernel;

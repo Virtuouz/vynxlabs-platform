@@ -34,8 +34,11 @@ FROM node:24-slim
 # Without those capabilities in the container, node-cp cannot start at all, and
 # platform-start runs the control plane on plain node instead: it then refuses managed
 # workers to tenants whose code is written outside the operator. See docs/self-hosting.md.
+#
+# The same image runs the worker host (platform-worker-host), which starts managed workers
+# in a container of its own; iptables lets it keep them from private addresses.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libcap2-bin \
+  && apt-get install -y --no-install-recommends libcap2-bin iptables \
   && cp /usr/local/bin/node /usr/local/bin/node-cp \
   && setcap cap_setuid,cap_setgid+ep /usr/local/bin/node-cp \
   && apt-get purge -y libcap2-bin \
@@ -53,4 +56,5 @@ COPY --from=build /repo/packages/screens/runtime/dist ./screens
 USER node
 EXPOSE 8080
 COPY --chmod=755 deploy/image/platform-start /usr/local/bin/platform-start
+COPY --chmod=755 deploy/image/platform-worker-host /usr/local/bin/platform-worker-host
 CMD ["platform-start", "dist/main.js"]

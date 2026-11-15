@@ -38,7 +38,24 @@ From the repository root:
 fly deploy . --config deploy/fly/fly.toml --dockerfile Dockerfile
 ```
 
-The control plane starts worker processes inside its own machine, one per tenant with work, so size the machine for the scripts it will run. Set `MANAGED_WORKERS=false` if every tenant is served by standalone workers instead.
+Managed workers run in a second process group, `workers`, on machines of their own, started by the worker host. Fly gives every machine of an app the same private network, so set the machines' firewall rules (the worker host adds them at start when it has `NET_ADMIN`, which Fly machines have) and keep the database outside the app's network: a Managed Postgres cluster is. Set the shared secret once:
+
+```sh
+fly secrets set --app <app> WORKER_HOST_TOKEN="$(openssl rand -hex 32)" MANAGED_WORKERS=host \
+  APPS_URL='https://apps.<your domain>'
+```
+
+and add the group to `fly.toml`:
+
+```toml
+[processes]
+  app = "platform-start dist/main.js"
+  workers = "platform-worker-host --url http://<app>.internal:8080"
+```
+
+Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as `vxrun`. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.
+
+`APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are not served.
 
 Migrations run when the new machine starts, before it accepts traffic. The health check holds traffic until `/api/v1/readyz` returns 200.
 

@@ -1,10 +1,27 @@
 import type { FailureAlert } from "@vynxlabs/db";
-import type { HttpConfig } from "@vynxlabs/sdk";
-import { httpConnector } from "@vynxlabs/sdk";
+import { sql } from "@vynxlabs/db";
 import { mutate, SYSTEM } from "../audit.js";
 import type { Kernel } from "../kernel.js";
 import { readConnection } from "./bindings.js";
 import { type ScriptBody, startRun } from "./runs.js";
+import { onTaskEnded, queueTask } from "./tasks.js";
+
+/**
+ * A notification is posted by one of the tenant's workers, not by the control
+ * plane (decision 0001): the alert says `notified` once the worker has.
+ */
+onTaskEnded("deliver", async (kernel, task, outcome) => {
+  const [table, id] = (task.subject ?? "").split(":") as [string, string | undefined];
+  if (!id || (table !== "run" && table !== "flow_run")) return;
+  const result =
+    "result" in outcome
+      ? { notified: true }
+      : { notified: false, notifyError: outcome.error.message };
+  await sql`
+    update ${sql.table(table)} set alert = coalesce(alert, '{}'::jsonb) || ${JSON.stringify(result)}::jsonb
+    where id = ${id} and tenant_id = ${task.tenant_id}
+  `.execute(kernel.db);
+});
 
 interface FailedRun {
   id: string;
@@ -43,7 +60,7 @@ export async function sendAlerts(kernel: Kernel, run: FailedRun): Promise<void> 
     .select("body")
     .where("id", "=", run.resource_id)
     .executeTakeFirst();
-  const outcome = await alert(kernel, {
+  const outcome = await alert(kernel, "run", {
     tenantId: run.tenant_id,
     workspaceId: run.workspace_id,
     id: run.id,
@@ -55,7 +72,8 @@ export async function sendAlerts(kernel: Kernel, run: FailedRun): Promise<void> 
   if (outcome) {
     await kernel.db
       .updateTable("run")
-      .set({ alert: JSON.stringify(outcome) })
+      // A worker may have delivered already; what it said stands.
+      .set({ alert: sql`${JSON.stringify(outcome)}::jsonb || coalesce(alert, '{}'::jsonb)` })
       .where("id", "=", run.id)
       .execute();
   }
@@ -67,7 +85,7 @@ export async function alertFlowFailure(
   flowRun: { id: string; tenant_id: string; workspace_id: string; flow_path: string },
   error: string,
 ): Promise<void> {
-  const outcome = await alert(kernel, {
+  const outcome = await alert(kernel, "flow_run", {
     tenantId: flowRun.tenant_id,
     workspaceId: flowRun.workspace_id,
     id: flowRun.id,
@@ -78,7 +96,8 @@ export async function alertFlowFailure(
   if (outcome) {
     await kernel.db
       .updateTable("flow_run")
-      .set({ alert: JSON.stringify(outcome) })
+      // A worker may have delivered already; what it said stands.
+      .set({ alert: sql`${JSON.stringify(outcome)}::jsonb || coalesce(alert, '{}'::jsonb)` })
       .where("id", "=", flowRun.id)
       .execute();
   }
@@ -86,6 +105,7 @@ export async function alertFlowFailure(
 
 async function alert(
   kernel: Kernel,
+  table: "run" | "flow_run",
   failure: Failure,
 ): Promise<Record<string, unknown> | undefined> {
   const workspace = await kernel.db
@@ -140,16 +160,21 @@ async function alert(
         path: wanted.notify,
       });
       if (!connection) throw new Error(`The connection "${wanted.notify}" is not bound.`);
-      const client = httpConnector.create(
-        connection.config as unknown as HttpConfig,
-        connection.credential,
-        AbortSignal.timeout(10_000),
-      );
-      await client.post("", {
-        text: `Run failed: ${summary.script} in ${workspace.slug}. ${summary.error}`,
-        run: { ...summary, workspace: workspace.slug },
+      await queueTask(kernel.db, {
+        tenantId: failure.tenantId,
+        workspaceId: failure.workspaceId,
+        kind: "deliver",
+        subject: `${table}:${failure.id}`,
+        request: {
+          connection: wanted.notify,
+          payload: {
+            text: `Run failed: ${summary.script} in ${workspace.slug}. ${summary.error}`,
+            run: { ...summary, workspace: workspace.slug },
+          },
+        },
       });
-      outcome.notified = true;
+      // Said once a worker has posted it.
+      outcome.notified = null;
     } catch (error) {
       outcome.notified = false;
       outcome.notifyError = (error as Error).message;

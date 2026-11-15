@@ -40,11 +40,22 @@ describe("configuration", () => {
       authSecret: "a".repeat(32),
       masterKey: Buffer.alloc(32, 7),
       bootstrapAdmin: undefined,
-      managedWorkers: true,
+      managedWorkers: "process",
+      workerHostToken: undefined,
       managedWorkerUser: { uid: 10001, gid: 10001 },
       retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
+      egressAllow: { networks: [], hosts: [] },
       consoleDir: undefined,
+      appsUrl: undefined,
+      appsOnConsoleAddress: false,
     });
+  });
+
+  test("the operator may let the instance reach some internal networks and hosts for tenants", () => {
+    expect(loadConfig({ ...valid, EGRESS_ALLOW: "10.20.0.0/16,git.internal" }).egressAllow).toEqual(
+      { networks: ["10.20.0.0/16"], hosts: ["git.internal"] },
+    );
+    expect(() => loadConfig({ ...valid, EGRESS_ALLOW: "10.0.0.0/99" })).toThrow(/EGRESS_ALLOW/);
   });
 
   test("history is kept 30, 30, 7 and 400 days unless the operator says otherwise, within bounds", () => {
@@ -55,6 +66,23 @@ describe("configuration", () => {
       /RETENTION_AUDIT_DAYS must be a whole number of days from 90 to 3650/,
     );
     expect(() => loadConfig({ ...valid, RETENTION_RUNS_DAYS: "0" })).toThrow(/RETENTION_RUNS_DAYS/);
+  });
+
+  test("managed workers are started by a worker host, beside the control plane, or not at all", () => {
+    const token = "t".repeat(32);
+    expect(loadConfig({ ...valid, MANAGED_WORKERS: "true" }).managedWorkers).toBe("process");
+    expect(loadConfig({ ...valid, MANAGED_WORKERS: "false" }).managedWorkers).toBe(false);
+    expect(
+      loadConfig({ ...valid, MANAGED_WORKERS: "host", WORKER_HOST_TOKEN: token }),
+    ).toMatchObject({ managedWorkers: "host", workerHostToken: token });
+    // The token means nothing without a host to present it.
+    expect(loadConfig({ ...valid, WORKER_HOST_TOKEN: token }).workerHostToken).toBeUndefined();
+    expect(problems({ ...valid, MANAGED_WORKERS: "host" })).toEqual([
+      "MANAGED_WORKERS=host needs WORKER_HOST_TOKEN, of at least 32 characters.",
+    ]);
+    expect(problems({ ...valid, MANAGED_WORKERS: "yes" })).toEqual([
+      "MANAGED_WORKERS must be host, process or false.",
+    ]);
   });
 
   test("managed workers run as their own user unless the operator says otherwise", () => {

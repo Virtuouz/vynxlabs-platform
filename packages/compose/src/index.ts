@@ -93,16 +93,48 @@ function sourcesOf(manifests: readonly BundleManifest[]): Source[] {
   return sources;
 }
 
+/**
+ * The entry's `__vx_describe(entry)`: a script's `input` and `output` exports as
+ * JSON Schema, made with the zod the bundle was built with. The control plane
+ * never loads a bundle; a worker calls this, in a process of its own, for a
+ * `describe` task (decision 0001).
+ */
+function describer(sources: Source[]): string {
+  const declared = sources
+    .map((source, index) =>
+      source.kind === "script" ? `${JSON.stringify(source.entry)}: m${index}` : undefined,
+    )
+    .filter(Boolean)
+    .join(", ");
+  return `import { z as __vx_z } from "@vynxlabs/sdk";
+const __vx_declared = { ${declared} };
+exports.__vx_describe = (entry) => {
+  const declared = Object.hasOwn(__vx_declared, entry) ? __vx_declared[entry] : undefined;
+  const schema = (value, io) =>
+    value && typeof value === "object" && typeof value.safeParse === "function"
+      ? __vx_z.toJSONSchema(value, { io, unrepresentable: "any" })
+      : undefined;
+  const found = {};
+  const input = schema(declared?.input, "input");
+  const output = schema(declared?.output, "output");
+  if (input) found.input = input;
+  if (output) found.output = output;
+  return found;
+};`;
+}
+
 /** Answers every import the compiler meets. Nothing reaches the disk unless this allows it. */
 function lockdown(sources: Source[], sdkEntry: string): Plugin {
   const byFile = new Map(sources.map((source) => [source.file, source]));
-  const entry = sources
-    .map(
-      (source, index) =>
-        `import s${index} from ${JSON.stringify(`vx-source:${source.file}`)};\n` +
-        `exports[${JSON.stringify(source.entry)}] = s${index};`,
-    )
-    .join("\n");
+  const scripts = sources.filter((source) => source.kind === "script");
+  const entry =
+    sources
+      .map(
+        (source, index) =>
+          `import s${index}, * as m${index} from ${JSON.stringify(`vx-source:${source.file}`)};\n` +
+          `exports[${JSON.stringify(source.entry)}] = s${index};`,
+      )
+      .join("\n") + (scripts.length > 0 ? `\n${describer(sources)}` : "");
   // Files the SDK itself is made of, found by following its own imports.
   const trusted = new Set<string>();
   return {
@@ -111,14 +143,14 @@ function lockdown(sources: Source[], sdkEntry: string): Plugin {
       context.onResolve({ filter: /.*/ }, async (args) => {
         if (args.pluginData?.inner) return undefined;
         if (args.kind === "entry-point") return { path: "entry", namespace: "vx" };
-        if (args.namespace === "vx" && args.importer === "entry") {
-          return { path: args.path.slice("vx-source:".length), namespace: "vx" };
-        }
-        if (args.path.startsWith("node:")) return { path: args.path, external: true };
         if (args.namespace === "vx" && args.path === "@vynxlabs/sdk") {
           trusted.add(sdkEntry);
           return { path: sdkEntry };
         }
+        if (args.namespace === "vx" && args.importer === "entry") {
+          return { path: args.path.slice("vx-source:".length), namespace: "vx" };
+        }
+        if (args.path.startsWith("node:")) return { path: args.path, external: true };
         if (args.namespace === "file" && trusted.has(args.importer)) {
           const found = await context.resolve(args.path, {
             resolveDir: args.resolveDir,
@@ -211,7 +243,10 @@ export async function composeCode(
         (source) =>
           `export const ${source.entry} = { ${EXPORT_SHAPE[source.kind]}: __vx_console[${JSON.stringify(source.entry)}] };\n`,
       )
-      .join("");
+      .join("") +
+    (sources.some((source) => source.kind === "script")
+      ? "export const __vx_describe = __vx_console.__vx_describe;\n"
+      : "");
   const code = base + CONSOLE_MARKER + section;
   // The whole module must still parse: an export of the repository's own could clash with one of these.
   try {

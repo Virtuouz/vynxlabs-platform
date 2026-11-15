@@ -4,6 +4,11 @@
 #   docker compose -f deploy/compose/compose.yaml up -d
 #
 # Set PLATFORM_IMAGE to run a published image instead of building from source.
+#
+# Two networks (decision 0001): `data` holds the database and the object store, and
+# only the control plane joins it; `execution` holds the control plane and the worker
+# host, which starts each tenant's managed workers. A tenant's script can reach the
+# control plane and the internet, and never the database or the object store.
 name: vynxlabs-platform
 
 services:
@@ -28,11 +33,15 @@ services:
       MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-      MANAGED_WORKERS: ${MANAGED_WORKERS:-true}
+      MANAGED_WORKERS: ${MANAGED_WORKERS:-host}
+      WORKER_HOST_TOKEN: ${WORKER_HOST_TOKEN:?set WORKER_HOST_TOKEN in .env}
+      EGRESS_ALLOW: ${EGRESS_ALLOW:-}
       APPS_URL: ${APPS_URL:-}
+      APPS_ON_CONSOLE_ADDRESS: ${APPS_ON_CONSOLE_ADDRESS:-}
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks: [data, execution]
     ports:
       - "${PLATFORM_BIND:-127.0.0.1:8080}:8080"
     healthcheck:
@@ -46,6 +55,24 @@ services:
       retries: 6
       start_period: 20s
 
+  # Starts managed workers, each as vxrun, on the execution network only.
+  worker-host:
+    image: ${PLATFORM_IMAGE:-vynxlabs-platform:local}
+    restart: unless-stopped
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    command: ["platform-worker-host"]
+    # Root, to start each worker as vxrun, holding only what that needs, and NET_ADMIN for
+    # the rules that keep workers from private and metadata addresses.
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, NET_ADMIN]
+    environment:
+      PLATFORM_URL: http://control-plane:8080
+      WORKER_HOST_TOKEN: ${WORKER_HOST_TOKEN:?set WORKER_HOST_TOKEN in .env}
+    networks: [execution]
+
   postgres:
     image: postgres:18
     restart: unless-stopped
@@ -53,6 +80,7 @@ services:
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: platform
+    networks: [data]
     volumes:
       - postgres:/var/lib/postgresql
     healthcheck:
@@ -69,6 +97,7 @@ services:
     environment:
       AWS_ACCESS_KEY_ID: platform
       AWS_SECRET_ACCESS_KEY: ${OBJECTSTORE_SECRET:?set OBJECTSTORE_SECRET in .env}
+    networks: [data]
     volumes:
       - objectstore:/data
     healthcheck:
@@ -76,6 +105,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+networks:
+  data:
+  execution:
 
 volumes:
   postgres:

@@ -1,5 +1,6 @@
 import { type Kysely, newId, openExternalPostgres, sql } from "@vynxlabs/db";
 import type { Db, Trx } from "../audit.js";
+import { checkHost, guardedLookup } from "../egress.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { decryptFor, encryptFor } from "../execution/bindings.js";
 import type { Kernel } from "../kernel.js";
@@ -111,6 +112,8 @@ export async function openSource(
   const password = binding.credential
     ? await decryptFor(kernel, db, tenantId, workspaceId, credentialName(path), binding.credential)
     : undefined;
+  // A host written as an address is never looked up, so it is checked here too.
+  await checkHost(config.host);
   const connection = openExternalPostgres({
     host: config.host,
     port: config.port ?? 5432,
@@ -118,6 +121,8 @@ export async function openSource(
     user: config.user,
     password,
     ssl: config.ssl,
+    // A host a tenant gave: reached only through the egress guard.
+    lookup: guardedLookup,
   });
   pools.set(binding.id, { stamp, db: connection });
   return { db: connection, schema: config.schema ?? "public" };

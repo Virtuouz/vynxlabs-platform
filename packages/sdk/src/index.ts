@@ -1,9 +1,16 @@
 import { z } from "zod";
 import type { ScriptContext } from "./context.js";
+import type { ConnectionTest } from "./extensions.js";
 import type { ColumnSpec, InsertOf, RowOf } from "./tables.js";
 
 export type { Logger, RunInfo, ScriptContext } from "./context.js";
-export type { Connector, InterfaceWidget, TriggerSource, WidgetContext } from "./extensions.js";
+export type {
+  ConnectionTest,
+  Connector,
+  InterfaceWidget,
+  TriggerSource,
+  WidgetContext,
+} from "./extensions.js";
 export {
   type HttpClient,
   type HttpConfig,
@@ -432,11 +439,26 @@ export interface ConnectorOptions<Config, Client> {
    * connection's secret, when it has one. `signal` aborts when the run is canceled.
    */
   create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
+  /**
+   * Tries a connection without doing anything with it: what the console's Test
+   * button runs. Resolves with what it found, or throws why it could not reach it.
+   * A connector without it is tested by building its client.
+   */
+  test?(
+    config: Config,
+    credential: string | undefined,
+    signal: AbortSignal,
+  ): Promise<ConnectionTest>;
 }
 
 export interface ConnectorDefinition<Config, Client> extends ResourceDefinition {
   readonly kind: "connector";
   create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
+  test?(
+    config: Config,
+    credential: string | undefined,
+    signal: AbortSignal,
+  ): Promise<ConnectionTest>;
 }
 
 /**
@@ -450,7 +472,12 @@ export function defineConnector<Config, Client>(
   const definition = resource("connector", options.path, (entry) =>
     compact({ entry, description: options.description, configSchema: options.configSchema }),
   );
-  return { ...definition, kind: "connector", create: options.create };
+  return {
+    ...definition,
+    kind: "connector",
+    create: options.create,
+    ...(options.test ? { test: options.test } : {}),
+  };
 }
 
 export interface ConnectionOptions {

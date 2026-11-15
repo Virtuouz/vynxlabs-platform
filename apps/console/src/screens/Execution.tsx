@@ -19,6 +19,7 @@ import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
+import { type TaskState, useTaskEnd } from "../tasks.ts";
 import { fromNow } from "./Overview.tsx";
 
 const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
@@ -588,6 +589,71 @@ function SetUpConnection({
   );
 }
 
+/** What trying a connection found. */
+interface ConnectionTestResult {
+  ok: boolean;
+  status?: number;
+  message?: string;
+  latencyMs?: number;
+}
+
+/**
+ * Has one of the workspace's workers try a connection, from where scripts run,
+ * and says what it found.
+ */
+function TestConnection({ root, path }: { root: string; path: string }) {
+  const [taskId, setTaskId] = useState<string>();
+  const [found, setFound] = useState<{ tone: "success" | "danger"; text: string }>();
+  const following = useTaskEnd(root, taskId, (task: TaskState) => {
+    setTaskId(undefined);
+    const result = task.result as ConnectionTestResult | null;
+    if (task.status === "failed" || !result) {
+      setFound({ tone: "danger", text: task.error?.message ?? "The test did not finish." });
+      return;
+    }
+    const took = result.latencyMs !== undefined ? ` in ${result.latencyMs} ms` : "";
+    setFound(
+      result.ok
+        ? {
+            tone: "success",
+            text: `Reached${result.status ? `, ${result.status}` : ""}${took}.${result.message ? ` ${result.message}` : ""}`,
+          }
+        : {
+            tone: "danger",
+            text: `${result.message ?? "Not reached."}${took ? ` (${took.trim()})` : ""}`,
+          },
+    );
+  });
+  return (
+    <span className="inline-flex items-center gap-2">
+      {following.waiting ? (
+        <span className="text-[13px] text-ink-muted" role="status">
+          {following.slow ? "Waiting for a worker…" : "Testing…"}
+        </span>
+      ) : found ? (
+        <span title={found.text} className="max-w-[16rem] truncate">
+          <Badge tone={found.tone}>{found.text}</Badge>
+        </span>
+      ) : null}
+      <Button
+        size="small"
+        disabled={following.waiting}
+        onClick={async () => {
+          setFound(undefined);
+          try {
+            const task = await api.post<{ id: string }>(`${root}/connection-tests`, { path });
+            setTaskId(task.id);
+          } catch (error) {
+            setFound({ tone: "danger", text: (error as Error).message });
+          }
+        }}
+      >
+        Test
+      </Button>
+    </span>
+  );
+}
+
 export function Connections({ root }: { root: string }) {
   const connectionUses = useReferences(root, "connection");
   return (
@@ -679,7 +745,8 @@ export function Connections({ root }: { root: string }) {
           }),
       }}
       rowActions={(row, reload) => (
-        <span className="flex justify-end gap-2">
+        <span className="flex flex-wrap justify-end gap-2">
+          {row.bound ? <TestConnection root={root} path={row.path} /> : null}
           {row.connector !== "http" ? (
             <SetUpConnection root={root} row={row} onDone={reload} />
           ) : null}
@@ -830,7 +897,7 @@ function PoolCard({
 export function Workers({ base }: { base: string }) {
   const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
-  const managed = useLoad<{ state: "off" | "isolated" | "shared" | "refused" }>(
+  const managed = useLoad<{ state: "off" | "host" | "isolated" | "shared" | "refused" }>(
     `${base}/managed-workers`,
   );
   const [adding, setAdding] = useState(false);
@@ -872,9 +939,10 @@ export function Workers({ base }: { base: string }) {
         {managed.data?.state === "refused" ? (
           <Notice tone="attention">
             <strong>This tenant's code runs on standalone workers only.</strong> People outside the
-            instance's operators write its code, and this instance cannot run the workers it starts
-            as a user of their own, so it starts none. Make a credential below and start a worker
-            with it: see "Standalone workers" in the self-hosting guide.
+            instance's operators write its code, and the workers this instance starts run beside its
+            control plane, on its network, so it starts none for this tenant. Make a credential
+            below and start a worker with it, or ask the operator to run a worker host: see "Workers
+            the instance starts" in the self-hosting guide.
           </Notice>
         ) : managed.data?.state === "shared" && tenant.data?.managedWorkers ? (
           <p className="m-0 text-meta text-ink-muted">

@@ -6,6 +6,7 @@ import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manife
 import { Worker } from "@vynxlabs/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { reapDeadRuns, requeueLostRuns } from "./kernel/execution/runs.js";
+import { sweepTasks } from "./kernel/execution/tasks.js";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -182,8 +183,8 @@ function protocol(token: string) {
     return { status: response.statusCode, body: response.body ? response.json() : null };
   };
   return {
-    claim: (workerId = "018f0000-0000-7000-8000-000000000001") =>
-      call("POST", "/claim", { workerId, waitSeconds: 0 }),
+    claim: (workerId = "018f0000-0000-7000-8000-000000000001", kinds?: string[]) =>
+      call("POST", "/claim", { workerId, waitSeconds: 0, ...(kinds ? { kinds } : {}) }),
     get: (path: string) => call("GET", path),
     post: (path: string, body: object) => call("POST", path, body),
   };
@@ -206,6 +207,7 @@ beforeAll(async () => {
         body,
       });
       response.setHeader("content-type", "application/json");
+      if (request.url?.startsWith("/denied")) response.statusCode = 401;
       response.end(JSON.stringify({ pong: true }));
     });
   });
@@ -631,7 +633,8 @@ describe("running", () => {
     const id = await start("flaky", { succeedOn: 99 });
     const run = await until(
       async () => (await alice.get(`${ws()}/runs/${id}`)).body,
-      (r) => ended(r) && r.alert !== null,
+      // The notification is posted by a worker, after the alert is recorded.
+      (r) => ended(r) && typeof r.alert?.notified === "boolean",
       30,
     );
     expect(run).toMatchObject({
@@ -654,6 +657,39 @@ describe("running", () => {
       run: { id, script: "flaky", attempt: 3 },
     });
   }, 45_000);
+
+  test("a connection is tried by a worker, which says what it found", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: task bodies are inspected freely
+    const tried = async (path: string): Promise<any> => {
+      const queued = await alice.post(`${ws()}/connection-tests`, { path });
+      expect(queued.status, JSON.stringify(queued.body)).toBe(202);
+      return until(
+        async () => (await alice.get(`${ws()}/tasks/${queued.body.id}`)).body,
+        (task) => task.status === "succeeded" || task.status === "failed",
+      );
+    };
+    const reached = await tried("api");
+    expect(reached).toMatchObject({
+      kind: "test-connection",
+      subject: "api",
+      status: "succeeded",
+      result: { ok: true, status: 200 },
+    });
+    expect(reached.result.latencyMs).toBeGreaterThanOrEqual(0);
+    // The worker asked with the connection's credential, as a script's client would.
+    expect(received.at(-1)?.headers.authorization).toBe("Bearer api-credential-123");
+
+    await alice.put(`${ws()}/connection-bindings/refusing`, {
+      config: { baseUrl: `${apiUrl}/denied` },
+    });
+    expect((await tried("refusing")).result).toMatchObject({
+      ok: false,
+      status: 401,
+      message: expect.stringContaining("answered 401"),
+    });
+    await alice.delete(`${ws()}/connection-bindings/refusing`);
+    expect((await alice.post(`${ws()}/connection-tests`, { path: "unbound" })).status).toBe(404);
+  });
 
   test("a waiting run and a running run can both be canceled", async () => {
     const running = await start("slow", { ms: 20_000 });
@@ -966,6 +1002,95 @@ describe("the worker protocol", () => {
     expect((await protocol("vxk_an-api-key").claim()).status).toBe(401);
   });
 
+  test("a task goes only to a worker that takes its kind, in its own tenant and workspace", async () => {
+    const theirs = protocol(
+      (
+        await (
+          await t.signIn("gina@globex.example", PASSWORD)
+        ).post(`/tenants/${other}/worker-credentials`, { name: "theirs for tasks" })
+      ).body.token,
+    );
+    const prodOnly = protocol(
+      (
+        await alice.post(`/tenants/${tenant}/worker-credentials`, {
+          name: "prod only for tasks",
+          workspaceId: prod,
+        })
+      ).body.token,
+    );
+    const ours = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "ours for tasks" })).body
+        .token,
+    );
+    const queued = (await alice.post(`${ws()}/connection-tests`, { path: "api" })).body;
+
+    // A worker that does not say which kinds it takes is given runs only; one that takes
+    // other kinds is not given this one; nor is another tenant's or another workspace's.
+    expect((await ours.claim()).body).toEqual({ job: null });
+    expect((await ours.claim(undefined, ["run", "describe"])).body).toEqual({ job: null });
+    expect((await theirs.claim(undefined, ["test-connection"])).body).toEqual({ job: null });
+    expect((await prodOnly.claim(undefined, ["test-connection"])).body).toEqual({ job: null });
+
+    const job = (await ours.claim(undefined, ["run", "test-connection"])).body.job;
+    expect(job).toMatchObject({
+      kind: "test-connection",
+      taskId: queued.id,
+      workspaceId: dev,
+      request: { connection: "api" },
+    });
+    const taskPath = `/tasks/${job.taskId}`;
+    // The connection it names is readable for the task, and only by its holder.
+    expect((await ours.get(`${taskPath}/connection`)).body).toMatchObject({
+      connector: "http",
+      config: { baseUrl: apiUrl },
+      credential: "api-credential-123",
+    });
+    for (const stranger of [theirs, prodOnly]) {
+      expect((await stranger.get(`${taskPath}/connection`)).status).toBe(404);
+      expect((await stranger.post(`${taskPath}/heartbeat`, {})).status).toBe(404);
+      expect((await stranger.post(`${taskPath}/complete`, { result: {} })).status).toBe(404);
+    }
+    expect((await ours.post(`${taskPath}/heartbeat`, {})).status).toBe(204);
+    // A result too large to keep is refused, and the task stays the worker's to finish.
+    expect(
+      (await ours.post(`${taskPath}/complete`, { result: { big: "x".repeat(300 * 1024) } })).status,
+    ).toBe(400);
+    expect(
+      (await ours.post(`${taskPath}/complete`, { result: { ok: true, status: 204 } })).status,
+    ).toBe(204);
+    expect((await alice.get(`${ws()}/tasks/${job.taskId}`)).body).toMatchObject({
+      status: "succeeded",
+      result: { ok: true, status: 204 },
+    });
+    // Reporting twice changes nothing.
+    expect((await ours.post(`${taskPath}/complete`, { result: {} })).status).toBe(409);
+
+    // One nobody takes in time, or whose worker goes silent, is failed with the reason.
+    const unclaimed = (await alice.post(`${ws()}/connection-tests`, { path: "api" })).body;
+    const silent = (await alice.post(`${ws()}/connection-tests`, { path: "api" })).body;
+    const held = (await ours.claim(undefined, ["test-connection"])).body.job;
+    expect(held.taskId).toBe(unclaimed.id);
+    await t.db
+      .updateTable("task")
+      .set({ last_heartbeat_at: new Date(Date.now() - 120_000) })
+      .where("id", "=", unclaimed.id)
+      .execute();
+    await t.db
+      .updateTable("task")
+      .set({ expires_at: new Date(Date.now() - 1000) })
+      .where("id", "=", silent.id)
+      .execute();
+    await sweepTasks(t.kernel);
+    expect((await alice.get(`${ws()}/tasks/${unclaimed.id}`)).body).toMatchObject({
+      status: "failed",
+      error: { message: "Its worker stopped responding." },
+    });
+    expect((await alice.get(`${ws()}/tasks/${silent.id}`)).body).toMatchObject({
+      status: "failed",
+      error: { message: expect.stringContaining("No worker took it in time") },
+    });
+  });
+
   test("the script limit and the workspace limit both hold, and a busy workspace does not starve another", async () => {
     const ours = protocol(
       (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "limits" })).body.token,
@@ -1086,7 +1211,11 @@ describe("the worker protocol", () => {
     });
 
     // Now the supervisor sees work for the tenant and starts a worker, which finishes the run.
-    const supervisor = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    const supervisor = new WorkerSupervisor(t.kernel, {
+      url,
+      idleExitSeconds: 2,
+      operatorCodeOnly: false,
+    });
     await supervisor.tick();
     expect(supervisor.tenants).toEqual([tenant]);
     expect(await finished(id, 30)).toMatchObject({ status: "succeeded", attempt: 2, error: null });
@@ -1161,7 +1290,7 @@ describe("operator health and guards", () => {
   test("every change by a principal left an audit entry, and every such route was exercised", () => {
     expect(t.unaudited).toEqual([]);
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|connection-tests|variable-values|worker-credentials)(\/|$)/;
     // Worker protocol routes are not changes by a principal. The protocol tests cover them.
     expect(t.unexercised((route) => execution.test(route) && !route.includes("/worker/"))).toEqual(
       [],
@@ -1172,7 +1301,13 @@ describe("operator health and guards", () => {
 describe("managed workers", () => {
   test("one starts for a tenant with work, runs it, and exits when idle, holding no instance secrets", async () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
-    const supervisor = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    // Acme's code is written by its own people; the rule that keeps it off workers beside the
+    // control plane is tested below, and set aside here.
+    const supervisor = new WorkerSupervisor(t.kernel, {
+      url,
+      idleExitSeconds: 2,
+      operatorCodeOnly: false,
+    });
 
     // The credential is handed over on standard input, never in the environment.
     const environment = supervisor.environment();
@@ -1256,18 +1391,18 @@ describe("managed workers", () => {
     expect(await hasOutsideCodeWriters(t.kernel, tenant)).toBe(true);
   });
 
-  test("where workers cannot run as their own user, a tenant whose code is written outside the operator gets none", async () => {
-    // Running the tests as root would switch users and prove nothing here.
-    if (process.getuid?.() === 0) return;
+  test("beside the control plane, a tenant whose code is written outside the operator gets no worker", async () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
     const { workerUserMode } = await import("./kernel/execution/isolation.js");
+    // Even as a user of its own, a worker beside the control plane is on its network.
     const supervisor = new WorkerSupervisor(t.kernel, {
       url,
       idleExitSeconds: 2,
       user: { uid: 10001, gid: 10001 },
     });
-    expect(await supervisor.mode()).toBe("unable");
-    expect(workerUserMode()).toBe("unable");
+    // As root it can switch users; otherwise not. Either way the tenant gets none.
+    expect(["isolated", "unable"]).toContain(await supervisor.mode());
+    expect(workerUserMode()).toBe(await supervisor.mode());
     const id = await start("greet", { name: "Refused" });
     await supervisor.tick();
     expect(supervisor.tenants).toEqual([]);
@@ -1291,12 +1426,69 @@ describe("managed workers", () => {
 
   test("two control planes on one database start one worker for a tenant", async () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
-    const first = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
-    const second = new WorkerSupervisor(t.kernel, { url, idleExitSeconds: 2 });
+    const options = { url, idleExitSeconds: 2, operatorCodeOnly: false };
+    const first = new WorkerSupervisor(t.kernel, options);
+    const second = new WorkerSupervisor(t.kernel, options);
     const id = await start("greet", { name: "Once" });
     await Promise.all([first.tick(), second.tick()]);
     expect([...first.tenants, ...second.tenants]).toEqual([tenant]);
     expect(await finished(id, 30)).toMatchObject({ status: "succeeded" });
     await Promise.all([first.stop(), second.stop()]);
   }, 90_000);
+  test("a worker host is leased one tenant with work at a time, with the instance's token only", async () => {
+    const { setWorkerUserMode } = await import("./kernel/execution/isolation.js");
+    const token = "h".repeat(40);
+    const lease = (as: string | undefined) =>
+      t.app.inject({
+        method: "POST",
+        url: "/api/v1/worker-host/lease",
+        headers: as ? { authorization: `Bearer ${as}` } : {},
+        payload: { waitSeconds: 0 },
+      });
+    // Without host mode the routes are not there at all.
+    expect((await lease(token)).statusCode).toBe(404);
+
+    const config = t.kernel.config;
+    const before = { mode: config.managedWorkers, token: config.workerHostToken };
+    Object.assign(config, { managedWorkers: "host", workerHostToken: token });
+    setWorkerUserMode("host");
+    try {
+      expect((await lease(undefined)).statusCode).toBe(401);
+      expect((await lease("x".repeat(40))).statusCode).toBe(401);
+      expect((await lease(token)).json()).toEqual({ lease: null });
+      // In a worker host, a tenant's code runs off the control plane's network, whoever writes it.
+      expect((await alice.get(`/tenants/${tenant}/managed-workers`)).body).toEqual({
+        state: "host",
+      });
+
+      const id = await start("greet", { name: "Hosted" });
+      const given = (await lease(token)).json().lease;
+      expect(given).toMatchObject({ tenantId: tenant, idleExitSeconds: 60 });
+      // One worker for a tenant: a second request gets nothing while the first is alive.
+      expect((await lease(token)).json()).toEqual({ lease: null });
+
+      // What the host hands its worker is an ordinary worker credential for that tenant.
+      const hosted = protocol(given.token);
+      const claimed = await until(
+        async () => (await hosted.claim()).body.job,
+        (job) => job?.runId === id,
+        10,
+      );
+      expect(
+        (await hosted.post(`/runs/${id}/complete`, { attempt: claimed.attempt, output: {} }))
+          .status,
+      ).toBe(204);
+
+      const ended = await t.app.inject({
+        method: "POST",
+        url: `/api/v1/worker-host/leases/${given.id}/ended`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(ended.statusCode).toBe(204);
+      expect((await hosted.claim()).status).toBe(401);
+    } finally {
+      Object.assign(config, { managedWorkers: before.mode, workerHostToken: before.token });
+      setWorkerUserMode("off");
+    }
+  });
 });

@@ -3,8 +3,8 @@ import type { FastifyBaseLogger } from "fastify";
 
 /** What a browser is told: something changed, and what. Never the data itself. */
 export interface RunEvent {
-  /** `run`, `flow_run`, `step` or `log`. */
-  k: "run" | "flow_run" | "step" | "log";
+  /** `run`, `flow_run`, `step`, `log`, or `task`: something a worker does for the platform. */
+  k: "run" | "flow_run" | "step" | "log" | "task";
   /** The workspace. */
   w: string;
   /** The run's or the flow run's ID. */

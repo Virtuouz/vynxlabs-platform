@@ -29,11 +29,16 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     masterKey: randomBytes(32),
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
+    workerHostToken: undefined,
     managedWorkerUser: "same",
     retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
+    // The tests' stand-in services listen on this machine.
+    egressAllow: { networks: ["127.0.0.0/8", "::1/128"], hosts: ["localhost"] },
     consoleDir: undefined,
     screensDir: undefined,
     appsUrl: undefined,
+    // Most suites serve apps at the one address they have. The default is tested on its own.
+    appsOnConsoleAddress: true,
     mail: undefined,
     ...overrides,
   };

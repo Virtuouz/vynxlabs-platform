@@ -1,12 +1,19 @@
 import { fileURLToPath } from "node:url";
 import { ComposeError, composeBundle, SOURCE_KINDS, type UnsignedBundle } from "@vynxlabs/compose";
 import { newId, sql } from "@vynxlabs/db";
-import { type Bundle, type BundleManifest, CORE_PREFIX, entryFor } from "@vynxlabs/manifest";
+import {
+  type Bundle,
+  type BundleManifest,
+  CORE_PREFIX,
+  entryFor,
+  validateJson,
+} from "@vynxlabs/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@vynxlabs/sdk";
-import type { Audit, Db, Principal, Trx } from "./audit.js";
+import { type Audit, type Db, mutate, type Principal, type Trx } from "./audit.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import { loadBundle, storeBundle } from "./execution/bundles.js";
 import { deployBundle } from "./execution/deploy.js";
+import { onTaskEnded, queueTask } from "./execution/tasks.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
 
@@ -419,3 +426,109 @@ export async function keepConsoleManaged(
   return (await storeBundle(kernel, trx, audit, workspace, principal, composite, "compose")).bundle
     .id;
 }
+
+/** The largest schema read from code that a draft keeps. */
+const MAX_DERIVED_SCHEMA_BYTES = 64 * 1024;
+
+/**
+ * Has one of the workspace's workers read what a script draft declares as its
+ * `input` and `output`. The control plane never loads the code itself
+ * (decision 0001): it composes a preview bundle of the draft, and the worker
+ * runs that bundle's `__vx_describe` in a process of its own. Code that does
+ * not build is not described; saving it says nothing more.
+ */
+export async function deriveSchemas(
+  kernel: Kernel,
+  workspace: WorkspaceRef,
+  principal: Principal,
+  draft: { path: string; revision: number },
+): Promise<string | undefined> {
+  // A draft that does not build, or names what the workspace does not have yet, is
+  // saved all the same. It is read once it is whole.
+  try {
+    const { bundle } = await composeDrafts(kernel, kernel.db, workspace, [draft.path]);
+    return await describeIn(kernel, workspace, principal, draft, bundle);
+  } catch (error) {
+    if (error instanceof HttpError) return undefined;
+    throw error;
+  }
+}
+
+async function describeIn(
+  kernel: Kernel,
+  workspace: WorkspaceRef,
+  principal: Principal,
+  draft: { path: string; revision: number },
+  bundle: Bundle,
+): Promise<string> {
+  return mutate(kernel.db, { principal }, async (trx, audit) => {
+    const stored = await storeBundle(kernel, trx, audit, workspace, principal, bundle, "preview");
+    const task = await queueTask(trx, {
+      tenantId: workspace.tenantId,
+      workspaceId: workspace.id,
+      kind: "describe",
+      subject: `${draft.revision}:${draft.path}`,
+      request: {
+        bundle: { id: stored.bundle.id, digest: stored.bundle.digest },
+        entry: entryFor("script", draft.path),
+      },
+    });
+    return task.id;
+  });
+}
+
+/** A schema a worker read from code, if it is one a draft may keep. */
+function acceptable(schema: unknown): Record<string, unknown> | undefined {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return undefined;
+  if (Buffer.byteLength(JSON.stringify(schema)) > MAX_DERIVED_SCHEMA_BYTES) return undefined;
+  try {
+    // Compiling it is the check: one that is not a JSON Schema throws.
+    validateJson(schema, {});
+  } catch {
+    return undefined;
+  }
+  return schema as Record<string, unknown>;
+}
+
+/**
+ * What a worker read is written onto the draft, if the draft is still at the
+ * revision it was read from: a newer save has a newer task of its own. The
+ * revision does not move, since nobody changed what was written.
+ */
+onTaskEnded("describe", async (kernel, task, outcome) => {
+  if (!("result" in outcome)) return;
+  const at = (task.subject ?? "").indexOf(":");
+  const revision = Number((task.subject ?? "").slice(0, at));
+  const path = (task.subject ?? "").slice(at + 1);
+  const found = (outcome.result ?? {}) as { input?: unknown; output?: unknown };
+  const input = acceptable(found.input);
+  const output = acceptable(found.output);
+  const draft = await kernel.db
+    .selectFrom("resource_draft")
+    .select(["body"])
+    .where("workspace_id", "=", task.workspace_id)
+    .where("path", "=", path)
+    .where("revision", "=", revision)
+    .where("kind", "=", "script")
+    .where("deleted", "=", false)
+    .executeTakeFirst();
+  if (!draft) return;
+  const body = { ...(draft.body as Record<string, unknown>) };
+  if (input || output) {
+    if (input) body.input = input;
+    if (output) body.output = output;
+    body.schemaSource = "code";
+  } else if (body.schemaSource === "code") {
+    // The code no longer declares them: what it said last stays, to be edited by hand.
+    delete body.schemaSource;
+  } else {
+    return;
+  }
+  await kernel.db
+    .updateTable("resource_draft")
+    .set({ body: JSON.stringify(body) })
+    .where("workspace_id", "=", task.workspace_id)
+    .where("path", "=", path)
+    .where("revision", "=", revision)
+    .execute();
+});

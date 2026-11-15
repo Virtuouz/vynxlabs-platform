@@ -30,16 +30,19 @@ const ManagedWorkers = Type.Object({
   state: Type.Union(
     [
       Type.Literal("off"),
+      Type.Literal("host"),
       Type.Literal("isolated"),
       Type.Literal("shared"),
       Type.Literal("refused"),
     ],
     {
       description:
-        "`off`: the instance starts no workers for this tenant. `isolated`: it does, as a " +
-        "user of their own. `shared`: it does, as the control plane's own user, by the " +
-        "operator's choice or because only the operator writes this tenant's code. `refused`: it would, but cannot run them as their own user, and " +
-        "people outside the operator write this tenant's code, so it needs a standalone worker.",
+        "`off`: the instance starts no workers for this tenant. `host`: it does, in a worker " +
+        "host on a network of its own. `isolated`: it does, beside the control plane, as a " +
+        "user of their own, because only the operator writes this tenant's code. `shared`: " +
+        "the same, as the control plane's own user. `refused`: it would, but workers beside " +
+        "the control plane share its network, and people outside the operator write this " +
+        "tenant's code, so it needs a worker host or a standalone worker.",
     },
   ),
 });
@@ -66,15 +69,12 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirstOrThrow();
         const mode = workerUserMode();
         if (!tenant.managed_workers || mode === "off") return { state: "off" as const };
-        if (mode === "isolated") return { state: "isolated" as const };
+        if (mode === "host") return { state: "host" as const };
+        // MANAGED_WORKER_USER=same: the operator says everyone who writes code works for them.
         if (mode === "shared") return { state: "shared" as const };
-        // Workers cannot have a user of their own here. Code only the operator writes may
-        // still run beside the control plane.
-        return {
-          state: (await hasOutsideCodeWriters(kernel, params.t))
-            ? ("refused" as const)
-            : ("shared" as const),
-        };
+        // Beside the control plane, only code the operator alone writes runs (decision 0001).
+        if (await hasOutsideCodeWriters(kernel, params.t)) return { state: "refused" as const };
+        return { state: mode === "isolated" ? ("isolated" as const) : ("shared" as const) };
       },
     );
 

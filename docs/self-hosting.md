@@ -32,6 +32,8 @@ Fill in `deploy/compose/.env`:
 | `AUTH_SECRET` | `openssl rand -hex 32`. Signs session cookies |
 | `MASTER_KEY` | `openssl rand -base64 32`. Wraps every tenant's encryption key. **Keep a copy somewhere safe.** Without it no stored secret can be read again |
 | `PUBLIC_URL` | The address people will type, for example `https://platform.example.com` |
+| `WORKER_HOST_TOKEN` | `openssl rand -hex 32`. Lets the worker host, which starts tenants' workers, ask for work |
+| `APPS_URL` | A second hostname for apps written as code, for example `https://apps.example.com`. Optional, but without it they are not served |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | The first operator. At least 12 characters. Remove both after the first start |
 | `PLATFORM_BIND` | Where it listens on the host. Default `127.0.0.1:8080` |
 
@@ -47,7 +49,8 @@ The database is created and migrated on the first start. Open the address, sign 
 - Set `PUBLIC_URL` to the address behind the proxy. Sign-in checks requests against it.
 - Let the proxy pass the run event stream through as it comes. The console keeps one long request open per tab, `GET /api/v1/tenants/<id>/stream`, answered as `text/event-stream`. The response says `X-Accel-Buffering: no`, which nginx honors; elsewhere, turn response buffering off for that path, and allow an idle time of at least 30 seconds (a heartbeat is sent every 20). A stream that a proxy cuts or holds back costs nothing but freshness: the console falls back to asking every few seconds.
 - Each replica holds one more database connection than its pool, to listen for changes to runs.
-- If the instance will hold more than one tenant's apps, set `APPS_URL` as well. See [Apps, and the addresses they are served at](#apps-and-the-addresses-they-are-served-at).
+- Give apps written as code their own address with `APPS_URL`. See [Apps, and the addresses they are served at](#apps-and-the-addresses-they-are-served-at).
+- If the instance runs in a cloud, check that the worker host started with its firewall rules: its log says so. See [Workers the instance starts](#workers-the-instance-starts).
 - Remove the two `BOOTSTRAP_ADMIN_` lines and restart.
 
 ### Using your own Postgres or object store
@@ -159,21 +162,46 @@ A worker's credential is best handed to it on its standard input, `platform-work
 
 ## Workers the instance starts
 
-For a tenant with work and no worker of its own, the control plane starts one, on the same machine. Each attempt of a script runs in a process of its own, ended at its time limit or when canceled, and limited to the script's `memoryMb` (512 by default).
+For a tenant with work and no worker of its own, the instance starts one. Each attempt of a script runs in a process of its own, ended at its time limit or when canceled, and limited to the script's `memoryMb` (512 by default).
 
-These workers run as a user of their own, `vxrun` (uid and gid 10001), so that a script can neither read the control plane's environment, with the master key and the database address, nor signal it. The image is built for this: the control plane runs on a copy of node, `node-cp`, that may switch users, and workers run on plain node, which may not.
+Where those workers run is set by `MANAGED_WORKERS`.
 
-Switching users needs the container's `CAP_SETUID` and `CAP_SETGID`. Docker gives both by default. They are missing when capabilities are dropped, as with `cap_drop: [ALL]` or a Kubernetes `securityContext` that drops them. Add them back with `cap_add: [SETUID, SETGID]`, or `capabilities: { add: [SETUID, SETGID] }`. Some runtimes also refuse file capabilities under `no-new-privileges` or `allowPrivilegeEscalation: false`; Docker 29 did not in our checks. The control plane's log says at start which way it went.
+### `host`: in a worker host (the default in `deploy/compose`)
 
-Without them the kernel will not start `node-cp`, so the image starts the control plane on plain node instead. It says so in its log at start, and starts no managed worker for a tenant whose code is written by anyone outside the instance's operators: a member or a group with `code:write` who holds no instance-wide role, or any service account. That tenant's Workers page says it runs on standalone workers only. A tenant whose code only the operators write still gets managed workers, as the control plane's own user.
+A worker host is the same image, started as `platform-worker-host`, in a container of its own. It asks the control plane for a tenant with work, gets a credential for it, and starts a worker with it, as `vxrun` (uid and gid 10001). The compose file puts it on a network, `execution`, with the control plane and nothing else of the instance's: the database and the object store are on another network, `data`, which it is not on. A tenant's script can reach the control plane and the internet, and not the database, the object store, or the control plane's environment.
+
+The host runs as root in its container, holding only `CAP_SETUID` and `CAP_SETGID`, to start workers as `vxrun`, and `CAP_NET_ADMIN`. With `NET_ADMIN` it adds firewall rules at start that refuse `vxrun` loopback, private and link-local addresses, cloud metadata among them, other than the control plane and the container's name servers. Without it, it says so in its log, and only the network keeps workers from the instance's services: block `169.254.169.254` at the machine if the instance runs in a cloud. The rules are made once, at start, for the control plane's address then; restart the worker host if the control plane's container is recreated with another address.
+
+The control plane and the host share a secret, `WORKER_HOST_TOKEN` (`openssl rand -hex 32`, at least 32 characters). The host never gives it to a worker.
+
+### `process`: beside the control plane
+
+Without a worker host, the control plane starts workers itself, on its own machine and its own network. They can reach whatever the control plane reaches, so it starts them only for tenants whose code only the operators write. A tenant whose code is written by anyone else, a member or a group with `code:write` who holds no instance-wide role, or any service account, gets none, and its Workers page says it runs on standalone workers only. `true`, from before there was a worker host, means `process`.
+
+These workers run as `vxrun` too, where the container may switch users, so that a script can neither read the control plane's environment nor signal it. The control plane runs on a copy of node, `node-cp`, that may switch users, and workers run on plain node, which may not. Switching users needs the container's `CAP_SETUID` and `CAP_SETGID`, which Docker gives by default. Without them the image starts the control plane on plain node, says so, and workers run as the control plane's own user.
+
+This is the mode for development, and for a single site where only the operator writes code.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `MANAGED_WORKERS` | `true` | Whether the control plane starts workers at all |
-| `MANAGED_WORKER_USER` | `own` | `own`: run them as their own user. `same`: run them as the control plane's user, for every tenant. Only for an instance where everyone who writes code works for the operator, or for development |
-| `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` | `10001` | The user and group they run as |
+| `MANAGED_WORKERS` | `process` (`host` in `deploy/compose`) | `host`, `process`, or `false` to start none |
+| `WORKER_HOST_TOKEN` | | What the worker host presents. Required with `host` |
+| `MANAGED_WORKER_USER` | `own` | In `process` mode: `own` runs workers as their own user; `same` as the control plane's, for every tenant, by which you say everyone who writes code works for you. Only for development, or a site where that is so |
+| `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` | `10001` | The user and group workers run as. The worker host reads them too |
 
-Rate limits on webhooks, sign-ins and guests are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas run.
+Rate limits on webhooks, sign-ins and guests are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas or worker hosts run.
+
+## What the instance reaches for a tenant
+
+The control plane reaches a few addresses a tenant chooses: an identity provider's settings and endpoints, a Git remote, a data source, and a hostname the tenant registers, to check it. It refuses any whose address is loopback, private, link-local (cloud metadata included), shared or reserved, and says so. Everything else a tenant's systems are asked, such as posting a failure alert or trying a connection, a worker does.
+
+To let it reach an internal Git server, an identity provider or a database on your network, list them in `EGRESS_ALLOW`, comma-separated, as networks or host names:
+
+```sh
+EGRESS_ALLOW=10.20.0.0/16,git.internal,192.168.1.40
+```
+
+A name in the list is allowed whatever it resolves to. A network is allowed for any name that resolves into it.
 
 ## Moving a tenant
 
@@ -224,9 +252,9 @@ An app is a tenant's own interface, built from its repository and served by the 
 
 ### By path, on the instance's address
 
-With nothing configured, an app is at `PUBLIC_URL/apps/<tenant>/<workspace>/<app>/`, and a tenant's sign-in pages at `PUBLIC_URL/portal/<tenant>/`. One hostname and one certificate serve everything, which is what a single machine on a plant network wants.
+With nothing configured, a tenant's sign-in pages are at `PUBLIC_URL/portal/<tenant>/`, and an app made in the App Builder at `PUBLIC_URL/apps/<tenant>/<workspace>/<app>/`. An app written as code is not served there: its page says the instance has no address for apps. Its code would otherwise run at the same address as the console, where a member who opens it is already signed in.
 
-An app is JavaScript written by whoever writes that tenant's code, and here it runs at the same address as the console. A member who opens it is already signed in to the console there. That is fine where everyone who writes code works for you. Where it is not, use a second address.
+Set `APPS_URL`, below. Or, where everyone who writes code works for you, as on a single machine on a plant network, set `APPS_ON_CONSOLE_ADDRESS=true` to serve apps written as code at `PUBLIC_URL` too, knowingly.
 
 ### A second address for every app
 
@@ -263,7 +291,7 @@ The proxy must pass the `Host` header through unchanged, and say whether the req
 
 | At | The console | The API | A member's console session | Apps |
 | --- | --- | --- | --- | --- |
-| `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set |
+| `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set. Apps written as code only with `APPS_ON_CONSOLE_ADDRESS=true` |
 | `APPS_URL` | No | All of it, by API key or app sign-in | Ignored | By path |
 | A registered hostname | No | That tenant only | Ignored | The one app, at the root |
 

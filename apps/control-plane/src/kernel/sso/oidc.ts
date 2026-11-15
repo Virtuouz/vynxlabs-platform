@@ -1,4 +1,5 @@
 import * as client from "openid-client";
+import { guardedFetch } from "../egress.js";
 import { readClaims } from "./claims.js";
 import { type Asserted, SsoRefusal } from "./people.js";
 import type { OidcConfig, Provider, ProviderSecrets } from "./providers.js";
@@ -26,6 +27,9 @@ async function configurationOf(
       secrets.clientSecret ? undefined : client.None(),
       {
         timeout: 10,
+        // The issuer is an address a tenant gave: it, and everything it names, is reached
+        // through the egress guard.
+        [client.customFetch]: guardedFetch as unknown as client.CustomFetch,
         ...(issuer.protocol === "http:" ? { execute: [client.allowInsecureRequests] } : {}),
       },
     )
@@ -39,6 +43,7 @@ async function configurationOf(
   // The library trusts an ID token that came straight from the token address over TLS, as
   // the specification allows. This has it check the signature against the published keys too.
   client.enableNonRepudiationChecks(config);
+  config[client.customFetch] = guardedFetch as unknown as client.CustomFetch;
   if (discovered.size > 500) discovered.clear();
   discovered.set(provider.id, { key, at: Date.now(), config });
   return config;

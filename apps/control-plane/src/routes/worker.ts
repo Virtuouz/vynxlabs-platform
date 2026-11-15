@@ -33,6 +33,13 @@ import {
   runnable,
   TAG_PATTERN,
 } from "../kernel/execution/runs.js";
+import {
+  beatTask,
+  claimTask,
+  endTask,
+  heldTask,
+  MAX_RESULT_BYTES,
+} from "../kernel/execution/tasks.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
 import { seeWorker } from "../kernel/execution/workers.js";
 import { publishEvent } from "../kernel/flows/events.js";
@@ -47,6 +54,7 @@ const RunParams = Type.Object({ id: Id });
 const AttemptQuery = Type.Object({ attempt: Attempt });
 
 const Job = Type.Object({
+  kind: Type.Optional(Type.Literal("run", { description: "Absent from an older control plane." })),
   runId: Id,
   attempt: Attempt,
   workspaceId: Id,
@@ -69,6 +77,24 @@ const Job = Type.Object({
   ),
 });
 
+/** Work for the platform that is not a run (decision 0001). Given only to a worker that asks for its kind. */
+const TaskJob = Type.Object({
+  kind: Type.Union([
+    Type.Literal("describe"),
+    Type.Literal("deliver"),
+    Type.Literal("test-connection"),
+  ]),
+  taskId: Id,
+  workspaceId: Id,
+  request: AnyObject,
+  timeoutSeconds: Type.Integer(),
+  memoryMb: Type.Integer(),
+  heartbeatSeconds: Type.Integer(),
+});
+/** How long a task may take, and the memory it may use. */
+const TASK_TIMEOUT_SECONDS = 30;
+const TASK_MEMORY_MB = 256;
+
 const MAX_WAIT_SECONDS = 25;
 const MAX_LOG_MESSAGE = 8000;
 /** Memory for a script that does not say, in MB. */
@@ -84,6 +110,24 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
     const config = { access: access.worker };
+
+    /** A bound connection as a worker builds its client from: connector, settings, credential. */
+    async function boundConnection(tenantId: string, workspaceId: string, path: string) {
+      const bound = await readConnection(kernel, db, { tenantId, workspaceId, path });
+      if (!bound) throw notFound(`The connection ${path}`);
+      const definition = await db
+        .selectFrom("resource")
+        .select("body")
+        .where("workspace_id", "=", workspaceId)
+        .where("kind", "=", "connection")
+        .where("path", "=", path)
+        .executeTakeFirst();
+      return {
+        connector: (definition?.body as { connector?: string } | undefined)?.connector ?? "http",
+        config: bound.config as Record<string, unknown>,
+        ...(bound.credential !== undefined ? { credential: bound.credential } : {}),
+      };
+    }
 
     /**
      * A worker that could not deliver some log lines says how many, and the run's
@@ -165,8 +209,16 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             waitSeconds: Type.Optional(
               Type.Integer({ minimum: 0, maximum: MAX_WAIT_SECONDS, default: 20 }),
             ),
+            kinds: Type.Optional(
+              Type.Array(Type.String({ maxLength: 40 }), {
+                maxItems: 10,
+                description:
+                  "The kinds of job this worker takes: `run`, and the task kinds it knows. " +
+                  "A worker that says nothing is given runs only.",
+              }),
+            ),
           }),
-          response: { 200: Type.Object({ job: Type.Union([Job, Type.Null()]) }) },
+          response: { 200: Type.Object({ job: Type.Union([Job, TaskJob, Type.Null()]) }) },
         },
       },
       async ({ worker, body, raw }) => {
@@ -174,8 +226,28 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const deadline = Date.now() + (body.waitSeconds ?? 20) * 1000;
         // A worker that hung up must not be handed a job.
         const gone = () => raw.socket.destroyed;
+        const takesRuns = body.kinds === undefined || body.kinds.includes("run");
         for (;;) {
-          const claimed = await claimRun(kernel, worker, body.workerId, gone);
+          // A task first: each is short, and someone is often waiting on it.
+          const task = body.kinds
+            ? await claimTask(kernel, worker, body.workerId, body.kinds)
+            : undefined;
+          if (task) {
+            return {
+              job: {
+                kind: task.kind,
+                taskId: task.id,
+                workspaceId: task.workspace_id,
+                request: task.request,
+                timeoutSeconds: TASK_TIMEOUT_SECONDS,
+                memoryMb: TASK_MEMORY_MB,
+                heartbeatSeconds: Math.floor(HEARTBEAT_SECONDS / 3),
+              },
+            };
+          }
+          const claimed = takesRuns
+            ? await claimRun(kernel, worker, body.workerId, gone)
+            : undefined;
           if (claimed) {
             const { run } = claimed;
             const bundle = await db
@@ -186,6 +258,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const manifest = await runnable(kernel, bundle, run.script_path);
             return {
               job: {
+                kind: "run" as const,
                 runId: run.id,
                 attempt: run.attempt,
                 workspaceId: run.workspace_id,
@@ -207,6 +280,101 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (gone() || Date.now() >= deadline) return { job: null };
           await sleep(Math.min(500, Math.max(0, deadline - Date.now())));
         }
+      },
+    );
+
+    // ----- Tasks -----
+
+    const TaskParams = Type.Object({ id: Id });
+
+    app.post(
+      "/worker/tasks/:id/heartbeat",
+      {
+        config,
+        schema: {
+          summary: "Say that the worker is still at a task",
+          tags: ["worker protocol"],
+          params: TaskParams,
+          response: { 204: NoContent },
+        },
+      },
+      async ({ worker, params }, reply) => {
+        await beatTask(kernel, worker, params.id);
+        return reply.code(204).send(null);
+      },
+    );
+
+    app.post(
+      "/worker/tasks/:id/complete",
+      {
+        config,
+        schema: {
+          summary: "Report what a task found",
+          description: `The result is JSON of at most ${MAX_RESULT_BYTES / 1024} KB, in the shape its kind gives.`,
+          tags: ["worker protocol"],
+          params: TaskParams,
+          body: Type.Object({ result: Type.Unknown() }),
+          response: { 204: NoContent },
+        },
+      },
+      async ({ worker, params, body }, reply) => {
+        if (Buffer.byteLength(JSON.stringify(body.result ?? null)) > MAX_RESULT_BYTES) {
+          throw badRequest(`A task's result may be at most ${MAX_RESULT_BYTES / 1024} KB.`);
+        }
+        await endTask(kernel, worker, params.id, { result: body.result ?? null });
+        return reply.code(204).send(null);
+      },
+    );
+
+    app.post(
+      "/worker/tasks/:id/fail",
+      {
+        config,
+        schema: {
+          summary: "Report that a task could not be done",
+          tags: ["worker protocol"],
+          params: TaskParams,
+          body: Type.Object({
+            error: Type.Object({ message: Type.String({ maxLength: 8000 }) }),
+          }),
+          response: { 204: NoContent },
+        },
+      },
+      async ({ worker, params, body }, reply) => {
+        await endTask(kernel, worker, params.id, { error: { message: body.error.message } });
+        return reply.code(204).send(null);
+      },
+    );
+
+    app.get(
+      "/worker/tasks/:id/connection",
+      {
+        config,
+        schema: {
+          summary: "Read the connection a task is about",
+          description:
+            "For a `deliver` or `test-connection` task: the one connection it names, and no other.",
+          tags: ["worker protocol"],
+          params: TaskParams,
+          response: {
+            200: Type.Object({
+              connector: Type.String(),
+              config: AnyObject,
+              credential: Type.Optional(Type.String()),
+            }),
+          },
+        },
+      },
+      async ({ worker, params }) => {
+        const task = await heldTask(db, worker, params.id);
+        const path = task.request.connection;
+        if (
+          (task.kind !== "deliver" && task.kind !== "test-connection") ||
+          typeof path !== "string"
+        ) {
+          throw forbidden("a task about a connection");
+        }
+        return boundConnection(task.tenant_id, task.workspace_id, path);
       },
     );
 
@@ -420,24 +588,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!may.connection(path)) {
           throw forbidden(`a declared use of the connection "${path}"`);
         }
-        const bound = await readConnection(kernel, db, {
-          tenantId: run.tenant_id,
-          workspaceId: run.workspace_id,
-          path,
-        });
-        if (!bound) throw notFound(`The connection ${path}`);
-        const definition = await db
-          .selectFrom("resource")
-          .select("body")
-          .where("workspace_id", "=", run.workspace_id)
-          .where("kind", "=", "connection")
-          .where("path", "=", path)
-          .executeTakeFirst();
-        return {
-          connector: (definition?.body as { connector?: string } | undefined)?.connector ?? "http",
-          config: bound.config,
-          ...(bound.credential !== undefined ? { credential: bound.credential } : {}),
-        };
+        return boundConnection(run.tenant_id, run.workspace_id, path);
       },
     );
 

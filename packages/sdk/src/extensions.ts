@@ -14,6 +14,24 @@ export interface Connector<Config, Client> {
    * secret, when it has one. `signal` aborts when the run is canceled.
    */
   create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
+  /**
+   * Tries a connection without doing anything with it: what the console's Test
+   * button runs. Resolves with what it found, or throws why it could not reach it.
+   * A connector without it is tested by building its client.
+   */
+  test?(
+    config: Config,
+    credential: string | undefined,
+    signal: AbortSignal,
+  ): Promise<ConnectionTest>;
+}
+
+/** What trying a connection found. */
+export interface ConnectionTest {
+  /** The status the system answered with, for one that has statuses. */
+  status?: number;
+  /** Anything else worth showing a person. */
+  message?: string;
 }
 
 /** A way to start runs. */

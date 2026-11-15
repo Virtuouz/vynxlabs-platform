@@ -2,14 +2,15 @@ import { grants } from "../authorize.js";
 import type { Kernel } from "../kernel.js";
 
 /**
- * How this process starts managed workers:
+ * How this instance starts managed workers:
+ * - `host`: a worker host on a network of its own starts them, as their own user.
  * - `isolated`: as another user, who cannot read the control plane's environment or signal it.
  * - `shared`: as the control plane's own user, because the operator chose so.
  * - `unable`: another user was asked for and could not be had. Tenants whose code
  *   is written by anyone outside the operator get no managed worker.
  * - `off`: this process starts none.
  */
-export type WorkerUserMode = "isolated" | "shared" | "unable" | "off";
+export type WorkerUserMode = "host" | "isolated" | "shared" | "unable" | "off";
 
 let mode: WorkerUserMode = "off";
 

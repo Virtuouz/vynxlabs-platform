@@ -21,6 +21,7 @@ import {
   runState,
   runStateSql,
 } from "../kernel/execution/state.js";
+import { queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
 import { fireWebhook, webhookToken } from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
@@ -53,6 +54,23 @@ function wildPath(params: { "*": string }): string {
   if (!pathPattern.test(path) || path.length > 255) throw badRequest("The path is not valid.");
   return path;
 }
+
+/** Something a worker does for the platform, as the console follows it. */
+const Task = Type.Object({
+  id: Id,
+  kind: Type.String(),
+  subject: NullableString,
+  status: Type.Union([
+    Type.Literal("queued"),
+    Type.Literal("running"),
+    Type.Literal("succeeded"),
+    Type.Literal("failed"),
+  ]),
+  result: Type.Unknown({ description: "What it found, in the shape its kind gives." }),
+  error: Type.Union([Type.Object({ message: Type.String() }), Type.Null()]),
+  createdAt: Time,
+  finishedAt: NullableTime,
+});
 
 const Bundle = Type.Object({
   id: Id,
@@ -1824,6 +1842,86 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
         });
         return reply.code(204).send(null);
+      },
+    );
+
+    app.post(
+      `${base}/connection-tests`,
+      {
+        config: { access: access.workspace("connection:write") },
+        schema: {
+          summary: "Try a bound connection",
+          description:
+            "One of the workspace's workers tries it: an http connection asks its base URL, " +
+            "a mail server is connected to and signed in to, a connector of a bundle's own runs " +
+            "its `test`. Follow the task it returns.",
+          tags: ["bindings"],
+          params: WorkspaceParams,
+          body: Type.Object({ path: Type.String({ maxLength: 255 }) }),
+          response: { 202: Task },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const path = wildPath({ "*": body.path });
+        const bound = await db
+          .selectFrom("connection_binding")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("path", "=", path)
+          .executeTakeFirst();
+        if (!bound) throw notFound(`A binding for ${path}`);
+        // A connector that is not built in is run from the bundle the workspace runs now.
+        const bundle = await db
+          .selectFrom("workspace")
+          .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+          .select(["bundle.id", "bundle.digest"])
+          .where("workspace.id", "=", params.w)
+          .executeTakeFirst();
+        const task = await ctx.mutate(async (trx, audit) => {
+          const queued = await queueTask(trx, {
+            tenantId: params.t,
+            workspaceId: params.w,
+            kind: "test-connection",
+            subject: path,
+            request: {
+              connection: path,
+              ...(bundle ? { bundle: { id: bundle.id, digest: bundle.digest } } : {}),
+            },
+          });
+          await audit({
+            action: "connection.tested",
+            targetType: "connection",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { taskId: queued.id },
+          });
+          return queued;
+        });
+        return reply.code(202).send(toTask(task));
+      },
+    );
+
+    app.get(
+      `${base}/tasks/:id`,
+      {
+        config: { access: access.workspace("run:read") },
+        schema: {
+          summary: "A task a worker does for the platform",
+          tags: ["runs"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          response: { 200: Task },
+        },
+      },
+      async ({ params }) => {
+        const task = await db
+          .selectFrom("task")
+          .selectAll()
+          .where("id", "=", params.id)
+          .where("workspace_id", "=", params.w)
+          .executeTakeFirst();
+        if (!task) throw notFound("The task");
+        return toTask(task as TaskRow);
       },
     );
 

@@ -399,6 +399,24 @@ describe("serving by path, on the instance's own address", () => {
   });
 });
 
+describe("an instance with no address for apps", () => {
+  test("serves no app written as code at the console's address, and says why", async () => {
+    const config = t.kernel.config;
+    expect((await t.app.inject({ url: "/api/v1/instance" })).json().appsAddress).toBe("console");
+    config.appsOnConsoleAddress = false;
+    try {
+      const page = await browser(t, MAIN).get("/apps/acme/main/status/");
+      expect(page.status).toBe(503);
+      expect(page.body).toContain("This app is not served at this address");
+      expect(page.body).toContain("APPS_URL");
+      expect(page.body).not.toContain("Order status");
+      expect((await t.app.inject({ url: "/api/v1/instance" })).json().appsAddress).toBe("none");
+    } finally {
+      config.appsOnConsoleAddress = true;
+    }
+  });
+});
+
 describe("end users", () => {
   let ed: Awaited<ReturnType<typeof endUser>>;
   let eve: Awaited<ReturnType<typeof endUser>>;

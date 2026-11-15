@@ -7,7 +7,16 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { allowedCall, type Job, type LogEntry } from "./context.js";
+import {
+  allowedCall,
+  type Bound,
+  type Claimed,
+  isTask,
+  type Job,
+  type LogEntry,
+  TASK_KINDS,
+  type TaskJob,
+} from "./context.js";
 import type { FromRunner, ToRunner } from "./runner.js";
 
 export type WorkerLog = (
@@ -46,7 +55,7 @@ class CredentialRefused extends Error {}
 /** The control plane said this attempt is over: canceled, timed out or taken back. */
 class AttemptOver extends Error {}
 
-const WORKER_VERSION = "0.5.0";
+const WORKER_VERSION = "0.6.0";
 
 /** Log lines kept while the control plane cannot be reached. Past this, the oldest go. */
 const MAX_PENDING_LOGS = 5000;
@@ -142,7 +151,7 @@ export class Worker {
           if (job) {
             this.#inFlight += 1;
             try {
-              await this.#execute(job);
+              await (isTask(job) ? this.#task(job) : this.#execute(job));
             } finally {
               this.#inFlight -= 1;
               this.#lastWork = Date.now();
@@ -211,17 +220,18 @@ export class Worker {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
-  async #claim(): Promise<Job | null> {
+  async #claim(): Promise<Claimed | null> {
     const abort = new AbortController();
     this.#claims.add(abort);
     try {
-      const reply = await this.#call<{ job: Job | null }>(
+      const reply = await this.#call<{ job: Claimed | null }>(
         "POST",
         "/claim",
         {
           workerId: this.id,
           version: WORKER_VERSION,
           waitSeconds: this.#options.claimWaitSeconds ?? 20,
+          kinds: ["run", ...TASK_KINDS],
         },
         abort.signal,
       );
@@ -240,7 +250,7 @@ export class Worker {
    * nothing of it stays in the worker's memory. Past `MAX_BUNDLE_FILES` the
    * least recently used are removed.
    */
-  #bundleFile(bundle: Job["bundle"]): Promise<CachedBundle> {
+  #bundleFile(bundle: { id: string; digest: string }): Promise<CachedBundle> {
     let loading = this.#bundles.get(bundle.digest);
     if (loading) {
       // Most recently used goes last.
@@ -443,6 +453,114 @@ export class Worker {
       clearTimeout(timeout);
       // Whatever the script left running ends with its attempt. An aborted one had its
       // grace to stop by itself; any other is ended now.
+      if (child && child.exitCode === null && child.signalCode === null) {
+        if (!killing) child.kill("SIGKILL");
+        child.once("exit", () => clearTimeout(killing));
+      }
+    }
+  }
+
+  /**
+   * Does a task: in a process of its own, as a run is, with the same limits,
+   * but given what it needs at its start and able to ask for nothing more.
+   */
+  async #task(job: TaskJob): Promise<void> {
+    const taskPath = `/tasks/${job.taskId}`;
+    const abort = new AbortController();
+    let ended: AttemptOver | CredentialRefused | undefined;
+    const end = (error: unknown) => {
+      if (error instanceof AttemptOver || error instanceof CredentialRefused) {
+        ended = error;
+        abort.abort(error);
+      }
+    };
+    const heartbeat = setInterval(
+      () => void this.#call("POST", `${taskPath}/heartbeat`).catch(end),
+      Math.max(1, job.heartbeatSeconds) * 1000,
+    );
+    const timeout = setTimeout(
+      () =>
+        abort.abort(
+          new Error(`The task took longer than its limit of ${job.timeoutSeconds} seconds.`),
+        ),
+      job.timeoutSeconds * 1000,
+    );
+    let child: ChildProcess | undefined;
+    let killing: NodeJS.Timeout | undefined;
+    try {
+      const bundle = job.request.bundle ? await this.#bundleFile(job.request.bundle) : undefined;
+      const bound = job.request.connection
+        ? await this.#call<Bound>("GET", `${taskPath}/connection`)
+        : undefined;
+      const memoryMb = job.memoryMb ?? DEFAULT_MEMORY_MB;
+      const started = fork(this.#runner, [], {
+        env: runnerEnvironment(),
+        execArgv: [`--max-old-space-size=${memoryMb}`],
+        stdio: ["ignore", "inherit", "pipe", "ipc"],
+      });
+      child = started;
+      let stderr = "";
+      started.stderr?.on("data", (chunk: Buffer) => {
+        process.stderr.write(chunk);
+        stderr = (stderr + chunk.toString("utf8")).slice(-STDERR_KEPT);
+      });
+      const outcome = new Promise<unknown>((resolve, reject) => {
+        started.on("message", (message: FromRunner) => {
+          if (message.t === "call") {
+            // A task is given what it needs. It may ask for nothing.
+            if (started.connected) {
+              started.send({
+                t: "reply",
+                id: message.id,
+                error: "This call is not open to a task.",
+              } satisfies ToRunner);
+            }
+          } else if (message.t === "done") {
+            resolve(message.output);
+          } else if (message.t === "failed") {
+            reject(new Error(message.error.message));
+          }
+        });
+        started.once("exit", (code, signal) =>
+          reject(processEnded(code, signal, stderr, memoryMb)),
+        );
+        started.once("error", reject);
+      });
+      started.send({
+        t: "task",
+        job,
+        ...(bundle ? { bundleFile: bundle.file, manifests: bundle.manifests } : {}),
+        ...(bound ? { bound } : {}),
+      } satisfies ToRunner);
+      const aborted = new Promise<never>((_, reject) => {
+        const stop = () => {
+          killing = setTimeout(() => started.kill("SIGKILL"), ABORT_GRACE_MS);
+          reject(abort.signal.reason);
+        };
+        if (abort.signal.aborted) stop();
+        else abort.signal.addEventListener("abort", stop, { once: true });
+      });
+      const result = await Promise.race([outcome, aborted]);
+      await this.#call("POST", `${taskPath}/complete`, { result: result ?? null });
+    } catch (error) {
+      if (error instanceof CredentialRefused || ended instanceof CredentialRefused) {
+        throw ended ?? error;
+      }
+      if (ended || error instanceof AttemptOver) return;
+      await this.#call("POST", `${taskPath}/fail`, {
+        error: { message: ((error as Error).message ?? String(error)).slice(0, 8000) },
+      }).catch((reportError) => {
+        if (reportError instanceof CredentialRefused) throw reportError;
+        if (!(reportError instanceof AttemptOver)) {
+          this.#log("warn", "A task's failure could not be reported.", {
+            taskId: job.taskId,
+            error: reportError.message,
+          });
+        }
+      });
+    } finally {
+      clearInterval(heartbeat);
+      clearTimeout(timeout);
       if (child && child.exitCode === null && child.signalCode === null) {
         if (!killing) child.kill("SIGKILL");
         child.once("exit", () => clearTimeout(killing));

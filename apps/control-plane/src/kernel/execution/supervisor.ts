@@ -22,6 +22,13 @@ export interface SupervisorOptions {
    * user, by the operator's choice; the default for code that does not say.
    */
   user?: { uid: number; gid: number } | "same";
+  /**
+   * Starts workers only for tenants whose code only the operator writes: a
+   * worker beside the control plane shares its network, and so can reach what
+   * the control plane reaches (decision 0001). On unless `user` is `same`, by
+   * which the operator says everyone who writes code works for them.
+   */
+  operatorCodeOnly?: boolean;
 }
 
 interface Managed {
@@ -48,8 +55,54 @@ export async function tenantsNeedingWorkers(kernel: Kernel): Promise<{ tenant_id
       and run.pool is null
       -- And a tenant may run everything on workers of its own.
       and tenant.managed_workers
+    union
+    select distinct task.tenant_id from task
+    join tenant on tenant.id = task.tenant_id
+    where task.status = 'queued' and task.pool is null and tenant.managed_workers
   `.execute(kernel.db);
   return waiting.rows;
+}
+
+/**
+ * Makes the credential for a new managed worker, unless one is already alive
+ * for the tenant, started by this replica, another, or a worker host. Decided
+ * under a lock per tenant, so no two can both start one.
+ */
+export async function claimManagedSlot(kernel: Kernel, tenantId: string) {
+  return kernel.db.transaction().execute(async (trx) => {
+    await sql`select pg_advisory_xact_lock(hashtext(${`managed-worker:${tenantId}`}))`.execute(trx);
+    const alive = await sql<{ id: string }>`
+      select c.id from worker_credential c
+      where c.tenant_id = ${tenantId} and c.managed and c.revoked_at is null
+        and (c.expires_at is null or c.expires_at > now())
+        and (
+          -- Just made, and its worker not yet heard from.
+          c.created_at > now() - interval '30 seconds'
+          or exists (
+            select 1 from worker w
+            where w.credential_id = c.id and w.last_seen_at > now() - interval '60 seconds'
+          )
+        )
+      limit 1
+    `.execute(trx);
+    if (alive.rows.length > 0) return undefined;
+    return createWorkerCredential(trx, {
+      tenantId,
+      name: "managed worker",
+      managed: true,
+      expiresAt: new Date(Date.now() + CREDENTIAL_HOURS * 3600_000),
+    });
+  });
+}
+
+/** A managed worker exited: its credential is of no further use. */
+export async function endManagedSlot(kernel: Kernel, credentialId: string) {
+  return kernel.db
+    .updateTable("worker_credential")
+    .set({ revoked_at: new Date() })
+    .where("id", "=", credentialId)
+    .where("managed", "=", true)
+    .executeTakeFirst();
 }
 
 /**
@@ -150,7 +203,8 @@ export class WorkerSupervisor {
 
   /** Whether a tenant may have a worker started by the instance, as this process starts them. */
   async allowed(tenantId: string): Promise<boolean> {
-    if ((await this.mode()) !== "unable") return true;
+    const restricted = this.#options.operatorCodeOnly ?? (this.#options.user ?? "same") !== "same";
+    if (!restricted && (await this.mode()) !== "unable") return true;
     const known = this.#writers.get(tenantId);
     if (known && Date.now() - known.at < WRITERS_CACHE_MS) return !known.outside;
     const outside = await hasOutsideCodeWriters(this.#kernel, tenantId);
@@ -170,8 +224,9 @@ export class WorkerSupervisor {
           this.#refused.add(tenantId);
           this.#kernel.log.warn(
             { tenantId },
-            "no managed worker for this tenant: its code is written outside the operator, " +
-              "and workers cannot run as their own user here. It needs a standalone worker.",
+            "no managed worker for this tenant: its code is written outside the operator, and a " +
+              "worker started beside the control plane shares its network. Run a worker host " +
+              "(MANAGED_WORKERS=host), or give the tenant a standalone worker.",
           );
         }
         continue;
@@ -181,43 +236,9 @@ export class WorkerSupervisor {
     }
   }
 
-  /**
-   * Makes the credential for a new managed worker, unless one is already alive
-   * for the tenant, started by this replica or another. Decided under a lock
-   * per tenant, so two replicas cannot both start one.
-   */
-  async #claimSlot(tenantId: string) {
-    return this.#kernel.db.transaction().execute(async (trx) => {
-      await sql`select pg_advisory_xact_lock(hashtext(${`managed-worker:${tenantId}`}))`.execute(
-        trx,
-      );
-      const alive = await sql<{ id: string }>`
-        select c.id from worker_credential c
-        where c.tenant_id = ${tenantId} and c.managed and c.revoked_at is null
-          and (c.expires_at is null or c.expires_at > now())
-          and (
-            -- Just made, and its worker not yet heard from.
-            c.created_at > now() - interval '30 seconds'
-            or exists (
-              select 1 from worker w
-              where w.credential_id = c.id and w.last_seen_at > now() - interval '60 seconds'
-            )
-          )
-        limit 1
-      `.execute(trx);
-      if (alive.rows.length > 0) return undefined;
-      return createWorkerCredential(trx, {
-        tenantId,
-        name: "managed worker",
-        managed: true,
-        expiresAt: new Date(Date.now() + CREDENTIAL_HOURS * 3600_000),
-      });
-    });
-  }
-
   async #start(tenantId: string): Promise<void> {
-    const { db, log } = this.#kernel;
-    const credential = await this.#claimSlot(tenantId);
+    const { log } = this.#kernel;
+    const credential = await claimManagedSlot(this.#kernel, tenantId);
     if (!credential) return;
     const user = this.#options.user;
     const child = spawn(this.#node, [this.#bin, "--token-stdin"], {
@@ -242,11 +263,7 @@ export class WorkerSupervisor {
       this.#workers.delete(tenantId);
       log.info({ tenantId, code }, "a managed worker exited");
       // Its credential is of no further use.
-      const revoking = db
-        .updateTable("worker_credential")
-        .set({ revoked_at: new Date() })
-        .where("id", "=", credential.row.id)
-        .execute()
+      const revoking = endManagedSlot(this.#kernel, credential.row.id)
         .catch((error) =>
           log.warn({ err: error }, "a managed worker's credential could not be revoked"),
         )

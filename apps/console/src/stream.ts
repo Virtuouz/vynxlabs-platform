@@ -3,7 +3,7 @@ import { invalidatePrefix } from "./api.ts";
 
 /** What the server says changed. Never the data: what is shown is read again. */
 export interface StreamEvent {
-  k: "run" | "flow_run" | "step" | "log";
+  k: "run" | "flow_run" | "step" | "log" | "task";
   /** The workspace. */
   w: string;
   /** The run's or the flow run's ID. */
@@ -97,7 +97,7 @@ function start(tenantId: string) {
     setConnected(true);
     invalidatePrefix(tenant);
   });
-  for (const kind of ["run", "flow_run", "step", "log"]) {
+  for (const kind of ["run", "flow_run", "step", "log", "task"]) {
     source.addEventListener(kind, changed as EventListener);
   }
   source.onopen = () => setConnected(true);

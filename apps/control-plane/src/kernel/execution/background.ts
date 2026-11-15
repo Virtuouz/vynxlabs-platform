@@ -9,6 +9,7 @@ import { removeExpiredImports } from "../tenancy/staging.js";
 import { removeOldPreviews } from "./bundles.js";
 import { reapDeadRuns, requeueLostRuns } from "./runs.js";
 import type { WorkerSupervisor } from "./supervisor.js";
+import { sweepTasks } from "./tasks.js";
 import { fireDueSchedules } from "./triggers.js";
 
 /**
@@ -52,6 +53,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     ["schedules", () => fireDueSchedules(kernel)],
     ["lost runs", () => requeueLostRuns(kernel)],
     ["dead runs", () => reapDeadRuns(kernel)],
+    ["tasks", () => sweepTasks(kernel)],
     ["flows", () => advanceDueFlows(kernel)],
     ["expired sign-ins", sweep],
     ["health", health],

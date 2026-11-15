@@ -259,16 +259,87 @@ describe("trying a draft out", () => {
     const { removeOldPreviews } = await import("./kernel/execution/bundles.js");
     const previews = () =>
       t.db.selectFrom("bundle").select("id").where("origin", "=", "preview").execute();
-    expect(await previews()).toHaveLength(1);
-    const others = (await t.db.selectFrom("bundle").select("id").execute()).length - 1;
+    // Saving a script made previews too, for reading its schemas.
+    const made = (await previews()).length;
+    expect(made).toBeGreaterThanOrEqual(1);
+    const others = (await t.db.selectFrom("bundle").select("id").execute()).length - made;
     expect(await removeOldPreviews(t.kernel)).toBe(0);
-    expect(await previews()).toHaveLength(1);
-    expect(await removeOldPreviews(t.kernel, 0)).toBe(1);
+    expect(await previews()).toHaveLength(made);
+    expect(await removeOldPreviews(t.kernel, 0)).toBe(made);
     expect(await previews()).toEqual([]);
     expect((await alice.get(`${ws()}/runs/${started.body.runId}`)).status).toBe(404);
     // Nothing that was deployed or uploaded is touched.
     expect(await t.db.selectFrom("bundle").select("id").execute()).toHaveLength(others);
     expect(await removeOldPreviews(t.kernel, 0)).toBe(0);
+  });
+
+  test("what a script's code declares as its input and output is read by a worker onto its draft", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: task bodies are inspected freely
+    const ended = async (id: string): Promise<any> => {
+      for (let i = 0; i < 150; i++) {
+        const task = (await alice.get(`${ws()}/tasks/${id}`)).body;
+        if (task.status === "succeeded" || task.status === "failed") return task;
+        await sleep(100);
+      }
+      throw new Error(`Task ${id} did not end.`);
+    };
+    const typed =
+      'import { z } from "@vynxlabs/sdk";\n' +
+      "export const input = z.object({ name: z.string().min(1) });\n" +
+      "export const output = z.object({ hello: z.string() });\n" +
+      "export default async (input: { name: string }) => ({ hello: input.name });\n";
+    const saved = await draft("orders/typed", scriptBody(typed));
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.schemaTaskId).toEqual(expect.any(String));
+    expect((await ended(saved.body.schemaTaskId)).status).toBe("succeeded");
+    const read = (await alice.get(`${ws()}/drafts/orders/typed`)).body;
+    expect(read.revision).toBe(1);
+    expect(read.body).toMatchObject({
+      schemaSource: "code",
+      input: {
+        type: "object",
+        properties: { name: { type: "string", minLength: 1 } },
+        required: ["name"],
+      },
+      output: { type: "object", properties: { hello: { type: "string" } } },
+    });
+
+    // Two saves in a row: only the newer one's reading is written.
+    const first = await alice.put(`${ws()}/drafts/orders/typed`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody(typed.replace("min(1)", "min(2)")),
+    });
+    const second = await alice.put(`${ws()}/drafts/orders/typed`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody(typed.replace("min(1)", "min(3)")),
+    });
+    await ended(first.body.schemaTaskId);
+    await ended(second.body.schemaTaskId);
+    expect(
+      (await alice.get(`${ws()}/drafts/orders/typed`)).body.body.input.properties.name.minLength,
+    ).toBe(3);
+
+    // Code that declares nothing keeps the schema written by hand.
+    const plain = await draft(
+      "orders/plain",
+      scriptBody("export default async () => ({});\n", {
+        input: { type: "object", properties: { id: { type: "integer" } } },
+      }),
+    );
+    expect((await ended(plain.body.schemaTaskId)).result).toEqual({});
+    const kept = (await alice.get(`${ws()}/drafts/orders/plain`)).body.body;
+    expect(kept.input).toEqual({ type: "object", properties: { id: { type: "integer" } } });
+    expect(kept.schemaSource).toBeUndefined();
+
+    // Code that does not build is not read.
+    const broken = await draft("orders/unbuilt", scriptBody("export default async () => (;\n"));
+    expect(broken.status).toBe(200);
+    expect(broken.body.schemaTaskId).toBeUndefined();
+    for (const path of ["orders/typed", "orders/plain", "orders/unbuilt"]) {
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
   });
 
   test("code that does not build says where", async () => {

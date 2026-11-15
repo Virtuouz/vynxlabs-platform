@@ -1,16 +1,33 @@
 /**
- * Runs one attempt of one script, in a process of its own that the worker can
- * end at any moment. It holds no credential: every call to the control plane is
- * asked of the worker over IPC, and the worker makes it only for this run.
+ * Runs one attempt of one script, or one task, in a process of its own that the
+ * worker can end at any moment. It holds no credential: every call to the
+ * control plane is asked of the worker over IPC, and the worker makes it only
+ * for this run. A task asks for nothing: what it needs, it is given at start.
  */
 import { pathToFileURL } from "node:url";
 import type { BundleManifest } from "@vynxlabs/manifest";
 import type { ScriptContext } from "@vynxlabs/sdk";
-import { buildContext, type Job, type LogEntry } from "./context.js";
+import {
+  type Bound,
+  buildContext,
+  connectorFor,
+  type Job,
+  type Loaded,
+  type LogEntry,
+  type TaskJob,
+} from "./context.js";
 
 /** What the worker sends. */
 export type ToRunner =
   | { t: "start"; job: Job; bundleFile: string; manifests: BundleManifest[] }
+  | {
+      t: "task";
+      job: TaskJob;
+      bundleFile?: string;
+      manifests?: BundleManifest[];
+      /** The connection the task is about, read by the worker. */
+      bound?: Bound;
+    }
   | { t: "reply"; id: number; result?: unknown; error?: string }
   | { t: "abort"; message: string };
 
@@ -83,9 +100,81 @@ async function run(job: Job, bundleFile: string, manifests: BundleManifest[]) {
   }
 }
 
+/** What `describe` finds in code that declares nothing. */
+const NOTHING_DECLARED = {};
+
+async function task(message: Extract<ToRunner, { t: "task" }>) {
+  try {
+    const { job, bound } = message;
+    const loaded: Loaded | undefined = message.bundleFile
+      ? {
+          exports: (await import(pathToFileURL(message.bundleFile).href)) as Record<
+            string,
+            unknown
+          >,
+          manifests: message.manifests ?? [],
+        }
+      : undefined;
+    let result: unknown;
+    if (job.kind === "describe") {
+      // The bundle's own helper turns the script's `input` and `output` into JSON Schema,
+      // with the zod it was built with.
+      const describe = loaded?.exports.__vx_describe;
+      result =
+        typeof describe === "function"
+          ? await (describe as (entry: string) => unknown)(String(job.request.entry))
+          : NOTHING_DECLARED;
+    } else {
+      if (!bound) throw new Error("The task names no connection.");
+      const connector = connectorFor(loaded, bound.connector);
+      if (job.kind === "deliver") {
+        if (bound.connector !== "http") {
+          throw new Error(
+            `A notification goes through an http connection, not a ${bound.connector} one.`,
+          );
+        }
+        const client = connector.create(bound.config, bound.credential, abort.signal) as {
+          post(path: string, json: unknown): Promise<{ status: number }>;
+        };
+        const response = await client.post("", job.request.payload);
+        result = { status: response.status };
+      } else {
+        const started = performance.now();
+        const latency = () => Math.round(performance.now() - started);
+        try {
+          let found: { status?: number; message?: string };
+          if (connector.test) {
+            found = await connector.test(bound.config, bound.credential, abort.signal);
+          } else {
+            connector.create(bound.config, bound.credential, abort.signal);
+            found = { message: "The connector has no test of its own. Its client was made." };
+          }
+          result = { ok: true, ...found, latencyMs: latency() };
+        } catch (error) {
+          const status = (error as { status?: unknown }).status;
+          result = {
+            ok: false,
+            ...(typeof status === "number" ? { status } : {}),
+            message: (error as Error).message ?? String(error),
+            latencyMs: latency(),
+          };
+        }
+      }
+    }
+    await finish({
+      t: "done",
+      output: result === undefined ? null : JSON.parse(JSON.stringify(result)),
+    });
+  } catch (error) {
+    await finish({ t: "failed", error: failure(error) });
+  }
+}
+
 process.on("message", (message: ToRunner) => {
   if (message.t === "start") {
     void run(message.job, message.bundleFile, message.manifests);
+  } else if (message.t === "task") {
+    void task(message);
   } else if (message.t === "reply") {
     const pending = waiting.get(message.id);
     if (!pending) return;

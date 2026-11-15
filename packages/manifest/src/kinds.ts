@@ -118,6 +118,12 @@ export const scriptKind: KindDefinition = {
       description: { type: "string", maxLength: 500 },
       input: jsonSchema,
       output: jsonSchema,
+      schemaSource: {
+        enum: ["code"],
+        description:
+          "Set when `input` and `output` were read from the script's own `input` and `output` " +
+          "exports, which the console then shows and does not let be edited by hand.",
+      },
       timeoutSeconds: { type: "integer", minimum: 1, maximum: 3600 },
       memoryMb: {
         type: "integer",

@@ -803,6 +803,27 @@ export interface TenantRetentionTable {
   updated_at: Generated<Date>;
 }
 
+/** Work a worker does for the platform that is not a script run (decision 0001). */
+export interface TaskTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  pool: string | null;
+  kind: "describe" | "deliver" | "test-connection";
+  request: Json<Record<string, unknown>>;
+  subject: string | null;
+  status: Generated<"queued" | "running" | "succeeded" | "failed">;
+  result: NullableJson;
+  error: ColumnType<{ message: string } | null, string | null | undefined, string | null>;
+  attempt: Generated<number>;
+  worker_id: string | null;
+  created_at: Generated<Date>;
+  started_at: Date | null;
+  finished_at: Date | null;
+  last_heartbeat_at: Date | null;
+  expires_at: Date;
+}
+
 /** One rate-limited key's count in its current window, shared by every replica. */
 export interface RateLimitTable {
   key: string;
@@ -1043,6 +1064,7 @@ export interface PlatformSchema {
   member_recent_scope: MemberRecentScopeTable;
   rate_limit: RateLimitTable;
   tenant_retention: TenantRetentionTable;
+  task: TaskTable;
   dashboard_share: DashboardShareTable;
   health_check: HealthCheckTable;
   resource_draft_history: ResourceDraftHistoryTable;

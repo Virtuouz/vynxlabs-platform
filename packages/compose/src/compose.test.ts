@@ -106,6 +106,31 @@ describe("composing a bundle", () => {
     );
   });
 
+  test("what a console script declares as input and output is read as JSON Schema from the bundle", async () => {
+    const typed = script(
+      "orders/typed",
+      'import { z } from "@vynxlabs/sdk";\n' +
+        "export const input = z.object({ name: z.string(), count: z.number().int().default(1) });\n" +
+        "export const output = z.object({ greeting: z.string() });\n" +
+        'export default async (input: { name: string }) => ({ greeting: "hi " + input.name });\n',
+    );
+    const bundle = await composeBundle(base, [hello, typed], options);
+    const module = (await load(bundle.code)) as unknown as {
+      __vx_describe: (entry: string) => Record<string, unknown>;
+    };
+    expect(module.__vx_describe(typed.body.entry as string)).toMatchObject({
+      input: {
+        type: "object",
+        properties: { name: { type: "string" }, count: { type: "integer", default: 1 } },
+        required: ["name"],
+      },
+      output: { type: "object", properties: { greeting: { type: "string" } } },
+    });
+    // One that declares nothing, and a name that is no script, find nothing.
+    expect(module.__vx_describe(hello.body.entry as string)).toEqual({});
+    expect(module.__vx_describe("toString")).toEqual({});
+  });
+
   test("composing again replaces the console-managed part and leaves the repository's code alone", async () => {
     const once = await composeCode(baseCode, [hello], options);
     const twice = await composeCode(once, [hello], options);

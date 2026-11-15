@@ -53,6 +53,15 @@ export const nosy = {
   },
 };
 
+/** What a describe task calls. It tries to reach the control plane the only way it could. */
+export const __vx_describe = (entry) =>
+  new Promise((resolve) => {
+    process.on("message", (message) => {
+      if (message.t === "reply" && message.id === 999) resolve({ entry, answer: message });
+    });
+    process.send({ t: "call", id: 999, method: "GET", path: "/secrets/api-key" });
+  });
+
 /** Reaches the control plane through its context. */
 export const caller = {
   async execute(input, ctx) {
@@ -95,6 +104,8 @@ interface Platform {
 }
 
 interface Asked {
+  /** A task in place of a run. */
+  task?: { kind: string; request: Record<string, unknown> };
   entry: string;
   input?: unknown;
   timeoutSeconds?: number;
@@ -141,6 +152,19 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
       if (!next) {
         await new Promise((resolve) => setTimeout(resolve, 50));
         return reply(response, 200, { job: null });
+      }
+      if (next.task) {
+        return reply(response, 200, {
+          job: {
+            kind: next.task.kind,
+            taskId: next.runId,
+            workspaceId: randomUUID(),
+            request: { ...next.task.request, bundle: { id: randomUUID(), digest: content.digest } },
+            timeoutSeconds: 30,
+            memoryMb: 256,
+            heartbeatSeconds: 1,
+          },
+        });
       }
       return reply(response, 200, {
         job: {
@@ -339,5 +363,35 @@ describe("what a script may ask its worker to call", () => {
     expect(allowedCall(job, "GET", "/runs/r1/secrets\\..\\..\\r2")).toBe(false);
     expect(allowedCall(job, "GET", "/claim")).toBe(false);
     expect(allowedCall(job, "DELETE", "/runs/r1/data")).toBe(false);
+  });
+});
+
+describe("tasks", () => {
+  it("a describe task is given nothing to call: a call it makes is refused, and it says what it found", async () => {
+    const control = await platform([
+      { entry: "unused", task: { kind: "describe", request: { entry: "typed" } } },
+    ]);
+    const worker = new Worker({ url: control.url, token: "wt-secret", claimWaitSeconds: 0 });
+    const running = worker.run();
+    await until(() => control.requests.some((request) => request.endsWith("/complete")), 15_000);
+    worker.stop();
+    await running;
+    // The claim said which kinds this worker takes.
+    expect(control.bodies[0]).toMatchObject({
+      kinds: ["run", "describe", "deliver", "test-connection"],
+    });
+    const done = control.requests.findIndex((request) => request.endsWith("/complete"));
+    expect(control.requests[done]).toBe(`POST /tasks/${control.runIds[0]}/complete`);
+    expect(control.bodies[done]).toEqual({
+      result: {
+        entry: "typed",
+        answer: { t: "reply", id: 999, error: "This call is not open to a task." },
+      },
+    });
+    // Nothing but the bundle and the report was asked of the control plane.
+    expect(control.requests.filter((request) => !request.startsWith("POST /claim"))).toEqual([
+      expect.stringMatching(/^GET \/bundles\//),
+      `POST /tasks/${control.runIds[0]}/complete`,
+    ]);
   });
 });

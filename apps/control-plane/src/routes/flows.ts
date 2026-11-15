@@ -13,6 +13,7 @@ import {
 } from "../kernel/execution/state.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
 import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
+import { expressionContext } from "../kernel/flows/context.js";
 import {
   cancelFlowRun,
   decideApproval,
@@ -21,6 +22,7 @@ import {
   startFlowRun,
 } from "../kernel/flows/engine.js";
 import { publishEvent } from "../kernel/flows/events.js";
+import { ExpressionError } from "../kernel/flows/expressions.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { PageQuery, pageOf } from "../pagination.js";
@@ -183,6 +185,95 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
     const base = "/tenants/:t/workspaces/:w";
+
+    // ----- What an expression gives, against a run that happened -----
+
+    app.get(
+      `${base}/expressions/value`,
+      {
+        config: {
+          access: access.workspace("flow_run:read"),
+          rateLimit: { max: 240, timeWindow: "1 minute" },
+        },
+        schema: {
+          summary: "What an expression gives against a flow run",
+          description:
+            "For the flow editor: the expression is worked out against what a run of the flow " +
+            "had when it ended, `trigger`, `steps` and `now`, as a step's would be, in the same " +
+            "sandbox and with the same limits. Name the run, or the flow to use its newest run. " +
+            "With `items`, the expression is one of a foreach's, and sees the first item.",
+          tags: ["flows"],
+          params: Type.Object({ t: Id, w: Id }),
+          querystring: Type.Object({
+            expression: Type.String({ minLength: 1, maxLength: 4000 }),
+            flowRun: Type.Optional(Id),
+            flow: Type.Optional(Type.String({ maxLength: 255 })),
+            items: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),
+          }),
+          response: {
+            200: Type.Object({
+              value: Type.Optional(Type.Unknown()),
+              error: Type.Optional(Type.String()),
+              note: Type.Optional(Type.String()),
+              flowRun: Type.Union([
+                Type.Object({ id: Id, createdAt: Time, state: RunStateSchema }),
+                Type.Null(),
+              ]),
+            }),
+          },
+        },
+      },
+      async ({ params, query }) => {
+        const said = (error: unknown) => {
+          if (error instanceof ExpressionError) return error.message;
+          throw error;
+        };
+        try {
+          await kernel.expressions.check(query.expression);
+        } catch (error) {
+          return { error: said(error), flowRun: null };
+        }
+        let found = db
+          .selectFrom("flow_run")
+          .select(["id", "trigger_node", "created_at"])
+          .select(flowStateSql("flow_run").as("state"))
+          .where("workspace_id", "=", params.w);
+        if (query.flowRun) found = found.where("id", "=", query.flowRun);
+        else if (query.flow) found = found.where("flow_path", "=", query.flow);
+        else throw badRequest("Name a flow run, or a flow to use its newest run.");
+        const run = await found.orderBy("created_at", "desc").limit(1).executeTakeFirst();
+        if (!run) {
+          if (query.flowRun) throw notFound("The flow run");
+          return { note: "Run a test to see its value.", flowRun: null };
+        }
+        const shown = { id: run.id, createdAt: iso(run.created_at), state: run.state as RunState };
+        let extra: Record<string, unknown> = {};
+        let note: string | undefined;
+        try {
+          if (query.items) {
+            const items = await kernel.expressions.evaluate(
+              query.items,
+              await expressionContext(db, run),
+            );
+            if (!Array.isArray(items) || items.length === 0) {
+              return {
+                note: "Its items gave no list to take the first of.",
+                flowRun: shown,
+              };
+            }
+            extra = { item: items[0], index: 0 };
+            note = "For the first item.";
+          }
+          const value = await kernel.expressions.evaluate(
+            query.expression,
+            await expressionContext(db, run, extra),
+          );
+          return { value, ...(note ? { note } : {}), flowRun: shown };
+        } catch (error) {
+          return { error: said(error), flowRun: shown };
+        }
+      },
+    );
 
     // ----- Flows -----
 

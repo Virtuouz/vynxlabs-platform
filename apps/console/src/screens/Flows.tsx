@@ -11,7 +11,7 @@ import {
   Timeline,
   type TimelineRow,
 } from "@vynxlabs/ui";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
@@ -567,6 +567,50 @@ export function timelineRow(step: StepRow, runStartedAt?: string): TimelineRow {
   };
 }
 
+/**
+ * A flow run, kept up to date while it goes: read again when the run, a step of
+ * it or a script run it started changes, and after `refresh`. Without the
+ * stream, every second and a half while it runs.
+ */
+export function useFlowRunLive(root: string, id: string | undefined) {
+  const [run, setRun] = useState<FlowRunDetail>();
+  const [error, setError] = useState<string>();
+  const [tick, setTick] = useState(0);
+  const streaming = useStreamConnected();
+  const [changed, setChanged] = useState(0);
+  useStreamEvents(
+    (event) => id !== undefined && (event.id === id || event.flow === id),
+    () => setChanged((n) => n + 1),
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` and `changed` ask again
+  useEffect(() => {
+    if (!id) {
+      setRun(undefined);
+      return;
+    }
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const current = await api.get<FlowRunDetail>(`${root}/flow-runs/${id}`);
+        if (stopped) return;
+        setRun(current);
+        setError(undefined);
+        if (current.status === "running" && !streaming) timer = setTimeout(poll, 1500);
+      } catch (caught) {
+        if (!stopped) setError((caught as Error).message);
+      }
+    };
+    poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [root, id, tick, changed, streaming]);
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
+  return { run: run?.id === id ? run : undefined, error, refresh };
+}
+
 /** One flow run, on a time axis and on the flow's graph, refreshed while it is in progress. */
 export function FlowRunView({
   root,
@@ -580,39 +624,9 @@ export function FlowRunView({
   /** Drawn in place of the page's own title, with the run and a way to read it again. */
   header?: (run: FlowRunDetail, refresh: () => void, flow: FlowDetail | undefined) => ReactNode;
 }) {
-  const [run, setRun] = useState<FlowRunDetail>();
-  const [error, setError] = useState<string>();
+  const { run, error, refresh } = useFlowRunLive(root, id);
   const [selected, setSelected] = useState<string>();
-  const [tick, setTick] = useState(0);
   const flow = useLoad<FlowDetail>(run ? `${root}/flows/${run.flow}` : null);
-  const streaming = useStreamConnected();
-  const [changed, setChanged] = useState(0);
-  // Read again when the flow run, a step of it or a script run it started changes, and
-  // after an action here. Without the stream, every second and a half while it runs.
-  useStreamEvents(
-    (event) => event.id === id || event.flow === id,
-    () => setChanged((n) => n + 1),
-  );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` and `changed` ask again
-  useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const current = await api.get<FlowRunDetail>(`${root}/flow-runs/${id}`);
-        if (stopped) return;
-        setRun(current);
-        if (current.status === "running" && !streaming) timer = setTimeout(poll, 1500);
-      } catch (caught) {
-        if (!stopped) setError((caught as Error).message);
-      }
-    };
-    poll();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  }, [root, id, tick, changed, streaming]);
 
   if (error) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
@@ -640,13 +654,12 @@ export function FlowRunView({
         decision,
         ...(comment ? { comment } : {}),
       });
-      setTick((value) => value + 1);
+      refresh();
     } catch (caught) {
       notify.error(caught);
     }
   };
 
-  const refresh = () => setTick((value) => value + 1);
   return (
     <div className="flex flex-col gap-5">
       {header ? (

@@ -16,6 +16,7 @@ import { bundleManifest } from "../execution/bundles.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
+import { buildContext, type ContextStep, readOutput } from "./context.js";
 import { ExpressionError } from "./expressions.js";
 
 /** The most items one foreach will run. More than this belongs in a script. */
@@ -559,32 +560,11 @@ class Advance {
     return this.#update(step, { status: "failed", error: { message } });
   }
 
-  /** What a finished step produced. Something too large to hold in a row is not loaded. */
-  async #outputOf(step: StepRow): Promise<unknown> {
+  /** What a finished step produced, read once per run. */
+  async #outputOf(step: ContextStep): Promise<unknown> {
     const key = stepKey(step.node_id, step.item_key);
     if (this.#outputs.has(key)) return this.#outputs.get(key);
-    let output: unknown;
-    const tooLarge = (ref: string) => ({
-      stored: ref,
-      note: "This output is too large to use in an expression. Read it in a script.",
-    });
-    if (step.run_id) {
-      const run = await this.#trx
-        .selectFrom("run")
-        .select(["output", "output_ref"])
-        .where("id", "=", step.run_id)
-        .executeTakeFirst();
-      output = run?.output_ref ? tooLarge(run.output_ref) : (run?.output ?? null);
-    } else if (step.child_flow_run_id) {
-      const child = await this.#trx
-        .selectFrom("flow_run")
-        .select("output")
-        .where("id", "=", step.child_flow_run_id)
-        .executeTakeFirst();
-      output = child?.output ?? null;
-    } else {
-      output = step.output_ref ? tooLarge(step.output_ref) : (step.output ?? null);
-    }
+    const output = await readOutput(this.#trx, step);
     this.#outputs.set(key, output);
     return output;
   }
@@ -626,22 +606,13 @@ class Advance {
 
   // ----- Expressions -----
 
-  async #context(extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-    const steps: Record<string, unknown> = {};
-    for (const step of this.#steps.values()) {
-      if (step.item_key !== "") continue;
-      if (step.status === "succeeded") steps[step.node_id] = { output: await this.#outputOf(step) };
-      else if (step.status === "failed")
-        steps[step.node_id] = { error: step.error ?? { message: "" } };
-    }
-    const trigger = this.#steps.get(stepKey(this.#flowRun.trigger_node));
-    return {
-      trigger: trigger ? await this.#outputOf(trigger) : {},
-      steps,
-      // The time the expression is worked out, as a CEL timestamp.
-      now: new Date(),
-      ...extra,
-    };
+  #context(extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    return buildContext(
+      this.#steps.values(),
+      this.#flowRun.trigger_node,
+      (step) => this.#outputOf(step),
+      extra,
+    );
   }
 
   async #evaluate(

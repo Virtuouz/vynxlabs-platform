@@ -1,6 +1,6 @@
 # Phase 10: platform expansion
 
-Status: in progress. Milestones 1 to 3 are built, on branch `phase-10-expansion`.
+Status: in progress. Milestones 1 to 4 are built, on branch `phase-10-expansion`.
 Last updated: 2026-11-15
 
 Phase 10 builds the P2 items of the [evolution roadmap](../evolution/07-roadmap.md): all thirteen, in seven milestones. Phase 9 made what exists dependable. This phase widens what a tenant can do with it:
@@ -97,4 +97,19 @@ Each milestone ends with `pnpm typecheck`, `pnpm lint` and `pnpm test` passing, 
 - **The walk fixed four things.** The form drew any field allowed 200 characters or more as a text box, so the OAuth addresses were tall boxes; they are one line now. The HTTP connector's settings had no titles ("Base Url", "Auth") and an empty box under a bearer token. Reopening a connection with its own addresses said "Google". And on a phone the health and Reconnect were off the table's edge; health is the second column now, with Reconnect in it.
 - **The run's message says which call failed** ("GET /runs/…/connections/google answered 422: The connection google needs connecting again…"). The worker adds the first part; the reason is all there.
 - **Walked in Chromium on a built instance, at 1440 and 390 px, with a stand-in provider and API:** an HTTP connection with a wrong token tested "HTTP 401", then with the right one "Reached in 25 ms"; an OAuth connection was saved, connected at the provider with PKCE, and tested on return; with tokens lasting a minute, a run of `calendar/who` refreshed once and read the API with nobody acting; with the provider refusing, the next run failed saying the connection needs connecting again, the list said Needs reconnecting, and Reconnect brought it back. No page scrolled sideways, and no page threw. `pnpm e2e` passes (16).
+
+### Milestone 4
+
+- **The run page could not show a draft's run.** It draws the graph of the flow as deployed, which for a draft is stale or not there. The test's states are drawn on the editor's own nodes instead, and the edges it took are drawn strong; that drawing is never part of what is saved.
+- **The panel tests what is saved, and saves first.** A test run builds a bundle from the workspace's drafts, so a change not yet saved is saved before the run. A new flow is saved once before it can be tested, since saving it opens it at its own address.
+- **Following the run was moved out of the run page** into one hook that both use: the run is read again on its stream events, and every second and a half without the stream.
+- **What an expression reads was built in two places' worth of code, now one.** The engine's context (the trigger, each finished step's output or error, and the time) is made by one function, which the engine and the preview both call, so a preview cannot say what a run would not. The existing flow tests pass unchanged.
+- **The preview runs the expression in the engine's sandbox, against a run that happened,** by `GET …/expressions/value`: a read, with `flow_run:read`, rate-limited. Without a run it says to run a test. A foreach's input is worked out for the first of its items, which the editor sends.
+- **Numbers from step outputs are doubles, in the preview as in a run.** `count * 10` fails with the engine's own hint and `count * 10.0` works. The first server test assumed otherwise, and the preview was right.
+- **The walk's own seed flow had a mistake the preview showed at once:** `sum()`, which CEL does not have, failed under its field with the engine's words, and the Last test showed the step's failure beside it.
+- **Undo is of the graph and the description, never of what is chosen.** Snapshots leave out selection, dragging and measuring, so choosing a step is not a change. Typing in one field is one step until it pauses for a second; a drag is one step. Typing in a field keeps the browser's own undo of that field.
+- **Undoing first closed the chosen step's settings.** The restored nodes carried no selection, and the canvas took that as nothing chosen. The chosen step now stays chosen when it is still there. Found on the walk; the e2e test now undoes from outside a field and checks the settings stay.
+- **The canvas spilled over the test panel** at 1440 px: its least height left no room for the panel. It may be shorter on a wide screen now, the graph is fitted again when the panel opens or closes, and the minimap is hidden while the panel is open, where it covered steps.
+- **A running instance serves only the console it found at start.** Rebuilding the console under a running instance gave a blank page until it was restarted. Worth knowing when building in place.
+- **Walked in Chromium on a built instance, at 1440 and 390 px,** with a draft flow that runs a script for each line of an order: tested from the panel, the steps filled in on the graph (the foreach took 0.9 to 1.9 s on a worker); the summary step's Last test showed `{count: 2, total: 525, customer: "Brooks family"}`; its expressions previewed `525` and `2`, and `No such key: totl` when misspelt; the foreach's input previewed its first item; a case giving `525` said a case must give true or false; a removed step came back with Undo, went with ⇧⌘Z and came back with ⌘Z, and after a reload the draft had it. No page scrolled sideways, and no page threw. `pnpm e2e` passes (17), with a new test of the editor.
 

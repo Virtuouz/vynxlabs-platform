@@ -8,6 +8,7 @@ import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { useRecordRecent } from "../recent.ts";
 import { Link, navigate } from "../router.tsx";
 import { type LiveRun, stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
 import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
@@ -33,6 +34,14 @@ function RunOfEitherKind({ root, link, id }: { root: string; link: string; id: s
   // The address does not say which kind of run it is: whichever answers is the one.
   const script = useLoad<LiveRun>(`${root}/runs/${id}`);
   const flow = useLoad<FlowRunDetail>(script.error ? `${root}/flow-runs/${id}` : null);
+  // Remembered for the palette as what it turned out to be.
+  const [, tenantId, workspaceId] = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root) ?? [];
+  useRecordRecent(
+    tenantId,
+    workspaceId,
+    script.data ? "run" : flow.data ? "flow_run" : undefined,
+    id,
+  );
   if (script.data) return <ScriptRunPage root={root} link={link} id={id} />;
   if (flow.data) {
     return (
@@ -309,6 +318,13 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             <Link to={`${link}/runs/${String(run.alert.handlerRunId)}`} className="text-meta">
               The failure handler's run
             </Link>
+          ) : null}
+          {run.alert?.suppressed && typeof run.alert.sameAs === "string" ? (
+            <p className="m-0 text-meta text-ink-muted">
+              No alert was sent: it is counted on{" "}
+              <Link to={`${link}/runs/${run.alert.sameAs}`}>the alert of an earlier failure</Link>,
+              sent less than ten minutes before.
+            </p>
           ) : null}
         </aside>
 

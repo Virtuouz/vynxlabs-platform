@@ -16,7 +16,12 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { isOperator, type Me, useLoad } from "./api.ts";
 import { BrandMark, useBrand } from "./kit/brand.tsx";
-import { CommandPalette, type Destination, useCommandKey } from "./kit/CommandPalette.tsx";
+import {
+  CommandPalette,
+  type Destination,
+  ShortcutSheet,
+  useCommandKey,
+} from "./kit/CommandPalette.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { EnvTag, Tag } from "./kit/status.tsx";
 import {
@@ -34,6 +39,7 @@ import {
   WORKSPACE_SECTIONS,
   whereIs,
 } from "./nav.ts";
+import { openedAt, useRecordRecent } from "./recent.ts";
 import { Link, navigate } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
@@ -479,6 +485,8 @@ export function Shell({
     tenantId ? `/tenants/${tenantId}/workspaces` : null,
   );
   const workspace = workspaces.data?.items.find((candidate) => candidate.id === workspaceId);
+  const opened = openedAt(path);
+  useRecordRecent(tenantId ?? undefined, workspaceId ?? undefined, opened?.kind, opened?.ref);
   const wsCounts = useLoad<WorkspaceCounts>(
     tenantId && workspaceId ? `/tenants/${tenantId}/workspaces/${workspaceId}/summary` : null,
   );
@@ -939,7 +947,12 @@ export function Shell({
         open={palette}
         onClose={() => setPalette(false)}
         destinations={destinations}
+        tenantId={tenantId ?? undefined}
+        workspaceId={workspaceId ?? undefined}
+        workspaceType={workspace?.type}
+        workspaces={(workspaces.data?.items ?? []).map((one) => ({ id: one.id, name: one.name }))}
       />
+      <ShortcutSheet />
     </div>
   );
 }

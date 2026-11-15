@@ -253,7 +253,10 @@ describe("small things the console shows", () => {
   test("only the listed preference routes may write without an audit entry", async () => {
     const { default: Fastify } = await import("fastify");
     const { installAccessControl, PREFERENCE_ROUTES } = await import("./kernel/http.js");
-    expect([...PREFERENCE_ROUTES]).toEqual(["PUT /api/v1/me/recent"]);
+    expect([...PREFERENCE_ROUTES]).toEqual([
+      "PUT /api/v1/me/recent",
+      "PUT /api/v1/me/recent-items",
+    ]);
     const app = Fastify();
     const build = async () => {
       await app.register(

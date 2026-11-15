@@ -15,6 +15,7 @@ import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
+import { observe } from "../metrics.js";
 import { ExpressionError } from "./expressions.js";
 
 /** The most items one foreach will run. More than this belongs in a script. */
@@ -1050,6 +1051,7 @@ class Advance {
       })
       .where("id", "=", this.#flowRun.id)
       .execute();
+    observe.flowRunEnded(this.#kernel.metrics, status);
     return { status, flowRun: this.#flowRun, error };
   }
 
@@ -1075,6 +1077,7 @@ async function cancelFlowTree(kernel: Kernel, trx: Trx, flowRunId: string): Prom
     .returning(["id", "workspace_id"])
     .executeTakeFirst();
   if (!flowRun) return;
+  observe.flowRunEnded(kernel.metrics, "cancelled");
   const active = await trx
     .selectFrom("step_run")
     .select(["node_id", "item_key", "run_id", "child_flow_run_id"])

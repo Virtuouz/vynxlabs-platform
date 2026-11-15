@@ -30,6 +30,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
     workerHostToken: undefined,
+    metricsWorkspaceLabels: true,
     managedWorkerUser: "same",
     retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
     // The tests' stand-in services listen on this machine.

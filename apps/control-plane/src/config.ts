@@ -28,6 +28,8 @@ export interface Config {
   managedWorkers: "host" | "process" | false;
   /** What a worker host presents to ask for leases. Set in `host` mode. */
   workerHostToken: string | undefined;
+  /** Whether metrics carry tenant and workspace labels. Off for an instance with very many. */
+  metricsWorkspaceLabels: boolean;
   /**
    * The user managed workers run as: their own, so that a script cannot read the
    * control plane's environment, or `same`, the control plane's, by the operator's choice.
@@ -182,6 +184,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     problems.push("MANAGED_WORKERS must be host, process or false.");
   }
   const workerHostToken = value("WORKER_HOST_TOKEN");
+  const metricsLabels = value("METRICS_WORKSPACE_LABELS") ?? "true";
+  if (metricsLabels !== "true" && metricsLabels !== "false") {
+    problems.push("METRICS_WORKSPACE_LABELS must be true or false.");
+  }
   if (managed === "host" && (workerHostToken === undefined || workerHostToken.length < 32)) {
     problems.push("MANAGED_WORKERS=host needs WORKER_HOST_TOKEN, of at least 32 characters.");
   }
@@ -239,6 +245,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
         : undefined,
     managedWorkers: managed === "host" || managed === "process" ? managed : false,
     workerHostToken: managed === "host" ? workerHostToken : undefined,
+    metricsWorkspaceLabels: metricsLabels === "true",
     managedWorkerUser: workerUser === "same" ? "same" : { uid: workerUid, gid: workerGid },
     retention,
     egressAllow: typeof egress === "string" ? { networks: [], hosts: [] } : egress,

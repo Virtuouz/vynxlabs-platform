@@ -7,6 +7,7 @@ import type { Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
+import { observe } from "../metrics.js";
 import { revealSecret } from "../secrets.js";
 import { decryptFor, encryptFor } from "./bindings.js";
 import { type Relay, startRun, TAG_PATTERN } from "./runs.js";
@@ -84,6 +85,7 @@ async function recordRefusal(
   reason: "signature" | "body" | "paused",
   problem = "",
 ) {
+  observe.webhookRefused(kernel.metrics, reason);
   await kernel.db
     .insertInto("webhook_refusal")
     .values({

@@ -69,6 +69,9 @@ function start(tenantId: string) {
     if (due.size > 0) {
       invalidatePrefix(`${tenant}/summary`);
       invalidatePrefix(`${tenant}/approvals`);
+      // What waits and what runs, on the Workers screen.
+      invalidatePrefix(`${tenant}/queue`);
+      invalidatePrefix(`${tenant}/workers`);
     }
     due.clear();
   };

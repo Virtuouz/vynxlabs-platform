@@ -1,6 +1,6 @@
 # Phase 9: maturity
 
-Status: in progress. Milestones 1 to 5 built and tested locally (quick wins; execution isolation, also in the image on the dev stack; retention; the state vocabulary, cache and run event stream; the run page, re-run and retry, search and tags). Milestones 6 to 8 not started. Milestone 6 was inserted on 2026-11-14 by [decision 0001](../evolution/decisions/0001-execution-boundary.md).
+Status: built. All eight milestones are built and tested locally, on branch `phase-9-maturity`, not yet merged or released. See [the summary](#summary) at the end.
 Last updated: 2026-11-14
 
 Phase 9 builds the P0 and P1 items of the [evolution roadmap](../evolution/07-roadmap.md). It changes no part of the platform's model. It makes what already exists dependable and connected:
@@ -148,4 +148,50 @@ Each item's acceptance criteria are in the roadmap and its spec. New suites this
   - an end user in the finance group pressed Remind on a row of an interface app, was asked for the note the action does not map, confirmed "Send a reminder for INV-102 to Fernhill Clinic?", and was told what the script does; both runs say `started_by: end_user`.
   
   No page scrolled sideways, and no page threw. `pnpm e2e` passes (16), against an instance of its own.
+- **Alerts are deduped per script or flow, under a lock per script or flow,** and the alert's own record says when it was sent (`alertedAt`), written before the lock is let go. Two failures at once cannot both send. The handler script is held back with the notification, since starting a run is the larger cost.
+- **On the walk instance, 12 failures of one script in a few seconds** made one post to the stand-in chat endpoint, an alert with "+11 more", and `platform_alerts_total` of 1 delivered and 11 suppressed.
+- **The queue metrics are new series beside the old ones.** The plan had `platform_runs_queued` gain labels. Changing a series' labels breaks a dashboard that sums it, so `platform_runs_queued` stays the instance total and `platform_workspace_runs_queued{tenant,workspace,pool}` is added.
+- **Counted series are kept by workspace ID and written with slugs,** so a renamed workspace keeps one series, and one whose workspace is gone is written as `gone`.
+- **Search is permission-checked once per workspace and kind, then per row only where that fails,** for someone bound to single resources. Over 2,000 seeded resources the median answer through the whole stack was under 100 ms in the test suite, as S8 asked. Results come shortest-path first within a workspace, after an exact match.
+- **A run is found by an ID prefix with a range on the key,** not by casting IDs to text, so it uses the primary key's index.
+- **Actions in the palette are not filtered by permission.** `/me` says nothing per workspace, so the palette offers what the workspace can do and the server refuses what the member may not, with its reason in a toast. New script and New flow are offered only in a dev workspace.
+- **Starting from the palette opens the run's page,** rather than a toast with Open run: the console's toasts carry text only.
+- **The palette's ⌘↵ hint is hidden on a phone,** and a result's name keeps its room before its kind and workspace: both found on the walk at 390 px.
+- **Walked in Chromium on a built instance, at 1440 and 390 px:** `reminders` in the palette found the script, the flow and the schedule, in this workspace; a pasted run ID opened its run; `/run`, then `agent/find-client`, opened its form and started the run; the Alerts page showed the one alert with "+11 more"; the Workers page said "Runs are waiting in sandbox", with the `plant` pool's five runs; `?` opened the shortcuts. No page scrolled sideways, and no page threw. `pnpm e2e` passes (16), against an instance of its own.
+
+## Summary
+
+Phase 9 built the roadmap's P0 and P1 items in eight milestones, one commit each, on `phase-9-maturity`.
+
+| # | Milestone | Commit |
+| --- | --- | --- |
+| 1 | Quick wins: logs kept, preferences out of the audit log, a 404, links that close loops | `3a4cf6e` |
+| 2 | Execution isolation: a process per attempt, memory caps, managed workers as their own user, shared limits | `2824abc` |
+| 3 | Retention: history kept for a period, audit months exported, then dropped | `2af302f` |
+| 4 | One state vocabulary, a console cache, live runs | `d1ec682` |
+| 5 | The run page, re-run and retry, runs found by search and tag | `e0cfd7d` |
+| 6 | The execution plane (decision 0001): the egress guard, tasks, the worker host, apps on their own address | `bcd7acb` |
+| 7 | The build loop: schema forms, triggers from Triggers, app actions | `1cf10f0` |
+| 8 | Alerts in the console, the command palette, the queue and metrics | this commit |
+
+**What moved from the first plan:** [decision 0001](../evolution/decisions/0001-execution-boundary.md) was taken during the phase. The control plane no longer runs tenant code or reaches tenant-chosen addresses unguarded, which inserted milestone 6 and moved reading schemas from zod onto the workers (`describe`), where S6 had the control plane evaluate them.
+
+**The exit criterion** was walked in parts, milestone by milestone, at 1440 and 390 px:
+- the failed run's error and log in three clicks (milestone 5);
+- re-run, and retry from the failed step (5), with input from a form (7);
+- live state (4), search and tags (5);
+- a schedule for a flow from Triggers (7);
+- a button in a no-code app (7).
+
+The timeout kill (2) and retention (3) are tested. It has not been walked as one session from a fresh instance; that is the first thing to do before merging.
+
+**Upgrading** needs the operator steps in the changelog: `WORKER_HOST_TOKEN` and the worker host, `APPS_URL` or `APPS_ON_CONSOLE_ADDRESS=true`, `EGRESS_ALLOW` for internal addresses, and retention periods to keep longer than the defaults. Migrations 0046 to 0051 run on start.
+
+**Open:**
+- two tests that each failed once under the full parallel run and passed after (milestones 6 and 7);
+- the timeline's axis labels at 390 px (milestone 5);
+- the Fly worker-host setup, written and not run (6);
+- per-workspace permissions in `/me`, which would let the palette hide what a member may not do (8).
+
+**Next:** the P2 items, as client work asks for them.
 

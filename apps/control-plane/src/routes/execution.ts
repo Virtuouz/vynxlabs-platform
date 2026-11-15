@@ -35,6 +35,7 @@ import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { labelText } from "../kernel/metrics.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
@@ -54,6 +55,23 @@ import {
 } from "./shared.js";
 
 const pathPattern = new RegExp(PATH_PATTERN);
+
+/** The worker version that first takes tasks. An older one is shown as needing an update. */
+const TASKS_SINCE = "0.6.0";
+/** Whether a version is older than another, or unknown. */
+function olderThan(version: string | null, than: string): boolean {
+  if (!version) return true;
+  const parts = (text: string) =>
+    text
+      .split(/[.-]/)
+      .slice(0, 3)
+      .map((part) => Number(part) || 0);
+  const [a, b] = [parts(version), parts(than)];
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  }
+  return false;
+}
 const WildParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
 function wildPath(params: { "*": string }): string {
   const path = params["*"];
@@ -2287,8 +2305,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   credentialName: Type.String(),
                   managed: Type.Boolean(),
                   version: NullableString,
+                  outdated: Type.Boolean({
+                    description:
+                      "Older than the protocol this control plane speaks: it takes no tasks. Update it.",
+                  }),
                   startedAt: Time,
                   lastSeenAt: Time,
+                  running: Type.Array(
+                    Type.Object({
+                      runId: Id,
+                      workspaceId: Id,
+                      script: Type.String(),
+                      startedAt: NullableTime,
+                    }),
+                    { description: "The runs it holds now." },
+                  ),
                 }),
               ),
             }),
@@ -2296,6 +2327,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params }) => {
+        const holding = await db
+          .selectFrom("run")
+          .select(["id", "workspace_id", "script_path", "started_at", "worker_id"])
+          .where("tenant_id", "=", params.t)
+          .where("status", "=", "running")
+          .where("worker_id", "is not", null)
+          .orderBy("started_at")
+          .execute();
         const rows = await db
           .selectFrom("worker")
           .innerJoin("worker_credential", "worker_credential.id", "worker.credential_id")
@@ -2317,8 +2356,93 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             credentialName: row.name,
             managed: row.managed,
             version: row.version,
+            outdated: olderThan(row.version, TASKS_SINCE),
             startedAt: iso(row.started_at),
             lastSeenAt: iso(row.last_seen_at),
+            running: holding
+              .filter((run) => run.worker_id === row.id)
+              .map((run) => ({
+                runId: run.id,
+                workspaceId: run.workspace_id,
+                script: run.script_path,
+                startedAt: isoOrNull(run.started_at),
+              })),
+          })),
+        };
+      },
+    );
+
+    app.get(
+      "/tenants/:t/queue",
+      {
+        config: { access: access.tenant("worker:read") },
+        schema: {
+          summary: "What waits for a worker, by workspace and pool",
+          description:
+            "Runs due now, runs set for later, how long the oldest due one has waited, and " +
+            "how many are running, for each workspace and pool with any; and the tasks waiting.",
+          tags: ["workers"],
+          params: TenantParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  workspaceId: Id,
+                  workspace: Type.String(),
+                  pool: NullableString,
+                  due: Type.Integer(),
+                  later: Type.Integer(),
+                  running: Type.Integer(),
+                  oldestSeconds: Type.Union([Type.Integer(), Type.Null()]),
+                }),
+              ),
+              tasks: Type.Array(
+                Type.Object({ workspaceId: Id, kind: Type.String(), waiting: Type.Integer() }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const rows = await sql<{
+          workspace_id: string;
+          slug: string;
+          pool: string | null;
+          due: string;
+          later: string;
+          running: string;
+          oldest: string | null;
+        }>`
+          select r.workspace_id, w.slug, r.pool,
+            count(*) filter (where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now()) as due,
+            count(*) filter (where r.status = 'queued' and r.scheduled_for > now()) as later,
+            count(*) filter (where r.status = 'running') as running,
+            extract(epoch from now() - min(coalesce(r.scheduled_for, r.created_at))
+              filter (where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now())) as oldest
+          from run r join workspace w on w.id = r.workspace_id
+          where r.tenant_id = ${params.t} and r.status in ('queued', 'running')
+          group by r.workspace_id, w.slug, r.pool
+          order by due desc, w.slug
+        `.execute(db);
+        const tasks = await sql<{ workspace_id: string; kind: string; n: string }>`
+          select workspace_id, kind, count(*) as n from task
+          where tenant_id = ${params.t} and status = 'queued'
+          group by workspace_id, kind
+        `.execute(db);
+        return {
+          items: rows.rows.map((row) => ({
+            workspaceId: row.workspace_id,
+            workspace: row.slug,
+            pool: row.pool,
+            due: Number(row.due),
+            later: Number(row.later),
+            running: Number(row.running),
+            oldestSeconds: row.oldest === null ? null : Math.max(0, Math.round(Number(row.oldest))),
+          })),
+          tasks: tasks.rows.map((row) => ({
+            workspaceId: row.workspace_id,
+            kind: row.kind,
+            waiting: Number(row.n),
           })),
         };
       },
@@ -2470,7 +2594,96 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           `platform_workers{kind="managed"} ${workerCount(true)}`,
           `platform_workers{kind="standalone"} ${workerCount(false)}`,
         ];
-        return reply.type("text/plain; version=0.0.4").send(`${lines.join("\n")}\n`);
+
+        // Where the work waits, by workspace and pool: from the database, so every replica agrees.
+        const byPlace = kernel.config.metricsWorkspaceLabels;
+        const waiting = await sql<{
+          tenant: string;
+          workspace: string;
+          pool: string | null;
+          n: string;
+          oldest: string | null;
+        }>`
+          select t.slug as tenant, w.slug as workspace, r.pool, count(*) as n,
+            extract(epoch from now() - min(coalesce(r.scheduled_for, r.created_at))) as oldest
+          from run r
+          join workspace w on w.id = r.workspace_id
+          join tenant t on t.id = r.tenant_id
+          where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now()
+          group by t.slug, w.slug, r.pool
+        `.execute(db);
+        if (byPlace) {
+          lines.push(
+            "# HELP platform_workspace_runs_queued Runs due and waiting for a worker, by workspace and pool.",
+            "# TYPE platform_workspace_runs_queued gauge",
+            ...waiting.rows.map(
+              (row) =>
+                `platform_workspace_runs_queued${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
+            ),
+            "# HELP platform_workspace_queue_oldest_seconds How long the oldest due run of a workspace has waited.",
+            "# TYPE platform_workspace_queue_oldest_seconds gauge",
+          );
+          const oldestBy = new Map<
+            string,
+            { tenant: string; workspace: string; seconds: number }
+          >();
+          for (const row of waiting.rows) {
+            const key = `${row.tenant}/${row.workspace}`;
+            const seconds = Math.max(0, Math.round(Number(row.oldest ?? 0)));
+            if ((oldestBy.get(key)?.seconds ?? -1) < seconds) {
+              oldestBy.set(key, { tenant: row.tenant, workspace: row.workspace, seconds });
+            }
+          }
+          for (const one of oldestBy.values()) {
+            lines.push(
+              `platform_workspace_queue_oldest_seconds${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
+            );
+          }
+        }
+        const flows = await sql<{ state: string; n: string }>`
+          select ${flowStateSql("f")} as state, count(*) as n from flow_run f
+          where f.status = 'running' group by 1
+        `.execute(db);
+        lines.push(
+          "# HELP platform_flow_runs Flow runs in progress, by state.",
+          "# TYPE platform_flow_runs gauge",
+          ...flows.rows.map(
+            (row) => `platform_flow_runs${labelText({ state: row.state })} ${Number(row.n)}`,
+          ),
+        );
+        const tasks = await sql<{ kind: string; n: string }>`
+          select kind, count(*) as n from task where status = 'queued' group by kind
+        `.execute(db);
+        lines.push(
+          "# HELP platform_tasks_queued Tasks waiting for a worker, by kind.",
+          "# TYPE platform_tasks_queued gauge",
+          ...tasks.rows.map(
+            (row) => `platform_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
+          ),
+        );
+
+        // What this replica counted, with workspaces named by their slugs.
+        const ids = [...kernel.metrics.workspaceIds()];
+        const names = new Map(
+          (ids.length === 0
+            ? []
+            : await db
+                .selectFrom("workspace")
+                .innerJoin("tenant", "tenant.id", "workspace.tenant_id")
+                .select(["workspace.id", "workspace.slug", "tenant.slug as tenant"])
+                .where("workspace.id", "in", ids)
+                .execute()
+          ).map((row) => [row.id, { tenant: row.tenant, workspace: row.slug }]),
+        );
+        const counted = kernel.metrics.render((labels) => {
+          const { workspace, ...rest } = labels;
+          if (workspace === undefined) return labels;
+          if (!byPlace) return rest;
+          const named = names.get(workspace);
+          // Where it was first, then what it was.
+          return named ? { ...named, ...rest } : { tenant: "gone", workspace: "gone", ...rest };
+        });
+        return reply.type("text/plain; version=0.0.4").send(`${lines.join("\n")}\n${counted}`);
       },
     );
   };

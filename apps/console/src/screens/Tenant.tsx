@@ -58,6 +58,7 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
+import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups } from "./Groups.tsx";
@@ -343,6 +344,7 @@ function ExportSection({ base }: { base: string }) {
 
 /** Every tab a workspace has. Any other address in a workspace has no page. */
 const WORKSPACE_TABS = new Set([
+  "alerts",
   "apps",
   "changes",
   "connections",
@@ -571,6 +573,13 @@ function WorkspaceDetail({
         </div>
       ) : tab === "variables" ? (
         <Variables root={root} />
+      ) : tab === "alerts" ? (
+        <Alerts
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          workspaceRoot={`${base}/workspaces/${workspaceId}`}
+          editable
+        />
       ) : null}
       {tab === "resources" && /^(new|edit)\//.test(rest) ? (
         (() => {

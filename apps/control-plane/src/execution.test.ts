@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { newId } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { Worker } from "@vynxlabs/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -691,6 +691,75 @@ describe("running", () => {
     expect((await alice.post(`${ws()}/connection-tests`, { path: "unbound" })).status).toBe(404);
   });
 
+  test("failures of one script in the window are counted on its alert, and the next alert says how many", async () => {
+    const posts = () => received.filter((request) => request.url === "/chat-hook").length;
+    const first = (
+      await t.db
+        .selectFrom("run")
+        .select(["id"])
+        .where("script_path", "=", "flaky")
+        .where("alert", "is not", null)
+        .orderBy("id", "desc")
+        .executeTakeFirstOrThrow()
+    ).id;
+    const before = posts();
+    const burst = await Promise.all([1, 2, 3].map(() => start("flaky", { succeedOn: 99 })));
+    const done = await Promise.all(
+      burst.map((id) =>
+        until(
+          async () => (await alice.get(`${ws()}/runs/${id}`)).body,
+          (run) => ended(run) && run.alert !== null,
+          30,
+        ),
+      ),
+    );
+    for (const run of done) expect(run.alert).toEqual({ suppressed: true, sameAs: first });
+    // Nothing more was posted, nor was the handler started again.
+    await sleep(500);
+    expect(posts()).toBe(before);
+    const listed = (await alice.get(`${ws()}/alerts`)).body.items;
+    expect(listed[0]).toMatchObject({ kind: "run", id: first, name: "flaky", repeats: 3 });
+
+    // Past the window, the next failure is alerted, and says what was counted meanwhile.
+    await sql`update run set alert = alert || jsonb_build_object('alertedAt', (now() - interval '11 minutes')::text) where id = ${first}`.execute(
+      t.db,
+    );
+    const later = await start("flaky", { succeedOn: 99 });
+    await until(
+      async () => (await alice.get(`${ws()}/runs/${later}`)).body,
+      (run) => ended(run) && typeof run.alert?.notified === "boolean",
+      30,
+    );
+    const post = received.filter((request) => request.url === "/chat-hook").at(-1);
+    expect(JSON.parse(post?.body ?? "{}").text).toContain(
+      "(and 3 more failures since the last alert)",
+    );
+    expect((await alice.get(`${ws()}/alerts?limit=1`)).body).toMatchObject({
+      items: [{ id: later, repeats: 0, notified: true }],
+      nextBefore: expect.any(String),
+    });
+  }, 60_000);
+
+  test("the alert settings say where alerts are set, and a test alert goes through the connection", async () => {
+    const settings = (await alice.get(`${ws()}/alert-settings`)).body;
+    expect(settings.overrides).toContainEqual({
+      path: "flaky",
+      ownership: "code",
+      script: "on-failure",
+      notify: "chat",
+    });
+    const sent = await alice.post(`${ws()}/alert-tests`, { connection: "chat" });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(202);
+    const task = await until(
+      async () => (await alice.get(`${ws()}/tasks/${sent.body.id}`)).body,
+      (one) => one.status === "succeeded" || one.status === "failed",
+    );
+    expect(task.status).toBe("succeeded");
+    const post = received.filter((request) => request.url === "/chat-hook").at(-1);
+    expect(JSON.parse(post?.body ?? "{}")).toMatchObject({ test: true });
+    expect((await alice.post(`${ws()}/alert-tests`, { connection: "nothing" })).status).toBe(400);
+  });
+
   test("a waiting run and a running run can both be canceled", async () => {
     const running = await start("slow", { ms: 20_000 });
     await until(
@@ -1266,6 +1335,56 @@ describe("operator health and guards", () => {
     expect(metrics.headers["content-type"]).toMatch(/^text\/plain/);
     expect(metrics.body).toMatch(/^platform_runs_queued \d+$/m);
     expect(metrics.body).toMatch(/^platform_workers\{kind="standalone"\} \d+$/m);
+  });
+
+  test("a backlog shows by workspace and pool on the queue and in the metrics, with what ran before", async () => {
+    // No worker is running now: these wait.
+    const waiting = [await start("greet", { name: "A" }), await start("greet", { name: "B" })];
+    try {
+      const queue = (await alice.get(`/tenants/${tenant}/queue`)).body;
+      expect(queue.items).toContainEqual(
+        expect.objectContaining({ workspaceId: dev, workspace: "main-dev", pool: null }),
+      );
+      const here = queue.items.find(
+        (item: { workspaceId: string; pool: string | null }) =>
+          item.workspaceId === dev && item.pool === null,
+      );
+      expect(here.due).toBeGreaterThanOrEqual(2);
+      expect(here.oldestSeconds).toBeGreaterThanOrEqual(0);
+
+      const metrics = (await t.admin.get("/metrics")).body as string;
+      const queued =
+        /^platform_workspace_runs_queued\{tenant="acme",workspace="main-dev",pool="default"\} (\d+)$/m.exec(
+          metrics,
+        );
+      expect(Number(queued?.[1])).toBeGreaterThanOrEqual(2);
+      expect(metrics).toMatch(
+        /^platform_workspace_queue_oldest_seconds\{tenant="acme",workspace="main-dev"\} \d+$/m,
+      );
+      // Runs that ended earlier in this file were counted, with their workspace named.
+      expect(metrics).toMatch(
+        /^platform_runs_finished_total\{tenant="acme",workspace="main-dev",state="succeeded"\} \d+$/m,
+      );
+      expect(metrics).toMatch(
+        /^platform_run_duration_seconds_bucket\{tenant="acme",workspace="main-dev",le="\+Inf"\} \d+$/m,
+      );
+      expect(metrics).toMatch(
+        /^platform_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
+      );
+      expect(metrics).toMatch(/^platform_alerts_total\{outcome="delivered"\} \d+$/m);
+
+      // Without workspace labels, the counted series carry none.
+      t.kernel.config.metricsWorkspaceLabels = false;
+      try {
+        const plain = (await t.admin.get("/metrics")).body as string;
+        expect(plain).not.toContain("platform_workspace_runs_queued");
+        expect(plain).toMatch(/^platform_runs_finished_total\{state="succeeded"\} \d+$/m);
+      } finally {
+        t.kernel.config.metricsWorkspaceLabels = true;
+      }
+    } finally {
+      for (const id of waiting) await alice.post(`${ws()}/runs/${id}/cancel`, {});
+    }
   });
 
   test("large inputs and outputs are kept in file storage, not in the run row", async () => {

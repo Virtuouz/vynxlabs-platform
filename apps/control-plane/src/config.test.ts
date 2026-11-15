@@ -42,6 +42,7 @@ describe("configuration", () => {
       bootstrapAdmin: undefined,
       managedWorkers: "process",
       workerHostToken: undefined,
+      metricsWorkspaceLabels: true,
       managedWorkerUser: { uid: 10001, gid: 10001 },
       retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
       egressAllow: { networks: [], hosts: [] },

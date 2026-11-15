@@ -1,6 +1,7 @@
 import {
   Activity,
   AppWindow,
+  BellRing,
   Blocks,
   Bot,
   Boxes,
@@ -126,6 +127,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "connections", label: "Connections", icon: Plug },
     { slug: "variables", label: "Variables", icon: Variable },
     { slug: "secrets", label: "Secrets", icon: KeyRound },
+    { slug: "alerts", label: "Alerts", icon: BellRing },
     { slug: "settings", label: "Workspace settings", icon: Settings },
   ],
 };

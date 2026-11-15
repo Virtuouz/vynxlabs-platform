@@ -894,6 +894,135 @@ function PoolCard({
   );
 }
 
+interface QueueRow {
+  workspaceId: string;
+  workspace: string;
+  pool: string | null;
+  due: number;
+  later: number;
+  running: number;
+  oldestSeconds: number | null;
+}
+interface WorkerRow {
+  id: string;
+  credentialName: string;
+  managed: boolean;
+  version: string | null;
+  outdated: boolean;
+  running: { runId: string; workspaceId: string; script: string; startedAt: string | null }[];
+}
+
+/** A wait in words: "40s", "3m", "2h 5m". */
+export function waitWords(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+/**
+ * What waits for a worker, by workspace and pool, and what each worker holds:
+ * a backlog is seen here before anyone asks why their run has not started.
+ */
+export function QueuePanel({ base }: { base: string }) {
+  const queue = useLoad<{
+    items: QueueRow[];
+    tasks: { workspaceId: string; kind: string; waiting: number }[];
+  }>(`${base}/queue`);
+  const workers = useLoad<{ items: WorkerRow[] }>(`${base}/workers`);
+  const tenantLink = base.replace(/^\/tenants\//, "/t/");
+  const rows = queue.data?.items ?? [];
+  const backlog = rows.filter((row) => row.due > 0);
+  const tasks = queue.data?.tasks.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
+  return (
+    <section aria-label="Queue" className="flex flex-col gap-3">
+      <h2 className="m-0 text-base font-semibold">Queue</h2>
+      {queue.error ? (
+        <Notice tone="danger">{queue.error.message}</Notice>
+      ) : !queue.data ? (
+        <p className="m-0 text-ink-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="m-0 text-ink-muted">Nothing is waiting, and nothing is running.</p>
+      ) : (
+        <>
+          {backlog.length > 0 ? (
+            <Notice tone="attention">
+              {backlog.length === 1
+                ? `Runs are waiting in ${backlog[0]?.workspace}`
+                : `Runs are waiting in ${backlog.length} places`}
+              {(() => {
+                const oldest = Math.max(...backlog.map((row) => row.oldestSeconds ?? 0));
+                return `, the oldest for ${waitWords(oldest)}.`;
+              })()}
+            </Notice>
+          ) : null}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[32rem] border-collapse text-left text-[14px]">
+              <thead>
+                <tr className="text-[13px] text-ink-muted">
+                  <th className="py-1.5 pr-3 font-medium">Workspace</th>
+                  <th className="py-1.5 pr-3 font-medium">Pool</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Waiting</th>
+                  <th className="py-1.5 pr-3 font-medium">Oldest</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Later</th>
+                  <th className="py-1.5 text-right font-medium">Running</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.workspaceId}:${row.pool ?? ""}`} className="border-line border-t">
+                    <td className="py-1.5 pr-3">
+                      <Link to={`${tenantLink}/workspaces/${row.workspaceId}/runs?status=queued`}>
+                        {row.workspace}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-telemetry">
+                      {row.pool ?? "default"}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{row.due}</td>
+                    <td className="py-1.5 pr-3">
+                      {row.oldestSeconds === null ? "—" : waitWords(row.oldestSeconds)}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{row.later}</td>
+                    <td className="py-1.5 text-right tabular-nums">{row.running}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {tasks > 0 ? (
+            <p className="m-0 text-meta text-ink-muted">
+              {tasks} task{tasks === 1 ? "" : "s"} for the platform waiting too: reading schemas,
+              sending alerts, trying connections.
+            </p>
+          ) : null}
+        </>
+      )}
+      {(workers.data?.items.length ?? 0) > 0 ? (
+        <ul aria-label="Workers online" className="m-0 flex list-none flex-col gap-1.5 p-0">
+          {workers.data?.items.map((worker) => (
+            <li key={worker.id} className="flex flex-wrap items-center gap-2 text-[14px]">
+              <span className="font-medium">{worker.credentialName}</span>
+              <span className="font-mono text-telemetry text-ink-muted">
+                {worker.version ?? "version unknown"}
+              </span>
+              {worker.outdated ? (
+                <Badge tone="attention">Older version: takes no tasks</Badge>
+              ) : null}
+              <span className="text-ink-muted">
+                {worker.running.length === 0
+                  ? "idle"
+                  : `running ${worker.running.map((run) => run.script).join(", ")}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 export function Workers({ base }: { base: string }) {
   const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
@@ -917,6 +1046,7 @@ export function Workers({ base }: { base: string }) {
           </Button>
         }
       >
+        <QueuePanel base={base} />
         {pools.error ? (
           <Notice tone="danger">{pools.error.message}</Notice>
         ) : !pools.data ? (

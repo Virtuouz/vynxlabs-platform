@@ -786,6 +786,16 @@ export interface DashboardShareTable {
   tenant_id: string;
 }
 
+/** An entity a member opened last in a tenant, for the command palette. */
+export interface MemberRecentItemTable {
+  member_id: string;
+  tenant_id: string;
+  kind: string;
+  ref: string;
+  workspace_id: string;
+  visited_at: Generated<Date>;
+}
+
 export interface MemberRecentScopeTable {
   member_id: string;
   tenant_id: string;
@@ -1062,6 +1072,7 @@ export interface PlatformSchema {
   scim_refusal: ScimRefusalTable;
   worker_pool: WorkerPoolTable;
   member_recent_scope: MemberRecentScopeTable;
+  member_recent_item: MemberRecentItemTable;
   rate_limit: RateLimitTable;
   tenant_retention: TenantRetentionTable;
   task: TaskTable;

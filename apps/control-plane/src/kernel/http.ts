@@ -186,7 +186,10 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * preference, which changes nothing anyone else can see or do; auditing them
  * buried real changes under every move between workspaces.
  */
-export const PREFERENCE_ROUTES: ReadonlySet<string> = new Set(["PUT /api/v1/me/recent"]);
+export const PREFERENCE_ROUTES: ReadonlySet<string> = new Set([
+  "PUT /api/v1/me/recent",
+  "PUT /api/v1/me/recent-items",
+]);
 
 /** Installs the hooks that resolve the caller and enforce each route's declared access. */
 export function installAccessControl(app: FastifyInstance, kernel: Kernel) {

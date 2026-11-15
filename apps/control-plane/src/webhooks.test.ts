@@ -168,6 +168,10 @@ describe("a webhook that checks signatures", () => {
       "x-hub-signature-256": `sha256=${sign(body)}`,
     });
     expect(tampered.statusCode).toBe(401);
+    // Each refusal is counted, by why.
+    expect((await t.admin.get("/metrics")).body).toMatch(
+      /^platform_webhook_refusals_total\{reason="signature"\} [1-9]\d*$/m,
+    );
     expect((await alice.get(`${ws()}/runs?limit=200`)).body.items.length).toBe(before);
   });
 

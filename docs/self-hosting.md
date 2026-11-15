@@ -384,6 +384,37 @@ The console keeps its own look whichever tenant is open. An operator brands it o
 - A workspace can be cloned into a new dev workspace, with or without its rows and files. By default the clone gets no connection, data source or secret value and its triggers are paused, so it cannot act on a real system. Turning that safety off is recorded in the audit log.
 - A workspace's triggers can be paused at any time.
 
+## Metrics
+
+`GET /api/v1/metrics` answers in the Prometheus text format, to an operator (`instance:read`). Scrape it with an API key of an operator's.
+
+What waits, read from the database at each scrape, so every replica says the same:
+
+| Series | What it is |
+| --- | --- |
+| `platform_runs_queued`, `platform_runs_running` | Runs waiting, and in progress, on the whole instance |
+| `platform_queue_oldest_seconds` | How long the oldest due run has waited |
+| `platform_workspace_runs_queued{tenant,workspace,pool}` | Due runs waiting, by workspace and pool |
+| `platform_workspace_queue_oldest_seconds{tenant,workspace}` | The oldest wait, by workspace |
+| `platform_flow_runs{state}` | Flow runs in progress: `running`, `waiting_approval`, `waiting_time` |
+| `platform_tasks_queued{kind}` | Tasks waiting for a worker |
+| `platform_workers{kind}` | Workers heard from in the last minute, `managed` or `standalone` |
+
+What happened, counted by the replica that saw it. Each replica answers for its own; add them up across replicas, as Prometheus does with `sum`:
+
+| Series | What it is |
+| --- | --- |
+| `platform_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
+| `platform_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
+| `platform_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
+| `platform_flow_runs_finished_total{state}` | Flow runs that ended |
+| `platform_webhook_refusals_total{reason}` | Refused webhook requests: `signature`, `body`, `paused` |
+| `platform_alerts_total{outcome}` | Failure alerts `delivered`, `failed`, or `suppressed` as a repeat |
+
+Workspaces are labeled by their slugs. On an instance with very many tenants, set `METRICS_WORKSPACE_LABELS=false`: the per-workspace queue series are left out, and the counted ones carry no tenant or workspace.
+
+The Workers page of each tenant shows the same queue: what waits where, the oldest wait, and what each worker holds.
+
 ## When something is wrong
 
 | What you see | What to look at |
@@ -392,7 +423,7 @@ The console keeps its own look whichever tenant is open. An operator brands it o
 | `/api/v1/readyz` answers 503 | The body says whether Postgres or the object store is unreachable |
 | "The database is newer than this version" | An older image was started on a newer database. Start the newer image |
 | A tenant's tables answer 503 | Its dedicated database. See the Database locations page |
-| Runs stay queued | The run's page says what it is waiting for. Otherwise the instance log, for the worker it tried to start |
+| Runs stay queued | The run's page says what it is waiting for, and the tenant's Workers page what waits where. Otherwise the instance log, for the worker it tried to start |
 | An import is refused | The message names the reason: the passphrase, the version, a damaged file, or a slug already taken |
 | An app's address answers "Nothing here" | Whether the workspace has a deployed bundle with that app, under the workspace's Apps tab |
 | A registered hostname shows the console | It is not enabled, or the proxy rewrites the `Host` header |

@@ -315,6 +315,13 @@ export const OWNED_TABLES: OwnedTable[] = [
   // Where members were last; this instance's to remember, not the tenant's to carry.
   { table: "member_recent_scope", ofTenant: own, key: ["member_id", "tenant_id"], export: "never" },
   {
+    table: "member_recent_item",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["member_id", "tenant_id", "workspace_id", "kind", "ref"],
+    export: "never",
+  },
+  {
     table: "dashboard_share",
     ofTenant: own,
     ofWorkspace: (id) =>

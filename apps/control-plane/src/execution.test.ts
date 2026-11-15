@@ -1196,6 +1196,66 @@ describe("the worker protocol", () => {
     await alice.patch(ws(), { concurrencyLimit: 10 });
   });
 
+  test("runs with the same concurrency key go one at a time, and other keys go ahead", async () => {
+    // A workspace of its own, so that the shared bundle stays as the other tests expect it.
+    const own = (
+      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "keys", name: "Keys", type: "dev" })
+    ).body.id as string;
+    const base = `/tenants/${tenant}/workspaces/${own}`;
+    const deployed = await deploy(
+      bundle(1, (manifests) => [
+        ...manifests,
+        script("charge", "slow", {
+          input: object({ customer: { type: "string" }, ms: { type: "number" } }),
+          concurrency: { key: "input.customer", limit: 1 },
+        }),
+      ]),
+      base,
+    );
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const ours = protocol(
+      (
+        await alice.post(`/tenants/${tenant}/worker-credentials`, {
+          name: "keys",
+          workspaceId: own,
+        })
+      ).body.token,
+    );
+    const charge = async (input: object) =>
+      (await alice.post(`${base}/runs`, { script: "charge", input })).body.id as string;
+    const ada = await charge({ customer: "ada", ms: 5 });
+    const adaAgain = await charge({ customer: "ada", ms: 5 });
+    const bo = await charge({ customer: "bo", ms: 5 });
+    const nobody = await charge({ ms: 5 });
+    const long = await charge({ customer: "x".repeat(300), ms: 5 });
+
+    const claimed: string[] = [];
+    for (let job = (await ours.claim()).body.job; job; job = (await ours.claim()).body.job)
+      claimed.push(job.runId);
+    // Ada's second run waits for her first; Bo, the run with no key, and the long key do not.
+    expect(claimed.sort()).toEqual([ada, bo, nobody, long].sort());
+
+    const waiting = (await alice.get(`${base}/runs/${adaAgain}`)).body;
+    expect(waiting).toMatchObject({
+      status: "queued",
+      concurrency: { key: "input.customer", value: "ada", limit: 1 },
+      waitingFor: "Waiting for 1 run with the same key (ada) to finish.",
+    });
+    expect((await alice.get(`${base}/runs/${nobody}`)).body.concurrency).toMatchObject({
+      value: "",
+    });
+    expect((await alice.get(`${base}/runs/${long}`)).body.concurrency.value).toMatch(
+      /^sha256:[0-9a-f]{64}$/,
+    );
+    // A run whose key has room waits for nothing.
+    expect((await alice.get(`${base}/runs/${bo}`)).body.waitingFor).toBeNull();
+
+    await ours.post(`/runs/${ada}/complete`, { attempt: 1, output: {} });
+    expect((await ours.claim()).body.job.runId).toBe(adaAgain);
+    for (const id of [adaAgain, bo, nobody, long])
+      await ours.post(`/runs/${id}/complete`, { attempt: 1, output: {} });
+  });
+
   test("a worker that goes silent loses its job, and another worker gets it", async () => {
     const ours = protocol(
       (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "silent" })).body.token,

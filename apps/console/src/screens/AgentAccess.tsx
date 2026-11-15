@@ -1,6 +1,7 @@
-import { EmptyState, Notice, SelectField, Table } from "@vynxlabs/ui";
+import { Button, Dialog, EmptyState, JsonView, Notice, SelectField, Table } from "@vynxlabs/ui";
 import { useState } from "react";
-import { useLoad } from "../api.ts";
+import { api, useLoad } from "../api.ts";
+import { InputForm } from "../InputDialog.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 
 interface Tool {
@@ -12,13 +13,15 @@ interface Tool {
 /**
  * What an AI agent gets when it connects with one of a service account's
  * keys: the address to connect to, what to put in the agent's settings, and
- * the tools it would be offered in a workspace. Nothing is run from here.
+ * the tools it would be offered in a workspace. A tool can be tried from here,
+ * as the account.
  */
 export function AgentAccess({ base, account }: { base: string; account: string }) {
   const workspaces = useLoad<{ items: { id: string; name: string; slug: string; type: string }[] }>(
     `${base}/workspaces`,
   );
   const [chosen, setChosen] = useState<string>();
+  const [trying, setTrying] = useState<Tool>();
   const workspace = chosen ?? workspaces.data?.items[0]?.id;
   const offered = useLoad<{ address: string; reachable: boolean; tools: Tool[] }>(
     workspace ? `${base}/service-accounts/${account}/tools?workspace=${workspace}` : null,
@@ -87,9 +90,8 @@ export function AgentAccess({ base, account }: { base: string; account: string }
           </div>
           {offered.data.reachable ? null : (
             <Notice tone="attention">
-              An agent would be refused here: connecting needs the account to see the workspace,
-              which takes a role with the <code>workspace:read</code> permission there. Roles on
-              single scripts or flows are not enough on their own. Give it one under Access.
+              An agent would be refused here: the account has no place in this workspace. Offer it a
+              script or flow from that script's or flow's page, or give it a role here under Access.
             </Notice>
           )}
           <Table<Tool>
@@ -119,12 +121,109 @@ export function AgentAccess({ base, account }: { base: string; account: string }
                   </span>
                 ),
               },
+              {
+                header: "",
+                align: "end",
+                cell: (row) => (
+                  <Button size="small" onClick={() => setTrying(row)}>
+                    Try
+                  </Button>
+                ),
+              },
             ]}
           />
+          {workspace ? (
+            <TryTool
+              base={base}
+              account={account}
+              workspace={workspace}
+              tool={trying}
+              onClose={() => setTrying(undefined)}
+            />
+          ) : null}
         </>
       ) : offered.error ? null : (
         <p className="text-ink-muted">Loading…</p>
       )}
     </div>
+  );
+}
+
+/**
+ * Calls a tool as the account would, to see that it works. It is real work: a
+ * script runs, a flow starts. The answer is what the agent would be told.
+ */
+function TryTool({
+  base,
+  account,
+  workspace,
+  tool,
+  onClose,
+}: {
+  base: string;
+  account: string;
+  workspace: string;
+  tool: Tool | undefined;
+  onClose: () => void;
+}) {
+  const [answer, setAnswer] = useState<{ isError: boolean; result: unknown }>();
+  const close = () => {
+    setAnswer(undefined);
+    onClose();
+  };
+  const { idempotencyKey: _key, ...properties } = tool?.inputSchema.properties ?? {};
+  const schema = tool
+    ? {
+        ...tool.inputSchema,
+        properties,
+        required: (tool.inputSchema.required ?? []).filter((name) => name !== "idempotencyKey"),
+      }
+    : undefined;
+  return (
+    <Dialog open={tool !== undefined} onClose={close} title={`Try ${tool?.name ?? ""}`}>
+      {tool ? (
+        <div className="flex flex-col gap-3">
+          <p className="m-0 text-ink-muted">
+            The call is made as this account, with only what it may do. It is real: a script runs
+            and a flow starts, with whatever effects they have. You are recorded as the one who
+            asked.
+          </p>
+          {answer ? (
+            <>
+              <Notice tone={answer.isError ? "danger" : "success"}>
+                {answer.isError
+                  ? "The agent would be told this failed."
+                  : "The agent would be told this."}
+              </Notice>
+              <JsonView
+                label="What the agent is told"
+                value={answer.result}
+                tone={answer.isError ? "danger" : "plain"}
+              />
+              <div className="flex justify-end gap-2">
+                <Button onClick={() => setAnswer(undefined)}>Try again</Button>
+                <Button variant="primary" onClick={close}>
+                  Done
+                </Button>
+              </div>
+            </>
+          ) : (
+            <InputForm
+              schema={schema}
+              action="Call it"
+              onCancel={close}
+              onSubmit={async (input) => {
+                setAnswer(
+                  await api.post<{ isError: boolean; result: unknown }>(
+                    `${base}/service-accounts/${account}/tool-calls`,
+                    { workspace, tool: tool.name, arguments: input ?? {} },
+                  ),
+                );
+              }}
+            />
+          )}
+        </div>
+      ) : null}
+    </Dialog>
   );
 }

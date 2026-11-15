@@ -115,6 +115,34 @@ describe("a form drawn from a schema", () => {
     });
   });
 
+  test("an option of a union that is nothing but its name asks for nothing more", () => {
+    const auth: JsonSchema = {
+      type: "object",
+      properties: {
+        auth: {
+          title: "How it is sent",
+          oneOf: [
+            { type: "object", title: "Bearer", properties: { type: { const: "bearer" } } },
+            {
+              type: "object",
+              title: "A header",
+              properties: { type: { const: "header" }, name: { type: "string", title: "Header" } },
+            },
+          ],
+        },
+      },
+    };
+    const { container } = render(<SchemaForm schema={auth} value={{ auth: { type: "bearer" } }} />);
+    expect(screen.getByLabelText("How it is sent")).toBeTruthy();
+    // The only box is the Fields and JSON switch: no empty group under the choice.
+    const groups = [...container.querySelectorAll("fieldset legend")].map(
+      (legend) => legend.textContent,
+    );
+    expect(groups).toEqual(["How to give it"]);
+    fireEvent.change(screen.getByLabelText("How it is sent"), { target: { value: "header" } });
+    expect(screen.getByLabelText("Header")).toBeTruthy();
+  });
+
   test("what does not pass is said on its field, nested ones too, and nothing is sent", async () => {
     const sent = vi.fn();
     render(<SchemaForm schema={order} onSubmit={sent} submitLabel="Place" />);

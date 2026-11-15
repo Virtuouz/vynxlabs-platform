@@ -39,7 +39,7 @@ export function Menu({ label, items, ariaLabel, triggerClassName, align = "start
         {label}
       </Base.Trigger>
       <Base.Portal>
-        <Base.Positioner sideOffset={6} align={align} className="z-50">
+        <Base.Positioner sideOffset={6} align={align} className="z-[70]">
           <Base.Popup className="max-h-[70vh] min-w-44 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-lg">
             {items.map((item) => (
               <div key={item.label}>

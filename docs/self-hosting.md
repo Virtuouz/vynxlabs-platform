@@ -30,7 +30,7 @@ Fill in `deploy/compose/.env`:
 | --- | --- |
 | `POSTGRES_PASSWORD`, `OBJECTSTORE_SECRET` | Long random values: `openssl rand -hex 24` |
 | `AUTH_SECRET` | `openssl rand -hex 32`. Signs session cookies |
-| `MASTER_KEY` | `openssl rand -base64 32`. Wraps every tenant's encryption key. **Keep a copy somewhere safe.** Without it no stored secret can be read again |
+| `MASTER_KEY` | `openssl rand -base64 32`. Wraps every tenant's encryption key. **Keep a copy somewhere safe.** Without it no stored secret can be read again. It can be rotated: see "Rotating the master key" |
 | `PUBLIC_URL` | The address people will type, for example `https://platform.example.com` |
 | `WORKER_HOST_TOKEN` | `openssl rand -hex 32`. Lets the worker host, which starts tenants' workers, ask for work |
 | `APPS_URL` | A second hostname for apps written as code, for example `https://apps.example.com`. Optional, but without it they are not served |
@@ -47,7 +47,7 @@ The database is created and migrated on the first start. Open the address, sign 
 
 - Put a reverse proxy that terminates TLS in front of it. The control plane speaks plain HTTP and listens on localhost by default for that reason.
 - Set `PUBLIC_URL` to the address behind the proxy. Sign-in checks requests against it.
-- Let the proxy pass the run event stream through as it comes. The console keeps one long request open per tab, `GET /api/v1/tenants/<id>/stream`, answered as `text/event-stream`. The response says `X-Accel-Buffering: no`, which nginx honors; elsewhere, turn response buffering off for that path, and allow an idle time of at least 30 seconds (a heartbeat is sent every 20). A stream that a proxy cuts or holds back costs nothing but freshness: the console falls back to asking every few seconds.
+- Let the proxy pass the run event stream through as it comes. The console keeps one long request open per tab, `GET /api/v1/tenants/<id>/stream`, answered as `text/event-stream`. The response says `X-Accel-Buffering: no`, which nginx honors; elsewhere, turn response buffering off for that path, and allow an idle time of at least 30 seconds (a heartbeat is sent every 20). A stream that a proxy cuts or holds back costs nothing but freshness: the console falls back to asking every few seconds. Apps open the same stream on the apps' address, for the runs their users started, so the same applies there.
 - Each replica holds one more database connection than its pool, to listen for changes to runs.
 - Give apps written as code their own address with `APPS_URL`. See [Apps, and the addresses they are served at](#apps-and-the-addresses-they-are-served-at).
 - If the instance runs in a cloud, check that the worker host started with its firewall rules: its log says so. See [Workers the instance starts](#workers-the-instance-starts).
@@ -69,11 +69,34 @@ The platform makes no network call you did not configure: no telemetry, no updat
 
 - **Postgres**: everything. Use your provider's point-in-time recovery, or `pg_dump` on a schedule.
 - **The object store**: bundles and files.
-- **`MASTER_KEY`**: once, somewhere that is not the same disk.
+- **`MASTER_KEY`**: once, somewhere that is not the same disk, and again after each rotation, with the old one kept for older backups.
 
 Take the Postgres and object store backups close together. A database that names a file the store does not have will say so when the file is asked for, and not before.
 
 A tenant can also be backed up by itself, as an export. See below.
+
+## Rotating the master key
+
+`MASTER_KEY` wraps one key per tenant, and seals a few things of the instance's own: database locations' addresses, the instance's identity providers' secrets, sign-ins in progress, and the seed of the data role's password. Tenants' secrets and credentials are sealed with their tenant's key, so rotating the master key rewraps only those few values, in seconds even on a large instance.
+
+The instance can hold a second key, `MASTER_KEY_SECONDARY`. It opens what either key sealed, and seals only with `MASTER_KEY`. While the second key is set, the instance seals again with `MASTER_KEY` whatever the second key sealed: at start, every ten minutes, and when asked with `docker compose exec control-plane node dist/main.js rekey` (from a source checkout, `node apps/control-plane/dist/main.js rekey`), which prints what it did and exits 1 if a value opened with neither key.
+
+With one replica:
+
+1. Generate the new key: `openssl rand -base64 32`. Keep it with the old one.
+2. Restart with the new key as `MASTER_KEY` and the old one as `MASTER_KEY_SECONDARY`. The values move at start.
+3. `GET /api/v1/instance/master-key`, as an operator, says `secondaryRemovable: true` when nothing is left under the old key.
+4. Restart without `MASTER_KEY_SECONDARY`.
+
+With several replicas, a replica that knows only the old key cannot open what a replica with the new one has sealed. Add the new key before using it:
+
+1. Restart every replica with the old key as `MASTER_KEY` and the **new** one as `MASTER_KEY_SECONDARY`. Nothing moves yet; every replica can now open both.
+2. Restart every replica with the two swapped. Values move to the new key as replicas start, and the ten-minute pass catches any sealed meanwhile by a replica not yet restarted.
+3. When the status says `secondaryRemovable`, restart without the second key.
+
+The data role's password does not change in a rotation: it is made from a secret kept in the database, which was the master key the instance had when it upgraded to this version, and is sealed with whichever key is current.
+
+**Backups taken before a rotation need the old key.** Keep each key for as long as the backups it sealed. A value no key opens is reported by the status and the `rekey` command, by place and row, and never changed.
 
 ## Retention
 
@@ -193,7 +216,7 @@ Rate limits on webhooks, sign-ins and guests are counted in the database, so the
 
 ## What the instance reaches for a tenant
 
-The control plane reaches a few addresses a tenant chooses: an identity provider's settings and endpoints, a Git remote, a data source, and a hostname the tenant registers, to check it. It refuses any whose address is loopback, private, link-local (cloud metadata included), shared or reserved, and says so. Everything else a tenant's systems are asked, such as posting a failure alert or trying a connection, a worker does.
+The control plane reaches a few addresses a tenant chooses: an identity provider's settings and endpoints, a Git remote, a data source, the token address of an OAuth connection, and a hostname the tenant registers, to check it. It refuses any whose address is loopback, private, link-local (cloud metadata included), shared or reserved, and says so. Everything else a tenant's systems are asked, such as posting a failure alert or trying a connection, a worker does.
 
 To let it reach an internal Git server, an identity provider or a database on your network, list them in `EGRESS_ALLOW`, comma-separated, as networks or host names:
 
@@ -202,6 +225,14 @@ EGRESS_ALLOW=10.20.0.0/16,git.internal,192.168.1.40
 ```
 
 A name in the list is allowed whatever it resolves to. A network is allowed for any name that resolves into it.
+
+### OAuth connections
+
+An OAuth 2.0 connection is authorized once by a member in the console, and the instance keeps its tokens and refreshes them. Two things follow for the operator:
+- **The provider sends members back to one address,** `<PUBLIC_URL>/api/v1/oauth/connections/callback`. Each app a tenant registers with Google, Microsoft or another provider must list it, so `PUBLIC_URL` must be the address members' browsers use. The connection wizard shows it.
+- **The control plane calls the provider's token address,** to exchange the code and to refresh. It goes through the guard above: a provider inside your network must be listed in `EGRESS_ALLOW`.
+
+Workers are handed the current access token, never the refresh token or the client's secret.
 
 ## Moving a tenant
 
@@ -305,6 +336,21 @@ A tenant's end users are its customers and portal users. They are a pool of the 
 - **Files have no owner.** Whoever may read files in a workspace may read all of them, so `portal_user` does not include them.
 
 Someone who is not signed in reaches only what is bound to `anonymous`, and is limited in how often they may ask. The limit is counted by address, in each replica.
+
+## Approval mail
+
+When a flow waits for an approval and the instance sends mail (`SMTP_URL` and `MAIL_FROM`), each member who may decide it is sent a mail with a link of their own: the members of the tenant who hold `approval:write` in the workspace and, when the step names groups or roles, are among them. Suspended and disabled members are not mailed, nor is an operator inside the tenant on an access grant. At most fifty are mailed for one step; the rest see it in the console.
+
+What a link is:
+- **The approver's own, and enough by itself.** It opens a page with what is asked and Approve and Reject, with no sign-in. Opening it decides nothing, so a mail scanner that fetches links does no harm. A forwarded link can be used, once, by whoever holds it: it decides as the approver it was sent to.
+- **Used once,** and only until 48 hours have passed, the step's own timeout comes, or anyone decides the approval, by link or in the console. Then every link to it stops working.
+- **Checked again when used.** A member suspended, or no longer allowed to decide, since the mail went out is refused.
+
+The decision is recorded as that member's, with the comment, `via: "email"` in the audit log, and "decided from the mail" in the console's Approvals.
+
+### Trying mail without a mail server
+
+`MAIL_CAPTURE_DIR=/some/folder` writes each message the instance would send to a file there instead, readable, and sends nothing. The instance says so in its log when it starts. It is for development and tests, never for an instance people use: the files hold one-time links.
 
 ## Groups, attributes and row rules for end users
 

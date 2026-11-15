@@ -14,8 +14,10 @@ import {
 import { Junction } from "../kit/motifs.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Link, navigate } from "../router.tsx";
+import { DriftView } from "./Drift.tsx";
 import { Deployments } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
+import { type PromotionRequest, RequestPromotion } from "./Promotion.tsx";
 
 interface Workspace {
   id: string;
@@ -59,7 +61,7 @@ interface Ledger {
   summary: { created?: number; updated?: number; deleted?: number };
 }
 
-interface PromotionPreview {
+export interface PromotionPreview {
   target: { id: string; name: string; type: string };
   bundle: { digest: string; version: number };
   possible: boolean;
@@ -67,6 +69,9 @@ interface PromotionPreview {
   summary: Summary | null;
   tried: { runs: number; failed: number; flowRuns: number; flowRunsFailed: number };
   triggers: number;
+  /** Whether the one looking may promote. One who may not can ask. */
+  canPromote?: boolean;
+  request?: PromotionRequest | null;
 }
 
 const CHANGE_TAG: Record<DraftRow["change"], [string, "draft" | "live" | "danger" | "repository"]> =
@@ -546,88 +551,7 @@ function PromoteStep({
       {!data ? (
         <p className="text-ink-muted">Working out what promoting would do…</p>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <section className="flex flex-col gap-2">
-            <SectionLabel>What changes in {target.name}</SectionLabel>
-            <Panel className="flex flex-col gap-2 p-4">
-              {data.refusal ? (
-                <Notice tone="danger">
-                  <strong>It cannot be promoted yet.</strong> {data.refusal.detail}
-                  <ul className="mt-2 mb-0 pl-5">
-                    {data.refusal.errors.map((one) => (
-                      <li key={`${one.path} ${one.message}`}>
-                        <Mono>{one.path}</Mono> {one.message}
-                      </li>
-                    ))}
-                  </ul>
-                </Notice>
-              ) : data.summary ? (
-                <>
-                  <p className="m-0 text-ink-muted">
-                    Creates {data.summary.created}, changes {data.summary.updated} and removes{" "}
-                    {data.summary.deleted}.
-                  </p>
-                  {data.summary.changes.length > 0 ? (
-                    <ul className="m-0 flex list-none flex-col gap-1 p-0">
-                      {data.summary.changes.map((one) => (
-                        <li
-                          key={`${one.kind}-${one.path}`}
-                          className="flex items-center gap-2 text-meta"
-                        >
-                          <Tag
-                            tone={
-                              one.change === "deleted"
-                                ? "danger"
-                                : one.change === "created"
-                                  ? "live"
-                                  : "draft"
-                            }
-                          >
-                            {one.change}
-                          </Tag>
-                          <Mono>{one.path}</Mono>
-                          <span className="text-ink-subtle">{one.kind}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {data.summary.data.length > 0 ? (
-                    <p className="m-0 text-meta text-ink-muted">{data.summary.data.join(" ")}</p>
-                  ) : (
-                    <p className="m-0 text-meta text-ink-muted">No table changes.</p>
-                  )}
-                </>
-              ) : null}
-            </Panel>
-          </section>
-          <section className="flex flex-col gap-2">
-            <SectionLabel>Before it goes</SectionLabel>
-            <Panel className="flex flex-col gap-3 p-4">
-              <KeyValues
-                rows={[
-                  {
-                    label: "Tried here",
-                    value: `${data.tried.runs + data.tried.flowRuns} runs, ${data.tried.failed + data.tried.flowRunsFailed} failed`,
-                    mono: true,
-                  },
-                  { label: "Triggers there", value: `${data.triggers} stay running`, mono: true },
-                ]}
-              />
-              {data.tried.runs + data.tried.flowRuns === 0 ? (
-                <Notice tone="attention">
-                  This version has not run here yet. Try it before it reaches production.
-                </Notice>
-              ) : data.tried.failed + data.tried.flowRunsFailed > 0 ? (
-                <Notice tone="attention">
-                  Some of its runs here failed.{" "}
-                  <Link to={`${link}/runs?status=failed`}>See them</Link>
-                </Notice>
-              ) : (
-                <StatePill state="succeeded">Every run here succeeded</StatePill>
-              )}
-            </Panel>
-          </section>
-        </div>
+        <PreviewPanels data={data} targetName={target.name} link={link} />
       )}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {result ? (
@@ -639,37 +563,152 @@ function PromoteStep({
             : ""}
         </Notice>
       ) : null}
+      {data && data.canPromote === false ? (
+        <RequestPromotion
+          root={root}
+          tenantId={root.split("/")[2] as string}
+          version={data.bundle.version}
+          targetName={target.name}
+          request={data.request ?? null}
+          onChanged={preview.reload}
+        />
+      ) : null}
+      {data && data.canPromote !== false && data.request?.status === "pending" ? (
+        <Notice tone="attention">
+          {data.request.requestedBy.name} asked for v{data.request.version} to be promoted.
+          Promoting here sends v{data.bundle.version}; the request is decided from the tenant's
+          overview.
+        </Notice>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="promote"
-          disabled={busy || !data?.possible}
-          onClick={async () => {
-            const sure = await ask.confirm({
-              title: `Promote to ${target.name}?`,
-              text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.`,
-              action: "Promote to production",
-              danger: true,
-            });
-            if (!sure) return;
-            setBusy(true);
-            setProblem(undefined);
-            try {
-              setResult(await api.post(`${root}/promotions`, {}));
-              preview.reload();
-            } catch (caught) {
-              setProblem(failureText(caught));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <Rocket aria-hidden="true" size={15} /> Promote to{" "}
-          {target.type === "production" ? "production" : target.name}
-        </Button>
+        {data?.canPromote === false ? null : (
+          <Button
+            variant="promote"
+            disabled={busy || !data?.possible}
+            onClick={async () => {
+              const sure = await ask.confirm({
+                title: `Promote to ${target.name}?`,
+                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.`,
+                action: "Promote to production",
+                danger: true,
+              });
+              if (!sure) return;
+              setBusy(true);
+              setProblem(undefined);
+              try {
+                setResult(await api.post(`${root}/promotions`, {}));
+                preview.reload();
+              } catch (caught) {
+                setProblem(failureText(caught));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Rocket aria-hidden="true" size={15} /> Promote to{" "}
+            {target.type === "production" ? "production" : target.name}
+          </Button>
+        )}
         <Button variant="quiet" onClick={() => navigate(`${link}/settings`)}>
           Change where this promotes to
         </Button>
       </div>
+      <DriftView root={root} hereName={workspace.name} />
+    </div>
+  );
+}
+
+/** What a promotion would change, and how the version has done before it goes. */
+export function PreviewPanels({
+  data,
+  targetName,
+  link,
+}: {
+  data: PromotionPreview;
+  targetName: string;
+  link: string;
+}) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className="flex flex-col gap-2">
+        <SectionLabel>What changes in {targetName}</SectionLabel>
+        <Panel className="flex flex-col gap-2 p-4">
+          {data.refusal ? (
+            <Notice tone="danger">
+              <strong>It cannot be promoted yet.</strong> {data.refusal.detail}
+              <ul className="mt-2 mb-0 pl-5">
+                {data.refusal.errors.map((one) => (
+                  <li key={`${one.path} ${one.message}`}>
+                    <Mono>{one.path}</Mono> {one.message}
+                  </li>
+                ))}
+              </ul>
+            </Notice>
+          ) : data.summary ? (
+            <>
+              <p className="m-0 text-ink-muted">
+                Creates {data.summary.created}, changes {data.summary.updated} and removes{" "}
+                {data.summary.deleted}.
+              </p>
+              {data.summary.changes.length > 0 ? (
+                <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                  {data.summary.changes.map((one) => (
+                    <li
+                      key={`${one.kind}-${one.path}`}
+                      className="flex items-center gap-2 text-meta"
+                    >
+                      <Tag
+                        tone={
+                          one.change === "deleted"
+                            ? "danger"
+                            : one.change === "created"
+                              ? "live"
+                              : "draft"
+                        }
+                      >
+                        {one.change}
+                      </Tag>
+                      <Mono>{one.path}</Mono>
+                      <span className="text-ink-subtle">{one.kind}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {data.summary.data.length > 0 ? (
+                <p className="m-0 text-meta text-ink-muted">{data.summary.data.join(" ")}</p>
+              ) : (
+                <p className="m-0 text-meta text-ink-muted">No table changes.</p>
+              )}
+            </>
+          ) : null}
+        </Panel>
+      </section>
+      <section className="flex flex-col gap-2">
+        <SectionLabel>Before it goes</SectionLabel>
+        <Panel className="flex flex-col gap-3 p-4">
+          <KeyValues
+            rows={[
+              {
+                label: "Tried here",
+                value: `${data.tried.runs + data.tried.flowRuns} runs, ${data.tried.failed + data.tried.flowRunsFailed} failed`,
+                mono: true,
+              },
+              { label: "Triggers there", value: `${data.triggers} stay running`, mono: true },
+            ]}
+          />
+          {data.tried.runs + data.tried.flowRuns === 0 ? (
+            <Notice tone="attention">
+              This version has not run here yet. Try it before it reaches production.
+            </Notice>
+          ) : data.tried.failed + data.tried.flowRunsFailed > 0 ? (
+            <Notice tone="attention">
+              Some of its runs here failed. <Link to={`${link}/runs?status=failed`}>See them</Link>
+            </Notice>
+          ) : (
+            <StatePill state="succeeded">Every run here succeeded</StatePill>
+          )}
+        </Panel>
+      </section>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import type { TenantCounts, WorkspaceCounts } from "../Shell.tsx";
+import { PromotionRequests } from "./Promotion.tsx";
 
 /** Actions that recorded a person's own preference, not a change. */
 const QUIET_ACTIONS = new Set(["member.recent_set"]);
@@ -47,6 +48,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export function TenantOverview({ base, tenantId }: { base: string; tenantId: string }) {
   const tenant = useLoad<{ name: string; slug: string }>(base);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
+  const instance = useLoad<{ mail?: boolean }>("/instance");
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
   const recent = useLoad<{ items: AuditEntry[] }>(`${base}/audit?limit=24`);
   // Entries from before moving between workspaces stopped being audited are no change to show.
@@ -64,7 +66,11 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         tone="attention"
         icon={<CirclePause aria-hidden="true" size={15} />}
         title={`${plural(c.approvalsWaiting, "approval")} waiting`}
-        detail="A flow is paused until someone decides."
+        detail={
+          instance.data?.mail === false
+            ? "A flow is paused until someone decides. Mail is not set up on this instance, so approvers are not told."
+            : "A flow is paused until someone decides. Those who may decide were emailed a link."
+        }
         action={<Go to={t("approvals")}>Decide</Go>}
       />,
     );
@@ -126,20 +132,25 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
             <SectionLabel>
               <span id="attention">Needs attention</span>
             </SectionLabel>
-            <Panel className="divide-y divide-line">
-              {!c ? (
-                <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
-              ) : attention.length > 0 ? (
-                attention
-              ) : (
-                <NextStep
-                  tone="success"
-                  icon={<CircleCheck aria-hidden="true" size={15} />}
-                  title="Nothing needs you"
-                  detail="No approvals waiting, every hostname works, and workers are online."
-                />
-              )}
-            </Panel>
+            {c?.promotionRequests && attention.length === 0 ? null : (
+              <Panel className="divide-y divide-line">
+                {!c ? (
+                  <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                ) : attention.length > 0 ? (
+                  attention
+                ) : (
+                  <NextStep
+                    tone="success"
+                    icon={<CircleCheck aria-hidden="true" size={15} />}
+                    title="Nothing needs you"
+                    detail="No approvals or promotions waiting, every hostname works, and workers are online."
+                  />
+                )}
+              </Panel>
+            )}
+            {c?.promotionRequests ? (
+              <PromotionRequests tenantId={tenantId} onDecided={counts.reload} />
+            ) : null}
           </section>
 
           <section aria-labelledby="workspaces" className="flex flex-col gap-2">

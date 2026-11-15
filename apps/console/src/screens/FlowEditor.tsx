@@ -9,7 +9,6 @@ import {
   NumberField,
   type Option,
   SelectField,
-  TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
 import {
@@ -29,14 +28,15 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Play, Plus, TriangleAlert } from "lucide-react";
+import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
-import { InputDialog } from "../InputDialog.tsx";
-import { Tag } from "../kit/status.tsx";
+import { typingIn, useHistory } from "../kit/history.ts";
+import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
 import { Link, navigate } from "../router.tsx";
+import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
 import {
   FormDesigner,
   missingInputs,
@@ -47,6 +47,8 @@ import {
   RespondSettings,
   WebhookSettings,
 } from "./FlowSteps.tsx";
+import { useFlowRunLive } from "./Flows.tsx";
+import { FlowTestPanel, LastTest, stepsOf, took } from "./FlowTestPanel.tsx";
 
 /** A node as the flow's manifest holds it. */
 type FlowNode = GraphNode & Record<string, unknown>;
@@ -214,16 +216,22 @@ function outputs(node: FlowNode): { id: string; label: string }[] {
 
 /** The names of the scripts that are nodes, by path, for the cards on the canvas. */
 const NodeNames = createContext<ReadonlyMap<string, string>>(new Map());
+/** What each node did in the test being shown, by node. */
+export const NodeRuns = createContext<ReadonlyMap<string, { state: RunState; took?: string }>>(
+  new Map(),
+);
 
 function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   const { id, node } = data;
   const out = outputs(node);
   const named = useContext(NodeNames).get(String(node.script ?? ""));
+  const ran = useContext(NodeRuns).get(id);
   return (
     <div
       className={`w-52 rounded-control border bg-surface px-3 py-2 shadow-sm ${
         selected ? "border-action ring-2 ring-action/30" : "border-line"
-      } ${node.type === "trigger" ? "rounded-full px-5" : ""}`}
+      } ${ran ? "border-2" : ""} ${node.type === "trigger" ? "rounded-full px-5" : ""}`}
+      style={ran && !selected ? { borderColor: STATE_STROKE[ran.state] } : undefined}
     >
       {node.type === "trigger" ? null : <Handle type="target" position={Position.Left} />}
       <div className="flex items-center justify-between gap-2">
@@ -231,6 +239,11 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
         <Badge tone={TYPE_TONE[node.type] ?? "neutral"}>{node.type}</Badge>
       </div>
       <div className="truncate text-[12px] text-ink-muted">{named ?? describe(node)}</div>
+      {ran ? (
+        <div className="mt-1 text-[12px]">
+          <StatePill state={ran.state} detail={ran.took} />
+        </div>
+      ) : null}
       {out.map((handle, index) => (
         <Handle
           key={handle.id}
@@ -382,7 +395,10 @@ export function FlowEditor({
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [askingInput, setAskingInput] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testRunId, setTestRunId] = useState<string>();
+  const [editedSinceTest, setEditedSinceTest] = useState(false);
+  const live = useFlowRunLive(root, testRunId);
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<number>();
@@ -464,8 +480,33 @@ export function FlowEditor({
   const specs = useMemo(() => new Map(pickable.map((one) => [one.path, one])), [pickable]);
   const names = useMemo(() => new Map(pickable.map((one) => [one.path, one.label])), [pickable]);
 
+  /** A change to the graph: saved a moment later, and no longer what the last test ran. */
+  const touch = () => {
+    setDirty(true);
+    setEditedSinceTest(true);
+  };
+  // What is undone is the graph and the description: never what is selected.
+  const history = useHistory(
+    () => ({
+      nodes: nodes.map(({ selected: _s, dragging: _d, measured: _m, ...rest }) => rest),
+      edges: edges.map(({ selected: _s, ...rest }) => rest),
+      description,
+    }),
+    (back) => {
+      // The chosen step stays chosen, when it is still there.
+      const kept = back.nodes.some((one) => one.id === selected) ? selected : undefined;
+      setNodes(back.nodes.map((one) => ({ ...one, selected: one.id === kept })) as CanvasNode[]);
+      setEdges(back.edges);
+      setDescription(back.description);
+      setSelected(kept);
+      touch();
+    },
+  );
+  const { clear: clearHistory, undo, redo } = history;
+
   const open = useCallback(
     (body: FlowBody) => {
+      clearHistory();
       const positions = { ...autoLayout(body.nodes, body.edges), ...(body.layout ?? {}) };
       setDescription(body.description ?? "");
       setNodes(
@@ -479,7 +520,7 @@ export function FlowEditor({
       setEdges(body.edges.map(toCanvasEdge));
       setLoaded(true);
     },
-    [setNodes, setEdges],
+    [setNodes, setEdges, clearHistory],
   );
 
   useEffect(() => {
@@ -527,6 +568,7 @@ export function FlowEditor({
     let id = entry.base;
     for (let n = 2; nodes.some((node) => node.id === id); n++) id = `${entry.base}_${n}`;
     // To the right of whatever is furthest right, level with it.
+    history.record(`Add ${id}`);
     const last = nodes.reduce<CanvasNode | undefined>(
       (furthest, node) => (!furthest || node.position.x > furthest.position.x ? node : furthest),
       undefined,
@@ -543,11 +585,12 @@ export function FlowEditor({
       },
     ]);
     setSelected(id);
-    setDirty(true);
+    touch();
     // Bring the new step into view once it has been drawn.
     setTimeout(() => canvas?.fitView({ ...FIT, duration: 200 }), 50);
   };
   const update = (id: string, change: Partial<FlowNode>) => {
+    history.record(`Change ${id}`, `${id}:${Object.keys(change).sort().join(",")}`);
     setNodes((before) =>
       before.map((node) =>
         node.id === id
@@ -555,10 +598,11 @@ export function FlowEditor({
           : node,
       ),
     );
-    setDirty(true);
+    touch();
   };
   const rename = (from: string, to: string) => {
     if (!NODE_ID.test(to) || nodes.some((node) => node.id === to)) return false;
+    history.record(`Rename ${from}`);
     setNodes((before) =>
       before.map((node) =>
         node.id === from ? { ...node, id: to, data: { id: to, node: node.data.node } } : node,
@@ -572,17 +616,19 @@ export function FlowEditor({
       })),
     );
     setSelected(to);
-    setDirty(true);
+    touch();
     return true;
   };
   const remove = (id: string) => {
+    history.record(`Remove ${id}`);
     setNodes((before) => before.filter((node) => node.id !== id));
     setEdges((before) => before.filter((edge) => edge.source !== id && edge.target !== id));
     setSelected(undefined);
-    setDirty(true);
+    touch();
   };
   const connect = (connection: Connection) => {
     if (connection.source === connection.target) return;
+    history.record("Connect steps");
     setEdges((before) => {
       // One edge leaves each handle of a branch, and one error path leaves a step.
       const kept = before.filter(
@@ -606,16 +652,16 @@ export function FlowEditor({
         kept,
       );
     });
-    setDirty(true);
+    touch();
   };
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     setProblem(undefined);
     if (!PATH.test(path)) {
       setProblem(
         "Give the flow a path: lowercase letters, digits, hyphens and underscores, in folders. For example orders/handle.",
       );
-      return;
+      return false;
     }
     setBusy(true);
     try {
@@ -642,8 +688,10 @@ export function FlowEditor({
       setSavedAt(Date.now());
       drafts.reload();
       if (!opened) navigate(`${link}/flows/edit/${path}`, { replace: true });
+      return true;
     } catch (error) {
       setProblem(failureText(error));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -671,14 +719,84 @@ export function FlowEditor({
     )
     .find((step) => step.type === "trigger" && step.trigger?.type === "manual");
   const hasManual = manualStep !== undefined;
-  // Errors are the dialog's to show, by field.
-  const runDraft = async (input: unknown) => {
+  // Errors are the form's to show, by field. The test runs what is saved, so a change is saved first.
+  const runTest = async (input: unknown) => {
+    if (dirty && !(await save())) throw new Error("The draft could not be saved. See above.");
     const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
       flow: path,
       input,
     });
-    navigate(`${link}/runs/${started.runId}`);
+    setTestRunId(started.runId);
+    setEditedSinceTest(false);
   };
+  const testBlocked = !hasManual
+    ? "A test starts at a manual trigger. Set the trigger to start by hand to test the flow here."
+    : state === "new"
+      ? "Save the flow first."
+      : state !== "draft" && !dirty
+        ? "This flow has no draft. Change something, and the test runs the draft."
+        : undefined;
+  // keyboard: ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo, except while typing in a field, which keeps its own.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || typingIn(event.target)) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        redo();
+      }
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+  // The canvas is shorter with the panel open: the whole graph is brought back into view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fitted again when the panel opens or closes
+  useEffect(() => {
+    const timer = setTimeout(() => canvas?.fitView({ ...FIT, duration: 200 }), 60);
+    return () => clearTimeout(timer);
+  }, [testing, canvas]);
+  const shown = testing ? live.run : undefined;
+  const nodeRuns = useMemo(
+    () =>
+      new Map(
+        (shown ? stepsOf(shown) : []).map((step) => [
+          step.node,
+          { state: step.state, ...(took(step) ? { took: took(step) as string } : {}) },
+        ]),
+      ),
+    [shown],
+  );
+  // The edges the test went down are drawn strong. Only how they are drawn: never saved.
+  const drawnEdges = useMemo(
+    () =>
+      shown
+        ? edges.map((edge) => {
+            const from = nodeRuns.get(edge.source);
+            const to = nodeRuns.get(edge.target);
+            const taken =
+              from &&
+              to &&
+              to.state !== "skipped" &&
+              (edge.sourceHandle === "error" ? from.state === "failed" : from.state !== "failed");
+            return taken
+              ? { ...edge, style: { ...edge.style, stroke: "var(--vx-action)", strokeWidth: 2.5 } }
+              : edge;
+          })
+        : edges,
+    [edges, shown, nodeRuns],
+  );
+  const previewSource = useMemo(
+    () => ({
+      root,
+      flowRun: testRunId,
+      flow: state === "new" ? undefined : path,
+      version: live.run ? `${live.run.id}:${live.run.status}:${live.run.steps.length}` : "",
+    }),
+    [root, testRunId, state, path, live.run],
+  );
 
   if (!loaded)
     return problem ? (
@@ -696,13 +814,18 @@ export function FlowEditor({
   const node = chosen?.data.node;
   const expression = (label: string, key: string, hint?: string) =>
     chosen && node ? (
-      <TextAreaField
+      <ExpressionField
         name={key}
         label={label}
         rows={2}
         value={(node[key] as string | undefined) ?? ""}
-        required={false}
-        {...(hint ? { hint } : {})}
+        hint={hint}
+        // A foreach's input and flow are worked out for each item: the preview takes the first.
+        items={
+          node.type === "foreach" && key !== "items"
+            ? ((node.items as string | undefined) ?? undefined)
+            : undefined
+        }
         onChange={(value) => update(chosen.id, { [key]: value === "" ? undefined : value })}
       />
     ) : null;
@@ -764,33 +887,44 @@ export function FlowEditor({
           <Button
             size="small"
             onClick={() => {
+              history.record("Tidy up");
               const positions = autoLayout(flowNodes, flowEdges);
               setNodes((before) =>
                 before.map((one) => ({ ...one, position: positions[one.id] ?? one.position })),
               );
-              setDirty(true);
+              touch();
             }}
           >
             Tidy up
           </Button>
-          {state === "draft" && !dirty && hasManual ? (
-            <Button size="small" onClick={() => setAskingInput(true)}>
-              <Play aria-hidden="true" size={13} /> Run by hand
-            </Button>
-          ) : null}
-          <InputDialog
-            open={askingInput}
-            onClose={() => setAskingInput(false)}
-            title={`Run ${path} by hand`}
-            action="Run"
-            schema={manualStep?.trigger?.input}
-            onSubmit={runDraft}
-          />
+          <Button
+            size="small"
+            variant="quiet"
+            aria-label="Undo"
+            title={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
+            disabled={!history.undoLabel}
+            onClick={undo}
+          >
+            <Undo2 aria-hidden="true" size={14} />
+          </Button>
+          <Button
+            size="small"
+            variant="quiet"
+            aria-label="Redo"
+            title={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
+            disabled={!history.redoLabel}
+            onClick={redo}
+          >
+            <Redo2 aria-hidden="true" size={14} />
+          </Button>
+          <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
+            <Play aria-hidden="true" size={13} /> Test
+          </Button>
           <Button
             size="small"
             variant={state === "draft" && !dirty ? "secondary" : "primary"}
             disabled={busy || (!dirty && state !== "new")}
-            onClick={save}
+            onClick={() => void save()}
           >
             Save draft
           </Button>
@@ -821,7 +955,7 @@ export function FlowEditor({
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="relative flex min-h-[28rem] flex-1 flex-col">
+        <div className="relative flex min-h-[28rem] flex-1 flex-col lg:min-h-[16rem]">
           <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
             <Button
               variant="primary"
@@ -908,36 +1042,47 @@ export function FlowEditor({
           </div>
           <div className="min-h-0 flex-1 bg-sunken" data-testid="flow-canvas">
             <NodeNames.Provider value={names}>
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                nodeTypes={nodeTypes}
-                onNodesChange={(changes) => {
-                  onNodesChange(changes);
-                  if (
-                    changes.some((change) => change.type === "position" || change.type === "remove")
-                  )
-                    setDirty(true);
-                }}
-                onEdgesChange={(changes) => {
-                  onEdgesChange(changes);
-                  if (changes.some((change) => change.type === "remove")) setDirty(true);
-                }}
-                onConnect={connect}
-                onSelectionChange={({ nodes: picked }) => setSelected(picked[0]?.id)}
-                onInit={setCanvas}
-                fitView
-                fitViewOptions={FIT}
-                maxZoom={1.5}
-                minZoom={0.2}
-                proOptions={{ hideAttribution: false }}
-                // The canvas takes its colors from the kit's tokens, so it follows the theme.
-                style={CANVAS_COLORS}
-              >
-                <Background />
-                <Controls />
-                <MiniMap pannable zoomable />
-              </ReactFlow>
+              <NodeRuns.Provider value={nodeRuns}>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={drawnEdges}
+                  nodeTypes={nodeTypes}
+                  onNodesChange={(changes) => {
+                    if (changes.some((change) => change.type === "remove"))
+                      history.record("Remove a step");
+                    onNodesChange(changes);
+                    if (
+                      changes.some(
+                        (change) => change.type === "position" || change.type === "remove",
+                      )
+                    )
+                      touch();
+                  }}
+                  onEdgesChange={(changes) => {
+                    if (changes.some((change) => change.type === "remove"))
+                      history.record("Remove a connection");
+                    onEdgesChange(changes);
+                    if (changes.some((change) => change.type === "remove")) touch();
+                  }}
+                  onConnect={connect}
+                  // A drag is one step to undo, however far it went.
+                  onNodeDragStart={() => history.record("Move a step")}
+                  onSelectionChange={({ nodes: picked }) => setSelected(picked[0]?.id)}
+                  onInit={setCanvas}
+                  fitView
+                  fitViewOptions={FIT}
+                  maxZoom={1.5}
+                  minZoom={0.2}
+                  proOptions={{ hideAttribution: false }}
+                  // The canvas takes its colors from the kit's tokens, so it follows the theme.
+                  style={CANVAS_COLORS}
+                >
+                  <Background />
+                  <Controls />
+                  {/* With the test panel open the canvas is short, and the map would cover the graph. */}
+                  {testing ? null : <MiniMap pannable zoomable />}
+                </ReactFlow>
+              </NodeRuns.Provider>
             </NodeNames.Provider>
           </div>
         </div>
@@ -945,276 +1090,299 @@ export function FlowEditor({
           aria-label="The chosen step"
           className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:w-[22rem] lg:border-t-0 lg:border-l"
         >
-          {chosen && node ? (
-            <>
-              <NameField key={chosen.id} id={chosen.id} rename={rename} />
-              {node.type === "trigger" ? (
-                <>
-                  <SelectField
-                    name="trigger"
-                    label="It starts"
-                    value={(node.trigger as { type: string }).type}
-                    options={[
-                      { value: "manual", label: "By hand, or from another flow" },
-                      { value: "schedule", label: "On a schedule" },
-                      { value: "event", label: "When an event is published" },
-                      { value: "webhook", label: "When its address is called" },
-                      { value: "form", label: "When someone fills in its form" },
-                    ]}
-                    onChange={(type) =>
-                      update(chosen.id, {
-                        trigger:
-                          type === "schedule"
-                            ? { type, cron: "0 8 * * *" }
-                            : type === "event"
-                              ? { type, event: "" }
-                              : type === "form"
-                                ? newForm()
-                                : { type },
-                      })
-                    }
-                  />
-                  {(node.trigger as { type: string }).type === "webhook" ? (
-                    <WebhookSettings
-                      trigger={node.trigger as Parameters<typeof WebhookSettings>[0]["trigger"]}
-                      sources={ofKind("trigger_source", "webhook")}
-                      secrets={secretOptions}
-                      onChange={(trigger) => update(chosen.id, { trigger })}
-                    />
-                  ) : null}
-                  {(node.trigger as { type: string }).type === "form" ? (
-                    <FormDesigner
-                      trigger={node.trigger as Parameters<typeof FormDesigner>[0]["trigger"]}
-                      onChange={(trigger) => update(chosen.id, { trigger })}
-                    />
-                  ) : null}
-                  {(node.trigger as { type: string }).type === "schedule" ? (
-                    <TextField
-                      name="cron"
-                      label="When, as a cron line"
-                      value={(node.trigger as { cron?: string }).cron ?? ""}
-                      hint="Minute, hour, day of month, month, day of week. 0 8 * * * is every day at 8."
-                      onChange={(cron) =>
-                        update(chosen.id, { trigger: { ...(node.trigger as object), cron } })
-                      }
-                    />
-                  ) : null}
-                  {(node.trigger as { type: string }).type === "schedule" &&
-                  (ofKind("trigger_source", "poll").length > 0 ||
-                    (node.trigger as { source?: string }).source) ? (
-                    <ComboboxField
-                      label="Trigger source (optional)"
-                      options={ofKind("trigger_source", "poll")}
-                      value={(node.trigger as { source?: string }).source || undefined}
-                      hint="Each tick runs it, and the flow starts once for each thing it finds."
-                      onChange={(source) => {
-                        const { source: _was, ...rest } = node.trigger as { source?: string };
-                        update(chosen.id, { trigger: source ? { ...rest, source } : rest });
-                      }}
-                    />
-                  ) : null}
-                  {(node.trigger as { type: string }).type === "event" ? (
-                    <ComboboxField
-                      label="Event"
-                      options={eventOptions}
-                      value={(node.trigger as { event?: string }).event || undefined}
-                      onChange={(event) =>
+          <ExpressionPreview.Provider value={previewSource}>
+            {chosen && node ? (
+              <>
+                <NameField key={chosen.id} id={chosen.id} rename={rename} />
+                {shown ? <LastTest run={shown} node={chosen.id} /> : null}
+                {node.type === "trigger" ? (
+                  <>
+                    <SelectField
+                      name="trigger"
+                      label="It starts"
+                      value={(node.trigger as { type: string }).type}
+                      options={[
+                        { value: "manual", label: "By hand, or from another flow" },
+                        { value: "schedule", label: "On a schedule" },
+                        { value: "event", label: "When an event is published" },
+                        { value: "webhook", label: "When its address is called" },
+                        { value: "form", label: "When someone fills in its form" },
+                      ]}
+                      onChange={(type) =>
                         update(chosen.id, {
-                          trigger: { ...(node.trigger as object), event: event ?? "" },
+                          trigger:
+                            type === "schedule"
+                              ? { type, cron: "0 8 * * *" }
+                              : type === "event"
+                                ? { type, event: "" }
+                                : type === "form"
+                                  ? newForm()
+                                  : { type },
                         })
                       }
                     />
-                  ) : null}
-                </>
-              ) : null}
-              {node.type === "script" && specs.has(String(node.script)) ? (
-                <p className="m-0 text-[13px]">
-                  <span className="font-semibold">{specs.get(String(node.script))?.label}</span>{" "}
-                  <code className="font-mono text-[12px] text-ink-muted">
-                    {String(node.script)}
-                  </code>
-                </p>
-              ) : node.type === "script" || node.type === "foreach" ? (
-                <ComboboxField
-                  label="Script"
-                  options={scriptOptions}
-                  value={(node.script as string | undefined) || undefined}
-                  onChange={(script) =>
-                    update(chosen.id, {
-                      script: script ?? (node.type === "foreach" ? undefined : ""),
-                    })
-                  }
-                />
-              ) : null}
-              {node.type === "subflow" ? (
-                <SelectField
-                  name="which"
-                  label="Which flow"
-                  value={node.flowFrom === undefined ? "named" : "chosen"}
-                  options={[
-                    { value: "named", label: "Always the same one" },
-                    { value: "chosen", label: "Chosen by the data, from a list" },
-                  ]}
-                  onChange={(which) =>
-                    update(
-                      chosen.id,
-                      which === "chosen"
-                        ? {
-                            flow: undefined,
-                            flowFrom: "trigger.flow",
-                            allow: node.flow ? [node.flow as string] : [],
-                          }
-                        : {
-                            flow: (node.allow as string[] | undefined)?.[0] ?? "",
-                            flowFrom: undefined,
-                            allow: undefined,
-                          },
-                    )
-                  }
-                />
-              ) : null}
-              {node.type === "subflow" && node.flowFrom !== undefined ? (
-                <>
-                  {expression(
-                    "Expression that gives the flow's path",
-                    "flowFrom",
-                    "It must give one of the flows below, or the step fails.",
-                  )}
-                  <MultiSelectField
-                    label="Flows it may start"
-                    options={flowOptions}
-                    value={(node.allow as string[] | undefined) ?? []}
-                    hint="Nothing outside this list is ever started, whatever the data says."
-                    onChange={(allow) => update(chosen.id, { allow })}
+                    {(node.trigger as { type: string }).type === "webhook" ? (
+                      <WebhookSettings
+                        trigger={node.trigger as Parameters<typeof WebhookSettings>[0]["trigger"]}
+                        sources={ofKind("trigger_source", "webhook")}
+                        secrets={secretOptions}
+                        onChange={(trigger) => update(chosen.id, { trigger })}
+                      />
+                    ) : null}
+                    {(node.trigger as { type: string }).type === "form" ? (
+                      <FormDesigner
+                        trigger={node.trigger as Parameters<typeof FormDesigner>[0]["trigger"]}
+                        onChange={(trigger) => update(chosen.id, { trigger })}
+                      />
+                    ) : null}
+                    {(node.trigger as { type: string }).type === "schedule" ? (
+                      <TextField
+                        name="cron"
+                        label="When, as a cron line"
+                        value={(node.trigger as { cron?: string }).cron ?? ""}
+                        hint="Minute, hour, day of month, month, day of week. 0 8 * * * is every day at 8."
+                        onChange={(cron) =>
+                          update(chosen.id, { trigger: { ...(node.trigger as object), cron } })
+                        }
+                      />
+                    ) : null}
+                    {(node.trigger as { type: string }).type === "schedule" &&
+                    (ofKind("trigger_source", "poll").length > 0 ||
+                      (node.trigger as { source?: string }).source) ? (
+                      <ComboboxField
+                        label="Trigger source (optional)"
+                        options={ofKind("trigger_source", "poll")}
+                        value={(node.trigger as { source?: string }).source || undefined}
+                        hint="Each tick runs it, and the flow starts once for each thing it finds."
+                        onChange={(source) => {
+                          const { source: _was, ...rest } = node.trigger as { source?: string };
+                          update(chosen.id, { trigger: source ? { ...rest, source } : rest });
+                        }}
+                      />
+                    ) : null}
+                    {(node.trigger as { type: string }).type === "event" ? (
+                      <ComboboxField
+                        label="Event"
+                        options={eventOptions}
+                        value={(node.trigger as { event?: string }).event || undefined}
+                        onChange={(event) =>
+                          update(chosen.id, {
+                            trigger: { ...(node.trigger as object), event: event ?? "" },
+                          })
+                        }
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+                {node.type === "script" && specs.has(String(node.script)) ? (
+                  <p className="m-0 text-[13px]">
+                    <span className="font-semibold">{specs.get(String(node.script))?.label}</span>{" "}
+                    <code className="font-mono text-[12px] text-ink-muted">
+                      {String(node.script)}
+                    </code>
+                  </p>
+                ) : node.type === "script" || node.type === "foreach" ? (
+                  <ComboboxField
+                    label="Script"
+                    options={scriptOptions}
+                    value={(node.script as string | undefined) || undefined}
+                    onChange={(script) =>
+                      update(chosen.id, {
+                        script: script ?? (node.type === "foreach" ? undefined : ""),
+                      })
+                    }
                   />
-                </>
-              ) : node.type === "subflow" || node.type === "foreach" ? (
-                <ComboboxField
-                  label={node.type === "foreach" ? "Or a flow" : "Flow"}
-                  options={flowOptions}
-                  value={(node.flow as string | undefined) || undefined}
-                  onChange={(flow) =>
-                    update(chosen.id, { flow: flow ?? (node.type === "foreach" ? undefined : "") })
-                  }
-                />
-              ) : null}
-              {node.type === "foreach"
-                ? expression("Items", "items", "An expression that gives a list.")
-                : null}
-              {node.type === "foreach" ? (
-                <CheckboxField
-                  name="continueOnError"
-                  label="Keep going when an item fails"
-                  hint="A failed item gives { error: { message } } in the list, and the step still succeeds."
-                  checked={node.continueOnError === true}
-                  onChange={(checked) =>
-                    update(chosen.id, { continueOnError: checked ? true : undefined })
-                  }
-                />
-              ) : null}
-              {node.type === "script" && specs.has(String(node.script)) ? (
-                <NodeInputs
-                  node={node}
-                  spec={specs.get(String(node.script)) as PickableNode}
-                  choices={pickChoices}
-                  onChange={(change) => update(chosen.id, change)}
-                />
-              ) : node.type === "script" || node.type === "subflow" || node.type === "foreach" ? (
-                expression(
-                  "Input",
-                  "input",
-                  "An expression. trigger is what started the flow, steps.<name>.output what a step gave.",
-                )
-              ) : null}
-              {node.type === "delay" ? (
-                <NumberField
-                  name="seconds"
-                  label="Seconds to wait"
-                  value={node.seconds as number}
-                  min={1}
-                  onChange={(seconds) => update(chosen.id, { seconds: seconds ?? 1 })}
-                />
-              ) : null}
-              {node.type === "approval" ? (
-                <>
-                  <TextField
-                    name="title"
-                    label="What is being approved"
-                    value={(node.title as string) ?? ""}
-                    onChange={(title) => update(chosen.id, { title })}
+                ) : null}
+                {node.type === "subflow" ? (
+                  <SelectField
+                    name="which"
+                    label="Which flow"
+                    value={node.flowFrom === undefined ? "named" : "chosen"}
+                    options={[
+                      { value: "named", label: "Always the same one" },
+                      { value: "chosen", label: "Chosen by the data, from a list" },
+                    ]}
+                    onChange={(which) =>
+                      update(
+                        chosen.id,
+                        which === "chosen"
+                          ? {
+                              flow: undefined,
+                              flowFrom: "trigger.flow",
+                              allow: node.flow ? [node.flow as string] : [],
+                            }
+                          : {
+                              flow: (node.allow as string[] | undefined)?.[0] ?? "",
+                              flowFrom: undefined,
+                              allow: undefined,
+                            },
+                      )
+                    }
                   />
-                  {expression("Detail to show", "detail")}
-                </>
-              ) : null}
-              {node.type === "fail"
-                ? expression("Message", "message", "An expression that gives text.")
-                : null}
-              {node.type === "respond" ? (
-                <RespondSettings
-                  node={node}
-                  onChange={(change) => update(chosen.id, change)}
-                  headers={(values, onChange) => (
-                    <ValuesEditor
-                      legend="Headers"
-                      add="Add a header"
-                      values={values}
-                      onChange={onChange}
+                ) : null}
+                {node.type === "subflow" && node.flowFrom !== undefined ? (
+                  <>
+                    {expression(
+                      "Expression that gives the flow's path",
+                      "flowFrom",
+                      "It must give one of the flows below, or the step fails.",
+                    )}
+                    <MultiSelectField
+                      label="Flows it may start"
+                      options={flowOptions}
+                      value={(node.allow as string[] | undefined) ?? []}
+                      hint="Nothing outside this list is ever started, whatever the data says."
+                      onChange={(allow) => update(chosen.id, { allow })}
                     />
-                  )}
-                />
-              ) : null}
-              {node.type === "branch" ? (
-                <CasesEditor
-                  cases={(node.cases as { name: string; when: string }[]) ?? []}
-                  onChange={(cases) => update(chosen.id, { cases })}
-                />
-              ) : null}
-              {node.type === "set" ? (
-                <ValuesEditor
-                  values={(node.values as Record<string, string>) ?? {}}
-                  onChange={(values) => update(chosen.id, { values })}
-                />
-              ) : null}
-              <div className="mt-auto">
-                <Button
-                  variant="danger"
-                  onClick={async () => {
-                    const sure = await ask.confirm({
-                      title: `Remove ${chosen.id}?`,
-                      text: "The edges into and out of it go too.",
-                      action: "Remove",
-                      danger: true,
-                    });
-                    if (sure) remove(chosen.id);
+                  </>
+                ) : node.type === "subflow" || node.type === "foreach" ? (
+                  <ComboboxField
+                    label={node.type === "foreach" ? "Or a flow" : "Flow"}
+                    options={flowOptions}
+                    value={(node.flow as string | undefined) || undefined}
+                    onChange={(flow) =>
+                      update(chosen.id, {
+                        flow: flow ?? (node.type === "foreach" ? undefined : ""),
+                      })
+                    }
+                  />
+                ) : null}
+                {node.type === "foreach"
+                  ? expression("Items", "items", "An expression that gives a list.")
+                  : null}
+                {node.type === "foreach" ? (
+                  <CheckboxField
+                    name="continueOnError"
+                    label="Keep going when an item fails"
+                    hint="A failed item gives { error: { message } } in the list, and the step still succeeds."
+                    checked={node.continueOnError === true}
+                    onChange={(checked) =>
+                      update(chosen.id, { continueOnError: checked ? true : undefined })
+                    }
+                  />
+                ) : null}
+                {node.type === "script" && specs.has(String(node.script)) ? (
+                  <NodeInputs
+                    node={node}
+                    spec={specs.get(String(node.script)) as PickableNode}
+                    choices={pickChoices}
+                    onChange={(change) => update(chosen.id, change)}
+                  />
+                ) : node.type === "script" || node.type === "subflow" || node.type === "foreach" ? (
+                  expression(
+                    "Input",
+                    "input",
+                    "An expression. trigger is what started the flow, steps.<name>.output what a step gave.",
+                  )
+                ) : null}
+                {node.type === "delay" ? (
+                  <NumberField
+                    name="seconds"
+                    label="Seconds to wait"
+                    value={node.seconds as number}
+                    min={1}
+                    onChange={(seconds) => update(chosen.id, { seconds: seconds ?? 1 })}
+                  />
+                ) : null}
+                {node.type === "approval" ? (
+                  <>
+                    <TextField
+                      name="title"
+                      label="What is being approved"
+                      value={(node.title as string) ?? ""}
+                      onChange={(title) => update(chosen.id, { title })}
+                    />
+                    {expression("Detail to show", "detail")}
+                  </>
+                ) : null}
+                {node.type === "fail"
+                  ? expression("Message", "message", "An expression that gives text.")
+                  : null}
+                {node.type === "respond" ? (
+                  <RespondSettings
+                    node={node}
+                    onChange={(change) => update(chosen.id, change)}
+                    headers={(values, onChange) => (
+                      <ValuesEditor
+                        legend="Headers"
+                        add="Add a header"
+                        values={values}
+                        onChange={onChange}
+                      />
+                    )}
+                  />
+                ) : null}
+                {node.type === "branch" ? (
+                  <CasesEditor
+                    cases={(node.cases as { name: string; when: string }[]) ?? []}
+                    onChange={(cases) => update(chosen.id, { cases })}
+                  />
+                ) : null}
+                {node.type === "set" ? (
+                  <ValuesEditor
+                    values={(node.values as Record<string, string>) ?? {}}
+                    onChange={(values) => update(chosen.id, { values })}
+                  />
+                ) : null}
+                <div className="mt-auto">
+                  <Button
+                    variant="danger"
+                    onClick={async () => {
+                      const sure = await ask.confirm({
+                        title: `Remove ${chosen.id}?`,
+                        text: "The edges into and out of it go too.",
+                        action: "Remove",
+                        danger: true,
+                      });
+                      if (sure) remove(chosen.id);
+                    }}
+                  >
+                    Remove this step
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <span aria-hidden="true" className="block h-0.5 w-5 bg-action" />
+                <h2 className="m-0 text-title">About this flow</h2>
+                <TextField
+                  name="description"
+                  label="What it does"
+                  value={description}
+                  required={false}
+                  onChange={(value) => {
+                    history.record("Change the description", "description");
+                    setDescription(value);
+                    touch();
                   }}
-                >
-                  Remove this step
-                </Button>
+                />
+                <p className="m-0 text-meta text-ink-muted">
+                  Choose a step to change it. Add steps with Add step, and drag from the dot on a
+                  step's right edge to the next step. The red dot underneath is where it goes when
+                  it fails.
+                </p>
               </div>
-            </>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <span aria-hidden="true" className="block h-0.5 w-5 bg-action" />
-              <h2 className="m-0 text-title">About this flow</h2>
-              <TextField
-                name="description"
-                label="What it does"
-                value={description}
-                required={false}
-                onChange={(value) => {
-                  setDescription(value);
-                  setDirty(true);
-                }}
-              />
-              <p className="m-0 text-meta text-ink-muted">
-                Choose a step to change it. Add steps with Add step, and drag from the dot on a
-                step's right edge to the next step. The red dot underneath is where it goes when it
-                fails.
-              </p>
-            </div>
-          )}
+            )}
+          </ExpressionPreview.Provider>
         </aside>
       </div>
+      {testing ? (
+        <FlowTestPanel
+          link={link}
+          path={path}
+          schema={manualStep?.trigger?.input}
+          blocked={testBlocked}
+          run={live.run}
+          error={live.error}
+          changed={editedSinceTest && live.run !== undefined}
+          onRun={runTest}
+          onChoose={(id) => {
+            setSelected(id);
+            setNodes((before) => before.map((one) => ({ ...one, selected: one.id === id })));
+          }}
+          onClose={() => setTesting(false)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -1269,9 +1437,10 @@ function CasesEditor({
               onChange(cases.map((each, at) => (at === index ? { ...each, name } : each)))
             }
           />
-          <TextField
+          <ExpressionField
             name={`when-${index}`}
             label="When"
+            condition
             value={one.when}
             onChange={(when) =>
               onChange(cases.map((each, at) => (at === index ? { ...each, when } : each)))
@@ -1335,7 +1504,7 @@ function ValuesEditor({
               )
             }
           />
-          <TextField
+          <ExpressionField
             name={`value-${index}`}
             label="Expression"
             value={value}

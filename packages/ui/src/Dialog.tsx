@@ -25,9 +25,10 @@ export function Dialog({
   return (
     <Base.Root open={open} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>
-        <Base.Backdrop className="fixed inset-0 bg-ink/40" />
+        {/* Above a side sheet: a question asked from one is answered over it. */}
+        <Base.Backdrop className="fixed inset-0 z-[60] bg-ink/40" />
         <Base.Popup
-          className={`fixed overflow-y-auto border-line bg-surface p-5 shadow-xl ${
+          className={`fixed z-[61] overflow-y-auto border-line bg-surface p-5 shadow-xl ${
             size === "palette"
               ? "inset-0 md:inset-auto md:top-[10vh] md:left-1/2 md:max-h-[80vh] md:w-[min(40rem,calc(100vw-2rem))] md:-translate-x-1/2 md:rounded-panel md:border"
               : `left-1/2 max-h-[88vh] -translate-x-1/2 rounded-panel border ${

@@ -6,7 +6,12 @@ import { access } from "../kernel/http.js";
 export function instanceRoutes(deps: {
   database: Database;
   version: string;
-  config?: { appsUrl: string | undefined; appsOnConsoleAddress: boolean };
+  config?: {
+    appsUrl: string | undefined;
+    appsOnConsoleAddress: boolean;
+    mail?: unknown;
+    mailCaptureDir?: string | undefined;
+  };
 }): FastifyPluginAsyncTypebox {
   return async (app) => {
     app.get(
@@ -32,6 +37,10 @@ export function instanceRoutes(deps: {
                     "in every case.",
                 },
               ),
+              mail: Type.Boolean({
+                description:
+                  "Whether the instance sends mail: approvers are told of what waits for them.",
+              }),
             }),
           },
         },
@@ -40,6 +49,7 @@ export function instanceRoutes(deps: {
         coreVersion: deps.version,
         apiVersion: "v1" as const,
         migrationLevel: await deps.database.migrationLevel(),
+        mail: Boolean(deps.config?.mail || deps.config?.mailCaptureDir),
         appsAddress: deps.config?.appsUrl
           ? ("separate" as const)
           : deps.config?.appsOnConsoleAddress

@@ -9,6 +9,7 @@ import {
   TextField,
 } from "@vynxlabs/ui";
 import type { GraphNode } from "../FlowGraph.tsx";
+import { ExpressionField } from "./ExpressionField.tsx";
 
 /**
  * The settings of the steps a flow is drawn from, where a step has more to
@@ -124,7 +125,7 @@ export function NodeInputs({
         }
       />
       {whole ? (
-        <TextAreaField
+        <ExpressionField
           name="input"
           label="Input"
           rows={3}
@@ -188,13 +189,12 @@ export function NodeInputs({
           }
           const text = property.type === "string";
           return (
-            <TextAreaField
+            <ExpressionField
               key={name}
               name={`input-${name}`}
               label={label}
               rows={text ? 1 : 2}
               value={inputs[name] ?? ""}
-              required={false}
               placeholder={text ? "'text', or trigger.field" : "An expression"}
               hint={[property.description, text ? "An expression: put plain text in quotes." : ""]
                 .filter(Boolean)
@@ -638,12 +638,11 @@ export function RespondSettings({
           onChange({ status: status === 200 ? undefined : (status ?? undefined) })
         }
       />
-      <TextAreaField
+      <ExpressionField
         name="respond-body"
         label="Body"
         rows={3}
         value={(node.body as string | undefined) ?? ""}
-        required={false}
         hint="An expression. An object or a list is sent as JSON, and text as it is."
         onChange={(body) => onChange({ body: body === "" ? undefined : body })}
       />

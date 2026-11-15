@@ -7,8 +7,17 @@ import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
 import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
+import { forgetHealth } from "../kernel/data/health.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
+import {
+  AuthorizationRefused,
+  beginAuthorization,
+  callbackAddress,
+  finishAuthorization,
+} from "../kernel/execution/oauth.js";
+// A Test's result is kept as the connection's health, by whichever replica sees it end.
+import "../kernel/execution/connection-health.js";
 import { loadBundle, MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
@@ -37,6 +46,7 @@ import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/
 import type { Kernel } from "../kernel/kernel.js";
 import { labelText } from "../kernel/metrics.js";
 import { PageQuery, pageOf } from "../pagination.js";
+import { describeRequests, PromotionRequest } from "./promotion-requests.js";
 import {
   AnyObject,
   Id,
@@ -218,8 +228,22 @@ const RunDetail = Type.Object({
   }),
   waitingFor: Type.Union([Type.String(), Type.Null()], {
     description:
-      "For a run that is queued with no worker connected that could take it: what it is waiting for.",
+      "For a queued run: what it is waiting for, when it is not simply its turn. No worker connected that could take it, or a run with the same concurrency key still going.",
   }),
+  concurrency: Type.Union(
+    [
+      Type.Object({
+        key: Type.String({ description: "Where the value is read from: `input.customerId`." }),
+        value: Type.String({
+          description:
+            "This run's value. Empty when its input had none. A long value is shown as its hash.",
+        }),
+        limit: Type.Integer({ description: "How many runs with the same value may go at once." }),
+      }),
+      Type.Null(),
+    ],
+    { description: "Set when the script limits its runs per value of a key in their input." },
+  ),
   input: Type.Unknown(),
   output: Type.Unknown(),
   alert: Type.Union([AnyObject, Type.Null()]),
@@ -422,18 +446,48 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Upload a bundle",
           description:
-            "Stores the bundle as the workspace's next version. It does not run until it is deployed.",
+            "Stores the bundle as the workspace's next version. It does not run until it is " +
+            "deployed. With `preview`, it is stored to be tried with a test run and never " +
+            "offered for deploying: the workspace's console resources are kept on it, and it " +
+            "is removed after a week, as the console's own tries are.",
           tags: ["deploys"],
           params: WorkspaceParams,
+          querystring: Type.Object({ preview: Type.Optional(Type.Boolean()) }),
           body: AnyObject,
           response: { 200: Bundle, 201: Bundle },
         },
       },
-      async ({ ctx, params, body }, reply) => {
+      async ({ ctx, params, query, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
-        const result = await ctx.mutate((trx, audit) =>
-          storeBundle(kernel, trx, audit, workspace, ctx.principal, body),
-        );
+        const result = await ctx.mutate(async (trx, audit) => {
+          if (!query.preview)
+            return storeBundle(kernel, trx, audit, workspace, ctx.principal, body);
+          const stored = await storeBundle(
+            kernel,
+            trx,
+            audit,
+            workspace,
+            ctx.principal,
+            body,
+            "preview",
+          );
+          const kept = await keepConsoleManaged(
+            kernel,
+            trx,
+            audit,
+            workspace,
+            ctx.principal,
+            stored.bundle.id,
+            "preview",
+          );
+          if (kept === stored.bundle.id) return stored;
+          const composed = await trx
+            .selectFrom("bundle")
+            .selectAll()
+            .where("id", "=", kept)
+            .executeTakeFirstOrThrow();
+          return { created: true, bundle: composed };
+        });
         return reply
           .code(result.created ? 201 : 200)
           .send(toBundle(result.bundle, await activeBundle(params.w)));
@@ -548,6 +602,17 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             message: Type.Optional(
               Type.String({ maxLength: 500, description: "What changed, in a few words." }),
             ),
+            settleDrafts: Type.Optional(
+              Type.Array(
+                Type.Object({ path: Type.String({ maxLength: 255 }), revision: Type.Integer() }),
+                {
+                  maxItems: 1000,
+                  description:
+                    "Drafts this bundle carries, as `platform pull` took them: each is removed " +
+                    "if it is still at that revision. A draft changed in the console since is kept.",
+                },
+              ),
+            ),
           }),
           response: {
             201: Type.Object({
@@ -555,6 +620,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               bundleId: Id,
               bundleVersion: Type.Integer(),
               summary: Summary,
+              draftsSettled: Type.Array(Type.String(), {
+                description: "The drafts the deploy made true, and so removed.",
+              }),
             }),
           },
         },
@@ -570,7 +638,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ctx.principal,
             // A bundle that says nothing about console-managed resources keeps the workspace's.
             await keepConsoleManaged(kernel, trx, audit, workspace, ctx.principal, body.bundleId),
-            body.message ? { message: body.message } : {},
+            {
+              ...(body.message ? { message: body.message } : {}),
+              ...(body.settleDrafts ? { settle: body.settleDrafts } : {}),
+            },
           ),
         );
         await publishPlatformEvent(kernel, {
@@ -588,6 +659,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           bundleId: result.bundle.id,
           bundleVersion: result.bundle.version,
           summary: result.summary,
+          draftsSettled: result.draftsSettled,
         });
       },
     );
@@ -638,6 +710,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               triggers: Type.Integer({
                 description: "Triggers that stay running in the workspace promoted to.",
               }),
+              canPromote: Type.Boolean({
+                description:
+                  "Whether the caller may promote it. One who may not can ask: promotion-requests.",
+              }),
+              request: Type.Union([PromotionRequest, Type.Null()], {
+                description: "This workspace's latest request for a promotion, of anyone's.",
+              }),
             }),
           },
         },
@@ -683,6 +762,22 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             flowRunsFailed: flowRuns.failed,
           },
           triggers: Number(triggers?.n ?? 0),
+          canPromote: await ctx.allowed("promotion:write", {
+            tenantId: target.tenantId,
+            workspaceId: target.id,
+          }),
+          request: await (async () => {
+            const latest = await db
+              .selectFrom("promotion_request")
+              .selectAll()
+              .where("source_workspace_id", "=", workspace.id)
+              .where("target_workspace_id", "=", target.id)
+              .where("status", "<>", "superseded")
+              .orderBy("created_at", "desc")
+              .limit(1)
+              .execute();
+            return (await describeRequests(kernel, ctx, latest))[0] ?? null;
+          })(),
         };
       },
     );
@@ -1095,6 +1190,57 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         : "This tenant runs on its own workers, and none is connected. Start one with a worker credential.";
     };
 
+    /**
+     * What a run waits for and, for a script that limits its runs per key, the key: a queued
+     * run whose worker is there is held back only by runs with the same value still going.
+     */
+    const keyed = async (
+      tenantId: string,
+      workspaceId: string,
+      row: {
+        id: string;
+        status: string;
+        pool: string | null;
+        resource_id: string;
+        concurrency_key: string | null;
+      },
+    ) => {
+      let concurrency: { key: string; value: string; limit: number } | null = null;
+      if (row.concurrency_key !== null) {
+        const resource = await db
+          .selectFrom("resource")
+          .select("body")
+          .where("id", "=", row.resource_id)
+          .executeTakeFirst();
+        const declared = (resource?.body as { concurrency?: unknown } | undefined)?.concurrency;
+        if (declared && typeof declared === "object") {
+          const { key, limit } = declared as { key: string; limit: number };
+          concurrency = { key, value: row.concurrency_key, limit };
+        }
+      }
+      if (row.status !== "queued") return { waitingFor: null, concurrency };
+      const absent = await waitingFor(tenantId, workspaceId, row.pool);
+      if (absent || row.concurrency_key === null) return { waitingFor: absent, concurrency };
+      const ahead = await db
+        .selectFrom("run")
+        .select(db.fn.countAll<string>().as("count"))
+        .where("workspace_id", "=", workspaceId)
+        .where("resource_id", "=", row.resource_id)
+        .where("concurrency_key", "=", row.concurrency_key)
+        .where("status", "=", "running")
+        .where("id", "<>", row.id)
+        .executeTakeFirstOrThrow();
+      const going = Number(ahead.count);
+      if (going === 0 || (concurrency && going < concurrency.limit)) {
+        return { waitingFor: null, concurrency };
+      }
+      const value = row.concurrency_key === "" ? "none" : row.concurrency_key;
+      return {
+        waitingFor: `Waiting for ${going} run${going === 1 ? "" : "s"} with the same key (${value}) to finish.`,
+        concurrency,
+      };
+    };
+
     const findRun = async (workspaceId: string, id: string) => {
       const row = await db
         .selectFrom("run")
@@ -1142,8 +1288,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           ...toRun(row, row.bundle_version),
           pool: row.pool,
-          waitingFor:
-            row.status === "queued" ? await waitingFor(params.t, params.w, row.pool) : null,
+          ...(await keyed(params.t, params.w, row)),
           input: await readPayload(kernel, row.input, row.input_ref),
           output: await readPayload(kernel, row.output, row.output_ref),
           alert: row.alert,
@@ -1633,6 +1778,33 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       ),
       hasCredential: Type.Boolean(),
       updatedAt: NullableTime,
+      health: Type.Union([
+        Type.Object({
+          ok: Type.Boolean(),
+          problem: Type.Union([Type.String(), Type.Null()]),
+          latencyMs: Type.Union([Type.Integer(), Type.Null()]),
+          checkedAt: Time,
+        }),
+        Type.Null(),
+      ]),
+      oauth: Type.Union(
+        [
+          Type.Object({
+            status: Type.Union([
+              Type.Literal("not_connected"),
+              Type.Literal("connected"),
+              Type.Literal("needs_reconnect"),
+            ]),
+            expiresAt: NullableTime,
+            scopes: Type.Array(Type.String()),
+            connectedBy: Type.Union([Type.String(), Type.Null()]),
+            connectedAt: NullableTime,
+            problem: Type.Union([Type.String(), Type.Null()]),
+          }),
+          Type.Null(),
+        ],
+        { description: "For an OAuth connection: whether it is authorized. Null for any other." },
+      ),
     });
 
     app.get(
@@ -1654,32 +1826,115 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "connection")
           .execute();
+        // A connection declared in a draft is shown as what the draft says it is, until it is deployed.
+        const drafted = await db
+          .selectFrom("resource_draft")
+          .select(["path", "body"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection")
+          .where("deleted", "=", false)
+          .execute();
         const bindings = await db
           .selectFrom("connection_binding")
-          .selectAll()
+          .select(["path", "config", "credential", "oauth", "updated_at"])
           .where("workspace_id", "=", params.w)
+          .execute();
+        const health = await db
+          .selectFrom("health_check")
+          .select(["path", "ok", "problem", "latency_ms", "checked_at"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection")
           .execute();
         const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
         const connectors = await deployedConnectors(params.w);
+        type Declared = { connector?: string; description?: string } | undefined;
         return {
           items: paths.map((path) => {
-            const definition = definitions.find((row) => row.path === path)?.body as
-              | { connector?: string; description?: string }
-              | undefined;
+            const deployed = definitions.find((row) => row.path === path)?.body as Declared;
+            const definition =
+              deployed ?? (drafted.find((row) => row.path === path)?.body as Declared);
             const binding = bindings.find((row) => row.path === path);
+            const checked = health.find((row) => row.path === path);
+            const connector = definition?.connector ?? "http";
             return {
               path,
-              connector: definition?.connector ?? "http",
+              connector,
               description: definition?.description ?? "",
-              defined: definition !== undefined,
+              defined: deployed !== undefined,
               bound: binding !== undefined,
               config: binding?.config ?? null,
-              configSchema: (connectorSchema(definition?.connector ?? "http", connectors) ??
+              configSchema: (connectorSchema(connector, connectors) ??
                 BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
               hasCredential: Boolean(binding?.credential),
               updatedAt: isoOrNull(binding?.updated_at ?? null),
+              health:
+                binding && checked
+                  ? {
+                      ok: checked.ok,
+                      problem: checked.problem,
+                      latencyMs: checked.latency_ms,
+                      checkedAt: iso(checked.checked_at),
+                    }
+                  : null,
+              oauth:
+                connector === "oauth2" || binding?.oauth
+                  ? {
+                      status: binding?.oauth?.status ?? ("not_connected" as const),
+                      expiresAt: binding?.oauth?.expiresAt ?? null,
+                      scopes: binding?.oauth?.scopes ?? [],
+                      connectedBy: binding?.oauth?.connectedBy ?? null,
+                      connectedAt: binding?.oauth?.connectedAt ?? null,
+                      problem: binding?.oauth?.problem ?? null,
+                    }
+                  : null,
             };
           }),
+        };
+      },
+    );
+
+    app.get(
+      `${base}/connectors`,
+      {
+        config: { access: access.workspace("connection:read") },
+        schema: {
+          summary: "The kinds of connection this workspace can have",
+          description:
+            "The connectors every worker has, then the workspace's own as deployed, each with " +
+            "the JSON Schema its settings must fit.",
+          tags: ["bindings"],
+          params: WorkspaceParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  name: Type.String(),
+                  builtin: Type.Boolean(),
+                  configSchema: AnyObject,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const own = await deployedConnectors(params.w);
+        return {
+          items: [
+            ...Object.entries(BUILTIN_CONFIG_SCHEMAS).map(([name, configSchema]) => ({
+              name,
+              builtin: true,
+              configSchema: configSchema as Record<string, unknown>,
+            })),
+            ...own.map((row) => ({
+              name: row.path,
+              builtin: false,
+              configSchema: ((row.body as { configSchema?: object }).configSchema ?? {}) as Record<
+                string,
+                unknown
+              >,
+            })),
+          ],
         };
       },
     );
@@ -1890,13 +2145,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (issues.length > 0)
           throw badRequest("The connection's configuration is not valid.", issues);
         await ctx.mutate(async (trx, audit) => {
-          const { created } = await bindConnection(
+          const { created, changed } = await bindConnection(
             kernel,
             trx,
             { tenantId: params.t, workspaceId: params.w, path },
             body.config,
             body.credential,
           );
+          // What a Test found says nothing about settings it did not try.
+          if (changed) await forgetHealth(trx, params.w, path);
           await audit({
             action: created ? "connection.bound" : "connection.rebound",
             targetType: "connection",
@@ -1936,6 +2193,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .returning("id")
             .executeTakeFirst();
           if (!removed) throw notFound("The connection binding");
+          await forgetHealth(trx, params.w, path);
           await audit({
             action: "connection.unbound",
             targetType: "connection",
@@ -2002,6 +2260,90 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           return queued;
         });
         return reply.code(202).send(toTask(task));
+      },
+    );
+
+    // ----- OAuth connections: authorized once by a member, refreshed here -----
+
+    app.post(
+      `${base}/connection-oauth`,
+      {
+        config: { access: access.workspace("connection:write") },
+        schema: {
+          summary: "Begin authorizing an OAuth connection",
+          description:
+            "For a member in a browser: send it to the `url` returned. The provider sends it " +
+            "back to this instance, which keeps the tokens, and then on to `returnTo`. The " +
+            "connection must be bound first, with its client's settings and secret.",
+          tags: ["bindings"],
+          params: WorkspaceParams,
+          body: Type.Object({
+            path: Type.String({ maxLength: 255 }),
+            returnTo: Type.Optional(Type.String({ maxLength: 2000, pattern: "^/(?![/\\\\])" })),
+          }),
+          response: { 200: Type.Object({ url: Type.String(), callback: Type.String() }) },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const path = wildPath({ "*": body.path });
+        const startedBy = ctx.memberId;
+        const begun = await ctx.mutate(async (trx, audit) => {
+          const started = await beginAuthorization(
+            kernel,
+            trx,
+            { tenantId: params.t, workspaceId: params.w, path },
+            { startedBy, returnTo: body.returnTo },
+          );
+          await audit({
+            action: "connection.oauth_started",
+            targetType: "connection",
+            targetId: path,
+            tenantId: params.t,
+            workspaceId: params.w,
+          });
+          return started;
+        });
+        return { url: begun.url, callback: callbackAddress(kernel) };
+      },
+    );
+
+    app.get(
+      "/oauth/connections/callback",
+      {
+        // Anyone may arrive here; who they are is read, to check they began it.
+        config: { access: access.custom, rateLimit: { max: 60, timeWindow: "1 minute" } },
+        schema: {
+          summary: "Where an OAuth provider sends a member back",
+          description:
+            "For browsers. The answer is taken once, only from the member who began it, and " +
+            "the code is exchanged for tokens. The browser is sent back to the console.",
+          tags: ["bindings"],
+          response: { 302: Type.Null() },
+        },
+      },
+      async (request, reply) => {
+        if ((await kernel.hosts.place(request)).kind !== "main") throw notFound("The page");
+        const query = new URL(request.url, kernel.hosts.mainOrigin).searchParams;
+        const back = (returnTo: string | null, said: Record<string, string>) => {
+          const target = new URL(returnTo ?? "/", kernel.hosts.mainOrigin);
+          for (const [name, value] of Object.entries(said)) target.searchParams.set(name, value);
+          return reply
+            .code(302)
+            .header("location", `${target.pathname}${target.search}`)
+            .header("cache-control", "no-store")
+            .send(null);
+        };
+        try {
+          const done = await finishAuthorization(kernel, query, request.ctx.actor);
+          return back(done.returnTo, { oauth: "connected", connection: done.connection.path });
+        } catch (error) {
+          if (!(error instanceof AuthorizationRefused)) throw error;
+          request.log.info({ reason: error.message }, "an OAuth connection was not authorized");
+          return back(error.returnTo, {
+            oauth_error: error.message,
+            ...(error.connection ? { connection: error.connection.path } : {}),
+          });
+        }
       },
     );
 

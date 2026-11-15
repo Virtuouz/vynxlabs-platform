@@ -16,6 +16,8 @@ import { bundleManifest } from "../execution/bundles.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
+import { expireLinks, mailApprovers } from "./approval-links.js";
+import { buildContext, type ContextStep, readOutput } from "./context.js";
 import { ExpressionError } from "./expressions.js";
 
 /** The most items one foreach will run. More than this belongs in a script. */
@@ -324,6 +326,7 @@ interface Finished {
  */
 export async function advance(kernel: Kernel, flowRunId: string): Promise<void> {
   const started: string[] = [];
+  const asking: string[] = [];
   const finished = await kernel.db.transaction().execute(async (trx) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${flowRunId}, 1))`.execute(trx);
     const flowRun = await trx
@@ -342,10 +345,19 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
     const pass = new Advance(kernel, trx, flowRun, manifest.body as unknown as FlowBody);
     const result = await pass.run();
     started.push(...pass.started);
+    asking.push(...pass.asking);
     return result;
   });
   // Flow runs started as steps take their own first step now that they are committed.
   for (const child of started) kickFlow(kernel, child);
+  // Approvers are told of a step that waits for them once it is committed, and never twice.
+  if (asking.length > 0) {
+    for (const node of asking) {
+      mailApprovers(kernel, flowRunId, node).catch((error) =>
+        kernel.log.error({ err: error, flowRunId, node }, "approvers could not be told"),
+      );
+    }
+  }
   if (finished) await afterFlowRun(kernel, finished);
 }
 
@@ -559,32 +571,11 @@ class Advance {
     return this.#update(step, { status: "failed", error: { message } });
   }
 
-  /** What a finished step produced. Something too large to hold in a row is not loaded. */
-  async #outputOf(step: StepRow): Promise<unknown> {
+  /** What a finished step produced, read once per run. */
+  async #outputOf(step: ContextStep): Promise<unknown> {
     const key = stepKey(step.node_id, step.item_key);
     if (this.#outputs.has(key)) return this.#outputs.get(key);
-    let output: unknown;
-    const tooLarge = (ref: string) => ({
-      stored: ref,
-      note: "This output is too large to use in an expression. Read it in a script.",
-    });
-    if (step.run_id) {
-      const run = await this.#trx
-        .selectFrom("run")
-        .select(["output", "output_ref"])
-        .where("id", "=", step.run_id)
-        .executeTakeFirst();
-      output = run?.output_ref ? tooLarge(run.output_ref) : (run?.output ?? null);
-    } else if (step.child_flow_run_id) {
-      const child = await this.#trx
-        .selectFrom("flow_run")
-        .select("output")
-        .where("id", "=", step.child_flow_run_id)
-        .executeTakeFirst();
-      output = child?.output ?? null;
-    } else {
-      output = step.output_ref ? tooLarge(step.output_ref) : (step.output ?? null);
-    }
+    const output = await readOutput(this.#trx, step);
     this.#outputs.set(key, output);
     return output;
   }
@@ -626,22 +617,13 @@ class Advance {
 
   // ----- Expressions -----
 
-  async #context(extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-    const steps: Record<string, unknown> = {};
-    for (const step of this.#steps.values()) {
-      if (step.item_key !== "") continue;
-      if (step.status === "succeeded") steps[step.node_id] = { output: await this.#outputOf(step) };
-      else if (step.status === "failed")
-        steps[step.node_id] = { error: step.error ?? { message: "" } };
-    }
-    const trigger = this.#steps.get(stepKey(this.#flowRun.trigger_node));
-    return {
-      trigger: trigger ? await this.#outputOf(trigger) : {},
-      steps,
-      // The time the expression is worked out, as a CEL timestamp.
-      now: new Date(),
-      ...extra,
-    };
+  #context(extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    return buildContext(
+      this.#steps.values(),
+      this.#flowRun.trigger_node,
+      (step) => this.#outputOf(step),
+      extra,
+    );
   }
 
   async #evaluate(
@@ -729,6 +711,7 @@ class Advance {
             },
             wake_at: node.timeoutSeconds ? new Date(Date.now() + node.timeoutSeconds * 1000) : null,
           });
+          this.#asking.push(step.node_id);
           break;
         }
         case "subflow": {
@@ -890,6 +873,8 @@ class Advance {
 
   /** Flow runs started during this pass. They take their first step once this transaction commits. */
   readonly #children: string[] = [];
+  /** Approval steps that began to wait in this pass: their approvers are told after it commits. */
+  readonly #asking: string[] = [];
 
   // ----- Settling a step whose work may have ended -----
 
@@ -1059,6 +1044,10 @@ class Advance {
   get started(): string[] {
     return this.#children;
   }
+
+  get asking(): string[] {
+    return this.#asking;
+  }
 }
 
 /** A step that failed for a reason its author can fix. It fails the step, not the engine. */
@@ -1171,6 +1160,8 @@ export async function decideApproval(
     .where("node_id", "=", request.node)
     .where("item_key", "=", "")
     .execute();
+  // However it was decided, the links mailed for it stop working.
+  await expireLinks(trx, request.flowRunId, request.node);
   return { flow: step.flow_path, title: step.detail.title };
 }
 

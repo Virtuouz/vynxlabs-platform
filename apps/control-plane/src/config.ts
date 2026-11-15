@@ -17,6 +17,11 @@ export interface Config {
   authSecret: string;
   /** 32 bytes. Wraps each tenant's data key. */
   masterKey: Buffer;
+  /**
+   * A second key the instance opens with, and never seals with: the next key
+   * before a rotation, the old one during it. See "Rotating the master key".
+   */
+  masterKeySecondary: Buffer | undefined;
   /** Creates the first operator admin when the instance has no members. */
   bootstrapAdmin: { email: string; password: string } | undefined;
   /**
@@ -56,6 +61,11 @@ export interface Config {
   appsOnConsoleAddress: boolean;
   /** Where mail goes out, for invitations and password resets. Undefined when no mail is sent. */
   mail: { url: string; from: string } | undefined;
+  /**
+   * For development only: each message is written to a file here instead of
+   * being sent. Never in production.
+   */
+  mailCaptureDir: string | undefined;
 }
 
 export const MIN_PASSWORD_LENGTH = 12;
@@ -146,6 +156,17 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     );
   }
 
+  const secondaryText = value("MASTER_KEY_SECONDARY");
+  const masterKeySecondary =
+    secondaryText === undefined ? undefined : Buffer.from(secondaryText, "base64");
+  if (masterKeySecondary && masterKeySecondary.length !== 32) {
+    problems.push("MASTER_KEY_SECONDARY must be 32 bytes, base64 encoded, as MASTER_KEY is.");
+  } else if (masterKeySecondary?.equals(masterKey)) {
+    problems.push(
+      "MASTER_KEY_SECONDARY is the same as MASTER_KEY. Remove it, or set it to the other key of the rotation.",
+    );
+  }
+
   const bootstrapEmail = value("BOOTSTRAP_ADMIN_EMAIL");
   const bootstrapPassword = value("BOOTSTRAP_ADMIN_PASSWORD");
   if ((bootstrapEmail === undefined) !== (bootstrapPassword === undefined)) {
@@ -176,6 +197,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if ((smtpUrl === undefined) !== (mailFrom === undefined)) {
     problems.push("SMTP_URL and MAIL_FROM must be set together.");
   }
+  // For development and tests: the instance says so loudly when it starts.
+  const mailCaptureDir = value("MAIL_CAPTURE_DIR");
 
   // `true` is read as `process`, as it was before there was a worker host.
   const managedRaw = value("MANAGED_WORKERS") ?? "process";
@@ -239,6 +262,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     publicUrl: publicUrl.replace(/\/+$/, ""),
     authSecret,
     masterKey,
+    masterKeySecondary,
     bootstrapAdmin:
       bootstrapEmail !== undefined && bootstrapPassword !== undefined
         ? { email: bootstrapEmail.toLowerCase(), password: bootstrapPassword }
@@ -253,6 +277,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),
     appsOnConsoleAddress: appsOnConsole === "true",
+    mailCaptureDir,
     mail:
       smtpUrl !== undefined && mailFrom !== undefined
         ? { url: smtpUrl, from: mailFrom }

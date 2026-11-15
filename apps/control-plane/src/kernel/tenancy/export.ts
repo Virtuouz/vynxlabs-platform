@@ -3,7 +3,7 @@ import { type Kysely, type PlatformSchema, sql, type Transaction } from "@vynxla
 import { workspaceSchema } from "../data/apply.js";
 import { notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
-import { tenantKey } from "../secrets.js";
+import { tenantKey } from "../tenant-keys.js";
 import { OWNED_TABLES, type OwnedTable } from "./tables.js";
 import { TAR_END, tarEntry } from "./tar.js";
 

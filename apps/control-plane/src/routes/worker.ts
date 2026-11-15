@@ -22,6 +22,7 @@ import { openSource, sourceFailure, sourceTable } from "../kernel/data/sources.j
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
+import { accessToken, isOAuthSettings } from "../kernel/execution/oauth.js";
 import {
   activeRun,
   claimRun,
@@ -122,8 +123,22 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connection")
         .where("path", "=", path)
         .executeTakeFirst();
+      const declared = (definition?.body as { connector?: string } | undefined)?.connector;
+      const oauth = bound.oauth !== null || isOAuthSettings(bound.config);
+      const connector = declared ?? (oauth ? "oauth2" : "http");
+      if (connector === "oauth2" || oauth) {
+        // The worker is handed the access token, refreshed when it is about to run out.
+        // The client's secret and the refresh token stay here.
+        const token = await accessToken(kernel, { tenantId, workspaceId, path });
+        return {
+          connector,
+          config: bound.config as Record<string, unknown>,
+          credential: token.accessToken,
+          ...(token.expiresAt ? { expiresAt: token.expiresAt } : {}),
+        };
+      }
       return {
-        connector: (definition?.body as { connector?: string } | undefined)?.connector ?? "http",
+        connector,
         config: bound.config as Record<string, unknown>,
         ...(bound.credential !== undefined ? { credential: bound.credential } : {}),
       };
@@ -361,6 +376,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               connector: Type.String(),
               config: AnyObject,
               credential: Type.Optional(Type.String()),
+              expiresAt: Type.Optional(Type.String({ format: "date-time" })),
             }),
           },
         },
@@ -578,6 +594,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               connector: Type.String(),
               config: AnyObject,
               credential: Type.Optional(Type.String()),
+              expiresAt: Type.Optional(Type.String({ format: "date-time" })),
             }),
           },
         },
@@ -663,6 +680,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               connector: Type.String(),
               config: AnyObject,
               credential: Type.Optional(Type.String()),
+              expiresAt: Type.Optional(Type.String({ format: "date-time" })),
             }),
           },
         },

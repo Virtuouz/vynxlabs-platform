@@ -19,6 +19,13 @@ export interface RunEvent {
   p?: string;
 }
 
+/** As Postgres announces it: with the tenant, and who started the run, which are never passed on. */
+interface Announced extends RunEvent {
+  t: string;
+  /** `<principal type>:<id>` of whoever started the run or flow run. */
+  by?: string;
+}
+
 /** What one subscriber may see, decided when it connected. */
 export interface Subscriber {
   tenantId: string;
@@ -26,11 +33,19 @@ export interface Subscriber {
   may: Map<string, { scripts: boolean; flows: boolean }>;
   /** Who it is, for the limit on open streams. */
   principal: string;
+  /**
+   * Set for someone who may read only the runs they started, such as an end user
+   * of an app: `<principal type>:<id>`. They are sent the events of those runs and
+   * flow runs only, wherever they are, and `may` is not looked at.
+   */
+  own?: string;
   send(event: string, data: unknown): void;
 }
 
 /** Streams one principal may hold open at once, on one replica. */
 export const MAX_STREAMS = 5;
+/** The same for someone following only their own runs: an app needs one, and a second tab. */
+export const MAX_OWN_STREAMS = 2;
 /** Log pings for one run are sent at most this often. */
 const LOG_PING_MS = 500;
 
@@ -81,7 +96,7 @@ export class StreamHub {
    */
   async subscribe(subscriber: Subscriber): Promise<(() => void) | false> {
     const open = this.#open.get(subscriber.principal) ?? 0;
-    if (open >= MAX_STREAMS) return false;
+    if (open >= (subscriber.own ? MAX_OWN_STREAMS : MAX_STREAMS)) return false;
     await this.#listen();
     this.#open.set(subscriber.principal, open + 1);
     let set = this.#subscribers.get(subscriber.tenantId);
@@ -103,7 +118,7 @@ export class StreamHub {
   }
 
   #receive(payload: string) {
-    let event: RunEvent & { t: string };
+    let event: Announced;
     try {
       event = JSON.parse(payload);
     } catch {
@@ -111,12 +126,12 @@ export class StreamHub {
     }
     const set = this.#subscribers.get(event.t);
     if (!set || set.size === 0) return;
-    const { t: _tenant, ...shown } = event;
+    const { t: _tenant, by, ...shown } = event;
     if (event.k === "log") {
-      this.#ping(event.id, () => this.#deliver(set, shown));
+      this.#ping(event.id, () => this.#deliver(set, shown, by));
       return;
     }
-    this.#deliver(set, shown);
+    this.#deliver(set, shown, by);
   }
 
   /** Sends a run's log ping now, or once its last one is old enough, but never twice in a row. */
@@ -145,10 +160,16 @@ export class StreamHub {
     }
   }
 
-  #deliver(set: Set<Subscriber>, event: RunEvent) {
+  #deliver(set: Set<Subscriber>, event: RunEvent, by: string | undefined) {
     // A script run that is a step of a flow is the flow's to show.
     const flows = event.k === "flow_run" || event.k === "step" || Boolean(event.flow);
     for (const subscriber of set) {
+      if (subscriber.own !== undefined) {
+        // Their own run, its log, their own flow run and its steps. Never the work of others,
+        // nor a script run a flow of theirs started, which the flow's steps stand for.
+        if (by === subscriber.own && event.k !== "task") subscriber.send(event.k, event);
+        continue;
+      }
       const may = subscriber.may.get(event.w);
       if (!may || !(flows ? may.flows : may.scripts)) continue;
       subscriber.send(event.k, event);

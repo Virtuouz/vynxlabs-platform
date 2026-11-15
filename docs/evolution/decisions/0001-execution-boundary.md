@@ -126,6 +126,7 @@ Verified in the code, 2026-11-14.
 | Git sync (`kernel/git.ts:144`) | Fetches and pushes to a tenant-supplied remote | Rule 2 | Named exception: it is the platform's own work on the tenant's repository. Egress guard; HTTPS only |
 | SSO metadata (`kernel/sso/metadata.ts:57`) | Fetches a tenant-supplied OIDC or SAML metadata URL | Rule 2 | Named exception: sign-in is the control plane's job. Egress guard |
 | Domain check (`routes/apps.ts:786`) | Asks a tenant's registered hostname for a fixed address on this instance | Rule 2, tightly bounded | Named exception; already one fixed path, answer compared and never shown. Egress guard |
+| OAuth connection token endpoints (`kernel/execution/oauth.ts`), added 2026-11-15 | Exchanges an authorization code, and refreshes tokens, at the token address an OAuth connection's settings give | Rule 2 | Named exception, by amendment below. Egress guard |
 | Tenant code apps on the console's address (no `APPS_URL`) | An app's code runs in the browser with the viewer's console session | **The same old assumption, in the browser** | Make a separate app address the default for new instances; keep the shared address only by explicit choice, with the warning `SECURITY.md` already gives |
 | Managed workers' network | `vxrun` processes share the control plane's network | **Rule 1's context is too close to the control plane** | See below |
 
@@ -202,3 +203,13 @@ Then milestone 6 as planned (SchemaForm, triggers, app actions), with S6's deriv
 | Data sources | Stay on the control plane for now, behind the egress guard, as a named exception. Serving them through the tenant's worker is a later item |
 | Managed workers' network | Option 2: a worker host container beside the control plane, on a network of its own. Option 3 is the fallback where no worker host is deployed: in-process managed workers only for tenants whose code only the operator writes. Option 1 is added in the worker host image as defense in depth where its runtime allows |
 | Apps' address | A separate app address is the default. Code apps are served on the console's address only when the operator says so explicitly |
+
+## Amendment: OAuth connection token endpoints (2026-11-15)
+
+Phase 10 adds OAuth 2.0 connections (roadmap P2-9). The owner decided the control plane exchanges their codes and refreshes their tokens, and the token endpoints join the named list. The reasons:
+- **The refresh token must not reach a worker.** It outlives every run and can mint access for as long as the provider allows. Kept on the control plane, sealed with the tenant's key, a worker is handed only the access token, which lasts minutes or hours.
+- **A refresh must happen once.** Providers that rotate refresh tokens invalidate the old one on use, so two workers refreshing at once would leave the connection broken. The control plane refreshes under a lock per connection.
+- **The destination is narrow.** It is the one token address the connection's settings name, called with a fixed form body, and its answer is read only for tokens and an error code. It goes through the egress guard like every other named exception.
+
+The authorization itself happens in the member's browser, and calling the API with the token is still a worker's work.
+

@@ -27,6 +27,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     publicUrl: "http://localhost:8080",
     authSecret: randomBytes(32).toString("hex"),
     masterKey: randomBytes(32),
+    masterKeySecondary: undefined,
     bootstrapAdmin: ADMIN,
     managedWorkers: false,
     workerHostToken: undefined,
@@ -41,6 +42,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     // Most suites serve apps at the one address they have. The default is tested on its own.
     appsOnConsoleAddress: true,
     mail: undefined,
+    mailCaptureDir: undefined,
     ...overrides,
   };
 }

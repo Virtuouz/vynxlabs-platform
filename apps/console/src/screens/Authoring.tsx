@@ -21,6 +21,7 @@ import { InputForm } from "../InputDialog.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
+import { OfferButton } from "./OfferToAgent.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 
 const STARTER = `import { type ScriptContext, z } from "@vynxlabs/sdk";
@@ -628,38 +629,48 @@ export function ScriptEditor({
           <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
           {dirty ? <Badge>Unsaved changes</Badge> : null}
         </div>
-        {readOnly ? null : (
-          <div className="flex items-center gap-2">
-            {state === "draft" && opened ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
+          {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
+            <OfferButton root={root} kind="script" path={opened} />
+          ) : null}
+          {readOnly ? null : (
+            <div className="flex items-center gap-2">
+              {state === "draft" && opened ? (
+                <Button
+                  variant="danger"
+                  disabled={busy}
+                  onClick={async () => {
+                    const sure = await ask.confirm({
+                      title: "Discard this draft?",
+                      text: `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`,
+                      action: "Discard",
+                      danger: true,
+                    });
+                    if (!sure) return;
+                    await api
+                      .delete(`${root}/drafts/${opened}`)
+                      .then(() => navigate(`${link}/${about.list}`), notify.error);
+                  }}
+                >
+                  Discard draft
+                </Button>
+              ) : null}
               <Button
-                variant="danger"
-                disabled={busy}
-                onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: "Discard this draft?",
-                    text: `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`,
-                    action: "Discard",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await api
-                    .delete(`${root}/drafts/${opened}`)
-                    .then(() => navigate(`${link}/${about.list}`), notify.error);
-                }}
+                variant="primary"
+                disabled={busy || (!dirty && state !== "new")}
+                onClick={save}
               >
-                Discard draft
+                Save draft
               </Button>
-            ) : null}
-            <Button variant="primary" disabled={busy || (!dirty && state !== "new")} onClick={save}>
-              Save draft
-            </Button>
-            {state === "draft" && !dirty ? (
-              <Link to={`${link}/changes`} className="text-action">
-                Review and deploy
-              </Link>
-            ) : null}
-          </div>
-        )}
+              {state === "draft" && !dirty ? (
+                <Link to={`${link}/changes`} className="text-action">
+                  Review and deploy
+                </Link>
+              ) : null}
+            </div>
+          )}
+        </div>
       </header>
       {core ? (
         <Notice tone="plain">

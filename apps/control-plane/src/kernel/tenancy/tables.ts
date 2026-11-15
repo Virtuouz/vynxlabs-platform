@@ -140,6 +140,31 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["id"],
     export: "always",
   },
+  // A link in a mail this instance sent: nowhere else would it lead.
+  {
+    table: "approval_link",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
+  // A request names this instance's bundles and members: it means nothing elsewhere.
+  {
+    table: "promotion_request",
+    ofTenant: own,
+    ofWorkspace: (id: string) =>
+      sql`(t.source_workspace_id = ${id} or t.target_workspace_id = ${id})`,
+    key: ["id"],
+    export: "never",
+  },
+  // An authorization in progress lasts minutes, and answers to this instance's address.
+  {
+    table: "connection_oauth_state",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
   {
     table: "connection_group_member",
     ofTenant: own,
@@ -352,6 +377,8 @@ export const INSTANCE_TABLES = [
   "database_location",
   // How the console looks on this instance. A tenant's branding is its portal's.
   "instance_branding",
+  // Secrets of the instance itself, such as the seed of the data role's password.
+  "instance_secret",
   // Rate-limit counters, keyed by route and caller, shared by every replica.
   "rate_limit",
   // In the platform database these hold every shared tenant's catalog. They are

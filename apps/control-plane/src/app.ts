@@ -14,13 +14,16 @@ import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { postgresRateLimitStore } from "./kernel/ratelimit.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
+import { accessRoutes } from "./routes/access.js";
 import { alertRoutes } from "./routes/alerts.js";
+import { approvalLinkRoutes } from "./routes/approval-links.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
 import { authoringRoutes } from "./routes/authoring.js";
 import { brandingRoutes } from "./routes/branding.js";
 import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
+import { driftRoutes } from "./routes/drift.js";
 import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionRoutes } from "./routes/execution.js";
@@ -31,11 +34,13 @@ import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { interfaceRoutes } from "./routes/interfaces.js";
 import { locationRoutes } from "./routes/locations.js";
+import { masterKeyRoutes } from "./routes/master-key.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { operationsRoutes } from "./routes/operations.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
+import { promotionRequestRoutes } from "./routes/promotion-requests.js";
 import { scimRoutes } from "./routes/scim.js";
 import { searchRoutes } from "./routes/search.js";
 import { sourceRoutes } from "./routes/sources.js";
@@ -187,6 +192,11 @@ export async function buildApp(options: AppOptions) {
       await api.register(operationsRoutes(kernel));
       await api.register(streamRoutes(kernel));
       await api.register(poolRoutes(kernel));
+      await api.register(masterKeyRoutes(kernel));
+      await api.register(promotionRequestRoutes(kernel));
+      await api.register(driftRoutes(kernel));
+      await api.register(accessRoutes(kernel));
+      await api.register(approvalLinkRoutes(kernel));
       api.get(
         "/openapi.json",
         {

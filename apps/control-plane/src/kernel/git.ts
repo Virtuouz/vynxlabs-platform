@@ -1090,7 +1090,7 @@ export async function compareWithBranch(
 }
 
 /** The files the workspace's console-managed resources make with its drafts laid over them. */
-async function draftFiles(
+export async function draftFiles(
   kernel: Kernel,
   db: Db,
   workspace: WorkspaceRef,

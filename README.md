@@ -61,6 +61,18 @@ To move a change between environments, link a dev workspace to the one it promot
 
 `platform init <directory>` writes a starter repository, and `platform run <script>` runs one script on your machine.
 
+### Working from a terminal
+
+```sh
+platform pull --tenant <slug> --workspace <dev slug>       # what was made in the console, drafts included, into platform/
+platform run orders/handle --remote --tenant <slug> --workspace <dev slug> --input '{"id":"A-1"}'
+platform logs <run id> -f --tenant <slug> --workspace <slug>
+```
+
+- **`pull`** writes every resource made in the console as files under `platform/`, with its drafts, and remembers what it wrote. A file you changed since is kept, and pull exits 1 until you keep your change or pass `--force`. `platform/` holds the workspace's whole console set: a deploy of the repository replaces the set with it, and clears the drafts the pull took. So pull, edit, deploy, and nothing is left on the console's Changes screen.
+- **`run --remote`** builds the repository, uploads the build as a preview that is never deployed, and runs the script or flow from it in a dev workspace, with the logs as they are written. It exits 0 when the run succeeded and 1 when it failed.
+- **`logs -f`** follows a run, or a flow run step by step with each step's logs, until it ends. Ctrl+C stops following and leaves the run going.
+
 The control plane starts a worker for a tenant when it has work. To run one yourself, for example inside a client's network, create a credential under the tenant's Workers page and start `node packages/worker/dist/bin.js --url <instance> --token <credential>`.
 
 ## Checks

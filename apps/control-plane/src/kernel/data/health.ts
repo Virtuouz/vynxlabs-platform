@@ -1,5 +1,5 @@
 import { sql } from "@vynxlabs/db";
-import type { Db } from "../audit.js";
+import type { Db, Trx } from "../audit.js";
 import type { Kernel } from "../kernel.js";
 import { openSource, sourceFailure } from "./sources.js";
 
@@ -43,29 +43,67 @@ export async function checkSource(
     problem = (said.detail ?? said.message ?? "It could not be reached.").slice(0, 500);
   }
   const latency = problem ? null : Date.now() - started;
+  return recordHealth(kernel.db as Db, {
+    tenantId,
+    workspaceId,
+    kind: "data_source",
+    path,
+    problem,
+    latencyMs: latency,
+  });
+}
+
+/**
+ * Keeps what the last check of a data source or connection found, in place of
+ * what the one before found.
+ */
+export async function recordHealth(
+  db: Db,
+  check: {
+    tenantId: string;
+    workspaceId: string;
+    kind: "data_source" | "connection";
+    path: string;
+    /** Null when it was reached. */
+    problem: string | null;
+    latencyMs: number | null;
+  },
+): Promise<HealthResult> {
   const checkedAt = new Date();
-  await kernel.db
+  const problem = check.problem?.slice(0, 500) ?? null;
+  const values = {
+    ok: problem === null,
+    problem,
+    latency_ms: problem === null ? check.latencyMs : null,
+    checked_at: checkedAt,
+  };
+  await db
     .insertInto("health_check")
     .values({
-      workspace_id: workspaceId,
-      tenant_id: tenantId,
-      kind: "data_source",
-      path,
-      ok: problem === null,
-      problem,
-      latency_ms: latency,
-      checked_at: checkedAt,
+      workspace_id: check.workspaceId,
+      tenant_id: check.tenantId,
+      kind: check.kind,
+      path: check.path,
+      ...values,
     })
-    .onConflict((c) =>
-      c.columns(["workspace_id", "kind", "path"]).doUpdateSet({
-        ok: problem === null,
-        problem,
-        latency_ms: latency,
-        checked_at: checkedAt,
-      }),
-    )
+    .onConflict((c) => c.columns(["workspace_id", "kind", "path"]).doUpdateSet(values))
     .execute();
-  return { ok: problem === null, problem, latencyMs: latency, checkedAt: checkedAt.toISOString() };
+  return {
+    ok: values.ok,
+    problem,
+    latencyMs: values.latency_ms,
+    checkedAt: checkedAt.toISOString(),
+  };
+}
+
+/** Forgets what was found about a connection, which no longer says anything about it. */
+export async function forgetHealth(db: Db | Trx, workspaceId: string, path: string): Promise<void> {
+  await db
+    .deleteFrom("health_check")
+    .where("workspace_id", "=", workspaceId)
+    .where("kind", "=", "connection")
+    .where("path", "=", path)
+    .execute();
 }
 
 /**

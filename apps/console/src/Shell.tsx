@@ -86,6 +86,8 @@ export interface TenantCounts {
   workersOnline: number | null;
   operatorAccessActive: number | null;
   members: number | null;
+  /** Promotion requests waiting on the one looking. */
+  promotionRequests?: number | null;
 }
 
 interface Count {

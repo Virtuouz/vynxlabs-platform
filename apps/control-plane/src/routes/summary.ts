@@ -45,6 +45,7 @@ const TenantSummary = Type.Object({
   workersOnline: Count,
   operatorAccessActive: Count,
   members: Count,
+  promotionRequests: Count,
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -243,6 +244,35 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           may("member:read"),
         ]);
         const now = new Date();
+        /** Requests waiting on the caller: those to workspaces they may promote to. */
+        const waitingRequests = async () => {
+          const pending = await db
+            .selectFrom("promotion_request")
+            .select("target_workspace_id")
+            .where("tenant_id", "=", params.t)
+            .where("status", "=", "pending")
+            .execute();
+          let decides = false;
+          let waiting = 0;
+          const targets = new Set(pending.map((row) => row.target_workspace_id));
+          const allowed = new Map<string, boolean>();
+          for (const target of targets) {
+            allowed.set(
+              target,
+              await ctx.allowed("promotion:write", { tenantId: params.t, workspaceId: target }),
+            );
+          }
+          for (const row of pending) {
+            if (allowed.get(row.target_workspace_id)) {
+              decides = true;
+              waiting += 1;
+            }
+          }
+          // Null when the caller decides none: neither a number to watch nor a zero to trust.
+          if (!decides && !(await ctx.allowed("promotion:write", { tenantId: params.t })))
+            return null;
+          return waiting;
+        };
         const total = (table: "workspace" | "tenant_member") =>
           count(
             db
@@ -305,6 +335,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               )
             : null,
           members: members ? await total("tenant_member") : null,
+          promotionRequests: await waitingRequests(),
         };
       },
     );

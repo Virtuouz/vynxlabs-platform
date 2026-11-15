@@ -143,11 +143,29 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const path of body.uses?.sources ?? []) expect(manifest, "sources", path, "data_source");
       expect(manifest, "onFailure.script", body.onFailure?.script, "script");
       expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+      const keyed = (body as { concurrency?: unknown }).concurrency;
+      if (typeof keyed === "object" && keyed !== null && "key" in keyed) {
+        const missing = keyMissing(
+          (body as { input?: unknown }).input,
+          String((keyed as { key: string }).key),
+        );
+        if (missing) {
+          problems.push(
+            `${manifest.path} (script): /body/concurrency/key reads ${missing}, which the script's input does not have.`,
+          );
+        }
+      }
     }
     if (manifest.kind === "connection" || manifest.kind === "connection_group") {
       const connector = (manifest.body as { connector?: string }).connector;
       if (connector !== undefined && !BUILTIN_CONNECTORS.includes(connector)) {
         expect(manifest, "connector", connector, "connector");
+      }
+      // Each member of a group would need someone to authorize it in a browser.
+      if (manifest.kind === "connection_group" && connector === "oauth2") {
+        problems.push(
+          `${manifest.path} (connection_group): /body/connector is oauth2, which a group cannot use yet. Declare a connection for each account.`,
+        );
       }
     }
     if (manifest.kind === "connector") {
@@ -364,4 +382,28 @@ export function bundleExpressions(
     }
   }
   return found;
+}
+
+/**
+ * The first field of a concurrency key that an input schema does not list,
+ * where it lists its fields: almost always a misspelling, found at deploy
+ * rather than as every run sharing the empty lane. A schema that lists none,
+ * or says outright that it takes more (`additionalProperties`), is taken at
+ * its word.
+ */
+export function keyMissing(schema: unknown, key: string): string | undefined {
+  let at = schema as Record<string, unknown> | undefined;
+  let walked = "input";
+  for (const field of key.split(".").slice(1)) {
+    walked += `.${field}`;
+    if (!at || typeof at !== "object") return undefined;
+    const properties = at.properties as Record<string, unknown> | undefined;
+    if (!properties || typeof properties !== "object") return undefined;
+    if (!(field in properties)) {
+      const more = at.additionalProperties;
+      return more === undefined || more === false ? walked : undefined;
+    }
+    at = properties[field] as Record<string, unknown> | undefined;
+  }
+  return undefined;
 }

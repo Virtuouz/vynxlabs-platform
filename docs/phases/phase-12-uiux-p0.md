@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–3 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–4 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -121,4 +121,29 @@ The navigation is outside the page's boundary, so a broken page can always be le
 - An optional action, which Milestone 7's Undo uses, doubles the time a toast stays.
 
 **A run's state change is announced, but not its first showing.** This applies on the run page, the runs inspector and a flow's run view. Opening a run doesn't repeat what is already on the screen.
+
+### Milestone 4
+
+**The 500-line cut was confirmed in a browser** by the new `e2e/run-logs.spec.ts` against the old console. A finished 1,200-line run opened from the runs list said "500 lines". The run page itself showed all 1,200, which suggests the stream hadn't connected yet when it first read, so it polled, and polling does read every page. Once the stream is connected, a finished run gets no more events, so it never asked again.
+
+**A run's log is now read to the end, a page of 1,000 at a time,** inside the one-read-at-a-time loop. A run with 12,000 lines takes 12 requests.
+
+**The page keeps the newest 5,000 lines.** The log viewer draws every line, and isn't virtualised until P1-6. What went wrong is usually near the end, so the oldest lines are left out first.
+- A note above the log says how many lines are not shown.
+- "Download the whole log", and the viewer's own Download button, read every page again and save them all, in the same format the viewer's download already used (`logText` in the kit).
+
+**A failed read no longer replaces a run's page:**
+- `error` is now only for a run that could not be shown at all.
+- Once shown, a failed read keeps the run and says "Reconnecting…".
+- Reads are tried again after 1.5, 3, 6, 12, then 30 s, whether or not the stream is up, since no event may come.
+- A run never shown is tried again only for errors that may pass: 5xx, 408 and 429.
+
+This applies to the run page, the runs inspector, a flow's run view and a flow step's log.
+
+**`?run=` finds the run's kind by its ID** through the activity route, the same one the list uses, when the run isn't on the list's first page.
+- While it looks, the inspector says "Loading…" instead of guessing a script run.
+- When nothing matches, it says so.
+- The old code also headed the panel "Run" instead of its path.
+
+**A test that clicked a download link sent happy-dom's window to `about:blank`,** and every later test in the file lost its address. Tests that download now stub the anchor's `click`.
 

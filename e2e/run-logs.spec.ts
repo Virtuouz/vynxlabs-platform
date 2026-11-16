@@ -1,0 +1,95 @@
+import { expect, type Page, test } from "@playwright/test";
+
+/**
+ * A run's log, in a browser (phase 12, milestone 4): a run that logs more than
+ * one page of lines shows all of them on its page, read while the event stream
+ * is connected, and a run link opens from the runs list after a reload.
+ */
+
+const ADMIN = {
+  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
+  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
+};
+const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
+const stamp = Date.now().toString(36);
+
+// biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
+const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
+  page.evaluate(
+    async ([method, path, body]) => {
+      const response = await fetch(`/api/v1${path}`, {
+        method: method as string,
+        headers: body ? { "content-type": "application/json" } : {},
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const text = await response.text();
+      if (response.status >= 300) throw new Error(`${method} ${path}: ${response.status} ${text}`);
+      return text ? JSON.parse(text) : null;
+    },
+    [method, path, body] as const,
+  );
+
+const CHATTY = `import type { ScriptContext } from "@vynxlabs/sdk";
+
+export default async function (_given: unknown, ctx: ScriptContext) {
+  for (let line = 1; line <= 1200; line += 1) ctx.log.info(\`line \${line}\`);
+  return { lines: 1200 };
+}
+`;
+
+test("a run that logs 1,200 lines shows them all, and opens from a link to the list", async ({
+  browser,
+}) => {
+  const page = await (await browser.newContext()).newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(String(error).slice(0, 300)));
+  await page.goto("/");
+  await page.getByLabel("Email").fill(ADMIN.email);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Password").fill(ADMIN.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByText("All tenants").first().waitFor();
+
+  const tenant = await call(page, "POST", "/tenants", { slug: `rl-${stamp}`, name: "Run logs" });
+  await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
+    reason: "The run logs e2e test",
+    roleId: TENANT_ADMIN,
+  });
+  const dev = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+    slug: "dev",
+    name: "Dev",
+    type: "dev",
+  });
+  const W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
+  await call(page, "PUT", `${W}/drafts/logs/chatty`, {
+    kind: "script",
+    schemaVersion: 1,
+    body: {
+      description: "Logs a great deal",
+      input: { type: "object" },
+      output: { type: "object" },
+      timeoutSeconds: 60,
+      retries: { limit: 0, delaySeconds: 0, backoff: false },
+      uses: { connections: [], secrets: [], variables: [] },
+      source: { language: "typescript", code: CHATTY },
+    },
+  });
+
+  // Opened once the run has finished, with the event stream connected: the page asks once, and must read every page of the log.
+  const started = await call(page, "POST", `${W}/test-runs`, { script: "logs/chatty", input: {} });
+  const link = `/t/${tenant.id}/workspaces/${dev.id}`;
+  await page.goto(`${link}/runs/${started.runId}`);
+  await expect(page.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
+  const log = page.getByRole("region", { name: "Log" });
+  await expect(log.getByText("1200 lines")).toBeVisible({ timeout: 15_000 });
+  await expect(log.getByText("line 1200", { exact: true })).toBeAttached();
+  await expect(log.getByText("line 1", { exact: true })).toBeAttached();
+
+  // A link to the run in the list opens it after a reload.
+  await page.goto(`${link}/runs?run=${started.runId}`);
+  await page.reload();
+  const inspector = page.getByRole("complementary", { name: "The chosen run" });
+  await expect(inspector.getByText("1200 lines")).toBeVisible({ timeout: 15_000 });
+
+  expect(errors).toEqual([]);
+});

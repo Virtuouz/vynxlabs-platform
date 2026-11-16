@@ -32,7 +32,13 @@ export {
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
 export { JsonView, type JsonViewProps } from "./JsonView.tsx";
-export { type LogLine, LogViewer, type LogViewerProps } from "./LogViewer.tsx";
+export {
+  type LogLine,
+  LogViewer,
+  type LogViewerProps,
+  logText,
+  saveText,
+} from "./LogViewer.tsx";
 export { Markdown } from "./Markdown.tsx";
 export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";

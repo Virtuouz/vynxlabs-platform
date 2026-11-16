@@ -877,6 +877,7 @@ function StepLogs({ root, runId }: { root: string; runId: string }) {
       <LogWindowNote earlier={earlier} onDownload={wholeLog} />
       <LogViewer
         lines={lines}
+        firstLine={earlier + 1}
         live={active}
         onDownload={wholeLog}
         fileName={logFile}

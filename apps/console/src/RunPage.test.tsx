@@ -2,6 +2,7 @@
 import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { useNamedObject } from "./kit/title.ts";
+import { LOG_WINDOW } from "./screens/Execution.tsx";
 import { RunPage } from "./screens/RunPage.tsx";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { answer, show } from "./testing.tsx";
@@ -347,8 +348,10 @@ test("a finished run's page shows every line of its log, read a page at a time",
   expect(afters).toEqual(["0", "1000", "2000"]);
 });
 
-test("a long log keeps its newest lines on the page, and the whole of it can be downloaded", async () => {
-  routes[`GET ${root}/runs/r1/logs`] = logOf(7000);
+test("a long log keeps its newest lines on the page, and the whole of it can be downloaded", {
+  timeout: 60_000,
+}, async () => {
+  routes[`GET ${root}/runs/r1/logs`] = logOf(LOG_WINDOW + 2000);
   const saved: Blob[] = [];
   // The download is a Blob handed to the browser; it is caught here instead, and put back after.
   const { createObjectURL, revokeObjectURL } = URL;
@@ -365,15 +368,16 @@ test("a long log keeps its newest lines on the page, and the whole of it can be 
     click.mockRestore();
   });
   show(<RunPage root={root} link={link} id="r1" />);
-  expect(await screen.findByText("5000 lines")).toBeTruthy();
+  expect(await screen.findByText(`${LOG_WINDOW} lines`, {}, { timeout: 20_000 })).toBeTruthy();
   expect(screen.getByText("The first 2,000 lines are not shown here.")).toBeTruthy();
-  expect(screen.getByText("line 7000")).toBeTruthy();
+  // Lines are numbered from the start of the whole log, not of what the page holds.
+  expect(screen.getByRole("button", { name: "Link to line 2001" })).toBeTruthy();
   expect(screen.queryByText("line 2000")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Download the whole log" }));
   await waitFor(() => expect(saved).toHaveLength(1));
   const text = await (saved[0] as Blob).text();
-  expect(text.trimEnd().split("\n")).toHaveLength(7000);
+  expect(text.trimEnd().split("\n")).toHaveLength(LOG_WINDOW + 2000);
   expect(text.startsWith("2026-11-14T10:00:01.000Z info  line 1\n")).toBe(true);
 });
 

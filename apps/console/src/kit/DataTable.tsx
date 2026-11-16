@@ -1,4 +1,4 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
 import { Button, Menu, type MenuItem, Notice, Skeleton } from "@vynxlabs/ui";
 import { MoreHorizontal } from "lucide-react";
 import {
@@ -187,6 +187,12 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     getScrollElement: () => region.current,
     estimateSize: () => HEIGHT[density] + (detail ? 20 : 0),
     overscan: 12,
+    // Draws a first screenful before the list has been measured, or where it measures nothing.
+    initialRect: { width: 800, height: 600 },
+    observeElementRect: (instance, report) =>
+      observeElementRect(instance, (rect) =>
+        report(rect.height > 0 ? rect : { width: rect.width || 800, height: 600 }),
+      ),
   });
 
   // Roving focus: one cell of the grid is in the tab order; arrows move it.

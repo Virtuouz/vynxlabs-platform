@@ -161,6 +161,7 @@ test("a long list draws only the rows near the view", () => {
     </div>,
   );
   const drawn = screen.getByRole("grid").querySelectorAll("tr[data-row]").length;
+  expect(drawn).toBeGreaterThan(0);
   expect(drawn).toBeLessThan(200);
   expect(screen.getByRole("grid").getAttribute("aria-rowcount")).toBe("5001");
 });

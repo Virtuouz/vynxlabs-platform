@@ -92,3 +92,17 @@ Findings are recorded under each milestone as it lands.
 - **The shell header** carries `LiveIndicator`.
 - **Lists that aren't live** say "Updated 14:02", from the read's `dataUpdatedAt`, which `useLoad` now exposes as `updatedAt`.
 - **Running runs** show elapsed time that counts each second (`kit/Elapsed.tsx`). Run pages and the inspector say "waited X · ran Y", with the wait counted from `scheduledFor` when a run was delayed.
+
+### Milestone 6: LogViewer v2
+
+- **Finding.** Search now finds and steps through matches: Enter and Shift+Enter, a count, and the matches highlighted. "Only matching" turns it back into a filter. ⌘F inside the viewer focuses its search, because long logs draw only the lines in view, where the browser's own find can't reach.
+- **Line numbers** count from the start of the whole log (`firstLine`), so a page that holds only the newest lines still numbers them truly. A number copies a `#L42` link, and opening that address scrolls to the line and marks it.
+- **Reading.**
+  - Copy works on a line, the selection, or every line shown.
+  - Fields fold to one line and open in place.
+  - A mark separates the attempts (the API always sent `attempt`; `LogLine` now has it).
+  - Follow pauses when the reader scrolls up, and offers "Jump to latest".
+  - Level chips with counts replace the minimum-level select.
+- **Long logs.** Rows are virtualised past 500 lines (`@tanstack/react-virtual`, now a kit dependency). The console's window rose from 5,000 lines to 50,000.
+- **Compatibility.** The viewer's default height grew from 28rem to `min(70vh, 48rem)`, and `fill` makes it fill a flex parent. Every existing prop still works, which matters to tenant apps.
+- **Zero sizes.** A list that measures zero height draws a screenful with estimated row heights instead of nothing. Without this the measure loops, and it is what keeps the virtual lists testable in happy-dom. DataTable got the same guard.

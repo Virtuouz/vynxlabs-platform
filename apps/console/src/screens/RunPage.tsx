@@ -412,6 +412,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             <LogWindowNote earlier={earlier} onDownload={wholeLog} />
             <LogViewer
               lines={lines}
+              firstLine={earlier + 1}
               live={active}
               fileName={logFile}
               onDownload={wholeLog}

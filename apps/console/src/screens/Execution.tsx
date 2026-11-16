@@ -356,10 +356,11 @@ export type LiveRun = Run & {
 /** Log lines read at once: the most the route gives. */
 const LOG_PAGE = 1000;
 /**
- * The most log lines a page holds. The viewer draws every line it is given, and
- * what went wrong is usually near the end, so the oldest are left out first.
+ * The most log lines a page holds. The viewer draws only the lines in view, but
+ * each line held costs memory, and what went wrong is usually near the end, so
+ * past this the oldest are left out first. "Download the whole log" has them all.
  */
-export const LOG_WINDOW = 5000;
+export const LOG_WINDOW = 50_000;
 
 /**
  * A run and its log lines, asked for again whenever the run changes or logs: on

@@ -182,7 +182,7 @@ test("tenants are found by name, and one opens in the inspector", async () => {
       }}
     />,
   );
-  const table = await screen.findByRole("table", { name: "Tenants" });
+  const table = await screen.findByRole("grid", { name: "Tenants" });
   expect(within(table).getByText("Member")).toBeTruthy();
   expect(within(table).getByText("Through a grant")).toBeTruthy();
   fireEvent.input(screen.getByLabelText("Search tenants"), { target: { value: "glob" } });

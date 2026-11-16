@@ -11,6 +11,7 @@
   "dependencies": {
     "@dagrejs/dagre": "^3.1.3",
     "@tanstack/react-query": "^5",
+    "@tanstack/react-virtual": "3.13.12",
     "@vynxlabs/screens": "workspace:*",
     "@vynxlabs/ui": "workspace:*",
     "@xyflow/react": "^12.12.1",

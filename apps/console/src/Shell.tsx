@@ -22,6 +22,7 @@ import {
   ShortcutSheet,
   useCommandKey,
 } from "./kit/CommandPalette.tsx";
+import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { EnvTag, Tag } from "./kit/status.tsx";
 import {
@@ -65,7 +66,8 @@ interface WorkspaceSummary {
 /** What `GET …/summary` answers for a workspace. A count the person may not read is null. */
 export interface WorkspaceCounts {
   drafts: number | null;
-  failedRuns: { count: number | null; since: string };
+  // Optional: an older server may not send it, and a missing count must not take the shell down.
+  failedRuns?: { count: number | null; since: string };
   unboundConnections: number | null;
   approvalsWaiting: number | null;
   git: { state: string } | null;
@@ -129,7 +131,7 @@ function panelFor(
     const area = where.area as keyof typeof WORKSPACE_SECTIONS;
     const ws = counts.workspace;
     const countOf: Record<string, Count | undefined> = {
-      runs: some(ws?.failedRuns.count, (n) => `${n} failed`, "danger"),
+      runs: some(ws?.failedRuns?.count, (n) => `${n} failed`, "danger"),
       release: some(ws?.drafts, (n) => `${n} draft${n === 1 ? "" : "s"}`, "action"),
       git:
         ws?.git?.state === "conflict"
@@ -646,7 +648,7 @@ export function Shell({
   );
 
   const ws = wsCounts.data;
-  const failed = ws?.failedRuns.count ?? 0;
+  const failed = ws?.failedRuns?.count ?? 0;
   const drafts = ws?.drafts ?? 0;
 
   return (
@@ -903,12 +905,16 @@ export function Shell({
           className={`flex min-h-0 flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
         >
           {where.workbench ? (
-            children
+            <ErrorBoundary key={path} what="This page">
+              {children}
+            </ErrorBoundary>
           ) : (
             <div
               className={`w-full px-4 md:px-8 ${where.editor ? "py-4" : "mx-auto max-w-[1440px] py-6"}`}
             >
-              {children}
+              <ErrorBoundary key={path} what="This page">
+                {children}
+              </ErrorBoundary>
             </div>
           )}
         </main>
@@ -945,16 +951,20 @@ export function Shell({
         </div>
       </SideSheet>
 
-      <CommandPalette
-        open={palette}
-        onClose={() => setPalette(false)}
-        destinations={destinations}
-        tenantId={tenantId ?? undefined}
-        workspaceId={workspaceId ?? undefined}
-        workspaceType={workspace?.type}
-        workspaces={(workspaces.data?.items ?? []).map((one) => ({ id: one.id, name: one.name }))}
-      />
-      <ShortcutSheet />
+      <ErrorBoundary what="The command palette" compact>
+        <CommandPalette
+          open={palette}
+          onClose={() => setPalette(false)}
+          destinations={destinations}
+          tenantId={tenantId ?? undefined}
+          workspaceId={workspaceId ?? undefined}
+          workspaceType={workspace?.type}
+          workspaces={(workspaces.data?.items ?? []).map((one) => ({ id: one.id, name: one.name }))}
+        />
+      </ErrorBoundary>
+      <ErrorBoundary what="The shortcut list" compact>
+        <ShortcutSheet />
+      </ErrorBoundary>
     </div>
   );
 }

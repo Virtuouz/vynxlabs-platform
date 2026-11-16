@@ -208,7 +208,7 @@ export function Overview({
 
   const attention: { key: string; node: ReactNode }[] = [];
   if (counts) {
-    const failed = counts.failedRuns.count ?? 0;
+    const failed = counts.failedRuns?.count ?? 0;
     if (failed > 0)
       attention.push({
         key: "failed",

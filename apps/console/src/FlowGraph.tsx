@@ -233,7 +233,7 @@ export function FlowGraph({
           const at = positions[id] as { x: number; y: number };
           const state = statuses?.[id];
           const look = state
-            ? { stroke: STATE_STROKE[state], label: stateLabel(state) }
+            ? { stroke: STATE_STROKE[state] ?? "var(--vx-ink-muted)", label: stateLabel(state) }
             : undefined;
           const isSelected = selected === id;
           return (

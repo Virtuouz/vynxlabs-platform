@@ -1,6 +1,7 @@
 import { SideSheet } from "@vynxlabs/ui";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { InsetRule, Junction, type JunctionKind } from "./motifs.tsx";
 
 /** Whether the window is at least this wide, kept up to date as it is resized. */
@@ -105,7 +106,9 @@ export function Inspector({
   if (!wide) {
     return (
       <SideSheet open={open} onClose={onClose} title={title} description={eyebrow} footer={footer}>
-        {children}
+        <ErrorBoundary what="This panel" compact>
+          {children}
+        </ErrorBoundary>
       </SideSheet>
     );
   }
@@ -129,7 +132,11 @@ export function Inspector({
           <X aria-hidden="true" size={15} />
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <ErrorBoundary what="This panel" compact>
+          {children}
+        </ErrorBoundary>
+      </div>
       {footer ? (
         <div className="flex flex-wrap items-center gap-2 border-line border-t px-4 py-3">
           {footer}

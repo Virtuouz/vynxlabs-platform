@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestone 0 (this document). Nothing built yet.
+Status: milestones 0–1 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -58,3 +58,21 @@ The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-r
 ## Findings
 
 Recorded per milestone as each lands.
+
+### Milestone 1
+
+**Boundaries sit where a failure should stop:**
+- around the work surface, keyed on the path, so moving to another page starts clean;
+- around each inspector's body, in both its docked and sheet forms;
+- around the command palette and the shortcut list;
+- around the whole console, as a last resort, inside the providers.
+
+The navigation is outside the page's boundary, so a broken page can always be left.
+
+**There is no route for client errors yet.** A caught error goes to the browser console. Sending it to the server log, as the roadmap suggests, needs a route, and is left for P2-4 with the request ID.
+
+**`unknown` is a state of its own,** with a neutral icon and the word "Unknown". It is not "Note", which is what `stateOf` gave before. `StatePill` and `stateLabel` fall back to it for any value they don't know, so callers that pass the server's value straight through are covered without changes.
+
+**The same missing-count crash was in two more places** than the audit found, the tenant and workspace overviews. `failedRuns` is now optional in the type, so the compiler finds any new use.
+
+**`/api/v1null` came from TanStack Query.** `refetch()` runs even when a query is switched off. `useLoad`'s `reload` now does nothing without a path. The test reproduces the request without the fix.

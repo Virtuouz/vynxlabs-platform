@@ -88,6 +88,13 @@ test("a new script's first save and run keeps the editor, and shows the run it s
     pool: null,
   });
   routes[`GET ${base}/runs/r1/logs`] = () => ({ items: [], done: true });
+  routes[`GET ${base}/runs/r1/insight`] = () => ({
+    attempts: [],
+    worker: null,
+    timeoutSeconds: 60,
+    uses: [],
+    diagnosis: null,
+  });
   history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/new");
   show(<AtAddress />);
 

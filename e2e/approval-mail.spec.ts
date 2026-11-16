@@ -64,7 +64,10 @@ test("an approver approves from the mail on a phone, and the console says who an
   await admin.getByRole("button", { name: "Continue" }).click();
   await admin.getByLabel("Password").fill(ADMIN.password);
   await admin.getByRole("button", { name: "Sign in" }).click();
-  await admin.getByText("All tenants").first().waitFor();
+  // Signed in wherever the console opens: it reopens the last place, which an earlier spec may have left in a tenant.
+  await admin
+    .getByRole("heading", { name: "Sign in" })
+    .waitFor({ state: "detached", timeout: 15_000 });
 
   const tenant = await call(admin, "POST", "/tenants", { slug: `mail-${stamp}`, name: "Fernhill" });
   await call(admin, "POST", `/tenants/${tenant.id}/access-grants`, {

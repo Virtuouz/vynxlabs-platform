@@ -48,7 +48,10 @@ test("a run that logs 1,200 lines shows them all, and opens from a link to the l
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Password").fill(ADMIN.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByText("All tenants").first().waitFor();
+  // Signed in wherever the console opens: it reopens the last place, which an earlier spec may have left in a tenant.
+  await page
+    .getByRole("heading", { name: "Sign in" })
+    .waitFor({ state: "detached", timeout: 15_000 });
 
   const tenant = await call(page, "POST", "/tenants", { slug: `rl-${stamp}`, name: "Run logs" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {

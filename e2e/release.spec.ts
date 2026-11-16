@@ -54,7 +54,6 @@ test("a developer asks, a promoter decides from the overview, drift shows the ch
   browser,
 }) => {
   const admin = await signIn(browser, ADMIN.email, ADMIN.password);
-  await admin.getByText("All tenants").first().waitFor();
   const tenant = await call(admin, "POST", "/tenants", { slug: `rel-${stamp}`, name: "Releasing" });
   await call(admin, "POST", `/tenants/${tenant.id}/access-grants`, {
     reason: "The release e2e test",

@@ -1,6 +1,6 @@
 # Phase 11: holding up under load
 
-Status: in progress on branch `phase-11-load`.
+Status: milestones 1–5 built on branch `phase-11-load`, not yet merged. Milestone 6's docs are written; re-running the stress test on Fly waits for the owner's go-ahead to deploy.
 Last updated: 2026-11-16
 
 A stress test on a Fly instance, run after phase 10, found failures that come from the design, not from the size of the machines:
@@ -28,7 +28,7 @@ A bigger machine would only have moved where each one starts:
 
 | Area | Decision |
 | --- | --- |
-| Shape | One branch, `phase-11-load`, in six milestones, one commit each |
+| Shape | One branch, `phase-11-load`, in six milestones. Milestones 1–3 share one commit, as their changes share files |
 | `memoryMb` | Enforced on all of a script's memory, plus 64 MB for Node itself. Scripts that held more in Buffers now fail; noted in the changelog |
 | Dev workspaces | New ones start with triggers paused, as clones already do |
 | A flow's schedule trigger | Gets `overlap`, defaulting to `skip` |

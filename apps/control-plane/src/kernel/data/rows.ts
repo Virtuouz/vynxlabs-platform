@@ -181,23 +181,38 @@ export async function withData<T>(
   run: (trx: AnyDb) => Promise<T>,
 ): Promise<T> {
   const store = await kernel.data.forTenant(tenantId);
-  return store.rows.transaction().execute(async (trx) => {
-    await sql`select
-      set_config('app.principal', ${scope.principalId ?? ""}, true),
-      set_config('app.data_all', ${scope.all ? "on" : "off"}, true),
-      set_config('app.groups', ${JSON.stringify(scope.groups ?? [])}, true),
-      set_config('app.attrs', ${JSON.stringify(scope.attributes ?? {})}, true)`.execute(trx);
-    try {
-      return await run(trx as unknown as AnyDb);
-    } catch (error) {
-      throw translate(error);
-    }
-  });
+  const timeoutMs = kernel.config.limits.dataStatementTimeoutMs;
+  const work = () =>
+    store.rows.transaction().execute(async (trx) => {
+      // No one statement holds a connection for long: past the limit it is stopped.
+      await sql`select
+        set_config('app.principal', ${scope.principalId ?? ""}, true),
+        set_config('app.data_all', ${scope.all ? "on" : "off"}, true),
+        set_config('app.groups', ${JSON.stringify(scope.groups ?? [])}, true),
+        set_config('app.attrs', ${JSON.stringify(scope.attributes ?? {})}, true),
+        set_config('statement_timeout', ${String(timeoutMs)}, true)`.execute(trx);
+      try {
+        return await run(trx as unknown as AnyDb);
+      } catch (error) {
+        throw translate(error, timeoutMs);
+      }
+    });
+  // On the shared database each tenant has a share of the connections, so one tenant's
+  // slow requests leave the others room.
+  return store.shared ? kernel.data.gate.run(tenantId, work) : work();
 }
 
 /** Database refusals that are the caller's doing, in words they can act on. */
-export function translate(error: unknown): unknown {
+export function translate(error: unknown, timeoutMs?: number): unknown {
   const code = (error as { code?: string }).code;
+  if (code === "57014" && timeoutMs !== undefined) {
+    return new HttpError(
+      422,
+      "too_slow",
+      `This took longer than ${Math.round(timeoutMs / 1000)} seconds and was stopped. ` +
+        "Narrow the filter, or add an index on the columns it filters and sorts by.",
+    );
+  }
   const detail = (error as { detail?: string }).detail ?? "";
   const message = (error as { message?: string }).message ?? "";
   if (code === "42501" && message.includes("row-level security")) {

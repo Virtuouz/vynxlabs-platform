@@ -2,6 +2,28 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 11, holding up under load
+
+### For operators
+
+- **Database change.** Migration 0059 adds the machine a worker runs on.
+- **A machine that runs scripts is held to its run slots.** The scripts running there, across all its workers and tenants, never go past `RUN_SLOTS`, which by default comes from its memory. While others wait, a tenant takes no more than its share. Below `RUN_MEMORY_FLOOR_MB` of free memory no worker takes more work, and when memory still runs low the largest script is stopped. The worker host takes `--run-slots` and `--memory-floor`, and by default starts at most twice its run slots in workers, down from 50. `MANAGED_WORKERS_MAX` caps managed workers in `process` mode. See "Sizing" in the self-hosting guide.
+- **Scripts run at a lower CPU priority** than the control plane and the workers.
+- **`deploy/fly/fly.toml` asks for 1 GB and 512 MB of swap,** up from 512 MB and none.
+- **New metrics:** `platform_machine_running`, `platform_memory_available_bytes`, and `platform_db_pool{pool,state}`.
+- **Each tenant has a share of the table connections.** On the platform database a tenant's table requests past `DATA_TENANT_CONNECTIONS` (a third of the pool by default) wait their turn, and the others' go on.
+- **Every data request has a time limit,** `DATA_STATEMENT_TIMEOUT_MS`, 15 seconds by default.
+- **Pool sizes can be set:** `DATABASE_POOL_SIZE` and `DATA_POOL_SIZE`, each 10 by default as before.
+- **A database that takes no writes no longer takes the instance down.** One whose disk is full keeps serving reads, and `/readyz` stays 200 with `readOnly: true`. Changes and sign-ins are answered 503 `read_only`, and the queue and background work stop. They start again on their own once writes come back. The instance also starts this way: migrations are checked by reading alone when none are pending. Pooled connections are renewed each minute.
+- **A busy database is a 503 with `Retry-After`,** no longer a 500. A database that takes no writes, such as one whose disk is full, is a 503 `read_only`.
+
+### For tenant developers
+
+- **`memoryMb` now covers all of a script's memory,** Buffers and native memory included, plus 64 MB for Node itself. It used to cover only the JavaScript heap. A script that held large files, images or downloads in Buffers past its `memoryMb` now fails with "The script ran out of memory": raise its `memoryMb`.
+- A run stopped because its machine ran low on memory fails with "The script was stopped: the machine ran low on memory." Its retries apply.
+- **A table request that runs past 15 seconds is stopped** and answered 422 `too_slow`. Narrow its filter, or add an index on the columns it filters and sorts by. It used to run as long as it took, and hold a connection all the while.
+- **Scripts and `@vynxlabs/app` try a busy request again by themselves,** twice, after the wait the platform asks for. Your own code that calls the API should do the same on a 503 with `Retry-After`.
+
 ## Unreleased: phase 10, platform expansion
 
 ### For operators

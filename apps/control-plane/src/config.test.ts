@@ -49,7 +49,27 @@ describe("configuration", () => {
       consoleDir: undefined,
       appsUrl: undefined,
       appsOnConsoleAddress: false,
+      limits: {
+        runSlots: undefined,
+        runMemoryFloorMb: undefined,
+        managedWorkersMax: undefined,
+        databasePoolSize: 10,
+        dataPoolSize: 10,
+        dataTenantConnections: undefined,
+        dataStatementTimeoutMs: 15_000,
+      },
     });
+  });
+
+  test("the operator may set how much runs at once, within bounds", () => {
+    expect(
+      loadConfig({ ...valid, RUN_SLOTS: "6", RUN_MEMORY_FLOOR_MB: "0", MANAGED_WORKERS_MAX: "20" })
+        .limits,
+    ).toMatchObject({ runSlots: 6, runMemoryFloorMb: 0, managedWorkersMax: 20 });
+    expect(() => loadConfig({ ...valid, RUN_SLOTS: "0" })).toThrow(/RUN_SLOTS/);
+    expect(() => loadConfig({ ...valid, MANAGED_WORKERS_MAX: "lots" })).toThrow(
+      /MANAGED_WORKERS_MAX/,
+    );
   });
 
   test("the operator may let the instance reach some internal networks and hosts for tenants", () => {

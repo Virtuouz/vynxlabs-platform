@@ -32,11 +32,13 @@ async function fromApiKey(kernel: Kernel, token: string): Promise<Principal> {
   }
   // Recording every use would turn each read into a write. Once a minute is enough.
   if (!key.last_used_at || now.getTime() - key.last_used_at.getTime() > 60_000) {
+    // Only a note: a database taking no writes must not refuse the key for it.
     await kernel.db
       .updateTable("api_key")
       .set({ last_used_at: now })
       .where("id", "=", key.id)
-      .execute();
+      .execute()
+      .catch(() => {});
   }
   if (key.owner_type === "member") {
     const member = await kernel.db

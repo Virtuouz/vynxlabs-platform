@@ -635,6 +635,8 @@ export interface WorkerTable {
   credential_id: string;
   tenant_id: string;
   version: string | null;
+  /** The machine the worker runs on, when the one that started it says. */
+  machine: Generated<string | null>;
   started_at: Generated<Date>;
   last_seen_at: Timestamp;
 }

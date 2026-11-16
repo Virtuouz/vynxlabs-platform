@@ -232,12 +232,26 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "A worker that says nothing is given runs only.",
               }),
             ),
+            machine: Type.Optional(
+              Type.Object(
+                {
+                  name: Type.String({ minLength: 1, maxLength: 120 }),
+                  slots: Type.Integer({ minimum: 1, maximum: 1000 }),
+                },
+                {
+                  description:
+                    "The machine this worker shares with others, as the worker host or control " +
+                    "plane that started it names it, and how many scripts it runs at once. " +
+                    "Workers on one machine never run more than that between them.",
+                },
+              ),
+            ),
           }),
           response: { 200: Type.Object({ job: Type.Union([Job, TaskJob, Type.Null()]) }) },
         },
       },
       async ({ worker, body, raw }) => {
-        await seeWorker(kernel, worker, body.workerId, body.version);
+        await seeWorker(kernel, worker, body.workerId, body.version, body.machine);
         const deadline = Date.now() + (body.waitSeconds ?? 20) * 1000;
         // A worker that hung up must not be handed a job.
         const gone = () => raw.socket.destroyed;
@@ -245,7 +259,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         for (;;) {
           // A task first: each is short, and someone is often waiting on it.
           const task = body.kinds
-            ? await claimTask(kernel, worker, body.workerId, body.kinds)
+            ? await claimTask(kernel, worker, body.workerId, body.kinds, body.machine)
             : undefined;
           if (task) {
             return {
@@ -261,7 +275,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             };
           }
           const claimed = takesRuns
-            ? await claimRun(kernel, worker, body.workerId, gone)
+            ? await claimRun(kernel, worker, body.workerId, gone, body.machine)
             : undefined;
           if (claimed) {
             const { run } = claimed;

@@ -6,6 +6,7 @@ import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { bundleManifest } from "./bundles.js";
+import { type MachineClaim, machineHasRoom } from "./workers.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
 export const INLINE_PAYLOAD_BYTES = 256 * 1024;
@@ -307,6 +308,8 @@ export async function claimRun(
   workerId: string,
   /** Says whether the worker has gone away. A job is never handed to a worker that has. */
   abandoned: () => boolean = () => false,
+  /** The machine the worker shares with others, whose slots it must keep within. */
+  machine?: MachineClaim,
 ) {
   let query = kernel.db
     .selectFrom("workspace")
@@ -348,6 +351,9 @@ export async function claimRun(
             .where("status", "=", "running")
             .executeTakeFirstOrThrow();
           if (Number(running.n) >= workspace.concurrency_limit) return "full" as const;
+          if (machine && !(await machineHasRoom(trx, machine, scope.tenantId))) {
+            return "machine" as const;
+          }
 
           const queue = queueName(workspace.id, scope.pool);
           const job = await kernel.queue.claim<{ runId: string }>(queue, trx);
@@ -398,6 +404,8 @@ export async function claimRun(
           throw error;
         });
       if (outcome === "abandoned") return null;
+      // The machine is full whichever workspace the job would come from.
+      if (outcome === "machine") return null;
       if (outcome === "stale") continue;
       if (outcome === "full" || outcome === "empty") break;
       return outcome;

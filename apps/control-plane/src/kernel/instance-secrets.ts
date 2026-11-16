@@ -14,6 +14,13 @@ export async function instanceSecret(
   name: string,
   first: () => Buffer,
 ): Promise<Buffer> {
+  const read = () =>
+    db.selectFrom("instance_secret").select("sealed").where("name", "=", name).executeTakeFirst();
+  // Read first: a database that takes no writes still gives up a secret it already has.
+  const known = await read();
+  if (known) {
+    return Buffer.from(vault.openForInstance(instanceSecretContext(name), known.sealed), "base64");
+  }
   await db
     .insertInto("instance_secret")
     .values({

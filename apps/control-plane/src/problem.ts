@@ -1,8 +1,9 @@
 import { STATUS_CODES } from "node:http";
+import { isPoolTimeout } from "@vynxlabs/db";
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { type Static, Type } from "typebox";
 import { EgressRefused } from "./kernel/egress.js";
-import { HttpError } from "./kernel/errors.js";
+import { busy, HttpError, readOnly } from "./kernel/errors.js";
 
 /** RFC 9457 problem details, plus a stable code and the request ID. */
 export const Problem = Type.Object(
@@ -84,7 +85,17 @@ export function errorHandler(
   if (error instanceof EgressRefused) {
     return sendProblem(request, reply, 400, { code: "egress_refused", detail: error.message });
   }
+  // The database too busy to hand out a connection, or taking no writes: said as such,
+  // with when to try again, never as the server's own failure.
+  if (isPoolTimeout(error)) return errorHandler(busy(), request, reply);
+  if ((error as { code?: unknown }).code === "25006") {
+    return errorHandler(readOnly(), request, reply);
+  }
+  if ((error as { code?: unknown }).code === "57014") {
+    return errorHandler(busy(5), request, reply);
+  }
   if (error instanceof HttpError) {
+    if (error.headers) reply.headers(error.headers);
     return sendProblem(request, reply, error.statusCode, {
       code: error.problemCode,
       detail: error.message,

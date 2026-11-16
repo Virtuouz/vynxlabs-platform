@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { type Bundle, bundleDigest } from "@vynxlabs/manifest";
 import { afterEach, describe, expect, it } from "vitest";
 import { allowedCall, type Job } from "./context.js";
+import { type MachineProbe, procProbe } from "./machine.js";
 import { Worker } from "./worker.js";
 
 /** The scripts these tests run, all in one bundle. */
@@ -35,6 +36,16 @@ export const hog = {
   async execute() {
     const kept = [];
     for (;;) kept.push(new Array(1_000_000).fill(Math.random()));
+  },
+};
+
+/** Holds \`mb\` of Buffers, outside the JavaScript heap, then waits. */
+export const buffers = {
+  async execute(input) {
+    const held = [];
+    for (let i = 0; i < input.mb / 10; i += 1) held.push(Buffer.alloc(10 * 1024 * 1024, i));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    return { held: held.length };
   },
 };
 
@@ -315,6 +326,21 @@ describe("a process per attempt", () => {
     expect(state.ended[1]).toMatchObject({ kind: "complete", body: { output: { wrote: 1 } } });
   });
 
+  it.skipIf(procProbe.memory() === undefined)(
+    "fails a script that holds more than its memory outside the heap",
+    async () => {
+      const state = await platform([
+        { entry: "buffers", memoryMb: 64, input: { mb: 300 } },
+        { entry: "buffers", memoryMb: 512, input: { mb: 100 } },
+      ]);
+      await work(state, () => state.ended.length === 2);
+      const failed = state.ended[0]?.body.error as { message: string } | undefined;
+      expect(failed?.message).toBe("The script ran out of memory (64 MB).");
+      // Within its memory, Buffers and all, a script is left alone.
+      expect(state.ended[1]).toMatchObject({ kind: "complete", body: { output: { held: 10 } } });
+    },
+  );
+
   it("gives a script no credential and almost none of the worker's environment", async () => {
     const state = await platform([{ entry: "nosy" }]);
     await work(state, () => state.ended.length === 1, "wt-secret-token");
@@ -393,5 +419,38 @@ describe("tasks", () => {
       expect.stringMatching(/^GET \/bundles\//),
       `POST /tasks/${control.runIds[0]}/complete`,
     ]);
+  });
+});
+
+describe("a machine shared with other workers", () => {
+  /** A machine whose free memory the test sets. */
+  const machine = (available: { mb: number }): MachineProbe => ({
+    memory: () => ({ totalMb: 2048, availableMb: available.mb }),
+    rssMb: () => undefined,
+    children: () => [],
+  });
+
+  it("claims nothing while the machine is below its memory floor, then carries on", async () => {
+    const state = await platform([{ entry: "chatty", input: { count: 1, pause: 0 } }]);
+    const free = { mb: 100 };
+    const worker = new Worker({
+      url: state.url,
+      token: "token",
+      concurrency: 1,
+      claimWaitSeconds: 1,
+      machine: { name: "m1", slots: 4, floorMb: 200 },
+      probe: machine(free),
+    });
+    const running = worker.run();
+    await pause(1500);
+    expect(state.requests.filter((request) => request === "POST /claim")).toEqual([]);
+    free.mb = 1000;
+    await until(() => state.ended.length === 1, 10_000);
+    worker.stop();
+    await running;
+    expect(state.ended[0]).toMatchObject({ kind: "complete" });
+    // Each claim names the machine and its slots, so the control plane can hold all its workers to them.
+    const claim = state.bodies[state.requests.indexOf("POST /claim")];
+    expect(claim?.machine).toEqual({ name: "m1", slots: 4 });
   });
 });

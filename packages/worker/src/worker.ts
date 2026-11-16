@@ -2,7 +2,7 @@ import { type ChildProcess, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { setPriority, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ import {
   TASK_KINDS,
   type TaskJob,
 } from "./context.js";
+import { type MachineProbe, type MachineShare, NODE_OVERHEAD_MB, procProbe } from "./machine.js";
 import type { FromRunner, ToRunner } from "./runner.js";
 
 export type WorkerLog = (
@@ -41,6 +42,14 @@ export interface WorkerOptions {
   claimWaitSeconds?: number;
   /** The runner each attempt is started with. Default: the one beside this file. */
   runner?: string;
+  /**
+   * The machine this worker shares with others, when the host or control plane that
+   * started it says: the control plane holds all of them to its slots, and none
+   * claims while the machine is short of memory.
+   */
+  machine?: MachineShare;
+  /** Where memory is read from. Replaced in tests. */
+  probe?: MachineProbe;
 }
 
 /** A bundle's code on disk, and what it says it contains. */
@@ -55,7 +64,22 @@ class CredentialRefused extends Error {}
 /** The control plane said this attempt is over: canceled, timed out or taken back. */
 class AttemptOver extends Error {}
 
-const WORKER_VERSION = "0.6.0";
+/** The control plane is busy, and said when to try again. Nothing was done. */
+class Busy extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterSeconds: number,
+  ) {
+    super(message);
+  }
+}
+
+/** How often a script's call is tried again when the control plane is busy. */
+const BUSY_RETRIES = 2;
+/** The longest a script's call waits before trying again, in seconds. */
+const BUSY_WAIT_LIMIT = 5;
+
+const WORKER_VERSION = "0.7.0";
 
 /** Log lines kept while the control plane cannot be reached. Past this, the oldest go. */
 const MAX_PENDING_LOGS = 5000;
@@ -96,21 +120,105 @@ function defaultRunner(): string {
   return fileURLToPath(new URL("../dist/runner.js", import.meta.url));
 }
 
+/** How often a script's memory is looked at. */
+const MEMORY_CHECK_MS = 500;
+/** How long a worker waits before claiming again when its machine is short of memory. */
+const LOW_MEMORY_WAIT_MS = 2000;
+
 /** Why a script's process ended without saying how its script did. */
 function processEnded(
   code: number | null,
   signal: NodeJS.Signals | null,
   stderr: string,
   memoryMb: number,
+  /** Who ended it, when it was ended: over its memory, by this worker, or by neither. */
+  killed: "memory" | "worker" | undefined,
 ): Error {
   const error =
-    /heap out of memory|Allocation failed/i.test(stderr) || code === 134
+    killed === "memory" || /heap out of memory|Allocation failed/i.test(stderr) || code === 134
       ? new Error(`The script ran out of memory (${memoryMb} MB).`)
-      : new Error(
-          `The script's process ended unexpectedly (${signal ? `signal ${signal}` : `code ${code}`}).`,
-        );
+      : signal === "SIGKILL" && killed === undefined
+        ? new Error("The script was stopped: the machine ran low on memory.")
+        : new Error(
+            `The script's process ended unexpectedly (${signal ? `signal ${signal}` : `code ${code}`}).`,
+          );
   if (stderr.trim()) error.stack = `${error.message}\n${stderr.trim()}`;
   return error;
+}
+
+/** A script's process, watched: it may hold its `memoryMb` and Node's own beside it, no more. */
+interface ScriptProcess {
+  child: ChildProcess;
+  /** Ends the process now, as this worker's own decision. */
+  kill(): void;
+  /** Why it ended, once it has. */
+  ended(code: number | null, signal: NodeJS.Signals | null): Error;
+  dispose(): void;
+}
+
+function startScript(runner: string, memoryMb: number, probe: MachineProbe): ScriptProcess {
+  const child = fork(runner, [], {
+    env: runnerEnvironment(),
+    execArgv: [`--max-old-space-size=${memoryMb}`],
+    stdio: ["ignore", "inherit", "pipe", "ipc"],
+  });
+  // Scripts give way to the control plane and to the worker that reports on them.
+  if (child.pid !== undefined) {
+    try {
+      setPriority(child.pid, 10);
+    } catch {
+      // Not allowed here: they run at the worker's own priority.
+    }
+  }
+  // What the script's process says on stderr goes on to the worker's, and its end is kept
+  // to say why the process died, if it does.
+  let stderr = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    process.stderr.write(chunk);
+    stderr = (stderr + chunk.toString("utf8")).slice(-STDERR_KEPT);
+  });
+  let killed: "memory" | "worker" | undefined;
+  // The heap limit covers only what JavaScript holds. Buffers, and what native code holds,
+  // are counted here instead, from what the process holds in all.
+  const limitMb = memoryMb + NODE_OVERHEAD_MB;
+  const watching =
+    child.pid !== undefined && probe.rssMb(child.pid) !== undefined
+      ? setInterval(() => {
+          const held = child.pid === undefined ? undefined : probe.rssMb(child.pid);
+          if (held !== undefined && held > limitMb && killed === undefined) {
+            killed = "memory";
+            child.kill("SIGKILL");
+          }
+        }, MEMORY_CHECK_MS)
+      : undefined;
+  return {
+    child,
+    kill() {
+      killed ??= "worker";
+      child.kill("SIGKILL");
+    },
+    ended(code, signal) {
+      return processEnded(code, signal, stderr, memoryMb, killed);
+    },
+    dispose() {
+      clearInterval(watching);
+    },
+  };
+}
+
+/** Ends a script's process with its attempt: now, or when the grace already given runs out. */
+function endScript(script: ScriptProcess | undefined, killing: NodeJS.Timeout | undefined) {
+  if (!script) return;
+  const { child } = script;
+  if (child.exitCode === null && child.signalCode === null) {
+    if (!killing) script.kill();
+    child.once("exit", () => {
+      clearTimeout(killing);
+      script.dispose();
+    });
+  } else {
+    script.dispose();
+  }
 }
 
 /**
@@ -125,6 +233,7 @@ export class Worker {
   readonly #log: WorkerLog;
   readonly #cacheDir: string;
   readonly #runner: string;
+  readonly #probe: MachineProbe;
   /** Bundles on disk by digest, least recently used first. */
   readonly #bundles = new Map<string, Promise<CachedBundle>>();
   #stopping = false;
@@ -138,6 +247,15 @@ export class Worker {
     this.#log = options.log ?? (() => {});
     this.#cacheDir = options.cacheDir ?? join(tmpdir(), `platform-worker-${this.id}`);
     this.#runner = options.runner ?? defaultRunner();
+    this.#probe = options.probe ?? procProbe;
+  }
+
+  /** Whether the machine has too little memory left to start another script. */
+  #shortOfMemory(): boolean {
+    const floor = this.#options.machine?.floorMb;
+    if (!floor) return false;
+    const memory = this.#probe.memory();
+    return memory !== undefined && memory.availableMb < floor;
   }
 
   /** Works until `stop()` is called, the credential is refused, or it has been idle long enough. */
@@ -146,6 +264,12 @@ export class Worker {
     let reason: "stopped" | "idle" | "refused" = "stopped";
     const slots = Array.from({ length: this.#options.concurrency ?? 4 }, async () => {
       while (!this.#stopping) {
+        if (this.#shortOfMemory()) {
+          // Not idle: the work is there, the memory is not. Wait for it.
+          this.#lastWork = Date.now();
+          await sleep(LOW_MEMORY_WAIT_MS);
+          continue;
+        }
         try {
           const job = await this.#claim();
           if (job) {
@@ -215,7 +339,11 @@ export class Worker {
       } catch {
         // Not a problem document.
       }
-      throw new Error(`${method} ${path} answered ${response.status}: ${detail}`);
+      const message = `${method} ${path} answered ${response.status}: ${detail}`;
+      if (response.status === 503 && response.headers.get("retry-after")) {
+        throw new Busy(message, Number(response.headers.get("retry-after")) || 1);
+      }
+      throw new Error(message);
     }
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
@@ -232,6 +360,14 @@ export class Worker {
           version: WORKER_VERSION,
           waitSeconds: this.#options.claimWaitSeconds ?? 20,
           kinds: ["run", ...TASK_KINDS],
+          ...(this.#options.machine
+            ? {
+                machine: {
+                  name: this.#options.machine.name,
+                  slots: this.#options.machine.slots,
+                },
+              }
+            : {}),
         },
         abort.signal,
       );
@@ -355,24 +491,14 @@ export class Worker {
       job.timeoutSeconds * 1000,
     );
 
-    let child: ChildProcess | undefined;
+    let script: ScriptProcess | undefined;
     let killing: NodeJS.Timeout | undefined;
     try {
       const bundle = await this.#bundleFile(job.bundle);
       const memoryMb = job.memoryMb ?? DEFAULT_MEMORY_MB;
-      const started = fork(this.#runner, [], {
-        env: runnerEnvironment(),
-        execArgv: [`--max-old-space-size=${memoryMb}`],
-        stdio: ["ignore", "inherit", "pipe", "ipc"],
-      });
-      child = started;
-      // What the script's process says on stderr goes on to the worker's, and its end is kept
-      // to say why the process died, if it does.
-      let stderr = "";
-      started.stderr?.on("data", (chunk: Buffer) => {
-        process.stderr.write(chunk);
-        stderr = (stderr + chunk.toString("utf8")).slice(-STDERR_KEPT);
-      });
+      script = startScript(this.#runner, memoryMb, this.#probe);
+      const { child: started } = script;
+      const watched = script;
 
       const outcome = new Promise<unknown>((resolve, reject) => {
         started.on("message", (message: FromRunner) => {
@@ -394,9 +520,7 @@ export class Worker {
             reject(failure);
           }
         });
-        started.once("exit", (code, signal) =>
-          reject(processEnded(code, signal, stderr, memoryMb)),
-        );
+        started.once("exit", (code, signal) => reject(watched.ended(code, signal)));
         started.once("error", reject);
       });
       started.send({
@@ -415,7 +539,7 @@ export class Worker {
               t: "abort",
               message: String((abort.signal.reason as Error)?.message ?? abort.signal.reason),
             } satisfies ToRunner);
-          killing = setTimeout(() => started.kill("SIGKILL"), ABORT_GRACE_MS);
+          killing = setTimeout(() => watched.kill(), ABORT_GRACE_MS);
           reject(abort.signal.reason);
         };
         if (abort.signal.aborted) stop();
@@ -453,10 +577,7 @@ export class Worker {
       clearTimeout(timeout);
       // Whatever the script left running ends with its attempt. An aborted one had its
       // grace to stop by itself; any other is ended now.
-      if (child && child.exitCode === null && child.signalCode === null) {
-        if (!killing) child.kill("SIGKILL");
-        child.once("exit", () => clearTimeout(killing));
-      }
+      endScript(script, killing);
     }
   }
 
@@ -485,7 +606,7 @@ export class Worker {
         ),
       job.timeoutSeconds * 1000,
     );
-    let child: ChildProcess | undefined;
+    let script: ScriptProcess | undefined;
     let killing: NodeJS.Timeout | undefined;
     try {
       const bundle = job.request.bundle ? await this.#bundleFile(job.request.bundle) : undefined;
@@ -493,17 +614,9 @@ export class Worker {
         ? await this.#call<Bound>("GET", `${taskPath}/connection`)
         : undefined;
       const memoryMb = job.memoryMb ?? DEFAULT_MEMORY_MB;
-      const started = fork(this.#runner, [], {
-        env: runnerEnvironment(),
-        execArgv: [`--max-old-space-size=${memoryMb}`],
-        stdio: ["ignore", "inherit", "pipe", "ipc"],
-      });
-      child = started;
-      let stderr = "";
-      started.stderr?.on("data", (chunk: Buffer) => {
-        process.stderr.write(chunk);
-        stderr = (stderr + chunk.toString("utf8")).slice(-STDERR_KEPT);
-      });
+      script = startScript(this.#runner, memoryMb, this.#probe);
+      const { child: started } = script;
+      const watched = script;
       const outcome = new Promise<unknown>((resolve, reject) => {
         started.on("message", (message: FromRunner) => {
           if (message.t === "call") {
@@ -521,9 +634,7 @@ export class Worker {
             reject(new Error(message.error.message));
           }
         });
-        started.once("exit", (code, signal) =>
-          reject(processEnded(code, signal, stderr, memoryMb)),
-        );
+        started.once("exit", (code, signal) => reject(watched.ended(code, signal)));
         started.once("error", reject);
       });
       started.send({
@@ -534,7 +645,7 @@ export class Worker {
       } satisfies ToRunner);
       const aborted = new Promise<never>((_, reject) => {
         const stop = () => {
-          killing = setTimeout(() => started.kill("SIGKILL"), ABORT_GRACE_MS);
+          killing = setTimeout(() => watched.kill(), ABORT_GRACE_MS);
           reject(abort.signal.reason);
         };
         if (abort.signal.aborted) stop();
@@ -561,10 +672,7 @@ export class Worker {
     } finally {
       clearInterval(heartbeat);
       clearTimeout(timeout);
-      if (child && child.exitCode === null && child.signalCode === null) {
-        if (!killing) child.kill("SIGKILL");
-        child.once("exit", () => clearTimeout(killing));
-      }
+      endScript(script, killing);
     }
   }
 
@@ -593,7 +701,17 @@ export class Worker {
       body = { ...(body as Record<string, unknown>), attempt: job.attempt };
     }
     try {
-      const result = await this.#call<unknown>(message.method, path, body);
+      // A busy control plane did nothing with the call, and says when to try again.
+      let result: unknown;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          result = await this.#call<unknown>(message.method, path, body);
+          break;
+        } catch (error) {
+          if (!(error instanceof Busy) || attempt >= BUSY_RETRIES) throw error;
+          await sleep(Math.min(error.retryAfterSeconds, BUSY_WAIT_LIMIT) * 1000);
+        }
+      }
       reply({ t: "reply", id: message.id, result });
     } catch (error) {
       reply({ t: "reply", id: message.id, error: (error as Error).message ?? String(error) });

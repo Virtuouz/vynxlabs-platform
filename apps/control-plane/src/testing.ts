@@ -43,6 +43,15 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     appsOnConsoleAddress: true,
     mail: undefined,
     mailCaptureDir: undefined,
+    limits: {
+      runSlots: undefined,
+      runMemoryFloorMb: undefined,
+      managedWorkersMax: undefined,
+      databasePoolSize: 10,
+      dataPoolSize: 10,
+      dataTenantConnections: undefined,
+      dataStatementTimeoutMs: 15_000,
+    },
     ...overrides,
   };
 }

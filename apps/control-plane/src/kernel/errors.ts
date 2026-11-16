@@ -3,18 +3,22 @@ export class HttpError extends Error {
   readonly statusCode: number;
   readonly problemCode: string;
   readonly issues: { path: string; message: string }[] | undefined;
+  /** Headers the response carries, such as `retry-after`. */
+  readonly headers: Record<string, string> | undefined;
 
   constructor(
     statusCode: number,
     problemCode: string,
     detail: string,
     issues?: { path: string; message: string }[],
+    headers?: Record<string, string>,
   ) {
     super(detail);
     this.name = "HttpError";
     this.statusCode = statusCode;
     this.problemCode = problemCode;
     this.issues = issues;
+    this.headers = headers;
   }
 }
 
@@ -26,3 +30,20 @@ export const unauthenticated = (detail = "Sign in or send an API key.") =>
 export const badRequest = (detail: string, issues?: { path: string; message: string }[]) =>
   new HttpError(400, issues ? "validation_failed" : "bad_request", detail, issues);
 export const conflict = (detail: string) => new HttpError(409, "conflict", detail);
+
+/** The database is busy: the request waited too long for a connection. Safe to try again. */
+export const busy = (retryAfterSeconds = 2) =>
+  new HttpError(503, "busy", "The database is busy. Try again in a moment.", undefined, {
+    "retry-after": String(retryAfterSeconds),
+  });
+
+/** The database takes no writes for now: its disk is full, or it is in maintenance. */
+export const readOnly = () =>
+  new HttpError(
+    503,
+    "read_only",
+    "The database is taking no changes for now: its disk may be full, or it is in maintenance. " +
+      "Reading still works. Try again later.",
+    undefined,
+    { "retry-after": "30" },
+  );

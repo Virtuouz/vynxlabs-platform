@@ -4,6 +4,7 @@ import type {
 } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
+import { procProbe } from "@vynxlabs/worker";
 import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
@@ -3003,6 +3004,59 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             (row) => `platform_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
           ),
         );
+        // What each machine that shares its slots is running: the gauge to set an alert on
+        // beside the slots the operator gave it.
+        const machines = await sql<{ machine: string; n: number }>`
+          select w.machine, count(*)::int as n
+          from (
+            select worker_id from run where status = 'running'
+            union all
+            select worker_id from task where status = 'running'
+          ) busy
+          join worker w on w.id = busy.worker_id
+          where w.machine is not null
+          group by w.machine
+        `.execute(db);
+        lines.push(
+          "# HELP platform_machine_running Scripts running on each machine whose workers share its run slots.",
+          "# TYPE platform_machine_running gauge",
+          ...machines.rows.map(
+            (row) => `platform_machine_running${labelText({ machine: row.machine })} ${row.n}`,
+          ),
+        );
+        const pools = await kernel.data.poolStats();
+        lines.push(
+          "# HELP platform_db_pool Connections of this replica's pools to the platform database: open, idle, and requests waiting for one.",
+          "# TYPE platform_db_pool gauge",
+          ...Object.entries(pools).flatMap(([pool, stats]) =>
+            (["total", "idle", "waiting"] as const).map(
+              (state) => `platform_db_pool${labelText({ pool, state })} ${stats[state]}`,
+            ),
+          ),
+        );
+        const size = await sql<{ bytes: string }>`
+          select pg_database_size(current_database()) as bytes
+        `.execute(db);
+        const readOnly = await kernel.readOnly().catch(() => false);
+        lines.push(
+          "# HELP platform_database_size_bytes The platform database's size on disk. Alert well before its volume is full.",
+          "# TYPE platform_database_size_bytes gauge",
+          `platform_database_size_bytes ${Number(size.rows[0]?.bytes ?? 0)}`,
+          "# HELP platform_database_read_only 1 while the platform database takes no writes, such as when its disk is full.",
+          "# TYPE platform_database_read_only gauge",
+          `platform_database_read_only ${readOnly ? 1 : 0}`,
+        );
+        const memory = procProbe.memory();
+        if (memory) {
+          lines.push(
+            "# HELP platform_memory_available_bytes Memory this replica's machine can still give out.",
+            "# TYPE platform_memory_available_bytes gauge",
+            `platform_memory_available_bytes ${Math.round(memory.availableMb * 1024 * 1024)}`,
+            "# HELP platform_memory_total_bytes All of this replica's machine's memory.",
+            "# TYPE platform_memory_total_bytes gauge",
+            `platform_memory_total_bytes ${Math.round(memory.totalMb * 1024 * 1024)}`,
+          );
+        }
 
         // What this replica counted, with workspaces named by their slugs.
         const ids = [...kernel.metrics.workspaceIds()];

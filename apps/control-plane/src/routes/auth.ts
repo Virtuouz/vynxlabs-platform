@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { readOnly } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { sendProblem } from "../problem.js";
@@ -39,6 +40,10 @@ export function authRoutes(kernel: Kernel): FastifyPluginAsync {
           reply.header("set-cookie", cookie);
         }
         const text = await response.text();
+        // The library says only that it failed. A database taking no writes is said as such.
+        if (response.status >= 500 && (await kernel.readOnly().catch(() => false))) {
+          throw readOnly();
+        }
         if (response.status >= 400) {
           let parsed: { code?: string; message?: string } = {};
           try {

@@ -5,6 +5,9 @@
 
 app = "vynxlabs-platform"
 primary_region = "iad"
+# Room to swap, so that a machine short of memory slows down instead of stalling.
+# Scripts are held to the machine's run slots and memory floor before it comes to that.
+swap_size_mb = 512
 
 [env]
   PORT = "8080"
@@ -25,6 +28,9 @@ primary_region = "iad"
     timeout = "5s"
     grace_period = "30s"
 
+# With MANAGED_WORKERS=process (the default) scripts run on this machine beside the
+# control plane: 1 GB gives three run slots; each 160 MB more gives one more.
+# RUN_SLOTS sets them outright. See "Sizing" in docs/self-hosting.md.
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "1024mb"

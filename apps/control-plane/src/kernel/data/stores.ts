@@ -4,12 +4,14 @@ import {
   type Kysely,
   openDataStore,
   type PlatformSchema,
+  type PoolStats,
   type Transaction,
 } from "@vynxlabs/db";
 import type { FastifyBaseLogger } from "fastify";
 import type { Db, Trx } from "../audit.js";
 import type { Vault } from "../crypto.js";
 import { HttpError, notFound } from "../errors.js";
+import { TenantGate } from "./gate.js";
 
 /** A connection to the database that holds a tenant's custom tables and their catalog. */
 export type DataDb = Kysely<PlatformSchema> | Transaction<PlatformSchema>;
@@ -80,13 +82,21 @@ export class DataStores {
   readonly #dedicated = new Map<string, Promise<DataStore>>();
   /** A tenant's location never changes, so it is looked up once. */
   readonly #locations = new Map<string, string | null>();
+  /**
+   * Each tenant's share of the platform database's row connections. A dedicated
+   * database is its tenant's alone, and needs none.
+   */
+  readonly gate: TenantGate;
 
   constructor(
     database: Database,
     vault: Vault,
     secret: () => Promise<Buffer>,
     log: FastifyBaseLogger,
+    /** Row requests one tenant may have open at once on the platform database. */
+    tenantConnections = 3,
   ) {
+    this.gate = new TenantGate(tenantConnections);
     this.#database = database;
     this.#db = database.router.platform();
     this.#vault = vault;
@@ -98,9 +108,9 @@ export class DataStores {
    * The platform database as a data store. Opening it takes a connection, so it is
    * opened once at start, before any request can ask for it from inside a transaction.
    */
-  platform(): Promise<DataStore> {
+  platform(options: { setUp?: boolean } = {}): Promise<DataStore> {
     this.#platform ??= this.#secret()
-      .then((secret) => this.#database.openDataStore(secret))
+      .then((secret) => this.#database.openDataStore(secret, options))
       .catch((error) => {
         this.#platform = undefined;
         throw error;
@@ -213,6 +223,13 @@ export class DataStores {
       held.set(store, data);
     }
     return { db: data, store };
+  }
+
+  /** How the platform database's pools are doing: its own, the queue's, and the row requests'. */
+  async poolStats(): Promise<Record<string, PoolStats>> {
+    const own = this.#database.poolStats();
+    const store = await this.#platform?.catch(() => undefined);
+    return { ...own, ...(store ? { rows: store.rowStats() } : {}) };
   }
 
   /** Every store in use, with the name of its location. For the readiness check. */

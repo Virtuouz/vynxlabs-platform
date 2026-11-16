@@ -131,7 +131,8 @@ export async function resolveScimCaller(
       .updateTable("scim_token")
       .set({ last_used_at: now })
       .where("id", "=", row.id)
-      .execute();
+      .execute()
+      .catch(() => {});
   }
   return { provider: found, tokenId: row.id, tokenPrefix: row.prefix };
 }

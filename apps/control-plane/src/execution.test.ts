@@ -1432,6 +1432,11 @@ describe("operator health and guards", () => {
         /^platform_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
       );
       expect(metrics).toMatch(/^platform_alerts_total\{outcome="delivered"\} \d+$/m);
+      // What the instance holds itself to under load: its pools and its database.
+      expect(metrics).toMatch(/^platform_db_pool\{pool="platform",state="waiting"\} \d+$/m);
+      expect(metrics).toMatch(/^platform_db_pool\{pool="rows",state="total"\} \d+$/m);
+      expect(metrics).toMatch(/^platform_database_size_bytes \d+$/m);
+      expect(metrics).toMatch(/^platform_database_read_only 0$/m);
 
       // Without workspace labels, the counted series carry none.
       t.kernel.config.metricsWorkspaceLabels = false;
@@ -1494,7 +1499,7 @@ describe("managed workers", () => {
       Object.keys(environment)
         .sort()
         .filter((name) => name.startsWith("PLATFORM_")),
-    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT"]);
+    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT", "PLATFORM_WORKER_MACHINE"]);
     for (const secret of [
       "DATABASE_URL",
       "MASTER_KEY",

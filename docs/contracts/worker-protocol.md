@@ -34,6 +34,8 @@ Asks for the next job. The control plane holds the request for up to `waitSecond
 
 Request: `workerId` (a UUID the worker chooses once, at start), optional `version`, optional `waitSeconds`, and optional `kinds`: the kinds of job the worker takes, `run` and any [task kinds](#tasks) it knows. A worker that sends no `kinds` is given runs only. Added in 0.6.0.
 
+Optional `machine`: `{name, slots}`, the machine the worker shares with other workers and how many scripts it runs at once. Added in 0.7.0. Workers that send the same `name` are held together to `slots`: past it, and past a tenant's fair share while other tenants on the machine wait, the claim gets no job. The worker host and the control plane hand their workers this in `PLATFORM_WORKER_MACHINE`, as `<name>|<slots>|<memory floor MB>`. A worker given it also stops claiming while the machine's free memory is below the floor. A standalone worker sends nothing and is held only to its own concurrency.
+
 Response: `{"job": null}`, a run, or a [task](#tasks). A run has `kind: "run"`, absent from a control plane older than 0.6.0, and:
 
 | Field | Meaning |
@@ -44,7 +46,7 @@ Response: `{"job": null}`, a run, or a [task](#tasks). A run has `kind: "run"`, 
 | `input` | The script's input |
 | `bundle.id`, `bundle.digest` | The bundle this run is pinned to |
 | `timeoutSeconds` | How long this attempt may take |
-| `memoryMb` | The most memory the script may use, in MB. Default 512. A worker that cannot limit memory may ignore it |
+| `memoryMb` | The most memory the script may use, in MB. Default 512. The reference worker holds a script's whole process to it, plus 64 MB for Node itself. A worker that cannot limit memory may ignore it |
 | `heartbeatSeconds` | Send a heartbeat at least this often |
 | `idempotencyKey` | The same on every attempt of this run |
 | `trigger` | What started the run |

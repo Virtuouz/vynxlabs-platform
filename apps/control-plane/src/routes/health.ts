@@ -5,9 +5,20 @@ import { access } from "../kernel/http.js";
 import type { ObjectStore } from "../storage.js";
 
 const Check = Type.Object({ ok: Type.Boolean(), error: Type.Optional(Type.String()) });
+const DatabaseCheck = Type.Object({
+  ok: Type.Boolean(),
+  error: Type.Optional(Type.String()),
+  readOnly: Type.Optional(
+    Type.Boolean({
+      description:
+        "The database answers but takes no writes, such as when its disk is full. Reads are served; changes are answered 503.",
+    }),
+  ),
+  latencyMs: Type.Optional(Type.Integer({ description: "How long the database took to answer." })),
+});
 const Readiness = Type.Object({
   status: Type.Union([Type.Literal("ready"), Type.Literal("not_ready")]),
-  checks: Type.Object({ database: Check, objectStore: Check }),
+  checks: Type.Object({ database: DatabaseCheck, objectStore: Check }),
 });
 
 const CHECK_TIMEOUT_MS = 3000;
@@ -56,21 +67,34 @@ export function healthRoutes(deps: {
         schema: {
           summary: "Readiness",
           description:
-            "Returns 200 when Postgres and the object store are reachable, 503 otherwise.",
+            "Returns 200 when Postgres and the object store are reachable, 503 otherwise. A database that takes no writes is still ready, and says so in `readOnly`.",
           tags: ["health"],
           response: { 200: Readiness, 503: Readiness },
         },
       },
       async (request, reply) => {
+        let readOnly: boolean | undefined;
+        const started = performance.now();
         const [database, objectStore] = await Promise.all([
-          run(() => deps.database.ping()),
+          run(async () => {
+            await deps.database.ping();
+            readOnly = await deps.database.readOnly();
+          }),
           run(() => deps.storage.check()),
         ]);
+        // A database that answers but takes no writes is still ready: reads are served.
+        const databaseCheck = database.ok
+          ? {
+              ...database,
+              ...(readOnly === undefined ? {} : { readOnly }),
+              latencyMs: Math.round(performance.now() - started),
+            }
+          : database;
         const ready = database.ok && objectStore.ok;
         if (!ready) request.log.warn({ database, objectStore }, "readiness check failed");
         return reply.code(ready ? 200 : 503).send({
           status: ready ? "ready" : "not_ready",
-          checks: { database, objectStore },
+          checks: { database: databaseCheck, objectStore },
         });
       },
     );

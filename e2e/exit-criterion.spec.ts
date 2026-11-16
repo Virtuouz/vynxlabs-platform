@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { GitServer } from "./git-server.ts";
+import { signInWithPassword } from "./sign-in.ts";
 
 /**
  * The exit criterion of phase 7, walked in a browser on a fresh instance:
@@ -76,15 +77,7 @@ let link: string;
 test.beforeAll(async ({ browser }) => {
   await git.start();
   admin = await open(browser);
-  await admin.goto("/");
-  await admin.getByLabel("Email").fill(ADMIN.email);
-  await admin.getByRole("button", { name: "Continue" }).click();
-  await admin.getByLabel("Password").fill(ADMIN.password);
-  await admin.getByRole("button", { name: "Sign in" }).click();
-  // Signed in wherever the console opens: it reopens the last place, which an earlier spec may have left in a tenant.
-  await admin
-    .getByRole("heading", { name: "Sign in" })
-    .waitFor({ state: "detached", timeout: 15_000 });
+  await signInWithPassword(admin, ADMIN.email, ADMIN.password);
   asAdmin = apiOf(admin);
 });
 

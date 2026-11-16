@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { signInWithPassword } from "./sign-in.ts";
 
 /**
  * The flow editor, in a browser (phase 10, milestone 4): a draft is tested
@@ -63,15 +64,7 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await page.goto("/");
-  await page.getByLabel("Email").fill(ADMIN.email);
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByLabel("Password").fill(ADMIN.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  // Signed in wherever the console opens: it reopens the last place, which an earlier spec may have left in a tenant.
-  await page
-    .getByRole("heading", { name: "Sign in" })
-    .waitFor({ state: "detached", timeout: 15_000 });
+  await signInWithPassword(page, ADMIN.email, ADMIN.password);
 
   const tenant = await call(page, "POST", "/tenants", {
     slug: `fe-${stamp}`,
@@ -184,15 +177,7 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await page.goto("/");
-  await page.getByLabel("Email").fill(ADMIN.email);
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByLabel("Password").fill(ADMIN.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  // Signed in wherever the console opens: it reopens the last place, which an earlier spec may have left in a tenant.
-  await page
-    .getByRole("heading", { name: "Sign in" })
-    .waitFor({ state: "detached", timeout: 15_000 });
+  await signInWithPassword(page, ADMIN.email, ADMIN.password);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `fk-${stamp}`,
     name: "Flow by keyboard",

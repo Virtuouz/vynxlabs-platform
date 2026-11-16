@@ -1,4 +1,5 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
+import { signInWithPassword } from "./sign-in.ts";
 
 /**
  * Releasing as a team, in a browser (phase 10, milestone 6): a developer who may
@@ -39,14 +40,7 @@ async function signIn(browser: Browser, email: string, password: string): Promis
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await page.goto("/");
-  await page.getByLabel("Email").fill(email);
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page
-    .getByRole("heading", { name: "Sign in" })
-    .waitFor({ state: "detached", timeout: 15_000 });
+  await signInWithPassword(page, email, password);
   return page;
 }
 

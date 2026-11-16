@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { signInWithPassword } from "./sign-in.ts";
 
 /**
  * Approving from a mail, in a browser (phase 10, milestone 7): a flow waits for
@@ -59,15 +60,7 @@ test("an approver approves from the mail on a phone, and the console says who an
   const errors: string[] = [];
   const admin = await (await browser.newContext()).newPage();
   admin.on("pageerror", (error) => errors.push(String(error).slice(0, 300)));
-  await admin.goto("/");
-  await admin.getByLabel("Email").fill(ADMIN.email);
-  await admin.getByRole("button", { name: "Continue" }).click();
-  await admin.getByLabel("Password").fill(ADMIN.password);
-  await admin.getByRole("button", { name: "Sign in" }).click();
-  // Signed in wherever the console opens: it reopens the last place, which an earlier spec may have left in a tenant.
-  await admin
-    .getByRole("heading", { name: "Sign in" })
-    .waitFor({ state: "detached", timeout: 15_000 });
+  await signInWithPassword(admin, ADMIN.email, ADMIN.password);
 
   const tenant = await call(admin, "POST", "/tenants", { slug: `mail-${stamp}`, name: "Fernhill" });
   await call(admin, "POST", `/tenants/${tenant.id}/access-grants`, {

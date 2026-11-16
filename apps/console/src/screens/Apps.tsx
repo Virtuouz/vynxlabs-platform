@@ -2,7 +2,7 @@ import { Button, Notice, SelectField, SideSheet, Tabs } from "@vynxlabs/ui";
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText } from "../ask.tsx";
+import { ask, failureText } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
@@ -196,21 +196,32 @@ function ShareDialog({
                   size="small"
                   disabled={busy}
                   aria-label={`Stop sharing with ${binding.principalLabel}`}
-                  onClick={() =>
-                    run(async () => {
-                      // The same people's access to the app's tables goes with it.
-                      const theirs = (bindings.data?.items ?? []).filter(
-                        (other) =>
-                          !other.managedByResource &&
-                          other.scopeType === "resource" &&
-                          targets.includes(other.resourceId ?? "") &&
-                          other.principalType === binding.principalType &&
-                          other.principalId === binding.principalId &&
-                          other.roleName === binding.roleName,
-                      );
+                  onClick={async () => {
+                    // The same people's access to the app's tables goes with it.
+                    const theirs = (bindings.data?.items ?? []).filter(
+                      (other) =>
+                        !other.managedByResource &&
+                        other.scopeType === "resource" &&
+                        targets.includes(other.resourceId ?? "") &&
+                        other.principalType === binding.principalType &&
+                        other.principalId === binding.principalId &&
+                        other.roleName === binding.roleName,
+                    );
+                    const tablesToo = theirs.filter((one) => one.resourceId !== app?.id).length;
+                    const sure = await ask.confirm({
+                      title: `Stop sharing ${app?.title ?? "the app"} with ${binding.principalLabel}?`,
+                      text:
+                        tablesToo > 0
+                          ? `They lose the app, and their access to its ${tablesToo} table${tablesToo === 1 ? "" : "s"} goes with it.`
+                          : "They lose the app.",
+                      action: "Stop sharing",
+                      danger: true,
+                    });
+                    if (!sure) return;
+                    await run(async () => {
                       for (const one of theirs) await api.delete(`${base}/bindings/${one.id}`);
-                    })
-                  }
+                    });
+                  }}
                 >
                   Stop sharing
                 </Button>

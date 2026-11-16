@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–6 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–7 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -174,4 +174,18 @@ This applies to the run page, the runs inspector, a flow's run view and a flow s
 **Milestone 5 went in with one lint error** (a handler named `escape`, which shadows a browser global). It is fixed here, and lint is checked before each commit from now on.
 
 **The queue panel crashed when a queue answer had no `tasks`.** The new test's mock found it. It now counts none.
+
+### Milestone 7
+
+**Removing a widget can be undone.** The toast after it offers Undo for ten seconds, longer while pointed at. Undo puts the widget back where it was, with the widgets that followed it, and autosave saves it again. Undo through the builder's history waits for P2-10.
+
+**"Stop sharing" asks first,** naming the app, the person or group, and how many of the app's tables their access goes from too.
+
+**Unbinding a connection and deleting a secret name what uses it,** from the references the list already loaded: "Used by 3: billing/charge, billing/refund and orders/sync." `RemoveButton` takes `affected`.
+
+**"Delete for good" on a retired table or column asks for its name to be typed.** `RemoveButton` takes `typeToConfirm`.
+
+**A create dialog forgets what was typed when it is cancelled,** passwords included.
+
+**A field can make the person choose** (`pick`), instead of taking the first option. Create workspace uses it for the type, which cannot be changed afterwards, and lists Production first, as the empty list suggests.
 

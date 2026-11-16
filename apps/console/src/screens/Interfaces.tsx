@@ -1432,6 +1432,11 @@ export function PageEditor({
               })
             }
             onRemove={() => {
+              // Kept to put back: the widget, and which widgets followed it.
+              const removed = structuredClone(widget);
+              const followers = page.widgets
+                .filter((one) => one.link?.from === widget.id)
+                .map((one) => [one.id, structuredClone(one.link)] as const);
               onChange((target) => {
                 target.widgets = target.widgets.filter((one) => one.id !== widget.id);
                 // Whatever followed it follows nothing now.
@@ -1442,6 +1447,24 @@ export function PageEditor({
                 settle(target.widgets, undefined);
               });
               onSelect(undefined);
+              notify.success(`Removed ${widget.title ? `“${widget.title}”` : "the widget"}.`, {
+                action: {
+                  label: "Undo",
+                  onClick: () => {
+                    onChange((target) => {
+                      if (target.widgets.some((one) => one.id === removed.id)) return;
+                      target.widgets.push(structuredClone(removed));
+                      for (const [id, link] of followers) {
+                        const one = target.widgets.find((other) => other.id === id);
+                        if (one && !one.link && link) one.link = link;
+                      }
+                      // Back where it was; what took its room moves down again.
+                      settle(target.widgets, removed.id);
+                    });
+                    onSelect(removed.id);
+                  },
+                },
+              });
             }}
           />
         ) : (

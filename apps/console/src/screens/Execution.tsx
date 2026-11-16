@@ -14,7 +14,7 @@ import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
-import { UsedBy, useReferences } from "../kit/references.tsx";
+import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
@@ -746,6 +746,7 @@ export function Connections({ root }: { root: string }) {
                 <RemoveButton
                   label="Unbind"
                   confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
+                  affected={usersOf(connectionUses(row.path))}
                   run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
                   onDone={done}
                 />

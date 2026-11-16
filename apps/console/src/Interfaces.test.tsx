@@ -300,6 +300,13 @@ test("widgets are added and removed, and what is wrong is said before anything c
       timeout: 4000,
     },
   );
+  // A removal can be taken back: the widget returns where it was, and is saved again.
+  fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+  await waitFor(
+    () => expect(stored.pages[0]?.widgets.map((widget) => widget.id)).toEqual(["chart", "chart_2"]),
+    { timeout: 4000 },
+  );
+  expect(stored.pages[0]?.widgets[1]?.at.y).toBe(8);
 
   // A page is added through a dialog of the console's own, never the browser's.
   fireEvent.click(screen.getByRole("button", { name: "Page" }));
@@ -404,6 +411,11 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
     })),
   );
   fireEvent.click(dialog.getByRole("button", { name: "Stop sharing with finance" }));
+  // It asks first, and says the tables go too.
+  const asked = (await screen.findAllByRole("dialog")).at(-1) as HTMLElement;
+  expect(asked.textContent).toContain("their access to its 2 tables goes with it");
+  expect(sent("DELETE", "/bindings/")).toEqual([]);
+  fireEvent.click(within(asked).getByRole("button", { name: "Stop sharing" }));
   await dialog.findByText("Nobody else yet.");
   expect(sent("DELETE", "/bindings/").map((call) => call.url.split("/").pop())).toEqual([
     "b1",

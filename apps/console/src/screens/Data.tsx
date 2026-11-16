@@ -669,6 +669,7 @@ function PurgeButton({
     <RemoveButton
       label="Delete for good"
       confirm={`Delete ${what} and everything in it? This is the one action that destroys data, and it cannot be undone.`}
+      typeToConfirm={column ?? table}
       run={() => api.post(`${root}/table-purges`, { table, ...(column ? { column } : {}) })}
       onDone={onDone}
     />

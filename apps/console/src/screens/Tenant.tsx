@@ -5,7 +5,7 @@ import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
 import { Inspector, KeyValues } from "../kit/layout.tsx";
-import { UsedBy, useReferences } from "../kit/references.tsx";
+import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -318,9 +318,11 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           {
             name: "type",
             label: "Type",
+            // Chosen on purpose: it cannot be changed afterwards.
+            pick: true,
             options: [
-              { value: "dev", label: "Dev" },
               { value: "production", label: "Production" },
+              { value: "dev", label: "Dev" },
             ],
           },
           {
@@ -706,6 +708,7 @@ function WorkspaceDetail({
             <RemoveButton
               label="Delete"
               confirm={`Delete the secret ${row.name}? Anything that uses it will fail.`}
+              affected={usersOf(secretUses(row.name))}
               run={() => api.delete(`${root}/secrets/${row.name}`)}
               onDone={reload}
             />

@@ -215,7 +215,8 @@ test("a table from the repository is read-only in its definition, and shows what
   expect(screen.getByText("2 values")).toBeTruthy();
   expect(screen.getByText("ws_abc.orders")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Delete for good" }));
-  await answer("Delete for good");
+  // Nothing is destroyed until its name is typed.
+  await answer("Delete for good", "notes");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({
       table: "orders",

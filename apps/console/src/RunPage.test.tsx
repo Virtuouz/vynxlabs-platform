@@ -482,23 +482,24 @@ test("a run is opened, read and closed from the list with the keyboard alone", a
   history.replaceState(null, "", "/t/t1/workspaces/w1/runs");
   show(<RunsWorkbench root={root} link={link} />);
   const row = (await screen.findByText("reminders/send", { selector: "a" })).closest("tr");
-  expect(row?.tabIndex).toBe(0);
-  row?.focus();
-  fireEvent.keyDown(row as HTMLElement, { key: "Enter" });
+  // The list is one tab stop: a cell of the first row.
+  const cell = screen.getByRole("grid", { name: "Runs" }).querySelector('[tabindex="0"]');
+  expect(row?.contains(cell)).toBe(true);
+  (cell as HTMLElement).focus();
+  fireEvent.keyDown(cell as HTMLElement, { key: "Enter" });
 
   const inspector = await screen.findByRole("complementary", { name: "The chosen run" });
   // Focus goes to the inspector's heading, and the run's error can be read.
   await waitFor(() => expect(document.activeElement?.tagName).toBe("H2"));
   expect(inspector.contains(document.activeElement)).toBe(true);
   expect(await screen.findAllByText("The SMS gateway said no.")).not.toHaveLength(0);
-  expect(row?.getAttribute("aria-current")).toBe("true");
-  expect(row?.hasAttribute("aria-selected")).toBe(false);
+  expect(row?.getAttribute("aria-selected")).toBe("true");
 
   fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
   await waitFor(() =>
     expect(screen.queryByRole("complementary", { name: "The chosen run" })).toBeNull(),
   );
-  // Focus is back on the row that opened it.
-  expect(document.activeElement).toBe(row);
+  // Focus is back where it was in the list.
+  expect(document.activeElement).toBe(cell);
   history.replaceState(null, "", "/");
 });

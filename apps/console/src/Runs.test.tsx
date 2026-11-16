@@ -1,22 +1,31 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 let asked: string[];
+let sent: { address: string; body: unknown }[];
 
 beforeEach(() => {
   asked = [];
+  sent = [];
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: true,
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
   }));
-  vi.stubGlobal("fetch", async (address: string) => {
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     asked.push(address);
+    if (init.method === "POST") {
+      sent.push({ address, body: JSON.parse((init.body as string) ?? "null") });
+      return new Response(JSON.stringify({ cancelled: 2, more: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const path = address.split("?")[0] as string;
     if (path.endsWith("/runs/r1") || path.endsWith("/runs/r1/insight")) {
       const value = path.endsWith("/insight")
@@ -59,15 +68,16 @@ beforeEach(() => {
               maxAttempts: 3,
               error: null,
               errorSummary: null,
-              tags: [],
+              outputSummary: '{"sent":12}',
+              tags: ["clinic:north"],
               bundleVersion: 1,
               createdAt: new Date().toISOString(),
               startedAt: new Date().toISOString(),
               finishedAt: new Date().toISOString(),
             },
           ],
-          counts: { succeeded: 1 },
-          stateCounts: { succeeded: 1 },
+          counts: { succeeded: 1, queued: 2 },
+          stateCounts: { succeeded: 1, queued: 2 },
         }
       : { items: [] };
     return new Response(JSON.stringify(value), {
@@ -127,4 +137,45 @@ test("a run's details link to its script, the trigger that started it and its ve
   expect(href("v4")).toBe("/t/t1/workspaces/w1/deployments");
   expect(screen.getByRole("button", { name: "Copy the run ID" })).toBeTruthy();
   expect(screen.getByRole("button", { name: /^Copy as curl/ })).toBeTruthy();
+});
+
+test("each run is one row with what it produced, and the order is chosen by its headers", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  const grid = await screen.findByRole("grid", { name: "Runs" });
+  const row = within(grid).getByText("reminders/send").closest("tr") as HTMLElement;
+  expect(within(row).getByText('{"sent":12}')).toBeTruthy();
+  fireEvent.click(within(grid).getByRole("button", { name: /Duration/ }));
+  expect(location.search).toBe("?sort=duration&dir=asc");
+  await waitFor(() => expect(lists().at(-1)).toContain("sort=duration&dir=asc"));
+});
+
+test("tags add up as filters, and a run's target can be the only one shown", async () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?tag=vip");
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("reminders/send", { selector: "a" });
+  fireEvent.click(screen.getByRole("button", { name: "Show only runs tagged clinic:north" }));
+  expect(new URLSearchParams(location.search).getAll("tag")).toEqual(["vip", "clinic:north"]);
+  await waitFor(() => expect(lists().at(-1)).toContain("tag=vip&tag=clinic%3Anorth"));
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?target=reminders%2Fsend");
+  cleanup();
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("reminders/send", { selector: "a" });
+  expect(lists().at(-1)).toContain("target=reminders%2Fsend");
+  expect(
+    screen.getByRole("button", { name: "Stop showing only runs of reminders/send" }),
+  ).toBeTruthy();
+});
+
+test("cancelling queued runs names how many and cancels only what the list shows", async () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?q=reminders&tag=vip");
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain('matching "reminders"');
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel queued runs" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]?.body).toMatchObject({
+    include: "queued",
+    filters: { q: "reminders", tags: ["vip"] },
+  });
 });

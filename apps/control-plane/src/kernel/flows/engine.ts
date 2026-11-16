@@ -13,6 +13,7 @@ import {
 import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
+import { summarize } from "../execution/redact.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
@@ -1031,6 +1032,7 @@ class Advance {
       .set({
         status,
         output: stored.inline ?? JSON.stringify({ stored: stored.ref }),
+        output_summary: summarize(output),
         error: error ? JSON.stringify(error) : null,
         finished_at: new Date(),
       })

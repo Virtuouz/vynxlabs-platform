@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { isId, sql } from "@vynxlabs/db";
 import { Type } from "typebox";
-import { forbidden, notFound } from "../kernel/errors.js";
+import { badRequest, forbidden, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { diagnose } from "../kernel/execution/diagnose.js";
 import { bundleFrames, originalPosition } from "../kernel/execution/sourcemap.js";
@@ -46,9 +46,15 @@ const Activity = Type.Object({
   maxAttempts: Type.Integer(),
   error: NullableString,
   errorSummary: NullableString,
+  outputSummary: Type.Union([Type.String(), Type.Null()], {
+    description: "A short line of what it produced, with secret-looking values masked.",
+  }),
   tags: Type.Array(Type.String()),
   bundleVersion: Type.Integer(),
   createdAt: Time,
+  scheduledFor: Type.Union([Time, Type.Null()], {
+    description: "When a delayed or scheduled script run was due. Flow runs have none.",
+  }),
   startedAt: NullableTime,
   finishedAt: NullableTime,
 });
@@ -70,11 +76,14 @@ interface ActivityRow {
   max_attempts: number;
   error: string | null;
   error_summary: string | null;
+  output_summary: string | null;
   tags: string[];
   version: number;
   created_at: Date;
+  scheduled_for: Date | null;
   started_at: Date | null;
   finished_at: Date | null;
+  sort_value: number | null;
 }
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -147,8 +156,8 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         parts.push(sql`
           select 'script' as kind, r.id, r.script_path as target, r.status::text as status,
             ${runStateSql("r.status")} as state, r.trigger_type, r.attempt, r.max_attempts, r.error->>'message' as error,
-            r.error_summary, r.tags,
-            b.version, r.created_at, r.started_at, r.finished_at
+            r.error_summary, r.output_summary, r.tags,
+            b.version, r.created_at, r.scheduled_for, r.started_at, r.finished_at
           from run r join bundle b on b.id = r.bundle_id
           where r.workspace_id = ${w} and r.flow_run_id is null and ${window("r.created_at")}
             ${filters.target ? sql`and r.script_path = ${filters.target}` : sql``}
@@ -161,8 +170,9 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               select 1 from step_run s where s.flow_run_id = f.id and s.status = 'waiting'
             ) then 'waiting' else f.status::text end as status,
             ${flowStateSql("f")} as state, f.trigger_type, 1 as attempt, 1 as max_attempts, f.error->>'message' as error,
-            f.error_summary, f.tags,
-            b.version, f.created_at, f.created_at as started_at, f.finished_at
+            f.error_summary, f.output_summary, f.tags,
+            b.version, f.created_at, null::timestamptz as scheduled_for, f.created_at as started_at,
+            f.finished_at
           from flow_run f join bundle b on b.id = f.bundle_id
           where f.workspace_id = ${w} and f.parent_flow_run_id is null and ${window("f.created_at")}
             ${filters.target ? sql`and f.flow_path = ${filters.target}` : sql``}
@@ -212,6 +222,14 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ),
             from: Type.Optional(Time),
             to: Type.Optional(Time),
+            sort: Type.Optional(
+              Type.Union([Type.Literal("started"), Type.Literal("duration")], {
+                description:
+                  "Order by when each run started (or was due, or received), or by how long it took. " +
+                  "Newest first when left out.",
+              }),
+            ),
+            dir: Type.Optional(Type.Union([Type.Literal("asc"), Type.Literal("desc")])),
           }),
           response: {
             200: Type.Object({
@@ -246,8 +264,38 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           return { items: [], nextCursor: null, counts: {}, stateCounts: {}, keptDays };
         }
         const all = union(params.w, may, filters);
+        const descending = (query.dir ?? "desc") === "desc";
+        // Runs not yet started sort by when they were due or received; unfinished ones last by duration.
+        const sortValue =
+          query.sort === "started"
+            ? sql`extract(epoch from coalesce(started_at, scheduled_for, created_at))::float8`
+            : query.sort === "duration"
+              ? sql`coalesce(extract(epoch from finished_at - started_at)::float8, -1)`
+              : sql`null::float8`;
+        let afterValue: number | undefined;
+        let afterId = args.after;
+        if (query.sort && args.after) {
+          const [value, id] = args.after.split("|");
+          afterValue = Number(value);
+          afterId = id;
+          if (!Number.isFinite(afterValue) || !afterId || !isId(afterId)) {
+            throw badRequest("The cursor is not valid.");
+          }
+        }
+        const keyset = !afterId
+          ? sql``
+          : query.sort
+            ? descending
+              ? sql`and (sort_value, id) < (${afterValue}::float8, ${afterId}::uuid)`
+              : sql`and (sort_value, id) > (${afterValue}::float8, ${afterId}::uuid)`
+            : sql`and id < ${afterId}`;
+        const order = query.sort
+          ? descending
+            ? sql`order by sort_value desc, id desc`
+            : sql`order by sort_value asc, id asc`
+          : sql`order by id desc`;
         const rows = await sql<ActivityRow>`
-          select * from (${all}) as activity
+          select * from (select *, ${sortValue} as sort_value from (${all}) as a) as activity
           where true
             ${query.status ? sql`and status = ${query.status}` : sql``}
             ${
@@ -257,8 +305,8 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ? sql`and state = ${query.state}`
                   : sql``
             }
-            ${args.after ? sql`and id < ${args.after}` : sql``}
-          order by id desc
+            ${keyset}
+          ${order}
           limit ${args.limit + 1}
         `.execute(db);
         const counted = await sql<{ status: string; n: string }>`
@@ -271,7 +319,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...toPage(
             rows.rows,
             args,
-            (row) => row.id,
+            (row) => (query.sort ? `${row.sort_value}|${row.id}` : row.id),
             (row) => ({
               kind: row.kind,
               id: row.id,
@@ -283,9 +331,11 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               maxAttempts: Number(row.max_attempts),
               error: row.error,
               errorSummary: row.error_summary,
+              outputSummary: row.output_summary,
               tags: row.tags,
               bundleVersion: Number(row.version),
               createdAt: iso(row.created_at),
+              scheduledFor: row.scheduled_for ? iso(row.scheduled_for) : null,
               startedAt: row.started_at ? iso(row.started_at) : null,
               finishedAt: row.finished_at ? iso(row.finished_at) : null,
             }),

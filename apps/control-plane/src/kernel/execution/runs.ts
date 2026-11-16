@@ -5,7 +5,8 @@ import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
-import { bundleManifest } from "./bundles.js";
+import { bundleManifest, payloadSchemas } from "./bundles.js";
+import { summarize } from "./redact.js";
 import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
@@ -461,6 +462,7 @@ export async function completeRun(
   );
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
   const stored = await storePayload(kernel, run.id, "output", output);
+  const schemas = await payloadSchemas(kernel, run.bundle_id, run.script_path);
   const finishedAt = new Date();
   await kernel.db
     .updateTable("run")
@@ -468,6 +470,7 @@ export async function completeRun(
       status: "succeeded",
       output: stored.inline,
       output_ref: stored.ref,
+      output_summary: summarize(output, schemas.output),
       error: null,
       finished_at: finishedAt,
     })

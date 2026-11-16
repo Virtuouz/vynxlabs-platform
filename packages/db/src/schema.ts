@@ -505,6 +505,8 @@ export interface RunTable {
   tags: Generated<string[]>;
   /** The first line of the error, kept by the database. */
   error_summary: Generated<string | null>;
+  /** A short, redacted line of the output, written when the run ends. */
+  output_summary: Generated<string | null>;
   /** The value of the script's concurrency key in this run's input, when it has one. */
   concurrency_key: Generated<string | null>;
 }
@@ -586,6 +588,8 @@ export interface FlowRunTable {
   tags: Generated<string[]>;
   /** The first line of the error, kept by the database. */
   error_summary: Generated<string | null>;
+  /** A short, redacted line of the output, written when the run ends. */
+  output_summary: Generated<string | null>;
   /** The flow run this one retries. */
   retry_of: string | null;
 }

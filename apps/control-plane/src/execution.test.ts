@@ -493,6 +493,9 @@ describe("running", () => {
 
     const listed = await alice.get(`${ws()}/runs?script=greet&status=succeeded`);
     expect(listed.body.items.map((r: { id: string }) => r.id)).toEqual([id]);
+    // The runs list shows a short line of what it produced.
+    const row = (await alice.get(`${ws()}/activity?q=${id}`)).body.items[0];
+    expect(row).toMatchObject({ outputSummary: '{"greeting":"Hello Ada","version":1}' });
     expect(
       (await alice.get(`${ws()}/scripts`)).body.items.find(
         (s: { path: string }) => s.path === "greet",

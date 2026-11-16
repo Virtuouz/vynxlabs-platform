@@ -217,6 +217,9 @@ const Run = Type.Object({
   tags: Type.Array(Type.String()),
   rerunOf: Type.Union([Id, Type.Null()], { description: "The run this one runs again." }),
   createdAt: Time,
+  scheduledFor: Type.Union([Time, Type.Null()], {
+    description: "When a delayed or scheduled run was due. Time waited counts from here.",
+  }),
   startedAt: NullableTime,
   finishedAt: NullableTime,
 });
@@ -266,6 +269,7 @@ interface RunRow {
   error_summary: string | null;
   tags: string[];
   created_at: Date;
+  scheduled_for?: Date | null;
   started_at: Date | null;
   finished_at: Date | null;
 }
@@ -288,6 +292,7 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
       ? row.trigger_detail.of
       : null,
   createdAt: iso(row.created_at),
+  scheduledFor: isoOrNull(row.scheduled_for ?? null),
   startedAt: isoOrNull(row.started_at),
   finishedAt: isoOrNull(row.finished_at),
 });
@@ -1415,15 +1420,41 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: Type.Object({
             include: Type.Union([Type.Literal("queued"), Type.Literal("all")]),
             olderThanSeconds: Type.Optional(Type.Integer({ minimum: 1 })),
+            filters: Type.Optional(
+              Type.Object(
+                {
+                  target: Type.Optional(Type.String({ maxLength: 500 })),
+                  q: Type.Optional(Type.String({ maxLength: 200 })),
+                  tags: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 20 })),
+                  from: Type.Optional(Time),
+                  to: Type.Optional(Time),
+                },
+                {
+                  description:
+                    "Only the runs a runs list with these filters shows, as `GET activity` reads " +
+                    "them. A flow's steps are left to their flow.",
+                },
+              ),
+            ),
           }),
           response: { 200: Type.Object({ cancelled: Type.Integer(), more: Type.Boolean() }) },
         },
       },
       async ({ ctx, params, body }) => {
+        const filters = body.filters;
         const result = await cancelRuns(kernel, {
           workspaceId: params.w,
           include: body.include,
           olderThanSeconds: body.olderThanSeconds,
+          filters: filters
+            ? {
+                target: filters.target,
+                q: filters.q?.trim() || undefined,
+                tags: filters.tags,
+                from: filters.from ? new Date(filters.from) : undefined,
+                to: filters.to ? new Date(filters.to) : undefined,
+              }
+            : undefined,
         });
         await ctx.mutate(async (_trx, audit) => {
           await audit({

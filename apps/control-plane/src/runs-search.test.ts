@@ -16,7 +16,16 @@ const ids = (body: { items: { id: string }[] }) => body.items.map((one) => one.i
 
 async function insertRuns(
   count: number,
-  shape: (index: number) => { path?: string; status?: string; error?: string; tags?: string[] },
+  shape: (index: number) => {
+    path?: string;
+    status?: string;
+    error?: string;
+    tags?: string[];
+    startedAt?: Date;
+    finishedAt?: Date | null;
+    scheduledFor?: Date;
+    flowRunId?: string;
+  },
 ) {
   const rows = Array.from({ length: count }, (_, index) => {
     const id = newId();
@@ -36,7 +45,10 @@ async function insertRuns(
       idempotency_key: id,
       error: one.error ? JSON.stringify({ message: one.error }) : null,
       tags: one.tags ?? [],
-      finished_at: new Date(),
+      started_at: one.startedAt ?? null,
+      scheduled_for: one.scheduledFor ?? null,
+      flow_run_id: one.flowRunId ?? null,
+      finished_at: one.finishedAt === undefined ? new Date() : one.finishedAt,
     };
   });
   for (let start = 0; start < rows.length; start += 1000) {
@@ -157,4 +169,75 @@ describe("finding runs", () => {
     console.log(`first page of runs over 5,000: ${took.toFixed(0)} ms`);
     expect(took).toBeLessThan(300);
   }, 120_000);
+});
+
+describe("sorting, summaries and filtered cancelling", () => {
+  test("runs sort by when they started or by how long they took, a page at a time", async () => {
+    const base = Date.parse("2026-01-01T00:00:00Z");
+    const at = (seconds: number) => new Date(base + seconds * 1000);
+    const made = await insertRuns(5, (index) => ({
+      path: "sorted/job",
+      startedAt: at([30, 10, 50, 20, 40][index] as number),
+      finishedAt: at(([30, 10, 50, 20, 40][index] as number) + ([5, 1, 3, 9, 7][index] as number)),
+    }));
+    const order = (body: { items: { id: string }[] }) => ids(body).map((id) => made.indexOf(id));
+
+    expect(order((await activity("q=sorted&sort=started&dir=asc")).body)).toEqual([1, 3, 0, 4, 2]);
+    expect(order((await activity("q=sorted&sort=duration")).body)).toEqual([3, 4, 0, 2, 1]);
+    // Keyset pages in the chosen order, none twice.
+    const first = (await activity("q=sorted&sort=duration&limit=2")).body;
+    expect(order(first)).toEqual([3, 4]);
+    const second = (await activity(`q=sorted&sort=duration&limit=2&cursor=${first.nextCursor}`))
+      .body;
+    expect(order(second)).toEqual([0, 2]);
+    expect((await activity("sort=duration&cursor=bm9wZQ")).status).toBe(400);
+  });
+
+  test("a delayed run says when it was due", async () => {
+    const due = new Date("2026-02-01T09:00:00Z");
+    const [late] = await insertRuns(1, () => ({ path: "due/job", scheduledFor: due }));
+    const listed = (await activity("q=due")).body.items[0];
+    expect(listed).toMatchObject({ id: late, scheduledFor: due.toISOString() });
+  });
+
+  test("filtered cancelling stops only the queued runs the list shows, never a flow's steps", async () => {
+    const flowRun = newId();
+    await t.db
+      .insertInto("flow_run")
+      .values({
+        id: flowRun,
+        tenant_id: tenant,
+        workspace_id: workspace,
+        resource_id: newId(),
+        flow_path: "queue/flow",
+        bundle_id: bundle,
+        trigger_node: "start",
+        trigger_type: "manual",
+        trigger_detail: JSON.stringify({}),
+        status: "running",
+        started_by_type: "system",
+        idempotency_key: flowRun,
+      } as never)
+      .execute();
+    const [shown, step, elsewhere] = await insertRuns(3, (index) => ({
+      path: index === 2 ? "other/job" : "queue/job",
+      status: "queued",
+      finishedAt: null,
+      ...(index === 1 ? { flowRunId: flowRun } : {}),
+    }));
+    const cancelled = await alice.post(`/tenants/${tenant}/workspaces/${workspace}/runs/cancel`, {
+      include: "queued",
+      filters: { q: "queue/" },
+    });
+    expect(cancelled.body).toEqual({ cancelled: 1, more: false });
+    const statuses = await t.db
+      .selectFrom("run")
+      .select(["id", "status"])
+      .where("id", "in", [shown, step, elsewhere] as string[])
+      .execute();
+    const of = (id: string | undefined) => statuses.find((row) => row.id === id)?.status;
+    expect(of(shown)).toBe("cancelled");
+    expect(of(step)).toBe("queued");
+    expect(of(elsewhere)).toBe("queued");
+  });
 });

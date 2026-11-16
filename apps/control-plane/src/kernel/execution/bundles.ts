@@ -234,3 +234,32 @@ export async function removeOldPreviews(kernel: Kernel, olderThanDays = PREVIEW_
   }
   return removed;
 }
+
+/**
+ * A script's input and output schemas at a bundle, used to mask the secret parts
+ * of its payloads. Empty when the bundle or script cannot be read: masking then
+ * falls back to secret-looking keys.
+ */
+export async function payloadSchemas(
+  kernel: Kernel,
+  bundleId: string,
+  path: string,
+): Promise<{ input?: Record<string, unknown>; output?: Record<string, unknown> }> {
+  try {
+    const bundle = await kernel.db
+      .selectFrom("bundle")
+      .select(["id", "storage_key"])
+      .where("id", "=", bundleId)
+      .executeTakeFirst();
+    if (!bundle) return {};
+    const manifest = await bundleManifest(kernel, bundle, "script", path);
+    const body = (manifest?.body ?? {}) as { input?: unknown; output?: unknown };
+    const schema = (value: unknown) =>
+      typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+    const input = schema(body.input);
+    const output = schema(body.output);
+    return { ...(input ? { input } : {}), ...(output ? { output } : {}) };
+  } catch {
+    return {};
+  }
+}

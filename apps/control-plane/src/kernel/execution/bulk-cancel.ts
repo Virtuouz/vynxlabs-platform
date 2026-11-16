@@ -1,3 +1,4 @@
+import { isId, sql } from "@vynxlabs/db";
 import { HttpError } from "../errors.js";
 import { cancelFlowRun } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
@@ -14,6 +15,21 @@ export interface BulkCancel {
   include: "queued" | "all";
   /** Only what was started at least this long ago. */
   olderThanSeconds?: number | undefined;
+  /**
+   * Only the runs a filtered runs list shows: never a flow's steps, which go with
+   * their flow, and only those matching every filter given.
+   */
+  filters?: RunFilters | undefined;
+}
+
+/** The runs list's filters, as the activity route reads them. */
+export interface RunFilters {
+  target?: string | undefined;
+  /** A path prefix, a tag, an ID, or text in the error. */
+  q?: string | undefined;
+  tags?: string[] | undefined;
+  from?: Date | undefined;
+  to?: Date | undefined;
 }
 
 export interface BulkCancelled {
@@ -39,6 +55,28 @@ export async function cancelRuns(kernel: Kernel, request: BulkCancel): Promise<B
     if (passed.length > 0) query = query.where("id", "not in", passed);
     if (request.olderThanSeconds) {
       query = query.where("created_at", "<=", before(request.olderThanSeconds));
+    }
+    const filters = request.filters;
+    if (filters) {
+      query = query.where("flow_run_id", "is", null);
+      if (filters.target) query = query.where("script_path", "=", filters.target);
+      if (filters.from) query = query.where("created_at", ">=", filters.from);
+      if (filters.to) query = query.where("created_at", "<", filters.to);
+      for (const tag of filters.tags ?? []) {
+        query = query.where(sql<boolean>`${tag} = any(tags)`);
+      }
+      if (filters.q) {
+        const q = filters.q;
+        const like = q.replace(/[\\%_]/g, "\\$&");
+        query = query.where((eb) =>
+          eb.or([
+            eb("script_path", "like", `${like}%`),
+            eb(sql<boolean>`${q} = any(tags)`, "=", true),
+            eb("error_summary", "ilike", `%${like}%`),
+            ...(isId(q) ? [eb("id", "=", q)] : []),
+          ]),
+        );
+      }
     }
     const ids = (await query.orderBy("created_at").limit(BATCH).execute()).map((row) => row.id);
     if (ids.length === 0) return { ids, passed: [] };

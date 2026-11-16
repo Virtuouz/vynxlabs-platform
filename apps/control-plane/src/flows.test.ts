@@ -656,6 +656,18 @@ describe("running a flow", () => {
     ]);
     expect(step(done, "a").output).toEqual({ n: 6 });
     expect(step(done, "b").output).toEqual({ n: 12 });
+    // Each step says what it was given.
+    expect(step(done, "a").input).toEqual({ n: 3 });
+    expect(step(done, "b").input).toEqual({ n: 6 });
+
+    // The graph as it was when the run started, and whether the flow differs now.
+    const definition = (await alice.get(`${ws()}/flow-runs/${id}/definition`)).body;
+    expect(definition).toMatchObject({
+      path: "linear",
+      bundleVersion: done.bundleVersion,
+      changed: false,
+    });
+    expect(Object.keys(definition.nodes).sort()).toEqual(["a", "b", "c", "start"]);
 
     // A code step is an ordinary run, linked to its flow, with its own logs.
     const stepRun = (await alice.get(`${ws()}/runs/${step(done, "a").runId}`)).body;

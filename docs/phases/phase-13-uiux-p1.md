@@ -114,3 +114,10 @@ Findings are recorded under each milestone as it lands.
 - **What is not.** What is stored, what workers are given, and what a run again or a retry uses are the real values. A `{stored}` pointer to a large payload is left as it is, and no route serves stored payloads to readers.
 - **MCP tool results** (`routes/mcp.ts`) are not masked. They are the answer to a call the agent made, not a display of a past run.
 - **Re-run dialogs** (`InputDialog`) leave masked values out of the form, name them, and require them again. Submitting anything still masked is refused.
+
+### Milestone 8: the flow run page
+
+- **No new column.** Every kind of step already keeps what it was given: a code step's run has its input, a sub-flow's child run has its own, a foreach keeps its items and an approval its detail. `GET flow-runs/:id` gathers each step's `input` from there and masks it. The planned `step_run.input` column was not needed.
+- **More masking.** Step `detail` in the flow-run response, and the detail approvers see in the approvals list, are masked as well.
+- **`GET flow-runs/:id/definition`** returns the flow at the run's version. `changed` compares it with the workspace's active version, both read from bundles with keys in a stable order: the resource table keeps bodies in its own normalised form, so comparing against it said "changed" every time.
+- **The page** opens on the failed step, or else the running or waiting one, and keeps the chosen step in `?step=`. The banner reads "Failed at `b`: …" and links to the step. A step shows its input, a diagnosis from its run's insight, "Open script", and wait and run times. The flow's own input and output are shown, and the graph is drawn as the run ran it, with a note when the flow has changed since.

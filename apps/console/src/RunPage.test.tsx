@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { useNamedObject } from "./kit/title.ts";
 import { LOG_WINDOW } from "./screens/Execution.tsx";
@@ -505,5 +505,63 @@ test("a run is opened, read and closed from the list with the keyboard alone", a
   );
   // Focus is back where it was in the list.
   expect(document.activeElement).toBe(cell);
+  history.replaceState(null, "", "/");
+});
+
+test("a failed flow run opens on its failed step, names it, and shows what it was given", async () => {
+  routes[`GET ${root}/flow-runs/f2`] = () => [
+    200,
+    {
+      ...flowRun,
+      steps: [
+        step("start"),
+        step("a"),
+        step("b", {
+          status: "failed",
+          state: "failed",
+          runId: "rb",
+          input: { sku: "A", apiKey: "[redacted]" },
+          error: { message: "The supplier refused." },
+        }),
+      ],
+    },
+  ];
+  routes[`GET ${root}/flow-runs/f2/definition`] = () => [
+    200,
+    {
+      path: "orders/reorder",
+      bundleVersion: 4,
+      nodes: {
+        start: { type: "trigger" },
+        a: { type: "set" },
+        b: { type: "script", script: "supplier/order" },
+      },
+      edges: [],
+      layout: {},
+      changed: true,
+    },
+  ];
+  routes[`GET ${root}/runs/rb/logs`] = () => [200, { items: [], done: true }];
+  routes[`GET ${root}/runs/rb/insight`] = () => [
+    200,
+    { attempts: [], worker: null, timeoutSeconds: 30, uses: [], diagnosis: null },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  // No click: the failed step is what the page opens on.
+  const panel = await screen.findByRole("region", { name: "Step b" });
+  expect(within(panel).getByText("The supplier refused.")).toBeTruthy();
+  expect(await within(panel).findByRole("link", { name: "Open script supplier/order" })).toBeTruthy();
+  expect(panel.textContent).toContain("[redacted]");
+  expect(screen.getByText(/Failed at/).textContent).toContain("b");
+  // The flow's own input is on the page too.
+  expect(screen.getByRole("region", { name: "The flow's input and output" }).textContent).toContain(
+    '"sku"',
+  );
+  // Choosing another step puts it in the address; a reload comes back to it.
+  fireEvent.click(await screen.findByText("a", { selector: "button *, button" }));
+  await waitFor(() => expect(new URLSearchParams(location.search).get("step")).toBe("a"));
+  cleanup();
+  show(<RunPage root={root} link={link} id="f2" />);
+  expect(await screen.findByRole("region", { name: "Step a" })).toBeTruthy();
   history.replaceState(null, "", "/");
 });

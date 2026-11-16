@@ -123,6 +123,10 @@ const Step = Type.Object({
   status: Type.String(),
   state: RunStateSchema,
   outputName: NullableString,
+  input: Type.Unknown({
+    description:
+      "What the step was given: a code step's input, a sub-flow's, a foreach's items, an approval's detail. Secret-looking values are masked.",
+  }),
   output: Type.Unknown(),
   error: ErrorShape,
   handled: Type.Boolean({ description: "True when the step failed and its error path was taken." }),
@@ -148,6 +152,46 @@ const Step = Type.Object({
   }),
   finishedAt: NullableTime,
 });
+
+/** JSON with object keys in order, so two equal values always read the same. */
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, inner) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => a.localeCompare(b)))
+      : inner,
+  );
+}
+
+interface StepInputRow {
+  run_id: string | null;
+  run_script: string | null;
+  run_input: unknown;
+  run_input_ref: string | null;
+  child_flow_run_id: string | null;
+  child_input: unknown;
+  child_input_ref: string | null;
+  detail: unknown;
+}
+
+/** What a step was given, from wherever its kind keeps it, masked. */
+function stepInput(
+  step: StepInputRow,
+  schemaOf: (script: string) => Record<string, unknown> | undefined,
+): unknown {
+  if (step.run_id) {
+    if (step.run_input_ref) return { stored: step.run_input_ref };
+    return redact(step.run_input ?? null, step.run_script ? schemaOf(step.run_script) : undefined);
+  }
+  if (step.child_flow_run_id) {
+    return step.child_input_ref
+      ? { stored: step.child_input_ref }
+      : redact(step.child_input ?? null);
+  }
+  const detail = (step.detail ?? null) as { items?: unknown; detail?: unknown } | null;
+  if (detail && "items" in detail) return redact(detail.items);
+  if (detail && "detail" in detail) return redact(detail.detail);
+  return null;
+}
 
 const Approval = Type.Object({
   flowRunId: Id,
@@ -741,6 +785,87 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     });
 
     app.get(
+      `${base}/flow-runs/:id/definition`,
+      {
+        config: { access: access.workspace("flow_run:read") },
+        schema: {
+          summary: "The flow as it was when this run started",
+          description:
+            "The graph of the flow at the run's own version, so a run is drawn as it ran even " +
+            "after the flow has changed. `changed` says whether the deployed flow differs now. " +
+            "Positions are the run's version's own, with the flow's current ones for nodes it lacks.",
+          tags: ["flows"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          response: {
+            200: Type.Object({
+              path: Type.String(),
+              bundleVersion: Type.Integer(),
+              nodes: AnyObject,
+              edges: Type.Array(AnyObject),
+              layout: Type.Record(Type.String(), Position),
+              changed: Type.Boolean(),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const row = await flowRuns(params.w)
+          .where("flow_run.id", "=", params.id)
+          .executeTakeFirst();
+        if (!row) throw notFound("The flow run");
+        const bundle = await db
+          .selectFrom("bundle")
+          .select(["id", "storage_key"])
+          .where("id", "=", row.bundle_id)
+          .executeTakeFirstOrThrow();
+        const manifest = await bundleManifest(kernel, bundle, "flow", row.flow_path);
+        if (!manifest) throw notFound(`The flow ${row.flow_path} at version ${row.bundle_version}`);
+        const body = manifest.body as unknown as FlowBody;
+        const current = await db
+          .selectFrom("resource")
+          .select(["id", "body"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "flow")
+          .where("path", "=", row.flow_path)
+          .executeTakeFirst();
+        const positions = current
+          ? (
+              await db
+                .selectFrom("flow_layout")
+                .select("positions")
+                .where("resource_id", "=", current.id)
+                .executeTakeFirst()
+            )?.positions
+          : undefined;
+        // Changed when the active version's flow is drawn differently from the run's.
+        const active = await db
+          .selectFrom("workspace")
+          .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+          .select(["bundle.id", "bundle.storage_key"])
+          .where("workspace.id", "=", params.w)
+          .executeTakeFirst();
+        const now =
+          active && active.id !== bundle.id
+            ? await bundleManifest(kernel, active, "flow", row.flow_path)
+            : manifest;
+        const shape = (one: { body: Record<string, unknown> } | undefined) =>
+          one ? stableJson({ nodes: one.body.nodes, edges: one.body.edges }) : "";
+        return {
+          path: row.flow_path,
+          bundleVersion: row.bundle_version,
+          nodes: body.nodes as unknown as Record<string, unknown>,
+          edges: body.edges as unknown as Record<string, unknown>[],
+          layout: {
+            ...(positions ?? {}),
+            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
+          },
+          changed: shape(now) !== shape(manifest),
+        };
+      },
+    );
+
+    app.get(
       `${base}/flow-runs/:id/retry-plan`,
       {
         config: { access: access.workspace("flow_run:read") },
@@ -916,12 +1041,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             steps: await trx
               .selectFrom("step_run")
               .leftJoin("run", "run.id", "step_run.run_id")
+              .leftJoin("flow_run as child", "child.id", "step_run.child_flow_run_id")
               .selectAll("step_run")
               .select([
                 "run.output as run_output",
                 "run.output_ref as run_output_ref",
                 "run.started_at as run_started_at",
                 "run.script_path as run_script",
+                "run.input as run_input",
+                "run.input_ref as run_input_ref",
+                "child.input as child_input",
+                "child.input_ref as child_input_ref",
               ])
               .where("step_run.flow_run_id", "=", params.id)
               .orderBy("step_run.started_at")
@@ -955,6 +1085,9 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             status: step.status,
             state: stepState(step),
             outputName: step.output_name,
+            // What the step was given: a code step's run input, a sub-flow's input, the items
+            // of a foreach, the detail an approval showed. Masked as payloads are.
+            input: stepInput(step, (script) => scriptSchemas.get(script)?.input),
             // A code step's output is its run's. Something large is named, not sent.
             output: step.run_id
               ? step.run_output_ref
@@ -972,11 +1105,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             childFlowRunId: step.child_flow_run_id,
             wakeAt: isoOrNull(step.wake_at),
             // A foreach keeps its items here. They are shown through its item steps instead.
-            detail: Object.fromEntries(
-              Object.entries(step.detail).filter(
-                ([name]) => name !== "items" && name !== "copiedFrom",
+            detail: redact(
+              Object.fromEntries(
+                Object.entries(step.detail).filter(
+                  ([name]) => name !== "items" && name !== "copiedFrom",
+                ),
               ),
-            ),
+            ) as Record<string, unknown>,
             copiedFrom:
               (step.detail.copiedFrom as
                 | { flowRunId: string; runId?: string; childFlowRunId?: string }
@@ -1082,7 +1217,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       flow: row.flow_path,
       node: row.node_id,
       title: String(row.detail.title),
-      detail: row.detail.detail ?? null,
+      detail: redact(row.detail.detail ?? null),
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
       approvers: (() => {

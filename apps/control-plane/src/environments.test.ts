@@ -370,7 +370,7 @@ async function cloned(body: Record<string, unknown>, client = alice, from = shop
   if (asked.status !== 202) return asked;
   for (let i = 0; i < 200; i++) {
     const now = await alice.get(`/tenants/${tenant}/workspace-clones/${asked.body.id}`);
-    if (now.body.status !== "running") return now;
+    if (now.body.status !== "running" && now.body.status !== "queued") return now;
     await sleep(50);
   }
   throw new Error("the clone did not finish");
@@ -902,6 +902,55 @@ describe("the list of tenant-owned tables", () => {
     const owned = new Set<string>(OWNED_TABLES.map((entry) => entry.table));
     expect(carrying.filter((name) => !owned.has(name) && name !== "data_table")).toEqual([]);
   });
+});
+
+describe("large clones", () => {
+  test("a clone with many rows copies them all, a page at a time", async () => {
+    // 12,000 more rows in the console-made table: more than two pages.
+    for (let batch = 0; batch < 12; batch += 1) {
+      const rows = Array.from({ length: 1000 }, (_, n) => ({ label: `row ${batch * 1000 + n}` }));
+      const added = await alice.post(`${ws(shop)}/rows/scratch`, { rows });
+      expect(added.status, JSON.stringify(added.body).slice(0, 300)).toBeLessThan(300);
+    }
+    const done = await cloned({ slug: "shop-big", name: "Shop big", withData: true });
+    expect(done.body.status, JSON.stringify(done.body)).toBe("succeeded");
+    const tables = (await alice.get(`${ws(done.body.workspaceId)}/tables`)).body.items;
+    const scratch = tables.find((table: Any) => table.name === "scratch");
+    expect(scratch.rowCount).toBe(12_001);
+    expect(done.body.report.rows).toBeGreaterThanOrEqual(12_001);
+  }, 120_000);
+
+  test("a clone with data waits while another copies its rows, then goes ahead", async () => {
+    // Another clone, holding the one turn to copy rows.
+    const holder = (
+      await sql<{ id: string }>`
+        insert into workspace_clone (id, tenant_id, source_workspace_id, workspace_id, status,
+          with_data, safe, created_by_type)
+        values (gen_random_uuid(), ${tenant}, gen_random_uuid(), gen_random_uuid(), 'running',
+          true, true, 'member')
+        returning id
+      `.execute(t.db)
+    ).rows[0]?.id as string;
+    const asked = await alice.post(`${ws(shop)}/clones`, {
+      slug: "shop-waits",
+      name: "Shop waits",
+      withData: true,
+    });
+    expect(asked.status, JSON.stringify(asked.body)).toBe(202);
+    expect(asked.body.status).toBe("queued");
+    await sleep(2500);
+    const waiting = await alice.get(`/tenants/${tenant}/workspace-clones/${asked.body.id}`);
+    expect(waiting.body.status).toBe("queued");
+
+    await sql`update workspace_clone set status = 'succeeded' where id = ${holder}`.execute(t.db);
+    let status = "queued";
+    for (let i = 0; i < 200 && (status === "queued" || status === "running"); i++) {
+      await sleep(100);
+      status = (await alice.get(`/tenants/${tenant}/workspace-clones/${asked.body.id}`)).body
+        .status;
+    }
+    expect(status).toBe("succeeded");
+  }, 60_000);
 });
 
 describe("guards", () => {

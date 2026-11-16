@@ -506,7 +506,7 @@ The console keeps its own look whichever tenant is open. An operator brands it o
 ## Environments inside a tenant
 
 - A dev workspace is linked to the workspace it promotes to. Promoting activates there the same bundle that runs here, without rebuilding it. `platform promote --preview` shows what would change first.
-- A workspace can be cloned into a new dev workspace, with or without its rows and files. By default the clone gets no connection, data source or secret value and its triggers are paused, so it cannot act on a real system. Turning that safety off is recorded in the audit log.
+- A workspace can be cloned into a new dev workspace, with or without its rows and files. By default the clone gets no connection, data source or secret value and its triggers are paused, so it cannot act on a real system. Turning that safety off is recorded in the audit log. Clones with rows copy one at a time across the instance, in pages, so a large one does not slow every tenant's tables; the others wait as `queued`.
 - A workspace's triggers can be paused at any time.
 
 ## Metrics

@@ -19,6 +19,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Database change.** Migration 0060 adds the instance's own switches.
 - **An emergency stop for triggers.** **Instance → Triggers**, or `PUT /api/v1/instance/triggers`, pauses every schedule, source, webhook, form and event in every tenant at once. `TRIGGERS_PAUSED=true` does the same from the environment.
 - **A workspace with a long queue gets no more from its schedules:** past `SCHEDULE_BACKLOG_LIMIT` queued runs (200), a schedule passes over its time and says why.
+- **Database change.** Migration 0061 lets a clone wait its turn.
+- **One clone copies rows at a time across the instance,** in pages of 5,000 with a pause between, so a large copy no longer slows every tenant's tables. Others wait as `queued`. A clone is still one transaction, never half-copied. A clone still waiting when its instance restarts fails, as a running one does, and can be started again.
 - **Waiting workers are woken when work arrives** rather than every half second. A foreach went from about 150 to 530 items a minute on a development machine. A database that takes no writes, such as one whose disk is full, is a 503 `read_only`.
 
 ### For tenant developers

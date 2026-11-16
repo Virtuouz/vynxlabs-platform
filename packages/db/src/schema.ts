@@ -706,7 +706,7 @@ export interface WorkspaceCloneTable {
   tenant_id: string;
   source_workspace_id: string;
   workspace_id: string;
-  status: "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed";
   with_data: boolean;
   safe: boolean;
   report: Json<Record<string, unknown>>;

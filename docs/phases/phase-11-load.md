@@ -140,3 +140,14 @@ The time went to claiming: a waiting claim looked again only every 500 ms. It is
 - a new dev workspace's overview saying why its triggers are paused.
 
 No page errors, and nothing scrolls sideways. The runs list's **Cancel queued runs** was checked by the API tests and type-checking, not walked.
+
+### Milestone 5
+
+**A clone waits in the process that was asked, not in the background loop as planned.** It acts as the member who asked, and their principal exists only in that request. So a waiting clone cannot be picked up again by another process. One that is waiting when its instance restarts fails, as a running one already did, with the same "the instance restarted" message, and the member clones again.
+
+**The turn is a row, not a lock:** at most one clone with data is `running` across the instance.
+- A waiting clone looks every 2 seconds, under an advisory lock, and takes the turn when none is running, or when the one running is over an hour old and so died with its process.
+- It gives up after an hour.
+- Clones without data take no turn: they copy no rows.
+
+**Rows go in pages of 5,000 by `id`, with 50 ms between pages,** through `insert … select … where id > $last order by id limit … returning id`. Still inside the one transaction, so a failed clone leaves nothing half-copied, as before. Tested with a 12,001-row table: three pages.

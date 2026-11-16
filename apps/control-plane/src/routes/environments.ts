@@ -25,7 +25,15 @@ const Clone = Type.Object({
   id: Id,
   sourceWorkspaceId: Id,
   workspaceId: Id,
-  status: Type.Union([Type.Literal("running"), Type.Literal("succeeded"), Type.Literal("failed")]),
+  status: Type.Union(
+    [
+      Type.Literal("queued"),
+      Type.Literal("running"),
+      Type.Literal("succeeded"),
+      Type.Literal("failed"),
+    ],
+    { description: "`queued`: a clone with data waiting for another to finish copying." },
+  ),
   withData: Type.Boolean(),
   safe: Type.Boolean(),
   report: AnyObject,
@@ -37,7 +45,7 @@ interface CloneRow {
   id: string;
   source_workspace_id: string;
   workspace_id: string;
-  status: "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed";
   with_data: boolean;
   safe: boolean;
   report: Record<string, unknown>;
@@ -143,7 +151,8 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               tenant_id: params.t,
               source_workspace_id: source.id,
               workspace_id: workspaceId,
-              status: "running",
+              // A copy with data waits its turn; one without starts at once.
+              status: withData ? "queued" : "running",
               with_data: withData,
               safe,
               report: "{}",

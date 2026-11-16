@@ -10,6 +10,9 @@ import TsWorker from "monaco-editor/language/typescript/ts.worker.js?worker";
 import contextTypes from "../../../../packages/sdk/dist/context.d.ts?raw";
 import extensionTypes from "../../../../packages/sdk/dist/extensions.d.ts?raw";
 import httpTypes from "../../../../packages/sdk/dist/http.d.ts?raw";
+import indexTypes from "../../../../packages/sdk/dist/index.d.ts?raw";
+import oauth2Types from "../../../../packages/sdk/dist/oauth2.d.ts?raw";
+import smtpTypes from "../../../../packages/sdk/dist/smtp.d.ts?raw";
 import tableTypes from "../../../../packages/sdk/dist/tables.d.ts?raw";
 
 (globalThis as { MonacoEnvironment?: unknown }).MonacoEnvironment = {
@@ -28,22 +31,45 @@ monaco.typescript.typescriptDefaults.setCompilerOptions({
   strict: true,
   noEmit: true,
   allowNonTsExtensions: true,
-  lib: ["es2023"],
+  // A script runs in Node, which has the globals a web worker has (fetch, URL, AbortSignal,
+  // crypto…) and none of a page's (window, document).
+  lib: ["es2023", "webworker"],
 });
+// The SDK's own declarations, as built, so the editor knows every export the SDK has.
 const sdk = "file:///node_modules/@vynxlabs/sdk";
 const libraries: Record<string, string> = {
   "context.d.ts": contextTypes,
   "extensions.d.ts": extensionTypes,
   "http.d.ts": httpTypes,
+  "index.d.ts": indexTypes,
+  "oauth2.d.ts": oauth2Types,
+  "smtp.d.ts": smtpTypes,
   "tables.d.ts": tableTypes,
-  "index.d.ts":
-    'export * from "./context.js";\nexport * from "./http.js";\nexport * from "./tables.js";\n' +
-    'export * from "./extensions.js";\nexport declare const SDK_VERSION: string;\n',
   "package.json": '{"name":"@vynxlabs/sdk","types":"./index.d.ts"}',
 };
 for (const [name, content] of Object.entries(libraries)) {
   monaco.typescript.typescriptDefaults.addExtraLib(content, `${sdk}/${name}`);
 }
+
+// The SDK hands scripts zod as `z`, so its types come too.
+const zodRoot = "../../../../packages/sdk/node_modules/zod/";
+const zodTypes = import.meta.glob<string>(
+  [
+    "../../../../packages/sdk/node_modules/zod/index.d.ts",
+    "../../../../packages/sdk/node_modules/zod/v4/{classic,core,locales}/*.d.ts",
+  ],
+  { query: "?raw", import: "default", eager: true },
+);
+for (const [file, content] of Object.entries(zodTypes)) {
+  monaco.typescript.typescriptDefaults.addExtraLib(
+    content,
+    `file:///node_modules/zod/${file.slice(zodRoot.length)}`,
+  );
+}
+monaco.typescript.typescriptDefaults.addExtraLib(
+  '{"name":"zod","types":"./index.d.ts"}',
+  "file:///node_modules/zod/package.json",
+);
 
 /** The editor's colors, read from the kit's tokens so that it follows the theme and a tenant's branding. */
 export function applyTheme() {

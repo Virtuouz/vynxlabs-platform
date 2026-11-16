@@ -6,7 +6,10 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
  * wraps is replaced by a notice that says what failed, with a way to try again
  * and a way back; everything outside it, such as the navigation, keeps working.
  *
- * Give it a `key` that changes on navigation so a new page starts clean.
+ * `resetOn` clears a caught failure when it changes, such as the page's address,
+ * so moving elsewhere starts clean. It is not a `key`: a key would remount what
+ * it wraps on every change of address, even one that keeps the same screen, such
+ * as a new script's first save.
  */
 export class ErrorBoundary extends Component<
   {
@@ -15,6 +18,8 @@ export class ErrorBoundary extends Component<
     children: ReactNode;
     /** A smaller notice, for a panel rather than a page. */
     compact?: boolean;
+    /** When this changes, a failure shown is cleared and what it wraps is tried again. */
+    resetOn?: unknown;
   },
   { error: Error | undefined }
 > {
@@ -22,6 +27,12 @@ export class ErrorBoundary extends Component<
 
   static getDerivedStateFromError(error: unknown) {
     return { error: error instanceof Error ? error : new Error(String(error)) };
+  }
+
+  override componentDidUpdate(previous: { resetOn?: unknown }) {
+    if (this.state.error && previous.resetOn !== this.props.resetOn) {
+      this.setState({ error: undefined });
+    }
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo) {

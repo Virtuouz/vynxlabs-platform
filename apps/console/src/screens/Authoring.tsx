@@ -278,6 +278,10 @@ export function ScriptEditor({
   });
   const revisionRef = useRef<number>(undefined);
   const dirtyRef = useRef(false);
+  // The path this editor saved a new one as. Opening it again would reload what is already on screen.
+  const savedAs = useRef<string>(undefined);
+  // Where the code lives in the editor, fixed for the editor's life, so a first save keeps its undo history.
+  const [modelPath] = useState(() => `${about.list}/${kind}/${opened ?? "new"}.ts`);
 
   useEffect(() => {
     let current = true;
@@ -294,6 +298,7 @@ export function ScriptEditor({
       open(about.fresh(), "new");
       return;
     }
+    if (opened === savedAs.current) return;
     (async () => {
       try {
         const draft = await api.get<DraftDetail>(`${root}/drafts/${opened}`);
@@ -375,7 +380,10 @@ export function ScriptEditor({
       setDirty(false);
       setReadingFailed(undefined);
       setReading(saved.schemaTaskId);
-      if (!opened) navigate(`${link}/${about.edit}/${path}`, { replace: true });
+      if (!opened) {
+        savedAs.current = path;
+        navigate(`${link}/${about.edit}/${path}`, { replace: true });
+      }
       return true;
     } catch (error) {
       setProblem(failureText(error));
@@ -701,11 +709,12 @@ export function ScriptEditor({
           ) : (
             <CodeEditor
               label={`Source of ${path || `the new ${about.noun}`}`}
-              path={`${about.list}/${kind}/${opened ?? "new"}.ts`}
+              path={modelPath}
               language="typescript"
               value={body.source?.code ?? ""}
               readOnly={readOnly}
               height="34rem"
+              onRun={kind === "script" ? () => runShortcut.current() : undefined}
               onChange={(code) => {
                 if (code === body.source?.code) return;
                 change({ source: { language: "typescript", code } });

@@ -59,7 +59,7 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
   return (
     <Page
       title="Dashboards"
-      description="Pages of your own over this workspace's tables: tables, cards, charts and totals. A dashboard is saved as you make it, with nothing to deploy, and is yours unless you share it."
+      description="Pages of your own over this workspace's tables: tables, cards, charts and totals. A dashboard is saved when you press Save, with nothing to deploy, and is yours unless you share it."
       action={action}
     >
       {list.error ? (

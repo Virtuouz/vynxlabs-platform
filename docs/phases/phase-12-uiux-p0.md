@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–1 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–2 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -76,3 +76,27 @@ The navigation is outside the page's boundary, so a broken page can always be le
 **The same missing-count crash was in two more places** than the audit found, the tenant and workspace overviews. `failedRuns` is now optional in the type, so the compiler finds any new use.
 
 **`/api/v1null` came from TanStack Query.** `refetch()` runs even when a query is switched off. `useLoad`'s `reload` now does nothing without a path. The test reproduces the request without the fix.
+
+### Milestone 2
+
+**The three editor defects the audit inferred were checked in a browser,** by running the new `e2e/script-editor.spec.ts` against the console before and after the change:
+
+| Audit claim | Before | After |
+| --- | --- | --- |
+| A new script opens with an error | One error squiggle on the starter | None |
+| ⌘↵ is swallowed in the editor | Worse than inferred: nothing was saved or run, and Monaco inserted a blank line | Saves, runs, and shows the run beside the code |
+| The first "Save and run" loses its result | Shown by a unit test: the run starts, its panel never appears | The panel appears, and the editor is the same one |
+| Typing a path recreates the editor | It was recreated on every keystroke, but undo survived: Monaco restores a model's history when one is recreated at the same address | Not recreated. The label is updated in place |
+
+**The editor now loads the SDK's own declarations,** not a hand-written stub, plus zod's, which the SDK hands scripts as `z`. The stub had also drifted in a way the audit didn't find: the poll source starter failed on `PollResult` and `PollTick`. Zod's declarations add about 245 KB to the editor's lazy chunk. Nothing else loads them.
+
+**The editor's library is `es2023` plus `webworker`.** A script runs in Node, which has `fetch`, `URL` and `AbortSignal` but no `window` or `document`. The web worker library is the closest match Monaco ships. With `es2023` alone, the connector starter, and any script that calls `fetch`, showed errors.
+
+**Milestone 1's page boundary was remounting the page on every address change,** because it was keyed on the path. That undid the first-save fix in the real console, though not in the unit test, which renders the screen without the shell. The e2e run found it. The boundary now clears a failure when the address changes and leaves a working page mounted.
+
+**A new script's first save keeps its editor.** The address still changes from `…/new` to `…/edit/<path>`, but `useEditorKey` keeps the same key for that one step. The editor doesn't read back the draft it just saved.
+
+**The flow editor remounts on its first save in the same way** (`FlowEditor.tsx:690`). It is left for Milestone 8, where flow autosave starts from the first change and would make it visible.
+
+**A console rebuild needs an instance restart:** the static file server only knows the files that were there when it started.
+

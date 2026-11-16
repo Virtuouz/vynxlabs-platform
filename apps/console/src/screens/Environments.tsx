@@ -479,7 +479,7 @@ export function Promotion({
               <Button onClick={() => setOpen(false)}>Cancel</Button>
               {preview.possible ? (
                 <Button
-                  variant="primary"
+                  variant="promote"
                   onClick={async () => {
                     try {
                       const result = await api.post<{ bundleVersion: number }>(

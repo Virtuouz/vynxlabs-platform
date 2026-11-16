@@ -1065,11 +1065,8 @@ export function Sources({ root, link }: { root: string; link: string }) {
                     `${root}/data-source-checks/${row.path}`,
                     {},
                   );
-                  notify.success(
-                    result.ok
-                      ? `${row.path} answered.`
-                      : `${row.path} did not answer: ${result.problem}`,
-                  );
+                  if (result.ok) notify.success(`${row.path} answered.`);
+                  else notify.error(new Error(`${row.path} did not answer: ${result.problem}`));
                   reload();
                 } catch (caught) {
                   notify.error(caught);

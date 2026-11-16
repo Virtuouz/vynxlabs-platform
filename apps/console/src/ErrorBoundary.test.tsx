@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { type ReactNode, useEffect } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Me } from "./api.ts";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
@@ -119,4 +120,31 @@ test("a state the console does not know shows as Unknown", () => {
   expect(stateOf("failed")).toBe("failed");
   expect(stateOf("toString")).toBe("unknown");
   expect(stateLabel("paused_by_operator" as State)).toBe("Unknown");
+});
+
+test("a new address keeps the page that is shown, and clears a failure", async () => {
+  let mounts = 0;
+  function Counted() {
+    useEffect(() => {
+      mounts += 1;
+    }, []);
+    return <p>Editor</p>;
+  }
+  const at = (path: string, page: ReactNode) => (
+    <Shell me={me} path={path} tenantId="t1" onSignOut={() => {}}>
+      {page}
+    </Shell>
+  );
+  const { rerender } = show(at("/t/t1/workspaces/w1/scripts/new", <Counted />));
+  await screen.findByText("Editor");
+  // A new script's first save replaces its address: the editor on screen stays.
+  rerender(at("/t/t1/workspaces/w1/scripts/edit/hello/greet", <Counted />));
+  expect(screen.getByText("Editor")).toBeTruthy();
+  expect(mounts).toBe(1);
+
+  rerender(at("/t/t1/workspaces/w1/scripts/edit/hello/greet", <Broken />));
+  expect(await screen.findByText("This page could not be shown.")).toBeTruthy();
+  rerender(at("/t/t1/workspaces/w1/runs", <p>The runs page</p>));
+  expect(await screen.findByText("The runs page")).toBeTruthy();
+  expect(screen.queryByText(/could not be shown/)).toBeNull();
 });

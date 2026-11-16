@@ -905,14 +905,14 @@ export function Shell({
           className={`flex min-h-0 flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
         >
           {where.workbench ? (
-            <ErrorBoundary key={path} what="This page">
+            <ErrorBoundary resetOn={path} what="This page">
               {children}
             </ErrorBoundary>
           ) : (
             <div
               className={`w-full px-4 md:px-8 ${where.editor ? "py-4" : "mx-auto max-w-[1440px] py-6"}`}
             >
-              <ErrorBoundary key={path} what="This page">
+              <ErrorBoundary resetOn={path} what="This page">
                 {children}
               </ErrorBoundary>
             </div>

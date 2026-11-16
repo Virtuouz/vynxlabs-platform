@@ -256,3 +256,7 @@ Each choice goes through the same `connect` the canvas uses, so it is recorded o
 
 The audit asked for the error path to be tested in a run. An approval step's failure is the only error path the test can build without a script, and a test run cannot fail an approval, so the run takes the "yes" path. The saved edges are checked through the API. An axe check of the editor waits for P2-12, which adds axe to CI.
 
+### The whole e2e suite
+
+Run at the end against a local instance: 16 passed, 1 skipped, 1 failed. The failure is `exit-criterion.spec.ts`, "the deploy is a commit on the repository's branch, and a signed webhook starts the flow chosen by the data": the webhook answers 202, but the flow's rows never appear. It fails the same way on the code from before this phase (`30a74ab`), built and run on its own, so it is not from this phase. It is left for whoever owns that path. Phase 11's changes to dev workspaces' triggers are a first place to look.
+

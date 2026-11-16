@@ -23,6 +23,7 @@ import {
   useCommandKey,
 } from "./kit/CommandPalette.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
+import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { EnvTag, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
@@ -907,6 +908,7 @@ export function Shell({
             </nav>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {tenantId ? <LiveIndicator /> : null}
             {tenantId && workspaceId && drafts > 0 ? (
               <Link
                 to={`/t/${tenantId}/workspaces/${workspaceId}/release`}

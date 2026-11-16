@@ -6,6 +6,7 @@ import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
+import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
@@ -18,7 +19,6 @@ import {
   LogWindowNote,
   stamp,
   TRIGGER,
-  took,
   useLiveRun,
   wholeLogDownload,
 } from "./Execution.tsx";
@@ -94,6 +94,7 @@ function RunHeader({
   tags,
   related,
   actions,
+  timing,
   reconnecting = false,
 }: {
   link: string;
@@ -107,6 +108,8 @@ function RunHeader({
   tags: string[];
   related: ReactNode;
   actions: ReactNode;
+  /** How long it waited and ran, counting while it goes. */
+  timing?: ReactNode;
   /** A read failed and is being tried again: what is shown may be behind. */
   reconnecting?: boolean;
 }) {
@@ -131,6 +134,7 @@ function RunHeader({
           </h1>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted">
             <StatePill state={state} detail={detail} />
+            {timing}
             <StateAnnouncer state={state} label={`Run of ${path}`} />
             <Reconnecting show={reconnecting} />
             {started ? <span>{started}</span> : null}
@@ -214,12 +218,12 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         path={run.script}
         pathLink={`${link}/scripts/edit/${run.script}`}
         state={run.state}
-        detail={[
-          took(run),
-          run.maxAttempts > 1 ? `attempt ${Math.max(run.attempt, 1)} of ${run.maxAttempts}` : "",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+        detail={
+          run.maxAttempts > 1
+            ? `attempt ${Math.max(run.attempt, 1)} of ${run.maxAttempts}`
+            : undefined
+        }
+        timing={<WaitedAndRan run={run} />}
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
         tags={run.tags ?? []}
@@ -488,9 +492,6 @@ function FlowRunHeader({
   const trigger = flow?.nodes[run.triggerNode] as
     | { type: string; trigger?: { type: string; input?: Record<string, unknown> } }
     | undefined;
-  const elapsed = run.finishedAt
-    ? Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.createdAt))
-    : undefined;
 
   const retry = async (body: { from: "failed" | "start"; input?: unknown; bundle?: string }) => {
     const started = await api.post<{ id: string }>(`${root}/flow-runs/${run.id}/retry`, body);
@@ -543,7 +544,13 @@ function FlowRunHeader({
         path={run.flow}
         pathLink={`${link}/flows/${run.flow}`}
         state={run.state}
-        detail={elapsed !== undefined ? `${(elapsed / 1000).toFixed(1)} s` : undefined}
+        timing={
+          <Elapsed
+            from={run.createdAt}
+            to={run.finishedAt}
+            className="text-telemetry text-ink-muted"
+          />
+        }
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
         tags={run.tags}

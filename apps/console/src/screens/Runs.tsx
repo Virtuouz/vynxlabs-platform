@@ -22,6 +22,8 @@ import {
   type SortState,
   useDensity,
 } from "../kit/DataTable.tsx";
+import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
+import { clockTime } from "../kit/LiveIndicator.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
@@ -29,7 +31,7 @@ import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
-import { LogWindowNote, stamp, TRIGGER, took, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { LogWindowNote, stamp, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
 /** What the list can be narrowed to: a state, or either kind of waiting. */
@@ -463,7 +465,12 @@ export function RunsWorkbench({
       width: "w-24",
       align: "end",
       sort: "duration",
-      cell: (one) => <Mono className="text-ink-muted">{took(one) || "—"}</Mono>,
+      cell: (one) =>
+        one.startedAt ? (
+          <Elapsed from={one.startedAt} to={one.finishedAt} className="text-ink-muted" />
+        ) : (
+          <Mono className="text-ink-subtle">—</Mono>
+        ),
     },
     {
       header: "Attempt",
@@ -499,10 +506,10 @@ export function RunsWorkbench({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            {live ? (
-              <span className="flex items-center gap-1.5 text-meta text-ink-muted">
-                <Junction kind="here" size={5} />
-                {streaming ? "Live" : "Live · updates every 5s"}
+            {!streaming && list.updatedAt ? (
+              <span className="text-meta text-ink-muted">
+                Updated {clockTime(list.updatedAt)}
+                {live ? " · asked again every 5 s" : ""}
               </span>
             ) : null}
             <div className="w-full sm:w-64">
@@ -725,7 +732,10 @@ export function ScriptRunPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatePill state={run.state} detail={took(run) || undefined} />
+        <span className="flex flex-wrap items-center gap-2">
+          <StatePill state={run.state} />
+          <WaitedAndRan run={run} />
+        </span>
         <StateAnnouncer state={run.state} label={`Run of ${run.script}`} />
         <Reconnecting show={reconnecting} />
         <div className="flex gap-2">

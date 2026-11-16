@@ -83,3 +83,12 @@ Findings are recorded under each milestone as it lands.
 - **The runs list.** Activity sorts by `started` or `duration` with a keyset cursor for each order. Runs and flow runs gain `output_summary`, written by the control plane when a run ends and masked with `kernel/execution/redact.ts`, because masking follows the script's schema and the database doesn't know it. Runs that ended before migration `0062` have no summary.
 - **The bulk cancel bug was real.** "Cancel queued runs" cancelled every queued script run in the workspace, flow steps included. With the list's filters it now cancels only what the list shows, never a flow's step. The bare request, an operator clearing a backlog, keeps its meaning.
 - **Tests** reset the query string after each test (`testing.tsx`), since a screen's state now outlives a render in the address.
+
+### Milestone 5: live state
+
+- **The stream's status.** `stream.ts` now keeps `connecting`, `live`, `reconnecting` and `offline`, plus when it was last live. "Reconnecting" shows only after 3 s down, so a brief drop doesn't flicker. "Offline" shows after 30 s down, or as soon as the browser reports no network.
+- **Polling vs the label.** The raw `connected` flag is kept apart from the status, so screens start polling the moment the stream drops while the label waits out the debounce.
+- **Reconnecting.** The browser retries an `EventSource` by itself, but gives up for good on some failures (`readyState` CLOSED). The console then reopens the stream itself, with the same 1.5–30 s backoff as failed reads.
+- **The shell header** carries `LiveIndicator`.
+- **Lists that aren't live** say "Updated 14:02", from the read's `dataUpdatedAt`, which `useLoad` now exposes as `updatedAt`.
+- **Running runs** show elapsed time that counts each second (`kit/Elapsed.tsx`). Run pages and the inspector say "waited X · ran Y", with the wait counted from `scheduledFor` when a run was delayed.

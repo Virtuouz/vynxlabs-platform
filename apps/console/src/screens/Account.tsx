@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
+import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { CopyButton, ListScreen, RemoveButton, when } from "../ListScreen.tsx";
 
 export interface KeyRow {
@@ -48,11 +49,8 @@ export const keyColumns = [
   },
 ];
 
-export const showNewKey = (result: unknown) => (
-  <span>
-    Copy this key now. It is not shown again:{" "}
-    <code className="font-mono break-all select-all">{(result as { token: string }).token}</code>
-  </span>
+export const showNewKey = (result: unknown, dismiss?: () => void) => (
+  <OneTimeSecret value={(result as { token: string }).token} noun="key" onDone={dismiss} />
 );
 
 interface RecoveryState {

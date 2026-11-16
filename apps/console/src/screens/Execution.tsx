@@ -1,13 +1,23 @@
-import { Badge, type BadgeTone, Button, type LogLine, Notice } from "@vynxlabs/ui";
+import {
+  Badge,
+  type BadgeTone,
+  Button,
+  type LogLine,
+  logText,
+  Notice,
+  saveText,
+} from "@vynxlabs/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
-import { UsedBy, useReferences } from "../kit/references.tsx";
+import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
+import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
+import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
-import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -342,20 +352,41 @@ export type LiveRun = Run & {
   reruns?: { id: string; state: RunState; createdAt: string }[];
 };
 
+/** Log lines read at once: the most the route gives. */
+const LOG_PAGE = 1000;
+/**
+ * The most log lines a page holds. The viewer draws every line it is given, and
+ * what went wrong is usually near the end, so the oldest are left out first.
+ */
+export const LOG_WINDOW = 5000;
+
 /**
  * A run and its log lines, asked for again whenever the run changes or logs: on
  * the run event stream, or every second and a half while the stream is down.
+ *
+ * The whole log is read, a page at a time, and the newest `LOG_WINDOW` lines
+ * are kept; `earlier` counts those left out. A read that fails once the run is
+ * shown keeps what is shown, says it is `reconnecting`, and is tried again,
+ * waiting longer each time. `error` is only for a run that could not be shown at all.
  */
 export function useLiveRun(root: string, runId: string) {
   const [run, setRun] = useState<LiveRun>();
   const [lines, setLines] = useState<LogLine[]>([]);
+  const [earlier, setEarlier] = useState(0);
   const [error, setError] = useState<string>();
+  const [reconnecting, setReconnecting] = useState(false);
   const streaming = useStreamConnected();
   const shown = useRef(runId);
   const last = useRef(0);
   const done = useRef(false);
   const busy = useRef(false);
   const again = useRef(false);
+  const kept = useRef<LogLine[]>([]);
+  const dropped = useRef(0);
+  const loaded = useRef(false);
+  const failures = useRef(0);
+  const retry = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const refreshing = useRef<() => Promise<void>>(async () => {});
 
   const refresh = useCallback(async () => {
     // One read at a time; one asked for meanwhile is made right after.
@@ -364,36 +395,70 @@ export function useLiveRun(root: string, runId: string) {
       return;
     }
     busy.current = true;
+    clearTimeout(retry.current);
     try {
       do {
         again.current = false;
         const current = await api.get<LiveRun>(`${root}/runs/${runId}`);
-        const logs = await api.get<{ items: LogLine[]; done: boolean }>(
-          `${root}/runs/${runId}/logs?after=${last.current}`,
-        );
         if (shown.current !== runId) return;
         setRun(current);
-        if (logs.items.length > 0) {
-          last.current = logs.items.at(-1)?.seq ?? last.current;
-          setLines((existing) => [...existing, ...logs.items]);
-        }
-        done.current = logs.done;
+        loaded.current = true;
+        // Everything logged since the last line read, a page at a time.
+        let page: { items: LogLine[]; done: boolean };
+        do {
+          page = await api.get<{ items: LogLine[]; done: boolean }>(
+            `${root}/runs/${runId}/logs?after=${last.current}&limit=${LOG_PAGE}`,
+          );
+          if (shown.current !== runId) return;
+          if (page.items.length > 0) {
+            last.current = page.items.at(-1)?.seq ?? last.current;
+            let all = [...kept.current, ...page.items];
+            const over = all.length - LOG_WINDOW;
+            if (over > 0) {
+              all = all.slice(over);
+              dropped.current += over;
+            }
+            kept.current = all;
+            setLines(all);
+            setEarlier(dropped.current);
+          }
+          done.current = page.done;
+        } while (!page.done && page.items.length === LOG_PAGE);
       } while (again.current);
+      failures.current = 0;
+      setError(undefined);
+      setReconnecting(false);
     } catch (caught) {
-      if (shown.current === runId) setError((caught as Error).message);
+      if (shown.current !== runId) return;
+      if (loaded.current) setReconnecting(true);
+      else setError((caught as Error).message);
+      // A run already shown is always asked for again; one never shown, only if it may pass.
+      if (loaded.current || mayPass(caught)) {
+        failures.current += 1;
+        retry.current = setTimeout(() => void refreshing.current(), retryAfter(failures.current));
+      }
     } finally {
       busy.current = false;
     }
   }, [root, runId]);
+  refreshing.current = refresh;
 
   useEffect(() => {
     shown.current = runId;
     last.current = 0;
     done.current = false;
+    kept.current = [];
+    dropped.current = 0;
+    loaded.current = false;
+    failures.current = 0;
+    clearTimeout(retry.current);
     setRun(undefined);
     setLines([]);
+    setEarlier(0);
     setError(undefined);
+    setReconnecting(false);
     void refresh();
+    return () => clearTimeout(retry.current);
   }, [runId, refresh]);
 
   useStreamEvents(
@@ -403,11 +468,59 @@ export function useLiveRun(root: string, runId: string) {
   useEffect(() => {
     if (streaming) return;
     const timer = setInterval(() => {
-      if (!done.current) void refresh();
+      if (!done.current && failures.current === 0) void refresh();
     }, 1500);
     return () => clearInterval(timer);
   }, [streaming, refresh]);
-  return { run, lines, error };
+  return { run, lines, earlier, error, reconnecting };
+}
+
+/** Reads a run's whole log, a page at a time, and offers it as a file. */
+export async function downloadWholeLog(root: string, runId: string, fileName: string) {
+  const all: LogLine[] = [];
+  let after = 0;
+  for (;;) {
+    const page = await api.get<{ items: LogLine[]; done: boolean }>(
+      `${root}/runs/${runId}/logs?after=${after}&limit=${LOG_PAGE}`,
+    );
+    all.push(...page.items);
+    after = page.items.at(-1)?.seq ?? after;
+    if (page.done || page.items.length < LOG_PAGE) break;
+  }
+  saveText(logText(all), fileName);
+}
+
+/**
+ * The download for a log viewer: the lines it was given, or, when the oldest
+ * were left out, the whole log read again from the start.
+ */
+export function wholeLogDownload(root: string, runId: string, fileName: string, earlier: number) {
+  return earlier > 0
+    ? () => void downloadWholeLog(root, runId, fileName).catch(notify.error)
+    : undefined;
+}
+
+/** Says, above a log, that its oldest lines are not shown, with a way to have them all. */
+export function LogWindowNote({
+  earlier,
+  onDownload,
+}: {
+  earlier: number;
+  onDownload: (() => void) | undefined;
+}) {
+  if (earlier <= 0) return null;
+  return (
+    <p className="m-0 flex flex-wrap items-center gap-x-2 text-meta text-ink-muted">
+      <span>
+        The first {earlier.toLocaleString()} line{earlier === 1 ? " is" : "s are"} not shown here.
+      </span>
+      {onDownload ? (
+        <Button size="small" variant="quiet" onClick={onDownload}>
+          Download the whole log
+        </Button>
+      ) : null}
+    </p>
+  );
 }
 
 /** A date and time to the second, in the same shape on every line so that they compare by eye. */
@@ -633,6 +746,7 @@ export function Connections({ root }: { root: string }) {
                 <RemoveButton
                   label="Unbind"
                   confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
+                  affected={usersOf(connectionUses(row.path))}
                   run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
                   onDone={done}
                 />
@@ -830,7 +944,7 @@ export function QueuePanel({ base }: { base: string }) {
   const tenantLink = base.replace(/^\/tenants\//, "/t/");
   const rows = queue.data?.items ?? [];
   const backlog = rows.filter((row) => row.due > 0);
-  const tasks = queue.data?.tasks.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
+  const tasks = queue.data?.tasks?.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
   return (
     <section aria-label="Queue" className="flex flex-col gap-3">
       <h2 className="m-0 text-base font-semibold">Queue</h2>
@@ -921,6 +1035,9 @@ export function QueuePanel({ base }: { base: string }) {
 
 export function Workers({ base }: { base: string }) {
   const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
+  // The address a worker is given, as the operator set it, or else the one this page is at.
+  const instance = useLoad<{ publicUrl?: string | null }>("/instance");
+  const instanceUrl = instance.data?.publicUrl ?? location.origin;
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
   const managed = useLoad<{ state: "off" | "host" | "isolated" | "shared" | "refused" }>(
     `${base}/managed-workers`,
@@ -1034,7 +1151,7 @@ export function Workers({ base }: { base: string }) {
       }>
         as="section"
         title="Credentials for standalone workers"
-        description="Start a worker with: platform-worker --url <this instance> --token <credential>"
+        description={`A worker outside the platform signs in with one of these: platform-worker --url ${instanceUrl} --token followed by the credential. The full command is shown when a credential is made.`}
         path={`${base}/worker-credentials`}
         rowKey={(row) => row.id}
         columns={[
@@ -1078,14 +1195,21 @@ export function Workers({ base }: { base: string }) {
             pools.reload();
             return result;
           },
-          afterCreate: (result) => (
-            <span>
-              Copy this credential now. It is not shown again:{" "}
-              <code className="font-mono break-all select-all">
-                {(result as { token: string }).token}
-              </code>
-            </span>
-          ),
+          afterCreate: (result, dismiss) => {
+            const token = (result as { token: string }).token;
+            const command = `platform-worker --url ${instanceUrl} --token ${token}`;
+            return (
+              <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
+                <p className="m-0">Start a worker with it:</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-[13px] break-all select-all">
+                    {command}
+                  </code>
+                  <CopyButton value={command} label="Copy the command" />
+                </div>
+              </OneTimeSecret>
+            );
+          },
         }}
         rowActions={(row, reload) =>
           row.revokedAt ? null : (

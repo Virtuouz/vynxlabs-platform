@@ -9,6 +9,7 @@ export {
   type Option,
 } from "./Combobox.tsx";
 export { type ChartTokens, chartConfig, readChartTokens } from "./chartTheme.ts";
+export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
 export { Dialog } from "./Dialog.tsx";
 export {
   type ConfirmOptions,
@@ -32,7 +33,13 @@ export {
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
 export { JsonView, type JsonViewProps } from "./JsonView.tsx";
-export { type LogLine, LogViewer, type LogViewerProps } from "./LogViewer.tsx";
+export {
+  type LogLine,
+  LogViewer,
+  type LogViewerProps,
+  logText,
+  saveText,
+} from "./LogViewer.tsx";
 export { Markdown } from "./Markdown.tsx";
 export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";
@@ -71,7 +78,13 @@ export {
   type TimelineRow,
   type TimelineSegmentKind,
 } from "./Timeline.tsx";
-export { ToastProvider, type Toasts, type ToastTone, useToast } from "./Toast.tsx";
+export {
+  type ToastOptions,
+  ToastProvider,
+  type Toasts,
+  type ToastTone,
+  useToast,
+} from "./Toast.tsx";
 export {
   type CardsWidgetConfig,
   type CardWidgetConfig,

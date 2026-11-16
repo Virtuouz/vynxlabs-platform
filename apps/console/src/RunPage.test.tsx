@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { useNamedObject } from "./kit/title.ts";
 import { RunPage } from "./screens/RunPage.tsx";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { answer, show } from "./testing.tsx";
+
+// Waits are generous: some reads here follow others, and the suite runs beside slower ones.
+configure({ asyncUtilTimeout: 5000 });
 
 const root = "/tenants/t1/workspaces/w1";
 const link = "/t/t1/workspaces/w1";
@@ -271,4 +275,230 @@ test("the list searches, filters by tag and loads more, all through the address"
   // Choosing a run opens it beside the list, by the address.
   fireEvent.click(screen.getAllByText(/jobs\/one/)[0]?.closest("tr") as HTMLElement);
   expect(new URLSearchParams(location.search).get("run")).toBe("one");
+});
+
+test("a run's page names the run for the tab, and says when its state changes", async () => {
+  let state = "running";
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      state,
+      status: state,
+      finishedAt: state === "running" ? null : scriptRun.finishedAt,
+    },
+  ];
+  routes[`GET ${root}/runs/r1/logs`] = () => [200, { items: [], done: state !== "running" }];
+  show(
+    <>
+      <RunPage root={root} link={link} id="r1" />
+      <NamedObject />
+    </>,
+  );
+  expect(await screen.findByTestId("named")).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.getByTestId("named").textContent).toBe("Run of reminders/send"),
+  );
+  const announcer = () =>
+    [...document.querySelectorAll('[role="status"].sr-only')]
+      .map((one) => one.textContent)
+      .join("");
+  // Opening a run says nothing: its state is on the page.
+  expect(announcer()).toBe("");
+  state = "succeeded";
+  await waitFor(() => expect(announcer()).toBe("Run of reminders/send: Succeeded"), {
+    timeout: 6000,
+  });
+});
+
+/** What the screen on show names for the tab's title, as the shell reads it. */
+function NamedObject() {
+  return <span data-testid="named">{useNamedObject() ?? ""}</span>;
+}
+
+/** A log of `total` lines, served a page at a time as the route does: after a `seq`, up to `limit`. */
+function logOf(total: number, finished = true) {
+  return (_body: unknown, url: string): [number, unknown] => {
+    const query = new URLSearchParams(url.split("?")[1] ?? "");
+    const after = Number(query.get("after") ?? 0);
+    const limit = Number(query.get("limit") ?? 500);
+    const items = [];
+    for (let seq = after + 1; seq <= Math.min(after + limit, total); seq += 1) {
+      items.push({
+        seq,
+        attempt: 1,
+        time: "2026-11-14T10:00:01.000Z",
+        level: "info",
+        message: `line ${seq}`,
+        fields: {},
+      });
+    }
+    return [200, { items, done: finished && items.length < limit }];
+  };
+}
+
+test("a finished run's page shows every line of its log, read a page at a time", async () => {
+  routes[`GET ${root}/runs/r1/logs`] = logOf(2200);
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText("2200 lines")).toBeTruthy();
+  const afters = calls
+    .filter((call) => call.url.includes("/runs/r1/logs"))
+    .map((call) => new URLSearchParams(call.url.split("?")[1]).get("after"));
+  expect(afters).toEqual(["0", "1000", "2000"]);
+});
+
+test("a long log keeps its newest lines on the page, and the whole of it can be downloaded", async () => {
+  routes[`GET ${root}/runs/r1/logs`] = logOf(7000);
+  const saved: Blob[] = [];
+  // The download is a Blob handed to the browser; it is caught here instead, and put back after.
+  const { createObjectURL, revokeObjectURL } = URL;
+  URL.createObjectURL = (blob: Blob) => {
+    saved.push(blob);
+    return "blob:log";
+  };
+  URL.revokeObjectURL = () => {};
+  // Following the link would take the test's window away to the download.
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  onTestFinished(() => {
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    click.mockRestore();
+  });
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText("5000 lines")).toBeTruthy();
+  expect(screen.getByText("The first 2,000 lines are not shown here.")).toBeTruthy();
+  expect(screen.getByText("line 7000")).toBeTruthy();
+  expect(screen.queryByText("line 2000")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Download the whole log" }));
+  await waitFor(() => expect(saved).toHaveLength(1));
+  const text = await (saved[0] as Blob).text();
+  expect(text.trimEnd().split("\n")).toHaveLength(7000);
+  expect(text.startsWith("2026-11-14T10:00:01.000Z info  line 1\n")).toBe(true);
+});
+
+test("a read that fails keeps the run on screen, says it is reconnecting, and recovers", async () => {
+  let failing = false;
+  routes[`GET ${root}/runs/r1`] = () =>
+    failing
+      ? [503, { status: 503, detail: "The database is busy." }]
+      : [200, { ...scriptRun, state: "running", status: "running", finishedAt: null }];
+  routes[`GET ${root}/runs/r1/logs`] = logOf(3, false);
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText("3 lines")).toBeTruthy();
+  failing = true;
+  expect(await screen.findByText("Reconnecting…", {}, { timeout: 4000 })).toBeTruthy();
+  // What was shown stays.
+  expect(screen.getByText("3 lines")).toBeTruthy();
+  expect(screen.queryByText("The database is busy.")).toBeNull();
+  failing = false;
+  await waitFor(() => expect(screen.queryByText("Reconnecting…")).toBeNull(), { timeout: 6000 });
+  expect(screen.getByText("3 lines")).toBeTruthy();
+}, 15_000);
+
+test("a flow run whose read fails stays on screen and recovers", async () => {
+  let failing = false;
+  routes[`GET ${root}/flow-runs/f2`] = () =>
+    failing
+      ? [503, { status: 503, detail: "The database is busy." }]
+      : [200, { ...flowRun, status: "running", state: "running" }];
+  show(<RunPage root={root} link={link} id="f2" />);
+  expect(await screen.findByText("orders/reorder", { selector: "a" })).toBeTruthy();
+  failing = true;
+  expect(await screen.findByText("Reconnecting…", {}, { timeout: 4000 })).toBeTruthy();
+  expect(screen.getByText("orders/reorder", { selector: "a" })).toBeTruthy();
+  failing = false;
+  await waitFor(() => expect(screen.queryByText("Reconnecting…")).toBeNull(), { timeout: 6000 });
+}, 15_000);
+
+test("a run chosen in the address opens as its own kind, even when the list does not show it", async () => {
+  const flowActivity = {
+    kind: "flow",
+    id: "f9",
+    target: "orders/reorder",
+    status: "failed",
+    state: "failed",
+    trigger: "manual",
+    attempt: 1,
+    maxAttempts: 1,
+    error: null,
+    errorSummary: null,
+    tags: [],
+    bundleVersion: 1,
+    createdAt: new Date().toISOString(),
+    startedAt: null,
+    finishedAt: null,
+  };
+  routes[`GET ${root}/activity`] = (_body, url) => [
+    200,
+    {
+      items: url.includes("q=f9") ? [flowActivity] : [],
+      nextCursor: null,
+      stateCounts: {},
+    },
+  ];
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?run=f9");
+  show(<RunsWorkbench root={root} link={link} />);
+  await waitFor(() => expect(calls.some((call) => call.url.includes("q=f9"))).toBe(true));
+  const inspector = await screen.findByRole("complementary", { name: "The chosen run" });
+  await waitFor(() => expect(inspector.textContent).toContain("orders/reorder"));
+  // Its script panel would have asked for a script run by this ID.
+  expect(calls.some((call) => call.url.includes("/runs/f9"))).toBe(false);
+
+  cleanup();
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?run=nothing");
+  show(<RunsWorkbench root={root} link={link} />);
+  expect(await screen.findByText(/No run has this ID/)).toBeTruthy();
+  history.replaceState(null, "", "/");
+});
+
+test("a run is opened, read and closed from the list with the keyboard alone", async () => {
+  routes[`GET ${root}/activity`] = () => [
+    200,
+    {
+      items: [
+        {
+          kind: "script",
+          id: "r1",
+          target: "reminders/send",
+          status: "failed",
+          state: "failed",
+          trigger: "schedule",
+          attempt: 2,
+          maxAttempts: 2,
+          error: "The SMS gateway said no.",
+          errorSummary: "The SMS gateway said no.",
+          tags: [],
+          bundleVersion: 4,
+          createdAt: new Date().toISOString(),
+          startedAt: null,
+          finishedAt: null,
+        },
+      ],
+      nextCursor: null,
+      stateCounts: { failed: 1 },
+    },
+  ];
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs");
+  show(<RunsWorkbench root={root} link={link} />);
+  const row = (await screen.findByText("reminders/send", { selector: "a" })).closest("tr");
+  expect(row?.tabIndex).toBe(0);
+  row?.focus();
+  fireEvent.keyDown(row as HTMLElement, { key: "Enter" });
+
+  const inspector = await screen.findByRole("complementary", { name: "The chosen run" });
+  // Focus goes to the inspector's heading, and the run's error can be read.
+  await waitFor(() => expect(document.activeElement?.tagName).toBe("H2"));
+  expect(inspector.contains(document.activeElement)).toBe(true);
+  expect(await screen.findAllByText("The SMS gateway said no.")).not.toHaveLength(0);
+  expect(row?.getAttribute("aria-current")).toBe("true");
+  expect(row?.hasAttribute("aria-selected")).toBe(false);
+
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
+  await waitFor(() =>
+    expect(screen.queryByRole("complementary", { name: "The chosen run" })).toBeNull(),
+  );
+  // Focus is back on the row that opened it.
+  expect(document.activeElement).toBe(row);
+  history.replaceState(null, "", "/");
 });

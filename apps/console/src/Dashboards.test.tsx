@@ -69,6 +69,9 @@ test("dashboards are listed with whose they are, and a new one is named in the c
   ];
   routes[`POST ${api}/dashboards`] = () => [201, { ...mine, id: "d9", title: "Returns" }];
   show(<Dashboards root={root} link="/t/t1/workspaces/w1" />);
+  // Saving is a button press, and the description says so.
+  expect(await screen.findByText(/saved when you press Save/)).toBeTruthy();
+  expect(screen.queryByText(/saved as you make it/)).toBeNull();
   const rows = await screen.findAllByRole("row");
   expect(within(rows[1] as HTMLElement).getByText("Yours")).toBeTruthy();
   expect(within(rows[1] as HTMLElement).getByText("Only you")).toBeTruthy();

@@ -13,6 +13,11 @@ export interface CodeEditorProps {
   height?: string;
   /** A line to scroll to and select when the document opens, such as where something is defined. */
   revealLine?: number | undefined;
+  /**
+   * Called on ⌘↵ or Ctrl+Enter while the code has focus. Monaco keeps that key
+   * for itself otherwise, so a page-level shortcut never sees it.
+   */
+  onRun?: (() => void) | undefined;
 }
 
 /**
@@ -29,11 +34,13 @@ export function CodeEditor({
   readOnly = false,
   height = "28rem",
   revealLine,
+  onRun,
 }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "plain">("loading");
-  const latest = useRef({ value, onChange, revealLine });
-  latest.current = { value, onChange, revealLine };
+  const latest = useRef({ value, onChange, revealLine, onRun, label });
+  latest.current = { value, onChange, revealLine, onRun, label };
+  const runs = onRun !== undefined;
   const editor = useRef<{
     getValue(): string;
     setValue(text: string): void;
@@ -61,7 +68,7 @@ export function CodeEditor({
           fontSize: 13,
           scrollBeyondLastLine: false,
           tabSize: 2,
-          ariaLabel: label,
+          ariaLabel: latest.current.label,
           padding: { top: 10, bottom: 10 },
         });
         editor.current = created;
@@ -69,6 +76,11 @@ export function CodeEditor({
         if (line && line <= model.getLineCount()) {
           created.revealLineInCenter(line);
           created.setSelection(new monaco.Range(line, 1, line, model.getLineMaxColumn(line)));
+        }
+        if (runs) {
+          created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () =>
+            latest.current.onRun?.(),
+          );
         }
         const listening = created.onDidChangeModelContent(() =>
           latest.current.onChange?.(created.getValue()),
@@ -96,7 +108,12 @@ export function CodeEditor({
       gone = true;
       cleanup();
     };
-  }, [path, language, label, readOnly]);
+    // The label is not here: it changes as a path is typed, and a new editor would lose the undo history.
+  }, [path, language, readOnly, runs]);
+
+  useEffect(() => {
+    editor.current?.updateOptions({ ariaLabel: label });
+  }, [label]);
 
   // Text set from outside, such as a draft that was reloaded, replaces what the editor shows.
   useEffect(() => {

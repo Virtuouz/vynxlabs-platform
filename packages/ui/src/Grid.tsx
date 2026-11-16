@@ -249,7 +249,7 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
                       aria-label={`Filter by ${column.label ?? column.name}`}
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
-                      className="h-7 w-full min-w-20 rounded-[4px] border border-line bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
+                      className="h-7 w-full min-w-20 rounded-[4px] border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") event.currentTarget.blur();

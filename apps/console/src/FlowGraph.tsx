@@ -209,9 +209,11 @@ export function FlowGraph({
                 opacity={taken === false ? 0.4 : 1}
                 markerEnd={edge.error ? "url(#arrow-error)" : "url(#arrow)"}
               >
-                {taken !== undefined ? (
-                  <title>{taken ? "Taken in this run" : "Not taken"}</title>
-                ) : null}
+                <title>
+                  {`${edge.from} to ${edge.to}${label ? `, ${label}` : ""}${
+                    taken === undefined ? "" : taken ? ", taken in this run" : ", not taken"
+                  }`}
+                </title>
               </path>
               {label ? (
                 <text
@@ -233,7 +235,7 @@ export function FlowGraph({
           const at = positions[id] as { x: number; y: number };
           const state = statuses?.[id];
           const look = state
-            ? { stroke: STATE_STROKE[state], label: stateLabel(state) }
+            ? { stroke: STATE_STROKE[state] ?? "var(--vx-ink-muted)", label: stateLabel(state) }
             : undefined;
           const isSelected = selected === id;
           return (
@@ -243,12 +245,11 @@ export function FlowGraph({
               transform={`translate(${at.x} ${at.y})`}
               role="button"
               tabIndex={0}
+              // The ring below shows where keyboard focus is; the browser's own outline does not fit an SVG shape.
+              className="group outline-none"
               aria-pressed={isSelected}
               aria-label={`${KIND[node.type] ?? node.type} ${id}${look ? `, ${look.label}` : ""}`}
-              style={{
-                cursor: onMove ? "grab" : onSelect ? "pointer" : "default",
-                outline: "none",
-              }}
+              style={{ cursor: onMove ? "grab" : onSelect ? "pointer" : "default" }}
               onPointerDown={(event) => {
                 if (!onMove) return;
                 const start = point(event);
@@ -262,6 +263,17 @@ export function FlowGraph({
                 }
               }}
             >
+              <rect
+                className="hidden group-focus-visible:block"
+                x={-7}
+                y={-7}
+                width={WIDTH + 14}
+                height={HEIGHT + 14}
+                rx={node.type === "trigger" ? (HEIGHT + 14) / 2 : 12}
+                fill="none"
+                stroke="var(--vx-focus)"
+                strokeWidth={2.5}
+              />
               {isSelected ? (
                 <g stroke="var(--vx-action)" strokeWidth="2" fill="none">
                   <polyline points="-5,5 -5,-5 5,-5" />

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { problemsOf } from "./screens/FlowEditor.tsx";
+import { problemsOf, stepOrder } from "./screens/FlowEditor.tsx";
 
 test("a flow with nothing wrong has no problems", () => {
   expect(
@@ -54,5 +54,21 @@ test("a flow chosen by the data needs an expression and a list to choose from", 
   expect(problemsOf({ start, next: { type: "subflow", flowFrom: "", allow: [] } }, edges)).toEqual([
     "next needs an expression that gives the flow to start.",
     "next needs at least one flow it may start.",
+  ]);
+});
+
+test("steps are listed in the order a run reaches them, then those nothing reaches", () => {
+  const edges = [
+    { source: "start", target: "check" },
+    { source: "check", target: "notify" },
+    { source: "check", target: "stop" },
+    { source: "notify", target: "check" },
+  ];
+  expect(stepOrder(["stop", "notify", "orphan", "check", "start"], edges, ["start"])).toEqual([
+    "start",
+    "check",
+    "notify",
+    "stop",
+    "orphan",
   ]);
 });

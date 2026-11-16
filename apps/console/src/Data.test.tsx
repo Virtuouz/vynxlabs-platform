@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { SourceView, TableView, toFilter } from "./screens/Data.tsx";
+import { Sources, SourceView, TableView, toFilter } from "./screens/Data.tsx";
 import { answer, show } from "./testing.tsx";
 
 // The whole suite runs in parallel with tests that use a database, so waits are generous.
@@ -215,7 +215,8 @@ test("a table from the repository is read-only in its definition, and shows what
   expect(screen.getByText("2 values")).toBeTruthy();
   expect(screen.getByText("ws_abc.orders")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Delete for good" }));
-  await answer("Delete for good");
+  // Nothing is destroyed until its name is typed.
+  await answer("Delete for good", "notes");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({
       table: "orders",
@@ -327,4 +328,30 @@ test("filter text becomes a filter of the column's type", () => {
   expect(toFilter("number", "empty")).toEqual({ op: "is_null", value: true });
   expect(toFilter("number", "  ")).toBeNull();
   expect(() => toFilter("integer", "many")).toThrow("Enter a number.");
+});
+
+test("a data source that does not answer its test says so as a failure", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "The ERP",
+          bound: true,
+          config: { host: "erp.internal", database: "erp", user: "reader" },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`POST /api/v1${root}/data-source-checks/erp`] = () => [
+    200,
+    { ok: false, problem: "connection refused" },
+  ];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Test connection" }));
+  const said = await screen.findByText("erp did not answer: connection refused");
+  expect(said.closest("[role]")?.className).toContain("bg-danger-soft");
 });

@@ -270,7 +270,7 @@ function WorkspaceLine({
 }) {
   const summary = useLoad<WorkspaceCounts>(`${base}/workspaces/${workspace.id}/summary`);
   const s = summary.data;
-  const failed = s?.failedRuns.count ?? 0;
+  const failed = s?.failedRuns?.count ?? 0;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3">
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">

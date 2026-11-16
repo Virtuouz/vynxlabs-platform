@@ -183,5 +183,6 @@ test("? opens the shortcuts, except while typing", async () => {
   fireEvent.keyDown(screen.getByLabelText("Somewhere to type"), { key: "?" });
   expect(screen.queryByText("Keyboard shortcuts")).toBeNull();
   fireEvent.keyDown(document.body, { key: "?" });
-  expect(await screen.findByText("Keyboard shortcuts")).toBeTruthy();
+  expect(await screen.findByText("Keyboard shortcuts")).toBeTruthy(); // Only shortcuts that do something are listed: nothing moves through a list with j and k.
+  expect(screen.queryByText("j k")).toBeNull();
 });

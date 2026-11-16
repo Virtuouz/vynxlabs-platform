@@ -1064,6 +1064,7 @@ export const THEME_TOKENS = [
   "raised",
   "selected",
   "line-strong",
+  "line-control",
   "ink-subtle",
   "code-bg",
   "focus",

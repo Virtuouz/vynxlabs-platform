@@ -4,13 +4,24 @@ import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { useTitleObject } from "../kit/title.ts";
 import { useRecordRecent } from "../recent.ts";
 import { Link, navigate } from "../router.tsx";
-import { type LiveRun, stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
+import {
+  type LiveRun,
+  LogWindowNote,
+  stamp,
+  TRIGGER,
+  took,
+  useLiveRun,
+  wholeLogDownload,
+} from "./Execution.tsx";
 import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
 import { NotFound } from "./NotFound.tsx";
 import type { Insight } from "./Runs.tsx";
@@ -49,8 +60,15 @@ function RunOfEitherKind({ root, link, id }: { root: string; link: string; id: s
         root={root}
         id={id}
         link={link}
-        header={(run, refresh, detail) => (
-          <FlowRunHeader root={root} link={link} run={run} flow={detail} refresh={refresh} />
+        header={(run, refresh, detail, reconnecting) => (
+          <FlowRunHeader
+            root={root}
+            link={link}
+            run={run}
+            flow={detail}
+            refresh={refresh}
+            reconnecting={reconnecting}
+          />
         )}
       />
     );
@@ -76,6 +94,7 @@ function RunHeader({
   tags,
   related,
   actions,
+  reconnecting = false,
 }: {
   link: string;
   id: string;
@@ -88,7 +107,10 @@ function RunHeader({
   tags: string[];
   related: ReactNode;
   actions: ReactNode;
+  /** A read failed and is being tried again: what is shown may be behind. */
+  reconnecting?: boolean;
 }) {
+  useTitleObject(`Run of ${path}`);
   return (
     <header className="flex flex-col gap-3 border-line border-b pb-4">
       <nav aria-label="Where this run is" className="flex flex-wrap items-center gap-1.5 text-meta">
@@ -109,6 +131,8 @@ function RunHeader({
           </h1>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted">
             <StatePill state={state} detail={detail} />
+            <StateAnnouncer state={state} label={`Run of ${path}`} />
+            <Reconnecting show={reconnecting} />
             {started ? <span>{started}</span> : null}
             <Link to={`${link}/deployments`}>version {version}</Link>
             {related}
@@ -151,17 +175,19 @@ function startedBy(link: string, trigger: { type: string; [detail: string]: unkn
 }
 
 function ScriptRunPage({ root, link, id }: { root: string; link: string; id: string }) {
-  const { run, lines, error } = useLiveRun(root, id);
+  const { run, lines, earlier, error, reconnecting } = useLiveRun(root, id);
   const ended = run !== undefined && !LIVE.includes(run.state);
   const insight = useLoad<Insight>(ended ? `${root}/runs/${id}/insight` : null);
   const [editing, setEditing] = useState(false);
   const scripts = useLoad<{ items: { path: string; inputSchema: Record<string, unknown> }[] }>(
     editing ? `${root}/scripts` : null,
   );
-  if (error) return <Notice tone="danger">{error}</Notice>;
+  if (error && !run) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
   const active = run.state === "queued" || run.state === "running";
   const diagnosis = insight.data?.diagnosis;
+  const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
+  const wholeLog = wholeLogDownload(root, run.id, logFile, earlier);
 
   const rerun = async (body: { input?: unknown; bundle?: "original" | "active" }) => {
     const started = await api.post<{ id: string }>(`${root}/runs/${id}/rerun`, body);
@@ -182,6 +208,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
   return (
     <div className="flex flex-col gap-5">
       <RunHeader
+        reconnecting={reconnecting}
         link={link}
         id={run.id}
         path={run.script}
@@ -378,10 +405,12 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
           ) : null}
           {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
           <section aria-label="Log" className="flex flex-col gap-2">
+            <LogWindowNote earlier={earlier} onDownload={wholeLog} />
             <LogViewer
               lines={lines}
               live={active}
-              fileName={`${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`}
+              fileName={logFile}
+              onDownload={wholeLog}
               empty={active ? "Waiting for the first line…" : "The script logged nothing."}
             />
           </section>
@@ -444,12 +473,14 @@ function FlowRunHeader({
   run,
   flow,
   refresh,
+  reconnecting,
 }: {
   root: string;
   link: string;
   run: FlowRunDetail;
   flow: FlowDetail | undefined;
   refresh: () => void;
+  reconnecting: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const live = LIVE.includes(run.state);
@@ -506,6 +537,7 @@ function FlowRunHeader({
   return (
     <>
       <RunHeader
+        reconnecting={reconnecting}
         link={link}
         id={run.id}
         path={run.flow}

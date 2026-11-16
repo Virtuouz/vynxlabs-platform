@@ -11,19 +11,22 @@ import {
   Timeline,
   type TimelineRow,
 } from "@vynxlabs/ui";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { Reconnecting } from "../kit/Reconnecting.tsx";
+import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
-import { useLiveRun } from "./Execution.tsx";
+import { LogWindowNote, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
@@ -571,10 +574,16 @@ export function timelineRow(step: StepRow, runStartedAt?: string): TimelineRow {
  * A flow run, kept up to date while it goes: read again when the run, a step of
  * it or a script run it started changes, and after `refresh`. Without the
  * stream, every second and a half while it runs.
+ *
+ * A read that fails once the run is shown keeps it shown, says it is
+ * `reconnecting`, and is tried again, waiting longer each time.
  */
 export function useFlowRunLive(root: string, id: string | undefined) {
   const [run, setRun] = useState<FlowRunDetail>();
   const [error, setError] = useState<string>();
+  const [reconnecting, setReconnecting] = useState(false);
+  // The run last shown, so a failed read knows whether there is something to keep.
+  const shownId = useRef<string>(undefined);
   const [tick, setTick] = useState(0);
   const streaming = useStreamConnected();
   const [changed, setChanged] = useState(0);
@@ -590,15 +599,27 @@ export function useFlowRunLive(root: string, id: string | undefined) {
     }
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
     const poll = async () => {
       try {
         const current = await api.get<FlowRunDetail>(`${root}/flow-runs/${id}`);
         if (stopped) return;
+        shownId.current = id;
+        failures = 0;
         setRun(current);
         setError(undefined);
+        setReconnecting(false);
         if (current.status === "running" && !streaming) timer = setTimeout(poll, 1500);
       } catch (caught) {
-        if (!stopped) setError((caught as Error).message);
+        if (stopped) return;
+        const shown = shownId.current === id;
+        if (shown) setReconnecting(true);
+        else setError((caught as Error).message);
+        // A run already shown is always asked for again; one never shown, only if it may pass.
+        if (shown || mayPass(caught)) {
+          failures += 1;
+          timer = setTimeout(poll, retryAfter(failures));
+        }
       }
     };
     poll();
@@ -608,7 +629,7 @@ export function useFlowRunLive(root: string, id: string | undefined) {
     };
   }, [root, id, tick, changed, streaming]);
   const refresh = useCallback(() => setTick((n) => n + 1), []);
-  return { run: run?.id === id ? run : undefined, error, refresh };
+  return { run: run?.id === id ? run : undefined, error, reconnecting, refresh };
 }
 
 /** One flow run, on a time axis and on the flow's graph, refreshed while it is in progress. */
@@ -622,13 +643,18 @@ export function FlowRunView({
   id: string;
   link: string;
   /** Drawn in place of the page's own title, with the run and a way to read it again. */
-  header?: (run: FlowRunDetail, refresh: () => void, flow: FlowDetail | undefined) => ReactNode;
+  header?: (
+    run: FlowRunDetail,
+    refresh: () => void,
+    flow: FlowDetail | undefined,
+    reconnecting: boolean,
+  ) => ReactNode;
 }) {
-  const { run, error, refresh } = useFlowRunLive(root, id);
+  const { run, error, reconnecting, refresh } = useFlowRunLive(root, id);
   const [selected, setSelected] = useState<string>();
   const flow = useLoad<FlowDetail>(run ? `${root}/flows/${run.flow}` : null);
 
-  if (error) return <Notice tone="danger">{error}</Notice>;
+  if (error && !run) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
   // The trigger first, then the steps as they began.
   const steps = run.steps
@@ -663,13 +689,15 @@ export function FlowRunView({
   return (
     <div className="flex flex-col gap-5">
       {header ? (
-        header(run, refresh, flow.data)
+        header(run, refresh, flow.data, reconnecting)
       ) : (
         <div className="flex flex-wrap items-center gap-3">
           <Link to={`${link}/flows/${run.flow}`} className="text-action">
             {run.flow}
           </Link>
           <StatePill state={run.state} />
+          <StateAnnouncer state={run.state} label={`Run of ${run.flow}`} />
+          <Reconnecting show={reconnecting} />
           <span className="text-ink-muted">
             Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`},
             on bundle version {run.bundleVersion}
@@ -835,17 +863,24 @@ export function FlowRunView({
 
 /** The log of the script run a step started, where the step is shown. */
 function StepLogs({ root, runId }: { root: string; runId: string }) {
-  const { run, lines, error } = useLiveRun(root, runId);
-  if (error) return <Notice tone="danger">{error}</Notice>;
+  const { run, lines, earlier, error, reconnecting } = useLiveRun(root, runId);
+  if (error && !run) return <Notice tone="danger">{error}</Notice>;
   const active = run?.state === "queued" || run?.state === "running";
+  const logFile = `${runId.slice(-12)}.log`;
+  const wholeLog = wholeLogDownload(root, runId, logFile, earlier);
   return (
-    <LogViewer
-      lines={lines}
-      live={active}
-      fileName={`${runId.slice(-12)}.log`}
-      empty={
-        !run ? "Loading…" : active ? "Waiting for the first line…" : "The step logged nothing."
-      }
-    />
+    <div className="flex flex-col gap-2">
+      <Reconnecting show={reconnecting} />
+      <LogWindowNote earlier={earlier} onDownload={wholeLog} />
+      <LogViewer
+        lines={lines}
+        live={active}
+        onDownload={wholeLog}
+        fileName={logFile}
+        empty={
+          !run ? "Loading…" : active ? "Waiting for the first line…" : "The step logged nothing."
+        }
+      />
+    </div>
   );
 }

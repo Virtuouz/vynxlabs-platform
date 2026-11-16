@@ -15,6 +15,11 @@ export function useReferences(root: string, kind: string, enabled = true) {
   return (name: string) => (found.data?.items ?? []).filter((one) => one.target.name === name);
 }
 
+/** What uses a thing, each named once, for a confirmation that lists them. */
+export const usersOf = (uses: Reference[]): string[] => [
+  ...new Set(uses.map((one) => one.by.path)),
+];
+
 /** "orders/sync, orders/handle" or a quiet "Nothing deployed uses it". */
 export function UsedBy({ uses }: { uses: Reference[] }) {
   if (uses.length === 0) return <span className="text-ink-subtle">Nothing deployed uses it</span>;

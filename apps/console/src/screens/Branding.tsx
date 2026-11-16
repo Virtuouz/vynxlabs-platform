@@ -1,4 +1,12 @@
-import { Badge, Button, CheckboxField, Notice, TextField } from "@vynxlabs/ui";
+import {
+  Badge,
+  Button,
+  CheckboxField,
+  CONTRAST_NEEDED,
+  contrastRatio,
+  Notice,
+  TextField,
+} from "@vynxlabs/ui";
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
@@ -39,6 +47,7 @@ export const THEME_TOKENS = [
   "raised",
   "selected",
   "line-strong",
+  "line-control",
   "ink-subtle",
   "code-bg",
   "focus",
@@ -62,21 +71,22 @@ export const KIT: Theme = {
     sunken: "#e3e8ed",
     line: "#d3dae2",
     ink: "#16202e",
-    "ink-muted": "#5b6777",
+    "ink-muted": "#4b5666",
     action: "#0e5f7a",
     "action-ink": "#ffffff",
     "action-soft": "#dcedf3",
-    attention: "#b45309",
+    attention: "#9a4707",
     "attention-soft": "#fdf0dc",
     danger: "#b3261e",
     "danger-soft": "#fbe9e7",
-    success: "#1f7a4d",
+    success: "#1b6e45",
     "success-soft": "#e1f3e9",
     structure: "#e7ebf0",
     raised: "#ffffff",
     selected: "#e3eff4",
     "line-strong": "#b4bfcb",
-    "ink-subtle": "#687485",
+    "line-control": "#748090",
+    "ink-subtle": "#586474",
     "code-bg": "#f5f7f9",
     focus: "#0e5f7a",
     "radius-control": "6px",
@@ -104,7 +114,8 @@ export const KIT: Theme = {
     raised: "#1f2a38",
     selected: "#172430",
     "line-strong": "#3a4859",
-    "ink-subtle": "#7e8b9b",
+    "line-control": "#6b7b90",
+    "ink-subtle": "#8a97a7",
     "code-bg": "#0b1016",
     focus: "#5cb8d6",
   },
@@ -220,7 +231,63 @@ export function Preview({ scheme, values }: { scheme: "light" | "dark"; values: 
         </div>
         <code className="font-mono text-[13px] text-ink-muted">orders/record</code>
       </div>
+      <ContrastCheck values={values} />
     </div>
+  );
+}
+
+/** Pairs of tokens drawn on each other, and the contrast each needs. */
+const PAIRS: [ink: string, ground: string, needs: "text" | "edge"][] = [
+  ...["ink", "ink-muted", "ink-subtle"].flatMap((ink) =>
+    ["canvas", "surface", "sunken", "structure"].map(
+      (ground) => [ink, ground, "text"] as [string, string, "text"],
+    ),
+  ),
+  ["action", "surface", "text"],
+  ["action", "canvas", "text"],
+  ["action-ink", "action", "text"],
+  ["attention", "surface", "text"],
+  ["attention", "attention-soft", "text"],
+  ["success", "surface", "text"],
+  ["success", "success-soft", "text"],
+  ["danger", "surface", "text"],
+  ["danger", "danger-soft", "text"],
+  ["line-control", "surface", "edge"],
+  ["line-control", "canvas", "edge"],
+];
+
+/**
+ * Says which colors in a scheme would be hard to read, with each pair's
+ * contrast and what it needs. It warns; saving is still allowed.
+ */
+export function ContrastCheck({ values }: { values: Tokens }) {
+  const failing = PAIRS.flatMap(([ink, ground, needs]) => {
+    const one = values[ink];
+    const two = values[ground];
+    if (!one || !two) return [];
+    const ratio = contrastRatio(one, two);
+    return ratio !== undefined && ratio < CONTRAST_NEEDED[needs]
+      ? [{ ink, ground, ratio, needs: CONTRAST_NEEDED[needs] }]
+      : [];
+  });
+  if (failing.length === 0) {
+    return <p className="m-0 text-meta text-ink-muted">Every pair checked is easy to read.</p>;
+  }
+  return (
+    <Notice tone="attention">
+      <p className="m-0 font-medium">
+        {failing.length === 1 ? "One pair is" : `${failing.length} pairs are`} hard to read:
+      </p>
+      <ul className="m-0 mt-1 pl-4">
+        {failing.map((one) => (
+          <li key={`${one.ink}-${one.ground}`}>
+            <code className="font-mono">{one.ink}</code> on{" "}
+            <code className="font-mono">{one.ground}</code>: {one.ratio.toFixed(2)}, needs{" "}
+            {one.needs}
+          </li>
+        ))}
+      </ul>
+    </Notice>
   );
 }
 

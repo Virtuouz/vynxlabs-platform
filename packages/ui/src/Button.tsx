@@ -2,7 +2,7 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "reac
 
 const styles = {
   primary: "bg-action text-action-ink hover:brightness-110",
-  secondary: "bg-surface text-ink border border-line hover:bg-sunken",
+  secondary: "bg-surface text-ink border border-line-control hover:bg-sunken",
   quiet: "text-action hover:bg-action-soft",
   danger: "text-danger hover:bg-danger-soft",
   "danger-solid": "bg-danger text-surface hover:brightness-110",

@@ -741,7 +741,6 @@ const SHORTCUTS: [string, string][] = [
   ["@ then a name", "Find a person"],
   ["↑ ↓ and ↵", "Move through what was found, and open it"],
   ["⌘↵ or Ctrl+↵", "Run, start or run again what is chosen; in the script editor, run the draft"],
-  ["j k", "Move through a list"],
   ["Esc", "Close"],
   ["?", "These shortcuts"],
 ];

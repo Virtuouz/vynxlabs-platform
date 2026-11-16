@@ -3,8 +3,9 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { useEditorKey } from "../kit/editorKey.ts";
 import { Inspector, KeyValues } from "../kit/layout.tsx";
-import { UsedBy, useReferences } from "../kit/references.tsx";
+import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -317,9 +318,11 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           {
             name: "type",
             label: "Type",
+            // Chosen on purpose: it cannot be changed afterwards.
+            pick: true,
             options: [
-              { value: "dev", label: "Dev" },
               { value: "production", label: "Production" },
+              { value: "dev", label: "Dev" },
             ],
           },
           {
@@ -391,6 +394,7 @@ function WorkspaceDetail({
   rest: string;
 }) {
   const workspace = useLoad<Workspace>(`${base}/workspaces/${workspaceId}`);
+  const codeEditorKey = useEditorKey(`${tab}/${rest}`);
   // An address may name the workspace by its slug, as people type it. When the
   // ID is refused, the slug is looked up and the address replaced by the ID's.
   const refused = workspace.error?.status === 400 || workspace.error?.status === 404;
@@ -441,7 +445,7 @@ function WorkspaceDetail({
         workspace.data.type === "dev" ? (
           <Suspense fallback={<p className="text-ink-muted">Loading the editor…</p>}>
             <FlowEditor
-              key={rest}
+              key={codeEditorKey}
               root={root}
               link={`/t/${tenantId}/workspaces/${workspaceId}`}
               path={rest === "new" ? undefined : rest.slice("edit/".length)}
@@ -517,7 +521,7 @@ function WorkspaceDetail({
         <Apps root={root} />
       ) : tab === "scripts" && (rest === "new" || rest.startsWith("edit/")) ? (
         <ScriptEditor
-          key={rest}
+          key={codeEditorKey}
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           path={rest === "new" ? undefined : rest.slice("edit/".length)}
@@ -525,7 +529,7 @@ function WorkspaceDetail({
         />
       ) : tab === "extensions" && /^(connector|trigger_source)\/(new$|edit\/)/.test(rest) ? (
         <ScriptEditor
-          key={rest}
+          key={codeEditorKey}
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           kind={rest.split("/")[0] as CodeKind}
@@ -704,6 +708,7 @@ function WorkspaceDetail({
             <RemoveButton
               label="Delete"
               confirm={`Delete the secret ${row.name}? Anything that uses it will fail.`}
+              affected={usersOf(secretUses(row.name))}
               run={() => api.delete(`${root}/secrets/${row.name}`)}
               onDone={reload}
             />

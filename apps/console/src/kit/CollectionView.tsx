@@ -105,13 +105,14 @@ export function CollectionView<Row>({
                   <tr
                     key={key}
                     data-row={key}
-                    aria-current={on && !onSelect ? "true" : undefined}
-                    aria-selected={onSelect ? on : undefined}
+                    // The chosen row. A table row cannot be "selected" outside a grid; it can be current.
+                    aria-current={on ? "true" : undefined}
                     tabIndex={onSelect ? 0 : undefined}
                     onClick={onSelect ? () => onSelect(row) : undefined}
                     onKeyDown={
                       onSelect
                         ? (event) => {
+                            if (event.target !== event.currentTarget) return;
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
                               onSelect(row);

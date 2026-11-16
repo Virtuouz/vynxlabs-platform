@@ -2,6 +2,7 @@ import {
   CircleCheck,
   CircleDashed,
   CircleDot,
+  CircleHelp,
   CirclePause,
   CircleX,
   Clock,
@@ -37,7 +38,8 @@ export type State =
   | "warning"
   | "info"
   | "locked"
-  | "ok";
+  | "ok"
+  | "unknown";
 
 const STATES: Record<State, [label: string, icon: LucideIcon, tone: string]> = {
   // A run's states: the one map every screen uses.
@@ -58,7 +60,11 @@ const STATES: Record<State, [label: string, icon: LucideIcon, tone: string]> = {
   warning: ["Needs attention", TriangleAlert, "text-attention"],
   info: ["Note", Info, "text-action"],
   locked: ["Read-only", Lock, "text-ink-muted"],
+  // A state this console does not know yet, such as one a newer server added.
+  unknown: ["Unknown", CircleHelp, "text-ink-muted"],
 };
+
+const lookUp = (state: string) => STATES[state as State] ?? STATES.unknown;
 
 /**
  * A state as an icon and a word in its color, never a filled chip, so color is
@@ -73,7 +79,7 @@ export function StatePill({
   children?: ReactNode;
   detail?: ReactNode;
 }) {
-  const [label, Icon, tone] = STATES[state];
+  const [label, Icon, tone] = lookUp(state);
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <Icon aria-hidden="true" size={14} strokeWidth={1.75} className={`shrink-0 ${tone}`} />
@@ -83,10 +89,11 @@ export function StatePill({
   );
 }
 
-export const stateOf = (status: string): State => (status in STATES ? status : "info") as State;
+export const stateOf = (status: string): State =>
+  (Object.hasOwn(STATES, status) ? status : "unknown") as State;
 
 /** A run state's word, for places that show no icon, such as a node's accessible name. */
-export const stateLabel = (state: State) => STATES[state][0];
+export const stateLabel = (state: State) => lookUp(state)[0];
 
 /** The color of a run state, as a token, for drawings such as a flow's graph. */
 export const STATE_STROKE: Record<RunState, string> = {

@@ -24,6 +24,11 @@ export interface FormField {
   required?: boolean;
   options?: { value: string; label: string }[];
   /**
+   * With `options`: nothing is chosen for the person, who has to pick one. For a
+   * choice where the first option would be a costly guess, such as a workspace's type.
+   */
+  pick?: boolean;
+  /**
    * A list to choose from that the API holds: a GET route returning `{ items }`,
    * and how one item becomes a choice. The field is then a searchable list, so
    * nobody types a name that has to match something elsewhere.
@@ -71,7 +76,8 @@ export interface CreateConfig {
   fields: FormField[];
   submit: (values: Record<string, string>) => Promise<unknown>;
   /** Something to show once after creating, such as a key that is only shown now. */
-  afterCreate?: (result: unknown) => ReactNode;
+  /** What to show once made, such as a key shown once. `dismiss` takes it away. */
+  afterCreate?: (result: unknown, dismiss: () => void) => ReactNode;
 }
 
 export interface ListScreenProps<Row> {
@@ -126,14 +132,24 @@ export function CreateDialog({
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<ApiError>();
+  const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const fieldError = (name: string) =>
-    error?.fields.find((field) => field.path === `/body/${name}`)?.message;
+    unpicked.includes(name)
+      ? "Choose one."
+      : error?.fields.find((field) => field.path === `/body/${name}`)?.message;
+  // Cancelled means forgotten: what was typed, a password included, does not wait for the next time.
+  const close = () => {
+    setValues({});
+    setError(undefined);
+    setUnpicked([]);
+    onClose();
+  };
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={close}
       title={config.action}
       {...(config.description ? { description: config.description } : {})}
     >
@@ -141,12 +157,17 @@ export function CreateDialog({
         className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
+          const missing = config.fields
+            .filter((f) => f.pick && !(f.when && !f.when(values)) && !values[f.name])
+            .map((f) => f.name);
+          setUnpicked(missing);
+          if (missing.length > 0) return;
           setBusy(true);
           setError(undefined);
           try {
             const defaults = Object.fromEntries(
               config.fields
-                .filter((f) => f.options?.[0])
+                .filter((f) => f.options?.[0] && !f.pick)
                 .map((f) => [f.name, f.options?.[0]?.value as string]),
             );
             const result = await config.submit({ ...defaults, ...values });
@@ -173,8 +194,10 @@ export function CreateDialog({
               key={field.name}
               name={field.name}
               label={field.label}
-              options={field.options}
-              value={values[field.name] ?? field.options[0]?.value ?? ""}
+              options={
+                field.pick ? [{ value: "", label: "Choose…" }, ...field.options] : field.options
+              }
+              value={values[field.name] ?? (field.pick ? "" : (field.options[0]?.value ?? ""))}
               {...(field.hint ? { hint: field.hint } : {})}
               error={fieldError(field.name)}
               onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
@@ -196,7 +219,7 @@ export function CreateDialog({
         )}
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={close}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={busy}>
             {config.action}
           </Button>
@@ -260,7 +283,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           onClose={() => setCreating(false)}
           onCreated={(result) => {
             setCreating(false);
-            setCreated(create.afterCreate?.(result));
+            setCreated(create.afterCreate?.(result, () => setCreated(undefined)));
             list.reload();
           }}
         />
@@ -310,21 +333,31 @@ export function RemoveButton({
   confirm: question,
   run,
   onDone,
+  affected,
+  typeToConfirm,
 }: {
   label?: string;
   confirm: string;
   run: () => Promise<unknown>;
   onDone: () => void;
+  /** What uses the thing and is affected, named in the confirmation so its reach is seen first. */
+  affected?: string[] | undefined;
+  /** For what cannot be undone: the name to type before the action is offered. */
+  typeToConfirm?: string | undefined;
 }) {
   return (
     <Button
       variant="danger"
       size="small"
       onClick={async () => {
-        if (
-          !(await ask.confirm({ title: `${label}?`, text: question, action: label, danger: true }))
-        )
-          return;
+        const text = affected?.length
+          ? `${question} Used by ${affected.length}: ${listed(affected)}.`
+          : question;
+        const options = { title: `${label}?`, text, action: label, danger: true };
+        const sure = typeToConfirm
+          ? await ask.typeToConfirm({ ...options, expected: typeToConfirm })
+          : await ask.confirm(options);
+        if (!sure) return;
         try {
           await run();
           onDone();
@@ -339,7 +372,26 @@ export function RemoveButton({
 }
 
 /** Copies a value that has to be passed on by hand, such as a link or a DNS record. */
-export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+/** "a, b and 3 more", for a sentence. */
+export function listed(names: string[], most = 5): string {
+  if (names.length <= most) {
+    return names.length > 1
+      ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+      : (names[0] ?? "");
+  }
+  return `${names.slice(0, most).join(", ")} and ${names.length - most} more`;
+}
+
+export function CopyButton({
+  value,
+  label = "Copy",
+  onCopied,
+}: {
+  value: string;
+  label?: string;
+  /** Called once the value is on the clipboard. */
+  onCopied?: () => void;
+}) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <Button
@@ -348,6 +400,7 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
         try {
           await navigator.clipboard.writeText(value);
           setState("copied");
+          onCopied?.();
         } catch {
           setState("failed");
         }

@@ -12,13 +12,16 @@ import { ArrowUpRight, CircleX, Lightbulb, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { useTitleObject } from "../kit/title.ts";
 import { Link, navigate, useQueryValue } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
-import { stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
+import { LogWindowNote, stamp, TRIGGER, took, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
 /** What the list can be narrowed to: a state, or either kind of waiting. */
@@ -156,6 +159,19 @@ export function RunsWorkbench({
   }, [live, streaming]);
 
   const [chosen, setChosen] = useState<Activity>();
+  // Each time a run is chosen, even the one already open, focus goes to the inspector.
+  const [openings, setOpenings] = useState(0);
+  // The run in the address: the one clicked, one on the page, or, from a link or a
+  // reload, one looked up by its ID, so a flow run opens as a flow run.
+  const listed = chosen?.id === selected ? chosen : items.find((one) => one.id === selected);
+  const looked = useLoad<Page>(
+    selected && !listed && list.data
+      ? `${root}/activity?${new URLSearchParams({ q: selected, limit: "1" })}`
+      : null,
+  );
+  const picked = listed ?? looked.data?.items.find((one) => one.id === selected);
+  const missing = Boolean(selected && !listed && looked.data && !picked);
+  useTitleObject(selected ? (picked ? `Run of ${picked.target}` : "Run") : undefined);
   const counts = list.data?.stateCounts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const next = more.length === 0 ? (list.data?.nextCursor ?? null) : lastNext;
@@ -192,6 +208,7 @@ export function RunsWorkbench({
       onChoose={() => {
         setChosen(one);
         choose(one.id);
+        setOpenings((n) => n + 1);
       }}
       onTag={(value) => setTag(value)}
     />
@@ -288,12 +305,28 @@ export function RunsWorkbench({
             <Inspector
               open
               label="The chosen run"
-              title={chosen?.id === selected ? chosen.target : "Run"}
+              subject={`${selected}:${openings}`}
+              title={picked?.target ?? "Run"}
               eyebrow="Run"
               onClose={() => choose(null)}
             >
-              {chosen?.id === selected && chosen.kind === "flow" ? (
-                <FlowRunSummary run={chosen} link={link} />
+              {missing ? (
+                <p className="m-0 text-ink-muted">
+                  No run has this ID.{" "}
+                  <button
+                    type="button"
+                    className="text-action underline-offset-2 hover:underline"
+                    onClick={() => choose(null)}
+                  >
+                    Back to the list
+                  </button>
+                </p>
+              ) : looked.error && !picked ? (
+                <Notice tone="danger">{looked.error.message}</Notice>
+              ) : !picked ? (
+                <p className="m-0 text-ink-muted">Loading…</p>
+              ) : picked.kind === "flow" ? (
+                <FlowRunSummary run={picked} link={link} />
               ) : (
                 <ScriptRunPanel root={root} link={link} runId={selected} />
               )}
@@ -390,8 +423,18 @@ function RunRow({
 }) {
   return (
     <tr
-      aria-selected={on}
+      // The chosen run. A table row cannot be "selected" outside a grid; it can be current.
+      aria-current={on ? "true" : undefined}
+      tabIndex={0}
       onClick={onChoose}
+      onKeyDown={(event) => {
+        // A link or a tag inside the row does its own thing.
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onChoose();
+        }
+      }}
       className={`cursor-pointer border-line border-b ${on ? "bg-selected" : "hover:bg-surface"}`}
     >
       <td className="px-4 py-2.5 align-top md:pl-6">
@@ -486,20 +529,24 @@ export function ScriptRunPanel({
   link: string;
   runId: string;
 }) {
-  const { run, lines, error } = useLiveRun(root, runId);
+  const { run, lines, earlier, error, reconnecting } = useLiveRun(root, runId);
   const insight = useLoad<Insight>(
     run && !["queued", "running"].includes(run.status) ? `${root}/runs/${runId}/insight` : null,
   );
-  if (error) return <Notice tone="danger">{error}</Notice>;
+  if (error && !run) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="m-0 text-ink-muted">Loading…</p>;
   const active = run.status === "queued" || run.status === "running";
   const failed = run.status === "failed";
+  const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
+  const wholeLog = wholeLogDownload(root, run.id, logFile, earlier);
   const diagnosis = insight.data?.diagnosis;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <StatePill state={run.state} detail={took(run) || undefined} />
+        <StateAnnouncer state={run.state} label={`Run of ${run.script}`} />
+        <Reconnecting show={reconnecting} />
         <div className="flex gap-2">
           {active ? (
             <Button
@@ -579,11 +626,13 @@ export function ScriptRunPanel({
             id: "logs",
             label: "Logs",
             content: (
-              <div className="pt-3">
+              <div className="flex flex-col gap-2 pt-3">
+                <LogWindowNote earlier={earlier} onDownload={wholeLog} />
                 <LogViewer
                   lines={lines}
                   live={active}
-                  fileName={`${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`}
+                  onDownload={wholeLog}
+                  fileName={logFile}
                   empty={active ? "Waiting for the first line…" : "The script logged nothing."}
                 />
               </div>

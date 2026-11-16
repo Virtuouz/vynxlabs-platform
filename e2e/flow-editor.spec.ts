@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { signInWithPassword } from "./sign-in.ts";
 
 /**
  * The flow editor, in a browser (phase 10, milestone 4): a draft is tested
@@ -63,12 +64,7 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await page.goto("/");
-  await page.getByLabel("Email").fill(ADMIN.email);
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByLabel("Password").fill(ADMIN.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByText("All tenants").first().waitFor();
+  await signInWithPassword(page, ADMIN.email, ADMIN.password);
 
   const tenant = await call(page, "POST", "/tenants", {
     slug: `fe-${stamp}`,
@@ -143,7 +139,118 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
   expect(Object.keys(saved.body.nodes).sort()).toEqual(["check", "start", "totals"]);
   expect(saved.body.nodes.totals.values.count).toBe("size(trigger.customer) * 10");
 
+  // With the connection lost, saving says so and tries again, and leaving asks first.
+  const draftAddress = `**/api/v1${W}/drafts/orders/count`;
+  await page.route(draftAddress, (route) =>
+    route.request().method() === "PUT" ? route.abort() : route.continue(),
+  );
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(canvas.getByText("check", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Could not save. Trying again…" }),
+  ).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("link", { name: "Flows", exact: true }).first().click();
+  const leaving = page.getByRole("dialog");
+  await expect(leaving).toContainText("Leave without saving?");
+  await leaving.getByRole("button", { name: "Stay" }).click();
+  expect(page.url()).toContain("/flows/edit/orders/count");
+  // Back online, it catches up by itself.
+  await page.unroute(draftAddress);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(canvas.getByText("check", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("status").filter({ hasText: /Draft saved/ })).toBeVisible({
+    timeout: 20_000,
+  });
+
   await page.reload();
   await canvas.getByText("check", { exact: true }).waitFor();
+  expect(errors).toEqual([]);
+});
+
+test("a flow is built, saved and tested from the keyboard, without dragging", async ({
+  browser,
+}) => {
+  const page = await (await browser.newContext()).newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(String(error).slice(0, 300)));
+  page.on("dialog", (dialog) => {
+    errors.push(`a browser dialog: ${dialog.message()}`);
+    void dialog.dismiss();
+  });
+  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  const tenant = await call(page, "POST", "/tenants", {
+    slug: `fk-${stamp}`,
+    name: "Flow by keyboard",
+  });
+  await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
+    reason: "The flow editor's keyboard e2e test",
+    roleId: TENANT_ADMIN,
+  });
+  const dev = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+    slug: "dev",
+    name: "Dev",
+    type: "dev",
+  });
+  const W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
+  await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/flows/new`);
+
+  /** Presses a control by giving it focus and pressing Enter, as a keyboard does. */
+  const press = async (control: ReturnType<Page["getByRole"]>) => {
+    await control.focus();
+    await page.keyboard.press("Enter");
+  };
+  await page.getByLabel("Path").fill("orders/route");
+  const addStep = async (label: string) => {
+    await press(page.getByRole("button", { name: "Add step" }));
+    await press(
+      page
+        .getByRole("complementary", { name: "Steps to add" })
+        .getByRole("button", { name: new RegExp(`^${label}`) }),
+    );
+  };
+  await addStep("Branch");
+  await addStep("Set values");
+  await addStep("Approval");
+  await addStep("Fail");
+
+  const steps = page.getByRole("navigation", { name: "Steps in order" });
+  const aside = page.getByRole("complementary", { name: "The chosen step" });
+  const pick = async (step: string, field: string, target: string) => {
+    await press(steps.getByRole("button", { name: new RegExp(`^${step}`) }));
+    await aside.getByLabel(field).selectOption(target);
+  };
+  await pick("start", "Then go to", "branch");
+  await pick("branch", "When yes, go to", "set");
+  await pick("branch", "Otherwise, go to", "approve");
+  await pick("approve", "On failure, go to", "fail");
+  // The outline follows the runs' order: from the start along each connection.
+  await expect(steps.getByRole("button")).toHaveText([
+    /^start/,
+    /^branch/,
+    /^set/,
+    /^approve/,
+    /^fail/,
+  ]);
+  // Each connection is named for a screen reader.
+  await expect(page.getByRole("group", { name: "approve to fail, on error" })).toHaveCount(1);
+
+  await press(page.getByRole("button", { name: "Save draft" }));
+  await expect(page).toHaveURL(/\/flows\/edit\/orders\/route$/);
+  const saved = await call(page, "GET", `${W}/drafts/orders/route`);
+  expect(saved.body.edges).toEqual(
+    expect.arrayContaining([
+      { from: "start", to: "branch" },
+      { from: "branch", to: "set", output: "yes" },
+      { from: "branch", to: "approve", output: "otherwise" },
+      { from: "approve", to: "fail", error: true },
+    ]),
+  );
+
+  await press(page.getByRole("button", { name: "Test", exact: true }));
+  const panel = page.getByRole("region", { name: "The test run" });
+  await press(panel.getByRole("button", { name: "Run a test" }));
+  await expect(
+    panel.getByRole("list", { name: "Steps of the test" }).getByRole("button", { name: /^set/ }),
+  ).toContainText("Succeeded", { timeout: 30_000 });
   expect(errors).toEqual([]);
 });

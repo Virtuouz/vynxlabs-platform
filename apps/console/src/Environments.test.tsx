@@ -92,6 +92,8 @@ test("promotion shows what would change before anything does, then promotes", as
     "Table orders: column total renamed to amount. Its values are kept.",
   );
   expect(sent("POST")).toHaveLength(0);
+  // The one action that changes production has the kit's promote look.
+  expect(screen.getByRole("button", { name: "Promote" }).className).toContain("bg-attention");
   fireEvent.click(screen.getByRole("button", { name: "Promote" }));
   expect((await screen.findByText("Promoted to Main as its version 7.")).textContent).toBeTruthy();
 });

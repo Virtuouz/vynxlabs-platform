@@ -2,10 +2,10 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Apps } from "./screens/Apps.tsx";
-import { Branding, KIT, THEME_TOKENS } from "./screens/Branding.tsx";
+import { Branding, ContrastCheck, KIT, THEME_TOKENS } from "./screens/Branding.tsx";
 import { Domains } from "./screens/Domains.tsx";
 import { EndUsers } from "./screens/EndUsers.tsx";
 import { answer, show } from "./testing.tsx";
@@ -518,4 +518,14 @@ test("the instance's stylesheet is loaded once, never a tenant's, and again afte
   expect(links()[0]).toMatch(/^\/api\/v1\/instance\/theme\.css\?saved=\d+$/);
   expect(links().some((href) => href?.includes("/tenants/"))).toBe(false);
   for (const link of document.head.querySelectorAll("link[data-instance-theme]")) link.remove();
+});
+
+test("a branding preview says which colors would be hard to read, and still lets them be saved", () => {
+  const { rerender } = render(<ContrastCheck values={KIT.tokens} />);
+  expect(screen.getByText("Every pair checked is easy to read.")).toBeTruthy();
+  rerender(<ContrastCheck values={{ ...KIT.tokens, "ink-subtle": "#9aa4b0" }} />);
+  expect(screen.getByText("4 pairs are hard to read:")).toBeTruthy();
+  expect(screen.getAllByText(/needs 4\.5/, { selector: "li" })).toHaveLength(4);
+  rerender(<ContrastCheck values={{ ...KIT.dark, ...KIT.tokens, "line-control": "#d3dae2" }} />);
+  expect(screen.getByText("2 pairs are hard to read:")).toBeTruthy();
 });

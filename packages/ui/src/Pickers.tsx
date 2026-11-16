@@ -106,7 +106,7 @@ export function DateStepper({
     ...(value.slice(0, 4) !== today.slice(0, 4) ? { year: "numeric" } : {}),
   });
   const arrow =
-    "inline-flex size-8 items-center justify-center rounded-control border border-line bg-surface text-ink hover:bg-sunken disabled:opacity-50 disabled:pointer-events-none";
+    "inline-flex size-8 items-center justify-center rounded-control border border-line-control bg-surface text-ink hover:bg-sunken disabled:opacity-50 disabled:pointer-events-none";
   return (
     <fieldset className="m-0 flex min-w-0 items-center gap-2 border-0 p-0">
       <legend className="sr-only">{label}</legend>

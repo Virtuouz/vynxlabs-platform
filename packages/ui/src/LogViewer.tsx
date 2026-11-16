@@ -20,6 +20,11 @@ export interface LogViewerProps {
   fileName?: string;
   /** The tallest the list grows before it scrolls, as a CSS length. */
   maxHeight?: string;
+  /**
+   * Replaces the download of the lines given, for a log that has more lines
+   * than it was given, such as one whose oldest lines were left out.
+   */
+  onDownload?: (() => void) | undefined;
 }
 
 const LEVEL: Record<string, string> = {
@@ -37,6 +42,24 @@ const clock = (iso: string) => {
 const fieldsText = (line: LogLine) =>
   line.fields && Object.keys(line.fields).length > 0 ? JSON.stringify(line.fields) : "";
 
+/** Log lines as a text file has them: one per line, time, level, message and fields. */
+export function logText(lines: readonly LogLine[]): string {
+  return `${lines
+    .map((line) =>
+      `${line.time} ${line.level.padEnd(5)} ${line.message} ${fieldsText(line)}`.trimEnd(),
+    )
+    .join("\n")}\n`;
+}
+
+/** Offers text to the person as a file to save. */
+export function saveText(text: string, fileName: string) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 /** Log lines with a search box, a lowest level to show, wrapping, and a download. */
 export function LogViewer({
   lines,
@@ -44,6 +67,7 @@ export function LogViewer({
   empty = "Nothing was logged.",
   fileName = "log.txt",
   maxHeight = "28rem",
+  onDownload,
 }: LogViewerProps) {
   const [query, setQuery] = useState("");
   const [least, setLeast] = useState("debug");
@@ -70,20 +94,9 @@ export function LogViewer({
     if (live && follow && element && count > 0) element.scrollTop = element.scrollHeight;
   }, [live, follow, count]);
 
-  const download = () => {
-    const text = lines
-      .map((line) =>
-        `${line.time} ${line.level.padEnd(5)} ${line.message} ${fieldsText(line)}`.trimEnd(),
-      )
-      .join("\n");
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([`${text}\n`], { type: "text/plain" }));
-    link.download = fileName;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
+  const download = onDownload ?? (() => saveText(logText(lines), fileName));
 
-  const control = "h-7 rounded-control border border-line bg-surface px-2 text-[13px]";
+  const control = "h-7 rounded-control border border-line-control bg-surface px-2 text-[13px]";
   const toggle = (on: boolean) =>
     `${control} ${on ? "border-action bg-action-soft text-action" : "text-ink-muted hover:text-ink"}`;
 

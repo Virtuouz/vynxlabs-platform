@@ -151,9 +151,10 @@ export function useLoad<T>(path: string | null): Loaded<T> {
     client,
   );
   const { refetch } = query;
+  // A query with no path is switched off; asking it again would request `/api/v1null`.
   const reload = useCallback(() => {
-    void refetch();
-  }, [refetch]);
+    if (path !== null) void refetch();
+  }, [path, refetch]);
   return {
     data: query.data,
     error: query.error ?? undefined,

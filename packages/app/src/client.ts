@@ -75,13 +75,28 @@ export function setAppContext(context: AppContext | undefined): void {
   cached = context;
 }
 
+/** How often a request is tried again when the platform is busy, and the longest wait between. */
+const BUSY_RETRIES = 2;
+const BUSY_WAIT_LIMIT_MS = 5000;
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${appContext().api}${path}`, {
-    method,
-    credentials: "same-origin",
-    headers: body === undefined ? {} : { "content-type": "application/json" },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  const send = () =>
+    fetch(`${appContext().api}${path}`, {
+      method,
+      credentials: "same-origin",
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  let response = await send();
+  // Busy: nothing was done, and the platform says when to try again.
+  for (let attempt = 0; attempt < BUSY_RETRIES; attempt += 1) {
+    const after = response.headers.get("retry-after");
+    if (response.status !== 503 || !after) break;
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min((Number(after) || 1) * 1000, BUSY_WAIT_LIMIT_MS)),
+    );
+    response = await send();
+  }
   const text = await response.text();
   let parsed: unknown = null;
   try {

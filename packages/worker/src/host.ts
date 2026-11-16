@@ -2,6 +2,14 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import {
+  formatMachine,
+  type MachineProbe,
+  type MachineShare,
+  MemoryGuard,
+  machineShare,
+  procProbe,
+} from "./machine.js";
 import type { WorkerLog } from "./worker.js";
 
 /**
@@ -22,8 +30,14 @@ export interface WorkerHostOptions {
   token: string;
   /** The user workers run as. Never the host's own. */
   user: { uid: number; gid: number };
-  /** Workers alive at once. Default 50. */
+  /** Workers alive at once. Default: twice the machine's run slots, as each costs memory too. */
   maxWorkers?: number;
+  /** Scripts running at once on this machine, across all its workers. Default: from its memory. */
+  runSlots?: number;
+  /** Free memory below which no worker here takes more work, in MB. Default: from its memory. */
+  memoryFloorMb?: number;
+  /** Where memory is read from. Replaced in tests. */
+  probe?: MachineProbe;
   log?: WorkerLog;
   /** The worker to start. Default: the one beside this file. */
   workerBin?: string;
@@ -53,6 +67,10 @@ export class WorkerHost {
   readonly #log: WorkerLog;
   readonly #bin: string;
   readonly #workers = new Map<string, ChildProcess>();
+  readonly #probe: MachineProbe;
+  readonly #guard: MemoryGuard;
+  /** What this machine's workers share. */
+  readonly machine: MachineShare;
   #stopping = false;
   #asking: AbortController | undefined;
 
@@ -61,6 +79,20 @@ export class WorkerHost {
     this.#url = options.url.replace(/\/+$/, "");
     this.#log = options.log ?? (() => {});
     this.#bin = options.workerBin ?? fileURLToPath(new URL("./bin.js", import.meta.url));
+    this.#probe = options.probe ?? procProbe;
+    this.machine = machineShare(
+      {
+        ...(options.runSlots ? { slots: options.runSlots } : {}),
+        ...(options.memoryFloorMb !== undefined ? { floorMb: options.memoryFloorMb } : {}),
+      },
+      this.#probe,
+    );
+    this.#guard = new MemoryGuard({ probe: this.#probe, log: this.#log });
+  }
+
+  #shortOfMemory(): boolean {
+    const memory = this.#probe.memory();
+    return memory !== undefined && memory.availableMb < this.machine.floorMb;
   }
 
   /** Leases in progress, by lease. */
@@ -70,9 +102,11 @@ export class WorkerHost {
 
   /** Asks for leases and starts workers until stopped, or until the token is refused. */
   async run(): Promise<"stopped" | "refused"> {
-    const max = this.#options.maxWorkers ?? 50;
+    const max = this.#options.maxWorkers ?? this.machine.slots * 2;
+    this.#log("info", "this machine's share", { ...this.machine, maxWorkers: max });
+    this.#guard.start();
     while (!this.#stopping) {
-      if (this.#workers.size >= max) {
+      if (this.#workers.size >= max || this.#shortOfMemory()) {
         await sleep(1000);
         continue;
       }
@@ -100,6 +134,7 @@ export class WorkerHost {
   async stop(graceSeconds = 30): Promise<void> {
     this.#stopping = true;
     this.#asking?.abort();
+    this.#guard.stop();
     await Promise.all(
       [...this.#workers.values()].map(
         (child) =>
@@ -163,6 +198,7 @@ export class WorkerHost {
         HOME: "/tmp",
         PLATFORM_URL: this.#url,
         PLATFORM_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
+        PLATFORM_WORKER_MACHINE: formatMachine(this.machine),
       },
       stdio: ["pipe", "pipe", "pipe"],
       uid,

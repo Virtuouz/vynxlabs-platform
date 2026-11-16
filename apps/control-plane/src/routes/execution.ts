@@ -4,6 +4,7 @@ import type {
 } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
+import { procProbe } from "@vynxlabs/worker";
 import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
@@ -18,6 +19,7 @@ import {
 } from "../kernel/execution/oauth.js";
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
+import { cancelRuns } from "../kernel/execution/bulk-cancel.js";
 import { loadBundle, MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
@@ -1399,6 +1401,44 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.post(
+      `${base}/runs/cancel`,
+      {
+        config: { access: access.workspace("run:write") },
+        schema: {
+          summary: "Cancel a workspace's runs in bulk",
+          description:
+            "`queued` cancels what has not started; `all` what is going too. Up to 10,000 at a " +
+            "time: `more` says there are others, and the same request cancels the next.",
+          tags: ["runs"],
+          params: Type.Object({ t: Id, w: Id }),
+          body: Type.Object({
+            include: Type.Union([Type.Literal("queued"), Type.Literal("all")]),
+            olderThanSeconds: Type.Optional(Type.Integer({ minimum: 1 })),
+          }),
+          response: { 200: Type.Object({ cancelled: Type.Integer(), more: Type.Boolean() }) },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const result = await cancelRuns(kernel, {
+          workspaceId: params.w,
+          include: body.include,
+          olderThanSeconds: body.olderThanSeconds,
+        });
+        await ctx.mutate(async (_trx, audit) => {
+          await audit({
+            action: "run.bulk_cancelled",
+            targetType: "workspace",
+            targetId: params.w,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { ...body, ...result },
+          });
+        });
+        return result;
+      },
+    );
+
     // ----- Triggers -----
 
     app.get(
@@ -1431,6 +1471,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     description: "For a schedule: whether it skips a time while its last run goes.",
                   }),
                   lastSkippedAt: NullableTime,
+                  lastSkipReason: Type.Union(
+                    [Type.Literal("overlap"), Type.Literal("backlog"), Type.Null()],
+                    {
+                      description:
+                        "Why the last time was passed over: its last run was still going, or the " +
+                        "workspace already had too many runs waiting.",
+                    },
+                  ),
                   nextFireAt: NullableTime,
                   lastFiredAt: NullableTime,
                   url: NullableString,
@@ -1575,6 +1623,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     ? ((row.config as { overlap?: "skip" }).overlap ?? ("allow" as const))
                     : null,
                 lastSkippedAt: (row.config as { lastSkippedAt?: string }).lastSkippedAt ?? null,
+                lastSkipReason:
+                  (row.config as { lastSkipReason?: "overlap" | "backlog" }).lastSkipReason ??
+                  ((row.config as { lastSkippedAt?: string }).lastSkippedAt ? "overlap" : null),
                 nextFireAt: isoOrNull(row.next_fire_at),
                 lastFiredAt: isoOrNull(row.last_fired_at),
                 url: token ? address : null,
@@ -3003,6 +3054,59 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             (row) => `platform_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
           ),
         );
+        // What each machine that shares its slots is running: the gauge to set an alert on
+        // beside the slots the operator gave it.
+        const machines = await sql<{ machine: string; n: number }>`
+          select w.machine, count(*)::int as n
+          from (
+            select worker_id from run where status = 'running'
+            union all
+            select worker_id from task where status = 'running'
+          ) busy
+          join worker w on w.id = busy.worker_id
+          where w.machine is not null
+          group by w.machine
+        `.execute(db);
+        lines.push(
+          "# HELP platform_machine_running Scripts running on each machine whose workers share its run slots.",
+          "# TYPE platform_machine_running gauge",
+          ...machines.rows.map(
+            (row) => `platform_machine_running${labelText({ machine: row.machine })} ${row.n}`,
+          ),
+        );
+        const pools = await kernel.data.poolStats();
+        lines.push(
+          "# HELP platform_db_pool Connections of this replica's pools to the platform database: open, idle, and requests waiting for one.",
+          "# TYPE platform_db_pool gauge",
+          ...Object.entries(pools).flatMap(([pool, stats]) =>
+            (["total", "idle", "waiting"] as const).map(
+              (state) => `platform_db_pool${labelText({ pool, state })} ${stats[state]}`,
+            ),
+          ),
+        );
+        const size = await sql<{ bytes: string }>`
+          select pg_database_size(current_database()) as bytes
+        `.execute(db);
+        const readOnly = await kernel.readOnly().catch(() => false);
+        lines.push(
+          "# HELP platform_database_size_bytes The platform database's size on disk. Alert well before its volume is full.",
+          "# TYPE platform_database_size_bytes gauge",
+          `platform_database_size_bytes ${Number(size.rows[0]?.bytes ?? 0)}`,
+          "# HELP platform_database_read_only 1 while the platform database takes no writes, such as when its disk is full.",
+          "# TYPE platform_database_read_only gauge",
+          `platform_database_read_only ${readOnly ? 1 : 0}`,
+        );
+        const memory = procProbe.memory();
+        if (memory) {
+          lines.push(
+            "# HELP platform_memory_available_bytes Memory this replica's machine can still give out.",
+            "# TYPE platform_memory_available_bytes gauge",
+            `platform_memory_available_bytes ${Math.round(memory.availableMb * 1024 * 1024)}`,
+            "# HELP platform_memory_total_bytes All of this replica's machine's memory.",
+            "# TYPE platform_memory_total_bytes gauge",
+            `platform_memory_total_bytes ${Math.round(memory.totalMb * 1024 * 1024)}`,
+          );
+        }
 
         // What this replica counted, with workspaces named by their slugs.
         const ids = [...kernel.metrics.workspaceIds()];

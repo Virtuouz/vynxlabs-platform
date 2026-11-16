@@ -59,6 +59,15 @@ Size the `workers` machines for the scripts they will run. The worker host runs 
 
 Migrations run when the new machine starts, before it accepts traffic. The health check holds traffic until `/api/v1/readyz` returns 200.
 
+Fly does not restart a machine whose health check fails: the check only decides where traffic goes. The instance protects its machine instead:
+- Scripts are held to the machine's run slots (`RUN_SLOTS`).
+- No worker takes more work below the memory floor (`RUN_MEMORY_FLOOR_MB`).
+- If memory still runs low, the largest script is stopped.
+
+`swap_size_mb` in `fly.toml` gives the machine room to slow down rather than stall. Size the machine with "Sizing" in `docs/self-hosting.md`.
+
+The database matters as much as the app. A `shared-cpu-1x` Postgres has burst credit for a while, then a fraction of a core, and every tenant's queries slow down together. Give it a `performance` CPU, or use Fly Managed Postgres, for anything past a trial.
+
 ## Verify
 
 ```sh

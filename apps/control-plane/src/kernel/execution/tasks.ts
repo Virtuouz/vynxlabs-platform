@@ -10,6 +10,7 @@ import type { Db, Trx } from "../audit.js";
 import { conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { WorkerScope } from "./runs.js";
+import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
 
 export const TASK_KINDS = ["describe", "deliver", "test-connection"] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
@@ -88,11 +89,30 @@ export async function claimTask(
   scope: WorkerScope,
   workerId: string,
   kinds: readonly string[],
+  /** The machine the worker shares with others, whose slots it must keep within. */
+  machine?: MachineClaim,
 ): Promise<TaskRow | undefined> {
   const wanted = kinds.filter((kind): kind is TaskKind =>
     (TASK_KINDS as readonly string[]).includes(kind),
   );
   if (wanted.length === 0) return undefined;
+  if (!machine) return takeTask(kernel.db, scope, workerId, wanted);
+  // A worker that shares its machine takes a task only when the machine has room.
+  return onMachine(machine, (noteFull) =>
+    kernel.db.transaction().execute(async (trx) => {
+      const room = await machineHasRoom(trx, machine, scope.tenantId);
+      if (room === "full") noteFull();
+      return room === "room" ? takeTask(trx, scope, workerId, wanted) : undefined;
+    }),
+  );
+}
+
+async function takeTask(
+  db: Db | Trx,
+  scope: WorkerScope,
+  workerId: string,
+  wanted: TaskKind[],
+): Promise<TaskRow | undefined> {
   const claimed = await sql<TaskRow>`
     update task set status = 'running', worker_id = ${workerId}, started_at = now(),
       last_heartbeat_at = now(), attempt = attempt + 1
@@ -107,7 +127,7 @@ export async function claimTask(
       for update skip locked
     )
     returning *
-  `.execute(kernel.db);
+  `.execute(db);
   return claimed.rows[0];
 }
 

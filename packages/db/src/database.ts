@@ -3,18 +3,27 @@ import pg from "pg";
 import { type DataStore, openDataStore } from "./datastore.js";
 import { type Listener, type ListenOptions, listen } from "./listener.js";
 import { type MigrationResult, runMigrations } from "./migrate.js";
+import { type PoolStats, statsOf } from "./pool-stats.js";
 import { JobQueue, type QueueTuning } from "./queue.js";
 import { TenantRouter } from "./router.js";
 import type { PlatformSchema } from "./schema.js";
 
 /** How long a request for a connection waits when all are in use. */
 const CONNECTION_WAIT_MS = 5_000;
+/**
+ * How long a connection is kept before it is made again. A connection keeps the
+ * settings it was opened with: one opened while the database took no writes would
+ * otherwise refuse writes long after the database took them again.
+ */
+export const CONNECTION_LIFETIME_SECONDS = 60;
 /** Connections kept for the queue's own statements. Each is held for one statement. */
 const QUEUE_CONNECTIONS = 2;
 
 export interface DatabaseOptions {
   connectionString: string;
   maxConnections?: number;
+  /** Connections for every tenant's row requests on this database. Default: `maxConnections`, or 10. */
+  dataConnections?: number;
   /** Overrides the built-in migrations. For tests. */
   migrationsDir?: string;
   /** Called when an idle connection fails. Without it such errors are dropped. */
@@ -41,6 +50,7 @@ export class Database {
     this.#pool = new pg.Pool({
       connectionString: options.connectionString,
       max: options.maxConnections ?? 10,
+      maxLifetimeSeconds: CONNECTION_LIFETIME_SECONDS,
       // When every connection is busy, fail and say so. Waiting without limit turns
       // a pool that is too small, or work that holds connections, into a silent stop.
       connectionTimeoutMillis: CONNECTION_WAIT_MS,
@@ -54,6 +64,7 @@ export class Database {
     this.#queuePool = new pg.Pool({
       connectionString: options.connectionString,
       max: QUEUE_CONNECTIONS,
+      maxLifetimeSeconds: CONNECTION_LIFETIME_SECONDS,
       connectionTimeoutMillis: CONNECTION_WAIT_MS,
       application_name: "vynxlabs-platform-queue",
     });
@@ -85,12 +96,15 @@ export class Database {
    * This database as a place for custom tables. Call after `migrate()`.
    * `secret` is the instance's own: the restricted sign-in is derived from it.
    */
-  openDataStore(secret: Buffer): Promise<DataStore> {
+  openDataStore(secret: Buffer, options: { setUp?: boolean } = {}): Promise<DataStore> {
     return openDataStore({
       connectionString: this.#options.connectionString,
       secret,
+      ...(options.setUp === false ? { setUp: false } : {}),
       platform: this.#kysely,
-      ...(this.#options.maxConnections ? { maxConnections: this.#options.maxConnections } : {}),
+      ...((this.#options.dataConnections ?? this.#options.maxConnections)
+        ? { maxConnections: this.#options.dataConnections ?? this.#options.maxConnections }
+        : {}),
       ...(this.#options.onConnectionError
         ? { onConnectionError: this.#options.onConnectionError }
         : {}),
@@ -104,6 +118,22 @@ export class Database {
       .select((eb) => eb.fn.max("version").as("level"))
       .executeTakeFirst();
     return row?.level ?? 0;
+  }
+
+  /** How the platform's own pools are doing: connections open, idle, and requests waiting for one. */
+  poolStats(): Record<"platform" | "queue", PoolStats> {
+    return { platform: statsOf(this.#pool), queue: statsOf(this.#queuePool) };
+  }
+
+  /**
+   * Whether the database takes no writes now: a standby, or one set read-only, as a
+   * managed Postgres does when its disk is nearly full.
+   */
+  async readOnly(): Promise<boolean> {
+    const row = await sql<{ read_only: boolean }>`
+      select current_setting('transaction_read_only') = 'on' or pg_is_in_recovery() as read_only
+    `.execute(this.#kysely);
+    return row.rows[0]?.read_only ?? false;
   }
 
   /** Throws if the database cannot answer a trivial query. */

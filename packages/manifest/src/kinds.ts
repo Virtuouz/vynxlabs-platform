@@ -573,6 +573,11 @@ export const flowKind: KindDefinition = {
                         timezone: { type: "string", maxLength: 64 },
                         source: triggerSourceRef,
                         tags: tagExpressions,
+                        overlap: {
+                          enum: ["allow", "skip"],
+                          description:
+                            "`skip` passes over a time while the flow's last run from this trigger is still going, and is the default. `allow` starts it anyway.",
+                        },
                       },
                       ["cron"],
                     ),

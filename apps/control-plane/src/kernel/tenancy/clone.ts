@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { newId, sql } from "@vynxlabs/db";
 import { type Actor, type Audit, mutate, type Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
@@ -154,6 +155,40 @@ async function copyFiles(kernel: Kernel, trx: Trx, source: WorkspaceRef, target:
   return renamed;
 }
 
+/** Rows copied at a time, and the pause between, so a large clone shares the database. */
+const CLONE_PAGE_ROWS = 5000;
+const CLONE_PAGE_PAUSE_MS = 50;
+/** How often a clone waiting its turn looks again, and how long it waits at most. */
+const CLONE_TURN_LOOK_MS = 2000;
+const CLONE_TURN_LIMIT_MS = 60 * 60 * 1000;
+
+/**
+ * Takes the one turn to copy rows, if no other clone holds it: the clone is then
+ * running. Decided under a lock, so two cannot both take it. A clone that has
+ * been running for over an hour is taken to have died with its process.
+ */
+async function takeTurn(kernel: Kernel, cloneId: string): Promise<boolean> {
+  return kernel.db.transaction().execute(async (trx) => {
+    await sql`select pg_advisory_xact_lock(hashtext('workspace-clone-with-data'))`.execute(trx);
+    const busy = await trx
+      .selectFrom("workspace_clone")
+      .select("id")
+      .where("with_data", "=", true)
+      .where("status", "=", "running")
+      .where("id", "!=", cloneId)
+      .where("created_at", ">", new Date(Date.now() - CLONE_TURN_LIMIT_MS))
+      .executeTakeFirst();
+    if (busy) return false;
+    await trx
+      .updateTable("workspace_clone")
+      .set({ status: "running" })
+      .where("id", "=", cloneId)
+      .where("status", "=", "queued")
+      .execute();
+    return true;
+  });
+}
+
 /**
  * Copies rows table by table, inside the database that holds them. Only what
  * the clone's definitions declare is copied: retired columns and tables stay
@@ -201,12 +236,32 @@ async function copyRows(
       });
     const targetColumns = [...SYSTEM_COLUMNS, ...pairs.map((pair) => pair.to)];
     const sourceColumns = [...SYSTEM_COLUMNS, ...pairs.map((pair) => pair.from)];
-    const copied = await sql`
-      insert into ${sql.id(toSchema, table.physicalName)} (${sql.join(targetColumns.map((name) => sql.id(name)))})
-      select ${sql.join(sourceColumns.map((name) => sql.id(name)))}
-      from ${sql.id(fromSchema, original.physicalName)}
-    `.execute(db);
-    report.rows += Number(copied.numAffectedRows ?? 0n);
+    // In pages by ID, with a pause between, so other queries get the database in turn.
+    // Still one transaction: a clone that fails leaves nothing half-copied.
+    let after: string | null = null;
+    for (;;) {
+      const page: { rows: { n: number; last: string | null }[] } = await sql<{
+        n: number;
+        last: string | null;
+      }>`
+        with moved as (
+          insert into ${sql.id(toSchema, table.physicalName)} (${sql.join(targetColumns.map((name) => sql.id(name)))})
+          select ${sql.join(sourceColumns.map((name) => sql.id(name)))}
+          from ${sql.id(fromSchema, original.physicalName)}
+          ${after === null ? sql`` : sql`where id > ${after}::uuid`}
+          order by id
+          limit ${CLONE_PAGE_ROWS}
+          returning id
+        )
+        select (select count(*) from moved)::int as n,
+          (select id::text from moved order by id desc limit 1) as last
+      `.execute(db);
+      const moved = page.rows[0];
+      report.rows += moved?.n ?? 0;
+      if (!moved?.last || moved.n < CLONE_PAGE_ROWS) break;
+      after = moved.last;
+      await sleep(CLONE_PAGE_PAUSE_MS);
+    }
     report.tables += 1;
 
     // A file column holds a file's ID. The clone has its own copy of each file.
@@ -332,6 +387,16 @@ export async function runClone(kernel: Kernel, actor: Actor, cloneId: string): P
     return { id: row.id, tenantId: row.tenant_id, slug: row.slug };
   };
   try {
+    // One clone copies rows at a time across the instance; the rest wait their turn.
+    if (clone.status === "queued") {
+      const giveUp = Date.now() + CLONE_TURN_LIMIT_MS;
+      while (!(await takeTurn(kernel, cloneId))) {
+        if (Date.now() > giveUp) {
+          throw new Error("It waited over an hour for other clones to finish. Try it again.");
+        }
+        await sleep(CLONE_TURN_LOOK_MS);
+      }
+    }
     const source = ref(clone.source_workspace_id);
     const target = ref(clone.workspace_id);
     const options = { withData: clone.with_data, safe: clone.safe };
@@ -361,7 +426,11 @@ export async function runClone(kernel: Kernel, actor: Actor, cloneId: string): P
   }
 }
 
-/** Clones that were running when the process stopped never finished: their transaction was rolled back. */
+/**
+ * Clones that were running when the process stopped never finished: their
+ * transaction was rolled back. One still waiting its turn waited in that
+ * process, which is gone too.
+ */
 export async function failInterruptedClones(kernel: Kernel, startedBefore: Date): Promise<void> {
   await kernel.db
     .updateTable("workspace_clone")
@@ -371,7 +440,7 @@ export async function failInterruptedClones(kernel: Kernel, startedBefore: Date)
         "The instance restarted while this clone was running. Delete the workspace and clone again.",
       finished_at: new Date(),
     })
-    .where("status", "=", "running")
+    .where("status", "in", ["running", "queued"])
     .where("created_at", "<", startedBefore)
     .execute();
 }

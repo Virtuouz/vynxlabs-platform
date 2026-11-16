@@ -114,6 +114,8 @@ beforeAll(async () => {
       slug: "orders",
       name: "Orders",
       type: "dev",
+      // Its triggers are exercised here: a dev workspace would otherwise start them paused.
+      triggersPaused: false,
     })
   ).body.id;
   await alice.put(`${ws()}/secrets/HOOK_SECRET`, { value: "shh" });

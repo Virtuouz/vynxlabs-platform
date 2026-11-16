@@ -3,6 +3,14 @@ import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { sql } from "@vynxlabs/db";
+import {
+  formatMachine,
+  type MachineProbe,
+  type MachineShare,
+  MemoryGuard,
+  machineShare,
+  procProbe,
+} from "@vynxlabs/worker";
 import type { Kernel } from "../kernel.js";
 import {
   hasOutsideCodeWriters,
@@ -29,6 +37,18 @@ export interface SupervisorOptions {
    * which the operator says everyone who writes code works for them.
    */
   operatorCodeOnly?: boolean;
+  /** Scripts running at once on this machine, across all managed workers. Default: from memory. */
+  runSlots?: number;
+  /** Free memory, in MB, below which no managed worker takes more work. Default: from memory. */
+  memoryFloorMb?: number;
+  /**
+   * Managed workers alive at once. Default: twice the run slots. A worker waiting
+   * for a slot costs far less than a script, and a tenant without one cannot even
+   * wait its turn.
+   */
+  maxWorkers?: number;
+  /** Where memory is read from. Replaced in tests. */
+  probe?: MachineProbe;
 }
 
 interface Managed {
@@ -132,12 +152,43 @@ export class WorkerSupervisor {
   readonly #refused = new Set<string>();
   /** Revocations of exited workers' credentials still being written. */
   readonly #revoking = new Set<Promise<unknown>>();
+  readonly #memory: MachineProbe;
+  readonly #guard: MemoryGuard;
+  /** What the managed workers on this machine share. */
+  readonly machine: MachineShare;
   #mode: Promise<WorkerUserMode> | undefined;
   #stopped = false;
+  /** Whether "too many workers" or "short of memory" was last said, so each is said once. */
+  #held: "workers" | "memory" | undefined;
 
   constructor(kernel: Kernel, options: SupervisorOptions) {
     this.#kernel = kernel;
     this.#options = options;
+    this.#memory = options.probe ?? procProbe;
+    this.machine = machineShare(
+      {
+        ...(options.runSlots ? { slots: options.runSlots } : {}),
+        ...(options.memoryFloorMb !== undefined ? { floorMb: options.memoryFloorMb } : {}),
+      },
+      this.#memory,
+    );
+    this.#guard = new MemoryGuard({
+      probe: this.#memory,
+      log: (level, message, fields) => kernel.log[level](fields ?? {}, message),
+    });
+  }
+
+  /** Managed workers alive at once on this machine. */
+  get maxWorkers(): number {
+    return this.#options.maxWorkers ?? this.machine.slots * 2;
+  }
+
+  /** Why no more workers may start now, if none may. */
+  #full(): "workers" | "memory" | undefined {
+    if (this.#workers.size >= this.maxWorkers) return "workers";
+    const memory = this.#memory.memory();
+    if (memory && memory.availableMb < this.machine.floorMb) return "memory";
+    return undefined;
   }
 
   /** Tenants that currently have a managed worker. */
@@ -156,6 +207,7 @@ export class WorkerSupervisor {
       ...env,
       PLATFORM_URL: this.#options.url,
       PLATFORM_WORKER_IDLE_EXIT: String(this.#options.idleExitSeconds ?? 60),
+      PLATFORM_WORKER_MACHINE: formatMachine(this.machine),
     };
   }
 
@@ -216,9 +268,25 @@ export class WorkerSupervisor {
   async tick(): Promise<void> {
     if (this.#stopped) return;
     await this.mode();
+    this.#guard.start();
     const waiting = { rows: await tenantsNeedingWorkers(this.#kernel) };
     for (const { tenant_id: tenantId } of waiting.rows) {
       if (this.#workers.has(tenantId)) continue;
+      // Past the cap, or short of memory, the work waits for a worker to finish and leave.
+      const full = this.#full();
+      if (full) {
+        if (this.#held !== full) {
+          this.#held = full;
+          this.#kernel.log.warn(
+            { workers: this.#workers.size, max: this.maxWorkers, machine: this.machine },
+            full === "workers"
+              ? "no more managed workers start until one exits: the machine has its most"
+              : "no more managed workers start until memory frees up",
+          );
+        }
+        return;
+      }
+      this.#held = undefined;
       if (!(await this.allowed(tenantId))) {
         if (!this.#refused.has(tenantId)) {
           this.#refused.add(tenantId);
@@ -279,6 +347,7 @@ export class WorkerSupervisor {
   /** Asks every managed worker to finish what it is doing and exit. */
   async stop(graceSeconds = 10): Promise<void> {
     this.#stopped = true;
+    this.#guard.stop();
     const exits = [...this.#workers.values()].map(
       ({ child }) =>
         new Promise<void>((resolve) => {

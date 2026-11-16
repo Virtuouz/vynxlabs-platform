@@ -27,6 +27,7 @@ interface Trigger {
   /** For a schedule: whether it skips a time while its last run goes. */
   overlap?: "allow" | "skip" | null;
   lastSkippedAt?: string | null;
+  lastSkipReason?: "overlap" | "backlog" | null;
   nextFireAt: string | null;
   lastFiredAt: string | null;
   url: string | null;
@@ -340,9 +341,18 @@ export function TriggersWorkbench({
                       ? [
                           {
                             label: "Overlap",
-                            value: open.lastSkippedAt
-                              ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
-                              : "Skips a time while its last run goes.",
+                            value:
+                              open.lastSkippedAt && open.lastSkipReason !== "backlog"
+                                ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
+                                : "Skips a time while its last run goes.",
+                          },
+                        ]
+                      : []),
+                    ...(open.lastSkipReason === "backlog" && open.lastSkippedAt
+                      ? [
+                          {
+                            label: "Backlog",
+                            value: `Skipped ${fromNow(open.lastSkippedAt)}: the workspace already had too many runs waiting.`,
                           },
                         ]
                       : []),

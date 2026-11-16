@@ -171,6 +171,13 @@
                           "maxLength": 500
                         },
                         "description": "CEL expressions over `trigger`, what the trigger was given. Each gives one tag for the run it starts, such as `'order:' + string(trigger.id)`. A tag is up to 64 characters of a-z, 0-9 and _.:-; an expression that fails or gives anything else is left out."
+                      },
+                      "overlap": {
+                        "enum": [
+                          "allow",
+                          "skip"
+                        ],
+                        "description": "`skip` passes over a time while the flow's last run from this trigger is still going, and is the default. `allow` starts it anyway."
                       }
                     },
                     "required": [

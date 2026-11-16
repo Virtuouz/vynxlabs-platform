@@ -635,6 +635,8 @@ export interface WorkerTable {
   credential_id: string;
   tenant_id: string;
   version: string | null;
+  /** The machine the worker runs on, when the one that started it says. */
+  machine: Generated<string | null>;
   started_at: Generated<Date>;
   last_seen_at: Timestamp;
 }
@@ -704,7 +706,7 @@ export interface WorkspaceCloneTable {
   tenant_id: string;
   source_workspace_id: string;
   workspace_id: string;
-  status: "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed";
   with_data: boolean;
   safe: boolean;
   report: Json<Record<string, unknown>>;
@@ -972,6 +974,13 @@ export interface WebhookRefusalTable {
   occurred_at: Generated<Date>;
 }
 
+export interface InstanceControlTable {
+  id: Generated<boolean>;
+  triggers_paused: Generated<boolean>;
+  reason: string | null;
+  updated_at: Generated<Date>;
+}
+
 export interface InstanceBrandingTable {
   id: Generated<boolean>;
   product_name: string | null;
@@ -1143,6 +1152,7 @@ export interface PlatformSchema {
   sso_assertion: SsoAssertionTable;
   member_dashboard: MemberDashboardTable;
   instance_branding: InstanceBrandingTable;
+  instance_control: InstanceControlTable;
   trigger_pause: TriggerPauseTable;
   import_staging: ImportStagingTable;
   member_recovery_code: MemberRecoveryCodeTable;

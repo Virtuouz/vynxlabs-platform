@@ -66,6 +66,38 @@ export interface Config {
    * being sent. Never in production.
    */
   mailCaptureDir: string | undefined;
+  /** What the instance takes on at once, so that load makes work wait rather than fail. */
+  limits: Limits;
+}
+
+export interface Limits {
+  /**
+   * Scripts running at once on this machine, across the managed workers the
+   * control plane starts beside itself. Undefined: worked out from its memory.
+   */
+  runSlots: number | undefined;
+  /** Free memory, in MB, below which no managed worker here takes more work. */
+  runMemoryFloorMb: number | undefined;
+  /** Managed workers alive at once beside the control plane. Undefined: twice the run slots. */
+  managedWorkersMax: number | undefined;
+  /** Connections to the platform database for the platform's own work. */
+  databasePoolSize: number;
+  /** Connections for every tenant's row requests on the platform database. */
+  dataPoolSize: number;
+  /**
+   * Row requests one tenant may have open at once on the platform database, so a
+   * few slow ones cannot hold every connection. Undefined: a third of the pool, at least 2.
+   */
+  dataTenantConnections: number | undefined;
+  /** How long one data operation may take before it is stopped, in milliseconds. */
+  dataStatementTimeoutMs: number;
+  /**
+   * Starts with every trigger in every tenant paused, whatever the console says: the
+   * operator's emergency stop, for an instance that cannot stay up long enough to pause them.
+   */
+  triggersPaused: boolean;
+  /** Queued runs in a workspace past which its schedules skip their times. 0: no limit. */
+  scheduleBacklogLimit: number;
 }
 
 export const MIN_PASSWORD_LENGTH = 12;
@@ -243,6 +275,31 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   };
   const egress = parseEgressAllow(value("EGRESS_ALLOW"));
   if (typeof egress === "string") problems.push(egress);
+  const whole = (name: string, min: number, max: number) => {
+    const raw = value(name);
+    if (raw === undefined) return undefined;
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+      problems.push(`${name} must be a whole number from ${min} to ${max}.`);
+      return undefined;
+    }
+    return parsed;
+  };
+  const limits: Limits = {
+    runSlots: whole("RUN_SLOTS", 1, 1000),
+    runMemoryFloorMb: whole("RUN_MEMORY_FLOOR_MB", 0, 1_000_000),
+    managedWorkersMax: whole("MANAGED_WORKERS_MAX", 1, 1000),
+    databasePoolSize: whole("DATABASE_POOL_SIZE", 2, 500) ?? 10,
+    dataPoolSize: whole("DATA_POOL_SIZE", 2, 500) ?? 10,
+    dataTenantConnections: whole("DATA_TENANT_CONNECTIONS", 1, 500),
+    dataStatementTimeoutMs: whole("DATA_STATEMENT_TIMEOUT_MS", 1000, 600_000) ?? 15_000,
+    triggersPaused: (value("TRIGGERS_PAUSED") ?? "false") === "true",
+    scheduleBacklogLimit: whole("SCHEDULE_BACKLOG_LIMIT", 0, 1_000_000) ?? 200,
+  };
+  const pausedRaw = value("TRIGGERS_PAUSED");
+  if (pausedRaw !== undefined && pausedRaw !== "true" && pausedRaw !== "false") {
+    problems.push("TRIGGERS_PAUSED must be true or false.");
+  }
   const workerUid = id("MANAGED_WORKER_UID");
   const workerGid = id("MANAGED_WORKER_GID");
 
@@ -282,6 +339,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       smtpUrl !== undefined && mailFrom !== undefined
         ? { url: smtpUrl, from: mailFrom }
         : undefined,
+    limits,
   };
 
   if (problems.length > 0) throw new ConfigError(problems);

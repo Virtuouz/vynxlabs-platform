@@ -247,6 +247,8 @@ beforeAll(async () => {
       slug: "main-dev",
       name: "Dev",
       type: "dev",
+      // Its triggers are exercised here: a dev workspace would otherwise start them paused.
+      triggersPaused: false,
     })
   ).body.id;
   prod = (
@@ -1432,6 +1434,11 @@ describe("operator health and guards", () => {
         /^platform_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
       );
       expect(metrics).toMatch(/^platform_alerts_total\{outcome="delivered"\} \d+$/m);
+      // What the instance holds itself to under load: its pools and its database.
+      expect(metrics).toMatch(/^platform_db_pool\{pool="platform",state="waiting"\} \d+$/m);
+      expect(metrics).toMatch(/^platform_db_pool\{pool="rows",state="total"\} \d+$/m);
+      expect(metrics).toMatch(/^platform_database_size_bytes \d+$/m);
+      expect(metrics).toMatch(/^platform_database_read_only 0$/m);
 
       // Without workspace labels, the counted series carry none.
       t.kernel.config.metricsWorkspaceLabels = false;
@@ -1466,6 +1473,16 @@ describe("operator health and guards", () => {
     expect(run.output.echo).toHaveLength(big.length);
   });
 
+  test("runs are cancelled in bulk only as asked: nothing older than a month waits here", async () => {
+    // The bulk cancel itself is tested in trigger-limits.test.ts; here it must touch nothing.
+    const done = await alice.post(`${ws()}/runs/cancel`, {
+      include: "queued",
+      olderThanSeconds: 30 * 24 * 3600,
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body).toEqual({ cancelled: 0, more: false });
+  });
+
   test("every change by a principal left an audit entry, and every such route was exercised", () => {
     expect(t.unaudited).toEqual([]);
     const execution =
@@ -1494,7 +1511,7 @@ describe("managed workers", () => {
       Object.keys(environment)
         .sort()
         .filter((name) => name.startsWith("PLATFORM_")),
-    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT"]);
+    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT", "PLATFORM_WORKER_MACHINE"]);
     for (const secret of [
       "DATABASE_URL",
       "MASTER_KEY",

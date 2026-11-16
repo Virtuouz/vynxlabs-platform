@@ -10,6 +10,7 @@ import type { AppliedResource, KindHook } from "../kinds.js";
 import { observe } from "../metrics.js";
 import { revealSecret } from "../secrets.js";
 import { decryptFor, encryptFor } from "./bindings.js";
+import { instanceTriggersPaused } from "./control.js";
 import { type Relay, startRun, TAG_PATTERN } from "./runs.js";
 
 interface ScheduleConfig {
@@ -461,6 +462,10 @@ export function registerExecutionHooks(kernel: Kernel) {
                     cron: trigger.cron,
                     ...(trigger.timezone ? { timezone: trigger.timezone } : {}),
                     ...(trigger.source ? { source: trigger.source } : {}),
+                    // A flow that is still going when its time comes again is passed over
+                    // unless it says otherwise: one that takes longer than its interval
+                    // would otherwise pile up without end.
+                    ...((trigger.overlap ?? "skip") === "skip" ? { overlap: "skip" as const } : {}),
                   },
                 }
               : {}),
@@ -588,6 +593,7 @@ export async function relaySource(
     .executeTakeFirst();
   // The trigger was removed, turned off or paused while its source was running.
   if (!state?.enabled || state.triggers_paused) return;
+  if (await instanceTriggersPaused(kernel)) return;
   if (await pausedAlone(kernel, state)) return;
   const answer = (typeof output === "object" && output !== null ? output : {}) as {
     accept?: unknown;
@@ -690,6 +696,9 @@ export function webhookToken(
  * times while the instance was down runs once, then waits for its next time.
  */
 export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promise<number> {
+  // Paused for the whole instance: every schedule keeps its due time, and fires once on resuming.
+  if (await instanceTriggersPaused(kernel)) return 0;
+  const backlogLimit = kernel.config.limits.scheduleBacklogLimit;
   let fired = 0;
   for (;;) {
     const started = await kernel.db.transaction().execute(async (trx) => {
@@ -723,6 +732,23 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         .where("resource_id", "=", due.resource_id)
         .where("node_id", "=", due.node_id)
         .execute();
+      /** Passes over this time, and says why on the trigger. */
+      const skip = async (reason: "overlap" | "backlog") => {
+        await trx
+          .updateTable("trigger_state")
+          .set({
+            config: sql`config || jsonb_build_object('lastSkippedAt', ${fireTime.toISOString()}::text, 'lastSkipReason', ${reason}::text)`,
+          })
+          .where("resource_id", "=", due.resource_id)
+          .where("node_id", "=", due.node_id)
+          .execute();
+        return { kind: "none" as const, id: "" };
+      };
+      // A workspace whose queue is already long gains nothing from more: the time is passed
+      // over, so that a backlog, such as one left by an outage, cannot grow without end.
+      if (backlogLimit > 0 && (await queuedAtLeast(trx, due.workspace_id, backlogLimit))) {
+        return skip("backlog");
+      }
       try {
         if (config.source) {
           // One at a time: a tick that comes while the last is still looking is passed over,
@@ -756,15 +782,7 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         }
         const label = due.node_id ? `${due.path}#${due.node_id}` : due.path;
         if (config.overlap === "skip" && (await stillGoing(trx, due, label))) {
-          await trx
-            .updateTable("trigger_state")
-            .set({
-              config: sql`config || jsonb_build_object('lastSkippedAt', ${fireTime.toISOString()}::text)`,
-            })
-            .where("resource_id", "=", due.resource_id)
-            .where("node_id", "=", due.node_id)
-            .execute();
-          return { kind: "none" as const, id: "" };
+          return skip("overlap");
         }
         return await startTarget(kernel, trx, due, {
           input: config.input ?? {},
@@ -791,6 +809,16 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
     await kickStarted(kernel, [started]);
     fired += 1;
   }
+}
+
+/** Whether a workspace has at least `limit` runs waiting. Counts no further than that. */
+async function queuedAtLeast(trx: Trx, workspaceId: string, limit: number): Promise<boolean> {
+  const found = await sql<{ n: number }>`
+    select count(*)::int as n from (
+      select 1 from run where workspace_id = ${workspaceId} and status = 'queued' limit ${limit}
+    ) waiting
+  `.execute(trx);
+  return (found.rows[0]?.n ?? 0) >= limit;
 }
 
 /** Whether the last run a schedule started is still queued or going. */
@@ -860,7 +888,10 @@ export async function findForm(kernel: Kernel, tenantId: string, token: string) 
     .where("trigger_state.tenant_id", "=", tenantId)
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
-  const paused = state.triggers_paused || (await pausedAlone(kernel, state));
+  const paused =
+    state.triggers_paused ||
+    (await pausedAlone(kernel, state)) ||
+    (await instanceTriggersPaused(kernel));
   return { state, form: state.config as unknown as FormTrigger, paused };
 }
 
@@ -916,7 +947,11 @@ export async function fireWebhook(
     .where("trigger_state.type", "=", "webhook")
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
-  if (state.triggers_paused || (await pausedAlone(kernel, state))) {
+  if (
+    state.triggers_paused ||
+    (await pausedAlone(kernel, state)) ||
+    (await instanceTriggersPaused(kernel))
+  ) {
     await recordRefusal(kernel, state, "paused");
     return { refused: "paused" as const };
   }

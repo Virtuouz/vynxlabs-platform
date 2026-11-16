@@ -145,3 +145,34 @@ describe("runner", () => {
     await expect(loadMigrations(badName)).rejects.toBeInstanceOf(MigrationFilesError);
   });
 });
+
+describe("a database that takes no writes", () => {
+  /** Makes the test database read-only for every connection made from now on. */
+  async function readOnly(database: Database) {
+    const name = new URL(testDb.connectionString).pathname.slice(1);
+    await sql`alter database ${sql.id(name)} set default_transaction_read_only = on`.execute(
+      database.router.platform(),
+    );
+  }
+
+  test("an up-to-date one is found to be so by reading alone", async () => {
+    const dir = await migrationsDir(3);
+    const first = open(dir);
+    await first.migrate();
+    await readOnly(first);
+    const later = open(dir);
+    expect(await later.readOnly()).toBe(true);
+    expect(await later.migrate()).toEqual({ applied: [], level: 3 });
+    await expect(
+      sql`insert into first (id) values (1)`.execute(later.router.platform()),
+    ).rejects.toMatchObject({ code: "25006" });
+  });
+
+  test("one with migrations to apply still fails to migrate", async () => {
+    const first = open(await migrationsDir(2));
+    await first.migrate();
+    expect(await first.readOnly()).toBe(false);
+    await readOnly(first);
+    await expect(open(await migrationsDir(3)).migrate()).rejects.toThrow();
+  });
+});

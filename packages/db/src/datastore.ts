@@ -1,6 +1,7 @@
 import { createHash, createHmac } from "node:crypto";
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
+import { type PoolStats, statsOf } from "./pool-stats.js";
 import type { PlatformSchema } from "./schema.js";
 
 /**
@@ -17,6 +18,8 @@ export interface DataStore {
   readonly rows: Kysely<PlatformSchema>;
   /** The role `rows` signs in as. Workspace tables are granted to it. */
   readonly role: string;
+  /** How the `rows` pool is doing. */
+  rowStats(): PoolStats;
   ping(): Promise<void>;
   close(): Promise<void>;
 }
@@ -77,6 +80,11 @@ export interface DataStoreOptions {
    * database's name, so it is never stored and every replica arrives at the same one.
    */
   secret: Buffer;
+  /**
+   * Whether to make sure the catalog, the role and its grants are in place. Off
+   * only for a database that takes no writes: they were made when it last did.
+   */
+  setUp?: boolean;
   /** The platform database's own connection, when this store is that database. */
   platform?: Kysely<PlatformSchema>;
   maxConnections?: number;
@@ -88,6 +96,8 @@ function pool(connectionString: string, max: number, onError?: (error: Error) =>
     connectionString,
     max,
     idleTimeoutMillis: 30_000,
+    // A connection opened while the database took no writes keeps refusing them: renewed each minute.
+    maxLifetimeSeconds: 60,
     connectionTimeoutMillis: 5_000,
     application_name: "vynxlabs-platform-data",
   });
@@ -119,49 +129,20 @@ export async function openDataStore(options: DataStoreOptions): Promise<DataStor
       .update(`data-role:${database}`)
       .digest("hex");
 
-    await owner.transaction().execute(async (trx) => {
-      await sql`select pg_advisory_xact_lock(${SETUP_LOCK})`.execute(trx);
-      if (!options.platform) await sql.raw(CATALOG).execute(trx);
-      const exists = await sql`select 1 from pg_roles where rolname = ${role}`.execute(trx);
-      await sql
-        .raw(
-          `${exists.rows.length > 0 ? "alter" : "create"} role "${role}" login password '${password}'`,
-        )
-        .execute(trx);
-      // Tables made before this role existed, by an earlier version.
-      const schemas = await sql<{ name: string }>`
-        select nspname as name from pg_namespace where nspname ~ '^ws_[0-9a-f]{32}$'
-      `.execute(trx);
-      for (const { name } of schemas.rows) {
-        await sql`grant usage on schema ${sql.id(name)} to ${sql.id(role)}`.execute(trx);
-        await sql`grant select, insert, update, delete on all tables in schema ${sql.id(name)} to ${sql.id(role)}`.execute(
-          trx,
-        );
-      }
-      const policies = await sql<{ schema: string; table: string }>`
-        select schemaname as schema, tablename as "table" from pg_policies
-        where schemaname ~ '^ws_[0-9a-f]{32}$' and policyname = 'rows' and not (${role} = any (roles))
-      `.execute(trx);
-      for (const policy of policies.rows) {
-        await sql`alter policy rows on ${sql.id(policy.schema, policy.table)} to ${sql.id(role)}`.execute(
-          trx,
-        );
-      }
-    });
+    if (options.setUp !== false) await setUp(owner, options, role, password);
 
     const address = new URL(options.connectionString);
+
     address.username = role;
     address.password = password;
-    const rows = new Kysely<PlatformSchema>({
-      dialect: new PostgresDialect({
-        pool: pool(address.toString(), max, options.onConnectionError),
-      }),
-    });
+    const rowsPool = pool(address.toString(), max, options.onConnectionError);
+    const rows = new Kysely<PlatformSchema>({ dialect: new PostgresDialect({ pool: rowsPool }) });
     return {
       shared: options.platform !== undefined,
       owner,
       rows,
       role,
+      rowStats: () => statsOf(rowsPool),
       async ping() {
         await sql`select 1`.execute(owner);
         await sql`select 1`.execute(rows);
@@ -175,4 +156,42 @@ export async function openDataStore(options: DataStoreOptions): Promise<DataStor
     if (!options.platform) await owner.destroy().catch(() => {});
     throw error;
   }
+}
+
+/** Makes sure the catalog exists, the role signs in with its password, and it may use every workspace table. */
+async function setUp(
+  owner: Kysely<PlatformSchema>,
+  options: DataStoreOptions,
+  role: string,
+  password: string,
+): Promise<void> {
+  await owner.transaction().execute(async (trx) => {
+    await sql`select pg_advisory_xact_lock(${SETUP_LOCK})`.execute(trx);
+    if (!options.platform) await sql.raw(CATALOG).execute(trx);
+    const exists = await sql`select 1 from pg_roles where rolname = ${role}`.execute(trx);
+    await sql
+      .raw(
+        `${exists.rows.length > 0 ? "alter" : "create"} role "${role}" login password '${password}'`,
+      )
+      .execute(trx);
+    // Tables made before this role existed, by an earlier version.
+    const schemas = await sql<{ name: string }>`
+        select nspname as name from pg_namespace where nspname ~ '^ws_[0-9a-f]{32}$'
+      `.execute(trx);
+    for (const { name } of schemas.rows) {
+      await sql`grant usage on schema ${sql.id(name)} to ${sql.id(role)}`.execute(trx);
+      await sql`grant select, insert, update, delete on all tables in schema ${sql.id(name)} to ${sql.id(role)}`.execute(
+        trx,
+      );
+    }
+    const policies = await sql<{ schema: string; table: string }>`
+        select schemaname as schema, tablename as "table" from pg_policies
+        where schemaname ~ '^ws_[0-9a-f]{32}$' and policyname = 'rows' and not (${role} = any (roles))
+      `.execute(trx);
+    for (const policy of policies.rows) {
+      await sql`alter policy rows on ${sql.id(policy.schema, policy.table)} to ${sql.id(role)}`.execute(
+        trx,
+      );
+    }
+  });
 }

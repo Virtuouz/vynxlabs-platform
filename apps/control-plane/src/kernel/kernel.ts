@@ -36,6 +36,8 @@ export interface Kernel {
   expressions: Expressions;
   /** The core version, checked against each bundle's range. */
   version: string;
+  /** Whether the platform database takes no writes now, such as when its disk is full. */
+  readOnly(): Promise<boolean>;
   /** The highest database migration applied. An export can only be imported at the same level. */
   migrationLevel(): Promise<number>;
   log: FastifyBaseLogger;
@@ -77,7 +79,14 @@ export function createKernel(
     router: database.router,
     auth: createAuth(db, config, log),
     vault,
-    data: new DataStores(database, vault, dataRoleSecret, log),
+    data: new DataStores(
+      database,
+      vault,
+      dataRoleSecret,
+      log,
+      config.limits.dataTenantConnections ??
+        Math.max(2, Math.floor(config.limits.dataPoolSize / 3)),
+    ),
     kinds,
     hooks,
     config,
@@ -86,6 +95,7 @@ export function createKernel(
     expressions: new Expressions(),
     version,
     migrationLevel: () => database.migrationLevel(),
+    readOnly: () => database.readOnly(),
     log,
     hosts: new Hosts(db, config),
     mail: new Mailer(config, log),

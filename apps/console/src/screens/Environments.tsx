@@ -28,7 +28,7 @@ const failed = (error: unknown) => {
 interface Clone {
   id: string;
   workspaceId: string;
-  status: "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed";
   error: string | null;
   report: Record<string, number>;
 }
@@ -76,6 +76,9 @@ export function WorkspaceControls({
           >
             <strong>Triggers are paused.</strong> No schedule, webhook or event starts anything in
             this workspace. Runs you start by hand still work.
+            {workspace.type === "dev"
+              ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
+              : ""}
           </Notice>
         ) : (
           <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -210,7 +213,7 @@ function CloneDialog({
 
   // The copying goes on after the request is answered. Ask how it is going until it ends.
   useEffect(() => {
-    if (clone?.status !== "running") return;
+    if (clone?.status !== "running" && clone?.status !== "queued") return;
     const timer = setInterval(async () => {
       try {
         setClone(await api.get<Clone>(`${base}/workspace-clones/${clone.id}`));
@@ -237,7 +240,12 @@ function CloneDialog({
     >
       {clone ? (
         <div className="flex flex-col gap-3">
-          {clone.status === "running" ? (
+          {clone.status === "queued" ? (
+            <p className="m-0" role="status">
+              Waiting for another clone to finish copying. One copies its rows at a time, so the
+              rest of the instance stays quick.
+            </p>
+          ) : clone.status === "running" ? (
             <p className="m-0" role="status">
               Copying…
             </p>
@@ -259,7 +267,7 @@ function CloneDialog({
           )}
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Close</Button>
-            {clone.status === "running" ? null : (
+            {clone.status === "running" || clone.status === "queued" ? null : (
               <Button
                 variant="primary"
                 onClick={() => {

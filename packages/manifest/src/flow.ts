@@ -42,7 +42,15 @@ export type FlowTrigger =
        */
       input?: Record<string, unknown>;
     }
-  | { type: "schedule"; cron: string; timezone?: string; source?: string; tags?: string[] }
+  | {
+      type: "schedule";
+      cron: string;
+      timezone?: string;
+      source?: string;
+      tags?: string[];
+      /** `skip` passes over a time while the flow's last run from it is still going. Default `skip`. */
+      overlap?: "allow" | "skip";
+    }
   | {
       type: "webhook";
       /** CEL expressions over `trigger` that tag each run it starts. */

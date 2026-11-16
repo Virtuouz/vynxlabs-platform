@@ -185,7 +185,7 @@ A worker's credential is best handed to it on its standard input, `platform-work
 
 ## Workers the instance starts
 
-For a tenant with work and no worker of its own, the instance starts one. Each attempt of a script runs in a process of its own, ended at its time limit or when canceled, and limited to the script's `memoryMb` (512 by default).
+For a tenant with work and no worker of its own, the instance starts one. Each attempt of a script runs in a process of its own, ended at its time limit or when canceled, and limited to the script's `memoryMb` (512 by default). How much one machine runs at once is under "Sizing" below.
 
 Where those workers run is set by `MANAGED_WORKERS`.
 
@@ -213,6 +213,85 @@ This is the mode for development, and for a single site where only the operator 
 | `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` | `10001` | The user and group workers run as. The worker host reads them too |
 
 Rate limits on webhooks, sign-ins and guests are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas or worker hosts run.
+
+### Sizing: what one machine runs at once
+
+Every attempt of a script is a process of its own. A machine that runs scripts, whether the control plane's in `process` mode or a worker host's, shares **run slots** between all its workers and tenants:
+- The scripts running there never go past its slots.
+- While other tenants are waiting, no tenant takes more than its share.
+- Work past that waits in the queue, and nothing fails for it.
+
+On top of the slots:
+- No worker takes more work while the machine's free memory is below its **memory floor**.
+- If free memory still falls under a twentieth of it, the largest script is stopped and its run fails with "The script was stopped: the machine ran low on memory." Its retries apply.
+- A script is held to its `memoryMb`: all the memory it holds, Buffers and native memory included, plus 64 MB for Node itself. Past that its run fails with "The script ran out of memory".
+- Scripts run at a lower CPU priority than the control plane and the workers, so the console stays quick under heavy scripts.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RUN_SLOTS` | From memory: one per 160 MB past the first 512 MB, at least 2 | Scripts running at once on this machine. 1 GB gives 3, 2 GB gives 9, 4 GB gives 22 |
+| `RUN_MEMORY_FLOOR_MB` | A tenth of memory, at least 128 | Free memory below which no worker here takes more work. 0 turns the check off |
+| `MANAGED_WORKERS_MAX` | Twice the run slots | In `process` mode, managed workers alive at once. A worker waiting for a slot costs little; one per tenant with work is what lets tenants take turns |
+
+The worker host takes the same settings, as `--run-slots`, `--memory-floor` and `--max-workers` or from the same variables.
+
+Plan on 2 GB for a machine that runs the control plane and scripts together. Give the database a dedicated CPU for anything past a trial: on a shared CPU it runs at full speed only until its burst credit is spent, and then every tenant's queries slow down together.
+
+`/api/v1/metrics` reports `platform_machine_running`, the scripts running on each machine, and `platform_memory_available_bytes`, this replica's free memory. Alert on a queue that keeps growing (`platform_queue_oldest_seconds`) rather than on full slots: full slots are the limit doing its work.
+
+### Sizing: the database
+
+Every tenant's table requests on the platform database share one pool of connections per replica. Each tenant has a share of it:
+- A tenant's requests past its share wait their turn, so one tenant's slow searches leave the others room.
+- After 5 seconds of waiting, a request is answered 503 with `Retry-After`, never 500. Nothing was done, so it is safe to try again.
+- `@vynxlabs/app` and scripts try again by themselves, twice.
+
+Every data request has a time limit. Past it, the statement is stopped and the request is answered 422 `too_slow`, saying to narrow the filter or add an index. Totals keep their own limit of 5 seconds.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DATABASE_POOL_SIZE` | 10 | Connections for the platform's own work, per replica |
+| `DATA_POOL_SIZE` | 10 | Connections for every tenant's table requests, per replica |
+| `DATA_TENANT_CONNECTIONS` | A third of `DATA_POOL_SIZE`, at least 2 | Table requests one tenant may have open at once, per replica |
+| `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
+
+Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `platform_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
+
+### When the database takes no writes
+
+A managed Postgres turns itself read-only when its disk is nearly full. The instance keeps serving what reads alone can:
+- `/readyz` stays 200 and reports `"readOnly": true`, so the load balancer keeps sending traffic.
+- Tables, runs and the console can be read by members who are already signed in and by API keys.
+- Changes, new sign-ins and new runs are answered 503 `read_only`, with `Retry-After`.
+- The queue, schedules and managed workers stop.
+
+The instance checks every 10 seconds, and starts them again on its own once the database takes writes. A connection opened while it took none keeps refusing writes until it is renewed: connections are renewed each minute, so writes come back within about a minute.
+
+It also starts in this state: migrations are checked by reading alone when there are none to apply. An upgrade that brings migrations still needs a database that takes writes.
+
+Watch the database's disk, and alert well before it is full. `platform_database_size_bytes` in the metrics tracks the platform database's size. On Fly, extend the volume with `fly volumes extend`.
+
+### When work piles up
+
+Some limits apply by default:
+- **A flow's schedule passes over a time while its last run from that trigger is still going,** unless the trigger says `overlap: "allow"`. A schedule resource keeps its own default, `allow`, and can say `skip`.
+- **A workspace with `SCHEDULE_BACKLOG_LIMIT` runs waiting (200 by default) gets no more from its schedules** until the queue shrinks. The trigger shows the time it passed over, and why. 0 turns this off.
+- **A new dev workspace starts with its triggers paused,** so a schedule tried there does not run beside production's. Resume them in its settings.
+
+To stop everything at once, pause every trigger in the instance under **Instance → Triggers**, or with `PUT /api/v1/instance/triggers {"paused": true}`:
+- Nothing new starts from a schedule, source, webhook, form or event, in any tenant.
+- Schedules keep their times and fire once on resuming.
+- Webhooks are answered 503.
+- Runs already queued or going carry on.
+
+`TRIGGERS_PAUSED=true` does the same from where the instance runs, and the console cannot undo it. Use it when the instance cannot stay up long enough to pause from the console.
+
+To clear a backlog, use **Cancel queued runs** on a workspace's Runs, or `platform runs cancel --tenant <slug> --workspace <slug>`. `--all` cancels what is going too, flow runs included.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SCHEDULE_BACKLOG_LIMIT` | 200 | Queued runs in a workspace past which its schedules pass over their times. 0: no limit |
+| `TRIGGERS_PAUSED` | `false` | `true` pauses every trigger in the instance, whatever the console says |
 
 ## What the instance reaches for a tenant
 
@@ -427,7 +506,7 @@ The console keeps its own look whichever tenant is open. An operator brands it o
 ## Environments inside a tenant
 
 - A dev workspace is linked to the workspace it promotes to. Promoting activates there the same bundle that runs here, without rebuilding it. `platform promote --preview` shows what would change first.
-- A workspace can be cloned into a new dev workspace, with or without its rows and files. By default the clone gets no connection, data source or secret value and its triggers are paused, so it cannot act on a real system. Turning that safety off is recorded in the audit log.
+- A workspace can be cloned into a new dev workspace, with or without its rows and files. By default the clone gets no connection, data source or secret value and its triggers are paused, so it cannot act on a real system. Turning that safety off is recorded in the audit log. Clones with rows copy one at a time across the instance, in pages, so a large one does not slow every tenant's tables; the others wait as `queued`.
 - A workspace's triggers can be paused at any time.
 
 ## Metrics

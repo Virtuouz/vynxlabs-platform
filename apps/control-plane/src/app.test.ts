@@ -69,7 +69,10 @@ describe("routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       status: "ready",
-      checks: { database: { ok: true }, objectStore: { ok: true } },
+      checks: {
+        database: { ok: true, readOnly: false, latencyMs: expect.any(Number) },
+        objectStore: { ok: true },
+      },
     });
   });
 
@@ -80,7 +83,10 @@ describe("routes", () => {
       expect(response.statusCode).toBe(503);
       expect(response.json()).toEqual({
         status: "not_ready",
-        checks: { database: { ok: true }, objectStore: { ok: false, error: "Error" } },
+        checks: {
+          database: { ok: true, readOnly: false, latencyMs: expect.any(Number) },
+          objectStore: { ok: false, error: "Error" },
+        },
       });
     } finally {
       storageUp = true;

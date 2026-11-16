@@ -95,13 +95,13 @@ export function RunsWorkbench({
   /** The workspace's console address. */
   link: string;
 }) {
-  const [asked, ask] = useQueryValue("status");
+  const [asked, askStatus] = useQueryValue("status");
   // An address from before the states, `?status=cancelled`, still works.
   const wanted = asked === "cancelled" ? "canceled" : asked;
   const status: "all" | Filter = FILTERS.some((one) => one.value === wanted)
     ? (wanted as Filter)
     : "all";
-  const setStatus = (next: "all" | Filter) => ask(next === "all" ? null : next);
+  const setStatus = (next: "all" | Filter) => askStatus(next === "all" ? null : next);
   const [kindAsked, setKindAsked] = useQueryValue("kind");
   const kind = kindAsked === "script" || kindAsked === "flow" ? kindAsked : "all";
   const [whenAsked, setWhenAsked] = useQueryValue("when");
@@ -160,6 +160,29 @@ export function RunsWorkbench({
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const next = more.length === 0 ? (list.data?.nextCursor ?? null) : lastNext;
   const filtered = status !== "all" || Boolean(search) || Boolean(tag);
+  const queued = counts.queued ?? 0;
+  /** The way out of a backlog: every run here that has not started yet. */
+  const cancelQueued = async () => {
+    const sure = await ask.confirm({
+      title: "Cancel every queued run?",
+      text: "Every run in this workspace that has not started yet is cancelled. Runs already going carry on.",
+      action: "Cancel queued runs",
+      cancel: "Keep them",
+      danger: true,
+    });
+    if (!sure) return;
+    try {
+      const done = await api.post<{ cancelled: number; more: boolean }>(`${root}/runs/cancel`, {
+        include: "queued",
+      });
+      notify.success(
+        `${done.cancelled} queued run${done.cancelled === 1 ? "" : "s"} cancelled${done.more ? ". More are left: cancel again." : "."}`,
+      );
+      setTick((n) => n + 1);
+    } catch (error) {
+      notify.error(error);
+    }
+  };
   const row = (one: Activity) => (
     <RunRow
       key={one.id}
@@ -241,6 +264,11 @@ export function RunsWorkbench({
                 value === "all" ? total : states.reduce((sum, one) => sum + (counts[one] ?? 0), 0),
             }))}
           />
+          {queued > 0 ? (
+            <Button size="small" onClick={cancelQueued}>
+              Cancel queued runs
+            </Button>
+          ) : null}
           {tag ? (
             <button
               type="button"

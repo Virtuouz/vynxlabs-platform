@@ -62,6 +62,33 @@ export async function loadMigrations(dir: string): Promise<MigrationFile[]> {
   return files;
 }
 
+/** The result of migrating, when nothing needs applying: found without writing anything. */
+async function upToDate(
+  client: PoolClient,
+  files: MigrationFile[],
+  upTo: number | undefined,
+): Promise<MigrationResult | undefined> {
+  const table = await client.query<{ name: string | null }>(
+    "select to_regclass('platform_migration')::text as name",
+  );
+  if (!table.rows[0]?.name) return undefined;
+  const applied = await client.query<{ version: number; name: string; checksum: string }>(
+    "select version, name, checksum from platform_migration order by version",
+  );
+  const newest = files.length;
+  for (const row of applied.rows) {
+    const file = files[row.version - 1];
+    if (!file) throw new DatabaseNewerThanCodeError(row.version, newest);
+    if (file.checksum !== row.checksum) throw new MigrationChecksumError(row.version, row.name);
+  }
+  const wanted = upTo === undefined ? newest : Math.min(newest, upTo);
+  if (applied.rows.length < wanted) return undefined;
+  return {
+    applied: [],
+    level: upTo === undefined ? newest : Math.min(newest, Math.max(upTo, applied.rows.length)),
+  };
+}
+
 async function appliedMigrations(client: PoolClient) {
   await client.query(`
     create table if not exists platform_migration (
@@ -92,6 +119,10 @@ export async function runMigrations(
   const files = await loadMigrations(dir);
   const client = await pool.connect();
   try {
+    // An up-to-date database is checked by reading alone, so that a database taking no
+    // writes, such as one whose disk is full, still lets the instance start and serve.
+    const current = await upToDate(client, files, upTo);
+    if (current) return current;
     await client.query("select pg_advisory_lock($1)", [LOCK_KEY]);
     try {
       const applied = await appliedMigrations(client);

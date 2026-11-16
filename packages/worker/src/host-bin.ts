@@ -6,6 +6,8 @@ const { values } = parseArgs({
   options: {
     url: { type: "string" },
     "max-workers": { type: "string" },
+    "run-slots": { type: "string" },
+    "memory-floor": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -18,7 +20,13 @@ work, and starts a worker for it as a user of its own. Run it in a container on
 a network that reaches the control plane and nothing else of the instance's.
 
 Options:
-  --max-workers <n>   Workers alive at once. Default 50.
+  --run-slots <n>     Scripts running at once on this machine, across all its
+                      workers. Default: from its memory, one per 160 MB past the
+                      first 512 MB, at least 2. RUN_SLOTS also sets it.
+  --memory-floor <mb> No worker takes more work while the machine has less free
+                      memory than this. Default: a tenth of it, at least 128 MB.
+                      RUN_MEMORY_FLOOR_MB also sets it.
+  --max-workers <n>   Workers alive at once. Default: twice the run slots.
 
 WORKER_HOST_TOKEN is the token the control plane was given. PLATFORM_URL can be
 used instead of --url. Workers run as MANAGED_WORKER_UID and MANAGED_WORKER_GID,
@@ -59,11 +67,29 @@ if (process.getuid?.() !== 0) {
   );
 }
 
+const positive = (value: string | undefined, name: string, allowZero = false) => {
+  if (value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < (allowZero ? 0 : 1)) {
+    console.error(`${name} must be a ${allowZero ? "" : "positive "}whole number.`);
+    process.exit(2);
+  }
+  return parsed;
+};
+const slots = positive(values["run-slots"] ?? process.env.RUN_SLOTS, "--run-slots");
+const floor = positive(
+  values["memory-floor"] ?? process.env.RUN_MEMORY_FLOOR_MB,
+  "--memory-floor",
+  true,
+);
+
 const host = new WorkerHost({
   url,
   token,
   user,
   ...(values["max-workers"] ? { maxWorkers: Number(values["max-workers"]) } : {}),
+  ...(slots ? { runSlots: slots } : {}),
+  ...(floor !== undefined ? { memoryFloorMb: floor } : {}),
   log,
 });
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

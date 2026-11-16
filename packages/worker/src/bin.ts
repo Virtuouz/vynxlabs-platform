@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
+import { parseMachine } from "./machine.js";
 import { Worker } from "./worker.js";
 
 const { values } = parseArgs({
@@ -72,9 +73,12 @@ try {
 }
 
 const idleExit = values["idle-exit"] ?? process.env.PLATFORM_WORKER_IDLE_EXIT;
+// Set by the worker host or control plane that started this worker: the machine it shares.
+const machine = parseMachine(process.env.PLATFORM_WORKER_MACHINE);
 const worker = new Worker({
   url,
   token,
+  ...(machine ? { machine } : {}),
   ...(values.concurrency ? { concurrency: Number(values.concurrency) } : {}),
   ...(idleExit ? { idleExitSeconds: Number(idleExit) } : {}),
   log: (level, message, fields) =>

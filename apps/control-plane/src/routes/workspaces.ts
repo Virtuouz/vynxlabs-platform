@@ -195,7 +195,10 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("workspace:write") },
         schema: {
           summary: "Create a workspace",
-          description: "The type is fixed at creation and can never be changed.",
+          description:
+            "The type is fixed at creation and can never be changed. A dev workspace starts " +
+            "with its triggers paused, so that schedules tried in it do not run beside " +
+            "production's; `triggersPaused: false` starts it running.",
           tags: ["tenancy"],
           params: TenantParams,
           body: Type.Object({
@@ -203,6 +206,9 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             name: Name,
             type: WorkspaceType,
             linkedWorkspaceId: Type.Optional(Id),
+            triggersPaused: Type.Optional(
+              Type.Boolean({ description: "Default: true for a dev workspace, false otherwise." }),
+            ),
           }),
           response: { 201: Workspace },
         },
@@ -220,6 +226,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               name: body.name,
               type: body.type,
               linked_workspace_id: linked,
+              triggers_paused: body.triggersPaused ?? body.type === "dev",
             })
             .returningAll()
             .executeTakeFirstOrThrow();
@@ -229,7 +236,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetId: row.id,
             tenantId: params.t,
             workspaceId: row.id,
-            details: { slug: row.slug, type: row.type, linkedWorkspaceId: linked },
+            details: {
+              slug: row.slug,
+              type: row.type,
+              linkedWorkspaceId: linked,
+              triggersPaused: row.triggers_paused,
+            },
           });
           return row;
         });

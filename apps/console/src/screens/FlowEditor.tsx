@@ -29,13 +29,22 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
 import { typingIn, useHistory } from "../kit/history.ts";
+import { retryAfter } from "../kit/retry.ts";
 import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useNavigationGuard } from "../router.tsx";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
 import {
   FormDesigner,
@@ -400,6 +409,11 @@ export function FlowEditor({
   const [editedSinceTest, setEditedSinceTest] = useState(false);
   const live = useFlowRunLive(root, testRunId);
   const [problem, setProblem] = useState<string>();
+  // The path this editor saved a new flow as. Opening it again would reload what is on screen.
+  const savedAs = useRef<string>(undefined);
+  // Autosaves that failed in a row, and whether they have been given up until asked again.
+  const failures = useRef(0);
+  const [gaveUp, setGaveUp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<number>();
   const [adding, setAdding] = useState(false);
@@ -529,6 +543,7 @@ export function FlowEditor({
       open({ nodes: { start: { type: "trigger", trigger: { type: "manual" } } }, edges: [] });
       return;
     }
+    if (opened === savedAs.current) return;
     (async () => {
       try {
         const draft = await api.get<{ body: FlowBody; revision: number }>(
@@ -687,7 +702,10 @@ export function FlowEditor({
       setDirty(false);
       setSavedAt(Date.now());
       drafts.reload();
-      if (!opened) navigate(`${link}/flows/edit/${path}`, { replace: true });
+      if (!opened) {
+        savedAs.current = path;
+        navigate(`${link}/flows/edit/${path}`, { replace: true });
+      }
       return true;
     } catch (error) {
       setProblem(failureText(error));
@@ -697,13 +715,32 @@ export function FlowEditor({
     }
   };
 
-  // A flow already saved once is saved again a moment after each change, as the app builder does.
+  // A flow already saved once is saved again a moment after each change, as the app builder
+  // does. One that fails is tried again, waiting longer each time, and given up after five
+  // tries until the next change or Retry, so that a lost connection is said, not hidden.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `save` reads the latest state when it runs
   useEffect(() => {
-    if (!dirty || busy || state === "new" || state === "repository") return;
-    const timer = setTimeout(() => void save(), 1500);
+    if (!dirty || busy || gaveUp || state === "new" || state === "repository") return;
+    const wait = failures.current === 0 ? 1500 : retryAfter(failures.current);
+    const timer = setTimeout(async () => {
+      if (await save()) {
+        failures.current = 0;
+        return;
+      }
+      failures.current += 1;
+      if (failures.current >= 5) setGaveUp(true);
+    }, wait);
     return () => clearTimeout(timer);
-  }, [dirty, busy, state, nodes, edges, description]);
+  }, [dirty, busy, gaveUp, state, nodes, edges, description]);
+  // A change after giving up is worth trying again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a change is the reason to try again
+  useEffect(() => {
+    setGaveUp(false);
+  }, [nodes, edges, description]);
+  useNavigationGuard(
+    dirty,
+    `Your changes to ${path || "this new flow"} are not saved. Leave anyway?`,
+  );
   // "Saved 12s ago" moves on by itself.
   useEffect(() => {
     const timer = setInterval(() => setTick((n) => n + 1), 10_000);
@@ -836,7 +873,11 @@ export function FlowEditor({
   const saveState = dirty
     ? state === "new" || state === "repository"
       ? "Not saved"
-      : "Saving…"
+      : gaveUp
+        ? "Could not save."
+        : failures.current > 0
+          ? "Could not save. Trying again…"
+          : "Saving…"
     : savedAt
       ? `Draft saved ${Math.max(1, Math.round((Date.now() - savedAt) / 1000)) < 60 ? `${Math.max(1, Math.round((Date.now() - savedAt) / 1000))}s` : `${Math.round((Date.now() - savedAt) / 60000)}m`} ago`
       : STATE[state][1];
@@ -879,9 +920,24 @@ export function FlowEditor({
               <TriangleAlert aria-hidden="true" size={13} /> {found.length} to fix
             </span>
           ) : null}
-          <span role="status" className="text-meta text-ink-subtle">
+          <span
+            role="status"
+            className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
+          >
             {saveState}
           </span>
+          {gaveUp ? (
+            <Button
+              size="small"
+              variant="quiet"
+              onClick={() => {
+                failures.current = 0;
+                setGaveUp(false);
+              }}
+            >
+              Retry
+            </Button>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button

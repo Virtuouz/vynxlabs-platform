@@ -18,8 +18,9 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { InputForm } from "../InputDialog.tsx";
+import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { Page } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useNavigationGuard } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
@@ -330,6 +331,33 @@ export function ScriptEditor({
     return () => removeEventListener("keydown", onKey);
   }, [kind]);
 
+  // Changes not saved are not lost by a click elsewhere, Back, or closing the tab.
+  useNavigationGuard(
+    dirty && editable,
+    `Your changes to ${path || `this new ${about.noun}`} are not saved. Leave anyway?`,
+  );
+  // A draft saves itself a few seconds after the last change. Something new waits for
+  // its first Save, so that a path half typed never becomes a draft of its own; until
+  // then a copy is kept in this browser.
+  const recoveryKey = `${root}:${kind}`;
+  const { kept, drop, taken } = useKeptCopy<{ path: string; body: ScriptBody; schemaText: string }>(
+    recoveryKey,
+    !opened,
+  );
+  useRecoveryCopy(recoveryKey, { path, body, schemaText }, state === "new" && dirty);
+  const autosave = useRef<() => Promise<boolean>>(async () => false);
+  const failedFor = useRef<unknown>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each change starts the wait again
+  useEffect(() => {
+    if (!dirty || busy || !editable || (state !== "draft" && state !== "deployed")) return;
+    // One that failed is tried again once something changes, not in a loop.
+    if (failedFor.current === body) return;
+    const timer = setTimeout(async () => {
+      if (!(await autosave.current())) failedFor.current = body;
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [dirty, busy, editable, state, body, schemaText]);
+
   revisionRef.current = revision;
   dirtyRef.current = dirty;
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
@@ -380,6 +408,7 @@ export function ScriptEditor({
       setDirty(false);
       setReadingFailed(undefined);
       setReading(saved.schemaTaskId);
+      clearRecovery(recoveryKey);
       if (!opened) {
         savedAs.current = path;
         navigate(`${link}/${about.edit}/${path}`, { replace: true });
@@ -393,6 +422,8 @@ export function ScriptEditor({
       setBusy(false);
     }
   };
+
+  autosave.current = save;
 
   /** Runs the draft with this input. What the server refuses is thrown, for the form to place. */
   const test = async (input: unknown) => {
@@ -699,6 +730,33 @@ export function ScriptEditor({
       ) : state === "repository" ? (
         <Notice tone="attention">
           Saving a draft of this {about.noun} takes it over from the repository.
+        </Notice>
+      ) : null}
+      {kept && state === "new" && !dirty ? (
+        <Notice
+          tone="attention"
+          action={
+            <span className="flex gap-2">
+              <Button
+                size="small"
+                onClick={() => {
+                  setPath(kept.path);
+                  setBody(kept.body);
+                  setSchemaText(kept.schemaText);
+                  setDirty(true);
+                  taken();
+                }}
+              >
+                Restore it
+              </Button>
+              <Button size="small" variant="quiet" onClick={drop}>
+                Discard
+              </Button>
+            </span>
+          }
+        >
+          A new {about.noun}
+          {kept.path ? ` (${kept.path})` : ""} that was not saved is kept in this browser.
         </Notice>
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}

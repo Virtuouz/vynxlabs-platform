@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–7 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–8 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -36,7 +36,7 @@ The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-r
 | --- | --- |
 | Shape | One branch, `phase-12-uiux-p0`, in eleven milestones. One commit each |
 | Contrast tokens | The new values go into the kit's defaults, so tenant apps get them too. Noted in the changelog for tenant developers. Themes that set these tokens keep their values |
-| Unsaved work | A navigation guard and `beforeunload`. Script and resource drafts autosave about 3 s after the last edit once a path is set, with a local recovery copy before that |
+| Unsaved work | A navigation guard and `beforeunload`. Script and resource drafts autosave about 3 s after the last edit once they exist as drafts, with a local recovery copy before that (see Milestone 8) |
 | Branding contrast | Warn only. The branding editors show the ratio and a warning. Saving is still allowed, and the server is unchanged |
 
 ## Milestones
@@ -188,4 +188,24 @@ This applies to the run page, the runs inspector, a flow's run view and a flow s
 **A create dialog forgets what was typed when it is cancelled,** passwords included.
 
 **A field can make the person choose** (`pick`), instead of taking the first option. Create workspace uses it for the type, which cannot be changed afterwards, and lists Production first, as the empty list suggests.
+
+### Milestone 8
+
+**The router holds the page while a screen has changes not saved:**
+- Each editor registers with `useNavigationGuard(dirty, message)`.
+- `navigate()`, which every link goes through, asks in the console's own dialog first.
+- Back and Forward have already moved the address when the browser says so. The router puts the page's own address back before any screen sees the change, then asks.
+- Closing or reloading the tab gets the browser's own prompt (`beforeunload`), registered only while there are changes, so the reloads in the e2e tests stay quiet.
+- A `replace` never asks: it is the same page refining its address. That includes a first save from `…/new` to `…/edit/<path>`.
+- Until the console's dialog is mounted, nobody is held. The repository allows no browser dialogs.
+
+**Autosave starts once something is a draft, not once a path is typed.** This differs from the plan. A new script whose path is typed one letter at a time would have saved a draft at "orders/s", then "orders/sy", and so on, leaving drafts behind.
+- Something new waits for its first Save. Until then it is held by the guard, and, for scripts and resources, by a copy kept in this browser.
+- The editor offers that copy back the next time a new one is opened.
+- Saved drafts, and deployed resources being edited, save themselves 3 s after the last change.
+- A failed autosave is tried again only after the next change, not in a loop.
+
+**The flow editor's autosave backs off and gives up after five tries,** waiting 1.5 s, then 1.5, 3, 6 and 12 s between tries. While it retries it says "Could not save. Trying again…". After that it says "Could not save." with Retry, where it used to say "Saving…" forever and try every 1.5 s. The e2e test cuts the connection to see it, checks that leaving asks first, and sees it catch up once back online.
+
+**The flow editor no longer remounts on its first save,** for the same reason as the script editor in Milestone 2. It keeps its undo history.
 

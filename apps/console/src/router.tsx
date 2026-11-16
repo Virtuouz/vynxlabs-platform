@@ -10,17 +10,86 @@ const listeners = new Set<() => void>();
  */
 let lastChange: "push" | "replace" | "pop" = "push";
 export const navigationKind = () => lastChange;
+
+/**
+ * Screens holding changes not yet saved. While any is here, leaving the page by
+ * a link, by Back or Forward, or by closing or reloading the tab asks first.
+ * Refining the same page's address (`replace`) never asks.
+ */
+const blockers = new Set<{ message: string }>();
+/** How the person is asked: the console sets its own dialog. Until it does, nobody is held. */
+let askToLeave = async (_message: string) => true;
+export function setLeaveQuestion(question: (message: string) => Promise<boolean>) {
+  askToLeave = question;
+}
+/** The address on show, kept to go back to when leaving is refused. */
+let shown = typeof location === "object" ? `${location.pathname}${location.search}` : "/";
+/** Set while Back is being let through after the person agreed to leave. */
+let letPass = false;
+
 if (typeof addEventListener === "function") {
-  addEventListener("popstate", () => {
-    lastChange = "pop";
+  // Registered before any screen's own listener, so a refused Back is stopped before it is seen.
+  addEventListener("popstate", (event) => {
+    if (letPass || blockers.size === 0) {
+      letPass = false;
+      lastChange = "pop";
+      shown = `${location.pathname}${location.search}`;
+      return;
+    }
+    event.stopImmediatePropagation();
+    // The address has already moved: put the page's own back, then ask.
+    history.pushState(null, "", shown);
+    void askToLeave(messageOfBlockers()).then((leave) => {
+      if (!leave) return;
+      blockers.clear();
+      letPass = true;
+      history.back();
+    });
+  });
+  addEventListener("beforeunload", (event) => {
+    if (blockers.size === 0) return;
+    event.preventDefault();
+    // Older browsers show the prompt only when a value is set.
+    event.returnValue = "";
   });
 }
 
-export function navigate(to: string, options: { replace?: boolean } = {}) {
+const messageOfBlockers = () =>
+  [...blockers][0]?.message ?? "Changes on this page are not saved. Leave anyway?";
+
+function go(to: string, options: { replace?: boolean }) {
   lastChange = options.replace ? "replace" : "push";
   if (options.replace) history.replaceState(null, "", to);
   else history.pushState(null, "", to);
+  shown = `${location.pathname}${location.search}`;
   for (const listener of listeners) listener();
+}
+
+export function navigate(to: string, options: { replace?: boolean } = {}) {
+  if (blockers.size === 0 || options.replace) {
+    go(to, options);
+    return;
+  }
+  void askToLeave(messageOfBlockers()).then((leave) => {
+    if (!leave) return;
+    blockers.clear();
+    go(to, options);
+  });
+}
+
+/**
+ * Asks before the page is left while `active`, such as while an editor holds
+ * changes it has not saved. `message` says what would be lost.
+ */
+export function useNavigationGuard(active: boolean, message: string) {
+  useEffect(() => {
+    if (!active) return;
+    const blocker = { message };
+    blockers.add(blocker);
+    return () => {
+      blockers.delete(blocker);
+    };
+  }, [active, message]);
 }
 
 export function usePath(): string {

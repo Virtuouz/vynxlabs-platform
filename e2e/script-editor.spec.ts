@@ -95,6 +95,23 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
     await page.evaluate(() => Boolean(document.activeElement?.closest(".monaco-editor"))),
   ).toBe(true);
 
+  // A change not yet saved holds the page: leaving asks first. Then the draft saves itself.
+  await editor.locator(".view-lines").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("//later");
+  await page.getByRole("link", { name: "All scripts" }).click();
+  const leaving = page.getByRole("dialog");
+  await expect(leaving).toContainText("Leave without saving?");
+  await leaving.getByRole("button", { name: "Stay" }).click();
+  await expect(page).toHaveURL(/\/scripts\/edit\/hello\/greet$/);
+  await expect(page.getByText("Unsaved changes")).toHaveCount(0, { timeout: 15_000 });
+  const saved = await call(
+    page,
+    "GET",
+    `/tenants/${tenant.id}/workspaces/${dev.id}/drafts/hello/greet`,
+  );
+  expect(saved.body.source.code).toContain("//later");
+
   // A new page: the first Tab reaches the skip link, which goes to the content.
   await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/runs`);
   await expect(page).toHaveTitle(/^Runs · Dev · /);

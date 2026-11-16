@@ -10,10 +10,11 @@ import {
   TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
-import { Link, navigate, useQueryValue } from "../router.tsx";
+import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
+import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -202,6 +203,32 @@ export function ResourceEditor({
     };
   }, [root, opened, about, askedType]);
 
+  // Changes not saved are not lost by a click elsewhere, Back, or closing the tab. A draft
+  // saves itself a few seconds after the last change; something new waits for its first Save,
+  // with a copy kept in this browser until then.
+  useNavigationGuard(
+    dirty && editable,
+    `Your changes to ${path || `this new ${about.noun}`} are not saved. Leave anyway?`,
+  );
+  const recoveryKey = `${root}:${kind}`;
+  const { kept, drop, taken } = useKeptCopy<{
+    path: string;
+    body: Body;
+    json: Record<string, string>;
+  }>(recoveryKey, !opened);
+  useRecoveryCopy(recoveryKey, { path, body, json }, state === "new" && dirty);
+  const autosave = useRef<() => Promise<boolean>>(async () => false);
+  const failedFor = useRef<unknown>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each change starts the wait again
+  useEffect(() => {
+    if (!dirty || busy || !editable || (state !== "draft" && state !== "deployed")) return;
+    if (failedFor.current === body) return;
+    const timer = setTimeout(async () => {
+      if (!(await autosave.current())) failedFor.current = body;
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [dirty, busy, editable, state, body, json]);
+
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <p className="text-ink-muted">Loading…</p>;
 
@@ -229,18 +256,18 @@ export function ResourceEditor({
     ...(kind === "schedule" ? scheduleProblems : []),
   ];
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     setProblem(undefined);
     if (!PATH.test(path)) {
       setProblem(
         `Give the ${about.noun} a path: lowercase letters, digits, hyphens and underscores, in folders. For example ${about.example}.`,
       );
-      return;
+      return false;
     }
     if (found.length > 0) {
       // What is missing is listed under the form from now on, until it is put right.
       setTried(true);
-      return;
+      return false;
     }
     const written: Body = { ...body };
     for (const [name, value] of Object.entries(json)) {
@@ -260,13 +287,18 @@ export function ResourceEditor({
       setState("draft");
       setDirty(false);
       drafts.reload();
+      clearRecovery(recoveryKey);
       if (!opened) navigate(`${link}/resources/edit/${kind}/${path}`, { replace: true });
+      return true;
     } catch (error) {
       setProblem(failureText(error));
+      return false;
     } finally {
       setBusy(false);
     }
   };
+
+  autosave.current = save;
 
   const STATE: Record<typeof state, [BadgeTone, string]> = {
     new: ["neutral", "Not saved"],
@@ -399,6 +431,33 @@ export function ResourceEditor({
         <Notice tone="attention">
           This {about.noun} is managed in the tenant's repository. Saving a draft of it takes it
           over.
+        </Notice>
+      ) : null}
+      {kept && state === "new" && !dirty ? (
+        <Notice
+          tone="attention"
+          action={
+            <span className="flex gap-2">
+              <Button
+                size="small"
+                onClick={() => {
+                  setPath(kept.path);
+                  setBody(kept.body);
+                  setJson(kept.json);
+                  setDirty(true);
+                  taken();
+                }}
+              >
+                Restore it
+              </Button>
+              <Button size="small" variant="quiet" onClick={drop}>
+                Discard
+              </Button>
+            </span>
+          }
+        >
+          A new {about.noun}
+          {kept.path ? ` (${kept.path})` : ""} that was not saved is kept in this browser.
         </Notice>
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}

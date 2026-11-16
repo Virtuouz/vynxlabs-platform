@@ -10,9 +10,23 @@ import {
 } from "@vynxlabs/ui";
 import { type ReactNode, useState } from "react";
 import { type ApiError, makeQueryClient, setActiveClient } from "./api.ts";
+import { setLeaveQuestion } from "./router.tsx";
 
 let dialogs: Dialogs | undefined;
 let toasts: Toasts | undefined;
+
+// Leaving a page with unsaved changes is asked in the console's own dialog.
+setLeaveQuestion((message) =>
+  dialogs
+    ? dialogs.confirm({
+        title: "Leave without saving?",
+        text: message,
+        action: "Leave",
+        cancel: "Stay",
+        danger: true,
+      })
+    : Promise.resolve(true),
+);
 
 function Bridge() {
   dialogs = useDialogs();

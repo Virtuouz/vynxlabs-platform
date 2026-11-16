@@ -445,7 +445,7 @@ function WorkspaceDetail({
         workspace.data.type === "dev" ? (
           <Suspense fallback={<p className="text-ink-muted">Loading the editor…</p>}>
             <FlowEditor
-              key={rest}
+              key={codeEditorKey}
               root={root}
               link={`/t/${tenantId}/workspaces/${workspaceId}`}
               path={rest === "new" ? undefined : rest.slice("edit/".length)}

@@ -143,6 +143,29 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
   expect(Object.keys(saved.body.nodes).sort()).toEqual(["check", "start", "totals"]);
   expect(saved.body.nodes.totals.values.count).toBe("size(trigger.customer) * 10");
 
+  // With the connection lost, saving says so and tries again, and leaving asks first.
+  const draftAddress = `**/api/v1${W}/drafts/orders/count`;
+  await page.route(draftAddress, (route) =>
+    route.request().method() === "PUT" ? route.abort() : route.continue(),
+  );
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(canvas.getByText("check", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Could not save. Trying again…" }),
+  ).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("link", { name: "Flows", exact: true }).first().click();
+  const leaving = page.getByRole("dialog");
+  await expect(leaving).toContainText("Leave without saving?");
+  await leaving.getByRole("button", { name: "Stay" }).click();
+  expect(page.url()).toContain("/flows/edit/orders/count");
+  // Back online, it catches up by itself.
+  await page.unroute(draftAddress);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(canvas.getByText("check", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("status").filter({ hasText: /Draft saved/ })).toBeVisible({
+    timeout: 20_000,
+  });
+
   await page.reload();
   await canvas.getByText("check", { exact: true }).waitFor();
   expect(errors).toEqual([]);

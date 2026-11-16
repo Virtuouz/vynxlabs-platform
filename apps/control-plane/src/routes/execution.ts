@@ -20,10 +20,16 @@ import {
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
 import { cancelRuns } from "../kernel/execution/bulk-cancel.js";
-import { loadBundle, MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
+import {
+  loadBundle,
+  MAX_BUNDLE_BYTES,
+  payloadSchemas,
+  storeBundle,
+} from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
+import { redact } from "../kernel/execution/redact.js";
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
@@ -1296,8 +1302,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...toRun(row, row.bundle_version),
           pool: row.pool,
           ...(await keyed(params.t, params.w, row)),
-          input: await readPayload(kernel, row.input, row.input_ref),
-          output: await readPayload(kernel, row.output, row.output_ref),
+          // What is shown masks secret-looking values; workers and re-runs read the real ones.
+          ...(await (async () => {
+            const schemas = await payloadSchemas(kernel, row.bundle_id, row.script_path);
+            return {
+              input: redact(await readPayload(kernel, row.input, row.input_ref), schemas.input),
+              output: redact(await readPayload(kernel, row.output, row.output_ref), schemas.output),
+            };
+          })()),
           alert: row.alert,
           idempotencyKey: row.idempotency_key,
           reruns: (

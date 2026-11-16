@@ -585,6 +585,26 @@ describe("running", () => {
     expect(everything).not.toContain("api-credential-123");
   });
 
+  test("a secret-looking value is masked wherever a run is shown, and kept as it was", async () => {
+    const id = await start("greet", { name: "Ada", apiKey: "k-live-123" });
+    const run = await finished(id);
+    expect(run.input).toEqual({ name: "Ada", apiKey: "[redacted]" });
+    // What is stored, and what a run again is given, is the real value.
+    const stored = await t.db
+      .selectFrom("run")
+      .select("input")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    expect(stored.input).toEqual({ name: "Ada", apiKey: "k-live-123" });
+    const again = await alice.post(`${ws()}/runs/${id}/rerun`, { bundle: "original" });
+    const rerun = await t.db
+      .selectFrom("run")
+      .select("input")
+      .where("id", "=", again.body.id)
+      .executeTakeFirstOrThrow();
+    expect(rerun.input).toEqual({ name: "Ada", apiKey: "k-live-123" });
+  });
+
   test("a failed attempt is retried, and the run succeeds on a later attempt", async () => {
     const run = await finished(await start("flaky", { succeedOn: 2 }), 20);
     expect(run).toMatchObject({

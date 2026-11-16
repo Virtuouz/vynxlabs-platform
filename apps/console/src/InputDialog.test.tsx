@@ -72,3 +72,31 @@ test("with no schema it asks for JSON", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Run" }));
   await waitFor(() => expect(sent).toHaveBeenCalledWith({ a: 1 }));
 });
+
+test("a value masked when shown is left out of a run again, named, and asked for", async () => {
+  const sent = vi.fn(async () => {});
+  show(
+    <InputDialog
+      open
+      onClose={() => {}}
+      title="Run it again"
+      action="Run again"
+      schema={{
+        type: "object",
+        properties: { sku: { type: "string" }, apiKey: { type: "string" } },
+        required: ["sku"],
+      }}
+      initial={{ sku: "A-1", apiKey: "[redacted]" }}
+      onSubmit={sent}
+    />,
+  );
+  expect(screen.getByText(/One value was masked when shown \(apiKey\)/)).toBeTruthy();
+  expect((screen.getByLabelText(/api ?key/i) as HTMLInputElement).value).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Run again" }));
+  // It is required now: nothing is sent without it.
+  await new Promise((done) => setTimeout(done, 50));
+  expect(sent).not.toHaveBeenCalled();
+  fireEvent.input(screen.getByLabelText(/api ?key/i), { target: { value: "k-2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run again" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledWith({ sku: "A-1", apiKey: "k-2" }));
+});

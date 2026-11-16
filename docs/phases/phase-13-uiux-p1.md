@@ -106,3 +106,11 @@ Findings are recorded under each milestone as it lands.
 - **Long logs.** Rows are virtualised past 500 lines (`@tanstack/react-virtual`, now a kit dependency). The console's window rose from 5,000 lines to 50,000.
 - **Compatibility.** The viewer's default height grew from 28rem to `min(70vh, 48rem)`, and `fill` makes it fill a flex parent. Every existing prop still works, which matters to tenant apps.
 - **Zero sizes.** A list that measures zero height draws a screenful with estimated row heights instead of nothing. Without this the measure loops, and it is what keeps the virtual lists testable in happy-dom. DataTable got the same guard.
+
+### Milestone 7: payload redaction
+
+- **Where it applies.** `kernel/execution/redact.ts` masks on read. It applies to `GET runs/:id` (input and output, following the script's schema at the run's bundle), `GET flow-runs/:id` (flow input and output, and each step's output, with a code step following its script's schema) and the runs list's output summary.
+- **What is masked.** A value is masked when its schema marks it `writeOnly`, `format: "password"` or `x-secret`, or when its key names a secret (`password`, `token`, `apiKey`, `authorization`, `clientSecret`, and keys ending that way).
+- **What is not.** What is stored, what workers are given, and what a run again or a retry uses are the real values. A `{stored}` pointer to a large payload is left as it is, and no route serves stored payloads to readers.
+- **MCP tool results** (`routes/mcp.ts`) are not masked. They are the answer to a call the agent made, not a display of a past run.
+- **Re-run dialogs** (`InputDialog`) leave masked values out of the form, name them, and require them again. Submitting anything still masked is refused.

@@ -4,7 +4,8 @@ import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
-import { bundleManifest } from "../kernel/execution/bundles.js";
+import { bundleManifest, payloadSchemas } from "../kernel/execution/bundles.js";
+import { redact } from "../kernel/execution/redact.js";
 import { readPayload } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
@@ -894,8 +895,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!mayReadAll) {
           return {
             ...toFlowRun(row),
-            input: row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
-            output: row.output ?? null,
+            input: redact(row.input_ref ? { stored: row.input_ref } : (row.input ?? null)),
+            output: redact(row.output ?? null),
             steps: [],
             retries: [],
           };
@@ -920,6 +921,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 "run.output as run_output",
                 "run.output_ref as run_output_ref",
                 "run.started_at as run_started_at",
+                "run.script_path as run_script",
               ])
               .where("step_run.flow_run_id", "=", params.id)
               .orderBy("step_run.started_at")
@@ -931,10 +933,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .limit(20)
               .execute(),
           }));
+        // A code step's output is masked by its script's schema; everything else by its keys.
+        const scriptSchemas = new Map<string, Awaited<ReturnType<typeof payloadSchemas>>>();
+        for (const script of new Set(
+          steps.flatMap((step) => (step.run_script ? [step.run_script] : [])),
+        )) {
+          scriptSchemas.set(script, await payloadSchemas(kernel, run.bundle_id, script));
+        }
         return {
           ...toFlowRun(run),
-          input: run.input_ref ? { stored: run.input_ref } : (run.input ?? null),
-          output: run.output ?? null,
+          input: redact(run.input_ref ? { stored: run.input_ref } : (run.input ?? null)),
+          output: redact(run.output ?? null),
           retries: retries.map((one) => ({
             id: one.id,
             state: one.state,
@@ -950,10 +959,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             output: step.run_id
               ? step.run_output_ref
                 ? { stored: step.run_output_ref }
-                : (step.run_output ?? null)
+                : redact(
+                    step.run_output ?? null,
+                    step.run_script ? scriptSchemas.get(step.run_script)?.output : undefined,
+                  )
               : step.output_ref
                 ? { stored: step.output_ref }
-                : (step.output ?? null),
+                : redact(step.output ?? null),
             error: step.error ? { message: step.error.message } : null,
             handled: step.handled,
             runId: step.run_id,

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { type Bundle, bundleDigest } from "@vynxlabs/manifest";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { claimRun } from "./kernel/execution/runs.js";
@@ -141,6 +142,31 @@ test("past its share, a tenant may take a slot nobody else is waiting for", asyn
   await busy.queue(2);
   expect(await claimRun(t.kernel, busy.scope, busyWorker, undefined, machine)).not.toBeNull();
   expect(await claimRun(t.kernel, busy.scope, busyWorker, undefined, machine)).not.toBeNull();
+});
+
+test("many claims at once for a full machine wait without holding the app's connections", async () => {
+  // Found under the Fly stress test: a dozen workers, four claims each, all waiting
+  // for the machine's lock while holding a connection, left none for anything else.
+  const one = await place("slots-crowd");
+  const machine = { name: `m-${randomUUID()}`, slots: 1 };
+  const worker = await one.worker(machine);
+  await one.queue(2);
+  expect(await claimRun(t.kernel, one.scope, worker, undefined, machine)).not.toBeNull();
+  // Long enough that the machine being full is no longer remembered.
+  await sleep(300);
+  let waiting = 0;
+  const watch = setInterval(() => {
+    waiting = Math.max(waiting, t.database.poolStats().platform.waiting);
+  }, 1);
+  const claims = await Promise.all(
+    Array.from({ length: 40 }, () => claimRun(t.kernel, one.scope, worker, undefined, machine)),
+  );
+  clearInterval(watch);
+  expect(claims.every((claim) => claim === null)).toBe(true);
+  expect(waiting).toBe(0);
+  // Once it is no longer remembered as full, a claim asks again and finds it still full.
+  await sleep(300);
+  expect(await claimRun(t.kernel, one.scope, worker, undefined, machine)).toBeNull();
 });
 
 test("tasks count against the machine's slots too", async () => {

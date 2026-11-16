@@ -104,6 +104,57 @@ export interface MachineClaim {
 const MACHINE_PRESENCE = "60 seconds";
 
 /**
+ * Whether a machine has room for another job: `room`; `full`, its slots all taken;
+ * or `share`, this tenant has had its share while others wait.
+ */
+export type MachineRoom = "room" | "full" | "share";
+
+/** How long a machine found full is not asked again. A slot freed meanwhile waits that long. */
+const FULL_FOR_MS = 250;
+/** Claims for each machine in this process, one after another. */
+const turns = new Map<string, Promise<void>>();
+/** Until when each machine was last found full. */
+const fullUntil = new Map<string, number>();
+
+/** Whether this machine was found full a moment ago, so a claim need not ask the database. */
+export function machineFull(machine: MachineClaim | undefined): boolean {
+  return machine !== undefined && (fullUntil.get(machine.name) ?? 0) > Date.now();
+}
+
+/**
+ * Runs a claim for a machine once the claims before it in this process are done.
+ * A machine's claims are decided one at a time under a database lock; waiting for
+ * that lock holds a connection, so dozens of workers waiting for it at once would
+ * take every connection the control plane has. Waiting here holds none. A claim
+ * that finds the machine full says so, and those after it return without asking.
+ */
+export async function onMachine<T>(
+  machine: MachineClaim | undefined,
+  claim: (noteFull: () => void) => Promise<T>,
+): Promise<T | undefined> {
+  const noteFull = () => {
+    if (machine) fullUntil.set(machine.name, Date.now() + FULL_FOR_MS);
+  };
+  if (!machine) return claim(noteFull);
+  if (machineFull(machine)) return undefined;
+  const previous = turns.get(machine.name) ?? Promise.resolve();
+  let release = () => {};
+  const mine = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => mine);
+  turns.set(machine.name, tail);
+  await previous;
+  try {
+    if (machineFull(machine)) return undefined;
+    return await claim(noteFull);
+  } finally {
+    release();
+    if (turns.get(machine.name) === tail) turns.delete(machine.name);
+  }
+}
+
+/**
  * Whether a worker on this machine may take another job for this tenant. Workers
  * on one machine share its slots: the scripts running there, across all of them,
  * never go past it. While others on the machine have work waiting, a tenant takes
@@ -114,7 +165,7 @@ export async function machineHasRoom(
   trx: Trx,
   machine: MachineClaim,
   tenantId: string,
-): Promise<boolean> {
+): Promise<MachineRoom> {
   await sql`select pg_advisory_xact_lock(hashtextextended(${`machine:${machine.name}`}, 0))`.execute(
     trx,
   );
@@ -130,7 +181,7 @@ export async function machineHasRoom(
     group by w.tenant_id
   `.execute(trx);
   const total = busy.rows.reduce((sum, row) => sum + row.n, 0);
-  if (total >= machine.slots) return false;
+  if (total >= machine.slots) return "full";
   const mine = busy.rows.find((row) => row.tenant_id === tenantId)?.n ?? 0;
   const present = await sql<{ n: number }>`
     select count(distinct tenant_id)::int as n from worker
@@ -138,7 +189,7 @@ export async function machineHasRoom(
       and last_seen_at > now() - ${sql.lit(MACHINE_PRESENCE)}::interval
   `.execute(trx);
   const share = Math.max(1, Math.floor(machine.slots / Math.max(1, present.rows[0]?.n ?? 1)));
-  if (mine < share) return true;
+  if (mine < share) return "room";
   // Past its share, a tenant may still take a free slot nobody else here is waiting for.
   const othersWaiting = await sql<{ waiting: boolean }>`
     select exists (
@@ -155,7 +206,7 @@ export async function machineHasRoom(
         )
     ) as waiting
   `.execute(trx);
-  return !othersWaiting.rows[0]?.waiting;
+  return othersWaiting.rows[0]?.waiting ? "share" : "room";
 }
 
 /** A worker not heard from for this long is no longer listed. */

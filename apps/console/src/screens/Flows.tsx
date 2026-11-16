@@ -6,7 +6,6 @@ import {
   LogViewer,
   Notice,
   ResultView,
-  Table,
   Tabs,
   Timeline,
   type TimelineRow,
@@ -18,13 +17,14 @@ import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../Fl
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page, when } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { LogWindowNote, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
@@ -76,9 +76,9 @@ export function Flows({
   editable?: boolean;
 }) {
   const list = useLoad<{ items: FlowRow[] }>(`${root}/flows`);
-  const [filter, setFilter] = useState<FlowFilter>("all");
-  const [search, setSearch] = useState("");
-  const [chosen, setChosen] = useState<string>();
+  const [filter, setFilter] = useUrlParam<FlowFilter>("filter", "all");
+  const [search, setSearch] = useUrlParam("q", "");
+  const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = list.data?.items ?? [];
   const wanted = search.trim().toLowerCase();
   const rows = items.filter(
@@ -473,7 +473,10 @@ export function FlowView({
       ) : null}
       <section>
         <h2 className="mt-2 mb-2 text-base font-semibold">Recent runs</h2>
-        <Table
+        <DataTable
+          variant="static"
+          framed
+          label="Recent runs"
           rows={runs.data?.items ?? []}
           rowKey={(row) => row.id}
           empty={<EmptyState title="This flow has not run yet" />}

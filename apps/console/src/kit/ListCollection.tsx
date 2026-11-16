@@ -2,8 +2,11 @@ import { Button, Notice, TextField } from "@vynxlabs/ui";
 import { type ReactNode, useState } from "react";
 import { useLoad } from "../api.ts";
 import { type CreateConfig, CreateDialog } from "../ListScreen.tsx";
+import { useUrlState } from "../router.tsx";
 import { type CollectionColumn, CollectionView } from "./CollectionView.tsx";
 import { Inspector } from "./layout.tsx";
+
+const LIST_URL = { q: { type: "string" }, item: { type: "string", push: true } } as const;
 
 /**
  * A collection read from one GET route that answers `{ items }`, with a search
@@ -44,8 +47,13 @@ export function ListCollection<Row>({
   const list = useLoad<{ items: Row[] }>(path);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<ReactNode>();
-  const [query, setQuery] = useState("");
-  const [chosen, setChosen] = useState<string>();
+  // The search and the open row are in the address: a reload or a link keeps them,
+  // and Back closes the inspector before it leaves the screen.
+  const [url, setUrl] = useUrlState(LIST_URL);
+  const query = url.q ?? "";
+  const setQuery = (value: string) => setUrl({ q: value || undefined });
+  const chosen = url.item;
+  const setChosen = (key: string | undefined) => setUrl({ item: key });
 
   const wanted = query.trim().toLowerCase();
   const rows = list.data?.items.filter(
@@ -126,6 +134,10 @@ export function ListCollection<Row>({
         }
         error={list.error?.message}
         loading={list.loading && !list.data}
+        table={{
+          onRetry: list.reload,
+          ...(wanted !== "" ? { filtered: { onClear: () => setQuery("") } } : {}),
+        }}
       />
       {create ? (
         <CreateDialog

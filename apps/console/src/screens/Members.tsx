@@ -6,7 +6,7 @@ import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate, useQueryValue } from "../router.tsx";
+import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 
@@ -118,8 +118,8 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
   const members = useLoad<{ items: Member[] }>(`${base}/members?limit=200`);
   const bindings = useLoad<{ items: Binding[] }>(`${base}/bindings`);
   const workspaces = useLoad<{ items: WorkspaceRef[] }>(`${base}/workspaces`);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<string>();
+  const [search, setSearch] = useUrlParam("q", "");
+  const [selected, setSelected] = useUrlParam("member", undefined, { push: true });
   const [adding, setAdding] = useState(false);
   const needle = search.trim().toLowerCase();
   const rows = members.data?.items.filter(

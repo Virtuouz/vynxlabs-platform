@@ -1,8 +1,10 @@
-import { Button, Dialog, EmptyState, JsonView, Notice, SelectField, Table } from "@vynxlabs/ui";
+import { Button, Dialog, EmptyState, JsonView, Notice, SelectField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { InputForm } from "../InputDialog.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { CopyButton } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 
 interface Tool {
   name: string;
@@ -20,7 +22,7 @@ export function AgentAccess({ base, account }: { base: string; account: string }
   const workspaces = useLoad<{ items: { id: string; name: string; slug: string; type: string }[] }>(
     `${base}/workspaces`,
   );
-  const [chosen, setChosen] = useState<string>();
+  const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const [trying, setTrying] = useState<Tool>();
   const workspace = chosen ?? workspaces.data?.items[0]?.id;
   const offered = useLoad<{ address: string; reachable: boolean; tools: Tool[] }>(
@@ -94,7 +96,10 @@ export function AgentAccess({ base, account }: { base: string; account: string }
               script or flow from that script's or flow's page, or give it a role here under Access.
             </Notice>
           )}
-          <Table<Tool>
+          <DataTable<Tool>
+            variant="static"
+            framed
+            label="Tools offered"
             rows={offered.data.tools}
             rowKey={(row) => row.name}
             empty={

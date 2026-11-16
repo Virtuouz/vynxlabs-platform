@@ -7,7 +7,7 @@ import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
 import { CopyButton } from "../ListScreen.tsx";
-import { Link, navigate, useQueryValue } from "../router.tsx";
+import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { stamp } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
@@ -426,7 +426,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
   const list = useLoad<{ items: EventRow[] }>(
     `${root}/events?limit=100${applied ? `&name=${encodeURIComponent(applied)}` : ""}`,
   );
-  const [chosen, setChosen] = useState<string>();
+  const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const open = list.data?.items.find((one) => one.id === chosen);
 
   return (
@@ -618,7 +618,7 @@ interface Decided {
 
 /** Decisions waiting for this person, the oldest first, and those already made. */
 export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: string }) {
-  const [state, setState] = useState<"waiting" | "decided">("waiting");
+  const [state, setState] = useUrlParam<"waiting" | "decided">("show", "waiting");
   const waiting = useLoad<{ items: Waiting[] }>(`${base}/approvals`);
   const decided = useLoad<{ items: Decided[] }>(
     state === "decided" ? `${base}/approvals/decided` : null,
@@ -626,7 +626,7 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
   const workspaces = useLoad<{ items: { id: string; name: string; type: string }[] }>(
     `${base}/workspaces`,
   );
-  const [chosen, setChosen] = useState<string>();
+  const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const nameOf = (id: string) => workspaces.data?.items.find((one) => one.id === id)?.name ?? "";
   const key = (row: { flowRunId: string; node: string }) => `${row.flowRunId}-${row.node}`;
   const open = waiting.data?.items.find((one) => key(one) === chosen);

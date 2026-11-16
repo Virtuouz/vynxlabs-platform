@@ -1,11 +1,13 @@
-import { Button, CheckboxField, EmptyState, Facts, Notice, SelectField, Table } from "@vynxlabs/ui";
+import { Button, CheckboxField, EmptyState, Facts, Notice, SelectField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { CopyButton, when } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 
 interface Settings {
   subjectFrom: "externalId" | "userName" | null;
@@ -118,7 +120,10 @@ export function Provisioning({
             <OneTimeSecret value={made.token} noun="token" onDone={() => setMade(undefined)} />
           </Notice>
         ) : null}
-        <Table<Token>
+        <DataTable<Token>
+          variant="static"
+          framed
+          label="Provisioning tokens"
           rows={data.tokens}
           rowKey={(row) => row.id}
           empty={
@@ -256,7 +261,7 @@ interface Refusal {
 /** Who the provider has pushed, and the pushes that were refused with why. */
 function Pushed({ root }: { root: string }) {
   const pushed = useLoad<{ people: PushedPerson[]; refusals: Refusal[] }>(`${root}/pushed`);
-  const [filter, setFilter] = useState<"all" | "active" | "off">("all");
+  const [filter, setFilter] = useUrlParam<"all" | "active" | "off">("people", "all");
   if (pushed.error) return <Notice tone="danger">{pushed.error.message}</Notice>;
   const people = pushed.data?.people ?? [];
   const refusals = pushed.data?.refusals ?? [];
@@ -277,7 +282,10 @@ function Pushed({ root }: { root: string }) {
             { value: "off", label: "Turned off", count: people.filter((p) => !p.active).length },
           ]}
         />
-        <Table<PushedPerson>
+        <DataTable<PushedPerson>
+          variant="static"
+          framed
+          label="People pushed"
           rows={shown}
           rowKey={(row) => row.userName}
           empty={<EmptyState title="Nobody pushed yet">The provider has pushed nobody.</EmptyState>}
@@ -315,7 +323,10 @@ function Pushed({ root }: { root: string }) {
               The newest refusals and why. Nothing a refused push carried is kept: fix it at the
               provider, and its next push is taken.
             </p>
-            <Table<Refusal>
+            <DataTable<Refusal>
+              variant="static"
+              framed
+              label="Refused pushes"
               rows={refusals}
               empty={null}
               rowKey={(row) => `${row.at} ${row.method} ${row.resource}`}

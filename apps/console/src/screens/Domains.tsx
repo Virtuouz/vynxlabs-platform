@@ -6,12 +6,12 @@ import {
   Notice,
   SelectField,
   SideSheet,
-  Table,
   TextField,
 } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
@@ -389,7 +389,10 @@ export function Domains({ base }: { base: string }) {
           {list.error.message}
         </Notice>
       ) : list.data ? (
-        <Table<Domain>
+        <DataTable<Domain>
+          variant="static"
+          framed
+          label="Domains"
           rows={list.data.items}
           rowKey={(row) => row.id}
           columns={[

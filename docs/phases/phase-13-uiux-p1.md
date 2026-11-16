@@ -73,3 +73,13 @@ The UI/UX audit ranks ten items as P1 in [09-prioritized-uiux-roadmap.md](../uiu
 | 16 | Changelog, docs, the whole e2e suite | |
 
 Findings are recorded under each milestone as it lands.
+
+## Findings
+
+### Milestones 1–4: URL state, one table, the runs list
+
+- **`useUrlState` and `useUrlParam`** (`router.tsx`) hold a screen's view state in the query. Opening an item pushes a history entry, so Back closes it; filtering replaces. Each history entry has a key, and the scroll of `main` and of each table comes back on Back and Forward. A query-only push never asks the navigation guard.
+- **`DataTable`** (`kit/DataTable.tsx`) is the one list. `CollectionView`, `ListCollection` and `ListScreen` remain, as frames around it that load data and hold the inspector and the create dialog. The plan was to delete the first two. They are kept because they no longer draw a table of their own, and "one list implementation" (P2-2) is met by the table. `enforce.test.ts` fails on any other `<table>` or the kit's `Table` in the console. Two native tables are allowed, each with a `table-allowed:` reason: the roles permission matrix, which is a form, and the run chart's numbers for screen readers.
+- **The runs list.** Activity sorts by `started` or `duration` with a keyset cursor for each order. Runs and flow runs gain `output_summary`, written by the control plane when a run ends and masked with `kernel/execution/redact.ts`, because masking follows the script's schema and the database doesn't know it. Runs that ended before migration `0062` have no summary.
+- **The bulk cancel bug was real.** "Cancel queued runs" cancelled every queued script run in the workspace, flow steps included. With the list's filters it now cancels only what the list shows, never a flow's step. The bare request, an operator clearing a backlog, keeps its meaning.
+- **Tests** reset the query string after each test (`testing.tsx`), since a screen's state now outlives a render in the address.

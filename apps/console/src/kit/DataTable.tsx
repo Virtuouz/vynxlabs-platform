@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button, Menu, type MenuItem, Notice, Skeleton } from "@vynxlabs/ui";
 import { MoreHorizontal } from "lucide-react";
 import {
+  isValidElement,
   type KeyboardEvent,
   type ReactNode,
   useCallback,
@@ -36,6 +37,17 @@ export interface DataColumn<Row> {
   /** The sort key the server or caller understands; the header becomes a sort button. */
   sort?: string;
 }
+
+export interface EmptyContent {
+  title: string;
+  text?: ReactNode;
+  action?: ReactNode;
+}
+const isEmptyContent = (value: unknown): value is EmptyContent =>
+  typeof value === "object" &&
+  value !== null &&
+  !isValidElement(value) &&
+  typeof (value as { title?: unknown }).title === "string";
 
 export type SortState = { key: string; dir: "asc" | "desc" } | undefined;
 export type Density = "compact" | "standard" | "comfortable";
@@ -123,7 +135,10 @@ export interface DataTableProps<Row> {
   refreshing?: boolean | undefined;
   error?: string | undefined;
   onRetry?: (() => void) | undefined;
-  empty: { title: string; text?: ReactNode; action?: ReactNode };
+  /** What an empty list says: a title with text and an action, or anything to show instead. */
+  empty: EmptyContent | ReactNode;
+  /** A bordered panel, for a table set inside a page rather than filling a work area. */
+  framed?: boolean | undefined;
   /** Set while filters hide every row: the empty state offers to clear them. */
   filtered?: { onClear: () => void } | undefined;
   /** Load more, or Previous and Next. */
@@ -154,6 +169,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     error,
     onRetry,
     empty,
+    framed = false,
     filtered,
     footer,
   } = props;
@@ -323,6 +339,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
       </div>
     );
   } else if (rows.length === 0) {
+    if (!filtered && !isEmptyContent(empty)) return <>{empty}</>;
     body = (
       <div className="p-4 md:p-6">
         {filtered ? (
@@ -335,8 +352,10 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
               </Button>
             }
           />
-        ) : (
+        ) : isEmptyContent(empty) ? (
           <EmptyCanvas title={empty.title} text={empty.text} action={empty.action} />
+        ) : (
+          empty
         )}
       </div>
     );
@@ -591,9 +610,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   return (
     <div
       ref={region}
-      className={
-        fill ? "min-h-0 flex-1 overflow-auto" : variant === "inset" ? "" : "overflow-x-auto"
-      }
+      className={`${fill ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} ${
+        framed ? "rounded-panel border border-line bg-surface" : ""
+      }`}
     >
       {body}
     </div>

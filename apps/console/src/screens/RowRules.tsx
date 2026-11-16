@@ -1,6 +1,7 @@
 import { Button, ComboboxField, Notice, SelectField, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
+import { DataTable } from "../kit/DataTable.tsx";
 
 type Condition =
   | { everyone: true }
@@ -308,33 +309,26 @@ export function SeeItAs({
         shown.length === 0 ? (
           <p className="m-0 text-ink-muted">This person would see no rows.</p>
         ) : (
-          <div className="overflow-x-auto rounded-control border border-line">
-            <table className="w-full border-collapse text-left text-[13px]">
-              <thead>
-                <tr className="text-ink-muted">
-                  {names.map((name) => (
-                    <th key={name} scope="col" className="px-3 py-1.5 font-medium">
-                      {name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((row) => (
-                  <tr key={String(row.id)} className="border-line border-t">
-                    {names.map((name) => (
-                      <td key={name} className="px-3 py-1.5">
-                        {row[name] === null || row[name] === undefined ? "" : String(row[name])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {shown.length === 20 ? (
-              <p className="m-0 px-3 py-1.5 text-[12.5px] text-ink-muted">The first 20 rows.</p>
-            ) : null}
-          </div>
+          <DataTable<(typeof shown)[number]>
+            variant="static"
+            framed
+            density="compact"
+            label="Rows this person would see"
+            rows={shown}
+            rowKey={(row) => String(row.id)}
+            empty={null}
+            columns={names.map((name) => ({
+              header: name,
+              truncate: true,
+              cell: (row) =>
+                row[name] === null || row[name] === undefined ? "" : String(row[name]),
+            }))}
+            footer={
+              shown.length === 20 ? (
+                <p className="m-0 text-meta text-ink-muted">The first 20 rows.</p>
+              ) : null
+            }
+          />
         )
       ) : null}
     </div>

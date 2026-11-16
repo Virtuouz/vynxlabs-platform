@@ -165,6 +165,7 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
           </span>
           <span>now</span>
         </div>
+        {/* table-allowed: the chart's numbers, for screen readers. */}
         <table className="sr-only">
           <caption>Runs finished per hour, over the last 24 hours</caption>
           <thead>

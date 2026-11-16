@@ -316,6 +316,41 @@ export function useUrlState<S extends Record<string, UrlKey>>(
   return [state, change];
 }
 
+/**
+ * One string of view state in the address, used like `useState`: a filter, a
+ * search, a tab, the open item. With `push`, changing it makes a history entry,
+ * so Back undoes it (opening something); otherwise it replaces (filtering).
+ * Names must be unique on a screen.
+ */
+export function useUrlParam<T extends string = string>(
+  name: string,
+  fallback: NoInfer<T>,
+  options?: { push?: boolean },
+): [T, (value: T | undefined) => void];
+export function useUrlParam<T extends string = string>(
+  name: string,
+  fallback?: undefined,
+  options?: { push?: boolean },
+): [T | undefined, (value: T | undefined) => void];
+export function useUrlParam(
+  name: string,
+  fallback?: string,
+  options: { push?: boolean } = {},
+): [string | undefined, (value: string | undefined) => void] {
+  const [state, set] = useUrlState({
+    [name]: {
+      type: "string" as const,
+      ...(fallback === undefined ? {} : { default: fallback }),
+      ...(options.push ? { push: true } : {}),
+    },
+  });
+  const change = useCallback(
+    (value: string | undefined) => set({ [name]: value === "" ? undefined : value }),
+    [name, set],
+  );
+  return [state[name] as string | undefined, change];
+}
+
 /** Matches `/t/:tenant/members` style patterns. A trailing `/*` matches any deeper path. */
 export function match(pattern: string, path: string): Record<string, string> | null {
   const open = pattern.endsWith("/*");

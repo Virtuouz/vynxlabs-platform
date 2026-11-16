@@ -8,7 +8,6 @@ import {
   NumberField,
   type Option,
   SelectField,
-  Table,
   Tabs,
   TextAreaField,
   TextField,
@@ -18,6 +17,7 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { InputForm } from "../InputDialog.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard } from "../router.tsx";
@@ -894,7 +894,10 @@ export function Extensions({
     >
       {error ? <Notice tone="danger">{error.message}</Notice> : null}
       {resources.data && drafts.data ? (
-        <Table
+        <DataTable
+          variant="static"
+          framed
+          label="Extensions"
           rows={[...rows.values()].sort((a, b) => a.path.localeCompare(b.path))}
           rowKey={(row) => row.path}
           empty={

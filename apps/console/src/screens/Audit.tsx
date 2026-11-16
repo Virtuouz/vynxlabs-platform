@@ -4,6 +4,7 @@ import { type ApiError, api } from "../api.ts";
 import { actionWords } from "../audit-words.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
+import { useUrlParam } from "../router.tsx";
 
 interface Entry {
   id: string;
@@ -116,8 +117,8 @@ export function AuditTable({
   const [area, setArea] = useState("");
   const [since, setSince] = useState("all");
   const [verb, setVerb] = useState<Verb | "all">("all");
-  const [search, setSearch] = useState("");
-  const [open, setOpen] = useState<string>();
+  const [search, setSearch] = useUrlParam("q", "");
+  const [open, setOpen] = useUrlParam("entry", undefined, { push: true });
   const [closed, setClosed] = useState(false);
   const wide = useWide(WIDE.inspector);
 

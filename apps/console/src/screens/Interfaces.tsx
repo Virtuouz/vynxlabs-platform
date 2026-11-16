@@ -26,7 +26,6 @@ import {
   Notice,
   NumberField,
   SelectField,
-  Table,
   TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
@@ -43,6 +42,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -1972,7 +1972,10 @@ export function Interfaces({
           {list.error.message}
         </Notice>
       ) : list.data ? (
-        <Table<Listed>
+        <DataTable<Listed>
+          variant="static"
+          framed
+          label="Apps"
           rows={list.data.items}
           rowKey={(row) => row.path}
           empty={

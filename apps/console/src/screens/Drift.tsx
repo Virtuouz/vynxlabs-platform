@@ -4,6 +4,7 @@ import { useLoad } from "../api.ts";
 import { folded, lineDiff, sortedJson } from "../kit/diff.ts";
 import { FilterChips, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, type State, StatePill } from "../kit/status.tsx";
+import { useUrlParam } from "../router.tsx";
 
 type DriftState = "in_sync" | "changed" | "only_here" | "only_there";
 
@@ -40,7 +41,7 @@ const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1
  */
 export function DriftView({ root, hereName }: { root: string; hereName: string }) {
   const drift = useLoad<Drift>(`${root}/drift`);
-  const [shown, setShown] = useState<DriftState | "differs">("differs");
+  const [shown, setShown] = useUrlParam<DriftState | "differs">("show", "differs");
   const [open, setOpen] = useState<DriftItem>();
   const data = drift.data;
   const there = data?.target.name ?? "production";

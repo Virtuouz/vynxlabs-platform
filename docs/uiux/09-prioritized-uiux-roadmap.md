@@ -9,7 +9,7 @@ Paths are relative to `apps/console/src` unless they start with `packages/` or `
 ## Main points
 
 - **P0 is about trust and access, not appearance.** Ten items: the console can blank itself, lose unsaved work, hide log lines, advertise things that do not exist, and shut keyboard users out of its most-used list and its flow canvas.
-- **P1 is the debugging and authoring loop.** Ten items that take the failure-to-fix journey from about 14–16 interactions and one re-find to about 8 with none.
+- **P1 is the debugging and authoring loop.** Ten items that take the failure-to-fix journey from 27 interactions and two re-finds of the object to about 10 with none.
 - **P2 is one system in place of several.** Thirteen items. The list primitive (P2-2) and URL state (P2-6) are the two that most other work waits on.
 - **P3 and P4 come last on purpose.** Keyboard chords, saved views and visual refinement are worth little on top of six list implementations.
 - **Twenty-two quick wins** can ship before any architectural work and remove most P0 risk.
@@ -220,8 +220,8 @@ These are defects. A user can lose work, be misled, or be unable to operate a co
 
 | Field | |
 | --- | --- |
-| Affects | `AC-KEYS`, `TN-SERVICE-ACCOUNTS`, `TN-WORKERS`. `screens/Account.tsx`, `screens/Execution.tsx` |
-| Problem and evidence | New API keys and new worker credentials are shown once with no Copy button (`screens/Account.tsx:51-56`, `screens/Execution.tsx:1081-1088`), while SCIM tokens and recovery codes have one. The worker start command is prose with placeholders and cannot be copied. **Verified**, 03 part C |
+| Affects | `AC-APIKEYS`, `TN-SERVICE-ACCOUNTS`, `TN-WORKERS`. `screens/Account.tsx`, `screens/Execution.tsx` |
+| Problem and evidence | New API keys and new worker credentials are shown once with no Copy button (`screens/Account.tsx:51-56`, `screens/Execution.tsx:1081-1088`), while SCIM tokens and recovery codes have one. The worker start command is a sentence with placeholders, `platform-worker --url <this instance> --token <credential>` (`screens/Execution.tsx:1037`), so the address and token are typed in by hand. **Verified**, 03 part C |
 | Change | One `OneTimeSecret` component (08): the value in mono, Copy, a "shown once" statement, and a confirmation before closing if it has not been copied. The worker command is a copyable block with the instance address and credential filled in |
 | User benefit | The one moment a secret is visible is the moment it is easiest to copy correctly |
 | Complexity | S |
@@ -262,14 +262,14 @@ These are the screens and journeys developers and operators use daily: finding a
 | Depends on | Backend: step input in the flow-run response. The run's version of the flow definition |
 | Risks | Step input may be large or sensitive. Apply the same redaction as run input |
 | Acceptance | Opening a failed flow run shows the failed step's error with zero clicks. Reloading with `?step=` restores the selection. The graph matches the run's version when the flow has changed since |
-| Metric | J11: 4–5 interactions with one Back → 1. Time on task for J11 |
+| Metric | J11: 5–6 interactions with one Back → 1. Time on task for J11 |
 
 ### P1-3. Context continuity
 
 | Field | |
 | --- | --- |
 | Affects | `WS-RUN-SCRIPT`, `WS-RUN-FLOW`, `WS-SCRIPT-EDITOR`, `WS-FLOW-EDITOR`, `WS-SCRIPTS`, `WS-FLOWS`, `SH-SHELL` |
-| Problem and evidence | From a production failure to a fix, the user re-finds the object. "version N" on a run links to the generic deployments list, not the source at that version (`screens/RunPage.tsx:113`). The read-only notice in production has no link to the dev workspace (`screens/Authoring.tsx:681`). Switching workspace keeps only the section and drops the object and the query (`Shell.tsx:766-769`). "promotes to X" in the header is plain text (`Shell.tsx:783-785`). A step's script run does not link back to its parent flow run. The whole loop costs about 14 to 16 interactions, two workspace switches and one re-find. **Verified**, 04 |
+| Problem and evidence | From a production failure to a fix, the user re-finds the object. "version N" on a run links to the generic deployments list, not the source at that version (`screens/RunPage.tsx:113`). The read-only notice in production has no link to the dev workspace (`screens/Authoring.tsx:681`). Switching workspace keeps only the section and drops the object and the query (`Shell.tsx:766-769`). "promotes to X" in the header is plain text (`Shell.tsx:783-785`). A step's script run does not link back to its parent flow run. "Retry from the failed step" always runs the run's original version (`screens/RunPage.tsx:485-492`), so after a fix is promoted the only option that uses it re-runs every step from the start (`:494-504`). The whole loop costs 27 interactions, 11 page loads, two workspace switches and two re-finds. **Verified**, 04 §4 |
 | Change | On a run: "View source at v4", read-only at the run's version with the failing line marked when the error has a location, and "Edit in dev", which opens the same path in the linked dev workspace's editor with the failed run's input loaded into the test pane. On any script, flow or trigger: a control that opens the same object in the linked workspace. The workspace switcher keeps the object when it exists there. Step runs link to their parent flow run |
 | User benefit | The developer goes from "it failed in production" to "I am editing the code with the failing input" in two clicks, without searching for the script by name |
 | Complexity | L |
@@ -304,7 +304,7 @@ These are the screens and journeys developers and operators use daily: finding a
 | Depends on | P2-8 (toasts with actions). Backend: deploying a subset of drafts, if not already supported |
 | Risks | Deploying one draft may leave it inconsistent with other drafts it depends on. Run the same validation as a full deploy and name the conflicts |
 | Acceptance | From a saved draft, deploying it to dev takes 2 interactions without leaving the editor. Each success state offers the next step as a link |
-| Metric | Fix-to-new-production-run interactions: about 14–16 → 8 or fewer |
+| Metric | The continuity loop in 04 §4: 27 interactions → 10 or fewer |
 
 ### P1-6. LogViewer v2
 
@@ -341,7 +341,7 @@ These are the screens and journeys developers and operators use daily: finding a
 | Affects | `WS-FLOW-EDITOR`, the flow test panel. `screens/FlowEditor.tsx`, `screens/FlowSteps.tsx` |
 | Problem and evidence | New steps land unconnected at the far right (`screens/FlowEditor.tsx:572-585`). Plain scripts are not in the palette, and a script step's input is one free-text expression although the script's schema is already loaded (`:1271-1277` against `:412`). Renaming a step does not rewrite expressions that refer to it (`:603-621`). Problems are a count and a full-width notice whose items cannot be clicked (`:946-954`). A flow with a non-manual trigger or with no draft cannot be tested without changing it (`:732-738`). "Test part of the flow" does not exist. Step logs require leaving the editor. Fit-to-view re-runs on every add and on every test toggle. **Verified**, 03 part A |
 | Change | Add a step after the selected one, already connected. Scripts searchable in the palette. A script step's inputs rendered as a schema form, each field accepting a value or an expression. Rename rewrites references and says how many. Problems are a list that selects the step and focuses the field. "Test from this step" with the previous run's outputs as inputs. Step logs inside the test panel. Fit only on open and on request |
-| User benefit | Building a flow from three scripts drops from 14 clicks and 3 drags to roughly 8 clicks and no drags, and a rename can no longer silently break a flow |
+| User benefit | Building a flow from three scripts drops from 15 interactions (11 clicks, 3 drags and 1 field) to roughly 8 with no drags, and a rename can no longer silently break a flow |
 | Complexity | L |
 | Depends on | P0-8 shares the inspector's connection controls. Backend: starting a test run from a step with supplied upstream outputs |
 | Risks | Rewriting expressions must be exact. Parse them. Do not use text replacement |
@@ -353,14 +353,14 @@ These are the screens and journeys developers and operators use daily: finding a
 | Field | |
 | --- | --- |
 | Affects | `WS-SCRIPTS`, `WS-FLOW-VIEW`, `WS-TRIGGERS`, the resource editor, `WS-FLOW-EDITOR`. `screens/ScheduleForm.tsx` |
-| Problem and evidence | There is no entry point from a script or a flow, so the target is picked again: 10 clicks, 2 to 3 pages and one sheet. Three scheduling paths differ. The sheet defaults to the browser's time zone, the resource page to UTC (`screens/ResourceEditor.tsx:72`), and the flow's schedule trigger is a bare cron field with no zone and no preview (`screens/FlowEditor.tsx:1138-1148`). **Verified**, 04 J20 |
+| Problem and evidence | There is no entry point from a script or a flow, so the target is picked again: 9 interactions plus the form's fields, 2 to 3 pages and one sheet. Three scheduling paths differ. The sheet defaults to the browser's time zone, the resource page to UTC (`screens/ResourceEditor.tsx:72`), and the flow's schedule trigger is a bare cron field with no zone and no preview (`screens/FlowEditor.tsx:1138-1148`). **Verified**, 04 J20 |
 | Change | "Add trigger" on a script or flow, with the target filled in. One schedule form used in all three places: presets, cron with validation, an explicit time zone that defaults to the workspace's zone, the next five run times, and an overlap policy where supported. The object's page lists its triggers with pause and fire-now |
 | User benefit | Scheduling is done from the thing being scheduled, and the same input always produces the same schedule |
 | Complexity | M |
 | Depends on | A workspace time-zone setting, if one is added. Otherwise the browser's zone with the zone always shown |
 | Risks | Changing the default zone on the resource page changes behaviour for people used to UTC. Show the zone prominently and do not migrate existing schedules |
 | Acceptance | Scheduling a script from its page takes 5 interactions or fewer on one page. All three entry points render the same form and produce the same trigger for the same input |
-| Metric | J20: 10 clicks and 2–3 pages → 5 or fewer and 1 page |
+| Metric | J20: 9 interactions plus fields and 2–3 pages → 5 or fewer and 1 page |
 
 ### P1-10. References as links
 
@@ -415,7 +415,7 @@ This level replaces several implementations of each pattern with one. It is wher
 | Field | |
 | --- | --- |
 | Affects | Every screen. `kit/layout.tsx` (`PageHeader`), `ListScreen.tsx` (`Page`), `Shell.tsx` |
-| Problem and evidence | Seven page-header variants and five back-link patterns. Three neighbouring screens show "Runs › r1", "All scripts" and "Flows /". **Observed**, O10. Inside a workspace the section name in the shell header is screen-reader-only (`Shell.tsx:788`). `FlowView` still uses the pre-redesign `Page` with an "All flows" link (`screens/Flows.tsx:381,409`). **Verified**, 02 |
+| Problem and evidence | Seven page-header variants and six back patterns. Three neighbouring screens show "Runs › r1", "All scripts" and "Flows /". **Observed**, O10. Inside a workspace the section name in the shell header is screen-reader-only (`Shell.tsx:788`). `FlowView` still uses the pre-redesign `Page` with an "All flows" link (`screens/Flows.tsx:381,409`). **Verified**, 02 |
 | Change | One `PageHeader` with two forms: list (title, count, primary action, toolbar) and object (state plus name, actions, meta line, tabs). One `Breadcrumb` in the shell header showing Workspace › Section › Object. Back links inside pages are removed |
 | User benefit | "Where am I and how do I get back" has one answer on every screen |
 | Complexity | M |
@@ -554,15 +554,15 @@ This level replaces several implementations of each pattern with one. It is wher
 
 | Field | |
 | --- | --- |
-| Affects | `IN-TENANTS`, `TN-GATE`, `TN-WORKSPACES`, `WS-OVERVIEW`, `WS-SCRIPTS`, `WS-FLOWS`, every empty state |
-| Problem and evidence | A tenant's creator is not made a member (`apps/control-plane/src/routes/tenants.ts:168-203`), so the operator meets the access-grant gate on a tenant they just created. From there it takes two workspace dialogs, an implicit worker requirement and no templates: roughly 30 interactions to a first run, with no checklist. Never-deployed draft scripts appear absent from the Scripts list (**Inferred**). There is no Tooltip component and no link to documentation anywhere in the console. **Verified**, 03 part C and J21i |
+| Affects | `IN-TENANTS`, `SH-GATE`, `TN-WORKSPACES`, `WS-OVERVIEW`, `WS-SCRIPTS`, `WS-FLOWS`, every empty state |
+| Problem and evidence | A tenant's creator is not made a member (`apps/control-plane/src/routes/tenants.ts:168-203`), so the operator meets the access-grant gate on a tenant they just created. From there it takes two workspace dialogs, an implicit worker requirement and no templates: about 31 interactions to a first run, with no checklist. Never-deployed draft scripts appear absent from the Scripts list (**Inferred**). There is no Tooltip component and no link to documentation anywhere in the console. **Verified**, 03 part C and J21i |
 | Change | Offer the creator membership or an automatic setup grant. A first-run checklist on the workspace overview that reflects real state: workspace, worker online, first script, first run, first deploy. Two or three starter templates for scripts and flows that run unchanged. Drafts shown in lists with a Draft tag. Empty states that offer the console action and the CLI command. "Learn more" links to the docs beside complex concepts |
 | User benefit | A new operator reaches a first successful run in minutes without reading the README |
 | Complexity | M |
 | Depends on | P3-1's Tooltip is helpful and not required. Backend: the membership change is a product decision for the owner |
 | Risks | Auto-membership changes the operator-access model, which is deliberately strict. A time-limited setup grant keeps the model |
 | Acceptance | On a fresh instance, a first successful script run takes 12 interactions or fewer with no documentation. The checklist updates as each step completes |
-| Metric | J21i: about 30 interactions → 12 or fewer. First-run completion rate |
+| Metric | J21i: about 31 interactions → 12 or fewer. First-run completion rate |
 
 ---
 

@@ -120,6 +120,7 @@ Sans is never used for a path or an ID. Mono is never used for a sentence. `font
 - One `display` per screen. It is the `h1`.
 - Heading levels follow document order. `title` is `h2` on a page and the dialog's heading in a dialog.
 - A state word uses `body` at weight 500 in its state colour, with its icon.
+- On an object page whose name is a path or an ID, the `h1` is that path in mono at the `title` metrics (16 / 24, weight 600), on the same line as its state. Screens named by a word ("Runs", "Members") use `display`.
 - Numbers that are compared down a column are right-aligned, in mono, with the unit in `meta`: `3.0 s`, not `3.0   s` (Observed, O5).
 
 ### One formatting module

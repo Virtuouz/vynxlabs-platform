@@ -15,7 +15,7 @@ Evidence labels are the same as in the other documents: **Verified** (read in co
 
 ## 6.1 Where the console stands
 
-The audit scored 85 surfaces. The mean is about 66 out of 100, with a range from 54 to 80. No surface is reference quality, and none is broken. In the rubric's bands the console is "functional / inconsistent" moving into "good but visibly improvable".
+The audit scored 83 surfaces. The mean is about 66 out of 100, with a range from 54 to 80. No surface is reference quality, and none is broken. In the rubric's bands the console is "functional / inconsistent" moving into "good but visibly improvable".
 
 | Area | Typical score | Reading |
 | --- | --- | --- |
@@ -101,7 +101,7 @@ Density does not apply to forms, sign-in, confirmations or empty states. Those k
 
 A user should learn each of these once: how a list behaves, how an object opens, how a page is titled, how a thing is saved, how success is confirmed, how a destructive action is confirmed.
 
-Today there are six list implementations, seven page-header variants, five back-link patterns, four tab implementations and three save models (Verified, 02). The user-visible cost is that "open a row" does four different things across Workspaces, Members, Domains and Single sign-on (03, part C).
+Today there are six list implementations, seven page-header variants, six back patterns, four tab implementations and three save models (Verified, 02). The user-visible cost is that "open a row" does four different things across Workspaces, Members, Domains and Single sign-on (03, part C).
 
 ### Rule 6. State is never ambiguous
 
@@ -147,7 +147,7 @@ The product's most valuable journey is:
 
 failed run → failed step → source at that version → edit in dev → test with the failed input → deploy → promote → new run
 
-Today it takes about 14 to 16 interactions, two workspace switches and one re-find of the object, and deploy and promote end in notices that lead nowhere (04). The target is that each stage offers the next as a link that carries the object and the input with it. No stage requires finding the same script or flow again.
+Today it takes 27 interactions, 11 page loads, two workspace switches and two re-finds of an object the user already had open. Deploy and promote end in notices that lead nowhere, and "Retry from the failed step" always runs the original version, so it cannot pick up the fix (04 §4). The target is 10 interactions and no re-find. The target is that each stage offers the next as a link that carries the object and the input with it. No stage requires finding the same script or flow again.
 
 This is "context continuity". It needs no new capability on the server. It needs links, URL state, and success messages that point forward.
 
@@ -257,7 +257,7 @@ Phone widths today cost more than they return for editors. The flow editor's ins
 
 The product teaches by making the user productive. No tour.
 
-- A fresh instance leads its operator to a first running script in a few steps, with a checklist that reflects real state: tenant, workspace, worker, first script, first run. Today it takes roughly 30 interactions, and the operator is stopped at an access gate on a tenant they just created (Verified, 03 part C).
+- A fresh instance leads its operator to a first running script in a few steps, with a checklist that reflects real state: tenant, workspace, worker, first script, first run. Today it takes about 31 interactions, and the operator is stopped at an access gate on a tenant they just created (Verified, 03 part C).
 - New script and new flow offer two or three starter templates that run as they are.
 - Every empty state names the object, says in one sentence what it is for, and offers the primary action, with the CLI path as a second option.
 - Help sits beside the task: a hint under a field, a tooltip on an icon, a "Learn more" link to the docs. There is no Tooltip component and no docs link in the console today (Verified, 01).

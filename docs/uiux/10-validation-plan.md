@@ -256,18 +256,18 @@ Baselines here are the counts from code in 04. Stage 0 replaces them with measur
 | T1 | Forced scrolls to see output | 2 | 0 | P1-4 |
 | T2 | Clicks and scrolls per debug iteration | 2 and 2 | 0 and 0 (one key chord) | P1-4, P0-6 |
 | T3 | Interactions from saved draft to deployed in dev | Leaves the editor for Release | 2, without leaving the editor | P1-5 |
-| T4 | Interactions to build a three-script flow | 14 clicks and 3 drags | 8 clicks, 0 drags | P1-8, P0-8 |
+| T4 | Interactions to build a three-script flow | 15 (11 clicks, 3 drags, 1 field) | 8, with 0 drags | P1-8, P0-8 |
 | T5 | Interactions to the failed run's error text | 2 | 1 (shown in the row) | P1-1 |
-| T5 | Interactions to a failed flow step's error | 4–5, with one Back | 1 | P1-2 |
+| T5 | Interactions to a failed flow step's error | 5–6, with one Back | 1 | P1-2 |
 | T6 | Interactions from a failed step to its source at the run's version | Not possible directly | 1 | P1-3 |
-| T7 | Interactions for the whole loop | About 14–16 | 8 or fewer | P1-3, P1-5 |
-| T7 | Workspace switches made by hand | 2 | 0 (carried by links) | P1-3 |
-| T7 | Repeated object lookups | 1 | 0 | P1-3 |
+| T7 | Interactions for the whole loop | 27, over 11 page loads | 10 or fewer | P1-3, P1-2, P1-5 |
+| T7 | Workspace switches made through the switcher | 2 | 0 (both carried by a link that keeps the object) | P1-3 |
+| T7 | Repeated object lookups | 2 | 0 | P1-3 |
 | T8 | Filters that survive reload and Back | Runs only | All | P2-6 |
 | T9 | Clicks to a complete list of a connection's users | 2, to a truncated unlinked list | 1, complete and linked | P1-10 |
-| T10 | Clicks and pages to schedule from the script | 10 clicks, 2–3 pages | 5 or fewer, 1 page | P1-9 |
+| T10 | Interactions and pages to schedule from the script | 9 plus fields, 2–3 pages | 5 or fewer, 1 page | P1-9 |
 | T11 | Screens to add a member with a scoped role | 2 tabs | 1 flow | P2-11 |
-| T12 | Interactions to a first successful run | About 30 | 12 or fewer | P2-13 |
+| T12 | Interactions to a first successful run | About 31 | 12 or fewer | P2-13 |
 
 ### Per-screen structural targets
 

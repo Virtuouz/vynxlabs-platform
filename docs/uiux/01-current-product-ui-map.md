@@ -1,4 +1,4 @@
-# 01. Current product UI map
+# 1. Current product UI map
 
 This document is Phase A of the UI/UX audit: discovery. It describes what the Vynxlabs console is today, who uses it, how the frontend is built, what shared infrastructure exists, and every screen, dialog, sheet, inspector and wizard a person can reach, each with a stable ID. It is descriptive, not evaluative. Judgments are confined to the short closing section and point at roadmap IDs in `09-prioritized-uiux-roadmap.md`. Documents `03-screen-by-screen-audit.md` and `11-screen-matrix.md` key on the screen IDs defined here.
 

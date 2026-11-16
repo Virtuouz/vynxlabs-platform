@@ -1,4 +1,4 @@
-# 04. End-to-end workflow journey audit
+# 4. End-to-end workflow journey audit
 
 This document measures the console by journey rather than by screen. It traces 27 journeys (J1–J27, with J21 split into nine administrative journeys) step by step through the code, counts what each costs today, states a target version of each, and maps what blocks the target to the roadmap IDs in `09-prioritized-uiux-roadmap.md`. Section 4 traces the composite "continuity loop" from a failed production run to a new production execution of the fix; it is the centrepiece. Section 6 is the baseline table that `10-validation-plan.md` reuses. Screen-level detail is in `03-screen-by-screen-audit.md`; the route map is in `01-current-product-ui-map.md`.
 
@@ -17,10 +17,10 @@ Evidence labels used here:
 - Three links carry most of that cost: production has no "edit this in dev" link (`screens/Authoring.tsx:681-685`), the workspace switcher keeps the section but drops the object (`Shell.tsx:766-769`), and promotion ends in a sentence with no link to production (`screens/Release.tsx:557-565`).
 - "Retry from the failed step" always runs the version the run started on (`screens/RunPage.tsx:485-492`). The only way to run a fix against a failed flow run is "On the version deployed now", which runs every step again from the start (`screens/RunPage.tsx:494-504`).
 - Reading and re-running are in good shape: a failed run is 2 interactions from the overview (J10), re-run or retry is 3 (J14), filters are in the URL (J16). These were the weakest journeys in `docs/evolution/05-journeys.md` and are now the strongest.
-- Authoring loops are the weakest. The script test loop costs 2 clicks and 2 scrolls per iteration because Run is behind a tab and the output is below a fixed-height editor (J3–J5). A flow of three existing scripts costs 14 clicks and 3 drags, and each step's input is free text although the script's schema is loaded (J7, J8).
+- Authoring loops are the weakest. The script test loop costs 2 clicks and 2 scrolls per iteration because Run is behind a tab and the output is below a fixed-height editor (J3–J5). A flow of three existing scripts costs 11 clicks, 3 drags and a field, and each step's input is free text although the script's schema is loaded (J7, J8).
 - One journey is not possible at all: testing part of a flow (J9). One can silently give a wrong answer: "who changed X" searches only the audit entries already loaded (J21g).
-- Deploy leaves every editor and deploys every draft in the workspace (J6); nine journeys end on a success state with no link to the result (section 5.4).
-- A new instance needs about 32 interactions, 4 dialogs and 5 pages before a first script runs, because the tenant's creator is not a member of it (J21i).
+- Deploy leaves every editor and deploys every draft in the workspace (J6); section 5.4 lists nine success states that offer no link to the result.
+- A new instance needs about 31 interactions, 4 dialogs and 5 pages before a first script runs, because the tenant's creator is not a member of it (J21i).
 - The object the user is working on is looked up again in 12 of the 27 journeys (section 5.1), usually through a select or a list with no search.
 
 ## 1. Method and limits
@@ -47,6 +47,7 @@ Evidence labels used here:
 
 - The notes on run inspection assumed the command palette searches the current workspace only. It searches the tenant, current workspace first (`apps/control-plane/src/routes/search.ts:209-224`), groups other workspaces under "Other workspaces" (`kit/CommandPalette.tsx:556-559`) and opens a found script in the workspace it lives in (`kit/CommandPalette.tsx:126-133`). The palette is therefore a second route from production to the dev copy of a script (J13). It finds deployed resources only, by path substring.
 - The notes on tenant administration counted steps. This document recounts each field and click by the definition above, so the J21 figures are higher than the notes' figures. The step sequences are the same.
+- The notes on run inspection put the loop at "about 14–16 interactions, two workspace switches and one re-find". That figure starts after the fix is written and does not include reaching the dev editor or carrying the input. `09-prioritized-uiux-roadmap.md` (P1-3) and `10-validation-plan.md` (T7) quote it. The end-to-end trace in section 4 counts 27 interactions and two re-finds; its steps 13–29 are the part the notes counted (17 interactions, or 14 without pasting the failed input and opening the output tab).
 - The notes marked the editor remount on first save as inferred. The mechanism is Verified: the editors are keyed on the address (`screens/Tenant.tsx:444`, `:520`) and the first save replaces the address (`screens/Authoring.tsx:378`, `screens/FlowEditor.tsx:690`). What the user sees as a result (a first test run whose result panel never appears) remains Inferred.
 
 ## 2. Summary of all journeys
@@ -61,7 +62,7 @@ Counts are for the shortest path today. "Lost" and "ambiguous" name the single w
 | J4 | Inspect output | 1 per run, 2 scrolls | 1 | 0 | 0 | 0 | 0 | 0 | Output tab resets to Logs on every run | None | costly | P1-4, P3-5 |
 | J5 | Debug an error | 2 per iteration, 2 scrolls | 1 | 0 | 0 | 0 | 0 | 0 | Code and error are never on screen together | Which line failed | costly | P1-4, P1-6 |
 | J6 | Save/deploy the script | 2–3 (+3 to production) | 2 | 0 (1) | 1 | 0 | 0 | 0 | Deploy leaves the editor; no link back | Which drafts a deploy carries | costly | P1-5, P0-4 |
-| J7 | Create a workflow from 3 existing scripts | 18 (14 clicks, 3 drags, 1 field) | 2 | 0 | 0 | 0 | 0 | 0 | View re-fits after every added step | "Draft" tag on a flow that is not saved | costly | P1-8, P0-8 |
+| J7 | Create a workflow from 3 existing scripts | 15 (11 clicks, 3 drags, 1 field) | 2 | 0 | 0 | 0 | 0 | 0 | View re-fits after every added step | "Draft" tag on a flow that is not saved | costly | P1-8, P0-8 |
 | J8 | Configure workflow steps (3 steps) | 6 + lookups | 1 (+1 per lookup) | 0 | up to 3 | up to 3 | Input shape retyped as an expression | up to 3 | Leaving the editor to read a script's input shape | Rename leaves old references in expressions | costly | P1-8 |
 | J9 | Test part of the workflow | not possible (whole flow: 2 + n, +1 per step) | 1 | 0 | 0 | 0 | 0 | 0 | Step logs need the run page | Results belong to the saved graph, not the canvas | broken | P1-8, P1-2 |
 | J10 | Inspect a production run | 2 | 2 | 1 | 0 | 0 | 0 | 0 | Back from a run page loses loaded pages and scroll | A flow run peek shows no steps | smooth | P1-1, P0-3, P0-5 |
@@ -78,12 +79,12 @@ Counts are for the shortest path today. "Lost" and "ambiguous" name the single w
 | J21a | Add a member with a role in one workspace | 10–12 | 2 | 2 | 1 | 0 | 0 | 1 (the member) | New member not carried to "Give access" | Whether the account already exists | costly | P2-11, P2-8 |
 | J21b | Why can a member do X | 5–6 | 2–3 | 1 | 0 | 0 | 0 | 0 | None | Check needs the exact permission string | acceptable | P2-11 |
 | J21c | Service account + API key | 19–22 | 3 | 4 | 2 | 1 | 0 | 2 (the account) | Account page has no name and no grant action | A key with no role works but can do nothing | costly | P2-11, P0-10 |
-| J21d | Create a dev workspace linked to production | 13 | 2 | 2 | 0 | 0 | Same form filled twice | 1 (production re-picked) | No landing in the new workspace | Type defaults to Dev silently | costly | P2-13, P0-9 |
+| J21d | Create a dev workspace linked to production | 12 | 2 | 2 | 0 | 0 | Same form filled twice | 1 (production re-picked) | No landing in the new workspace | Type defaults to Dev silently | costly | P2-13, P0-9 |
 | J21e | Set up SSO | about 34 | 3 + 2 external | 3 | 3 (2 external) | 1 | 0 | 1 (the provider) | Provider and tab are not in the URL | "Turn on" has no precondition check | costly | P2-11, P2-6 |
 | J21f | Register a self-hosted worker | 7–10 + manual command | 1 + terminal | 1–2 | 1 (external) | 0 | URL and token typed into the command by hand | 0 | Token shown once without Copy | Whether the worker connected | costly | P0-10, P1-7 |
 | J21g | Who changed X in the audit log | 5 + k, unbounded | 1 | 1 | 0 | 0 | 0 | 0 | Filters and entry are not in the URL | Search covers loaded entries only | broken | P2-11, P2-6 |
 | J21h | Operator opens access to a tenant | 6–8 | 2 | 1 | 0 | 0 | 0 | 0 | None | Gate does not name the tenant | smooth | P2-8 |
-| J21i | Fresh instance → first running script | about 32 (41 with lasting access) | 5 | 4 | 3 | 1 | Reason typed to enter own tenant; workspace form twice | 2 | No landing after create tenant or workspace | Whether a worker is available | costly | P2-13, P0-10 |
+| J21i | Fresh instance → first running script | about 31 (40 with lasting access) | 5 | 4 | 3 | 1 | Reason typed to enter own tenant; workspace form twice | 2 | No landing after create tenant or workspace | Whether a worker is available | costly | P2-13, P0-10 |
 | J22 | Decide an approval | 3 | 1 | 1 | 0–1 | 0 | 0 | 0 | From a workspace the queue is tenant-wide | No confirmation or link to the resumed run | acceptable | P3-3, P2-8 |
 | J23 | Pause a trigger | 4–5 | 1 | 2 | 0 | 0 | 0 | 0 | None | No confirmation; type filter not in the URL | acceptable | P3-3, P2-8 |
 | J24 | Promote dev → prod | 4 | 1 | 1 | 0 | 0 | 0 | 0 | Promote step has no URL; reload returns to Review | Success names no place to go | acceptable | P1-5, P2-6 |
@@ -98,11 +99,11 @@ Counts are for the shortest path today. "Lost" and "ambiguous" name the single w
 
 | 05 journey | 05 count (Observed/Inferred there) | Today (this document) | What phases 9–11 changed | Still open |
 | --- | --- | --- | --- | --- |
-| 1 Create a script and run it | 9–12 clicks, 4 fields, 4 pages, 2 context switches | J1+J3+J4+J6 from the overview: 8 clicks, 1 + n fields, 3 pages, 1 context switch | Input schema is read from the code's own `input` export (`screens/Authoring.tsx:529-540`); "Try it" draws a form from it (`:592-599`); Scripts list has an inspector with Run in dev (`screens/Execution.tsx:233-257`) | Deploy still leaves the editor (05 projected 1 page); Run is behind a tab |
+| 1 Create a script and run it | 9–12 clicks, 4 fields, 4 pages, 2 context switches | J1+J3+J4+J6 from the overview: 8 clicks, 1 + n fields, 4 pages by 05's counting (3 from the Scripts list), 1 context switch | Input schema is read from the code's own `input` export (`screens/Authoring.tsx:529-540`); "Try it" draws a form from it (`:592-599`); Scripts list has an inspector with Run in dev (`screens/Execution.tsx:233-257`) | Deploy still leaves the editor (05 projected 1 page); Run is behind a tab |
 | 2 Debug a failed task | 4 clicks to see why; 8+ to fix; no link from run to code; no flow retry | J10: 2 to see why. J12: 1 to the script. J14: 3 to retry | Failed chip carries `?status=failed` (`Shell.tsx:878-885`); error summary in the row (`screens/Runs.tsx:407-410`); full run page (`screens/RunPage.tsx`); re-run with edited input and flow retry from the failed step (`:237-245`, `:559-570`); run → script and trigger links (`:106-108`, `:145`) | "Open code at version v1" (05's target) does not exist; production → dev hand-off |
-| 3 Create a workflow | 10–15 clicks + 3 per step, 3 pages, 1 context switch; no test with input, no undo | J7: 2 fixed + 4 clicks and 1 drag per step, 2 pages. Test loop: 2 clicks, 0 page changes (05's projection met) | Test in place with step states on the canvas (`screens/FlowTestPanel.tsx:28`); undo/redo (`screens/FlowEditor.tsx:489-505`); evaluated expression preview (`screens/ExpressionField.tsx:76-89`) | Per-step cost is higher than before by one click; connecting is drag-only; no partial test |
-| 4 Schedule an execution | 8 clicks, 4 fields, 4 pages; free-text cron and zone, JSON input | J20: 8 clicks, 1 + n fields (9 + n interactions), 2–3 pages | "New trigger" on Triggers (`screens/Operate.tsx:99-120`); presets, zone picker, next times, schema input (`screens/ScheduleForm.tsx:32-38`, `:181-203`, `:217`); a schedule can target a flow (`:90-99`) | Click count unchanged; no entry from the script or flow; 05 projected 5 clicks, 2 pages |
-| 5 Connect an API | about 14 clicks, 5–7 fields, 5 pages, three areas, no test | J18: 4 clicks, 2 + n fields, 1 page, then 2 clicks on Releases | One wizard declares, binds and tests from a worker (`screens/ConnectionWizard.tsx:152-532`) | Deploy of the declaration is not linked from the sheet |
+| 3 Create a workflow | 10–15 clicks + 3 per step, 3 pages, 1 context switch; no test with input, no undo | J7: 2 fixed + 4 clicks and 1 drag per step by 05's counting, 2 pages. Test loop: 2 clicks, 0 page changes (05's projection met) | Test in place with step states on the canvas (`screens/FlowTestPanel.tsx:28`); undo/redo (`screens/FlowEditor.tsx:489-505`); evaluated expression preview (`screens/ExpressionField.tsx:76-89`) | Per-step cost has not fallen; connecting is drag-only; no partial test |
+| 4 Schedule an execution | 8 clicks, 4 fields, 4 pages; free-text cron and zone, JSON input | J20: 10 clicks, 1 + n fields by 05's counting (9 + n interactions by this document's), 2–3 pages | "New trigger" on Triggers (`screens/Operate.tsx:99-120`); presets, zone picker, next times, schema input (`screens/ScheduleForm.tsx:32-38`, `:181-203`, `:217`); a schedule can target a flow (`:90-99`) | Click count did not fall; no entry from the script or flow; 05 projected 5 clicks, 2 pages |
+| 5 Connect an API | about 14 clicks, 5–7 fields, 5 pages, three areas, no test | J18: about 6 clicks, 2 + n fields by 05's counting (6 + n interactions by this document's), 1 page, then 2 clicks on Releases | One wizard declares, binds and tests from a worker (`screens/ConnectionWizard.tsx:152-532`) | Deploy of the declaration is not linked from the sheet |
 | 6 Monitor executions | No search by ID, target or error; 100-row cap; polling only | J15: 3 by ID; J16: every filter in the URL | Search over path, ID, tags and error text, cursor paging, retention stated (`screens/Runs.tsx:98-135`, `:209-211`); tenant event stream (`stream.ts:62`); queue panel (`screens/Execution.tsx:824`) | Custom date range, per-target filter, sort; stream health shown only on the runs list |
 | 7 Internal tool | 6–8 clicks read-only; no widget can act | J26: 14–18 with a working action | Action widget and row actions with input mapping (`screens/ActionSettings.tsx:79-341`) | Undo, palette placement, publish summary |
 | 8 Promote dev to production | 5–6 clicks, 1 field, 2 pages; a developer cannot ask for promotion | J24: 4 interactions, 1 page | "Request promotion" and review on the tenant overview (`screens/Promotion.tsx:34`, `:172`) | Promote step has no URL; success has no link |
@@ -126,7 +127,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 4 | Clicks "Save draft"; the address is replaced with `scripts/edit/<path>` | Script editor | `screens/Authoring.tsx:659-665`, `:378` |
 
 **Counts:** I 3 · P 2 · D 0 · CS 0 · backtracks 0. From the workspace overview add 2 (rail "Build", then "Scripts").
-
 **Works well:** one click to an editor with runnable starter code; path rules are stated in the error (`screens/Authoring.tsx:347-351`); the same editor serves connectors and trigger sources.
 
 **Friction:**
@@ -136,9 +136,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - There is no autosave and no guard on leaving (`screens/Authoring.tsx:344`, `:392` are the only saves). The "All scripts" link above the title discards unsaved code without asking (`:610`).
 - A script saved as a draft is not in the Scripts list the editor links back to: the list reads deployed scripts and the row type has no draft field (`screens/Execution.tsx:76-92`, `:106`) (Inferred from the row type).
 
-**Target:** New script → path field focused with a default slug → code; draft autosaved with "Saved 3s ago". I 2 · P 2 · CS 0.
-
-**Blocks:** no autosave or leave guard (P0-4); remount on first save, `z` flagged, editor rebuilt per keystroke (P0-6); drafts absent from the list (P1-5, P2-2).
+**Target:** New script → path field focused with a default slug → code; draft autosaved with "Saved 3s ago". I 2 · P 2 · CS 0. **Blocks:** no autosave or leave guard (P0-4); remount on first save, `z` flagged, editor rebuilt per keystroke (P0-6); drafts absent from the list (P1-5, P2-2).
 
 ### J2 Configure inputs
 
@@ -152,7 +150,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | alt | For a script with no `input` export: types JSON Schema into a 7-row textarea on the Settings tab, then saves | Right panel | `screens/Authoring.tsx:541-558` |
 
 **Counts:** I 2 · P 1 · D 0 · CS 0. Timeout, retries and "uses" are one field each on the Settings tab (`screens/Authoring.tsx:467-527`).
-
 **Works well:** one source of truth for the input. `05-journeys.md` found the schema written twice (TypeScript and JSON Schema); the read-only echo "Change it there, and save" (`screens/Authoring.tsx:529-540`) removes that.
 
 **Friction:**
@@ -160,9 +157,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - The fallback is a plain textarea although the code editor supports JSON (`editor/CodeEditor.tsx:8`).
 - Retries exposes a count only; delay and backoff exist in the body (`screens/Authoring.tsx:107`, `:478-497`).
 
-**Target:** edit the schema in code → the form beside the code updates on autosave, with a visible "reading inputs…" state. I 0–1 · P 1.
-
-**Blocks:** no autosave (P0-4); status on one tab only and textarea fallback (P1-4).
+**Target:** edit the schema in code → the form beside the code updates on autosave, with a visible "reading inputs…" state. I 0–1 · P 1. **Blocks:** no autosave (P0-4); status on one tab only and textarea fallback (P1-4).
 
 ### J3 Test the script
 
@@ -177,7 +172,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | again | ⌘↵ runs again with the last input | Window listener | `screens/Authoring.tsx:314-326`, `:406-408` |
 
 **Counts:** I 2 + n · P 1 · D 0 · CS 0 · 1 forced scroll. Repeat run: 1.
-
 **Works well:** save and run are one act; the server's refusals land on the form fields (`InputDialog.tsx:10-17`); the run is a real worker run of the draft with nothing deployed.
 
 **Friction:**
@@ -187,9 +181,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - First run of a brand-new script: `test()` awaits `save()`, which navigates and remounts the editor; the continuation then sets the test run on the unmounted instance (`screens/Authoring.tsx:392-399`). The run starts but no result panel appears (Inferred; mechanism Verified).
 - The first ⌘↵ sends `{}` as input (`screens/Authoring.tsx:256`); a required-input refusal lands in the page notice, not on the form.
 
-**Target:** Run in the header and ⌘↵ inside Monaco; the form and output docked beside the code. I 1 + n · P 1 · 0 scrolls.
-
-**Blocks:** Run behind a tab, fixed editor, output below (P1-4); shortcut not registered, remount on first Save and run (P0-6).
+**Target:** Run in the header and ⌘↵ inside Monaco; the form and output docked beside the code. I 1 + n · P 1 · 0 scrolls. **Blocks:** Run behind a tab, fixed editor, output below (P1-4); shortcut not registered, remount on first Save and run (P0-6).
 
 ### J4 Inspect output
 
@@ -203,7 +195,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | alt | Production: on Runs, clicks the row (peek), then "Input and output" | Runs inspector | `screens/Runs.tsx:392-396`, `:592` |
 
 **Counts:** I 1 per run · P 1 · 2 forced scrolls per run. Production run: 2.
-
 **Works well:** tables, markdown and media in the result are detected and drawn (`packages/ui/src/ResultView.tsx`); "Events it published" sits beside the run (`screens/Authoring.tsx:739`).
 
 **Friction:**
@@ -211,9 +202,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - On the full run page the tabs open on Input even for a succeeded run, where Output is the point (`screens/RunPage.tsx:388-392`), and the tab is not in the URL.
 - Code and output cannot be seen together at 900 px height.
 
-**Target:** output docked beside or under the code, result first, tab choice remembered. I 0 · 0 scrolls.
-
-**Blocks:** layout and tab reset (P1-4); panel sizes and tab not persisted (P3-5, P2-6).
+**Target:** output docked beside or under the code, result first, tab choice remembered. I 0 · 0 scrolls. **Blocks:** layout and tab reset (P1-4); panel sizes and tab not persisted (P3-5, P2-6).
 
 ### J5 Debug an error
 
@@ -227,7 +216,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 4 | Scrolls down; clicks "Input and output" again if the result matters | Result panel | `screens/Authoring.tsx:738` |
 
 **Counts:** per iteration I 2 · P 1 · 2 forced scrolls · 0 dialogs.
-
 **Works well:** a server-derived diagnosis with a next step appears for known causes (`screens/Runs.tsx:539-553`); type errors show as Monaco squiggles from the SDK's own type files (`editor/monaco.ts:24-46`).
 
 **Friction:**
@@ -235,9 +223,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - Monaco diagnostics are not collected anywhere (no marker listener), so there is no problem count and saving or running is not informed by type errors.
 - The error and the code that caused it are a scroll apart in both directions.
 
-**Target:** the error's frame is a link that moves the cursor to the line; ⌘↵ reruns; output stays in view. Per iteration I 1 · 0 scrolls.
-
-**Blocks:** no problems list or stack plumbing, layout (P1-4); log viewer lacks match navigation and copy (P1-6).
+**Target:** the error's frame is a link that moves the cursor to the line; ⌘↵ reruns; output stays in view. Per iteration I 1 · 0 scrolls. **Blocks:** no problems list or stack plumbing, layout (P1-4); log viewer lacks match navigation and copy (P1-6).
 
 ### J6 Save/deploy the script
 
@@ -253,7 +239,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | prod | Clicks the "Promote" step, "Promote to production", then confirms | Release | `screens/Release.tsx:155`, `:585-610` |
 
 **Counts:** to deployed in dev I 2–3 (+1 for a message) · P 2 · CS 1. To production +3 and 1 dialog (J24).
-
 **Works well:** deploy and promote are separate, differently coloured acts; the preview lists refusals and unbound connections before the button enables (`screens/Release.tsx:303-341`); "Production is untouched" is stated under the button (`:375-377`).
 
 **Friction:**
@@ -262,9 +247,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - Success is a notice listing paths (`screens/Release.tsx:362-364`): no link back to the script, to run the deployed version, or onward to Promote. The stepper moves to the ledger, not to Promote (`:170`).
 - Review shows one sentence per draft, not a diff (`screens/Release.tsx:281-292`).
 
-**Target:** "Deploy ▾" in the editor header ("Deploy this change" / "Review all N changes"), then a toast "Deployed as v42 · Promote to Clinics · Run it". I 2 · P 1 · CS 0.
-
-**Blocks:** no deploy action in editors and no next step on success (P1-5); toasts carry text only (P2-8); deploying one change needs a server change, since the endpoint takes all drafts (Inferred).
+**Target:** "Deploy ▾" in the editor header ("Deploy this change" / "Review all N changes"), then a toast "Deployed as v42 · Promote to Clinics · Run it". I 2 · P 1 · CS 0. **Blocks:** no deploy action in editors and no next step on success (P1-5); toasts carry text only (P2-8); deploying one change needs a server change, since the endpoint takes all drafts (Inferred).
 
 ### J7 Create a workflow from existing scripts
 
@@ -280,8 +263,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 6 | Per script: drags from the previous step's right dot to the new step | Canvas | `screens/FlowEditor.tsx:1067` |
 | 7 | Clicks "Save draft"; autosave starts only after this | Editor header | `screens/FlowEditor.tsx:923-930`, `:702-706` |
 
-**Counts:** I 18 for three scripts (1 + 1 field + 3 × (3 clicks + 1 drag) + 1 save; the notes' 14 clicks count the combobox as two clicks) · P 2 · D 0 · CS 0.
-
+**Counts:** I 15 for three scripts (1 + 1 field + 3 × (3 clicks + 1 drag) + 1 save; the notes' 14 clicks, 3 drags and 1 field count each combobox pick as two clicks) · P 2 · D 0 · CS 0.
 **Works well:** labelled undo and redo (`screens/FlowEditor.tsx:489-505`); "N to fix" computed on every change (`:307-375`); drafts of scripts are offered in the picker (`:433`).
 
 **Friction:**
@@ -291,9 +273,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - No copy, paste or duplicate: three similar steps are three full passes.
 - A never-saved flow has no autosave (`screens/FlowEditor.tsx:703`) and no leave guard; it also shows a "Draft" tag beside "Not saved" (`:838`, `:872-876`).
 
-**Target:** type-to-add from one list that includes scripts by path; the step is inserted after the selection and connected. I 8 for three scripts (1 + 1 + 3 × 2), 0 drags.
-
-**Blocks:** palette contents and placement (P1-8); drag-only connection (P0-8); autosave from the first change (P0-4); duplicate and paste (P3-6).
+**Target:** type-to-add from one list that includes scripts by path; the step is inserted after the selection and connected. I 8 for three scripts (1 + 1 + 3 × 2), 0 drags. **Blocks:** palette contents and placement (P1-8); drag-only connection (P0-8); autosave from the first change (P0-4); duplicate and paste (P3-6).
 
 ### J8 Configure workflow steps
 
@@ -307,7 +287,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 4 | Optionally renames the step and presses Enter | Right aside | `screens/FlowEditor.tsx:1394-1412` |
 
 **Counts:** I 6 for three steps (3 selections, 3 fields), plus up to 3 lookups, each a context switch and a backtrack · P 1 (+1 per lookup) · D 0.
-
 **Works well:** the evaluated value appears under each expression once a test run exists (`screens/ExpressionField.tsx:76-89`); labelled nodes get a field-by-field form with resource pickers (`screens/FlowSteps.tsx:86-209`).
 
 **Friction:**
@@ -316,9 +295,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - Renaming a step rewrites edges only (`screens/FlowEditor.tsx:603-621`); expressions that say `steps.<old>.output` break silently. Rename commits on Enter only (`:1395`).
 - "N to fix" items are plain text: they do not select the node (`screens/FlowEditor.tsx:946-954`).
 
-**Target:** the step's input is a form drawn from the script's schema; each field takes a literal or an expression with completion from the last run. I n fields, 0 lookups, 0 context switches.
-
-**Blocks:** `NodeInputs` gated to labelled nodes, rename, problems not clickable (all P1-8).
+**Target:** the step's input is a form drawn from the script's schema; each field takes a literal or an expression with completion from the last run. I n fields, 0 lookups, 0 context switches. **Blocks:** `NodeInputs` gated to labelled nodes, rename, problems not clickable (all P1-8).
 
 ### J9 Test part of the workflow
 
@@ -332,7 +309,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 4 | For a step's log: clicks "Open the run", which leaves the editor | → run page | `screens/FlowTestPanel.tsx:83` |
 
 **Counts:** testing a part is **not possible**. Whole flow: I 2 + n, +1 per step read · P 1 (+1 for logs).
-
 **Works well:** the whole-flow loop is 2 clicks with no page change, which meets the projection in `05-journeys.md`; step states are painted on nodes and taken edges (`screens/FlowEditor.tsx:762-790`); "The flow changed since this test" is said (`screens/FlowTestPanel.tsx:86-90`).
 
 **Friction:**
@@ -340,9 +316,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - A flow whose trigger is not manual is told to change its trigger in order to be tested (`screens/FlowEditor.tsx:732-733`); a deployed flow with no draft cannot be tested until something is edited (`:736-738`).
 - A running test cannot be cancelled from the panel; step input is not shown; logs are a page away.
 
-**Target:** "Run from here" on a step, reusing the kept outputs of earlier steps; per-step input, output and logs inline. I 2 · P 1.
-
-**Blocks:** test from a step (P1-8); step input and logs beside output (P1-2); partial runs need server support (Inferred).
+**Target:** "Run from here" on a step, reusing the kept outputs of earlier steps; per-step input, output and logs inline. I 2 · P 1. **Blocks:** test from a step (P1-8); step input and logs beside output (P1-2); partial runs need server support (Inferred).
 
 ### J10 Inspect a production run
 
@@ -355,7 +329,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 3 | From the peek, "Open full view" | → `runs/:id` | `screens/Runs.tsx:521-523` |
 
 **Counts:** I 2 · P 2 · D 1 (peek) or 0 (page) · CS 0. `05-journeys.md` measured 4 clicks, with the chip opening the unfiltered list.
-
 **Works well:** the error's first line is in the row; row = peek and path = page; every filter and the selected run are in the URL (`screens/Runs.tsx:98-111`).
 
 **Friction:**
@@ -365,9 +338,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - A flow run's peek shows no steps and no failed-step name (`screens/Runs.tsx:450-477`).
 - An unknown run state crashes the whole console to a blank page (Observed (mocked API), O1; `kit/status.tsx:79`).
 
-**Target:** the overview lists the most recent failures; one click opens the run with the failure in view. I 1–2 · P 2.
-
-**Blocks:** runs list density and columns (P1-1); keyboard reach (P0-3); `?run=` for flow runs and crash on unknown state (P0-5, P0-1).
+**Target:** the overview lists the most recent failures; one click opens the run with the failure in view. I 1–2 · P 2. **Blocks:** runs list density and columns (P1-1); keyboard reach (P0-3); `?run=` for flow runs and crash on unknown state (P0-5, P0-1).
 
 ### J11 Diagnose a failed step
 
@@ -382,8 +353,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 5 | Clicks "Open this step's run" for the diagnosis, the input and the attempts | → script run page | `screens/Flows.tsx:807-809` |
 | 6 | Presses browser Back to return; selects the step again | Flow run page | `screens/Flows.tsx:628` |
 
-**Counts:** I 5–6 · P 3 · D 0 · CS 1 (step 5) · backtracks 1 · repeated lookup 1 (the step).
-
+**Counts:** I 5–6 (4 to reach the diagnosis; Back and re-selecting the step make it 5–6) · P 3 · D 0 · CS 1 (step 5) · backtracks 1 · repeated lookup 1 (the step).
 **Works well:** timeline with wait, run and hold segments; graph coloured by step state; step logs inline (`screens/Flows.tsx:806`); kept steps link to the run they were kept from (`:789-803`).
 
 **Friction:**
@@ -393,9 +363,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - The child run has no link back to its parent flow run: `startedBy` prints "A flow" as text (`screens/RunPage.tsx:140-151`).
 - The graph draws the current definition, not the one the run used (`screens/Flows.tsx:629`) (Inferred risk after a redeploy).
 
-**Target:** the run page opens with the first failed step selected and `?step=` in the URL; error, diagnosis, input, output and logs in one panel. I 2 · P 2 · CS 0 · backtracks 0.
-
-**Blocks:** failed step selected, named, addressable, with input (P1-2); live polling that stops after one failed read (P0-5).
+**Target:** the run page opens with the first failed step selected and `?step=` in the URL; error, diagnosis, input, output and logs in one panel. I 2 · P 2 · CS 0 · backtracks 0. **Blocks:** failed step selected, named, addressable, with input (P1-2); live polling that stops after one failed read (P0-5).
 
 ### J12 Navigate from failure back to source
 
@@ -409,7 +377,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 2 | Clicks "version N" hoping for the code at that version | → `deployments` list | `screens/RunPage.tsx:113` |
 
 **Counts:** script I 1 · P 2. Flow step I 2 (3 with step selection) · P 3 · CS 1. `05-journeys.md` Observed "link to code present: false"; the link now exists.
-
 **Works well:** the title is the link, so the route is short; the trigger that started the run is linked with its row selected (`screens/RunPage.tsx:145`).
 
 **Friction:**
@@ -418,9 +385,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - No line is targeted; a flow step has no link to its script or to its node in the definition; the flow view does not highlight the failed node.
 - The title link is plain ink with no affordance (`screens/RunPage.tsx:106`).
 
-**Target:** "Open source at vN" on the error block, landing read-only on the file and line, or on the node. I 1 · P 2.
-
-**Blocks:** source at a version and step → script link (P1-3, P1-10); "what changed since the last success" (P3-7).
+**Target:** "Open source at vN" on the error block, landing read-only on the file and line, or on the node. I 1 · P 2. **Blocks:** source at a version and step → script link (P1-3, P1-10); "what changed since the last success" (P3-7).
 
 ### J13 Make a correction
 
@@ -435,8 +400,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 5 | Edits, then "Save draft" | Dev editor | `screens/Authoring.tsx:659-665` |
 | alt 2–4 | ⌘K, types the path, moves to the row under "Other workspaces", Enter | Palette → dev editor | `kit/CommandPalette.tsx:126-133`, `:556-559` |
 
-**Counts:** I 4 (3 to reach the dev editor, 1 save) · P 3 · CS 1 (workspace) · repeated lookup 1. The palette route is also 4 to reach the editor. For a flow: 4 as well, through the flow view's "Edit this flow" link or the list inspector.
-
+**Counts:** I 4 (3 to reach the dev editor, 1 save) · P 3 · CS 1 (workspace) · repeated lookup 1. The palette route is 4 to reach the editor. For a flow: 4 as well, through the flow view's "Edit this flow" link or the list inspector.
 **Works well:** production really is read-only, with a plain reason; the palette reaches the dev copy without visiting a list.
 
 **Friction:**
@@ -445,9 +409,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - The failed run and its input do not travel. The user copies the input by hand before leaving, or keeps the production run open in a second tab.
 - For flows, production replaces the editor with a notice and no link at all (`screens/Tenant.tsx:451-454`).
 
-**Target:** "Edit in <dev workspace>" on the production run page and read-only editor, opening the same path in dev with the failed run's input loaded as the test input. I 1 · P 2 · repeated lookup 0.
-
-**Blocks:** dev↔prod jump for the same object and input carry-over (P1-3); the switcher keeping the object (P2-6).
+**Target:** "Edit in <dev workspace>" on the production run page and read-only editor, opening the same path in dev with the failed run's input loaded as the test input. I 1 · P 2 · repeated lookup 0. **Blocks:** dev↔prod jump for the same object and input carry-over (P1-3); the switcher keeping the object (P2-6).
 
 ### J14 Rerun or retry
 
@@ -461,7 +423,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 4 | Lands on the new run's page | → `runs/:newId` | `screens/RunPage.tsx:166-169`, `:464-467` |
 
 **Counts:** I 3 · P 2 · D 1. With other input: 3 + edited fields, in a form prefilled with the run's input (`screens/RunPage.tsx:424-435`). `05-journeys.md` measured 1 click for a script (same input only) and about 6 steps for a flow, from scratch.
-
 **Works well:** the wording says exactly what will run; the retry plan names kept approvals; old and new runs link both ways (`screens/RunPage.tsx:201-206`, `:520-525`).
 
 **Friction:**
@@ -470,9 +431,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - No retry from a chosen step, only from the first failed one; no batch re-run.
 - "Re-run of a run" and "Run again N times" name no state and link only the first (`screens/RunPage.tsx:201-206`).
 
-**Target:** the same 3, also from the list and peek, plus "Retry from the failed step on vN" once a newer version is deployed.
-
-**Blocks:** "Re-run on vN" (P1-3); batch re-run from the list (P3-3).
+**Target:** the same 3, also from the list and peek, plus "Retry from the failed step on vN" once a newer version is deployed. **Blocks:** "Re-run on vN" (P1-3); batch re-run from the list (P3-3).
 
 ### J15 Find a historical execution
 
@@ -487,7 +446,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | alt | ⌘K, types `>` and the run ID, Enter | Palette → run page | `kit/CommandPalette.tsx:738` |
 
 **Counts:** list I 4 + k · P 1–2 · D 0–1. By ID I 3. `05-journeys.md` found no search by ID, target or error and no paging past 100 rows.
-
 **Works well:** search and window are in the URL; retention is stated in the header (`screens/Runs.tsx:209-211`).
 
 **Friction:**
@@ -496,9 +454,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - Script and flow screens do not link to "all runs of this": the script inspector links the last run only (`screens/Execution.tsx:289-293`), the flow view lists 20 (`screens/Flows.tsx:363-365`).
 - Loaded pages reset on leaving the screen (`screens/Runs.tsx:142-145`), so Back from a run page loses the place.
 
-**Target:** "Runs of this script" from the script or flow (1), or Runs with target and date-range filters. I 3–4, no "Load more" hunting.
-
-**Blocks:** filters complete and sortable (P1-1); script → its runs (P1-10); saved views (P3-4).
+**Target:** "Runs of this script" from the script or flow (1), or Runs with target and date-range filters. I 3–4, no "Load more" hunting. **Blocks:** filters complete and sortable (P1-1); script → its runs (P1-10); saved views (P3-4).
 
 ### J16 Filter executions
 
@@ -512,7 +468,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 4 | Types in Search (300 ms debounce) | `screens/Runs.tsx:117-123` |
 
 **Counts:** I 1 per filter · P 1 · D 0. A view such as "failed flows, last 7 days, tag X" is 4.
-
 **Works well:** every filter is URL-backed and shareable; the legacy `?status=cancelled` still works; chip counts come from the server.
 
 **Friction:**
@@ -522,9 +477,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - No "clear filters"; the filtered-empty state offers no reset (`screens/Runs.tsx:311-313`); filter changes add no history entries (`router.tsx:48`), so Back does not undo one.
 - "Waiting for approval" overflows the Status column into the path (Observed (mocked API), O4).
 
-**Target:** the same single-click filters, complete (target, trigger, version, date range, several statuses), with a reset and a saved view. I 1 per filter; 1 for a saved view.
-
-**Blocks:** P1-1; saved views (P3-4); Back undoing a filter (P2-6).
+**Target:** the same single-click filters, complete (target, trigger, version, date range, several statuses), with a reset and a saved view. I 1 per filter; 1 for a saved view. **Blocks:** P1-1; saved views (P3-4); Back undoing a filter (P2-6).
 
 ### J17 Inspect logs
 
@@ -538,7 +491,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | flow | On a flow run page, selects a step: its log is inline | Flow run page | `screens/Flows.tsx:804-811` |
 
 **Counts:** I 1 · P 1–2 · D 1.
-
 **Works well:** logs are the default view of a run; level colours and structured fields under the line (Observed (mocked API), O6); download of all lines.
 
 **Friction:**
@@ -548,9 +500,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - The viewer is a fixed 28rem box even on the full page (`packages/ui/src/LogViewer.tsx:46`, `:154`); the peek is 22–26rem wide.
 - A flow has no combined log.
 
-**Target:** the same 1 interaction to a complete, full-height log with match navigation and copy. I 1.
-
-**Blocks:** log paging and sticky error (P0-5); LogViewer v2 (P1-6).
+**Target:** the same 1 interaction to a complete, full-height log with match navigation and copy. I 1. **Blocks:** log paging and sticky error (P0-5); LogViewer v2 (P1-6).
 
 ### J18 Create or edit a resource/credential
 
@@ -567,8 +517,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 7 | Deploys the draft declaration from Releases, which the sheet does not link | → Release | `screens/ConnectionWizard.tsx:464-466`; `Shell.tsx:868-876` |
 | edit | Row "Change" → edit → Save → automatic test | Sheet | `screens/Execution.tsx:625-628` |
 
-**Counts:** create I 6 + n (4 clicks, 2 + n fields), then 2 on Releases · P 1 (+1) · D 1 · CS 1. Edit I 3. Set a secret: 4 (button, name, value, submit; `screens/Tenant.tsx:686-702`). Set a variable's value: 4 (`screens/Execution.tsx:686-704`). `05-journeys.md` measured about 14 clicks over 5 pages with no test.
-
+**Counts:** create I 6 + n (2 clicks, 2 choices, 2 + n typed fields), then 2 on Releases · P 1 (+1) · D 1 · CS 1. Edit I 3. Set a secret: 4 (button, name, value, submit; `screens/Tenant.tsx:686-702`). Set a variable's value: 4 (`screens/Execution.tsx:686-704`). `05-journeys.md` measured about 14 clicks over 5 pages with no test.
 **Works well:** one wizard that declares, binds and proves the connection from where scripts run; "Change the token" after a failed test (`screens/ConnectionWizard.tsx:517-527`); secrets are write-only everywhere.
 
 **Friction:**
@@ -579,9 +528,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - No connection, variable or secret has its own URL; the palette opens the list only (`kit/CommandPalette.tsx:142-143`).
 - A failed data-source test is announced with a success toast (`screens/Data.tsx:1068-1072`).
 
-**Target:** the same sheet as a real stepper with a fifth step "Declared in a draft — deploy" that deploys or links; row-level "Replace value" for secrets and variables. I 6 + n + 1 · P 1 · CS 0.
-
-**Blocks:** deploy hand-off (P1-5); per-object URLs (P1-10); SecretField and one save model (P2-7); the success toast on failure (P0-6).
+**Target:** the same sheet as a real stepper with a fifth step "Declared in a draft — deploy" that deploys or links; row-level "Replace value" for secrets and variables. I 6 + n + 1 · P 1 · CS 0. **Blocks:** deploy hand-off (P1-5); per-object URLs (P1-10); SecretField and one save model (P2-7); the success toast on failure (P0-6).
 
 ### J19 Determine where a resource is used
 
@@ -596,7 +543,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 5 | Returns to Connections for the next one | — | — |
 
 **Counts:** I 1–2 to read up to three users; +3 per user opened · P 1 (+1 per user) · CS 1 and backtrack 1 per user · repeated lookup 1 per user.
-
 **Works well:** the column exists for connections, variables and secrets, which `05-journeys.md`'s source audit found only on secrets.
 
 **Friction:**
@@ -606,9 +552,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - Destructive confirms say "Scripts that use it will fail" or "Anything that uses it will fail." without listing them, although the list is in scope (`screens/Execution.tsx:633-638`; `screens/Tenant.tsx:703-710`).
 - "Nothing deployed uses it" does not cover drafts.
 
-**Target:** each path is a link; "+N more" opens the full list with kind and usage; the same list appears in the confirm. I 1–2 to read, +1 per user · CS 0.
-
-**Blocks:** references as links (P1-10); confirms that list what is affected (P0-9).
+**Target:** each path is a link; "+N more" opens the full list with kind and usage; the same list appears in the confirm. I 1–2 to read, +1 per user · CS 0. **Blocks:** references as links (P1-10); confirms that list what is affected (P0-9).
 
 ### J20 Configure scheduling/triggers
 
@@ -627,7 +571,6 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 | 8 | Header "N drafts · Review", then "Deploy N changes" | → Release | `Shell.tsx:868-876`; `screens/Release.tsx:351-374` |
 
 **Counts:** I 9 + n (the notes' 10 clicks count two combobox picks as two clicks each) · P 2–3 · D 1 · CS 2 · repeated lookup 1. Webhook, form or event trigger: "New trigger" navigates to a full-page resource editor instead (`screens/Operate.tsx:113-116`): about 7 interactions over 3 pages. `05-journeys.md` measured 8 clicks, 4 fields, 4 pages with free-text cron and zone.
-
 **Works well:** next fire times computed by the scheduler in the chosen zone; presets; the footer names the first outstanding problem beside a disabled Save (`screens/ScheduleForm.tsx:306-316`).
 
 **Friction:**
@@ -637,9 +580,7 @@ Each journey gives the persona and starting point, the steps with evidence, the 
 - The toast names "Changes" and offers no link; the trigger exists only after a deploy that carries every other draft.
 - Changing the target silently clears the input (`screens/ScheduleForm.tsx:157`).
 
-**Target:** "Add trigger ▾" on the script or flow → Schedule sheet with the target prefilled → preset → "Save and deploy". I 4 · P 1 · CS 0 · lookup 0.
-
-**Blocks:** scheduling in context and one schedule form (P1-9); deploy hand-off (P1-5).
+**Target:** "Add trigger ▾" on the script or flow → Schedule sheet with the target prefilled → preset → "Save and deploy". I 4 · P 1 · CS 0 · lookup 0. **Blocks:** scheduling in context and one schedule form (P1-9); deploy hand-off (P1-5).
 
 ### J21 Common administrative actions
 
@@ -658,14 +599,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 5 | Chooses the role (raw names, no descriptions) and "Where" (default "Whole tenant"); submits. Nothing confirms | Dialog | `screens/Members.tsx:483` |
 
 **Counts:** I 10 (12 for a new account) · P 2 · D 2 · CS 1 · repeated lookup 1 · 1 step outside the console (telling the person their password).
-
 **Works well:** the page says "Belonging grants nothing by itself"; tabs are URL-addressed (`screens/Members.tsx:14-19`).
 
 **Friction:** adding and granting are two tabs with no hand-off; whether the account exists cannot be known before filling the form; the default scope is the whole tenant; reopening a cancelled dialog shows the previous email and password (`ListScreen.tsx:127`, `:153`); both writes are silent.
 
-**Target:** "Add member": email → role and scope with one-line role descriptions → toast "Added … as developer in Billing · View access". I 6 · P 1 · D 1 · lookup 0.
-
-**Blocks:** principal-first "Give access" (P2-11); success feedback (P2-8); dialog that clears on cancel and has no silent defaults (P0-9).
+**Target:** "Add member": email → role and scope with one-line role descriptions → toast "Added … as developer in Billing · View access". I 6 · P 1 · D 1 · lookup 0. **Blocks:** principal-first "Give access" (P2-11); success feedback (P2-8); dialog that clears on cancel and has no silent defaults (P0-9).
 
 #### J21b Why can a member do X
 
@@ -698,9 +636,7 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 
 **Friction:** the object is split between an inspector and a page; create does not land on the result; the page that reports access cannot give it; a key with no role works and can do nothing, and nothing warns; the agent settings snippet contains a placeholder even right after a key is made (`screens/AgentAccess.tsx:42`).
 
-**Target:** create → land on one account page (name in the header) with Access ("Give access" prefilled), Keys (Copy, ready-made snippet) and Agent. I 13 · P 2 · D 2 · CS 0.
-
-**Blocks:** service account as one page (P2-11); Copy on new keys (P0-10).
+**Target:** create → land on one account page (name in the header) with Access ("Give access" prefilled), Keys (Copy, ready-made snippet) and Agent. I 13 · P 2 · D 2 · CS 0. **Blocks:** service account as one page (P2-11); Copy on new keys (P0-10).
 
 #### J21d Create a dev workspace linked to production
 
@@ -710,13 +646,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 2 | "Create workspace" again → name, slug, Type left as Dev, "Promotes to" = the production one → submit | Dialog | `screens/Tenant.tsx:326-338` |
 | 3 | Clicks the dev workspace's name | → workspace | `screens/Tenant.tsx:297-300` |
 
-**Counts:** I 13 · P 2 · D 2 · same form twice · repeated lookup 1.
+**Counts:** I 12 · P 2 · D 2 · same form twice · repeated lookup 1.
 
 **Friction:** the type "cannot be changed afterwards" yet defaults silently to Dev; "Promotes to" is shown for a production workspace; the slug is not derived from the name; the empty state advises production first while the default is Dev (`screens/Tenant.tsx:304`); no navigation after create.
 
-**Target:** one dialog: name → "Create production and a linked dev workspace" → lands in dev. I 5 · D 1.
-
-**Blocks:** first-run pair and landing (P2-13); no silent defaults (P0-9).
+**Target:** one dialog: name → "Create production and a linked dev workspace" → lands in dev. I 5 · D 1. **Blocks:** first-run pair and landing (P2-13); no silent defaults (P0-9).
 
 #### J21e Set up SSO
 
@@ -734,14 +668,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 10 | Back to Single sign-on → reopens the provider (the view was component state) → "Require it" → confirms | 4 | `screens/SingleSignOn.tsx:1056-1062`, `:1171` |
 
 **Counts:** I about 34 · P 3 + 2 external · D 3 · CS 3 (2 external) · backtracks 1 · repeated lookup 1.
-
 **Works well:** the provider is created off; "Try signing in" shows what the provider sent and what would happen; "Require it" states the lock-out consequence.
 
 **Friction:** neither the provider nor its tab is in the URL, so a reload mid-setup returns to the list; the test result must be fetched by hand; no DNS polling; stepper step 4 points to the "Set up" tab while its control is in the header (`screens/SingleSignOn.tsx:1098`, `:422-423`).
 
-**Target:** provider and tab in the URL; the result arrives by itself; DNS check polls; the last step holds "Turn on" and "Require" with their preconditions and recovery codes in place. I about 26 · CS 2 (external only) · backtracks 0.
-
-**Blocks:** SSO state in the URL (P2-11, P2-6).
+**Target:** provider and tab in the URL; the result arrives by itself; DNS check polls; the last step holds "Turn on" and "Require" with their preconditions and recovery codes in place. I about 26 · CS 2 (external only) · backtracks 0. **Blocks:** SSO state in the URL (P2-11, P2-6).
 
 #### J21f Register a self-hosted worker
 
@@ -757,9 +688,7 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 
 **Friction:** the set-up task is the last section of a monitoring page; the command is prose with unfilled placeholders although the browser knows the instance address; the one-time token has no Copy; nothing confirms the connection.
 
-**Target:** "Add a worker" → pool → a panel with the full command filled in and a Copy button, then "Waiting for the worker… connected". I 5.
-
-**Blocks:** Copy and copyable start command (P0-10); connection status (P1-7).
+**Target:** "Add a worker" → pool → a panel with the full command filled in and a Copy button, then "Waiting for the worker… connected". I 5. **Blocks:** Copy and copyable start command (P0-10); connection status (P1-7).
 
 #### J21g Who changed X in the audit log
 
@@ -775,9 +704,7 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 
 **Friction:** the search can miss silently: nothing says it covers only what is loaded, and chip counts are counts of loaded rows (`screens/Audit.tsx:163`); no actor or target filter; the target is an ID and not a link; filters and the open entry are not in the URL, so an entry cannot be put in a ticket; no "history of this" from the resource itself.
 
-**Target:** server-side search with actor and target facets in the URL, named and linked targets, and "Changes to this" on each resource. I 4 from the log, 1–2 from the resource.
-
-**Blocks:** server-side audit search and URL state (P2-11, P2-6).
+**Target:** server-side search with actor and target facets in the URL, named and linked targets, and "Changes to this" on each resource. I 4 from the log, 1–2 from the resource. **Blocks:** server-side audit search and URL state (P2-11, P2-6).
 
 #### J21h Operator opens access to a tenant
 
@@ -804,19 +731,16 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 2 | "No tenants yet" → "Create tenant" → name, slug → submit (silent; stays on the list) | 4 | `screens/Tenants.tsx:19`; `kit/ListCollection.tsx:131-141` |
 | 3 | Clicks the tenant: the gate, because the creator is not a member | 1 | `apps/control-plane/src/routes/tenants.ts:168-203` |
 | 4 | "Open operator access" → reason, level raised to `tenant_admin` (viewer cannot create), → submit | 4 | `screens/Tenant.tsx:98-136` |
-| 5 | Workspaces → creates production, then dev linked to it, opens dev (J21d) | 13 | `screens/Tenant.tsx:306-340` |
+| 5 | Workspaces → creates production, then dev linked to it, opens dev (J21d) | 12 | `screens/Tenant.tsx:306-340` |
 | 6 | Build → Scripts → "New script" → path → "Try it" → "Save and run" | 6 | `screens/Execution.tsx:207-231` |
 | 7 | For access that outlasts the grant: Members → add self → Access grants → give `tenant_admin` | 9 | `screens/Members.tsx:294-305`, `:475-504` |
 
-**Counts:** I about 32 to a first run (41 with lasting access) · P 5 · D 4 · CS 3 · backtracks 1 · the workspace form twice · a reason typed to enter a tenant made a minute earlier.
-
+**Counts:** I about 31 to a first run (40 with lasting access) · P 5 · D 4 · CS 3 · backtracks 1 · the workspace form twice · a reason typed to enter a tenant made a minute earlier.
 **Works well:** the Scripts empty state offers both the console and the CLI path; the starter script runs as written.
 
 **Friction:** three requirements are learned by hitting them: the grant, production-first, and a worker (if none is online the run queues and the only hint is on the tenant overview, `screens/TenantOverview.tsx:102`); no checklist ties the steps together; step 6 can hit the first-run defect in J3 (Inferred).
 
-**Target:** creating a tenant makes the creator a member and lands in it; an empty tenant shows a four-step first-run panel (workspace pair, worker, sample script, invite the client's admin), each step doing the real action. I at most 15.
-
-**Blocks:** first run and empty states (P2-13); one-time secrets for the worker step (P0-10).
+**Target:** creating a tenant makes the creator a member and lands in it; an empty tenant shows a four-step first-run panel (workspace pair, worker, sample script, invite the client's admin), each step doing the real action. I at most 15. **Blocks:** first run and empty states (P2-13); one-time secrets for the worker step (P0-10).
 
 ### J22 Decide an approval
 
@@ -829,14 +753,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 3 | Confirms the prompt "Note (optional)"; the row disappears | Prompt | `screens/Operate.tsx:634-657` |
 
 **Counts:** I 3 · P 1 · D 1. From the mail link: 2, with no sign-in (`screens/ApproveLink.tsx:33`). From a flow run page: 2 (`screens/Flows.tsx:684-704`).
-
 **Works well:** oldest first; who decides and the timeout in the inspector; deciding in place on the run page.
 
 **Friction:** Approve always opens a prompt, an extra dialog for the common no-note case; no confirmation and no link to the resumed run afterwards (`screens/Operate.tsx:652-653`); no batch decision; the queue mixes workspaces with no filter; Waiting/Decided and the selection are not in the URL (`:621`, `:629`); the detail is raw JSON.
 
-**Target:** Approve = 1 click with an undo toast carrying "Open run"; the note inline and optional. I 1.
-
-**Blocks:** batch actions (P3-3); toasts with actions (P2-8); per-approval URLs (P1-10).
+**Target:** Approve = 1 click with an undo toast carrying "Open run"; the note inline and optional. I 1. **Blocks:** batch actions (P3-3); toasts with actions (P2-8); per-approval URLs (P1-10).
 
 ### J23 Pause a trigger
 
@@ -849,14 +770,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 3 | Optionally types why (shown to everyone); clicks Pause | Prompt | `screens/Operate.tsx:276-283` |
 
 **Counts:** I 4–5 including opening Triggers · P 1 · D 2. The palette offers "Pause trigger…" through a picker (`kit/CommandPalette.tsx:367-481`).
-
 **Works well:** the reason is shown to all; the selection is in the URL so a run links to its trigger; the prompt is styled as dangerous in production (`screens/Operate.tsx:280`).
 
 **Friction:** no row-level action and no batch pause; no confirmation and no undo after pause or resume (`screens/Operate.tsx:259`, `:289`); the type filter is component state (`:77`); production is marked only by a small tag while this action stops production work.
 
-**Target:** a row action with an inline optional reason and an undo toast. I 2–3.
-
-**Blocks:** batch actions (P3-3); feedback (P2-8); production signal (P4-5).
+**Target:** a row action with an inline optional reason and an undo toast. I 2–3. **Blocks:** batch actions (P3-3); feedback (P2-8); production signal (P4-5).
 
 ### J24 Promote dev → prod
 
@@ -870,14 +788,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 4 | Reads "<target> now runs version N." | Inline notice | `screens/Release.tsx:557-565` |
 
 **Counts:** I 4 · P 1 · D 1. Without permission: "Request promotion", decided by someone else on the tenant overview (`screens/Promotion.tsx:34`, `:229`). `05-journeys.md` measured 5–6 clicks and 2 pages with no way to ask.
-
 **Works well:** the same bundle is promoted by digest; the confirm states the version and what happens to runs in progress; the amber promote button is the one action that changes production.
 
 **Friction:** the Promote step has no URL: `setStep` never updates the address and a reload returns to Review (`screens/Release.tsx:117-119`; `screens/Tenant.tsx:549`); the success sentence has no link to production, its runs or the version; the drift evidence sits below the button (`screens/Release.tsx:616`); the confirm's button always reads "Promote to production" (`:592`).
 
-**Target:** the step in the URL; from the deploy toast, "Promote" (1) + confirm (1); success offers "Open <production>" and "Re-run failed runs on vN". I 2–3.
-
-**Blocks:** hand-offs (P1-5); URL state (P2-6).
+**Target:** the step in the URL; from the deploy toast, "Promote" (1) + confirm (1); success offers "Open <production>" and "Re-run failed runs on vN". I 2–3. **Blocks:** hand-offs (P1-5); URL state (P2-6).
 
 ### J25 Browse and edit a table row
 
@@ -890,14 +805,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 3 | Clicks the cell; types; presses Enter | In place | `packages/ui/src/Grid.tsx:146-158`, `:180-186` |
 
 **Counts:** I 6 · P 2 · D 0. Efficient for one scalar value.
-
 **Works well:** in-place edit with the error under the cell; server-side filter, sort and count ("Rows 51 to 100 of 1,234 that match").
 
 **Friction:** sort, filters, page, hidden columns and density are component state (`screens/Data.tsx:91-99`), lost on reload or when leaving to check another table; clicking away commits (`packages/ui/src/Grid.tsx:180`) with no undo; long text, JSON, timestamps and references are edited as one-line raw strings; the row sheet is modal and read-only (`screens/Data.tsx:281-312`); every cell is a tab stop, with no arrow-key movement; identity columns are last (`:578-582`).
 
-**Target:** the same count on a real grid (arrow keys, Enter to edit, Esc to cancel), with view state in the URL and an undo toast. I 5–6, view state surviving a reload.
-
-**Blocks:** data grid semantics (P2-9); URL state (P2-6).
+**Target:** the same count on a real grid (arrow keys, Enter to edit, Esc to cancel), with view state in the URL and an undo toast. I 5–6, view state surviving a reload. **Blocks:** data grid semantics (P2-9); URL state (P2-6).
 
 ### J26 Build and publish an app page with an action
 
@@ -912,14 +824,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 5 | "Publish" (deploys at once), then "Open the app" | Header | `screens/Interfaces.tsx:1683-1706` |
 
 **Counts:** I 14–18 · P 2 · D 1 · CS 0. `05-journeys.md` found this impossible: no widget could act.
-
 **Works well:** autosave with "Saved. Not published yet."; the audience warning "X cannot start Y, so they will not see this action" (`screens/ActionSettings.tsx:158-163`); "See it as" a group.
 
 **Friction:** the palette is below the canvas and new widgets append at the bottom; "Remove this widget" has no confirm and no undo, and is autosaved 700 ms later (`screens/Interfaces.tsx:1200-1204`, `:1434-1445`); Publish has no summary; nothing on the canvas says preview actions are real; below 1280 px the inspector drops under everything (`:1312`, `:1414`); the "Phone 390" preview keeps the desktop grid (Inferred).
 
-**Target:** palette at the side, drop onto the canvas, undo, a publish summary. I 12–15, with no scrolling to the palette.
-
-**Blocks:** builder workspace (P2-10); confirm for widget removal (P0-9).
+**Target:** palette at the side, drop onto the canvas, undo, a publish summary. I 12–15, with no scrolling to the palette. **Blocks:** builder workspace (P2-10); confirm for widget removal (P0-9).
 
 ### J27 Share an app with a group
 
@@ -934,14 +843,11 @@ Starting point is the tenant overview unless stated. Counts follow section 1's d
 | 5 | Closes the sheet; the list remounts and the selection is gone | Workbench | `screens/Apps.tsx:375-382` |
 
 **Counts:** I 7–8 · P 1 · D 2 · CS 1 · repeated lookup 1.
-
 **Works well:** sharing gives the app and its tables in one step and says so; "What they can read" shows the rows a group will see, per table.
 
 **Friction:** "Stop sharing" has no confirm and removes that audience's access to every table the app reads (`screens/Apps.tsx:195-216`); sharing posts one request per target, so a failure midway leaves it half done (`:229-246`); no success line; the select has no search and is capped at the first 200 of each kind (`:106-110`).
 
-**Target:** Share beside Publish in the builder; a grouped, searchable audience picker; "Support can now open Orders and read orders, customers". I 5 · CS 0.
-
-**Blocks:** builder publish and share (P2-10); confirm for "Stop sharing" (P0-9); success feedback (P2-8).
+**Target:** Share beside Publish in the builder; a grouped, searchable audience picker; "Support can now open Orders and read orders, customers". I 5 · CS 0. **Blocks:** builder publish and share (P2-10); confirm for "Stop sharing" (P0-9); success feedback (P2-8).
 
 ## 4. The continuity loop
 
@@ -1040,7 +946,7 @@ Leverage is the number of interactions, re-finds and remembered items a link rem
 | 10 | **Step → its script; child run → its parent flow run.** | No script link on a step (`screens/Flows.tsx:748-828`); "A flow" as text (`screens/RunPage.tsx:140-151`) | The hop through the step's run at steps 5 and 7, and the Back that follows it in J11 | P1-10, P1-2 |
 | 11 | **A held "fixing run X" context.** Something that remembers the run that started the loop: a chip in the editor, a context command in the palette | Nothing holds it; the palette has no context commands (`Shell.tsx:948-956`) | The last remembered item; makes links 2 and 3 possible without URL plumbing on every screen | P1-3, P3-2 |
 
-Links 1–3 together remove 11 of the 27 interactions and both re-finds. Links 1–7 reach the target of 10.
+Links 1–3 together remove 9 of the 27 interactions and both re-finds. Links 1–7 reach the target of 10.
 
 ## 5. Cross-journey patterns
 
@@ -1101,7 +1007,7 @@ Things the user must hold between screens because no screen holds them.
 
 ### 5.4 Dead-end success states
 
-A dead-end success state confirms a write and offers no way to the result or the next step. Toasts cannot carry a link (`packages/ui/src/Toast.tsx:14-20`), and of 40 files with API writes 12 ever show a success toast (see `02-design-system-forensics.md`).
+A dead-end success state confirms a write and offers no way to the result or the next step. Toasts cannot carry a link (`packages/ui/src/Toast.tsx:14-20`), and of the 40 console files that make API writes, 12 ever show a success toast.
 
 | After | What the user sees | What is missing | Evidence |
 | --- | --- | --- | --- |
@@ -1133,7 +1039,7 @@ Counter-examples to keep: Re-run and "Fire now" land on the new run (`screens/Ru
 
 ### 5.6 View state that is not in the URL
 
-Only the Runs filters, the selected run and the selected trigger are in the URL (`screens/Runs.tsx:98-111`; `screens/Operate.tsx:80`). All query-string writes replace the history entry (`router.tsx:48`), so Back never closes an inspector and never undoes a filter. The state below is lost on reload, cannot be shared, and is what the journeys above lose most often. The full table is in `01-current-product-ui-map.md`.
+Only the Runs filters, the selected run and the selected trigger are in the URL (`screens/Runs.tsx:98-111`; `screens/Operate.tsx:80`). All query-string writes replace the history entry (`router.tsx:48`), so Back never closes an inspector and never undoes a filter. The state below is lost on reload, cannot be shared, and is what the journeys above lose most often. `01-current-product-ui-map.md` covers URL state screen by screen.
 
 | State | Journeys it hurts | Evidence |
 | --- | --- | --- |
@@ -1164,7 +1070,7 @@ Baselines are the counts from sections 3 and 4, by the definition in section 1, 
 | J4 | Inspect output | 1 per run | 1 | 0 | 0 | 1 | 0 | Forced scrolls 2 → 0 |
 | J5 | Debug an error | 2 per iteration | 1 | 0 | 1 per iteration | 1 | 0 | Forced scrolls 2 → 0; error → line in 1 |
 | J6 | Save/deploy the script | 2–3 | 2 | 1 | 2 | 1 | 0 | Success state offers a next step |
-| J7 | Create a workflow (3 scripts) | 18 | 2 | 0 | 8 | 2 | 0 | Drags required 3 → 0 |
+| J7 | Create a workflow (3 scripts) | 15 | 2 | 0 | 8 | 2 | 0 | Drags required 3 → 0 |
 | J8 | Configure steps (3 steps) | 6 + up to 3 lookups | 1–4 | up to 3 | n fields | 1 | 0 | Lookups 3 → 0 |
 | J9 | Test part of the workflow | not possible | — | — | 2 | 1 | 0 | Step logs readable in the editor |
 | J10 | Inspect a production run | 2 | 2 | 0 | 1–2 | 2 | 0 | Rows visible at 1440x900: about 10 → 18 or more; peek opens by keyboard |
@@ -1181,12 +1087,12 @@ Baselines are the counts from sections 3 and 4, by the definition in section 1, 
 | J21a | Member with a role | 10–12 | 2 | 1 | 6 | 1 | 0 | Lookups 1 → 0; success message shown |
 | J21b | Why can a member do X | 5–6 | 2–3 | 0 | 4 | 2 | 0 | No exact permission string needed |
 | J21c | Service account + key | 19–22 | 3 | 2 | 13 | 2 | 0 | Key copied with one click |
-| J21d | Dev workspace linked to production | 13 | 2 | 0 | 5 | 2 | 0 | Dialogs 2 → 1 |
+| J21d | Dev workspace linked to production | 12 | 2 | 0 | 5 | 2 | 0 | Dialogs 2 → 1 |
 | J21e | Set up SSO | about 34 | 3 + 2 external | 3 | about 26 | 2 + 2 external | 2 | A reload mid-setup returns to the same tab |
 | J21f | Register a worker | 7–10 + manual command | 1 + terminal | 1 | 5 | 1 + terminal | 1 | Command copied complete; connection confirmed on screen |
 | J21g | Who changed X | 5 + k, unbounded | 1 | 0 | 4 | 1 | 0 | Search covers all retained entries; entry linkable |
 | J21h | Operator access | 6–8 | 2 | 0 | 6 | 2 | 0 | Gate names the tenant |
-| J21i | Fresh instance → first run | about 32 | 5 | 3 | at most 15 | 3 | 1 | Dialogs 4 → 2 |
+| J21i | Fresh instance → first run | about 31 | 5 | 3 | at most 15 | 3 | 1 | Dialogs 4 → 2 |
 | J22 | Decide an approval | 3 | 1 | 0–1 | 1 | 1 | 0 | Undo offered; link to the resumed run |
 | J23 | Pause a trigger | 4–5 | 1 | 0 | 2–3 | 1 | 0 | Confirmation shown |
 | J24 | Promote dev → prod | 4 | 1 | 0 | 2–3 | 1 | 0 | Promote step reloads in place; success links to production |

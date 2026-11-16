@@ -1,4 +1,4 @@
-# Accessibility audit against WCAG 2.2 AA
+# 5. Accessibility audit against WCAG 2.2 AA
 
 This document audits the Vynxlabs console against the Web Content Accessibility Guidelines (WCAG) 2.2 at levels A and AA. It covers the console application, the shared component kit (`packages/ui`), the app renderer (`packages/screens`) and the end-to-end tests, at HEAD `e737382`. It records what already works, lists every defect found as a numbered finding (A11Y-01 to A11Y-51), explains each topic in detail, and proposes a test plan. Nothing described as a fix has been implemented; this is research and planning only.
 

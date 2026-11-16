@@ -1,4 +1,4 @@
-# Design-system forensics and debt report
+# 2. Design-system forensics and debt report
 
 This document answers one question: does the console have a coherent design system today, and if not, what is the debt? It covers the token file (`packages/ui/src/tokens.css`), the shared component kit (`packages/ui/src`, called "ui" below), the console's own kit (`apps/console/src/kit`, called "console kit"), the list scaffolding in `apps/console/src/ListScreen.tsx`, and the hand-written styling in the screens. It measures what exists (tokens, class counts, computed sizes, contrast ratios), lists every pattern that has more than one implementation, and ends with a numbered debt register (DS-1 …) that `09-prioritized-uiux-roadmap.md` draws on. The target system is defined in `07-design-system-specification.md`; nothing described here as a fix has been implemented.
 

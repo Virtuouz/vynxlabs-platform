@@ -22,7 +22,7 @@ interface Common {
 }
 
 const box =
-  "flex min-h-9 w-full flex-wrap items-center gap-1 rounded-control border border-line bg-surface px-1.5 py-1 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-action data-[disabled]:opacity-60";
+  "flex min-h-9 w-full flex-wrap items-center gap-1 rounded-control border border-line-control bg-surface px-1.5 py-1 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-action data-[disabled]:opacity-60";
 const input =
   "min-w-24 flex-1 bg-transparent px-1 text-ink outline-none placeholder:text-ink-muted/70";
 const popup =

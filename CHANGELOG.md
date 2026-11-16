@@ -4,7 +4,18 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 ## Unreleased: phase 12, trust and access
 
+### For operators
+
+- **`GET /api/v1/instance` returns `publicUrl`,** the address set in `PUBLIC_URL`. The console fills it into the command that starts a standalone worker.
+- **Console branding warns about colors that are hard to read.** The preview lists each pair under 4.5:1 for text, or 3:1 for the edges of controls. Saving is still allowed.
+
 ### For tenant developers
+
+- **The kit's default colors are darker where they were hard to read,** to meet WCAG 2.2 AA:
+  - in the light theme, `ink-muted` is `#4b5666`, `ink-subtle` is `#586474`, `attention` is `#9a4707` and `success` is `#1b6e45`;
+  - in the dark theme, `ink-subtle` is `#8a97a7`.
+
+  A new token, `line-control` (`#748090` light, `#6b7b90` dark), draws the edges of inputs, selects and secondary buttons at 3:1 or more. Apps and portals on the defaults look slightly darker. A theme that sets these tokens keeps its values, and can set `line-control` too.
 
 - **Toasts from `@vynxlabs/ui` read better and wait for people.** A `danger` toast stays until it is dismissed instead of leaving after five seconds, and is announced as an alert. Other toasts wait while they are pointed at or focused, and are announced once from a live region the provider keeps on the page. The same message shown twice no longer stacks. `show`, `success` and `danger` take an optional `{ action: { label, onClick } }`, such as Undo, and a toast with one stays twice as long. Tests that found toasts by `role="status"` should look for their text.
 

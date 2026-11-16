@@ -9,6 +9,7 @@ export {
   type Option,
 } from "./Combobox.tsx";
 export { type ChartTokens, chartConfig, readChartTokens } from "./chartTheme.ts";
+export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
 export { Dialog } from "./Dialog.tsx";
 export {
   type ConfirmOptions,

@@ -12,21 +12,23 @@
   --vx-sunken: #e3e8ed;
   --vx-line: #d3dae2;
   --vx-ink: #16202e;
-  --vx-ink-muted: #5b6777;
+  --vx-ink-muted: #4b5666;
   --vx-action: #0e5f7a;
   --vx-action-ink: #ffffff;
   --vx-action-soft: #dcedf3;
-  --vx-attention: #b45309;
+  --vx-attention: #9a4707;
   --vx-attention-soft: #fdf0dc;
   --vx-danger: #b3261e;
   --vx-danger-soft: #fbe9e7;
-  --vx-success: #1f7a4d;
+  --vx-success: #1b6e45;
   --vx-success-soft: #e1f3e9;
   --vx-structure: #e7ebf0;
   --vx-raised: #ffffff;
   --vx-selected: #e3eff4;
   --vx-line-strong: #b4bfcb;
-  --vx-ink-subtle: #687485;
+  /* The edge of a control, such as an input: 3:1 or more against what is around it. */
+  --vx-line-control: #748090;
+  --vx-ink-subtle: #586474;
   --vx-code-bg: #f5f7f9;
   --vx-focus: #0e5f7a;
   --vx-radius-control: 6px;
@@ -61,7 +63,8 @@
     --vx-raised: #1f2a38;
     --vx-selected: #172430;
     --vx-line-strong: #3a4859;
-    --vx-ink-subtle: #7e8b9b;
+    --vx-line-control: #6b7b90;
+    --vx-ink-subtle: #8a97a7;
     --vx-code-bg: #0b1016;
     --vx-focus: #5cb8d6;
     color-scheme: dark;
@@ -88,7 +91,8 @@
   --vx-raised: #1f2a38;
   --vx-selected: #172430;
   --vx-line-strong: #3a4859;
-  --vx-ink-subtle: #7e8b9b;
+  --vx-line-control: #6b7b90;
+  --vx-ink-subtle: #8a97a7;
   --vx-code-bg: #0b1016;
   --vx-focus: #5cb8d6;
   color-scheme: dark;
@@ -114,6 +118,7 @@
   --color-raised: var(--vx-raised);
   --color-selected: var(--vx-selected);
   --color-line-strong: var(--vx-line-strong);
+  --color-line-control: var(--vx-line-control);
   --color-ink-subtle: var(--vx-ink-subtle);
   --color-code-bg: var(--vx-code-bg);
   --color-focus: var(--vx-focus);

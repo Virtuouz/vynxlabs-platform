@@ -87,6 +87,10 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
         },
+        "line-control": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
         "ink-subtle": {
           "type": "string",
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
@@ -195,6 +199,10 @@
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
         },
         "line-strong": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+        },
+        "line-control": {
           "type": "string",
           "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
         },

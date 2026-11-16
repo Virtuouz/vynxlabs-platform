@@ -3,7 +3,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import { useId, useState } from "react";
 
 const control =
-  "h-9 w-full rounded-control border border-line bg-surface px-2.5 text-ink placeholder:text-ink-muted/70 disabled:opacity-60";
+  "h-9 w-full rounded-control border border-line-control bg-surface px-2.5 text-ink placeholder:text-ink-muted/70 disabled:opacity-60";
 
 interface Common {
   label: string;

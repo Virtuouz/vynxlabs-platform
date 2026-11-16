@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–8 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–9 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -208,4 +208,23 @@ This applies to the run page, the runs inspector, a flow's run view and a flow s
 **The flow editor's autosave backs off and gives up after five tries,** waiting 1.5 s, then 1.5, 3, 6 and 12 s between tries. While it retries it says "Could not save. Trying again…". After that it says "Could not save." with Retry, where it used to say "Saving…" forever and try every 1.5 s. The e2e test cuts the connection to see it, checks that leaving asks first, and sees it catch up once back online.
 
 **The flow editor no longer remounts on its first save,** for the same reason as the script editor in Milestone 2. It keeps its undo history.
+
+### Milestone 9
+
+**The kit's values are those in `docs/uiux/07-design-system-specification.md` §7.4:**
+- in the light theme, `ink-muted`, `ink-subtle`, `attention` and `success` are darker;
+- in the dark theme, `ink-subtle` is lighter.
+
+They are in the kit's defaults, so tenant apps and portals get them too, as the owner chose. A theme that sets a token keeps its value.
+
+**`line-control` is a token of its own,** registered in the five places a token lives: the stylesheet, the manifest's list, the console's branding list and kit values, the control plane's sign-in defaults, and the generated theme schema. The existing tests keep them in step.
+- It draws the edge of inputs, selects, combobox fields, the grid's cell inputs, the log viewer's controls, icon buttons and secondary buttons.
+- Panels and dividers keep `line`.
+- Checkboxes are the browser's own, whose edge is already dark enough.
+
+**A test reads the colors straight from `tokens.css`** and checks every pair in §7.4 for both themes, plus the status words on their soft backgrounds: text at 4.5:1, control edges at 3:1. It fails on the old values.
+
+**`contrastRatio` is in the kit.** The branding preview lists every checked pair under its threshold, for the console's branding and a tenant's. It is a warning only: saving is not refused, as the owner chose.
+
+**The redesign e2e test passes at every width in both themes** with the new values.
 

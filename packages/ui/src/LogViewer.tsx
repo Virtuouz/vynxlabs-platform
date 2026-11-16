@@ -96,7 +96,7 @@ export function LogViewer({
 
   const download = onDownload ?? (() => saveText(logText(lines), fileName));
 
-  const control = "h-7 rounded-control border border-line bg-surface px-2 text-[13px]";
+  const control = "h-7 rounded-control border border-line-control bg-surface px-2 text-[13px]";
   const toggle = (on: boolean) =>
     `${control} ${on ? "border-action bg-action-soft text-action" : "text-ink-muted hover:text-ink"}`;
 

@@ -23,6 +23,7 @@ const SWATCHES = [
   "sunken",
   "line",
   "line-strong",
+  "line-control",
   "ink",
   "ink-muted",
   "ink-subtle",

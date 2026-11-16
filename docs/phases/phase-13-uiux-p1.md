@@ -128,3 +128,18 @@ Findings are recorded under each milestone as it lands.
 - **Lookup.** `insight` maps a stack frame below that line against the console's map, and one above it against the repository's map as before. So a failed draft, a test run or a deployed console script now has a `location`.
 - **Build errors on save** already reached the console as `file:line` in each issue's `path`. That shape is kept, since the console and existing clients read it, rather than a new structure.
 - **Correction to Milestone 7.** It changed what `webhooks.test.ts` sees: a field named `token` now comes masked from `GET runs/:id`. The test now reads the stored input, which is what it means to check, and asserts that the token is masked when shown. It was missed because Milestone 7 ran only part of the suite. Since then the whole suite runs before every commit that touches the server.
+
+### Milestone 10: the script editor as a workspace
+
+- **Layout.** `kit/SplitPane.tsx` puts the code and a test pane side by side, filling the height under the header. The divider drags, or moves with the arrow keys (Shift for bigger steps, Home and End to the limits). Its size is kept per editor, and the panes stack below 1024 px.
+- **Why 70%.** At 1440 × 900 the shell's rail and section navigation take about 280 px, so the code's share of the split has to be 70% to give it the 55% of the viewport the acceptance row asks for.
+- **The test pane** holds the input form and Run, then Result, Problems and Runs tabs. Which pane tab and which run tab is chosen is kept in this browser, so a second run shows the same tab as the first. The run panel takes its tab from the editor, as `key={testRun}` still remounts it.
+- **Settings** fold away above the code, closed for a script that exists.
+- **`CodeEditor`.**
+  - `onMarkers` reports Monaco's diagnostics.
+  - `reveal` shows a line, in Monaco or in the fallback text box.
+  - `onSave` binds ⌘S inside Monaco. The page also listens for ⌘S, so the browser never saves the page.
+  - The fallback text box handles ⌘S and ⌘↵ itself.
+- **Problems** lists Monaco's errors and warnings and the server's build errors (`file:line` from a refused save or test run), each one a button to its line.
+- **Going to a failure.** A failed run whose insight has a location (Milestone 9) offers "Go to line N".
+- **Runs** lists this script's latest runs, tests included.

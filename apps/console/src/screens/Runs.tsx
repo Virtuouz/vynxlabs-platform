@@ -62,6 +62,8 @@ export interface Insight {
   timeoutSeconds: number | null;
   uses: { connection: string; bound: boolean }[];
   diagnosis: { cause: string; next: string; section?: string } | null;
+  /** Where in the script it failed, when the stack points into its own code. */
+  location?: { file: string; line: number; column: number } | null;
 }
 
 const WINDOWS = [
@@ -712,10 +714,18 @@ export function ScriptRunPanel({
   root,
   link,
   runId,
+  tab,
+  onTab,
+  onLocation,
 }: {
   root: string;
   link: string;
   runId: string;
+  /** The tab shown, held by the caller so it stays chosen from one run to the next. */
+  tab?: string | undefined;
+  onTab?: ((tab: string) => void) | undefined;
+  /** Offered when the failure points at a line of the script, to show it there. */
+  onLocation?: ((location: { file: string; line: number; column: number }) => void) | undefined;
 }) {
   const { run, lines, earlier, error, reconnecting } = useLiveRun(root, runId);
   const insight = useLoad<Insight>(
@@ -772,6 +782,22 @@ export function ScriptRunPanel({
             <CircleX aria-hidden="true" size={14} /> Why it failed
           </span>
           <p className="m-0 font-mono text-telemetry break-words">{run.error.message}</p>
+          {insight.data?.location ? (
+            onLocation ? (
+              <Button
+                size="small"
+                onClick={() =>
+                  onLocation(insight.data?.location as NonNullable<Insight["location"]>)
+                }
+              >
+                Go to line {insight.data.location.line}
+              </Button>
+            ) : (
+              <span className="text-meta text-ink-muted">
+                At <Mono>{`${insight.data.location.file}:${insight.data.location.line}`}</Mono>
+              </span>
+            )
+          ) : null}
         </div>
       ) : null}
       {diagnosis ? (
@@ -812,6 +838,8 @@ export function ScriptRunPanel({
 
       <Tabs
         label="About this run"
+        {...(tab !== undefined ? { value: tab } : {})}
+        {...(onTab ? { onChange: onTab } : {})}
         tabs={[
           {
             id: "logs",

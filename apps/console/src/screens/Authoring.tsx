@@ -15,14 +15,18 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
-import { CodeEditor } from "../editor/CodeEditor.tsx";
+import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
 import { InputForm } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { Elapsed } from "../kit/Elapsed.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
+import { SplitPane } from "../kit/SplitPane.tsx";
+import { type RunState, StatePill } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
+import { fromNow } from "./Overview.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 
 const STARTER = `import { type ScriptContext, z } from "@vynxlabs/sdk";
@@ -256,6 +260,14 @@ export function ScriptEditor({
   // The last input it was tried with, kept while the editor is open.
   const [testInput, setTestInput] = useState<unknown>({});
   const [testRun, setTestRun] = useState<string>();
+  // The test pane's tab, and the run's own tab, stay as chosen from one run to the next.
+  const [paneTab, setPaneTab] = useKeptChoice("vx-editor-pane", "result");
+  const [runTab, setRunTab] = useKeptChoice("vx-editor-run", "logs");
+  const [markers, setMarkers] = useState<Marker[]>([]);
+  const [buildIssues, setBuildIssues] = useState<{ file: string; line: number; message: string }[]>(
+    [],
+  );
+  const [reveal, setReveal] = useState<{ line: number; column?: number; at: number }>();
   const [reading, setReading] = useState<string>();
   const [readingFailed, setReadingFailed] = useState<string>();
   const connections = useChoices(root, "connection-bindings", "path");
@@ -317,6 +329,18 @@ export function ScriptEditor({
     };
   }, [root, opened, about]);
 
+  // ⌘S or Ctrl+S saves the draft, from anywhere on the page.
+  const saveShortcut = useRef<() => void>(() => {});
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveShortcut.current();
+      }
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
   // ⌘↵ or Ctrl+Enter runs the draft, from anywhere in the editor.
   const runShortcut = useRef<() => void>(() => {});
   useEffect(() => {
@@ -417,6 +441,7 @@ export function ScriptEditor({
     } catch (error) {
       setProblem(failureText(error));
       setFields((error as ApiError).fields ?? []);
+      setBuildIssues(buildIssuesOf(error));
       return false;
     } finally {
       setBusy(false);
@@ -424,6 +449,8 @@ export function ScriptEditor({
   };
 
   autosave.current = save;
+  saveShortcut.current =
+    readOnly || busy || (!dirty && state !== "new") ? () => {} : () => void save();
 
   /** Runs the draft with this input. What the server refuses is thrown, for the form to place. */
   const test = async (input: unknown) => {
@@ -435,7 +462,16 @@ export function ScriptEditor({
         script: path,
         input,
       });
+      setBuildIssues([]);
       setTestRun(started.runId);
+      setPaneTab("result");
+    } catch (error) {
+      const issues = buildIssuesOf(error);
+      if (issues.length > 0) {
+        setBuildIssues(issues);
+        setPaneTab("problems");
+      }
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -644,6 +680,31 @@ export function ScriptEditor({
     </div>
   );
 
+  const problemCount =
+    markers.filter((marker) => marker.severity === "error").length +
+    buildIssues.filter((issue) => issue.file === `${path}.script.ts`).length;
+  const codeArea = (height: string) =>
+    fromRepository ? (
+      <RepositorySource root={root} path={path} />
+    ) : (
+      <CodeEditor
+        label={`Source of ${path || `the new ${about.noun}`}`}
+        path={modelPath}
+        language="typescript"
+        value={body.source?.code ?? ""}
+        readOnly={readOnly}
+        height={height}
+        onRun={kind === "script" ? () => runShortcut.current() : undefined}
+        onSave={readOnly ? undefined : () => saveShortcut.current()}
+        onMarkers={setMarkers}
+        reveal={reveal}
+        onChange={(code) => {
+          if (code === body.source?.code) return;
+          change({ source: { language: "typescript", code } });
+        }}
+      />
+    );
+
   return (
     <section className="flex flex-col gap-4">
       <Link to={`${link}/${about.list}`} className="text-[13px] text-action">
@@ -760,54 +821,211 @@ export function ScriptEditor({
         </Notice>
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
-        <div className="min-w-0">
-          {fromRepository ? (
-            <RepositorySource root={root} path={path} />
-          ) : (
-            <CodeEditor
-              label={`Source of ${path || `the new ${about.noun}`}`}
-              path={modelPath}
-              language="typescript"
-              value={body.source?.code ?? ""}
-              readOnly={readOnly}
-              height="34rem"
-              onRun={kind === "script" ? () => runShortcut.current() : undefined}
-              onChange={(code) => {
-                if (code === body.source?.code) return;
-                change({ source: { language: "typescript", code } });
-              }}
-            />
-          )}
-        </div>
-        <div className="min-w-0 rounded-panel border border-line bg-surface p-4">
-          <Tabs
-            label="Beside the source"
-            tabs={[
-              { id: "settings", label: "Settings", content: settings },
-              ...(kind === "script" ? [{ id: "try", label: "Try it", content: trying }] : []),
-            ]}
-          />
-        </div>
-      </div>
-      {testRun ? (
-        <section
-          aria-label="The test run"
-          className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="m-0 text-title">Test run</h2>
-            <Button size="small" variant="quiet" onClick={() => setTestRun(undefined)}>
-              Close
-            </Button>
-          </div>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-            <ScriptRunPanel key={testRun} root={root} link={link} runId={testRun} />
-            <PublishedEvents root={root} runId={testRun} />
-          </div>
-        </section>
-      ) : null}
+      <details
+        className="rounded-panel border border-line bg-surface"
+        open={!opened || kind !== "script"}
+      >
+        <summary className="cursor-pointer px-4 py-2 font-medium">
+          Settings
+          <span className="ml-2 font-normal text-meta text-ink-muted">
+            {kind === "script" ? "What it does, its limits, what it uses and its input" : ""}
+          </span>
+        </summary>
+        <div className="border-line border-t p-4">{settings}</div>
+      </details>
+      {kind === "script" && !fromRepository ? (
+        <SplitPane
+          id="script-editor"
+          label="Resize the code and the test pane"
+          initial={70}
+          className="h-[calc(100dvh-13rem)] min-h-[30rem]"
+          first={codeArea("100%")}
+          second={
+            <section
+              aria-label="Test pane"
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto rounded-panel border border-line bg-surface p-4"
+            >
+              {trying}
+              <Tabs
+                label="What the test run gave"
+                value={paneTab}
+                onChange={setPaneTab}
+                tabs={[
+                  {
+                    id: "result",
+                    label: "Result",
+                    content: testRun ? (
+                      <div className="flex flex-col gap-4">
+                        <ScriptRunPanel
+                          key={testRun}
+                          root={root}
+                          link={link}
+                          runId={testRun}
+                          tab={runTab}
+                          onTab={setRunTab}
+                          onLocation={(at) =>
+                            setReveal({ line: at.line, column: at.column, at: Date.now() })
+                          }
+                        />
+                        <PublishedEvents root={root} runId={testRun} />
+                      </div>
+                    ) : (
+                      <p className="m-0 text-ink-muted">
+                        Run the draft to see what it returns, and its log, here.
+                      </p>
+                    ),
+                  },
+                  {
+                    id: "problems",
+                    label: problemCount > 0 ? `Problems (${problemCount})` : "Problems",
+                    content: (
+                      <ProblemList
+                        markers={markers}
+                        build={buildIssues.filter((issue) => issue.file === `${path}.script.ts`)}
+                        onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
+                      />
+                    ),
+                  },
+                  {
+                    id: "runs",
+                    label: "Runs",
+                    content: opened ? (
+                      <RecentRuns root={root} link={link} path={opened} />
+                    ) : (
+                      <p className="m-0 text-ink-muted">
+                        A script that is saved lists its runs here.
+                      </p>
+                    ),
+                  },
+                ]}
+              />
+            </section>
+          }
+        />
+      ) : (
+        codeArea("34rem")
+      )}
     </section>
+  );
+}
+
+/** A choice kept in this browser, such as which tab of the test pane was last open. */
+function useKeptChoice(key: string, fallback: string): [string, (value: string) => void] {
+  const [value, setValue] = useState(() => {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  return [
+    value,
+    (next: string) => {
+      setValue(next);
+      try {
+        localStorage.setItem(key, next);
+      } catch {
+        // Storage that cannot be reached keeps the choice for this visit only.
+      }
+    },
+  ];
+}
+
+/** Build errors the server named by file and line, from a refused save or test run. */
+function buildIssuesOf(error: unknown): { file: string; line: number; message: string }[] {
+  return ((error as ApiError).fields ?? []).flatMap((field) => {
+    const found = /^(.+\.ts):(\d+)$/.exec(field.path);
+    return found
+      ? [{ file: found[1] as string, line: Number(found[2]), message: field.message }]
+      : [];
+  });
+}
+
+/** What is wrong with the code, as a list: each item shows its line in the editor. */
+function ProblemList({
+  markers,
+  build,
+  onShow,
+}: {
+  markers: Marker[];
+  build: { line: number; message: string }[];
+  onShow: (line: number, column: number) => void;
+}) {
+  const items = [
+    ...build.map((issue) => ({ ...issue, column: 1, severity: "error" as const, from: "build" })),
+    ...markers.map((marker) => ({ ...marker, from: "editor" })),
+  ].sort((a, b) => a.line - b.line || a.column - b.column);
+  if (items.length === 0) return <p className="m-0 text-ink-muted">No problems found.</p>;
+  return (
+    <ul aria-label="Problems in the code" className="m-0 flex list-none flex-col gap-1 p-0">
+      {items.map((item) => (
+        <li key={`${item.from}:${item.line}:${item.column}:${item.message}`}>
+          <button
+            type="button"
+            onClick={() => onShow(item.line, item.column)}
+            className="flex w-full items-start gap-2 rounded-control px-2 py-1 text-left hover:bg-sunken"
+          >
+            <span
+              className={`shrink-0 font-mono text-telemetry ${
+                item.severity === "error" ? "text-danger" : "text-attention"
+              }`}
+            >
+              {item.line}:{item.column}
+            </span>
+            <span className="min-w-0 flex-1">{item.message}</span>
+            {item.from === "build" ? <Badge tone="danger">Build</Badge> : null}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+interface ScriptRunRow {
+  id: string;
+  state: RunState;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  trigger: { type: string; draft?: boolean };
+}
+
+/** The latest runs of this script, tests and real ones together. */
+function RecentRuns({ root, link, path }: { root: string; link: string; path: string }) {
+  const runs = useLoad<{ items: ScriptRunRow[] }>(
+    `${root}/runs?${new URLSearchParams({ script: path, limit: "20" })}`,
+  );
+  return (
+    <DataTable<ScriptRunRow>
+      variant="inset"
+      label={`Runs of ${path}`}
+      rows={runs.data?.items}
+      rowKey={(run) => run.id}
+      error={runs.error?.message}
+      onRetry={runs.reload}
+      onOpen={(run) => navigate(`${link}/runs/${run.id}`)}
+      href={(run) => `${link}/runs/${run.id}`}
+      empty={{ title: "No runs yet" }}
+      columns={[
+        { header: "State", cell: (run) => <StatePill state={run.state} /> },
+        {
+          header: "Started",
+          cell: (run) => (
+            <span className="text-ink-muted">
+              {fromNow(run.startedAt ?? run.createdAt)}
+              {run.trigger.draft ? " · test" : ""}
+            </span>
+          ),
+        },
+        {
+          header: "Took",
+          align: "end",
+          cell: (run) => (
+            <Elapsed from={run.startedAt} to={run.finishedAt} className="text-ink-muted" />
+          ),
+        },
+      ]}
+    />
   );
 }
 

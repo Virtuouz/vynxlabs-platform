@@ -32,6 +32,7 @@ import { gitRoutes } from "./routes/git.js";
 import { healthRoutes } from "./routes/health.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
+import { instanceControlRoutes } from "./routes/instance-control.js";
 import { interfaceRoutes } from "./routes/interfaces.js";
 import { locationRoutes } from "./routes/locations.js";
 import { masterKeyRoutes } from "./routes/master-key.js";
@@ -163,6 +164,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(healthRoutes(options));
       await api.register(instanceRoutes(options));
       await api.register(brandingRoutes(kernel));
+      await api.register(instanceControlRoutes(kernel));
       await api.register(authRoutes(kernel));
       await api.register(identityRoutes(kernel));
       await api.register(tenantRoutes(kernel));

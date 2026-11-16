@@ -3,6 +3,7 @@ import { sql } from "@vynxlabs/db";
 import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
 import { bundleManifest } from "../kernel/execution/bundles.js";
 import { readPayload } from "../kernel/execution/runs.js";
 import {
@@ -992,6 +993,40 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return toFlowRun(
           await flowRuns(params.w).where("flow_run.id", "=", params.id).executeTakeFirstOrThrow(),
         );
+      },
+    );
+
+    app.post(
+      `${base}/flow-runs/cancel`,
+      {
+        config: { access: access.workspace("flow_run:write") },
+        schema: {
+          summary: "Cancel a workspace's flow runs in progress, in bulk",
+          description:
+            "With the steps they have going, and their sub-flows. Up to 10,000 at a time: " +
+            "`more` says there are others.",
+          tags: ["flows"],
+          params: Type.Object({ t: Id, w: Id }),
+          body: Type.Object({ olderThanSeconds: Type.Optional(Type.Integer({ minimum: 1 })) }),
+          response: { 200: Type.Object({ cancelled: Type.Integer(), more: Type.Boolean() }) },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const result = await cancelFlowRuns(kernel, {
+          workspaceId: params.w,
+          olderThanSeconds: body.olderThanSeconds,
+        });
+        await ctx.mutate(async (_trx, audit) => {
+          await audit({
+            action: "flow_run.bulk_cancelled",
+            targetType: "workspace",
+            targetId: params.w,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { ...body, ...result },
+          });
+        });
+        return result;
       },
     );
 

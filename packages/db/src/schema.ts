@@ -974,6 +974,13 @@ export interface WebhookRefusalTable {
   occurred_at: Generated<Date>;
 }
 
+export interface InstanceControlTable {
+  id: Generated<boolean>;
+  triggers_paused: Generated<boolean>;
+  reason: string | null;
+  updated_at: Generated<Date>;
+}
+
 export interface InstanceBrandingTable {
   id: Generated<boolean>;
   product_name: string | null;
@@ -1145,6 +1152,7 @@ export interface PlatformSchema {
   sso_assertion: SsoAssertionTable;
   member_dashboard: MemberDashboardTable;
   instance_branding: InstanceBrandingTable;
+  instance_control: InstanceControlTable;
   trigger_pause: TriggerPauseTable;
   import_staging: ImportStagingTable;
   member_recovery_code: MemberRecoveryCodeTable;

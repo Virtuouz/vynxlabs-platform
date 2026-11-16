@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { HEARTBEAT_SECONDS } from "@vynxlabs/db";
 import { Type } from "typebox";
@@ -97,6 +96,8 @@ const TASK_TIMEOUT_SECONDS = 30;
 const TASK_MEMORY_MB = 256;
 
 const MAX_WAIT_SECONDS = 25;
+/** How long a waiting claim goes without looking, when nothing it hears of wakes it. */
+const CLAIM_LOOK_MS = 1000;
 const MAX_LOG_MESSAGE = 8000;
 /** Memory for a script that does not say, in MB. */
 const DEFAULT_MEMORY_MB = 512;
@@ -257,6 +258,9 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const gone = () => raw.socket.destroyed;
         const takesRuns = body.kinds === undefined || body.kinds.includes("run");
         for (;;) {
+          // A worker that hung up while this waited is handed nothing: woken by the work
+          // that arrived, the claim would otherwise take it for no one.
+          if (gone()) return { job: null };
           // A task first: each is short, and someone is often waiting on it.
           const task = body.kinds
             ? await claimTask(kernel, worker, body.workerId, body.kinds, body.machine)
@@ -307,7 +311,12 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             };
           }
           if (gone() || Date.now() >= deadline) return { job: null };
-          await sleep(Math.min(500, Math.max(0, deadline - Date.now())));
+          // Woken as soon as one of the tenant's runs or tasks changes, which is when a
+          // job may be ready; a retry that comes due later is found on the next look.
+          await kernel.stream.waitForWork(
+            worker.tenantId,
+            Math.min(CLAIM_LOOK_MS, Math.max(0, deadline - Date.now())),
+          );
         }
       },
     );

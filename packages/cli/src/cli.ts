@@ -62,6 +62,9 @@ Move a tenant
 See what ran
   runs --tenant <slug> --workspace <slug> [run id]
                                         List recent runs, or show one with its logs
+  runs cancel --tenant <slug> --workspace <slug> [--queued|--all] [--older-than <s>]
+                                        Cancel the workspace's queued runs; with --all, those
+                                        going too, and its flow runs
   logs <run id> --tenant <slug> --workspace <slug> [-f]
                                         A run's or flow run's logs; with -f, follow it to its
                                         end. Exits 0 when it succeeded, 1 failed, 3 canceled
@@ -531,6 +534,57 @@ async function tenant(args: string[], io: Io) {
 
 export const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);
 
+/**
+ * `runs cancel`: cancels a workspace's runs in bulk, the way out of a backlog.
+ * Queued runs by default; `--all` takes what is going too, and flow runs.
+ */
+async function cancelInBulk(args: string[], io: Io) {
+  const { values } = parseArgs({
+    args,
+    options: {
+      ...targetOptions,
+      queued: { type: "boolean" },
+      all: { type: "boolean" },
+      "older-than": { type: "string" },
+    },
+  });
+  if (values.queued && values.all) throw new CliError("Give --queued or --all, not both.");
+  const settings = await loadSettings(io.env);
+  const { base } = await locate(settings, values.tenant, values.workspace);
+  const older = values["older-than"];
+  const olderThanSeconds = older === undefined ? undefined : Number(older);
+  if (
+    olderThanSeconds !== undefined &&
+    (!Number.isInteger(olderThanSeconds) || olderThanSeconds < 1)
+  ) {
+    throw new CliError("--older-than is a whole number of seconds.");
+  }
+  const window = olderThanSeconds ? { olderThanSeconds } : {};
+  let total = 0;
+  for (;;) {
+    const done = await request(settings.url, `${base}/runs/cancel`, settings.token, {
+      method: "POST",
+      body: { include: values.all ? "all" : "queued", ...window },
+    });
+    if (done.status !== 200) throw refusal(done, "cancel runs");
+    total += done.body.cancelled as number;
+    if (!done.body.more) break;
+  }
+  io.out(`Cancelled ${total} ${values.all ? "" : "queued "}run${total === 1 ? "" : "s"}.`);
+  if (!values.all) return;
+  let flows = 0;
+  for (;;) {
+    const done = await request(settings.url, `${base}/flow-runs/cancel`, settings.token, {
+      method: "POST",
+      body: window,
+    });
+    if (done.status !== 200) throw refusal(done, "cancel flow runs");
+    flows += done.body.cancelled as number;
+    if (!done.body.more) break;
+  }
+  io.out(`Cancelled ${flows} flow run${flows === 1 ? "" : "s"}.`);
+}
+
 async function runs(args: string[], io: Io) {
   const { values, positionals } = parseArgs({
     args,
@@ -799,7 +853,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         await tenant(rest, io);
         return 0;
       case "runs":
-        await runs(rest, io);
+        if (rest[0] === "cancel") await cancelInBulk(rest.slice(1), io);
+        else await runs(rest, io);
         return 0;
       case undefined:
       case "help":

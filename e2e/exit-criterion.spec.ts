@@ -174,7 +174,13 @@ test("a member signs in through single sign-on, and is given a tenant to look af
     "make production",
   ).body.id;
   dev = ok(
-    await asAda("POST", `${T}/workspaces`, { slug: "sandbox", name: "Sandbox", type: "dev" }),
+    // Its webhook is walked below: a dev workspace would otherwise start with triggers paused.
+    await asAda("POST", `${T}/workspaces`, {
+      slug: "sandbox",
+      name: "Sandbox",
+      type: "dev",
+      triggersPaused: false,
+    }),
     "make the dev workspace",
   ).body.id;
   ok(await asAda("PATCH", `${T}/workspaces/${dev}`, { linkedWorkspaceId: prod }), "link them");

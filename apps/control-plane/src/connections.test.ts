@@ -209,7 +209,13 @@ beforeAll(async () => {
   alice = await t.signIn("alice@acme.example", PASSWORD);
   bob = await t.signIn("bob@acme.example", PASSWORD);
   workspace = (
-    await alice.post(`/tenants/${tenant}/workspaces`, { slug: "main", name: "Main", type: "dev" })
+    await alice.post(`/tenants/${tenant}/workspaces`, {
+      slug: "main",
+      name: "Main",
+      type: "dev",
+      // Its triggers are exercised here: a dev workspace would otherwise start them paused.
+      triggersPaused: false,
+    })
   ).body.id;
   workerToken = (
     await alice.post(`/tenants/${tenant}/worker-credentials`, {

@@ -247,6 +247,8 @@ beforeAll(async () => {
       slug: "main-dev",
       name: "Dev",
       type: "dev",
+      // Its triggers are exercised here: a dev workspace would otherwise start them paused.
+      triggersPaused: false,
     })
   ).body.id;
   prod = (
@@ -1469,6 +1471,16 @@ describe("operator health and guards", () => {
     const run = (await alice.get(`${ws()}/runs/${id}`)).body;
     expect(run.input.name).toHaveLength(big.length);
     expect(run.output.echo).toHaveLength(big.length);
+  });
+
+  test("runs are cancelled in bulk only as asked: nothing older than a month waits here", async () => {
+    // The bulk cancel itself is tested in trigger-limits.test.ts; here it must touch nothing.
+    const done = await alice.post(`${ws()}/runs/cancel`, {
+      include: "queued",
+      olderThanSeconds: 30 * 24 * 3600,
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body).toEqual({ cancelled: 0, more: false });
   });
 
   test("every change by a principal left an audit entry, and every such route was exercised", () => {

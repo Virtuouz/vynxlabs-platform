@@ -164,8 +164,16 @@ beforeAll(async () => {
   });
   await t.admin.delete(`/tenants/${tenant}/access-grants/${grant.body.id}`);
   alice = await t.signIn("alice@acme.example", PASSWORD);
+  // Triggers are exercised in both: a dev workspace would otherwise start them paused.
   const make = async (slug: string, type: string) =>
-    (await alice.post(`/tenants/${tenant}/workspaces`, { slug, name: slug, type })).body.id;
+    (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug,
+        name: slug,
+        type,
+        triggersPaused: false,
+      })
+    ).body.id;
   prod = await make("main", "production");
   dev = await make("dev", "dev");
   const credential = await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "test" });

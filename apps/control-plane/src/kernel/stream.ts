@@ -63,6 +63,8 @@ export class StreamHub {
   readonly #pings = new Map<string, { at: number; timer?: NodeJS.Timeout }>();
   #listener: Promise<Listener> | undefined;
   #closed = false;
+  /** Claims waiting for work, by tenant: woken by any change to its runs or tasks. */
+  readonly #waiting = new Map<string, Set<() => void>>();
 
   constructor(database: Database, log: FastifyBaseLogger) {
     this.#database = database;
@@ -117,12 +119,48 @@ export class StreamHub {
     };
   }
 
+  /**
+   * Waits until a run or task of the tenant changes, such as one being queued or
+   * ending, or until `ms` pass: a worker's claim then looks again at once rather
+   * than on its next poll. Without the listening connection, it only waits.
+   */
+  async waitForWork(tenantId: string, ms: number): Promise<void> {
+    try {
+      await this.#listen();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      return;
+    }
+    let set = this.#waiting.get(tenantId);
+    if (!set) {
+      set = new Set();
+      this.#waiting.set(tenantId, set);
+    }
+    const waiting = set;
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        waiting.delete(done);
+        if (waiting.size === 0 && this.#waiting.get(tenantId) === waiting) {
+          this.#waiting.delete(tenantId);
+        }
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      waiting.add(done);
+    });
+  }
+
   #receive(payload: string) {
     let event: Announced;
     try {
       event = JSON.parse(payload);
     } catch {
       return;
+    }
+    if (event.k === "run" || event.k === "task") {
+      const waiting = this.#waiting.get(event.t);
+      if (waiting) for (const wake of [...waiting]) wake();
     }
     const set = this.#subscribers.get(event.t);
     if (!set || set.size === 0) return;

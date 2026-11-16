@@ -2,6 +2,7 @@ import { newId } from "@vynxlabs/db";
 import { PLATFORM_EVENT_PREFIX, validateJson } from "@vynxlabs/manifest";
 import type { Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
+import { instanceTriggersPaused } from "../execution/control.js";
 import { kickStarted, notPausedAlone, startTarget } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { ExpressionError } from "./expressions.js";
@@ -77,20 +78,21 @@ export async function publishEvent(kernel: Kernel, trx: Trx, event: PublishEvent
     .select("triggers_paused")
     .where("id", "=", event.workspaceId)
     .executeTakeFirst();
-  const subscribers = paused?.triggers_paused
-    ? []
-    : await trx
-        .selectFrom("trigger_state")
-        .innerJoin("resource", "resource.id", "trigger_state.resource_id")
-        .selectAll("trigger_state")
-        .where("trigger_state.workspace_id", "=", event.workspaceId)
-        .where("trigger_state.type", "=", "event")
-        .where("trigger_state.event_name", "=", event.name)
-        .where("trigger_state.enabled", "=", true)
-        .where(notPausedAlone)
-        .orderBy("trigger_state.resource_id")
-        .orderBy("trigger_state.node_id")
-        .execute();
+  const subscribers =
+    paused?.triggers_paused || (await instanceTriggersPaused(kernel, trx))
+      ? []
+      : await trx
+          .selectFrom("trigger_state")
+          .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+          .selectAll("trigger_state")
+          .where("trigger_state.workspace_id", "=", event.workspaceId)
+          .where("trigger_state.type", "=", "event")
+          .where("trigger_state.event_name", "=", event.name)
+          .where("trigger_state.enabled", "=", true)
+          .where(notPausedAlone)
+          .orderBy("trigger_state.resource_id")
+          .orderBy("trigger_state.node_id")
+          .execute();
   const started: { kind: string; id: string }[] = [];
   for (const subscriber of subscribers) {
     if (subscriber.filter) {
@@ -164,6 +166,7 @@ export async function publishPlatformEvent(
     .limit(1)
     .executeTakeFirst();
   if (!heard) return;
+  if (await instanceTriggersPaused(kernel)) return;
   const published = await kernel.db.transaction().execute((trx) =>
     publishEvent(kernel, trx, {
       tenantId: event.tenantId,

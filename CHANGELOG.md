@@ -15,13 +15,20 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Every data request has a time limit,** `DATA_STATEMENT_TIMEOUT_MS`, 15 seconds by default.
 - **Pool sizes can be set:** `DATABASE_POOL_SIZE` and `DATA_POOL_SIZE`, each 10 by default as before.
 - **A database that takes no writes no longer takes the instance down.** One whose disk is full keeps serving reads, and `/readyz` stays 200 with `readOnly: true`. Changes and sign-ins are answered 503 `read_only`, and the queue and background work stop. They start again on their own once writes come back. The instance also starts this way: migrations are checked by reading alone when none are pending. Pooled connections are renewed each minute.
-- **A busy database is a 503 with `Retry-After`,** no longer a 500. A database that takes no writes, such as one whose disk is full, is a 503 `read_only`.
+- **A busy database is a 503 with `Retry-After`,** no longer a 500.
+- **Database change.** Migration 0060 adds the instance's own switches.
+- **An emergency stop for triggers.** **Instance → Triggers**, or `PUT /api/v1/instance/triggers`, pauses every schedule, source, webhook, form and event in every tenant at once. `TRIGGERS_PAUSED=true` does the same from the environment.
+- **A workspace with a long queue gets no more from its schedules:** past `SCHEDULE_BACKLOG_LIMIT` queued runs (200), a schedule passes over its time and says why.
+- **Waiting workers are woken when work arrives** rather than every half second. A foreach went from about 150 to 530 items a minute on a development machine. A database that takes no writes, such as one whose disk is full, is a 503 `read_only`.
 
 ### For tenant developers
 
 - **`memoryMb` now covers all of a script's memory,** Buffers and native memory included, plus 64 MB for Node itself. It used to cover only the JavaScript heap. A script that held large files, images or downloads in Buffers past its `memoryMb` now fails with "The script ran out of memory": raise its `memoryMb`.
 - A run stopped because its machine ran low on memory fails with "The script was stopped: the machine ran low on memory." Its retries apply.
 - **A table request that runs past 15 seconds is stopped** and answered 422 `too_slow`. Narrow its filter, or add an index on the columns it filters and sorts by. It used to run as long as it took, and hold a connection all the while.
+- **A flow's schedule passes over a time while its last run from that trigger is still going.** It used to start another beside it, so a flow that took longer than its interval piled up. Say `overlap: "allow"` on the trigger (`trigger.schedule(cron, { overlap: "allow" })`) to keep the old behaviour. `defineSchedule` takes `overlap` and `tags` too, as the manifest already did.
+- **A new dev workspace starts with its triggers paused,** so a schedule you try there does not run beside production's. Resume them in its settings, or create it with `triggersPaused: false`. Existing workspaces are unchanged.
+- **Runs can be cancelled in bulk:** **Cancel queued runs** on a workspace's Runs, `POST …/runs/cancel` and `POST …/flow-runs/cancel`, and `platform runs cancel`.
 - **Scripts and `@vynxlabs/app` try a busy request again by themselves,** twice, after the wait the platform asks for. Your own code that calls the API should do the same on a 503 with `Retry-After`.
 
 ## Unreleased: phase 10, platform expansion

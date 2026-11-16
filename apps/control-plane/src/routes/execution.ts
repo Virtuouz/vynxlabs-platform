@@ -19,6 +19,7 @@ import {
 } from "../kernel/execution/oauth.js";
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
+import { cancelRuns } from "../kernel/execution/bulk-cancel.js";
 import { loadBundle, MAX_BUNDLE_BYTES, storeBundle } from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
@@ -1400,6 +1401,44 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.post(
+      `${base}/runs/cancel`,
+      {
+        config: { access: access.workspace("run:write") },
+        schema: {
+          summary: "Cancel a workspace's runs in bulk",
+          description:
+            "`queued` cancels what has not started; `all` what is going too. Up to 10,000 at a " +
+            "time: `more` says there are others, and the same request cancels the next.",
+          tags: ["runs"],
+          params: Type.Object({ t: Id, w: Id }),
+          body: Type.Object({
+            include: Type.Union([Type.Literal("queued"), Type.Literal("all")]),
+            olderThanSeconds: Type.Optional(Type.Integer({ minimum: 1 })),
+          }),
+          response: { 200: Type.Object({ cancelled: Type.Integer(), more: Type.Boolean() }) },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const result = await cancelRuns(kernel, {
+          workspaceId: params.w,
+          include: body.include,
+          olderThanSeconds: body.olderThanSeconds,
+        });
+        await ctx.mutate(async (_trx, audit) => {
+          await audit({
+            action: "run.bulk_cancelled",
+            targetType: "workspace",
+            targetId: params.w,
+            tenantId: params.t,
+            workspaceId: params.w,
+            details: { ...body, ...result },
+          });
+        });
+        return result;
+      },
+    );
+
     // ----- Triggers -----
 
     app.get(
@@ -1432,6 +1471,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     description: "For a schedule: whether it skips a time while its last run goes.",
                   }),
                   lastSkippedAt: NullableTime,
+                  lastSkipReason: Type.Union(
+                    [Type.Literal("overlap"), Type.Literal("backlog"), Type.Null()],
+                    {
+                      description:
+                        "Why the last time was passed over: its last run was still going, or the " +
+                        "workspace already had too many runs waiting.",
+                    },
+                  ),
                   nextFireAt: NullableTime,
                   lastFiredAt: NullableTime,
                   url: NullableString,
@@ -1576,6 +1623,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     ? ((row.config as { overlap?: "skip" }).overlap ?? ("allow" as const))
                     : null,
                 lastSkippedAt: (row.config as { lastSkippedAt?: string }).lastSkippedAt ?? null,
+                lastSkipReason:
+                  (row.config as { lastSkipReason?: "overlap" | "backlog" }).lastSkipReason ??
+                  ((row.config as { lastSkippedAt?: string }).lastSkippedAt ? "overlap" : null),
                 nextFireAt: isoOrNull(row.next_fire_at),
                 lastFiredAt: isoOrNull(row.last_fired_at),
                 url: token ? address : null,

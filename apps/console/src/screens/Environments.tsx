@@ -76,6 +76,9 @@ export function WorkspaceControls({
           >
             <strong>Triggers are paused.</strong> No schedule, webhook or event starts anything in
             this workspace. Runs you start by hand still work.
+            {workspace.type === "dev"
+              ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
+              : ""}
           </Notice>
         ) : (
           <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">

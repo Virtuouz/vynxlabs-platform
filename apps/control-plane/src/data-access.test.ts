@@ -178,6 +178,8 @@ beforeAll(async () => {
       slug: "main-dev",
       name: "Dev",
       type: "dev",
+      // Its triggers are exercised here: a dev workspace would otherwise start them paused.
+      triggersPaused: false,
     })
   ).body.id;
   const rowsOnly = (

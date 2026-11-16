@@ -57,6 +57,8 @@ describe("configuration", () => {
         dataPoolSize: 10,
         dataTenantConnections: undefined,
         dataStatementTimeoutMs: 15_000,
+        triggersPaused: false,
+        scheduleBacklogLimit: 200,
       },
     });
   });

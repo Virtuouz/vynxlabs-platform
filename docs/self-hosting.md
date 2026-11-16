@@ -271,6 +271,28 @@ It also starts in this state: migrations are checked by reading alone when there
 
 Watch the database's disk, and alert well before it is full. `platform_database_size_bytes` in the metrics tracks the platform database's size. On Fly, extend the volume with `fly volumes extend`.
 
+### When work piles up
+
+Some limits apply by default:
+- **A flow's schedule passes over a time while its last run from that trigger is still going,** unless the trigger says `overlap: "allow"`. A schedule resource keeps its own default, `allow`, and can say `skip`.
+- **A workspace with `SCHEDULE_BACKLOG_LIMIT` runs waiting (200 by default) gets no more from its schedules** until the queue shrinks. The trigger shows the time it passed over, and why. 0 turns this off.
+- **A new dev workspace starts with its triggers paused,** so a schedule tried there does not run beside production's. Resume them in its settings.
+
+To stop everything at once, pause every trigger in the instance under **Instance → Triggers**, or with `PUT /api/v1/instance/triggers {"paused": true}`:
+- Nothing new starts from a schedule, source, webhook, form or event, in any tenant.
+- Schedules keep their times and fire once on resuming.
+- Webhooks are answered 503.
+- Runs already queued or going carry on.
+
+`TRIGGERS_PAUSED=true` does the same from where the instance runs, and the console cannot undo it. Use it when the instance cannot stay up long enough to pause from the console.
+
+To clear a backlog, use **Cancel queued runs** on a workspace's Runs, or `platform runs cancel --tenant <slug> --workspace <slug>`. `--all` cancels what is going too, flow runs included.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SCHEDULE_BACKLOG_LIMIT` | 200 | Queued runs in a workspace past which its schedules pass over their times. 0: no limit |
+| `TRIGGERS_PAUSED` | `false` | `true` pauses every trigger in the instance, whatever the console says |
+
 ## What the instance reaches for a tenant
 
 The control plane reaches a few addresses a tenant chooses: an identity provider's settings and endpoints, a Git remote, a data source, the token address of an OAuth connection, and a hostname the tenant registers, to check it. It refuses any whose address is loopback, private, link-local (cloud metadata included), shared or reserved, and says so. Everything else a tenant's systems are asked, such as posting a failure alert or trying a connection, a worker does.

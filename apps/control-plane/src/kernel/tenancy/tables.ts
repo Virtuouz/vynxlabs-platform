@@ -377,6 +377,8 @@ export const INSTANCE_TABLES = [
   "database_location",
   // How the console looks on this instance. A tenant's branding is its portal's.
   "instance_branding",
+  // The operator's switches for the whole instance, such as pausing every trigger.
+  "instance_control",
   // Secrets of the instance itself, such as the seed of the data role's password.
   "instance_secret",
   // Rate-limit counters, keyed by route and caller, shared by every replica.

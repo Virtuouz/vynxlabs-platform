@@ -236,6 +236,13 @@ export interface ScheduleOptions {
    * for each thing the source finds, with that thing as its input.
    */
   source?: string | { path: string };
+  /**
+   * `skip` passes over a time while the run it started last is still queued or
+   * going. Default `allow`.
+   */
+  overlap?: "allow" | "skip";
+  /** CEL expressions over `trigger` that tag each run it starts. */
+  tags?: string[];
 }
 
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
@@ -247,6 +254,8 @@ export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
       input: options.input,
       enabled: options.enabled,
       source: options.source ? pathOf(options.source) : undefined,
+      overlap: options.overlap,
+      tags: options.tags,
     }),
   );
 }
@@ -612,13 +621,25 @@ export const trigger = {
    * Started on a five-field cron schedule. With `source`, each tick runs that
    * trigger source, and the flow starts once for each thing it finds.
    */
-  schedule: (cron: string, options: { timezone?: string; source?: Target } = {}): FlowNode => ({
+  schedule: (
+    cron: string,
+    options: {
+      timezone?: string;
+      source?: Target;
+      /**
+       * `skip`, the default, passes over a time while the flow's last run from this
+       * trigger is still going. `allow` starts another beside it.
+       */
+      overlap?: "allow" | "skip";
+    } = {},
+  ): FlowNode => ({
     type: "trigger",
     trigger: compact({
       type: "schedule",
       cron,
       timezone: options.timezone,
       source: options.source ? pathOf(options.source) : undefined,
+      overlap: options.overlap,
     }),
   }),
   /**

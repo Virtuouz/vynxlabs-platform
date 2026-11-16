@@ -103,3 +103,40 @@ Each is now read first, or skipped when the database takes no writes. pg-boss st
 | Creating a tenant | 503 `read_only` |
 | Signing in | 503 |
 | After the database was made writable again | "the database takes writes again" logged, and creating a tenant was 201 |
+
+### Milestone 4
+
+**Overlap on a flow's schedule trigger defaults to `skip`. Schedule resources keep `allow`:**
+- A flow is the case that piled up in the test.
+- Changing a schedule resource's default would silently change scripts that run on purpose beside each other.
+- `stillGoing` already handled flow targets, so only the registration changed.
+
+**The backlog cap counts at most `limit` rows,** with a `count(*)` over a `limit`ed subquery, so a huge queue is no slower to check than a short one. Each pass is recorded on the trigger as `lastSkipReason`, `overlap` or `backlog`, next to the existing `lastSkippedAt`.
+
+**The instance-wide pause sits beside each workspace's pause** in every place that checks one:
+- schedules, which keep their due time;
+- a source's relay, forms and webhooks, which are refused as paused;
+- events, which are kept but start nothing.
+
+It is read at most every 2 seconds, inside the caller's transaction where there is one, so a pool of one connection cannot deadlock on it.
+
+**Bulk cancel goes through the same cancel as one run,** a batch of 200 to a transaction. Flow runs go one to a transaction, as each takes its flow run's lock. A run that ends meanwhile is passed over, not counted.
+
+**Foreach throughput was measured first.** 150 items, one at a time, a trivial script, on a development machine:
+
+| | Per item, median | Items a minute |
+| --- | --- | --- |
+| Before | engine 1 ms, claim 362 ms, process 95 ms | 151–271 (two runs) |
+| After | engine 1 ms, claim 13 ms, process 94 ms | 533 |
+
+The time went to claiming: a waiting claim looked again only every 500 ms. It is now woken by the database's own announcement of the tenant's runs and tasks, which the stream hub already listened to, and looks every second besides, for retries that come due. The engine's own work, re-reading every step, was 1 ms an item even at 150 items, so it was left as it is. A new process per item, about 95 ms, is now the floor; reusing processes is outside this phase.
+
+**A claim whose worker had hung up could take a task** once claims were woken by new work. Runs already checked for this, but tasks did not. The claim loop now checks before each look, which the faster wake made necessary.
+
+**Existing tests and the e2e walk exercise triggers in dev workspaces.** They now create them with `triggersPaused: false`. Under the full suite, one flow test, "an approval that was refused is asked again", once missed its 20-second wait; it passed alone, twice.
+
+**Walked at 1440 and 390 px:**
+- Instance → Triggers, running and paused, with the reason;
+- a new dev workspace's overview saying why its triggers are paused.
+
+No page errors, and nothing scrolls sideways. The runs list's **Cancel queued runs** was checked by the API tests and type-checking, not walked.

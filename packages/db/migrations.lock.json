@@ -57,5 +57,6 @@
   "0056_connection_oauth.sql": "6b4706bd14186322b1dce397a14f1dd5484769e51d99382c6d9c6bd7d6695dcd",
   "0057_promotion_request.sql": "1ae6891fd46b83df644a541016611bd7fc50f8abd71c48bbdbae27d68fb14e14",
   "0058_approval_link.sql": "c36e1b9f40e7b5c86813f96f5df88814067d1cab9cd9faad97b60444b4ed13b3",
-  "0059_worker_machine.sql": "30f44ca6937f5b09e5be3c3c70f19bd71423a56c2e8fdb0a3802482ef4073633"
+  "0059_worker_machine.sql": "30f44ca6937f5b09e5be3c3c70f19bd71423a56c2e8fdb0a3802482ef4073633",
+  "0060_instance_control.sql": "97dbf0d270d3257a6ec5e2129bc242c0713850837f53fcb466af81b0691eed4e"
 }

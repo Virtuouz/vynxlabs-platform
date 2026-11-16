@@ -308,7 +308,11 @@ export function Overview({
             tone="attention"
             icon={<CirclePause aria-hidden="true" size={15} />}
             title="Triggers are paused"
-            detail="No schedule, webhook or event starts anything here. Runs started by hand still work."
+            detail={
+              workspace.type === "dev"
+                ? "Dev workspaces start this way, so a schedule you try here does not run beside production's. Runs started by hand still work."
+                : "No schedule, webhook or event starts anything here. Runs started by hand still work."
+            }
             action={
               <Button size="small" onClick={() => navigate(`${link}/settings`)}>
                 View settings

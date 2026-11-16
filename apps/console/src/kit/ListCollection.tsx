@@ -134,7 +134,7 @@ export function ListCollection<Row>({
           onClose={() => setCreating(false)}
           onCreated={(result) => {
             setCreating(false);
-            setCreated(create.afterCreate?.(result));
+            setCreated(create.afterCreate?.(result, () => setCreated(undefined)));
             list.reload();
           }}
         />

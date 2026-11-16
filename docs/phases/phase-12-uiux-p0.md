@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–5 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–6 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -161,4 +161,17 @@ This applies to the run page, the runs inspector, a flow's run view and a flow s
 **Each choice of a run moves focus to the inspector, even the run already open.** The e2e test found that pressing Enter on the open run's row left focus on the row. The inspector takes a `subject`, and the runs list counts choices into it. Other inspectors move focus only when they open.
 
 **`Dialog` has a visible close button,** as `SideSheet` already had. Closing a confirmation that way answers no.
+
+### Milestone 6
+
+**One `OneTimeSecret` shows every value seen only once:** a new API key or service account key, a worker credential, and a SCIM token.
+- It shows the value, and a Copy button.
+- Done takes it away. If nothing was copied, Done asks first, because a lost value means making a new one.
+- `ListScreen` and `ListCollection` now hand `afterCreate` a `dismiss` so the notice can be closed. It used to stay until the page was left.
+
+**A new worker credential comes with the whole command,** `platform-worker --url <address> --token <credential>`, ready to copy. `GET /instance` now returns `publicUrl`, the address the operator set in `PUBLIC_URL`. The console falls back to its own address. The list's description names the address too.
+
+**Milestone 5 went in with one lint error** (a handler named `escape`, which shadows a browser global). It is fixed here, and lint is checked before each commit from now on.
+
+**The queue panel crashed when a queue answer had no `tasks`.** The new test's mock found it. It now counts none.
 

@@ -101,6 +101,7 @@ describe("routes", () => {
       migrationLevel: await database.migrationLevel(),
       appsAddress: "console",
       mail: false,
+      publicUrl: "http://localhost:8080",
     });
     expect(response.json().migrationLevel).toBeGreaterThan(0);
   });

@@ -71,7 +71,8 @@ export interface CreateConfig {
   fields: FormField[];
   submit: (values: Record<string, string>) => Promise<unknown>;
   /** Something to show once after creating, such as a key that is only shown now. */
-  afterCreate?: (result: unknown) => ReactNode;
+  /** What to show once made, such as a key shown once. `dismiss` takes it away. */
+  afterCreate?: (result: unknown, dismiss: () => void) => ReactNode;
 }
 
 export interface ListScreenProps<Row> {
@@ -260,7 +261,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           onClose={() => setCreating(false)}
           onCreated={(result) => {
             setCreating(false);
-            setCreated(create.afterCreate?.(result));
+            setCreated(create.afterCreate?.(result, () => setCreated(undefined)));
             list.reload();
           }}
         />
@@ -339,7 +340,16 @@ export function RemoveButton({
 }
 
 /** Copies a value that has to be passed on by hand, such as a link or a DNS record. */
-export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+export function CopyButton({
+  value,
+  label = "Copy",
+  onCopied,
+}: {
+  value: string;
+  label?: string;
+  /** Called once the value is on the clipboard. */
+  onCopied?: () => void;
+}) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <Button
@@ -348,6 +358,7 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
         try {
           await navigator.clipboard.writeText(value);
           setState("copied");
+          onCopied?.();
         } catch {
           setState("failed");
         }

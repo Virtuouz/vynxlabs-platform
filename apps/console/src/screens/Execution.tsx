@@ -13,10 +13,11 @@ import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
+import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { UsedBy, useReferences } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
-import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -942,7 +943,7 @@ export function QueuePanel({ base }: { base: string }) {
   const tenantLink = base.replace(/^\/tenants\//, "/t/");
   const rows = queue.data?.items ?? [];
   const backlog = rows.filter((row) => row.due > 0);
-  const tasks = queue.data?.tasks.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
+  const tasks = queue.data?.tasks?.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
   return (
     <section aria-label="Queue" className="flex flex-col gap-3">
       <h2 className="m-0 text-base font-semibold">Queue</h2>
@@ -1033,6 +1034,9 @@ export function QueuePanel({ base }: { base: string }) {
 
 export function Workers({ base }: { base: string }) {
   const pools = useLoad<{ items: WorkerPool[] }>(`${base}/worker-pools`);
+  // The address a worker is given, as the operator set it, or else the one this page is at.
+  const instance = useLoad<{ publicUrl?: string | null }>("/instance");
+  const instanceUrl = instance.data?.publicUrl ?? location.origin;
   const tenant = useLoad<{ managedWorkers: boolean }>(base);
   const managed = useLoad<{ state: "off" | "host" | "isolated" | "shared" | "refused" }>(
     `${base}/managed-workers`,
@@ -1146,7 +1150,7 @@ export function Workers({ base }: { base: string }) {
       }>
         as="section"
         title="Credentials for standalone workers"
-        description="Start a worker with: platform-worker --url <this instance> --token <credential>"
+        description={`A worker outside the platform signs in with one of these: platform-worker --url ${instanceUrl} --token followed by the credential. The full command is shown when a credential is made.`}
         path={`${base}/worker-credentials`}
         rowKey={(row) => row.id}
         columns={[
@@ -1190,14 +1194,21 @@ export function Workers({ base }: { base: string }) {
             pools.reload();
             return result;
           },
-          afterCreate: (result) => (
-            <span>
-              Copy this credential now. It is not shown again:{" "}
-              <code className="font-mono break-all select-all">
-                {(result as { token: string }).token}
-              </code>
-            </span>
-          ),
+          afterCreate: (result, dismiss) => {
+            const token = (result as { token: string }).token;
+            const command = `platform-worker --url ${instanceUrl} --token ${token}`;
+            return (
+              <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
+                <p className="m-0">Start a worker with it:</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-[13px] break-all select-all">
+                    {command}
+                  </code>
+                  <CopyButton value={command} label="Copy the command" />
+                </div>
+              </OneTimeSecret>
+            );
+          },
         }}
         rowActions={(row, reload) =>
           row.revokedAt ? null : (

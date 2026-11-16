@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
+import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { CopyButton, when } from "../ListScreen.tsx";
 
@@ -113,13 +114,8 @@ export function Provisioning({
         </div>
         {made ? (
           <Notice tone="attention">
-            <span className="flex flex-wrap items-center justify-between gap-2">
-              <span className="min-w-0">
-                The token “{made.name}”. Copy it now: it cannot be shown again.
-                <code className="mt-1 block font-mono text-[13px] break-all">{made.token}</code>
-              </span>
-              <CopyButton value={made.token} label="Copy the token" />
-            </span>
+            <p className="m-0 mb-1 font-medium">The token “{made.name}”</p>
+            <OneTimeSecret value={made.token} noun="token" onDone={() => setMade(undefined)} />
           </Notice>
         ) : null}
         <Table<Token>

@@ -7,6 +7,7 @@ export function instanceRoutes(deps: {
   database: Database;
   version: string;
   config?: {
+    publicUrl?: string;
     appsUrl: string | undefined;
     appsOnConsoleAddress: boolean;
     mail?: unknown;
@@ -41,6 +42,11 @@ export function instanceRoutes(deps: {
                 description:
                   "Whether the instance sends mail: approvers are told of what waits for them.",
               }),
+              publicUrl: Type.Union([Type.String(), Type.Null()], {
+                description:
+                  "The address the instance is reached at, as its operator set it: what a " +
+                  "standalone worker is given as `--url`.",
+              }),
             }),
           },
         },
@@ -50,6 +56,7 @@ export function instanceRoutes(deps: {
         apiVersion: "v1" as const,
         migrationLevel: await deps.database.migrationLevel(),
         mail: Boolean(deps.config?.mail || deps.config?.mailCaptureDir),
+        publicUrl: deps.config?.publicUrl ?? null,
         appsAddress: deps.config?.appsUrl
           ? ("separate" as const)
           : deps.config?.appsOnConsoleAddress

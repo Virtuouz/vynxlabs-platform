@@ -162,17 +162,17 @@ function DockedInspector({
     const track = (event: FocusEvent) => {
       if (!region.current?.contains(event.target as Node)) outside = event.target as Element;
     };
-    const escape = (event: KeyboardEvent) => {
+    const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       // A dialog or menu over the page closes first, on its own.
       if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
       closing.current();
     };
     document.addEventListener("focusin", track);
-    document.addEventListener("keydown", escape);
+    document.addEventListener("keydown", onEscape);
     return () => {
       document.removeEventListener("focusin", track);
-      document.removeEventListener("keydown", escape);
+      document.removeEventListener("keydown", onEscape);
       // Back to where it was, if that is still on the page and focus was in here.
       const inside =
         document.activeElement === document.body ||

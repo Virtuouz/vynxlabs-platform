@@ -17,7 +17,7 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
   A new token, `line-control` (`#748090` light, `#6b7b90` dark), draws the edges of inputs, selects and secondary buttons at 3:1 or more. Apps and portals on the defaults look slightly darker. A theme that sets these tokens keeps its values, and can set `line-control` too.
 
-- **Toasts from `@vynxlabs/ui` read better and wait for people.** A `danger` toast stays until it is dismissed instead of leaving after five seconds, and is announced as an alert. Other toasts wait while they are pointed at or focused, and are announced once from a live region the provider keeps on the page. The same message shown twice no longer stacks. `show`, `success` and `danger` take an optional `{ action: { label, onClick } }`, such as Undo, and a toast with one stays twice as long. Tests that found toasts by `role="status"` should look for their text.
+- **Toasts from `@vynxlabs/ui` read better and wait for people.** A `danger` toast stays until it is dismissed instead of leaving after five seconds, and is announced as an alert. Other toasts wait while they are pointed at or focused, and are announced once, as they are added to the toast stack, which is a live region of its own. Failures sit together below the others. The same message shown twice no longer stacks. `show`, `success` and `danger` take an optional `{ action: { label, onClick } }`, such as Undo, and a toast with one stays twice as long. Tests that found toasts by `role="status"` should look for their text.
 
 ## Unreleased: phase 11, holding up under load
 

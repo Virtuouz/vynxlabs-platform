@@ -276,8 +276,8 @@ describe("kit components under React", () => {
       act(() => {
         vi.advanceTimersByTime(1000);
       });
-      // The first toast has had its three seconds, the others have not.
-      expect(toastsShown()).toEqual(["Could not save.", "Copied."]);
+      // The first toast has had its three seconds, the others have not. Failures sit together, last.
+      expect(toastsShown()).toEqual(["Copied.", "Could not save."]);
       act(() => {
         vi.advanceTimersByTime(30_000);
       });
@@ -356,26 +356,23 @@ describe("kit components under React", () => {
     }
   });
 
-  test("a toast is read out once, from the page's live region", () => {
-    vi.useFakeTimers();
-    try {
-      render(
-        <ToastProvider>
-          <Toaster />
-        </ToastProvider>,
-      );
-      fireEvent.click(screen.getByText("Save"));
-      act(() => {
-        vi.advanceTimersByTime(100);
-      });
-      const live = document.querySelector('[aria-live="polite"]') as HTMLElement;
-      expect(live.textContent).toBe("Order saved.");
-      // The toast itself has no role, so it is not read a second time.
-      expect(document.querySelector("[data-tone]")?.getAttribute("role")).toBeNull();
-      expect(screen.queryByRole("status")).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+  test("a toast is read out once: added to a live list that is always there, never copied", () => {
+    render(
+      <ToastProvider>
+        <Toaster />
+      </ToastProvider>,
+    );
+    const live = document.querySelector('[aria-live="polite"]') as HTMLElement;
+    expect(live.textContent).toBe("");
+    fireEvent.click(screen.getByText("Save"));
+    expect(live.textContent).toContain("Order saved.");
+    // The text is on the page once, and the toast itself has no role of its own.
+    expect(screen.getAllByText("Order saved.")).toHaveLength(1);
+    expect(document.querySelector("[data-tone]")?.getAttribute("role")).toBeNull();
+    // A failure is not in the polite list: it is an alert of its own.
+    fireEvent.click(screen.getByText("Fail"));
+    expect(live.textContent).not.toContain("Could not save.");
+    expect(screen.getByRole("alert").textContent).toContain("Could not save.");
   });
 
   test("useToast says what is missing without a provider", () => {

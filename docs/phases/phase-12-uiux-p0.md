@@ -258,5 +258,14 @@ The audit asked for the error path to be tested in a run. An approval step's fai
 
 ### The whole e2e suite
 
-Run at the end against a local instance: 16 passed, 1 skipped, 1 failed. The failure is `exit-criterion.spec.ts`, "the deploy is a commit on the repository's branch, and a signed webhook starts the flow chosen by the data": the webhook answers 202, but the flow's rows never appear. It fails the same way on the code from before this phase (`30a74ab`), built and run on its own, so it is not from this phase. It is left for whoever owns that path. Phase 11's changes to dev workspaces' triggers are a first place to look.
+**All 22 e2e tests pass** against a local instance started as CI starts it, mail capture included.
 
+**The webhook test that failed at first was the instance's setup, not the code.** The local `.env` lacked `MANAGED_WORKER_USER=same`, which `.env.example` and CI both set. Without it, a tenant whose code is written by someone other than the operator gets no managed worker. The test's tenant, with Ada signed in through single sign-on, is one of those, so its flow's script step waited for a worker forever, though the webhook said 202. The e2e README now says so.
+
+**Once that test passed, the one after it, which had been skipped, found a fault in Milestone 3.** Each plain toast's text was in the page twice: in the toast, and in a hidden live region that announced it. Playwright found two matches, and a screen reader reading the page could meet the copy too.
+
+The toast stack is always on the page, so it is now the live region itself, as two lists:
+- a polite one for the others;
+- one for failures, each an alert.
+
+Text added there is read out once, and is in the page once. A repeated message is replaced by a new element, so it is read again. Failures now sit together, after the others.

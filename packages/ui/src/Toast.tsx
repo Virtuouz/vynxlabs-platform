@@ -63,7 +63,6 @@ export function ToastProvider({
     list.current = next;
     setShown(next);
   }, []);
-  const [said, setSaid] = useState("");
   const next = useRef(1);
   // Each timed message: when it is due to leave, or how long it has left while held.
   const timers = useRef(
@@ -96,23 +95,17 @@ export function ToastProvider({
 
   const toasts = useMemo<Toasts>(() => {
     const show = (message: string, tone: ToastTone = "plain", options: ToastOptions = {}) => {
-      // The same message again restarts the one shown rather than stacking a copy.
+      // The same message again replaces the one shown rather than stacking a copy. It is
+      // a new element, so a screen reader says it again.
       const twin = list.current.find((toast) => toast.message === message && toast.tone === tone);
-      const id = twin?.id ?? next.current++;
-      const toast = { id, message, tone, ...(options.action ? { action: options.action } : {}) };
       if (twin) {
-        clearTimeout(timers.current.get(id)?.timer);
-        timers.current.delete(id);
-        commit(list.current.map((one) => (one.id === id ? toast : one)));
-      } else {
-        commit([...list.current, toast]);
+        clearTimeout(timers.current.get(twin.id)?.timer);
+        timers.current.delete(twin.id);
       }
-      if (tone !== "danger") {
-        // Written into the page's polite live region, cleared first so a repeat is read again.
-        setSaid("");
-        setTimeout(() => setSaid(message), 50);
-        start(id, options.action ? duration * 2 : duration);
-      }
+      const id = next.current++;
+      const toast = { id, message, tone, ...(options.action ? { action: options.action } : {}) };
+      commit([...list.current.filter((one) => one !== twin), toast]);
+      if (tone !== "danger") start(id, options.action ? duration * 2 : duration);
       return id;
     };
     return {
@@ -151,12 +144,40 @@ export function ToastProvider({
     };
   }, []);
 
+  const card = (toast: Shown) => (
+    <div
+      key={toast.id}
+      role={toast.tone === "danger" ? "alert" : undefined}
+      data-tone={toast.tone}
+      className={`pointer-events-auto flex max-w-full items-center gap-3 rounded-control border px-3 py-2 text-ink shadow-lg sm:max-w-96 ${tones[toast.tone]}`}
+    >
+      <span className="min-w-0 flex-1">{toast.message}</span>
+      {toast.action ? (
+        <button
+          type="button"
+          className="shrink-0 rounded-[4px] px-1.5 py-0.5 font-medium text-action hover:bg-action-soft"
+          onClick={() => {
+            toast.action?.onClick();
+            dismiss(toast.id);
+          }}
+        >
+          {toast.action.label}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        aria-label="Dismiss"
+        className="shrink-0 rounded-[4px] px-1 text-ink-muted hover:text-ink"
+        onClick={() => dismiss(toast.id)}
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+  );
+
   return (
     <ToastContext.Provider value={toasts}>
       {children}
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {said}
-      </div>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: holding the messages while they are pointed at is not an action */}
       <div
         className="pointer-events-none fixed right-4 bottom-4 left-4 z-[80] flex flex-col items-end gap-2"
@@ -167,37 +188,16 @@ export function ToastProvider({
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) release();
         }}
       >
-        {shown.map((toast) => (
-          <div
-            key={toast.id}
-            // A failure is an alert, read out as it appears. The others are read from the live region above.
-            role={toast.tone === "danger" ? "alert" : undefined}
-            data-tone={toast.tone}
-            className={`pointer-events-auto flex max-w-full items-center gap-3 rounded-control border px-3 py-2 text-ink shadow-lg sm:max-w-96 ${tones[toast.tone]}`}
-          >
-            <span className="min-w-0 flex-1">{toast.message}</span>
-            {toast.action ? (
-              <button
-                type="button"
-                className="shrink-0 rounded-[4px] px-1.5 py-0.5 font-medium text-action hover:bg-action-soft"
-                onClick={() => {
-                  toast.action?.onClick();
-                  dismiss(toast.id);
-                }}
-              >
-                {toast.action.label}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              aria-label="Dismiss"
-              className="shrink-0 rounded-[4px] px-1 text-ink-muted hover:text-ink"
-              onClick={() => dismiss(toast.id)}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          </div>
-        ))}
+        {/*
+         * Both lists are always on the page, so what is added to them is read out once, as it
+         * appears: the others politely, a failure as an alert. The text is never in the page twice.
+         */}
+        <div aria-live="polite" className="flex flex-col items-end gap-2">
+          {shown.filter((toast) => toast.tone !== "danger").map(card)}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          {shown.filter((toast) => toast.tone === "danger").map(card)}
+        </div>
       </div>
     </ToastContext.Provider>
   );

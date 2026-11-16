@@ -991,7 +991,7 @@ interface ScriptRunRow {
 }
 
 /** The latest runs of this script, tests and real ones together. */
-function RecentRuns({ root, link, path }: { root: string; link: string; path: string }) {
+export function RecentRuns({ root, link, path }: { root: string; link: string; path: string }) {
   const runs = useLoad<{ items: ScriptRunRow[] }>(
     `${root}/runs?${new URLSearchParams({ script: path, limit: "20" })}`,
   );

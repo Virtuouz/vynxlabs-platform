@@ -22,6 +22,7 @@ import { notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { navigate } from "../router.tsx";
 import { useThemeChoice } from "../theme.ts";
+import { objectHref } from "./objects.tsx";
 
 export interface Destination {
   key: string;
@@ -128,23 +129,20 @@ function pageOf(tenantId: string, found: Found): string {
   if (found.kind === "end_user") return `/t/${tenantId}/end-users`;
   const ws = `/t/${tenantId}/workspaces/${found.workspaceId}`;
   switch (found.kind) {
+    // A script found by name is most often wanted to be changed.
     case "script":
       return `${ws}/scripts/edit/${found.ref}`;
     case "flow":
-      return `${ws}/flows/${found.ref}`;
     case "interface":
-      return `${ws}/screens/${found.ref}`;
     case "table":
-      return `${ws}/tables/${found.ref}`;
     case "trigger":
     case "schedule":
-      return `${ws}/triggers?trigger=${encodeURIComponent(found.ref)}`;
     case "connection":
-      return `${ws}/connections`;
+    case "variable":
+    case "secret":
     case "event":
-      return `${ws}/events`;
     case "app":
-      return `${ws}/apps`;
+      return objectHref(ws, found.kind, found.ref);
     default:
       return `${ws}/runs/${found.id}`;
   }

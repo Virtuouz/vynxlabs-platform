@@ -332,6 +332,20 @@ describe("deploying", () => {
       config: { baseUrl: apiUrl, headers: { "x-client": "platform" }, auth: { type: "bearer" } },
     });
     expect((await alice.get(`${ws()}/connection-bindings`)).body.items[0].hasCredential).toBe(true);
+    // Each connection and variable has an address of its own.
+    const one = await alice.get(`${ws()}/connection-bindings/api`);
+    expect(one.body).toMatchObject({ path: "api", bound: true, hasCredential: true });
+    expect(JSON.stringify(one.body)).not.toContain("api-credential-123");
+    expect((await alice.get(`${ws()}/connection-bindings/nowhere`)).status).toBe(404);
+    expect((await alice.put(`${ws()}/variable-values/config/size`, { value: "7" })).status).toBe(
+      204,
+    );
+    expect((await alice.get(`${ws()}/variable-values/config/size`)).body).toMatchObject({
+      path: "config/size",
+      value: "7",
+    });
+    expect((await alice.get(`${ws()}/variable-values/config/none`)).status).toBe(404);
+    expect((await alice.delete(`${ws()}/variable-values/config/size`)).status).toBe(204);
   });
 
   test("a binding can be removed, and a deploy then names it as missing again", async () => {
@@ -879,6 +893,11 @@ describe("triggers", () => {
       timezone: "UTC",
       enabled: true,
     });
+    // A script's page asks for its own triggers only.
+    const own = (await alice.get(`${ws()}/triggers?target=greet`)).body.items;
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.every((trigger: { script: string }) => trigger.script === "greet")).toBe(true);
+    expect((await alice.get(`${ws()}/triggers?target=nothing`)).body.items).toEqual([]);
     const due = new Date(schedule.nextFireAt);
     expect(due.getUTCMinutes()).toBe(0);
 

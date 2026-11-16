@@ -15,6 +15,7 @@ import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
+import { consoleLink, ObjectLink } from "../kit/objects.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
@@ -292,16 +293,17 @@ export function Scripts({
                   <div key={kind} className="flex flex-col gap-1">
                     <span className="text-label text-ink-subtle uppercase">{kind}</span>
                     {open.uses[kind].map((name) => (
-                      <Mono key={name}>{name}</Mono>
+                      <ObjectLink key={name} link={link} kind={kind.slice(0, -1)} path={name} />
                     ))}
                   </div>
                 ) : null,
               )}
-              {open.lastRun ? (
-                <Link to={`${runsLink}/${open.lastRun.id}`} className="text-meta">
-                  Open the last run
-                </Link>
-              ) : null}
+              <span className="flex flex-wrap gap-x-4 gap-y-1 text-meta">
+                <Link to={`${link}/scripts/${open.path}`}>Its page: runs, triggers, used by</Link>
+                {open.lastRun ? (
+                  <Link to={`${runsLink}/${open.lastRun.id}`}>Open the last run</Link>
+                ) : null}
+              </span>
             </div>
           </Inspector>
         ) : null
@@ -710,10 +712,25 @@ export function Connections({ root }: { root: string }) {
         rowKey={(row) => row.path}
         action={newButton}
         columns={[
-          { header: "Connection", cell: (row) => code(row.path) },
+          {
+            header: "Connection",
+            cell: (row) => (
+              <ObjectLink link={consoleLink(root)} kind="connection" path={row.path} />
+            ),
+          },
           // Second, so a phone shows it without scrolling the table.
           { header: "Health", cell: (row) => <ConnectionHealth root={root} row={row} /> },
-          { header: "Used by", cell: (row) => <UsedBy uses={connectionUses(row.path)} /> },
+          {
+            header: "Used by",
+            cell: (row) => (
+              <UsedBy
+                uses={connectionUses(row.path)}
+                failed={connectionUses.failed}
+                link={consoleLink(root)}
+                all={`${consoleLink(root)}/connections/${row.path}?tab=used-by`}
+              />
+            ),
+          },
           { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
           {
             header: "Points to",
@@ -785,8 +802,21 @@ export function Variables({ root }: { root: string }) {
       path={`${root}/variable-values`}
       rowKey={(row) => row.path}
       columns={[
-        { header: "Variable", cell: (row) => code(row.path) },
-        { header: "Read by", cell: (row) => <UsedBy uses={variableUses(row.path)} /> },
+        {
+          header: "Variable",
+          cell: (row) => <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />,
+        },
+        {
+          header: "Read by",
+          cell: (row) => (
+            <UsedBy
+              uses={variableUses(row.path)}
+              failed={variableUses.failed}
+              link={consoleLink(root)}
+              all={`${consoleLink(root)}/variables/${row.path}?tab=used-by`}
+            />
+          ),
+        },
         { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Value here",

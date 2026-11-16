@@ -363,6 +363,25 @@ describe("trying a draft out", () => {
     await alice.delete(`${ws()}/drafts/orders/reads`);
   });
 
+  test("what a draft would use is told apart from what is deployed", async () => {
+    await draft(
+      "orders/uses-erp",
+      scriptBody("export default async () => ({});\n", {
+        uses: { connections: ["erp"], secrets: [], variables: [] },
+      }),
+    );
+    const deployed = (await alice.get(`${ws()}/references?kind=connection&name=erp`)).body.items;
+    expect(
+      deployed.some((one: { by: { path: string } }) => one.by.path === "orders/uses-erp"),
+    ).toBe(false);
+    const withDrafts = (await alice.get(`${ws()}/references?kind=connection&name=erp&drafts=true`))
+      .body.items;
+    expect(withDrafts).toContainEqual(
+      expect.objectContaining({ by: { kind: "script", path: "orders/uses-erp" }, draft: true }),
+    );
+    await alice.delete(`${ws()}/drafts/orders/uses-erp`);
+  });
+
   test("a failure in code written in the console points at its own line", async () => {
     await draft(
       "orders/throws",

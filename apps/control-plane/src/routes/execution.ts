@@ -1495,6 +1495,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "`trigger:write`. A form's address is a page under the tenant's portal.",
           tags: ["runs"],
           params: WorkspaceParams,
+          querystring: Type.Object({
+            target: Type.Optional(
+              Type.String({
+                maxLength: 500,
+                description: "Only those that start this script or flow.",
+              }),
+            ),
+          }),
           response: {
             200: Type.Object({
               items: Type.Array(
@@ -1549,7 +1557,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         const rows = await db
           .selectFrom("trigger_state")
           .innerJoin("resource", "resource.id", "trigger_state.resource_id")
@@ -1622,60 +1630,60 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }
             : null;
         };
-        return {
-          items: await Promise.all(
-            rows.map(async (row) => {
-              const pause = pauses.find(
-                (one) => one.path === row.path && one.node_id === row.node_id,
-              );
-              const refusal = refusals.rows.find(
-                (one) => one.path === row.path && one.node_id === row.node_id,
-              );
-              const body = row.body as { cron?: string; timezone?: string };
-              const token =
-                mayAddress && (row.type === "webhook" || row.type === "form")
-                  ? await webhookToken(kernel, row)
-                  : undefined;
-              const address =
-                row.type === "form"
-                  ? `${kernel.config.publicUrl}/portal/${tenantSlug}/forms/${token}`
-                  : `${kernel.config.publicUrl}/api/v1/hooks/${token}`;
-              return {
-                path: row.path,
-                node: row.node_id,
-                type: row.type,
-                script: row.target_path,
-                targetKind: row.target_kind,
-                event: row.event_name,
-                enabled: row.enabled,
-                paused: pause
-                  ? { at: iso(pause.paused_at), by: pause.paused_by, reason: pause.reason }
+        const items = await Promise.all(
+          rows.map(async (row) => {
+            const pause = pauses.find(
+              (one) => one.path === row.path && one.node_id === row.node_id,
+            );
+            const refusal = refusals.rows.find(
+              (one) => one.path === row.path && one.node_id === row.node_id,
+            );
+            const body = row.body as { cron?: string; timezone?: string };
+            const token =
+              mayAddress && (row.type === "webhook" || row.type === "form")
+                ? await webhookToken(kernel, row)
+                : undefined;
+            const address =
+              row.type === "form"
+                ? `${kernel.config.publicUrl}/portal/${tenantSlug}/forms/${token}`
+                : `${kernel.config.publicUrl}/api/v1/hooks/${token}`;
+            return {
+              path: row.path,
+              node: row.node_id,
+              type: row.type,
+              script: row.target_path,
+              targetKind: row.target_kind,
+              event: row.event_name,
+              enabled: row.enabled,
+              paused: pause
+                ? { at: iso(pause.paused_at), by: pause.paused_by, reason: pause.reason }
+                : null,
+              lastRun: await lastRunOf(row),
+              lastRefusal: refusal
+                ? {
+                    reason: refusal.reason,
+                    problem: refusal.problem,
+                    at: iso(refusal.occurred_at),
+                  }
+                : null,
+              cron: body.cron ?? null,
+              timezone: row.type === "schedule" ? (body.timezone ?? "UTC") : null,
+              overlap:
+                row.type === "schedule"
+                  ? ((row.config as { overlap?: "skip" }).overlap ?? ("allow" as const))
                   : null,
-                lastRun: await lastRunOf(row),
-                lastRefusal: refusal
-                  ? {
-                      reason: refusal.reason,
-                      problem: refusal.problem,
-                      at: iso(refusal.occurred_at),
-                    }
-                  : null,
-                cron: body.cron ?? null,
-                timezone: row.type === "schedule" ? (body.timezone ?? "UTC") : null,
-                overlap:
-                  row.type === "schedule"
-                    ? ((row.config as { overlap?: "skip" }).overlap ?? ("allow" as const))
-                    : null,
-                lastSkippedAt: (row.config as { lastSkippedAt?: string }).lastSkippedAt ?? null,
-                lastSkipReason:
-                  (row.config as { lastSkipReason?: "overlap" | "backlog" }).lastSkipReason ??
-                  ((row.config as { lastSkippedAt?: string }).lastSkippedAt ? "overlap" : null),
-                nextFireAt: isoOrNull(row.next_fire_at),
-                lastFiredAt: isoOrNull(row.last_fired_at),
-                url: token ? address : null,
-              };
-            }),
-          ),
-        };
+              lastSkippedAt: (row.config as { lastSkippedAt?: string }).lastSkippedAt ?? null,
+              lastSkipReason:
+                (row.config as { lastSkipReason?: "overlap" | "backlog" }).lastSkipReason ??
+                ((row.config as { lastSkippedAt?: string }).lastSkippedAt ? "overlap" : null),
+              nextFireAt: isoOrNull(row.next_fire_at),
+              lastFiredAt: isoOrNull(row.last_fired_at),
+              url: token ? address : null,
+            };
+          }),
+        );
+        // One script's or flow's triggers, for its page.
+        return { items: query.target ? items.filter((one) => one.script === query.target) : items };
       },
     );
 
@@ -1901,6 +1909,80 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       ),
     });
 
+    /** Every connection of a workspace, deployed, drafted or only bound, with where it points. */
+    const connectionsOf = async (params: { w: string }) => {
+      const definitions = await db
+        .selectFrom("resource")
+        .select(["path", "body"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "connection")
+        .execute();
+      // A connection declared in a draft is shown as what the draft says it is, until it is deployed.
+      const drafted = await db
+        .selectFrom("resource_draft")
+        .select(["path", "body"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "connection")
+        .where("deleted", "=", false)
+        .execute();
+      const bindings = await db
+        .selectFrom("connection_binding")
+        .select(["path", "config", "credential", "oauth", "updated_at"])
+        .where("workspace_id", "=", params.w)
+        .execute();
+      const health = await db
+        .selectFrom("health_check")
+        .select(["path", "ok", "problem", "latency_ms", "checked_at"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "connection")
+        .execute();
+      const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
+      const connectors = await deployedConnectors(params.w);
+      type Declared = { connector?: string; description?: string } | undefined;
+      return {
+        items: paths.map((path) => {
+          const deployed = definitions.find((row) => row.path === path)?.body as Declared;
+          const definition =
+            deployed ?? (drafted.find((row) => row.path === path)?.body as Declared);
+          const binding = bindings.find((row) => row.path === path);
+          const checked = health.find((row) => row.path === path);
+          const connector = definition?.connector ?? "http";
+          return {
+            path,
+            connector,
+            description: definition?.description ?? "",
+            defined: deployed !== undefined,
+            bound: binding !== undefined,
+            config: binding?.config ?? null,
+            configSchema: (connectorSchema(connector, connectors) ??
+              BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
+            hasCredential: Boolean(binding?.credential),
+            updatedAt: isoOrNull(binding?.updated_at ?? null),
+            health:
+              binding && checked
+                ? {
+                    ok: checked.ok,
+                    problem: checked.problem,
+                    latencyMs: checked.latency_ms,
+                    checkedAt: iso(checked.checked_at),
+                  }
+                : null,
+            oauth:
+              connector === "oauth2" || binding?.oauth
+                ? {
+                    status: binding?.oauth?.status ?? ("not_connected" as const),
+                    expiresAt: binding?.oauth?.expiresAt ?? null,
+                    scopes: binding?.oauth?.scopes ?? [],
+                    connectedBy: binding?.oauth?.connectedBy ?? null,
+                    connectedAt: binding?.oauth?.connectedAt ?? null,
+                    problem: binding?.oauth?.problem ?? null,
+                  }
+                : null,
+          };
+        }),
+      };
+    };
+
     app.get(
       `${base}/connection-bindings`,
       {
@@ -1914,76 +1996,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params }) => {
-        const definitions = await db
-          .selectFrom("resource")
-          .select(["path", "body"])
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "connection")
-          .execute();
-        // A connection declared in a draft is shown as what the draft says it is, until it is deployed.
-        const drafted = await db
-          .selectFrom("resource_draft")
-          .select(["path", "body"])
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "connection")
-          .where("deleted", "=", false)
-          .execute();
-        const bindings = await db
-          .selectFrom("connection_binding")
-          .select(["path", "config", "credential", "oauth", "updated_at"])
-          .where("workspace_id", "=", params.w)
-          .execute();
-        const health = await db
-          .selectFrom("health_check")
-          .select(["path", "ok", "problem", "latency_ms", "checked_at"])
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "connection")
-          .execute();
-        const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
-        const connectors = await deployedConnectors(params.w);
-        type Declared = { connector?: string; description?: string } | undefined;
-        return {
-          items: paths.map((path) => {
-            const deployed = definitions.find((row) => row.path === path)?.body as Declared;
-            const definition =
-              deployed ?? (drafted.find((row) => row.path === path)?.body as Declared);
-            const binding = bindings.find((row) => row.path === path);
-            const checked = health.find((row) => row.path === path);
-            const connector = definition?.connector ?? "http";
-            return {
-              path,
-              connector,
-              description: definition?.description ?? "",
-              defined: deployed !== undefined,
-              bound: binding !== undefined,
-              config: binding?.config ?? null,
-              configSchema: (connectorSchema(connector, connectors) ??
-                BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
-              hasCredential: Boolean(binding?.credential),
-              updatedAt: isoOrNull(binding?.updated_at ?? null),
-              health:
-                binding && checked
-                  ? {
-                      ok: checked.ok,
-                      problem: checked.problem,
-                      latencyMs: checked.latency_ms,
-                      checkedAt: iso(checked.checked_at),
-                    }
-                  : null,
-              oauth:
-                connector === "oauth2" || binding?.oauth
-                  ? {
-                      status: binding?.oauth?.status ?? ("not_connected" as const),
-                      expiresAt: binding?.oauth?.expiresAt ?? null,
-                      scopes: binding?.oauth?.scopes ?? [],
-                      connectedBy: binding?.oauth?.connectedBy ?? null,
-                      connectedAt: binding?.oauth?.connectedAt ?? null,
-                      problem: binding?.oauth?.problem ?? null,
-                    }
-                  : null,
-            };
-          }),
-        };
+        return connectionsOf(params);
+      },
+    );
+
+    app.get(
+      `${base}/connection-bindings/*`,
+      {
+        config: { access: access.workspace("connection:read") },
+        schema: {
+          summary: "One connection, and where it points",
+          description: "As one item of the list. A credential is never returned.",
+          tags: ["bindings"],
+          params: WildParams,
+          response: { 200: ConnectionBinding },
+        },
+      },
+      async ({ params }) => {
+        const path = wildPath(params);
+        const found = (await connectionsOf(params)).items.find((one) => one.path === path);
+        if (!found) throw notFound(`The connection ${path}`);
+        return found;
       },
     );
 
@@ -2466,6 +2499,36 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Variable values -----
 
+    /** Every variable of a workspace, declared or only given a value. */
+    const variablesOf = async (params: { w: string }) => {
+      const definitions = await db
+        .selectFrom("resource")
+        .select(["path", "body"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "variable")
+        .execute();
+      const values = await db
+        .selectFrom("variable_value")
+        .selectAll()
+        .where("workspace_id", "=", params.w)
+        .execute();
+      const paths = [...new Set([...definitions, ...values].map((row) => row.path))].sort();
+      return {
+        items: paths.map((path) => {
+          const definition = definitions.find((row) => row.path === path)?.body as
+            | { description?: string; default?: string }
+            | undefined;
+          return {
+            path,
+            description: definition?.description ?? "",
+            default: definition?.default ?? null,
+            value: values.find((row) => row.path === path)?.value ?? null,
+            updatedAt: isoOrNull(values.find((row) => row.path === path)?.updated_at ?? null),
+          };
+        }),
+      };
+    };
+
     app.get(
       `${base}/variable-values`,
       {
@@ -2490,32 +2553,34 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params }) => {
-        const definitions = await db
-          .selectFrom("resource")
-          .select(["path", "body"])
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "variable")
-          .execute();
-        const values = await db
-          .selectFrom("variable_value")
-          .selectAll()
-          .where("workspace_id", "=", params.w)
-          .execute();
-        const paths = [...new Set([...definitions, ...values].map((row) => row.path))].sort();
-        return {
-          items: paths.map((path) => {
-            const definition = definitions.find((row) => row.path === path)?.body as
-              | { description?: string; default?: string }
-              | undefined;
-            return {
-              path,
-              description: definition?.description ?? "",
-              default: definition?.default ?? null,
-              value: values.find((row) => row.path === path)?.value ?? null,
-              updatedAt: isoOrNull(values.find((row) => row.path === path)?.updated_at ?? null),
-            };
-          }),
-        };
+        return variablesOf(params);
+      },
+    );
+
+    app.get(
+      `${base}/variable-values/*`,
+      {
+        config: { access: access.workspace("variable:read") },
+        schema: {
+          summary: "One variable and its value",
+          tags: ["bindings"],
+          params: WildParams,
+          response: {
+            200: Type.Object({
+              path: Type.String(),
+              description: Type.String(),
+              default: NullableString,
+              value: NullableString,
+              updatedAt: Type.Optional(NullableTime),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const path = wildPath(params);
+        const found = (await variablesOf(params)).items.find((one) => one.path === path);
+        if (!found) throw notFound(`The variable ${path}`);
+        return found;
       },
     );
 

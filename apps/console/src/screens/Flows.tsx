@@ -21,12 +21,14 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
+import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { LogWindowNote, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { TriggersOf } from "./ObjectPages.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
@@ -493,6 +495,18 @@ export function FlowView({
             { header: "Started by", cell: (row) => TRIGGER[row.trigger.type] ?? row.trigger.type },
           ]}
         />
+      </section>
+      <section aria-labelledby="flow-triggers">
+        <h2 id="flow-triggers" className="mt-2 mb-2 text-base font-semibold">
+          Schedules and triggers that start it
+        </h2>
+        <TriggersOf root={root} link={link} kind="flow" path={path} />
+      </section>
+      <section aria-labelledby="flow-used-by">
+        <h2 id="flow-used-by" className="mt-2 mb-2 text-base font-semibold">
+          Used by
+        </h2>
+        <ReferenceList root={root} link={link} kind="flow" name={path} />
       </section>
     </Page>
   );

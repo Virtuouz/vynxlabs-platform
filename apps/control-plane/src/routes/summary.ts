@@ -355,6 +355,12 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           querystring: Type.Object({
             kind: Type.Optional(Type.String({ maxLength: 40 })),
             name: Type.Optional(Type.String({ maxLength: 255 })),
+            drafts: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Also what drafts would use once deployed: a draft speaks for its path, and is marked.",
+              }),
+            ),
           }),
           response: {
             200: Type.Object({
@@ -363,6 +369,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   target: Type.Object({ kind: Type.String(), name: Type.String() }),
                   by: Type.Object({ kind: Type.String(), path: Type.String() }),
                   how: Type.String(),
+                  draft: Type.Optional(Type.Boolean()),
                 }),
               ),
             }),
@@ -371,7 +378,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params, query }) => {
         await findWorkspace(kernel, params.t, params.w);
-        const all = await workspaceReferences(db, params.w);
+        const all = await workspaceReferences(db, params.w, { drafts: query.drafts === true });
         return {
           items: all.filter(
             (one) =>

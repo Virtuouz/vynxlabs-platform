@@ -143,3 +143,12 @@ Findings are recorded under each milestone as it lands.
 - **Problems** lists Monaco's errors and warnings and the server's build errors (`file:line` from a refused save or test run), each one a button to its line.
 - **Going to a failure.** A failed run whose insight has a location (Milestone 9) offers "Go to line N".
 - **Runs** lists this script's latest runs, tests included.
+
+### Milestone 11: object pages and references as links
+
+- **New pages.** Connections, variables, secrets, events and scripts each have a page (`screens/ObjectPages.tsx`) in one `ObjectPage` frame: where it is, kind and name, actions, facts, and tabs whose choice is in the address. A connection or variable page reads the new `GET connection-bindings/*` and `GET variable-values/*`, which share the list routes' logic. A secret page reads the list, since there is no secret to return but its name and when it was set. An event page reads its declaration. A script page lists its runs, triggers and users, beside the editor.
+- **Approvals** are addressable already: the queue keeps the open approval in `?item=` (Milestone 4), which is the inspector tier of 06 §6.3. They got no page of their own.
+- **References.** `objectHref` gives every kind its home. `ReferenceList` lists everything that uses a thing, drafts included and marked (`references?drafts=true`), each a link, with an error state of its own: a failed read no longer says "Nothing deployed uses it". `UsedBy` in lists links each user and sends "and N more" to the page's Used by tab, never to a tooltip.
+- **Links.** List names link to their pages, a script's inspector links its connections, tables, secrets and variables, and flows show the triggers that start them and what uses them. The palette opens the new pages, though a script still opens its editor.
+- **`GET triggers?target=`** came here from Milestone 15, since the pages needed it.
+- **Flaky test.** `portability.test.ts` failed once in a full run and passed alone and in the next full run. A queued run can be claimed between the test listing it and cancelling it. Not caused by this phase; noted for later.

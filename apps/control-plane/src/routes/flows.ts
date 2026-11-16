@@ -581,8 +581,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Flow runs -----
 
-    const flowRuns = (workspaceId: string) =>
-      db
+    const flowRuns = (workspaceId: string, from: typeof db = db) =>
+      from
         .selectFrom("flow_run")
         .innerJoin("bundle", "bundle.id", "flow_run.bundle_id")
         .selectAll("flow_run")
@@ -900,28 +900,41 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             retries: [],
           };
         }
-        const steps = await db
-          .selectFrom("step_run")
-          .leftJoin("run", "run.id", "step_run.run_id")
-          .selectAll("step_run")
-          .select([
-            "run.output as run_output",
-            "run.output_ref as run_output_ref",
-            "run.started_at as run_started_at",
-          ])
-          .where("step_run.flow_run_id", "=", params.id)
-          .orderBy("step_run.started_at")
-          .orderBy("step_run.node_id")
-          .execute();
-        const retries = await flowRuns(params.w)
-          .where("flow_run.retry_of", "=", params.id)
-          .orderBy("flow_run.id", "desc")
-          .limit(20)
-          .execute();
+        // The run, whose state is worked out from its steps, and the steps are read from one
+        // snapshot: read apart, a step that began to wait between the two reads would show
+        // as waiting for approval under a run that says it is only running.
+        const { run, steps, retries } = await db
+          .transaction()
+          .setIsolationLevel("repeatable read")
+          .setAccessMode("read only")
+          .execute(async (trx) => ({
+            run:
+              (await flowRuns(params.w, trx)
+                .where("flow_run.id", "=", params.id)
+                .executeTakeFirst()) ?? row,
+            steps: await trx
+              .selectFrom("step_run")
+              .leftJoin("run", "run.id", "step_run.run_id")
+              .selectAll("step_run")
+              .select([
+                "run.output as run_output",
+                "run.output_ref as run_output_ref",
+                "run.started_at as run_started_at",
+              ])
+              .where("step_run.flow_run_id", "=", params.id)
+              .orderBy("step_run.started_at")
+              .orderBy("step_run.node_id")
+              .execute(),
+            retries: await flowRuns(params.w, trx)
+              .where("flow_run.retry_of", "=", params.id)
+              .orderBy("flow_run.id", "desc")
+              .limit(20)
+              .execute(),
+          }));
         return {
-          ...toFlowRun(row),
-          input: row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
-          output: row.output ?? null,
+          ...toFlowRun(run),
+          input: run.input_ref ? { stored: run.input_ref } : (run.input ?? null),
+          output: run.output ?? null,
           retries: retries.map((one) => ({
             id: one.id,
             state: one.state,

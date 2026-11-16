@@ -1,6 +1,6 @@
 # Phase 11: holding up under load
 
-Status: milestones 1–5 built on branch `phase-11-load`, not yet merged. Milestone 6's docs are written; re-running the stress test on Fly waits for the owner's go-ahead to deploy.
+Status: all six milestones built on branch `phase-11-load`, not yet merged. The stress test was re-run on Fly; results under Milestone 6.
 Last updated: 2026-11-16
 
 A stress test on a Fly instance, run after phase 10, found failures that come from the design, not from the size of the machines:
@@ -151,3 +151,32 @@ No page errors, and nothing scrolls sideways. The runs list's **Cancel queued ru
 - Clones without data take no turn: they copy no rows.
 
 **Rows go in pages of 5,000 by `id`, with 50 ms between pages,** through `insert … select … where id > $last order by id limit … returning id`. Still inside the one transaction, so a failed clone leaves nothing half-copied, as before. Tested with a 12,001-row table: three pages.
+
+### Milestone 6: the stress test again
+
+Re-run on 2026-11-16 on `vynxlabs-platform-test`, the same machines as before: the app on shared-cpu-2x with 2 GB, now with 512 MB of swap; the database on shared-cpu-1x with 512 MB and a 1 GB disk. The stress tenants were deleted afterwards.
+
+| Scenario | Before | Now |
+| --- | --- | --- |
+| Slow per-minute scripts in many tenants: 12 tenants, 156 runs a minute, about 55 needing to run at once | 9 tenants froze the machine within 60 s; a restart froze it again | Scripts held at the machine's 9 slots, an even share for every tenant, the rest queued; free memory never under 170 MB. Readiness 57–84 ms throughout, console p95 85–104 ms, with the fix below |
+| Recovering from that backlog | SQL | Instance → Triggers paused everything; 1,140 queued runs were cancelled through the API in 8 s |
+| `hog` holding 700 MB under `memoryMb` 512 | Succeeded | Failed: "The script ran out of memory (512 MB)." 300 MB succeeded |
+| 20 people browsing four 200k-row workspaces | 40–100% of table reads were 500 | No 500. Two in three table reads were 503 `busy` or 422 `too_slow`; runs and tenant lists stayed at p50 58 ms |
+| Two clones with data at once, 200k rows each | 30 s and 87 s; other calls 1.2–1.5 s | The second waited as `queued`, then ran: 40 s and 58 s. Other calls 58–319 ms. Reads of the table being cloned took up to 16 s, three past the 15 s limit (422) |
+| A per-minute flow over 1,000 items | 5 flow runs at once, about 40 items a minute | One flow run; later ticks skipped with `lastSkipReason: overlap`. 210 items in the first minute, then 23–35 a minute |
+| The database's disk full | Every request failed; the app restart-looped | Reads and readiness 60–190 ms, changes and sign-in 503 `read_only`. A restart came back healthy with `readOnly: true`. With the disk freed, writes, sign-in and the background loop came back in 26 s with no restart |
+| Deleting the 14 stress tenants | 0.2–0.8 s each | 0.3–0.5 s each; readiness at most 78 ms meanwhile |
+
+**Claims for a full machine took every connection the app had.** Found in the first multi-tenant run:
+- Twelve workers, four claims each, all took a connection and then waited for the machine's lock.
+- All 10 platform connections were held, with up to 36 requests waiting for one.
+- Readiness timed out for about 2 minutes, and bulk cancel took up to 24 s a workspace, while both machines were idle.
+
+Fixed in `2d456b0`:
+- A machine's claims now wait their turn in the process, holding nothing.
+- A machine found full is remembered for 250 ms, so woken claims return without asking the database.
+- A test reproduces it: 40 claims at once left 34 requests waiting for a connection before the fix, and none after.
+
+**What the rest comes down to is the machines' shared CPUs:**
+- **The table readers:** the database's one shared CPU sat at load 4 with 14 queries running, sorting and searching tables that have no indexes on those columns. The per-tenant share and the time limit turn that away clearly, but cannot make it faster. A performance CPU for the database, or the trigram indexes left out of this phase, would.
+- **The foreach:** after the first minute, the app machine's CPU was 52% stolen by the host: Fly's burst credit for a shared CPU was spent. Each item's new Node process, about 190 ms of CPU, then took 1.5–2 s. Reusing runner processes, left out of this phase, is the part on our side.

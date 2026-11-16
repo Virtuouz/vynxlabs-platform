@@ -550,7 +550,9 @@ test("a failed flow run opens on its failed step, names it, and shows what it wa
   // No click: the failed step is what the page opens on.
   const panel = await screen.findByRole("region", { name: "Step b" });
   expect(within(panel).getByText("The supplier refused.")).toBeTruthy();
-  expect(await within(panel).findByRole("link", { name: "Open script supplier/order" })).toBeTruthy();
+  expect(
+    await within(panel).findByRole("link", { name: "Open script supplier/order" }),
+  ).toBeTruthy();
   expect(panel.textContent).toContain("[redacted]");
   expect(screen.getByText(/Failed at/).textContent).toContain("b");
   // The flow's own input is on the page too.

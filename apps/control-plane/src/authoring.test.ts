@@ -371,7 +371,7 @@ describe("trying a draft out", () => {
           "type Order = { id: string };",
           "",
           "function check(order: Order) {",
-          "  throw new Error(`No warehouse for ${order.id}`);",
+          '  throw new Error("No warehouse for " + order.id);',
           "}",
           "",
           "export default async (input: Order) => {",

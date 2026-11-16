@@ -670,6 +670,32 @@ export function FlowEditor({
     touch();
   };
 
+  /** Takes away what leaves `source` by `handle`: to `target`, or to anything. */
+  const disconnect = (source: string, handle: string, target?: string) => {
+    history.record("Remove a connection");
+    setEdges((before) =>
+      before.filter(
+        (edge) =>
+          !(
+            edge.source === source &&
+            (edge.sourceHandle ?? "next") === handle &&
+            (target === undefined || edge.target === target)
+          ),
+      ),
+    );
+    touch();
+  };
+  /** Chooses a step from outside the canvas, and brings it into view. */
+  const choose = (id: string) => {
+    setSelected(id);
+    setNodes((before) =>
+      before.map((node) =>
+        Boolean(node.selected) === (node.id === id) ? node : { ...node, selected: node.id === id },
+      ),
+    );
+    canvas?.fitView({ nodes: [{ id }], maxZoom: 1, padding: 0.6, duration: 200 });
+  };
+
   const save = async (): Promise<boolean> => {
     setProblem(undefined);
     if (!PATH.test(path)) {
@@ -809,7 +835,7 @@ export function FlowEditor({
   // The edges the test went down are drawn strong. Only how they are drawn: never saved.
   const drawnEdges = useMemo(
     () =>
-      shown
+      (shown
         ? edges.map((edge) => {
             const from = nodeRuns.get(edge.source);
             const to = nodeRuns.get(edge.target);
@@ -822,7 +848,12 @@ export function FlowEditor({
               ? { ...edge, style: { ...edge.style, stroke: "var(--vx-action)", strokeWidth: 2.5 } }
               : edge;
           })
-        : edges,
+        : edges
+      ).map((edge) => ({
+        ...edge,
+        // A connection is named for screen readers by where it goes, and why.
+        ariaLabel: `${edge.source} to ${edge.target}${edge.label ? `, ${String(edge.label)}` : ""}`,
+      })),
     [edges, shown, nodeRuns],
   );
   const previewSource = useMemo(
@@ -1144,9 +1175,10 @@ export function FlowEditor({
         </div>
         <aside
           aria-label="The chosen step"
-          className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:w-[22rem] lg:border-t-0 lg:border-l"
+          className="flex max-h-[60vh] w-full shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:max-h-none lg:w-[22rem] lg:border-t-0 lg:border-l"
         >
           <ExpressionPreview.Provider value={previewSource}>
+            <StepOutline nodes={nodes} edges={edges} chosen={chosen?.id} onChoose={choose} />
             {chosen && node ? (
               <>
                 <NameField key={chosen.id} id={chosen.id} rename={rename} />
@@ -1380,6 +1412,21 @@ export function FlowEditor({
                     onChange={(values) => update(chosen.id, { values })}
                   />
                 ) : null}
+                <ConnectionsEditor
+                  id={chosen.id}
+                  node={node}
+                  nodes={nodes}
+                  edges={edges}
+                  onConnect={(handle, target) =>
+                    connect({
+                      source: chosen.id,
+                      sourceHandle: handle,
+                      target,
+                      targetHandle: null,
+                    })
+                  }
+                  onDisconnect={(handle, target) => disconnect(chosen.id, handle, target)}
+                />
                 <div className="mt-auto">
                   <Button
                     variant="danger"
@@ -1413,9 +1460,10 @@ export function FlowEditor({
                   }}
                 />
                 <p className="m-0 text-meta text-ink-muted">
-                  Choose a step to change it. Add steps with Add step, and drag from the dot on a
-                  step's right edge to the next step. The red dot underneath is where it goes when
-                  it fails.
+                  Choose a step to change it, on the canvas or from the steps above. Add steps with
+                  Add step. Say where each one goes next under the step's settings, or drag from the
+                  dot on its right edge to the next step. The red dot underneath is where it goes
+                  when it fails.
                 </p>
               </div>
             )}
@@ -1472,6 +1520,177 @@ function NameField({ id, rename }: { id: string; rename: (from: string, to: stri
   );
 }
 
+/** A list with one item moved from one place to another. */
+const moved = <T,>(items: T[], from: number, to: number): T[] => {
+  const next = [...items];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item as T);
+  return next;
+};
+
+/** The steps in the order a run reaches them: from the start, along each connection, then the rest. */
+export function stepOrder(
+  ids: string[],
+  edges: { source: string; target: string }[],
+  starts: string[],
+) {
+  const order: string[] = [];
+  const queue = [...starts];
+  while (queue.length > 0) {
+    const id = queue.shift() as string;
+    if (order.includes(id) || !ids.includes(id)) continue;
+    order.push(id);
+    for (const edge of edges) if (edge.source === id) queue.push(edge.target);
+  }
+  return [...order, ...ids.filter((id) => !order.includes(id))];
+}
+
+/**
+ * Every step as a list, in the order a run reaches them: a way to find and
+ * choose a step without the canvas, by keyboard or with a screen reader.
+ */
+function StepOutline({
+  nodes,
+  edges,
+  chosen,
+  onChoose,
+}: {
+  nodes: CanvasNode[];
+  edges: Edge[];
+  chosen: string | undefined;
+  onChoose: (id: string) => void;
+}) {
+  const ids = nodes.map((node) => node.id);
+  const starts = nodes.filter((node) => node.data.node.type === "trigger").map((node) => node.id);
+  const order = stepOrder(ids, edges, starts);
+  const byId = new Map(nodes.map((node) => [node.id, node.data.node]));
+  return (
+    <details open className="rounded-control border border-line">
+      <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium">
+        Steps ({order.length})
+      </summary>
+      <nav aria-label="Steps in order" className="max-h-48 overflow-y-auto px-1 pb-1">
+        <ol className="m-0 list-none p-0">
+          {order.map((id) => (
+            <li key={id}>
+              <button
+                type="button"
+                aria-current={id === chosen ? "true" : undefined}
+                onClick={() => onChoose(id)}
+                className={`flex w-full items-center justify-between gap-2 rounded-[4px] px-2 py-1 text-left ${
+                  id === chosen
+                    ? "bg-selected text-ink"
+                    : "text-ink-muted hover:bg-sunken hover:text-ink"
+                }`}
+              >
+                <span className="truncate font-mono text-[13px]">{id}</span>
+                <span className="text-meta">{byId.get(id)?.type}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      </nav>
+    </details>
+  );
+}
+
+/**
+ * Where a step goes next, chosen from lists instead of by dragging between
+ * dots: the steps it goes on to, where it goes when it fails, and where each of
+ * a branch's cases leads. Each choice is a connection on the canvas, undone as one.
+ */
+function ConnectionsEditor({
+  id,
+  node,
+  nodes,
+  edges,
+  onConnect,
+  onDisconnect,
+}: {
+  id: string;
+  node: FlowNode;
+  nodes: CanvasNode[];
+  edges: Edge[];
+  onConnect: (handle: string, target: string) => void;
+  onDisconnect: (handle: string, target?: string) => void;
+}) {
+  const outs = outputs(node);
+  if (outs.length === 0) return null;
+  // A step can go to any other step but a start.
+  const targets = nodes
+    .filter((one) => one.id !== id && one.data.node.type !== "trigger")
+    .map((one) => one.id);
+  const leaving = (handle: string) =>
+    edges
+      .filter((edge) => edge.source === id && (edge.sourceHandle ?? "next") === handle)
+      .map((edge) => edge.target);
+  return (
+    <fieldset className="m-0 flex flex-col gap-3 border-0 border-line border-t p-0 pt-3">
+      <legend className="float-left mb-1 p-0 text-[13px] font-medium">Where it goes next</legend>
+      {outs.map((out) => {
+        if (out.id === "next") {
+          const now = leaving("next");
+          const more = targets.filter((target) => !now.includes(target));
+          return (
+            <div key="next" className="clear-left flex flex-col gap-1.5">
+              {now.length > 0 ? (
+                <ul aria-label="Goes on to" className="m-0 flex list-none flex-col gap-1 p-0">
+                  {now.map((target) => (
+                    <li key={target} className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono text-[13px]">→ {target}</span>
+                      <Button
+                        size="small"
+                        variant="quiet"
+                        aria-label={`Stop going to ${target}`}
+                        onClick={() => onDisconnect("next", target)}
+                      >
+                        Remove
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {more.length > 0 ? (
+                <SelectField
+                  name={`next-of-${id}`}
+                  label={now.length > 0 ? "Also go to" : "Then go to"}
+                  value=""
+                  options={[
+                    { value: "", label: "Choose a step…" },
+                    ...more.map((target) => ({ value: target, label: target })),
+                  ]}
+                  onChange={(target) => {
+                    if (target) onConnect("next", target);
+                  }}
+                />
+              ) : null}
+            </div>
+          );
+        }
+        const label =
+          out.id === "error"
+            ? "On failure, go to"
+            : out.label === OTHERWISE
+              ? "Otherwise, go to"
+              : `When ${out.label}, go to`;
+        return (
+          <SelectField
+            key={out.id}
+            name={`${out.id}-of-${id}`}
+            label={label}
+            value={leaving(out.id)[0] ?? ""}
+            options={[
+              { value: "", label: "Nothing" },
+              ...targets.map((target) => ({ value: target, label: target })),
+            ]}
+            onChange={(target) => (target ? onConnect(out.id, target) : onDisconnect(out.id))}
+          />
+        );
+      })}
+    </fieldset>
+  );
+}
+
 function CasesEditor({
   cases,
   onChange,
@@ -1502,8 +1721,28 @@ function CasesEditor({
               onChange(cases.map((each, at) => (at === index ? { ...each, when } : each)))
             }
           />
-          {cases.length > 1 ? (
-            <div>
+          <div className="flex flex-wrap gap-1">
+            {index > 0 ? (
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label={`Move ${one.name || "this case"} up`}
+                onClick={() => onChange(moved(cases, index, index - 1))}
+              >
+                Move up
+              </Button>
+            ) : null}
+            {index < cases.length - 1 ? (
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label={`Move ${one.name || "this case"} down`}
+                onClick={() => onChange(moved(cases, index, index + 1))}
+              >
+                Move down
+              </Button>
+            ) : null}
+            {cases.length > 1 ? (
               <Button
                 size="small"
                 variant="danger"
@@ -1511,8 +1750,8 @@ function CasesEditor({
               >
                 Remove case
               </Button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       ))}
       <div>

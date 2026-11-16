@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–9 built on branch `phase-12-uiux-p0`.
+Status: all eleven milestones built on branch `phase-12-uiux-p0`, not yet merged.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -227,4 +227,32 @@ They are in the kit's defaults, so tenant apps and portals get them too, as the 
 **`contrastRatio` is in the kit.** The branding preview lists every checked pair under its threshold, for the console's branding and a tenant's. It is a warning only: saving is not refused, as the owner chose.
 
 **The redesign e2e test passes at every width in both themes** with the new values.
+
+### Milestone 10
+
+**Every connection can be made without dragging.** The step inspector has "Where it goes next":
+- the steps it goes on to, each with Remove, and "Then go to" or "Also go to" to add one;
+- "On failure, go to", for steps that can fail;
+- "When <case>, go to" and "Otherwise, go to", for a branch.
+
+Each choice goes through the same `connect` the canvas uses, so it is recorded once in the undo history, and a case or failure path still has one destination.
+
+**A list of the steps, in the order a run reaches them,** sits at the top of the inspector: from the start along each connection, then anything nothing reaches. Choosing one selects it on the canvas and brings it into view.
+
+**Cases can be moved up and down,** since they are tried in order.
+
+**Connections are named for screen readers,** "approve to fail, on error".
+
+**The connection dots take a 24 px target** and stay small to look at.
+
+**The inspector scrolls within itself when it stacks under the canvas** on narrow screens, instead of running off the page.
+
+**On the read-only graph,** nodes draw a focus ring when focused from the keyboard, and every edge has a title naming both ends.
+
+**The e2e test builds, saves and tests a flow using only focus and Enter, and choices in lists:**
+- start → branch;
+- the "yes" case → set, and "otherwise" → approve;
+- approve's failure → fail.
+
+The audit asked for the error path to be tested in a run. An approval step's failure is the only error path the test can build without a script, and a test run cannot fail an approval, so the run takes the "yes" path. The saved edges are checked through the API. An axe check of the editor waits for P2-12, which adds axe to CI.
 

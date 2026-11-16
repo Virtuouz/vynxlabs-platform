@@ -13,3 +13,18 @@ body,
 #app {
   height: 100%;
 }
+
+/*
+ * A flow step's connection dots stay small to look at but take a 24 px target,
+ * so they can be hit without precision (WCAG 2.5.8).
+ */
+.react-flow__handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+}

@@ -1,6 +1,6 @@
 import { SideSheet } from "@vynxlabs/ui";
 import { X } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { InsetRule, Junction, type JunctionKind } from "./motifs.tsx";
 
@@ -91,6 +91,7 @@ export function Inspector({
   children,
   footer,
   label,
+  subject,
 }: {
   open: boolean;
   title: ReactNode;
@@ -100,6 +101,8 @@ export function Inspector({
   footer?: ReactNode;
   /** The region's name for screen readers. */
   label: string;
+  /** What is shown, such as the chosen row's ID. Choosing another takes focus back to the heading. */
+  subject?: string | undefined;
 }) {
   const wide = useWide(WIDE.inspector);
   if (!open) return null;
@@ -113,7 +116,82 @@ export function Inspector({
     );
   }
   return (
+    <DockedInspector
+      title={title}
+      eyebrow={eyebrow}
+      onClose={onClose}
+      footer={footer}
+      label={label}
+      subject={subject}
+    >
+      {children}
+    </DockedInspector>
+  );
+}
+
+/**
+ * The inspector beside the list. Like the sheet it becomes on a narrower
+ * screen, it takes focus to its heading when it opens, closes on Esc, and gives
+ * focus back to whatever had it outside, such as the row that opened it.
+ */
+function DockedInspector({
+  title,
+  eyebrow,
+  onClose,
+  children,
+  footer,
+  label,
+  subject,
+}: {
+  title: ReactNode;
+  eyebrow?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  label: string;
+  subject?: string | undefined;
+}) {
+  const region = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const closing = useRef(onClose);
+  closing.current = onClose;
+
+  useEffect(() => {
+    // What last had focus outside the inspector is where focus goes back to.
+    let outside = document.activeElement;
+    const track = (event: FocusEvent) => {
+      if (!region.current?.contains(event.target as Node)) outside = event.target as Element;
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // A dialog or menu over the page closes first, on its own.
+      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+      closing.current();
+    };
+    document.addEventListener("focusin", track);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("focusin", track);
+      document.removeEventListener("keydown", escape);
+      // Back to where it was, if that is still on the page and focus was in here.
+      const inside =
+        document.activeElement === document.body ||
+        Boolean(region.current?.contains(document.activeElement));
+      if (inside && outside instanceof HTMLElement && outside.isConnected) {
+        outside.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
+  // Opening it, or choosing something else to show in it, takes focus to its heading.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new subject is the reason to move focus
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+  }, [subject]);
+
+  return (
     <aside
+      ref={region}
       aria-label={label}
       className="flex w-[22rem] shrink-0 flex-col border-line border-l bg-surface 2xl:w-[26rem]"
     >
@@ -121,7 +199,9 @@ export function Inspector({
         <div className="flex min-w-0 flex-col gap-1">
           <InsetRule />
           {eyebrow ? <span className="text-meta text-ink-subtle">{eyebrow}</span> : null}
-          <h2 className="m-0 truncate text-title">{title}</h2>
+          <h2 ref={heading} tabIndex={-1} className="m-0 truncate text-title outline-none">
+            {title}
+          </h2>
         </div>
         <button
           type="button"

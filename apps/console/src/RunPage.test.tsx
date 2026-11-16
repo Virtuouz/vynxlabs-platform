@@ -451,3 +451,54 @@ test("a run chosen in the address opens as its own kind, even when the list does
   expect(await screen.findByText(/No run has this ID/)).toBeTruthy();
   history.replaceState(null, "", "/");
 });
+
+test("a run is opened, read and closed from the list with the keyboard alone", async () => {
+  routes[`GET ${root}/activity`] = () => [
+    200,
+    {
+      items: [
+        {
+          kind: "script",
+          id: "r1",
+          target: "reminders/send",
+          status: "failed",
+          state: "failed",
+          trigger: "schedule",
+          attempt: 2,
+          maxAttempts: 2,
+          error: "The SMS gateway said no.",
+          errorSummary: "The SMS gateway said no.",
+          tags: [],
+          bundleVersion: 4,
+          createdAt: new Date().toISOString(),
+          startedAt: null,
+          finishedAt: null,
+        },
+      ],
+      nextCursor: null,
+      stateCounts: { failed: 1 },
+    },
+  ];
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs");
+  show(<RunsWorkbench root={root} link={link} />);
+  const row = (await screen.findByText("reminders/send", { selector: "a" })).closest("tr");
+  expect(row?.tabIndex).toBe(0);
+  row?.focus();
+  fireEvent.keyDown(row as HTMLElement, { key: "Enter" });
+
+  const inspector = await screen.findByRole("complementary", { name: "The chosen run" });
+  // Focus goes to the inspector's heading, and the run's error can be read.
+  await waitFor(() => expect(document.activeElement?.tagName).toBe("H2"));
+  expect(inspector.contains(document.activeElement)).toBe(true);
+  expect(await screen.findAllByText("The SMS gateway said no.")).not.toHaveLength(0);
+  expect(row?.getAttribute("aria-current")).toBe("true");
+  expect(row?.hasAttribute("aria-selected")).toBe(false);
+
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
+  await waitFor(() =>
+    expect(screen.queryByRole("complementary", { name: "The chosen run" })).toBeNull(),
+  );
+  // Focus is back on the row that opened it.
+  expect(document.activeElement).toBe(row);
+  history.replaceState(null, "", "/");
+});

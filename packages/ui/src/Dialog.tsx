@@ -38,7 +38,23 @@ export function Dialog({
                 }`
           }`}
         >
-          <Base.Title className="m-0 text-base font-semibold">{title}</Base.Title>
+          <div className="flex items-start justify-between gap-3">
+            <Base.Title className="m-0 text-base font-semibold">{title}</Base.Title>
+            {/* A way out that can be seen and pressed, beside Esc and the backdrop. */}
+            <Base.Close
+              aria-label="Close"
+              className="-mt-1 -mr-1 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+            >
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M4 4l8 8M12 4l-8 8"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </Base.Close>
+          </div>
           {description ? (
             <Base.Description className="mt-1 mb-0 text-ink-muted">{description}</Base.Description>
           ) : null}

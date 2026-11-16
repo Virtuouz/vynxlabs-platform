@@ -91,5 +91,16 @@ test("a run that logs 1,200 lines shows them all, and opens from a link to the l
   const inspector = page.getByRole("complementary", { name: "The chosen run" });
   await expect(inspector.getByText("1200 lines")).toBeVisible({ timeout: 15_000 });
 
+  // By keyboard alone: Esc closes it and focus goes back to the run's row; Enter opens it again.
+  const row = page.getByRole("row").filter({ hasText: "logs/chatty" });
+  await row.focus();
+  await page.keyboard.press("Enter");
+  await expect(inspector.getByRole("heading", { level: 2 })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(inspector).toHaveCount(0);
+  await expect(row).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(inspector).toBeVisible();
+
   expect(errors).toEqual([]);
 });

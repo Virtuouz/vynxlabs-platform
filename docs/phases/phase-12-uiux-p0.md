@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–4 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–5 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -146,4 +146,19 @@ This applies to the run page, the runs inspector, a flow's run view and a flow s
 - The old code also headed the panel "Run" instead of its path.
 
 **A test that clicked a download link sent happy-dom's window to `about:blank`,** and every later test in the file lost its address. Tests that download now stub the anchor's `click`.
+
+### Milestone 5
+
+**A runs row takes focus and opens on Enter or Space,** like `CollectionView`'s rows. Keys pressed on a link or a tag inside the row are left to them. The row keeps its link to the run's full page.
+
+**The chosen row is `aria-current`, in the runs list and in `CollectionView`.** `aria-selected` is only valid inside a grid, list box or tab list, and these are plain tables. Arrow-key movement between rows waits for one `DataTable` (P2-2).
+
+**The docked inspector now behaves like the sheet it becomes on narrower screens:**
+- It takes focus to its heading when it opens.
+- It closes on Esc, unless a dialog, menu or list box is open above it.
+- It gives focus back to whatever last had it outside: the row that opened it, as the e2e test checks.
+
+**Each choice of a run moves focus to the inspector, even the run already open.** The e2e test found that pressing Enter on the open run's row left focus on the row. The inspector takes a `subject`, and the runs list counts choices into it. Other inspectors move focus only when they open.
+
+**`Dialog` has a visible close button,** as `SideSheet` already had. Closing a confirmation that way answers no.
 

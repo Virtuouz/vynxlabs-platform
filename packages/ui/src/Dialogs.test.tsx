@@ -93,3 +93,10 @@ test("a second question cancels the one before it", async () => {
   await press("Continue");
   expect(await second.answer).toBe(true);
 });
+
+test("a dialog has a close button that can be seen, and closing it is a no", async () => {
+  mount();
+  const asked = await asking((d) => d.confirm({ title: "Delete the key?", action: "Delete" }));
+  await press("Close");
+  expect(await asked.answer).toBe(false);
+});

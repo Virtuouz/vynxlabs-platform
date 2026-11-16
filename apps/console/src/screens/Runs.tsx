@@ -159,6 +159,8 @@ export function RunsWorkbench({
   }, [live, streaming]);
 
   const [chosen, setChosen] = useState<Activity>();
+  // Each time a run is chosen, even the one already open, focus goes to the inspector.
+  const [openings, setOpenings] = useState(0);
   // The run in the address: the one clicked, one on the page, or, from a link or a
   // reload, one looked up by its ID, so a flow run opens as a flow run.
   const listed = chosen?.id === selected ? chosen : items.find((one) => one.id === selected);
@@ -206,6 +208,7 @@ export function RunsWorkbench({
       onChoose={() => {
         setChosen(one);
         choose(one.id);
+        setOpenings((n) => n + 1);
       }}
       onTag={(value) => setTag(value)}
     />
@@ -302,6 +305,7 @@ export function RunsWorkbench({
             <Inspector
               open
               label="The chosen run"
+              subject={`${selected}:${openings}`}
               title={picked?.target ?? "Run"}
               eyebrow="Run"
               onClose={() => choose(null)}
@@ -419,8 +423,18 @@ function RunRow({
 }) {
   return (
     <tr
-      aria-selected={on}
+      // The chosen run. A table row cannot be "selected" outside a grid; it can be current.
+      aria-current={on ? "true" : undefined}
+      tabIndex={0}
       onClick={onChoose}
+      onKeyDown={(event) => {
+        // A link or a tag inside the row does its own thing.
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onChoose();
+        }
+      }}
       className={`cursor-pointer border-line border-b ${on ? "bg-selected" : "hover:bg-surface"}`}
     >
       <td className="px-4 py-2.5 align-top md:pl-6">

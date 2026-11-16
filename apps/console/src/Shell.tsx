@@ -42,7 +42,7 @@ import {
   whereIs,
 } from "./nav.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
-import { Link, navigate, navigationKind } from "./router.tsx";
+import { Link, navigate, navigationKind, useRestoredScroll } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
@@ -561,6 +561,7 @@ export function Shell({
   // A new page takes focus to its heading, so a screen reader starts there. The
   // same page refining its address (a filter, a first save) keeps focus where it is.
   const main = useRef<HTMLElement>(null);
+  useRestoredScroll(main, "main");
   const shownPath = useRef(path);
   useEffect(() => {
     // The first page keeps the browser's own focus; so does the same page refining its address.

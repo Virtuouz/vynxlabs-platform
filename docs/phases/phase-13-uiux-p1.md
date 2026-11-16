@@ -121,3 +121,10 @@ Findings are recorded under each milestone as it lands.
 - **More masking.** Step `detail` in the flow-run response, and the detail approvers see in the approvals list, are masked as well.
 - **`GET flow-runs/:id/definition`** returns the flow at the run's version. `changed` compares it with the workspace's active version, both read from bundles with keys in a stable order: the resource table keeps bodies in its own normalised form, so comparing against it said "changed" every time.
 - **The page** opens on the failed step, or else the running or waiting one, and keeps the chosen step in `?step=`. The banner reads "Failed at `b`: …" and links to the step. A step shows its input, a diagnosis from its run's insight, "Open script", and wait and run times. The flow's own input and output are shown, and the graph is drawn as the run ran it, with a note when the flow has changed since.
+
+### Milestone 9: source maps for code written in the console
+
+- **The map.** Compose builds the console's section with an external source map. The bundle gains an optional `consoleSources` field: the sources, that map, and the line where the compiled section starts. It is covered by the digest, and `schemas/bundle.schema.json` is regenerated.
+- **Lookup.** `insight` maps a stack frame below that line against the console's map, and one above it against the repository's map as before. So a failed draft, a test run or a deployed console script now has a `location`.
+- **Build errors on save** already reached the console as `file:line` in each issue's `path`. That shape is kept, since the console and existing clients read it, rather than a new structure.
+- **Correction to Milestone 7.** It changed what `webhooks.test.ts` sees: a field named `token` now comes masked from `GET runs/:id`. The test now reads the stored input, which is what it means to check, and asserts that the token is masked when shown. It was missed because Milestone 7 ran only part of the suite. Since then the whole suite runs before every commit that touches the server.

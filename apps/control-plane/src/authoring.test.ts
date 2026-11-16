@@ -362,6 +362,37 @@ describe("trying a draft out", () => {
     await alice.delete(`${ws()}/drafts/orders/broken`);
     await alice.delete(`${ws()}/drafts/orders/reads`);
   });
+
+  test("a failure in code written in the console points at its own line", async () => {
+    await draft(
+      "orders/throws",
+      scriptBody(
+        [
+          "type Order = { id: string };",
+          "",
+          "function check(order: Order) {",
+          "  throw new Error(`No warehouse for ${order.id}`);",
+          "}",
+          "",
+          "export default async (input: Order) => {",
+          "  check(input);",
+          "  return {};",
+          "};",
+          "",
+        ].join("\n"),
+      ),
+    );
+    const started = await alice.post(`${ws()}/test-runs`, {
+      script: "orders/throws",
+      input: { id: "o-1" },
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const done = await finished(started.body.runId);
+    expect(done.status).toBe("failed");
+    const insight = (await alice.get(`${ws()}/runs/${started.body.runId}/insight`)).body;
+    expect(insight.location).toMatchObject({ file: "orders/throws.script.ts", line: 4 });
+    await alice.delete(`${ws()}/drafts/orders/throws`);
+  });
 });
 
 describe("deploying drafts", () => {

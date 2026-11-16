@@ -6,6 +6,7 @@ export {
   BundleSources,
   bundleCompatibility,
   bundleDigest,
+  ConsoleSources,
   compareVersions,
   coreInRange,
   MAX_BUNDLE_ASSETS,

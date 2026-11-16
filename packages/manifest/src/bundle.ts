@@ -80,6 +80,35 @@ export const BundleSources = Type.Object(
 );
 export type BundleSources = Static<typeof BundleSources>;
 
+/**
+ * The code written in the console, beside what it compiles to, so a failure in
+ * it points at its own line. The console's code sits after the repository's in
+ * `code`, from line `line` + 1; `map` covers that part alone.
+ */
+export const ConsoleSources = Type.Object(
+  {
+    files: Type.Array(
+      Type.Object(
+        {
+          path: Type.String({ maxLength: 500, description: "`<path>.<kind>.ts`." }),
+          content: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 2000 },
+    ),
+    line: Type.Integer({
+      minimum: 0,
+      description: "How many lines of `code` come before the console's compiled code.",
+    }),
+    map: Type.String({
+      description: "A source map (version 3) from the console's compiled code to the files.",
+    }),
+  },
+  { additionalProperties: false },
+);
+export type ConsoleSources = Static<typeof ConsoleSources>;
+
 /** The unit of deploy: one workspace's manifests and code, immutable once built. */
 export const Bundle = Type.Object(
   {
@@ -111,6 +140,7 @@ export const Bundle = Type.Object(
       }),
     ),
     sources: Type.Optional(BundleSources),
+    consoleSources: Type.Optional(ConsoleSources),
     digest: Type.String({
       pattern: "^[0-9a-f]{64}$",
       description: "SHA-256 over the other fields.",
@@ -147,6 +177,7 @@ export function bundleDigest(bundle: Omit<Bundle, "digest">): string {
       ? { formatVersion, sdkVersion, core, manifests, code }
       : { formatVersion, sdkVersion, core, manifests, code, assets: bundle.assets ?? [] }),
     ...(bundle.sources ? { sources: bundle.sources } : {}),
+    ...(bundle.consoleSources ? { consoleSources: bundle.consoleSources } : {}),
   };
   return createHash("sha256").update(canonical(hashed)).digest("hex");
 }

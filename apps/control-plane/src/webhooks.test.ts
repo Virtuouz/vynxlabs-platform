@@ -79,7 +79,11 @@ function bundle(): Bundle {
 /** Sends a request to a webhook's address exactly as given, with no help from a client. */
 const send = (name: string, payload: string, headers: Record<string, string> = {}, query = "") =>
   t.app.inject({ method: "POST", url: `/api/v1${hooks[name]}${query}`, headers, payload });
-const inputOf = async (runId: string) => (await alice.get(`${ws()}/runs/${runId}`)).body.input;
+/** What a run was given, as stored: the API shows secret-looking values masked. */
+// biome-ignore lint/suspicious/noExplicitAny: payloads are inspected freely
+const inputOf = async (runId: string): Promise<any> =>
+  (await t.db.selectFrom("run").select("input").where("id", "=", runId).executeTakeFirstOrThrow())
+    .input;
 const sign = (text: string, encoding: "hex" | "base64" = "hex") =>
   createHmac("sha256", SECRET).update(text).digest(encoding);
 
@@ -197,6 +201,11 @@ describe("a webhook that checks signatures", () => {
     const fresh = await send("chat", body, headers(now));
     expect(fresh.statusCode, fresh.body).toBe(202);
     expect(await inputOf(fresh.json().runId)).toEqual({ token: "abc", text: "hello" });
+    // Shown, the token is masked.
+    expect((await alice.get(`${ws()}/runs/${fresh.json().runId}`)).body.input).toEqual({
+      token: "[redacted]",
+      text: "hello",
+    });
     // Signed correctly, and ten minutes old: a captured request sent again.
     const replayed = await send("chat", body, headers(now - 600));
     expect(replayed.statusCode).toBe(401);

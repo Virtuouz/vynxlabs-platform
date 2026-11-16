@@ -562,11 +562,19 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ? await loadBundle(kernel, bundle).catch(() => undefined)
             : undefined;
           const sources = loaded?.sources;
-          if (bundle && sources) {
-            const own = new Set(sources.files.map((file) => file.path));
+          const written = loaded?.consoleSources;
+          if (bundle && (sources || written)) {
+            const own = new Set(sources?.files.map((file) => file.path) ?? []);
+            const console = new Set(written?.files.map((file) => file.path) ?? []);
             for (const frame of bundleFrames(run.error.stack, bundle.digest)) {
-              const at = originalPosition(sources.map, frame.line, frame.column);
-              if (at && own.has(at.source)) {
+              // Code written in the console sits after the repository's, with its own map.
+              const at =
+                written && frame.line > written.line
+                  ? originalPosition(written.map, frame.line - written.line, frame.column)
+                  : sources
+                    ? originalPosition(sources.map, frame.line, frame.column)
+                    : undefined;
+              if (at && (own.has(at.source) || console.has(at.source))) {
                 location = { file: at.source, line: at.line, column: at.column };
                 break;
               }

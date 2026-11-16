@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Me } from "./api.ts";
 import { monogram } from "./kit/brand.tsx";
 import { whereIs } from "./nav.ts";
+import { navigate } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
 import { show } from "./testing.tsx";
 import { applyThemeChoice } from "./theme.ts";
@@ -182,4 +183,56 @@ test("a chosen theme is put on the page and remembered, and the system's is the 
 test("without a logo the mark is the name's initials", () => {
   expect(monogram("Vynxlabs")).toBe("vy");
   expect(monogram("Northwind Ops")).toBe("no");
+});
+
+test("each page's tab title says what is open, the section, the workspace and the product", async () => {
+  const at = (path: string) => (
+    <Shell me={me} path={path} tenantId="t1" onSignOut={() => {}}>
+      <p>Screen</p>
+    </Shell>
+  );
+  const { rerender } = show(at("/t/t1/workspaces/w2/runs"));
+  await waitFor(() => expect(document.title).toBe("Runs · Sandbox · Vynxlabs"));
+  rerender(at("/t/t1/workspaces/w2/scripts/edit/orders/sync"));
+  await waitFor(() => expect(document.title).toBe("orders/sync · Scripts · Sandbox · Vynxlabs"));
+  rerender(at("/t/t1/workspaces/w2/scripts/new"));
+  await waitFor(() => expect(document.title).toBe("New script · Scripts · Sandbox · Vynxlabs"));
+  rerender(at("/t/t1/roles"));
+  await waitFor(() => expect(document.title).toBe("Members & access · Acme · Vynxlabs"));
+  rerender(
+    <Shell me={operator} path="/instance/branding" tenantId={undefined} onSignOut={() => {}}>
+      <p>Screen</p>
+    </Shell>,
+  );
+  await waitFor(() => expect(document.title).toBe("Console branding · Vynxlabs"));
+});
+
+test("the first tab stop skips to the content, and a new page takes focus to its heading", async () => {
+  const at = (path: string, heading: string) => (
+    <Shell me={me} path={path} tenantId="t1" onSignOut={() => {}}>
+      <h1>{heading}</h1>
+      <input aria-label="Filter" />
+    </Shell>
+  );
+  history.replaceState(null, "", "/t/t1/workspaces/w2/runs");
+  const { rerender } = show(at("/t/t1/workspaces/w2/runs", "Runs page"));
+  const skip = screen.getByRole("link", { name: "Skip to content" });
+  // Nothing that can take focus comes before it.
+  const focusable = document.querySelectorAll("a[href], button, input, [tabindex='0']");
+  expect(focusable[0]).toBe(skip);
+  expect(skip.getAttribute("href")).toBe("#main");
+  expect(document.getElementById("main")?.tagName).toBe("MAIN");
+  // The first page leaves focus where the browser put it.
+  expect(document.activeElement).toBe(document.body);
+
+  navigate("/t/t1/workspaces/w2/flows");
+  rerender(at("/t/t1/workspaces/w2/flows", "Flows page"));
+  await waitFor(() => expect(document.activeElement?.textContent).toBe("Flows page"));
+
+  // The same page refining its address keeps focus where it is.
+  screen.getByLabelText("Filter").focus();
+  navigate("/t/t1/workspaces/w2/flows/new", { replace: true });
+  rerender(at("/t/t1/workspaces/w2/flows/new", "Flows page"));
+  await new Promise((done) => requestAnimationFrame(() => done(undefined)));
+  expect(document.activeElement).toBe(screen.getByLabelText("Filter"));
 });

@@ -2,6 +2,12 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 12, trust and access
+
+### For tenant developers
+
+- **Toasts from `@vynxlabs/ui` read better and wait for people.** A `danger` toast stays until it is dismissed instead of leaving after five seconds, and is announced as an alert. Other toasts wait while they are pointed at or focused, and are announced once from a live region the provider keeps on the page. The same message shown twice no longer stacks. `show`, `success` and `danger` take an optional `{ action: { label, onClick } }`, such as Undo, and a toast with one stays twice as long. Tests that found toasts by `role="status"` should look for their text.
+
 ## Unreleased: phase 11, holding up under load
 
 ### For operators

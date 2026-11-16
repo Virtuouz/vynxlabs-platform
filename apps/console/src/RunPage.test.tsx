@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { useNamedObject } from "./kit/title.ts";
 import { RunPage } from "./screens/RunPage.tsx";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { answer, show } from "./testing.tsx";
@@ -272,3 +273,42 @@ test("the list searches, filters by tag and loads more, all through the address"
   fireEvent.click(screen.getAllByText(/jobs\/one/)[0]?.closest("tr") as HTMLElement);
   expect(new URLSearchParams(location.search).get("run")).toBe("one");
 });
+
+test("a run's page names the run for the tab, and says when its state changes", async () => {
+  let state = "running";
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      state,
+      status: state,
+      finishedAt: state === "running" ? null : scriptRun.finishedAt,
+    },
+  ];
+  routes[`GET ${root}/runs/r1/logs`] = () => [200, { items: [], done: state !== "running" }];
+  show(
+    <>
+      <RunPage root={root} link={link} id="r1" />
+      <NamedObject />
+    </>,
+  );
+  expect(await screen.findByTestId("named")).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.getByTestId("named").textContent).toBe("Run of reminders/send"),
+  );
+  const announcer = () =>
+    [...document.querySelectorAll('[role="status"].sr-only')]
+      .map((one) => one.textContent)
+      .join("");
+  // Opening a run says nothing: its state is on the page.
+  expect(announcer()).toBe("");
+  state = "succeeded";
+  await waitFor(() => expect(announcer()).toBe("Run of reminders/send: Succeeded"), {
+    timeout: 6000,
+  });
+});
+
+/** What the screen on show names for the tab's title, as the shell reads it. */
+function NamedObject() {
+  return <span data-testid="named">{useNamedObject() ?? ""}</span>;
+}

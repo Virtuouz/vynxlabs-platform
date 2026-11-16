@@ -1,6 +1,6 @@
 # Phase 12: trust and access (UI/UX audit P0)
 
-Status: milestones 0–2 built on branch `phase-12-uiux-p0`.
+Status: milestones 0–3 built on branch `phase-12-uiux-p0`.
 Last updated: 2026-11-16
 
 The UI/UX audit (`docs/uiux/`) ranks ten defects as P0 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Each was checked against the code at `caa1d1d` before this phase began, and each holds:
@@ -99,4 +99,26 @@ The navigation is outside the page's boundary, so a broken page can always be le
 **The flow editor remounts on its first save in the same way** (`FlowEditor.tsx:690`). It is left for Milestone 8, where flow autosave starts from the first change and would make it visible.
 
 **A console rebuild needs an instance restart:** the static file server only knows the files that were there when it started.
+
+### Milestone 3
+
+**A tab's title is built by the shell** from what it already knows, joined with " · ": what is open, the section, the workspace or tenant, and the product. For example "orders/sync · Scripts · Dev · Vynxlabs".
+- An editor's object comes from its address.
+- A screen that shows something the address doesn't name, a run, says so with `useTitleObject`. This is a small store the shell reads, so no prop has to pass through every screen.
+- The sign-in page keeps the product's name alone.
+
+**Focus moves to the new page's heading only on a new page or on Back and Forward,** never on a `replace`. The router now records which of the three each change was.
+- A `replace` is the same page refining its address: a filter, or a new script's first save. Moving focus then would pull it out of the editor the person is typing in.
+- The e2e test checks that focus stays in the code after ⌘↵.
+
+**The skip link is a plain `href="#main"`,** with `<main tabIndex={-1}>`. The browser moves focus by itself, and the router ignores a change that leaves the path the same. No script is needed.
+
+**Toasts changed in the kit, so tenant apps get the same behaviour,** as noted in the changelog:
+- A failure is `role="alert"` and stays until dismissed.
+- Other toasts are read from one polite live region the provider keeps on the page, and the toasts themselves have no role. Live regions with a role would also have broken the console tests that find a screen's own `role="status"` line.
+- Pointing at the stack, or focusing into it, holds every timer. Each resumes with the time it had left.
+- A repeated message restarts the one shown rather than stacking, so persistent errors from a retry loop don't pile up.
+- An optional action, which Milestone 7's Undo uses, doubles the time a toast stays.
+
+**A run's state change is announced, but not its first showing.** This applies on the run page, the runs inspector and a flow's run view. Opening a run doesn't repeat what is already on the screen.
 

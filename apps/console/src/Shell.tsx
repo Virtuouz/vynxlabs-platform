@@ -13,7 +13,7 @@ import {
   Search,
   Sun,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isOperator, type Me, useLoad } from "./api.ts";
 import { BrandMark, useBrand } from "./kit/brand.tsx";
 import {
@@ -25,6 +25,7 @@ import {
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { EnvTag, Tag } from "./kit/status.tsx";
+import { pageTitle, useNamedObject } from "./kit/title.ts";
 import {
   AREA_ICON,
   AREA_LABEL,
@@ -41,7 +42,7 @@ import {
   whereIs,
 } from "./nav.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
-import { Link, navigate } from "./router.tsx";
+import { Link, navigate, navigationKind } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
@@ -544,6 +545,38 @@ export function Shell({
     return undefined;
   })();
 
+  // The tab's title says where this is: what is open, the section, the workspace, the product.
+  const named = useNamedObject();
+  const fresh = /\/(script|flow)s\/new$/.exec(path);
+  const title = pageTitle([
+    named ?? opened?.ref ?? (fresh ? `New ${fresh[1]}` : undefined),
+    here ?? AREA_LABEL[where.area],
+    workspace?.name ?? tenant?.name,
+    brand.productName,
+  ]);
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
+
+  // A new page takes focus to its heading, so a screen reader starts there. The
+  // same page refining its address (a filter, a first save) keeps focus where it is.
+  const main = useRef<HTMLElement>(null);
+  const shownPath = useRef(path);
+  useEffect(() => {
+    // The first page keeps the browser's own focus; so does the same page refining its address.
+    if (path === shownPath.current) return;
+    shownPath.current = path;
+    if (navigationKind() === "replace") return;
+    const frame = requestAnimationFrame(() => {
+      const heading = main.current?.querySelector<HTMLElement>("h1");
+      const target = heading ?? main.current;
+      if (!target) return;
+      if (heading && !heading.hasAttribute("tabindex")) heading.tabIndex = -1;
+      target.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [path]);
+
   const destinations = useMemo<Destination[]>(() => {
     const list: Destination[] = [];
     if (tenantId && workspaceId) {
@@ -653,6 +686,12 @@ export function Shell({
 
   return (
     <div className="flex h-full min-h-0">
+      <a
+        href="#main"
+        className="sr-only z-[90] rounded-control border border-line bg-surface font-medium text-action shadow-lg focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2"
+      >
+        Skip to content
+      </a>
       <nav
         aria-label="Main"
         className="hidden w-16 shrink-0 flex-col items-center gap-1 border-line border-r bg-structure py-3 md:flex"
@@ -902,7 +941,10 @@ export function Shell({
         </header>
 
         <main
-          className={`flex min-h-0 flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
+          id="main"
+          ref={main}
+          tabIndex={-1}
+          className={`flex min-h-0 outline-none flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
         >
           {where.workbench ? (
             <ErrorBoundary resetOn={path} what="This page">

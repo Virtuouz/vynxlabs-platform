@@ -3,7 +3,21 @@ import { useCallback, useEffect, useState } from "react";
 
 const listeners = new Set<() => void>();
 
+/**
+ * How the address last changed: a new page (`push`), Back or Forward (`pop`), or
+ * the same page refining its address (`replace`), such as a filter or a new
+ * script's first save.
+ */
+let lastChange: "push" | "replace" | "pop" = "push";
+export const navigationKind = () => lastChange;
+if (typeof addEventListener === "function") {
+  addEventListener("popstate", () => {
+    lastChange = "pop";
+  });
+}
+
 export function navigate(to: string, options: { replace?: boolean } = {}) {
+  lastChange = options.replace ? "replace" : "push";
   if (options.replace) history.replaceState(null, "", to);
   else history.pushState(null, "", to);
   for (const listener of listeners) listener();

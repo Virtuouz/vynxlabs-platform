@@ -230,49 +230,148 @@ describe("kit components under React", () => {
     await waitFor(() => expect(screen.getByRole("tabpanel").textContent).toBe("One"));
   });
 
-  test("a toast is announced, can be dismissed and leaves by itself", () => {
+  /** The toasts on screen, by what they say. */
+  const toastsShown = () =>
+    [...document.querySelectorAll("[data-tone]")].map((toast) =>
+      (toast.textContent ?? "").replace("×", "").trim(),
+    );
+
+  function Toaster({ undo = () => {} }: { undo?: () => void }) {
+    const toast = useToast();
+    return (
+      <>
+        <Button onClick={() => toast.success("Order saved.")}>Save</Button>
+        <Button onClick={() => toast.danger("Could not save.")}>Fail</Button>
+        <Button onClick={() => toast.show("Copied.")}>Copy</Button>
+        <Button
+          onClick={() =>
+            toast.success("Widget removed.", { action: { label: "Undo", onClick: undo } })
+          }
+        >
+          Remove
+        </Button>
+      </>
+    );
+  }
+
+  test("a toast leaves by itself, except a failure, which stays until dismissed", () => {
     vi.useFakeTimers();
     try {
-      function Example() {
-        const toast = useToast();
-        return (
-          <>
-            <Button onClick={() => toast.success("Order saved.")}>Save</Button>
-            <Button onClick={() => toast.danger("Could not save.")}>Fail</Button>
-            <Button onClick={() => toast.show("Copied.")}>Copy</Button>
-          </>
-        );
-      }
       render(
         <ToastProvider duration={3000}>
-          <Example />
+          <Toaster />
         </ToastProvider>,
       );
-      expect(screen.queryByRole("status")).toBeNull();
+      expect(toastsShown()).toEqual([]);
       fireEvent.click(screen.getByText("Save"));
-      expect(screen.getByRole("status").textContent).toContain("Order saved.");
-      expect(screen.getByRole("status").className).toContain("bg-success-soft");
+      expect(toastsShown()).toEqual(["Order saved."]);
+      expect(document.querySelector("[data-tone]")?.className).toContain("bg-success-soft");
 
       act(() => {
         vi.advanceTimersByTime(2000);
       });
       fireEvent.click(screen.getByText("Fail"));
       fireEvent.click(screen.getByText("Copy"));
-      expect(screen.getAllByRole("status")).toHaveLength(3);
+      expect(toastsShown()).toHaveLength(3);
       act(() => {
         vi.advanceTimersByTime(1000);
       });
       // The first toast has had its three seconds, the others have not.
-      expect(screen.getAllByRole("status").map((toast) => toast.textContent)).toEqual([
-        expect.stringContaining("Could not save."),
-        expect.stringContaining("Copied."),
-      ]);
-
-      fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" })[0] as HTMLElement);
-      expect(screen.getAllByRole("status")).toHaveLength(1);
+      expect(toastsShown()).toEqual(["Could not save.", "Copied."]);
       act(() => {
-        vi.advanceTimersByTime(3000);
+        vi.advanceTimersByTime(30_000);
       });
+      // A failure is still there, half a minute on.
+      expect(toastsShown()).toEqual(["Could not save."]);
+      expect(screen.getByRole("alert").textContent).toContain("Could not save.");
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(toastsShown()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("toasts wait while they are pointed at or focused", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <ToastProvider duration={5000}>
+          <Toaster />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("Save"));
+      act(() => {
+        vi.advanceTimersByTime(4000);
+      });
+      const stack = document.querySelector("[data-tone]")?.parentElement as HTMLElement;
+      fireEvent.mouseEnter(stack);
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(toastsShown()).toEqual(["Order saved."]);
+      fireEvent.mouseLeave(stack);
+      act(() => {
+        vi.advanceTimersByTime(900);
+      });
+      expect(toastsShown()).toEqual(["Order saved."]);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(toastsShown()).toEqual([]);
+
+      fireEvent.click(screen.getByText("Copy"));
+      fireEvent.focus(screen.getByRole("button", { name: "Dismiss" }));
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(toastsShown()).toEqual(["Copied."]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a toast's action is done once and closes it, and a repeat does not stack", () => {
+    vi.useFakeTimers();
+    try {
+      const undo = vi.fn();
+      render(
+        <ToastProvider duration={3000}>
+          <Toaster undo={undo} />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("Remove"));
+      // With something to do about it, a toast stays twice as long.
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+      expect(undo).toHaveBeenCalledTimes(1);
+      expect(toastsShown()).toEqual([]);
+
+      fireEvent.click(screen.getByText("Fail"));
+      fireEvent.click(screen.getByText("Fail"));
+      expect(toastsShown()).toEqual(["Could not save."]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a toast is read out once, from the page's live region", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Toaster />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("Save"));
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      const live = document.querySelector('[aria-live="polite"]') as HTMLElement;
+      expect(live.textContent).toBe("Order saved.");
+      // The toast itself has no role, so it is not read a second time.
+      expect(document.querySelector("[data-tone]")?.getAttribute("role")).toBeNull();
       expect(screen.queryByRole("status")).toBeNull();
     } finally {
       vi.useRealTimers();

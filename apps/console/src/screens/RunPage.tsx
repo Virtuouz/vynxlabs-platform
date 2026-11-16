@@ -4,10 +4,12 @@ import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { useTitleObject } from "../kit/title.ts";
 import { useRecordRecent } from "../recent.ts";
 import { Link, navigate } from "../router.tsx";
 import { type LiveRun, stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
@@ -89,6 +91,7 @@ function RunHeader({
   related: ReactNode;
   actions: ReactNode;
 }) {
+  useTitleObject(`Run of ${path}`);
   return (
     <header className="flex flex-col gap-3 border-line border-b pb-4">
       <nav aria-label="Where this run is" className="flex flex-wrap items-center gap-1.5 text-meta">
@@ -109,6 +112,7 @@ function RunHeader({
           </h1>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted">
             <StatePill state={state} detail={detail} />
+            <StateAnnouncer state={state} label={`Run of ${path}`} />
             {started ? <span>{started}</span> : null}
             <Link to={`${link}/deployments`}>version {version}</Link>
             {related}

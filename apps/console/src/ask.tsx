@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import {
   type Dialogs,
   DialogsProvider,
+  type ToastOptions,
   ToastProvider,
   type Toasts,
   useDialogs,
@@ -63,6 +64,6 @@ export function failureText(error: unknown): string {
 
 /** Says what just happened, in a corner of the page. */
 export const notify = {
-  success: (message: string) => need(toasts).success(message),
+  success: (message: string, options?: ToastOptions) => need(toasts).success(message, options),
   error: (error: unknown) => need(toasts).danger(failureText(error)),
 };

@@ -71,7 +71,13 @@ export {
   type TimelineRow,
   type TimelineSegmentKind,
 } from "./Timeline.tsx";
-export { ToastProvider, type Toasts, type ToastTone, useToast } from "./Toast.tsx";
+export {
+  type ToastOptions,
+  ToastProvider,
+  type Toasts,
+  type ToastTone,
+  useToast,
+} from "./Toast.tsx";
 export {
   type CardsWidgetConfig,
   type CardWidgetConfig,

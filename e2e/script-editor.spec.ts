@@ -3,7 +3,8 @@ import { expect, type Page, test } from "@playwright/test";
 /**
  * The script editor, in a browser (phase 12, milestone 2): a new script opens
  * with no errors in its starter, typing its path keeps the code's undo history,
- * and ⌘↵ with the code focused saves, runs, and shows the run beside it.
+ * and ⌘↵ with the code focused saves, runs, and shows the run beside it. The
+ * tab's title says what is open, and the first Tab on a page skips to its content.
  */
 
 const ADMIN = {
@@ -88,6 +89,21 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
   // The key ran the script; Monaco did not also insert a line, as it does with Ctrl+Enter by default.
   expect(await editor.locator(".view-line").count()).toBe(lines);
+  // The tab says what is open, and the first save, which only refines the address, kept focus in the code.
+  await expect(page).toHaveTitle(/^hello\/greet · Scripts · Dev · /);
+  expect(
+    await page.evaluate(() => Boolean(document.activeElement?.closest(".monaco-editor"))),
+  ).toBe(true);
+
+  // A new page: the first Tab reaches the skip link, which goes to the content.
+  await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/runs`);
+  await expect(page).toHaveTitle(/^Runs · Dev · /);
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await expect(skip).toBeInViewport();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main#main")).toBeFocused();
 
   expect(errors).toEqual([]);
 });

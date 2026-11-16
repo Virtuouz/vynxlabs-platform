@@ -12,10 +12,12 @@ import { ArrowUpRight, CircleX, Lightbulb, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { useTitleObject } from "../kit/title.ts";
 import { Link, navigate, useQueryValue } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
 import { stamp, TRIGGER, took, useLiveRun } from "./Execution.tsx";
@@ -156,6 +158,9 @@ export function RunsWorkbench({
   }, [live, streaming]);
 
   const [chosen, setChosen] = useState<Activity>();
+  useTitleObject(
+    selected ? (chosen?.id === selected ? `Run of ${chosen.target}` : "Run") : undefined,
+  );
   const counts = list.data?.stateCounts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const next = more.length === 0 ? (list.data?.nextCursor ?? null) : lastNext;
@@ -500,6 +505,7 @@ export function ScriptRunPanel({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <StatePill state={run.state} detail={took(run) || undefined} />
+        <StateAnnouncer state={run.state} label={`Run of ${run.script}`} />
         <div className="flex gap-2">
           {active ? (
             <Button

@@ -16,6 +16,7 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
@@ -670,6 +671,7 @@ export function FlowRunView({
             {run.flow}
           </Link>
           <StatePill state={run.state} />
+          <StateAnnouncer state={run.state} label={`Run of ${run.flow}`} />
           <span className="text-ink-muted">
             Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`},
             on bundle version {run.bundleVersion}

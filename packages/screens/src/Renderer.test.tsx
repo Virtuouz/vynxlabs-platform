@@ -362,6 +362,31 @@ test("references are fetched once each, at most two hundred to a request", async
   ]);
 });
 
+test("in the builder the chosen widget is moved by arrow keys, and resized with Shift, without a pointer", async () => {
+  const { client } = fake();
+  const onMove = vi.fn();
+  render(
+    <PageRenderer
+      tables={tables}
+      client={client}
+      page={page([widget("orders", { title: "Orders", at: { x: 2, y: 3, w: 6, h: 6 } })])}
+      editing={{ selected: "orders", onSelect: () => {}, onMove }}
+    />,
+  );
+  const handle = within(await screen.findByRole("region", { name: "Orders" })).getByRole("button", {
+    name: "Editing",
+  });
+  expect(handle.getAttribute("aria-keyshortcuts")).toContain("ArrowLeft");
+  fireEvent.keyDown(handle, { key: "ArrowRight" });
+  expect(onMove).toHaveBeenLastCalledWith("orders", { x: 3, y: 3, w: 6, h: 6 });
+  fireEvent.keyDown(handle, { key: "ArrowUp" });
+  expect(onMove).toHaveBeenLastCalledWith("orders", { x: 2, y: 2, w: 6, h: 6 });
+  fireEvent.keyDown(handle, { key: "ArrowRight", shiftKey: true });
+  expect(onMove).toHaveBeenLastCalledWith("orders", { x: 2, y: 3, w: 7, h: 6 });
+  fireEvent.keyDown(handle, { key: "ArrowDown", shiftKey: true });
+  expect(onMove).toHaveBeenLastCalledWith("orders", { x: 2, y: 3, w: 6, h: 7 });
+});
+
 test("in the builder a widget is dragged by its heading and stretched by its corner, on the grid", async () => {
   const { client } = fake();
   const onMove = vi.fn();

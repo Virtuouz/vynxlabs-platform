@@ -26,6 +26,7 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Fields** (`TextField`, `SelectField`, `TextAreaField`, `NumberField`, `DateField`, `ComboboxField`): the error is tied to its control by `aria-describedby`, beside the hint, which now stays. An invalid control has a danger edge. `required` shows a mark, and `required={false}` shows "optional". The marks are hidden from assistive technology, which hears the control's own `required`, so labels and accessible names are unchanged. `FieldFrame` is exported, to give a field of your own the same label, hint and error.
 - **Toasts** take a `title`, a `link` to the result and an `info` tone. Three show at a time, and Esc dismisses one. `ToastProvider` takes `navigate` to follow links through your router.
 - **`Button loading`** shows a spinner beside the label, sets `aria-busy` and refuses a second press.
+- **Served apps lay out by the room they are given** (container queries), not by the window's width. The page switches to its 12-column grid once it has 672 px, about a tablet's width. A page embedded in something narrower stacks as a phone's does, and the App Builder's phone and tablet previews now show what a phone and a tablet would.
 - **`Grid navigation="grid"`** follows the WAI-ARIA grid pattern:
   - one tab stop, with arrow keys, Home/End and Page keys between cells;
   - Enter or F2 to edit, Escape to put a value back, Space to check a row;

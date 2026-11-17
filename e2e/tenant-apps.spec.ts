@@ -139,6 +139,28 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
     }
     await visitor.context().close();
   }
+  // In the builder, the page has the room: at a laptop's size the canvas takes 60% of the work
+  // area or more. A phone's preview lays the page out as a phone does: one column.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/screens/screens/stock`);
+  const canvas = page.locator("[data-canvas]");
+  await expect(canvas.getByRole("region", { name: "Stock" }).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  const share = await page.evaluate(() => {
+    const main = document.querySelector("main")?.getBoundingClientRect().width ?? 1;
+    return (document.querySelector("[data-canvas]")?.getBoundingClientRect().width ?? 0) / main;
+  });
+  expect(share).toBeGreaterThanOrEqual(0.6);
+  await page.getByRole("radio", { name: /Phone/ }).click();
+  const stacked = async () => {
+    const list = await canvas.getByRole("region", { name: "Stock" }).first().boundingBox();
+    const chart = await canvas.getByRole("region", { name: "Held by aisle" }).boundingBox();
+    return Boolean(list && chart && chart.y >= list.y + list.height - 1);
+  };
+  await expect.poll(stacked).toBe(true);
+  await expectNoAxeViolations(page, "the App Builder");
+
   await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
     () => {},
   );

@@ -5,10 +5,11 @@ import { Monitor, Plus, Smartphone, Tablet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify } from "../../ask.tsx";
+import { useHistory } from "../../kit/history.ts";
 import { Loading } from "../../kit/LoadState.tsx";
-import { PageHeader } from "../../kit/PageHeader.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
 import { PageEditor } from "./PageEditor.tsx";
+import { PublishDialog } from "./PublishDialog.tsx";
 
 /** The sizes the preview can be drawn at. */
 export const VIEWPORTS = {
@@ -19,7 +20,9 @@ export const VIEWPORTS = {
 
 // ----- The builder -----
 
-export type Saving = "saved" | "waiting" | "saving" | { failed: string };
+export type { Saving } from "./EditorShell.tsx";
+
+import type { Saving } from "./EditorShell.tsx";
 
 /** Builds one interface: a preview drawn from live rows, and the settings of what is chosen. */
 export function AppBuilder({
@@ -38,7 +41,19 @@ export function AppBuilder({
   const [saving, setSaving] = useState<Saving>("saved");
   const [problems, setProblems] = useState<{ path: string; message: string }[]>([]);
   const [publishing, setPublishing] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const revision = useRef<number | undefined>(undefined);
+  const latest = useRef<InterfaceBody | undefined>(undefined);
+  latest.current = body;
+  // Every change is a step that can be undone: the app as it was before it.
+  const history = useHistory<InterfaceBody | undefined>(
+    () => latest.current,
+    (back) => {
+      if (!back) return;
+      dirty.current = true;
+      setBody(back);
+    },
+  );
   const dirty = useRef(false);
   const list = useLoad<{ items: Listed[] }>(`${root}/interfaces`);
   const drafts = useLoad<{ items: { path: string }[] }>(`${root}/drafts`);
@@ -96,7 +111,8 @@ export function AppBuilder({
     return () => clearTimeout(timer);
   }, [body, save]);
 
-  const change = (apply: (draft: InterfaceBody) => void) => {
+  const change = (apply: (draft: InterfaceBody) => void, label = "a change", key?: string) => {
+    if (latest.current) history.record(label, key);
     setBody((before) => {
       if (!before) return before;
       const next = structuredClone(before);
@@ -129,7 +145,10 @@ export function AppBuilder({
       }
       await api.post(`${root}/changes/deploy`, { paths, message: `Publish ${body.title}` });
       revision.current = undefined;
-      notify.success("Published. People who open the app now see this.");
+      setReviewing(false);
+      notify.success("Published. People who open the app now see this.", {
+        ...(url ? { link: { label: "Open the app", href: url } } : {}),
+      });
       list.reload();
       drafts.reload();
       apps.reload();
@@ -148,182 +167,102 @@ export function AppBuilder({
     return [at?.title, on ? on.title || heading(on.id) : undefined].filter(Boolean).join(" › ");
   };
 
-  return (
-    <section className="flex flex-col gap-4">
-      <PageHeader
-        compact
-        title={body.title || "Untitled app"}
-        actions={
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-body-sm text-ink-muted" role="status">
-              {saving === "saved"
-                ? hasChanges
-                  ? "Saved. Not published yet."
-                  : "Published."
-                : saving === "saving" || saving === "waiting"
-                  ? "Saving…"
-                  : `Not saved: ${saving.failed}`}
-            </span>
-            {url ? (
-              <a href={url} target="_blank" rel="noreferrer" className="text-action">
-                Open the app
-              </a>
-            ) : null}
-            <Button
-              variant="primary"
-              disabled={publishing || problems.length > 0 || typeof saving === "object"}
-              onClick={publish}
-            >
-              Publish
-            </Button>
-          </span>
-        }
-        after={
-          <div className="w-80 max-w-full">
-            <TextField
-              label="Name of the app"
-              name="app-title"
-              value={body.title}
-              maxLength={200}
-              required
-              onChange={(title) =>
-                change((draft) => {
-                  if (title) draft.title = title;
-                })
-              }
-            />
-          </div>
-        }
-      />
-      {appPath === null && list.data ? (
-        <Notice
-          tone="attention"
-          action={
-            <Button
-              onClick={async () => {
-                const address = await ask.prompt({
-                  title: "Make an app for it",
-                  text: "The app's address ends with this. Lower-case letters, digits and dashes.",
-                  label: "Address",
-                  initial: slug(body.title),
-                  action: "Make the app",
-                });
-                if (!address) return;
-                try {
-                  await api.put(`${root}/drafts/${slug(address)}`, {
-                    kind: "app",
-                    schemaVersion: 1,
-                    body: { title: body.title, interface: path },
-                  });
-                  list.reload();
-                  drafts.reload();
-                } catch (error) {
-                  notify.error(error);
-                }
-              }}
-            >
-              Make an app for it
-            </Button>
+  const shell = {
+    title: body.title || "Untitled app",
+    saving,
+    savedWords: hasChanges ? "Saved. Not published yet." : "Published.",
+    history,
+    more: url ? (
+      <a href={url} target="_blank" rel="noreferrer" className="text-body-sm text-action">
+        Open the app
+      </a>
+    ) : null,
+    primary: (
+      <Button
+        variant="primary"
+        disabled={problems.length > 0 || typeof saving === "object"}
+        onClick={async () => {
+          dirty.current = false;
+          if (await save(body)) setReviewing(true);
+        }}
+      >
+        Publish
+      </Button>
+    ),
+    after: (
+      <div className="w-80 max-w-full">
+        <TextField
+          label="Name of the app"
+          name="app-title"
+          value={body.title}
+          maxLength={200}
+          required
+          onChange={(title) =>
+            change(
+              (draft) => {
+                if (title) draft.title = title;
+              },
+              "renaming the app",
+              "title",
+            )
           }
-        >
-          No app serves this yet, so nobody can open it.
-        </Notice>
-      ) : null}
-      {problems.length > 0 ? (
-        <Notice tone="attention">
-          <strong>To fix before it can be published:</strong>
-          <ul className="mt-1 mb-0 pl-5">
-            {problems.map((problem) => (
-              <li key={`${problem.path} ${problem.message}`}>
-                {where(problem.path)}: {problem.message}.
-              </li>
-            ))}
-          </ul>
-        </Notice>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-2 border-line border-b pb-2">
-        {body.pages.map((one) => (
-          <Button
-            key={one.id}
-            variant={one.id === page?.id ? "primary" : "quiet"}
-            aria-pressed={one.id === page?.id}
-            onClick={() => {
-              setPageId(one.id);
-              setSelected(undefined);
-            }}
-          >
-            {one.title}
-          </Button>
-        ))}
-        {body.pages.length < 20 ? (
-          <Button
-            onClick={async () => {
-              const title = await ask.prompt({
-                title: "Add a page",
-                label: "Name of the page",
-                action: "Add the page",
-              });
-              if (!title) return;
-              change((draft) => {
-                let id = slug(title).replace(/^[^a-z]+/, "") || "page";
-                for (let count = 2; draft.pages.some((one) => one.id === id); count += 1) {
-                  id = `${slug(title) || "page"}-${count}`;
-                }
-                draft.pages.push({ id, title, widgets: [] });
-                setPageId(id);
-                setSelected(undefined);
-              });
-            }}
-          >
-            <Plus size={14} aria-hidden="true" /> Page
-          </Button>
-        ) : null}
-        {page ? (
-          <>
-            <Button
-              variant="quiet"
-              onClick={async () => {
-                const title = await ask.prompt({
-                  title: "Rename the page",
-                  label: "Name of the page",
-                  initial: page.title,
-                  action: "Rename",
-                });
-                if (!title) return;
-                change((draft) => {
-                  const target = draft.pages.find((one) => one.id === page.id);
-                  if (target) target.title = title;
-                });
-              }}
-            >
-              Rename
-            </Button>
-            {body.pages.length > 1 ? (
+        />
+      </div>
+    ),
+    notices: (
+      <>
+        {appPath === null && list.data ? (
+          <Notice
+            tone="attention"
+            action={
               <Button
-                variant="quiet"
                 onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: `Remove the page ${page.title}?`,
-                    text: "Its widgets go with it. Nothing in any table is touched.",
-                    action: "Remove the page",
-                    danger: true,
+                  const address = await ask.prompt({
+                    title: "Make an app for it",
+                    text: "The app's address ends with this. Lower-case letters, digits and dashes.",
+                    label: "Address",
+                    initial: slug(body.title),
+                    action: "Make the app",
                   });
-                  if (!sure) return;
-                  change((draft) => {
-                    draft.pages = draft.pages.filter((one) => one.id !== page.id);
-                  });
-                  setPageId(undefined);
-                  setSelected(undefined);
+                  if (!address) return;
+                  try {
+                    await api.put(`${root}/drafts/${slug(address)}`, {
+                      kind: "app",
+                      schemaVersion: 1,
+                      body: { title: body.title, interface: path },
+                    });
+                    list.reload();
+                    drafts.reload();
+                  } catch (error) {
+                    notify.error(error);
+                  }
                 }}
               >
-                Remove page
+                Make an app for it
               </Button>
-            ) : null}
-          </>
+            }
+          >
+            No app serves this yet, so nobody can open it.
+          </Notice>
         ) : null}
-      </div>
+        {problems.length > 0 ? (
+          <Notice tone="attention">
+            <strong>To fix before it can be published:</strong>
+            <ul className="mt-1 mb-0 pl-5">
+              {problems.map((problem) => (
+                <li key={`${problem.path} ${problem.message}`}>
+                  {where(problem.path)}: {problem.message}.
+                </li>
+              ))}
+            </ul>
+          </Notice>
+        ) : null}
+      </>
+    ),
+  };
 
+  return (
+    <>
       {page ? (
         <PageEditor
           root={root}
@@ -331,15 +270,127 @@ export function AppBuilder({
           page={page}
           selected={selected}
           onSelect={setSelected}
-          onChange={(apply) =>
-            change((draft) => {
-              const target = draft.pages.find((one) => one.id === page.id);
-              if (target) apply(target);
-            })
+          shell={shell}
+          pages={
+            <section aria-labelledby="pages" className="flex flex-col gap-1">
+              <h2 id="pages" className="m-0 text-label text-ink-subtle uppercase">
+                Pages
+              </h2>
+              <div className="flex flex-wrap gap-1 lg:flex-col">
+                {body.pages.map((one) => (
+                  <Button
+                    key={one.id}
+                    size="small"
+                    className="lg:justify-start"
+                    variant={one.id === page?.id ? "primary" : "quiet"}
+                    aria-pressed={one.id === page?.id}
+                    onClick={() => {
+                      setPageId(one.id);
+                      setSelected(undefined);
+                    }}
+                  >
+                    {one.title}
+                  </Button>
+                ))}
+                {body.pages.length < 20 ? (
+                  <Button
+                    size="small"
+                    variant="quiet"
+                    className="lg:justify-start"
+                    onClick={async () => {
+                      const title = await ask.prompt({
+                        title: "Add a page",
+                        label: "Name of the page",
+                        action: "Add the page",
+                      });
+                      if (!title) return;
+                      change((draft) => {
+                        let id = slug(title).replace(/^[^a-z]+/, "") || "page";
+                        for (let count = 2; draft.pages.some((one) => one.id === id); count += 1) {
+                          id = `${slug(title) || "page"}-${count}`;
+                        }
+                        draft.pages.push({ id, title, widgets: [] });
+                        setPageId(id);
+                        setSelected(undefined);
+                      }, "adding a page");
+                    }}
+                  >
+                    <Plus size={14} aria-hidden="true" /> Page
+                  </Button>
+                ) : null}
+                {page ? (
+                  <>
+                    <Button
+                      size="small"
+                      variant="quiet"
+                      className="lg:justify-start"
+                      onClick={async () => {
+                        const title = await ask.prompt({
+                          title: "Rename the page",
+                          label: "Name of the page",
+                          initial: page.title,
+                          action: "Rename",
+                        });
+                        if (!title) return;
+                        change((draft) => {
+                          const target = draft.pages.find((one) => one.id === page.id);
+                          if (target) target.title = title;
+                        }, "renaming the page");
+                      }}
+                    >
+                      Rename
+                    </Button>
+                    {body.pages.length > 1 ? (
+                      <Button
+                        size="small"
+                        variant="quiet"
+                        className="lg:justify-start"
+                        onClick={async () => {
+                          const sure = await ask.confirm({
+                            title: `Remove the page ${page.title}?`,
+                            text: "Its widgets go with it. Nothing in any table is touched.",
+                            action: "Remove the page",
+                            danger: true,
+                          });
+                          if (!sure) return;
+                          change((draft) => {
+                            draft.pages = draft.pages.filter((one) => one.id !== page.id);
+                          }, "removing a page");
+                          setPageId(undefined);
+                          setSelected(undefined);
+                        }}
+                      >
+                        Remove page
+                      </Button>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            </section>
+          }
+          onChange={(apply, label, key) =>
+            change(
+              (draft) => {
+                const target = draft.pages.find((one) => one.id === page.id);
+                if (target) apply(target);
+              },
+              label,
+              key,
+            )
           }
         />
       ) : null}
-    </section>
+      <PublishDialog
+        open={reviewing}
+        onClose={() => setReviewing(false)}
+        root={root}
+        path={path}
+        appPath={appPath}
+        body={body}
+        publishing={publishing}
+        onPublish={() => void publish()}
+      />
+    </>
   );
 }
 

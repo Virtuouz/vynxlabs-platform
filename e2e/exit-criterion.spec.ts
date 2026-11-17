@@ -432,9 +432,12 @@ test("she publishes an app over a table, and two groups of end users see it diff
   await settings.getByLabel("Height").fill("4");
   await ada.waitForTimeout(1500);
   await ada.getByRole("button", { name: "Publish" }).click();
+  // Publishing says what it would do, and is done from there.
+  await ada.getByRole("dialog").getByRole("button", { name: "Publish" }).click();
   await ada.getByText("Published. People who open the app now see this.").waitFor();
   const url = (await ada
     .getByRole("link", { name: "Open the app" })
+    .first()
     .getAttribute("href")) as string;
 
   // Shared with every end user, from the apps screen.

@@ -218,6 +218,10 @@ test("a widget is made to follow another by choosing a sentence, and the change 
   await screen.findByText("Saved. Not published yet.");
 
   fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+  // Publishing says what it would do first, and is done from there.
+  fireEvent.click(
+    within(await screen.findByRole("dialog")).getByRole("button", { name: "Publish" }),
+  );
   await waitFor(() => expect(sent("POST", "/changes/deploy")).toHaveLength(1), { timeout: 4000 });
   // Only this app is deployed: its interface, and the app that serves it.
   expect(sent("POST", "/changes/deploy")[0]?.body).toEqual({
@@ -267,7 +271,9 @@ test("widgets are added and removed, and what is wrong is said before anything c
   // Nothing serves it yet, and the builder says so.
   expect(await screen.findByText("No app serves this yet, so nobody can open it.")).toBeTruthy();
 
-  fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+  fireEvent.click(
+    within(screen.getByRole("region", { name: "Add" })).getByRole("button", { name: "Chart" }),
+  );
   // The new widget is the one being edited.
   const settings = within(screen.getByRole("complementary", { name: "Settings" }));
   expect(((await settings.findByLabelText("Title")) as HTMLInputElement).value).toBe("Chart");
@@ -282,7 +288,9 @@ test("widgets are added and removed, and what is wrong is said before anything c
   });
 
   // A second of the same kind gets a name of its own, below the first.
-  fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+  fireEvent.click(
+    within(screen.getByRole("region", { name: "Add" })).getByRole("button", { name: "Chart" }),
+  );
   await waitFor(
     () => expect(stored.pages[0]?.widgets.map((widget) => widget.id)).toEqual(["chart", "chart_2"]),
     {

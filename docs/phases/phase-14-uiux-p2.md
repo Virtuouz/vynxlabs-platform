@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–8 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–9 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -241,3 +241,30 @@ Findings are recorded under each milestone as it lands.
   - Keyset paging, batch delete and CSV, in `data.test.ts`.
   - The new `e2e/data-grid.spec.ts`: 10,000 rows, five pages with no row twice and the grid not moving, axe, and a cell reached, changed, put back and saved from the keyboard alone.
 - **Pictures.** Times are hidden in a box of one width (`screenshot.css`) rather than masked. A grant's expiry of a different length had reflowed the rest of the operator banner.
+
+### Milestone 9: App Builder and Dashboards
+
+- **Split first, alone** (commit 8baf996). `screens/Interfaces.tsx` (2,118 lines) became the list (197 lines) and `screens/builder/`: `data.ts`, `links.ts`, `Format.tsx`, `WidgetSettings.tsx`, `PageEditor.tsx`, `PageFilters.tsx` and `AppBuilder.tsx`. Nothing changed in behaviour, and all 285 console tests passed unchanged. `WidgetSettings` is still one 800-line file: splitting it by widget type is a refactor this milestone didn't need, and it is left for when it is next changed.
+- **One `EditorShell`** (`builder/EditorShell.tsx`) is around both editors:
+  - one toolbar with the name, the save state, undo and redo with what they would undo, and the step that makes it reach people (Publish for an app, Share for a dashboard);
+  - what is on the page, and what can be added, on the left;
+  - the canvas in the middle;
+  - the chosen widget's settings on the right, in a `SplitPane` whose divider can be dragged or moved with the keys.
+  
+  The shell guards leaving while a change is unsaved, and handles ⌘Z and ⇧⌘Z outside fields. At 1440 × 900 the canvas takes 60% or more of the work area; e2e measures it. Dashboards count as editors now, so they get the whole width.
+- **Undo and redo** use phase 13's `useHistory`, recorded at each editor's single change funnel, with a label ("Undo adding text") and a key, so typing in one field is one step. Removing a widget is an ordinary step, and its toast's Undo is the editor's undo.
+- **Dashboards autosave** as apps do: debounced, with the revision, and with the shell's saving, saved and failed states. Sharing (everyone, or groups) is the Share step, in a dialog, and takes effect at once. Delete moved into a More menu. A dashboard offers no Form or Action widget: it is for looking, and writes and starts nothing.
+- **The publish dialog** (`builder/PublishDialog.tsx`) shows, before anything is done:
+  - the deploy preview (`GET changes/preview?paths=`), with a refusal if there is one;
+  - a widget-by-widget comparison with what people see now: added, changed, removed;
+  - who it reaches, from the app's bindings.
+  
+  The success toast links to the app.
+- **The device preview narrows the layout.** The renderer's grid lays out by its container (`@container`, `@2xl:`, 672 px) instead of the window, so the 390 px preview stacks as a phone does. The first try used `@3xl` (768 px). The tenant-app pictures caught that the served app, inside its page's padding at a 768 px window, fell back to one column. `@2xl` brought every served picture back to its baseline.
+- **Keyboard move and resize.** The chosen widget's Editing button takes arrow keys to move it a cell, and Shift and arrows to change its size, with `aria-keyshortcuts`.
+- **Tests:**
+  - The renderer's keyboard move and resize.
+  - The dashboard saving by itself, undo saving again at the next revision, Share as a step, and no Form or Action.
+  - The builder tests go through the publish dialog.
+  - In e2e: the canvas's share at 1440 × 900, the phone preview stacking, and axe on the App Builder. `exit-criterion.spec.ts` publishes through the dialog.
+  - The whole e2e suite passed: 26 tests.

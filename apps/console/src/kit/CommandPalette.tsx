@@ -1,4 +1,4 @@
-import { Dialog } from "@vynxlabs/ui";
+import { CheckboxField, Dialog, Kbd } from "@vynxlabs/ui";
 import {
   Activity,
   Boxes,
@@ -7,6 +7,8 @@ import {
   FileCode2,
   Keyboard,
   type LucideIcon,
+  Pin,
+  PinOff,
   Play,
   Plug,
   Radio,
@@ -16,13 +18,27 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, api } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { usePreference } from "../prefs.ts";
 import { navigate } from "../router.tsx";
 import { useThemeChoice } from "../theme.ts";
+import { type Pinnable, useCurrent } from "./current.ts";
+import {
+  formatCombo,
+  isMac,
+  isSingle,
+  OPEN_PALETTE,
+  OPEN_SHORTCUTS,
+  openShortcuts,
+  useShortcut,
+  useSingleKeys,
+} from "./keys.ts";
+import { useDelayed } from "./LoadState.tsx";
 import { objectHref } from "./objects.tsx";
+import { SCOPES, SHORTCUTS, type ShortcutId } from "./shortcuts.ts";
 
 export interface Destination {
   key: string;
@@ -54,6 +70,9 @@ interface Item {
   open: () => void;
   /** What ⌘↵ does with it: Run, Start, Pause, Run again. */
   secondary?: { label: string; run: () => void } | undefined;
+  /** Something found, which ⌘P pins or unpins. */
+  pin?: Pinnable | undefined;
+  danger?: boolean | undefined;
 }
 
 const KIND_ICON: Record<string, LucideIcon> = {
@@ -87,6 +106,8 @@ const KIND_LABEL: Record<string, string> = {
   end_user: "End user",
 };
 const SECTIONS = [
+  // The open object's own commands come first, under its own heading.
+  "Pinned",
   "Recent",
   "This workspace",
   "Other workspaces",
@@ -109,29 +130,37 @@ function score(label: string, where: string | undefined, words: string[]): numbe
   return total;
 }
 
-/** Opens on ⌘K or Ctrl+K anywhere, and from the header's search box. */
+/** Items in their sections, each with its place in the whole list, for the arrow keys. */
+function groupsOf(items: Item[]): [string, [Item, number][]][] {
+  const groups = new Map<string, [Item, number][]>();
+  items.forEach((item, index) => {
+    const group = groups.get(item.section) ?? [];
+    group.push([item, index]);
+    groups.set(item.section, group);
+  });
+  return [...groups];
+}
+
+/** Opens on ⌘K or Ctrl+K anywhere, from the header's search box, and when asked by `openPalette`. */
 export function useCommandKey(open: () => void) {
+  useShortcut("palette", open);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        open();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
+    addEventListener(OPEN_PALETTE, open);
+    return () => removeEventListener(OPEN_PALETTE, open);
   }, [open]);
 }
 
 /** Where a found thing's page is. */
 function pageOf(tenantId: string, found: Found): string {
-  if (found.kind === "member") return `/t/${tenantId}/members`;
-  if (found.kind === "end_user") return `/t/${tenantId}/end-users`;
+  if (found.kind === "member") return `/t/${tenantId}/members/${found.id}`;
+  if (found.kind === "end_user") return `/t/${tenantId}/end-users?user=${found.id}`;
   const ws = `/t/${tenantId}/workspaces/${found.workspaceId}`;
   switch (found.kind) {
-    // A script found by name is most often wanted to be changed.
+    // Its page, where its runs, schedule and source are; ⌘↵ runs it, and Edit is one press there.
     case "script":
-      return `${ws}/scripts/edit/${found.ref}`;
+      return `${ws}/scripts/${found.ref}`;
+    case "app":
+      return `${ws}/apps?app=${found.id}`;
     case "flow":
     case "interface":
     case "table":
@@ -141,7 +170,6 @@ function pageOf(tenantId: string, found: Found): string {
     case "variable":
     case "secret":
     case "event":
-    case "app":
       return objectHref(ws, found.kind, found.ref);
     default:
       return `${ws}/runs/${found.id}`;
@@ -200,6 +228,23 @@ export function CommandPalette({
   const [theme, setTheme] = useThemeChoice();
   const list = useRef<HTMLDivElement>(null);
   const asked = useRef(0);
+  const current = useCurrent();
+  const [pins, setPins] = usePreference<Pinnable[]>(`palette.pins:${tenantId ?? "none"}`, []);
+  const pinned = (one: Pinnable) =>
+    pins.some((pin) => pin.kind === one.kind && pin.ref === one.ref);
+  const togglePin = (one: Pinnable) => {
+    const next = pinned(one)
+      ? pins.filter((pin) => !(pin.kind === one.kind && pin.ref === one.ref))
+      : [one, ...pins].slice(0, 12);
+    setPins(next.length > 0 ? next : undefined);
+    notify.success(
+      pinned(one) ? `${one.title} is unpinned.` : `${one.title} is pinned to the palette.`,
+    );
+  };
+  const [searching, setSearching] = useState(false);
+  const [failure, setFailure] = useState<unknown>();
+  const [again, setAgain] = useState(0);
+  const slow = useDelayed(searching, 300);
   const ws = tenantId && workspaceId ? `/tenants/${tenantId}/workspaces/${workspaceId}` : undefined;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: starts empty each time it opens
@@ -229,12 +274,16 @@ export function CommandPalette({
   const { mode, text } = readQuery(query);
 
   // What the server finds, asked for once typing pauses. An older answer is dropped.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `again` is Try again: it asks once more
   useEffect(() => {
+    setFailure(undefined);
     if (!open || !tenantId || picking || mode === "actions" || text === "") {
       setFound([]);
+      setSearching(false);
       return;
     }
     const mine = ++asked.current;
+    setSearching(true);
     const timer = setTimeout(() => {
       const only = mode === "all" ? "" : `&only=${mode}`;
       const here = workspaceId ? `&workspace=${workspaceId}` : "";
@@ -243,12 +292,22 @@ export function CommandPalette({
           `/tenants/${tenantId}/search?q=${encodeURIComponent(text)}${here}${only}`,
         )
         .then(
-          (answer) => mine === asked.current && setFound(answer.items),
-          () => mine === asked.current && setFound([]),
+          (answer) => {
+            if (mine !== asked.current) return;
+            setFound(answer.items);
+            setSearching(false);
+          },
+          (error) => {
+            if (mine !== asked.current) return;
+            // A search that failed says so: it is not "nothing matches".
+            setFound([]);
+            setFailure(error);
+            setSearching(false);
+          },
         );
     }, 150);
     return () => clearTimeout(timer);
-  }, [open, tenantId, workspaceId, mode, text, picking]);
+  }, [open, tenantId, workspaceId, mode, text, picking, again]);
 
   const close = () => onClose();
 
@@ -479,6 +538,16 @@ export function CommandPalette({
           window.open("/api/v1/openapi.json", "_blank", "noopener");
         },
       },
+      {
+        key: "a-keys",
+        label: "Keyboard shortcuts",
+        icon: Keyboard,
+        section: "Actions",
+        open: () => {
+          close();
+          openShortcuts();
+        },
+      },
     ];
     if (mode === "actions") return actions.filter((one) => matches(one.label));
 
@@ -494,6 +563,12 @@ export function CommandPalette({
                   label: "Run again",
                   run: async () => {
                     const root = `/tenants/${tenantId}/workspaces/${inWorkspace}`;
+                    const sure = await ask.confirm({
+                      title: `Run ${one.title} again?`,
+                      text: "With the same input, on the version it ran.",
+                      action: "Run again",
+                    });
+                    if (!sure) return;
                     try {
                       const made =
                         one.kind === "run"
@@ -522,6 +597,14 @@ export function CommandPalette({
           if (tenantId) navigate(pageOf(tenantId, one));
         },
         secondary,
+        pin: {
+          kind: one.kind,
+          ref: one.ref,
+          id: one.id,
+          workspaceId: one.workspaceId,
+          workspaceSlug: one.workspaceSlug,
+          title: one.title,
+        },
       };
     };
 
@@ -544,8 +627,47 @@ export function CommandPalette({
       }));
 
     if (text === "") {
+      // What the page on screen shows comes first: with a run open, Run again is one press away.
+      const here: Item[] =
+        mode === "all" && current
+          ? [
+              ...current.commands.map((command) => ({
+                key: `c-${command.key}`,
+                label: command.label,
+                icon: command.icon,
+                danger: command.danger,
+                section: current.heading,
+                open: () => {
+                  close();
+                  void command.run();
+                },
+              })),
+              ...(current.pin
+                ? [
+                    {
+                      key: "c-pin",
+                      label: pinned(current.pin) ? "Unpin from the palette" : "Pin to the palette",
+                      icon: pinned(current.pin) ? PinOff : Pin,
+                      section: current.heading,
+                      open: () => {
+                        togglePin(current.pin as Pinnable);
+                        close();
+                      },
+                    },
+                  ]
+                : []),
+            ]
+          : [];
+      const pinnedItems = pins.map((one) =>
+        entity({ ...one, workspaceSlug: one.workspaceSlug ?? null, hint: null }, "Pinned"),
+      );
       return [
-        ...recent.slice(0, 8).map((one) => entity(one, "Recent")),
+        ...here,
+        ...pinnedItems,
+        ...recent
+          .filter((one) => !pins.some((pin) => pin.kind === one.kind && pin.ref === one.ref))
+          .slice(0, 8)
+          .map((one) => entity(one, "Recent")),
         ...(mode === "all" ? screens.slice(0, 12) : []),
         ...(mode === "all" ? actions.slice(0, 4) : []),
       ];
@@ -574,6 +696,8 @@ export function CommandPalette({
     workspaceType,
     workspaces,
     theme,
+    current,
+    pins,
   ]);
 
   // Lines grouped by section, in the sections' order.
@@ -596,7 +720,7 @@ export function CommandPalette({
       }[picking]
     : "Find anything. > runs, # resources, / actions, @ people";
 
-  let lastSection = "";
+  const mac = isMac();
   return (
     <>
       <Dialog open={open} onClose={onClose} title="Go to" size="palette">
@@ -631,6 +755,14 @@ export function CommandPalette({
                   else chosen.open();
                 } else if (event.key === "Backspace" && query === "" && picking) {
                   setPicking(undefined);
+                } else if (
+                  event.key.toLowerCase() === "p" &&
+                  (isMac() ? event.metaKey : event.ctrlKey) &&
+                  ordered[active]?.pin
+                ) {
+                  // ⌘P pins what is chosen, so it is first the next time.
+                  event.preventDefault();
+                  togglePin(ordered[active].pin as Pinnable);
                 }
               }}
               className="min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
@@ -641,62 +773,104 @@ export function CommandPalette({
             ref={list}
             role="listbox"
             aria-label="Results"
-            className="max-h-[calc(100vh-10rem)] overflow-y-auto md:max-h-[55vh]"
+            aria-busy={searching || undefined}
+            className="max-h-[calc(100dvh-10rem)] overflow-y-auto md:max-h-[55vh]"
           >
-            {ordered.length === 0 ? (
+            {failure ? (
+              <div
+                role="alert"
+                className="m-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-danger-soft px-3 py-2 text-body-sm text-danger"
+              >
+                <span>The search failed. What is typed may still be there; try again.</span>
+                {failure instanceof ApiError && failure.requestId ? (
+                  <span className="font-mono text-code-sm">Request ID {failure.requestId}</span>
+                ) : null}
+                <button
+                  type="button"
+                  className="ml-auto font-medium underline"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setAgain((count) => count + 1)}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : null}
+            {slow && ordered.length === 0 ? (
+              <p className="m-0 px-3 py-6 text-center text-ink-muted">Searching…</p>
+            ) : ordered.length === 0 && !failure ? (
               <p className="m-0 px-3 py-6 text-center text-ink-muted">
                 {text ? `Nothing matches “${text}”.` : "Type to find something."}
               </p>
             ) : (
-              ordered.map((item, index) => {
-                const Icon = item.icon;
-                const heading: ReactNode =
-                  item.section !== lastSection ? (
+              groupsOf(ordered).map(([section, members]) => {
+                const headingId = `command-group-${section.replace(/\W+/g, "-")}`;
+                return (
+                  // biome-ignore lint/a11y/useSemanticElements: a listbox groups its options with role="group"; a fieldset is for form controls
+                  <div key={section} role="group" aria-labelledby={headingId}>
                     <div
+                      id={headingId}
                       role="presentation"
                       className="px-3 pt-2 pb-1 text-meta font-medium tracking-wide text-ink-subtle uppercase"
                     >
-                      {item.section}
+                      {section}
                     </div>
-                  ) : null;
-                lastSection = item.section;
-                return (
-                  <div key={item.key}>
-                    {heading}
-                    <div
-                      tabIndex={-1}
-                      id={`command-${item.key}`}
-                      data-index={index}
-                      role="option"
-                      aria-selected={index === active}
-                      onMouseEnter={() => setActive(index)}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        item.open();
-                      }}
-                      className={`flex cursor-default items-center gap-2 rounded-control px-3 py-2 ${
-                        index === active ? "bg-selected" : ""
-                      }`}
-                    >
-                      {Icon ? (
-                        <Icon aria-hidden="true" size={16} className="shrink-0 text-ink-muted" />
-                      ) : null}
-                      {/* The name keeps its room; what it is, and where, gives way. */}
-                      <span className="max-w-[75%] shrink-0 truncate">{item.label}</span>
-                      {item.where ? (
-                        <span className="min-w-0 flex-1 truncate text-meta text-ink-subtle">
-                          {item.where}
-                        </span>
-                      ) : null}
-                      {index === active ? (
-                        <span className="ml-auto flex shrink-0 items-center gap-2 text-meta text-ink-subtle">
-                          {item.secondary ? (
-                            <span className="hidden md:inline">⌘↵ {item.secondary.label}</span>
+                    {members.map(([item, index]) => {
+                      const Icon = item.icon;
+                      return (
+                        <div
+                          key={item.key}
+                          tabIndex={-1}
+                          id={`command-${item.key}`}
+                          data-index={index}
+                          role="option"
+                          aria-selected={index === active}
+                          onMouseEnter={() => setActive(index)}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            item.open();
+                          }}
+                          className={`flex cursor-default items-center gap-2 rounded-control px-3 py-2 ${
+                            index === active ? "bg-selected" : ""
+                          } ${item.danger ? "text-danger" : ""}`}
+                        >
+                          {Icon ? (
+                            <Icon
+                              aria-hidden="true"
+                              size={16}
+                              className={`shrink-0 ${item.danger ? "" : "text-ink-muted"}`}
+                            />
                           ) : null}
-                          <CornerDownLeft aria-hidden="true" size={14} />
-                        </span>
-                      ) : null}
-                    </div>
+                          {/* The name keeps its room; what it is, and where, gives way. */}
+                          <span className="max-w-[75%] shrink-0 truncate">{item.label}</span>
+                          {item.where ? (
+                            <span className="min-w-0 flex-1 truncate text-meta text-ink-subtle">
+                              {item.where}
+                            </span>
+                          ) : null}
+                          {index === active ? (
+                            <span className="ml-auto hidden shrink-0 items-center gap-2 text-meta text-ink-subtle md:flex">
+                              {item.pin ? (
+                                <span>
+                                  {formatCombo("Mod+P", mac)}{" "}
+                                  {pins.some(
+                                    (pin) =>
+                                      pin.kind === item.pin?.kind && pin.ref === item.pin?.ref,
+                                  )
+                                    ? "Unpin"
+                                    : "Pin"}
+                                </span>
+                              ) : null}
+                              {item.secondary ? (
+                                <span>
+                                  {formatCombo("Mod+Enter", mac)} {item.secondary.label}
+                                </span>
+                              ) : null}
+                              <CornerDownLeft aria-hidden="true" size={14} />
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })
@@ -729,49 +903,66 @@ export function CommandPalette({
   );
 }
 
-const SHORTCUTS: [string, string][] = [
-  ["⌘K or Ctrl+K", "Find anything, or do something"],
-  ["> then an ID", "Open a run"],
-  ["# then a name", "Find a script, a flow, a table…"],
-  ["/ then a word", "Run a script, start a flow, pause a trigger…"],
-  ["@ then a name", "Find a person"],
-  ["↑ ↓ and ↵", "Move through what was found, and open it"],
-  ["⌘↵ or Ctrl+↵", "Run, start or run again what is chosen; in the script editor, run the draft"],
-  ["Esc", "Close"],
-  ["?", "These shortcuts"],
-];
-
-/** `?` anywhere outside a text field opens the list of shortcuts. */
+/**
+ * Every shortcut, from the registry, grouped by where it works: `?` outside a
+ * text field, "Keyboard shortcuts" in the account menu, or the palette. It
+ * holds the switch for single-key shortcuts, which some people need off.
+ */
 export function ShortcutSheet() {
   const [open, setOpen] = useState(false);
+  const [singles, setSingles] = useSingleKeys();
+  const show = useCallback(() => setOpen(true), []);
+  useShortcut("sheet", show);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "?" || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
-      ) {
-        return;
-      }
-      event.preventDefault();
-      setOpen(true);
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, []);
+    addEventListener(OPEN_SHORTCUTS, show);
+    return () => removeEventListener(OPEN_SHORTCUTS, show);
+  }, [show]);
+  const mac = isMac();
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} title="Keyboard shortcuts">
-      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-        {SHORTCUTS.map(([keys, does]) => (
-          <div key={keys} className="contents">
-            <dt className="font-mono text-code whitespace-nowrap">
-              <Keyboard aria-hidden="true" size={14} className="mr-1.5 inline text-ink-subtle" />
-              {keys}
-            </dt>
-            <dd className="m-0 text-ink-muted">{does}</dd>
-          </div>
-        ))}
-      </dl>
+    <Dialog open={open} onClose={() => setOpen(false)} title="Keyboard shortcuts" size="wide">
+      <div className="flex flex-col gap-5">
+        <CheckboxField
+          name="single-keys"
+          label="Single-key shortcuts"
+          hint="?, /, j, k, x and the g shortcuts. Turn them off if they get in the way of a screen reader or speech input."
+          checked={singles}
+          onChange={(on) => setSingles(on ? undefined : false)}
+        />
+        <div className="grid gap-x-8 gap-y-5 md:grid-cols-2">
+          {SCOPES.map((scope) => {
+            const here = (Object.keys(SHORTCUTS) as ShortcutId[]).filter(
+              (id) => SHORTCUTS[id].scope === scope,
+            );
+            if (here.length === 0) return null;
+            return (
+              <section key={scope} aria-label={scope} className="flex flex-col gap-2">
+                <h3 className="m-0 text-label font-semibold tracking-wide text-ink-subtle uppercase">
+                  {scope}
+                </h3>
+                <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+                  {here.map((id) => {
+                    const shortcut = SHORTCUTS[id];
+                    const off = !singles && shortcut.keys.every(isSingle);
+                    return (
+                      <div key={id} className={`contents ${off ? "text-ink-subtle" : ""}`}>
+                        <dt className="flex flex-wrap gap-1">
+                          {shortcut.keys.map((combo) => (
+                            <Kbd key={combo}>{formatCombo(combo, mac)}</Kbd>
+                          ))}
+                        </dt>
+                        <dd className={`m-0 ${off ? "" : "text-ink-muted"}`}>
+                          {shortcut.label}
+                          {off ? " (off)" : ""}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </section>
+            );
+          })}
+        </div>
+      </div>
     </Dialog>
   );
 }

@@ -2,6 +2,8 @@ import {
   Button,
   CheckboxField,
   ComboboxField,
+  ContextMenu,
+  type MenuItem,
   MultiSelectField,
   Notice,
   NumberField,
@@ -24,6 +26,7 @@ import {
   type ReactFlowInstance,
   useEdgesState,
   useNodesState,
+  type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
@@ -39,14 +42,17 @@ import {
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
+import { type Clip, type ClipStep, copySteps, pasteSteps, readClip } from "../flowClipboard.ts";
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
-import { typingIn, useHistory } from "../kit/history.ts";
+import { useHistory } from "../kit/history.ts";
+import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { retryAfter } from "../kit/retry.ts";
+import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
-import { navigate, useNavigationGuard } from "../router.tsx";
+import { navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
 import {
   FormDesigner,
@@ -267,6 +273,21 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
 }
 const nodeTypes = { flow: FlowNodeCard };
 const FIT = { maxZoom: 1, padding: 0.25 };
+/** "1 step", "3 steps". */
+const plural = (count: number) => `${count} step${count === 1 ? "" : "s"}`;
+
+/** Where a flow's canvas was left, for this browser tab's session. */
+function viewportOf(path: string | undefined): Viewport | undefined {
+  if (!path) return undefined;
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(`vx-viewport:${path}`) ?? "null");
+    return kept && Number.isFinite(kept.x) && Number.isFinite(kept.y) && Number.isFinite(kept.zoom)
+      ? kept
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 const CANVAS_COLORS = {
   "--xy-background-color": "var(--vx-sunken)",
   "--xy-background-pattern-color": "var(--vx-line)",
@@ -480,7 +501,12 @@ export function FlowEditor({
   const [description, setDescription] = useState("");
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [selected, setSelected] = useState<string>();
+  // The chosen step is in the address: a reload, or a link, opens the flow on it.
+  const [selected, setSelected] = useUrlParam("step");
+  // Until the flow is drawn with that step chosen, the canvas's own "nothing chosen" is not news.
+  const restoring = useRef(true);
+  // Where the canvas was left this session, read once per flow.
+  const kept = useMemo(() => viewportOf(path), [path]);
   const [canvas, setCanvas] = useState<ReactFlowInstance<CanvasNode, Edge>>();
   const [revision, setRevision] = useState<number>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
@@ -614,14 +640,19 @@ export function FlowEditor({
       const positions = { ...autoLayout(body.nodes, body.edges), ...(body.layout ?? {}) };
       loadedIds.current = new Set(Object.keys(body.nodes));
       setDescription(body.description ?? "");
+      const chosenInAddress = new URLSearchParams(location.search).get("step");
       setNodes(
         Object.entries(body.nodes).map(([id, node]) => ({
           id,
           type: "flow",
           position: positions[id] ?? { x: 0, y: 0 },
           data: { id, node },
+          ...(id === chosenInAddress ? { selected: true } : {}),
         })),
       );
+      setTimeout(() => {
+        restoring.current = false;
+      });
       setEdges(body.edges.map(toCanvasEdge));
       setLoaded(true);
     },
@@ -749,6 +780,176 @@ export function FlowEditor({
     setEdges((before) => before.filter((edge) => edge.source !== id && edge.target !== id));
     setSelected(undefined);
     touch();
+  };
+  /** The steps chosen on the canvas: several with ⌘-click or a box, or the one chosen. */
+  const chosenIds = (): string[] => {
+    const picked = nodes.filter((node) => node.selected).map((node) => node.id);
+    return picked.length > 0 ? picked : selected ? [selected] : [];
+  };
+  const clipOf = (ids: string[]) =>
+    copySteps(
+      nodes.map((node) => ({
+        id: node.id,
+        position: node.position,
+        node: node.data.node as unknown as ClipStep["node"],
+      })),
+      edges.map(toFlowEdge),
+      new Set(ids),
+    );
+  /** Adds steps from a clip, renamed where their names are taken, chosen, one step to undo. */
+  const pasteClip = (clip: Clip, offset = { x: 40, y: 40 }) => {
+    history.record(`Paste ${plural(clip.steps.length)}`);
+    const pasted = pasteSteps(
+      clip,
+      nodes.map((node) => node.id),
+      offset,
+    );
+    setNodes((before) => [
+      ...before.map((node) => ({ ...node, selected: false })),
+      ...pasted.steps.map((step) => ({
+        id: step.id,
+        type: "flow" as const,
+        selected: true,
+        position: step.position,
+        data: { id: step.id, node: step.node as unknown as FlowNode },
+      })),
+    ]);
+    setEdges((before) => [
+      ...before,
+      ...pasted.edges.map((edge, index) => toCanvasEdge(edge, before.length + index)),
+    ]);
+    setSelected(pasted.steps[0]?.id);
+    touch();
+    const changed = Object.entries(pasted.renamed).filter(([from, to]) => from !== to);
+    notify.success(
+      changed.length > 0
+        ? `${plural(pasted.steps.length)} added. Named ${changed.map(([, to]) => to).join(", ")}, as the names were taken.`
+        : `${plural(pasted.steps.length)} added.`,
+    );
+  };
+  const duplicate = (ids: string[]) => {
+    if (ids.length === 0) return false;
+    pasteClip(clipOf(ids));
+  };
+  const removeMany = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const gone = new Set(ids);
+    history.record(`Remove ${plural(ids.length)}`);
+    setNodes((before) => before.filter((node) => !gone.has(node.id)));
+    setEdges((before) => before.filter((edge) => !gone.has(edge.source) && !gone.has(edge.target)));
+    setSelected(undefined);
+    touch();
+  };
+  // ⌘C, ⌘X and ⌘V copy, cut and paste steps, within a flow or between flows. They are the
+  // browser's own copy and paste, so a field being typed in, or text chosen on the page,
+  // keeps them; only chosen steps on the canvas are copied as steps.
+  const clipboard = useRef({ chosenIds, clipOf, pasteClip, removeMany });
+  clipboard.current = { chosenIds, clipOf, pasteClip, removeMany };
+  useEffect(() => {
+    const forSteps = () =>
+      !isTyping(document.activeElement) &&
+      !document.querySelector('[role="dialog"], [role="menu"]') &&
+      !(window.getSelection()?.toString() ?? "");
+    const copy = (event: ClipboardEvent, cut: boolean) => {
+      if (!forSteps()) return;
+      const ids = clipboard.current.chosenIds();
+      if (ids.length === 0 || !event.clipboardData) return;
+      event.clipboardData.setData("text/plain", JSON.stringify(clipboard.current.clipOf(ids)));
+      event.preventDefault();
+      if (cut) clipboard.current.removeMany(ids);
+      notify.success(
+        `${plural(ids.length)} ${cut ? "cut" : "copied"}. Paste them here or in another flow.`,
+      );
+    };
+    const onCopy = (event: ClipboardEvent) => copy(event, false);
+    const onCut = (event: ClipboardEvent) => copy(event, true);
+    const onPaste = (event: ClipboardEvent) => {
+      if (isTyping(document.activeElement) || document.querySelector('[role="dialog"]')) return;
+      const clip = readClip(event.clipboardData?.getData("text/plain") ?? "");
+      if (!clip) return;
+      event.preventDefault();
+      clipboard.current.pasteClip(clip);
+    };
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCut);
+    document.addEventListener("paste", onPaste);
+    return () => {
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", onCut);
+      document.removeEventListener("paste", onPaste);
+    };
+  }, []);
+  useShortcut("flow.duplicate", () => duplicate(chosenIds()));
+  /** What a right-click on the canvas was on: a step, or the canvas itself. */
+  const [menuOn, setMenuOn] = useState<string>();
+  const menuItems = (): MenuItem[] => {
+    const step = menuOn;
+    if (step) {
+      const ids = chosenIds().includes(step) ? chosenIds() : [step];
+      const many = ids.length > 1;
+      return [
+        {
+          label: many ? `Duplicate ${plural(ids.length)}` : "Duplicate",
+          keys: keysOf("flow.duplicate"),
+          onSelect: () => duplicate(ids),
+        },
+        {
+          label: many ? `Copy ${plural(ids.length)}` : "Copy",
+          keys: formatCombo("Mod+C"),
+          onSelect: () => {
+            void navigator.clipboard
+              ?.writeText(JSON.stringify(clipOf(ids)))
+              .then(() => notify.success(`${plural(ids.length)} copied.`), notify.error);
+          },
+        },
+        ...(many
+          ? []
+          : [
+              {
+                label: "Rename…",
+                onSelect: async () => {
+                  const to = await ask.prompt({
+                    title: `Rename ${step}`,
+                    label: "Name",
+                    hint: "Lowercase letters, digits and _, starting with a letter. References to it follow.",
+                    initial: step,
+                    action: "Rename",
+                  });
+                  if (to && to !== step && !rename(step, to)) {
+                    notify.error(
+                      new Error(`${to} is not a name a step can have here, or it is taken.`),
+                    );
+                  }
+                },
+              },
+            ]),
+        {
+          label: many ? `Remove ${plural(ids.length)}` : "Remove",
+          danger: true,
+          separated: true,
+          keys: "⌫",
+          onSelect: () => removeMany(ids),
+        },
+      ];
+    }
+    return [
+      {
+        label: "Paste",
+        keys: formatCombo("Mod+V"),
+        onSelect: () => {
+          void navigator.clipboard?.readText().then((text) => {
+            const clip = readClip(text);
+            if (clip) pasteClip(clip);
+            else notify.info("The clipboard holds no steps. Copy steps from a flow first.");
+          }, notify.error);
+        },
+      },
+      {
+        label: "Select every step",
+        onSelect: () => setNodes((before) => before.map((node) => ({ ...node, selected: true }))),
+      },
+      { label: "Fit the flow in view", onSelect: () => canvas?.fitView(FIT) },
+    ];
   };
   const connect = (connection: Connection) => {
     if (connection.source === connection.target) return;
@@ -949,22 +1150,13 @@ export function FlowEditor({
       : state === "new"
         ? "Save the flow first."
         : undefined;
-  // keyboard: ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo, except while typing in a field, which keeps its own.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || typingIn(event.target)) return;
-      const key = event.key.toLowerCase();
-      if (key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        undo();
-      } else if ((key === "z" && event.shiftKey) || key === "y") {
-        event.preventDefault();
-        redo();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+  // ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo, except while typing in a field, which keeps its own.
+  useShortcut("undo", undo);
+  useShortcut("redo", redo);
+  // ⌘S saves now, rather than a moment after the last change.
+  useShortcut("save", () => {
+    if (!busy && state !== "repository") void save();
+  });
   const shown = testing ? live.run : undefined;
   const nodeRuns = useMemo(
     () =>
@@ -1046,170 +1238,26 @@ export function FlowEditor({
       ? `Draft saved ${Math.max(1, Math.round((Date.now() - savedAt) / 1000)) < 60 ? `${Math.max(1, Math.round((Date.now() - savedAt) / 1000))}s` : `${Math.round((Date.now() - savedAt) / 60000)}m`} ago`
       : stateLabel(state);
 
-  return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <div className="border-line border-b px-4 py-2 md:px-5">
-        <PageHeader
-          compact
-          mono={Boolean(opened)}
-          title={opened ? path : "New flow"}
-          state={
-            <>
-              <StatePill
-                state={state === "repository" || (state === "deployed" && !dirty) ? state : "draft"}
-              />
-              {found.length > 0 ? (
-                <span className="flex items-center gap-1 text-meta text-attention">
-                  <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
-                </span>
-              ) : null}
-              <span
-                role="status"
-                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
-              >
-                {saveState}
-              </span>
-              {gaveUp ? (
-                <Button
-                  size="small"
-                  variant="quiet"
-                  onClick={() => {
-                    failures.current = 0;
-                    setGaveUp(false);
-                  }}
-                >
-                  Retry
-                </Button>
-              ) : null}
-            </>
-          }
-          actions={
-            <>
-              <Button
-                size="small"
-                onClick={() => {
-                  history.record("Tidy up");
-                  const positions = autoLayout(flowNodes, flowEdges);
-                  setNodes((before) =>
-                    before.map((one) => ({ ...one, position: positions[one.id] ?? one.position })),
-                  );
-                  touch();
-                }}
-              >
-                Tidy up
-              </Button>
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label="Undo"
-                title={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
-                disabled={!history.undoLabel}
-                onClick={undo}
-              >
-                <Undo2 aria-hidden="true" size={14} />
-              </Button>
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label="Redo"
-                title={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
-                disabled={!history.redoLabel}
-                onClick={redo}
-              >
-                <Redo2 aria-hidden="true" size={14} />
-              </Button>
-              <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
-                <Play aria-hidden="true" size={14} /> Test
-              </Button>
-              <Button
-                size="small"
-                variant={state === "draft" && !dirty ? "secondary" : "primary"}
-                disabled={busy || (!dirty && state !== "new")}
-                onClick={() => void save()}
-              >
-                Save draft
-              </Button>
-              {state === "draft" && !dirty && path ? (
-                <DeployMenu
-                  root={root}
-                  link={link}
-                  path={path}
-                  disabled={busy}
-                  onDeployed={() => setState("deployed")}
-                />
-              ) : null}
-            </>
-          }
-          after={
-            opened ? undefined : (
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="w-56">
-                  <TextField
-                    name="path"
-                    label="Path"
-                    value={path}
-                    placeholder="orders/handle"
-                    onChange={setPath}
-                  />
-                </div>
-                <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
-                  <legend className="mb-1 text-body-sm font-medium">Start from</legend>
-                  <div className="flex flex-wrap gap-2">
-                    {FLOW_STARTERS.map((starter) => (
-                      <Button
-                        key={starter.id}
-                        size="small"
-                        title={starter.about}
-                        aria-pressed={starterId === starter.id}
-                        // Once the flow is changed, starting again would lose the change.
-                        disabled={dirty && starterId !== starter.id}
-                        onClick={() => {
-                          setStarterId(starter.id);
-                          open(starter.body as unknown as FlowBody);
-                        }}
-                      >
-                        {starter.label}
-                      </Button>
-                    ))}
-                  </div>
-                </fieldset>
-              </div>
-            )
-          }
-        />
-      </div>
-      {state === "repository" || problem || found.length > 0 ? (
-        <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
-          {state === "repository" ? (
-            <Notice tone="attention">
-              This flow is managed in the tenant's repository. Saving a draft of it takes it over.
-            </Notice>
-          ) : null}
-          {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          {found.length > 0 ? (
-            <Notice tone="attention">
-              <ul aria-label="To fix" className="m-0 flex list-none flex-col gap-0.5 p-0">
-                {found.map((one) => (
-                  <li key={one.message}>
-                    {one.node ? (
-                      <button
-                        type="button"
-                        onClick={() => goToProblem(one)}
-                        className="text-left underline-offset-2 hover:underline"
-                      >
-                        {one.message}
-                      </button>
-                    ) : (
-                      one.message
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Notice>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+  const keepViewport = (viewport: Viewport) => {
+    if (!path) return;
+    try {
+      sessionStorage.setItem(`vx-viewport:${path}`, JSON.stringify(viewport));
+    } catch {
+      // Without storage the canvas fits the flow next time.
+    }
+  };
+  // The canvas beside the chosen step's settings; the test run, when open, below both.
+  const editor = (
+    <SplitPane
+      id="flow-editor"
+      label="Resize the canvas and the step's settings"
+      className="min-h-0 flex-1"
+      initial={70}
+      collapsible="second"
+      minFirst={320}
+      minSecond={280}
+      paneLabels={{ first: "the canvas", second: "the step's settings" }}
+      first={
         <div className="relative flex min-h-[28rem] flex-1 flex-col lg:min-h-[16rem]">
           <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
             <Button
@@ -1295,60 +1343,97 @@ export function FlowEditor({
               </aside>
             ) : null}
           </div>
-          <div className="min-h-0 flex-1 bg-sunken" data-testid="flow-canvas">
-            <NodeNames.Provider value={names}>
-              <NodeRuns.Provider value={nodeRuns}>
-                <ReactFlow
-                  nodes={nodes}
-                  edges={drawnEdges}
-                  nodeTypes={nodeTypes}
-                  onNodesChange={(changes) => {
-                    if (changes.some((change) => change.type === "remove"))
-                      history.record("Remove a step");
-                    onNodesChange(changes);
-                    if (
-                      changes.some(
-                        (change) => change.type === "position" || change.type === "remove",
+          <ContextMenu
+            className="flex min-h-0 flex-1 flex-col"
+            items={menuItems()}
+            onOpen={(target) =>
+              setMenuOn(target?.closest<HTMLElement>(".react-flow__node")?.dataset.id ?? undefined)
+            }
+          >
+            <div className="min-h-0 flex-1 bg-sunken" data-testid="flow-canvas">
+              <NodeNames.Provider value={names}>
+                <NodeRuns.Provider value={nodeRuns}>
+                  <ReactFlow
+                    nodes={nodes}
+                    edges={drawnEdges}
+                    nodeTypes={nodeTypes}
+                    onNodesChange={(changes) => {
+                      if (changes.some((change) => change.type === "remove"))
+                        history.record("Remove a step");
+                      onNodesChange(changes);
+                      if (
+                        changes.some(
+                          (change) => change.type === "position" || change.type === "remove",
+                        )
                       )
-                    )
-                      touch();
-                  }}
-                  onEdgesChange={(changes) => {
-                    if (changes.some((change) => change.type === "remove"))
-                      history.record("Remove a connection");
-                    onEdgesChange(changes);
-                    if (changes.some((change) => change.type === "remove")) touch();
-                  }}
-                  onConnect={connect}
-                  // A drag is one step to undo, however far it went.
-                  onNodeDragStart={() => history.record("Move a step")}
-                  onSelectionChange={({ nodes: picked }) => setSelected(picked[0]?.id)}
-                  onInit={setCanvas}
-                  fitView
-                  fitViewOptions={FIT}
-                  maxZoom={1.5}
-                  minZoom={0.2}
-                  proOptions={{ hideAttribution: false }}
-                  // The canvas takes its colors from the kit's tokens, so it follows the theme.
-                  style={CANVAS_COLORS}
-                >
-                  <Background />
-                  <Controls />
-                  {/* With the test panel open the canvas is short, and the map would cover the graph. */}
-                  {testing ? null : <MiniMap pannable zoomable />}
-                </ReactFlow>
-              </NodeRuns.Provider>
-            </NodeNames.Provider>
-          </div>
+                        touch();
+                    }}
+                    onEdgesChange={(changes) => {
+                      if (changes.some((change) => change.type === "remove"))
+                        history.record("Remove a connection");
+                      onEdgesChange(changes);
+                      if (changes.some((change) => change.type === "remove")) touch();
+                    }}
+                    onConnect={connect}
+                    // A drag is one step to undo, however far it went.
+                    onNodeDragStart={() => history.record("Move a step")}
+                    onSelectionDragStart={() => history.record("Move steps")}
+                    onSelectionChange={({ nodes: picked }) => {
+                      if (restoring.current && picked.length === 0) return;
+                      setSelected(picked[0]?.id);
+                    }}
+                    onInit={setCanvas}
+                    // Where the canvas was left, this session, or the whole flow in view.
+                    {...(kept ? { defaultViewport: kept } : { fitView: true, fitViewOptions: FIT })}
+                    onMoveEnd={(_, viewport) => keepViewport(viewport)}
+                    maxZoom={1.5}
+                    minZoom={0.2}
+                    proOptions={{ hideAttribution: false }}
+                    // The canvas takes its colors from the kit's tokens, so it follows the theme.
+                    style={CANVAS_COLORS}
+                  >
+                    <Background />
+                    <Controls />
+                    {/* With the test panel open the canvas is short, and the map would cover the graph. */}
+                    {testing ? null : <MiniMap pannable zoomable />}
+                  </ReactFlow>
+                </NodeRuns.Provider>
+              </NodeNames.Provider>
+            </div>
+          </ContextMenu>
         </div>
+      }
+      second={
         <aside
           ref={inspector}
           aria-label="The chosen step"
-          className="flex max-h-[60vh] w-full shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:max-h-none lg:w-[22rem] lg:border-t-0 lg:border-l"
+          className="flex max-h-[60vh] min-h-0 flex-1 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:max-h-none lg:border-t-0 lg:border-l"
         >
           <ExpressionPreview.Provider value={previewSource}>
             <StepOutline nodes={nodes} edges={edges} chosen={chosen?.id} onChoose={choose} />
-            {chosen && node ? (
+            {chosenIds().length > 1 ? (
+              <section aria-label="The chosen steps" className="flex flex-col gap-3">
+                <h2 className="m-0 text-title">{plural(chosenIds().length)} chosen</h2>
+                <p className="m-0 font-mono text-code text-ink-muted">{chosenIds().join(", ")}</p>
+                <p className="m-0 text-meta text-ink-muted">
+                  Drag one to move them all. Copy them with {formatCombo("Mod+C")} to paste here or
+                  in another flow; references between them follow their new names.
+                </p>
+                <span className="flex flex-wrap gap-2">
+                  <Button
+                    size="small"
+                    onClick={() => duplicate(chosenIds())}
+                    keys={keysOf("flow.duplicate")}
+                    tooltip="Duplicate"
+                  >
+                    Duplicate
+                  </Button>
+                  <Button size="small" variant="danger" onClick={() => removeMany(chosenIds())}>
+                    Remove {plural(chosenIds().length)}
+                  </Button>
+                </span>
+              </section>
+            ) : chosen && node ? (
               <>
                 <NameField key={chosen.id} id={chosen.id} rename={rename} />
                 {shown ? (
@@ -1591,7 +1676,20 @@ export function FlowEditor({
                 {node.type === "branch" ? (
                   <CasesEditor
                     cases={(node.cases as { name: string; when: string }[]) ?? []}
-                    onChange={(cases) => update(chosen.id, { cases })}
+                    onChange={(cases, renamed) => {
+                      update(chosen.id, { cases });
+                      // The case's connection leaves the same case under its new name.
+                      if (renamed && renamed.from !== renamed.to) {
+                        setEdges((before) =>
+                          before.map((edge) =>
+                            edge.source === chosen.id &&
+                            edge.sourceHandle === `case:${renamed.from}`
+                              ? { ...edge, sourceHandle: `case:${renamed.to}`, label: renamed.to }
+                              : edge,
+                          ),
+                        );
+                      }
+                    }}
                   />
                 ) : null}
                 {node.type === "set" ? (
@@ -1657,32 +1755,215 @@ export function FlowEditor({
             )}
           </ExpressionPreview.Provider>
         </aside>
-      </div>
-      {testing ? (
-        <FlowTestPanel
-          link={link}
-          path={path}
-          schema={
-            chosenTrigger?.trigger?.type === "manual" ? chosenTrigger.trigger.input : undefined
+      }
+    />
+  );
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col">
+      <div className="border-line border-b px-4 py-2 md:px-5">
+        <PageHeader
+          compact
+          mono={Boolean(opened)}
+          title={opened ? path : "New flow"}
+          state={
+            <>
+              <StatePill
+                state={state === "repository" || (state === "deployed" && !dirty) ? state : "draft"}
+              />
+              {found.length > 0 ? (
+                <span className="flex items-center gap-1 text-meta text-attention">
+                  <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
+                </span>
+              ) : null}
+              <span
+                role="status"
+                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
+              >
+                {saveState}
+              </span>
+              {gaveUp ? (
+                <Button
+                  size="small"
+                  variant="quiet"
+                  onClick={() => {
+                    failures.current = 0;
+                    setGaveUp(false);
+                  }}
+                >
+                  Retry
+                </Button>
+              ) : null}
+            </>
           }
-          triggers={triggerNodes.map((one) => ({
-            node: one.id,
-            label: `${one.id} (${(one.data.node as { trigger?: { type?: string } }).trigger?.type ?? "trigger"})`,
-          }))}
-          trigger={testFromTrigger}
-          onTrigger={setTestTrigger}
-          blocked={testBlocked}
-          run={live.run}
-          error={live.error}
-          changed={editedSinceTest && live.run !== undefined}
-          onRun={runTest}
-          onChoose={(id) => {
-            setSelected(id);
-            setNodes((before) => before.map((one) => ({ ...one, selected: one.id === id })));
-          }}
-          onClose={() => setTesting(false)}
+          actions={
+            <>
+              <Button
+                size="small"
+                onClick={() => {
+                  history.record("Tidy up");
+                  const positions = autoLayout(flowNodes, flowEdges);
+                  setNodes((before) =>
+                    before.map((one) => ({ ...one, position: positions[one.id] ?? one.position })),
+                  );
+                  touch();
+                }}
+              >
+                Tidy up
+              </Button>
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label="Undo"
+                tooltip={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
+                keys={keysOf("undo")}
+                disabled={!history.undoLabel}
+                onClick={undo}
+              >
+                <Undo2 aria-hidden="true" size={14} />
+              </Button>
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label="Redo"
+                tooltip={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
+                keys={keysOf("redo")}
+                disabled={!history.redoLabel}
+                onClick={redo}
+              >
+                <Redo2 aria-hidden="true" size={14} />
+              </Button>
+              <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
+                <Play aria-hidden="true" size={14} /> Test
+              </Button>
+              <Button
+                size="small"
+                variant={state === "draft" && !dirty ? "secondary" : "primary"}
+                disabled={busy || (!dirty && state !== "new")}
+                onClick={() => void save()}
+              >
+                Save draft
+              </Button>
+              {state === "draft" && !dirty && path ? (
+                <DeployMenu
+                  root={root}
+                  link={link}
+                  path={path}
+                  disabled={busy}
+                  onDeployed={() => setState("deployed")}
+                />
+              ) : null}
+            </>
+          }
+          after={
+            opened ? undefined : (
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="w-56">
+                  <TextField
+                    name="path"
+                    label="Path"
+                    value={path}
+                    placeholder="orders/handle"
+                    onChange={setPath}
+                  />
+                </div>
+                <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+                  <legend className="mb-1 text-body-sm font-medium">Start from</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {FLOW_STARTERS.map((starter) => (
+                      <Button
+                        key={starter.id}
+                        size="small"
+                        tooltip={starter.about}
+                        aria-pressed={starterId === starter.id}
+                        // Once the flow is changed, starting again would lose the change.
+                        disabled={dirty && starterId !== starter.id}
+                        onClick={() => {
+                          setStarterId(starter.id);
+                          open(starter.body as unknown as FlowBody);
+                        }}
+                      >
+                        {starter.label}
+                      </Button>
+                    ))}
+                  </div>
+                </fieldset>
+              </div>
+            )
+          }
         />
+      </div>
+      {state === "repository" || problem || found.length > 0 ? (
+        <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
+          {state === "repository" ? (
+            <Notice tone="attention">
+              This flow is managed in the tenant's repository. Saving a draft of it takes it over.
+            </Notice>
+          ) : null}
+          {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          {found.length > 0 ? (
+            <Notice tone="attention">
+              <ul aria-label="To fix" className="m-0 flex list-none flex-col gap-0.5 p-0">
+                {found.map((one) => (
+                  <li key={one.message}>
+                    {one.node ? (
+                      <button
+                        type="button"
+                        onClick={() => goToProblem(one)}
+                        className="text-left underline-offset-2 hover:underline"
+                      >
+                        {one.message}
+                      </button>
+                    ) : (
+                      one.message
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
+        </div>
       ) : null}
+      {testing ? (
+        <SplitPane
+          id="flow-test"
+          orientation="vertical"
+          label="Resize the canvas and the test run"
+          className="min-h-0 flex-1"
+          initial={62}
+          minFirst={240}
+          minSecond={140}
+          paneLabels={{ first: "the canvas", second: "the test run" }}
+          first={editor}
+          second={
+            <FlowTestPanel
+              link={link}
+              path={path}
+              schema={
+                chosenTrigger?.trigger?.type === "manual" ? chosenTrigger.trigger.input : undefined
+              }
+              triggers={triggerNodes.map((one) => ({
+                node: one.id,
+                label: `${one.id} (${(one.data.node as { trigger?: { type?: string } }).trigger?.type ?? "trigger"})`,
+              }))}
+              trigger={testFromTrigger}
+              onTrigger={setTestTrigger}
+              blocked={testBlocked}
+              run={live.run}
+              error={live.error}
+              changed={editedSinceTest && live.run !== undefined}
+              onRun={runTest}
+              onChoose={(id) => {
+                setSelected(id);
+                setNodes((before) => before.map((one) => ({ ...one, selected: one.id === id })));
+              }}
+              onClose={() => setTesting(false)}
+            />
+          }
+        />
+      ) : (
+        editor
+      )}
     </section>
   );
 }
@@ -1892,7 +2173,11 @@ function CasesEditor({
   onChange,
 }: {
   cases: { name: string; when: string }[];
-  onChange: (cases: { name: string; when: string }[]) => void;
+  /** With `renamed` when a case's name changed, so its connection follows it. */
+  onChange: (
+    cases: { name: string; when: string }[],
+    renamed?: { from: string; to: string },
+  ) => void;
 }) {
   return (
     <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
@@ -1905,7 +2190,10 @@ function CasesEditor({
             label="Name"
             value={one.name}
             onChange={(name) =>
-              onChange(cases.map((each, at) => (at === index ? { ...each, name } : each)))
+              onChange(
+                cases.map((each, at) => (at === index ? { ...each, name } : each)),
+                { from: one.name, to: name },
+              )
             }
           />
           <ExpressionField

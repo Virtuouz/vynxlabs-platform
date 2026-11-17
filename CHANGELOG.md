@@ -2,6 +2,77 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 15, expert efficiency
+
+### For operators
+
+- **Database change.** Migration 0066 adds `member_preference` (a member's own settings) and `member_saved_view` (saved views of a list). Both are preferences: they are never audited, and are not exported with a tenant. Saved views go when their tenant does.
+- **Preferences API.**
+  - New `GET /me/preferences`, `PUT /me/preferences/:key {value}` and `DELETE /me/preferences/:key`.
+  - Only the keys the console keeps are accepted: `theme`, `panel`, `shortcuts.single-key`, `editor.*`, `density:*`, `split:*`, `palette.pins:<tenant>`.
+  - Each value may be at most 4 KB, and a member keeps at most 200.
+- **Saved views API.** New `GET /me/views?tenant=&workspace=&list=`, `POST /me/views`, `PATCH /me/views/:id` and `DELETE /me/views/:id`. Views are private to their maker, and names are unique per list, ignoring case. A member keeps at most 50 views per list.
+- **The console's theme, table density, pane sizes and editor tabs follow a member between browsers.** The first sign-in after upgrading moves what this browser had kept onto the server.
+- **Keyboard.**
+  - Every shortcut is listed under "Keyboard shortcuts" in the account menu and the palette, as well as on `?`.
+  - Single-key shortcuts (`?`, `/`, `j`, `k`, `x`, `g` then a letter) can be turned off there.
+  - New shortcuts: `g` then `o`, `r`, `f`, `s`, `t` or `a` goes to the overview, runs, flows, scripts, triggers or approvals; `/` searches the list on screen; ⌘S saves at once in the flow editor, the app builder and dashboards.
+  - ⌘K now opens the palette from inside the code editor.
+- **Command palette.**
+  - With a run, script, flow, trigger or approval open, ⌘K first offers what can be done with it: run again, retry, cancel, start, pause, approve.
+  - Anything found can be pinned (⌘P, or "Pin to the palette"), and pins come before recent items.
+  - Results are grouped under headings.
+  - Every result opens its own page: a script opens its page rather than its editor, a person opens their member page, and an app opens in its list.
+  - A failed search says so, with the request ID and Try again, rather than "Nothing matches".
+  - ⌘↵ "Run again" now asks first.
+- **Database change.** Migration 0067 adds two partial indexes, on succeeded script runs and on succeeded top-level flow runs, by workspace, path and ID. They make the last success before a run a short read however long the history.
+- **Comparison API.** New `GET runs/:id/previous-success` and `GET flow-runs/:id/previous-success`. Each gives the last success of the same script or flow before this run (or `null`), its version and timing, and whether the version and the input differ from this run's.
+- **Batch API.**
+  - New `POST runs/batch {action: cancel|rerun, ids}`, `POST flow-runs/batch {action: cancel|retry|restart, ids}`, `POST trigger-pauses/batch {paused, reason?, triggers}`, `POST drafts/batch-discard {paths}` and `POST /tenants/:t/approvals/batch {decision, comment?, approvals}`.
+  - Each takes up to 100 items. Each item is done by its single action's own route, as the caller, so it is checked and audited exactly as it would be alone.
+  - The answer is `{results: [{id, ok, status, detail?, requestId?, runId?}], done, failed}`.
+- **Batch actions in the console.**
+  - Rows can be checked on the runs list (Cancel, Run again), approvals (Approve or Reject, with one comment) and triggers (Pause, Resume). Shift and a click checks a range.
+  - When some items are not done, a dialog lists each one with why and its request ID, and offers to retry just those.
+  - Release deploys, or sets aside, only the drafts chosen.
+  - The triggers list's kind filter is now kept in the address.
+- **Saved views and columns.**
+  - The runs list, the audit log, events and a table's rows have a "Saved views" menu. It saves the list's filters, sort, columns and density by name, and puts them back in one choice.
+  - A view is private to whoever saved it. Its link carries the view, so anyone who may see the list opens it the same.
+  - The runs list and the audit log can hide columns and reorder them, with Move up and Move down. The choice is kept in the address and in views.
+  - The events list's name filter is now kept in the address.
+- **Panes.**
+  - The flow editor's canvas and step settings, the canvas and its test run, a run page's attempts and details, and Release's drafts and deploy panel can be resized by dragging or with the arrow keys; a double-click resets them.
+  - The flow editor's step settings and a run page's attempts can be folded away (Enter on the divider) and opened again from the rail they leave.
+  - The panel beside every list can be made wider or narrower.
+  - Every size is kept with the member's settings.
+  - The step chosen in the flow editor, the canvas position (for the session), a run's Input or Output tab, and a flow run's Timeline or Graph are kept, in the address where they can be.
+  - The runs list's Columns, Density and Views tools are now icon buttons, so they fit beside the filters.
+- **Flow canvas.**
+  - Steps can be copied, cut and pasted (⌘C, ⌘X, ⌘V), within a flow or into another, and duplicated (⌘D). Pasted steps whose names are taken get a suffix, and references between them follow the new names.
+  - A right-click, or Shift+F10, opens a menu on a step (Duplicate, Copy, Rename…, Remove) or on the canvas (Paste, Select every step, Fit the flow in view).
+  - With several steps chosen, the panel says so and offers Duplicate and Remove. Dragging a box of steps is one step to undo.
+  - **Fixed:** renaming a branch's case now keeps the connection that leaves it. Before, the connection still named the old case.
+- **Since it last worked.**
+  - A failed or canceled run's page says when the script or flow last succeeded, on which version, whether the input and version differ, and how long each took.
+  - When the input differs, the difference can be shown. When the version differs, "Compare the source" (or "Compare the flow") opens the two versions side by side.
+  - The palette offers "Compare with the last success" on a run's page.
+- **Wide screens (1920 px and up).**
+  - A run page shows its log beside its input and output, and a flow run its timeline beside the chosen step.
+  - The overview has three columns and may be up to 1920 px wide.
+  - The runs list's Target column keeps what it needs, and the panel beside lists is wider.
+- **Fixed:**
+  - A run page now scrolls. On a window shorter than the page, what was below the fold could not be reached.
+  - A failed run's last attempt now reads "failed" even when the script threw without logging an error. Before, it read "succeeded".
+
+### For tenant developers
+
+- **New in `@vynxlabs/ui`:**
+  - `Tooltip`, `TooltipProvider` and `Kbd`;
+  - `Button` takes `tooltip` and `keys`. A disabled button with a tooltip is wrapped so that it can still be focused and say why it is disabled.
+  - `ContextMenu`, with the same items as `Menu`. Menu items take `keys`, the shortcut shown beside them.
+
+
 ## Unreleased: phase 14, one design system
 
 ### For operators

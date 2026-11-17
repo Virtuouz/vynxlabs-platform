@@ -1,6 +1,6 @@
 import { Button } from "@vynxlabs/ui";
-import { useEffect } from "react";
 import { useNavigationGuard } from "../router.tsx";
+import { useShortcut } from "./keys.ts";
 
 /**
  * How a page of settings is saved (08 §3.32): changes are made, then saved
@@ -28,17 +28,13 @@ export function SaveBar({
   guard?: boolean;
 }) {
   useNavigationGuard(dirty && guard, `Your changes to ${what} are not saved.`);
-  useEffect(() => {
-    if (!dirty || !guard) return;
-    const save = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        if (!saving) onSave();
-      }
-    };
-    addEventListener("keydown", save);
-    return () => removeEventListener("keydown", save);
-  }, [dirty, guard, saving, onSave]);
+  useShortcut(
+    "save",
+    () => {
+      if (!saving) onSave();
+    },
+    { enabled: dirty && guard },
+  );
   if (!dirty) return null;
   return (
     <section

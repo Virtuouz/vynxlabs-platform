@@ -237,7 +237,7 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
   await expect(page.getByRole("group", { name: "approve to fail, on error" })).toHaveCount(1);
 
   await press(page.getByRole("button", { name: "Save draft" }));
-  await expect(page).toHaveURL(/\/flows\/edit\/orders\/route$/);
+  await expect(page).toHaveURL(/\/flows\/edit\/orders\/route(\?|$)/);
   const saved = await call(page, "GET", `${W}/drafts/orders/route`);
   expect(saved.body.edges).toEqual(
     expect.arrayContaining([
@@ -255,4 +255,104 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
     panel.getByRole("list", { name: "Steps of the test" }).getByRole("button", { name: /^set/ }),
   ).toContainText("Succeeded", { timeout: 30_000 });
   expect(errors).toEqual([]);
+});
+
+test("steps are duplicated, copied into another flow, and a renamed case keeps its connection", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    permissions: ["clipboard-read", "clipboard-write"],
+  });
+  const page = await context.newPage();
+  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  const tenant = await call(page, "POST", "/tenants", {
+    slug: `canvas-${stamp}`,
+    name: "Canvas",
+    addCreator: true,
+  });
+  const dev = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+    slug: "dev",
+    name: "Dev",
+    type: "dev",
+  });
+  const W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
+  const link = `/t/${tenant.id}/workspaces/${dev.id}`;
+  await call(page, "PUT", `${W}/drafts/orders/count`, {
+    kind: "flow",
+    schemaVersion: 1,
+    body: flow,
+  });
+  await call(page, "PUT", `${W}/drafts/orders/other`, {
+    kind: "flow",
+    schemaVersion: 1,
+    body: {
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        size: { type: "branch", cases: [{ name: "large", when: "true" }] },
+        big: { type: "set", values: { big: "true" } },
+      },
+      edges: [
+        { from: "start", to: "size" },
+        { from: "size", to: "big", output: "large" },
+      ],
+    },
+  });
+  const body = async (path: string) => (await call(page, "GET", `${W}/drafts/${path}`)).body;
+  const saved = async (path: string, done: (flow: { nodes: Record<string, unknown> }) => boolean) =>
+    expect.poll(async () => done(await body(path)), { timeout: 20_000 }).toBe(true);
+
+  // ----- Duplicate: one action, a valid name, references between the copies following -----
+  await page.goto(`${link}/flows/edit/orders/count`);
+  const canvas = page.getByTestId("flow-canvas");
+  await canvas.getByText("totals", { exact: true }).waitFor({ timeout: 30_000 });
+  await canvas.getByText("totals", { exact: true }).click();
+  await canvas.getByText("check", { exact: true }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.getByRole("region", { name: "The chosen steps" })).toContainText(
+    "2 steps chosen",
+  );
+  await page.keyboard.press("ControlOrMeta+d");
+  await expect(canvas.getByText("check_2", { exact: true })).toBeVisible();
+  await saved("orders/count", (flow) => "totals_2" in flow.nodes && "check_2" in flow.nodes);
+  const copied = (await body("orders/count")).nodes.check_2 as { values: Record<string, string> };
+  expect(copied.values.double).toBe("steps.totals_2.output.count * 2.0");
+  // One step to undo.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(canvas.getByText("check_2", { exact: true })).toHaveCount(0);
+  await saved("orders/count", (flow) => !("check_2" in flow.nodes));
+
+  // ----- Copy into another flow -----
+  await canvas.getByText("totals", { exact: true }).click();
+  await canvas.getByText("check", { exact: true }).click({ modifiers: ["ControlOrMeta"] });
+  await page.keyboard.press("ControlOrMeta+c");
+  await expect(page.getByText("2 steps copied.")).toBeVisible();
+  await page.goto(`${link}/flows/edit/orders/other`);
+  await canvas.getByText("size", { exact: true }).waitFor({ timeout: 30_000 });
+  await canvas.click({ position: { x: 40, y: 40 } });
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(canvas.getByText("check", { exact: true })).toBeVisible();
+  await saved("orders/other", (flow) => "totals" in flow.nodes && "check" in flow.nodes);
+
+  // ----- The context menu offers the same, on a step -----
+  await canvas.getByText("big", { exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(canvas.getByText("big_2", { exact: true })).toBeVisible();
+
+  // ----- A renamed case keeps its connection -----
+  await canvas.getByText("size", { exact: true }).click();
+  const settings = page.getByRole("complementary", { name: "The chosen step" });
+  const name = settings.getByRole("group", { name: "Cases, tried in order" }).getByLabel("Name");
+  await name.fill("huge");
+  await saved("orders/other", (flow) => {
+    const edges = (flow as unknown as { edges: { from: string; to: string; output?: string }[] })
+      .edges;
+    return edges.some(
+      (edge) => edge.from === "size" && edge.to === "big" && edge.output === "huge",
+    );
+  });
+
+  await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
+    () => {},
+  );
 });

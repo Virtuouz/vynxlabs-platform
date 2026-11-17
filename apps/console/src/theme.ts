@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { readPreference, usePreference } from "./prefs.ts";
 
 const INSTANCE_THEME = "/api/v1/instance/theme.css";
 
@@ -24,15 +25,10 @@ export function refreshInstanceTheme() {
 }
 
 export type ThemeChoice = "system" | "light" | "dark";
-const CHOICE_KEY = "vx-theme";
 
 function stored(): ThemeChoice {
-  try {
-    const value = localStorage.getItem(CHOICE_KEY);
-    return value === "light" || value === "dark" ? value : "system";
-  } catch {
-    return "system";
-  }
+  const value = readPreference<string>("theme", "system");
+  return value === "light" || value === "dark" ? value : "system";
 }
 
 /** Puts a person's choice of light or dark on the page. "system" leaves it to the browser. */
@@ -41,20 +37,10 @@ export function applyThemeChoice(choice: ThemeChoice = stored()) {
   else document.documentElement.dataset.theme = choice;
 }
 
-/** The person's choice of light, dark or the system's, kept in this browser. */
+/** The person's choice of light, dark or the system's, kept with their other settings. */
 export function useThemeChoice(): [ThemeChoice, (next: ThemeChoice) => void] {
-  const [choice, setChoice] = useState<ThemeChoice>(stored);
+  const [kept, keep] = usePreference<string>("theme", "system");
+  const choice: ThemeChoice = kept === "light" || kept === "dark" ? kept : "system";
   useEffect(() => applyThemeChoice(choice), [choice]);
-  return [
-    choice,
-    (next) => {
-      try {
-        if (next === "system") localStorage.removeItem(CHOICE_KEY);
-        else localStorage.setItem(CHOICE_KEY, next);
-      } catch {
-        // Private browsing may refuse storage. The choice then lasts for this page.
-      }
-      setChoice(next);
-    },
-  ];
+  return [choice, (next) => keep(next === "system" ? undefined : next)];
 }

@@ -1,9 +1,10 @@
 import { Button, JsonView, LogViewer, type MenuItem, Notice, ResultView, Tabs } from "@vynxlabs/ui";
-import { ArrowUpRight, CircleX, FileCode2, Lightbulb, Workflow, X } from "lucide-react";
+import { ArrowUpRight, CircleX, FileCode2, Lightbulb, RotateCcw, Workflow, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import {
   type DataColumn,
@@ -21,6 +22,7 @@ import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
+import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
 import { LogWindowNote, stamp, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
@@ -131,6 +133,7 @@ const RUNS_URL = {
   target: { type: "string" },
   sort: { type: "string" },
   dir: { type: "string" },
+  cols: { type: "list" },
   run: { type: "string", push: true },
 } as const;
 
@@ -303,6 +306,99 @@ export function RunsWorkbench({
       notify.error(error);
     }
   };
+  // Rows checked for a batch: cancel them, run them again, retry them.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const batch = useBatch();
+  const kindOf = (id: string) => items.find((one) => one.id === id);
+  const nameOf = (id: string) => kindOf(id)?.target ?? id;
+  /** Sends one batch per kind: script runs and flow runs have their own routes. */
+  const runBatch = async (
+    ids: string[],
+    script: "cancel" | "rerun" | undefined,
+    flow: "cancel" | "retry" | "restart" | undefined,
+  ): Promise<BatchAnswer> => {
+    const scripts = ids.filter((id) => kindOf(id)?.kind === "script");
+    const flows = ids.filter((id) => kindOf(id)?.kind === "flow");
+    const answers: BatchAnswer[] = [];
+    if (script && scripts.length > 0)
+      answers.push(
+        await api.post<BatchAnswer>(`${root}/runs/batch`, { action: script, ids: scripts }),
+      );
+    if (flow && flows.length > 0)
+      answers.push(
+        await api.post<BatchAnswer>(`${root}/flow-runs/batch`, { action: flow, ids: flows }),
+      );
+    return {
+      results: answers.flatMap((one) => one.results),
+      done: answers.reduce((sum, one) => sum + one.done, 0),
+      failed: answers.reduce((sum, one) => sum + one.failed, 0),
+    };
+  };
+  const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
+  const sample = (ids: string[]) => {
+    const names = ids.slice(0, 3).map(nameOf).join(", ");
+    return ids.length > 3 ? `${names} and ${ids.length - 3} more` : names;
+  };
+  const cancelChecked = async (ids: string[]) => {
+    const sure = await ask.confirm({
+      title: `Cancel ${plural(ids.length, "run")}?`,
+      text: `${sample(ids)}. Runs that have finished are left as they are.`,
+      action: `Cancel ${plural(ids.length, "run")}`,
+      cancel: "Keep them",
+      danger: true,
+    });
+    if (!sure) return;
+    await batch.run(() => runBatch(ids, "cancel", "cancel"), {
+      title: "Canceling runs",
+      done: (count) => `${plural(count, "run")} canceled.`,
+      name: nameOf,
+      retry: (again) => runBatch(again, "cancel", "cancel"),
+    });
+    setChecked(new Set());
+    refresh();
+  };
+  const againChecked = async (ids: string[]) => {
+    const sure = await ask.confirm({
+      title: `Run ${plural(ids.length, "run")} again?`,
+      text: `${sample(ids)}. Scripts run again with the same input, on the version they ran; flows retry from their failed step, or from the start if none failed.`,
+      action: "Run again",
+    });
+    if (!sure) return;
+    const failedFlows = ids.filter(
+      (id) => kindOf(id)?.kind === "flow" && kindOf(id)?.state === "failed",
+    );
+    const otherFlows = ids.filter(
+      (id) => kindOf(id)?.kind === "flow" && kindOf(id)?.state !== "failed",
+    );
+    const scripts = ids.filter((id) => kindOf(id)?.kind === "script");
+    const send = async (subset: string[]) => {
+      const parts = await Promise.all([
+        runBatch(
+          subset.filter((id) => scripts.includes(id) || failedFlows.includes(id)),
+          "rerun",
+          "retry",
+        ),
+        runBatch(
+          subset.filter((id) => otherFlows.includes(id)),
+          undefined,
+          "restart",
+        ),
+      ]);
+      return {
+        results: parts.flatMap((one) => one.results),
+        done: parts.reduce((sum, one) => sum + one.done, 0),
+        failed: parts.reduce((sum, one) => sum + one.failed, 0),
+      };
+    };
+    await batch.run(() => send(ids), {
+      title: "Running again",
+      done: (count) => `${plural(count, "run")} started again.`,
+      name: nameOf,
+      retry: send,
+    });
+    setChecked(new Set());
+    refresh();
+  };
   const open = (one: Activity) => {
     setChosen(one);
     setUrl({ run: one.id });
@@ -405,6 +501,8 @@ export function RunsWorkbench({
     },
     {
       header: "Target",
+      // From 1920 px the path keeps what it needs, and the result takes the rest.
+      width: "3xl:w-[26rem]",
       cell: (one) => (
         <span className="flex min-w-0 items-center gap-1.5">
           <KindIcon kind={one.kind} />
@@ -597,7 +695,22 @@ export function RunsWorkbench({
                 Cancel {queued} queued
               </Button>
             ) : null}
+            <ColumnsMenu
+              columns={columns.slice(1).map((column) => ({
+                key: column.key ?? column.header,
+                label: column.header,
+              }))}
+              shown={url.cols.length > 0 ? url.cols : undefined}
+              onChange={(next) => setUrl({ cols: next ?? [] })}
+            />
             <DensityMenu density={density} onChange={setDensity} />
+            <ViewsMenu
+              tenantId={tenantOf(root)}
+              workspaceId={workspaceOf(root)}
+              list="runs"
+              omit={["run"]}
+              density={{ value: density, set: setDensity }}
+            />
           </span>
         </div>
       </div>
@@ -643,11 +756,33 @@ export function RunsWorkbench({
           fill
           density={density}
           columns={columns}
+          columnsShown={url.cols.length > 0 ? url.cols : undefined}
           rows={list.data ? items : undefined}
           rowKey={(one) => one.id}
           selected={selected}
           onOpen={open}
           href={(one) => `${link}/runs/${one.id}`}
+          checked={checked}
+          onCheck={setChecked}
+          batch={(keys) => (
+            <>
+              <Button
+                size="small"
+                variant="danger"
+                disabled={batch.busy}
+                onClick={() => void cancelChecked([...keys])}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="small"
+                disabled={batch.busy}
+                onClick={() => void againChecked([...keys])}
+              >
+                <RotateCcw aria-hidden="true" size={14} /> Run again
+              </Button>
+            </>
+          )}
           sort={sort}
           onSort={(next) => setUrl({ sort: next?.key, dir: next?.dir })}
           actions={actionsOf}
@@ -676,6 +811,7 @@ export function RunsWorkbench({
           }
         />
       </MasterDetail>
+      {batch.dialog}
     </div>
   );
 }
@@ -962,3 +1098,7 @@ export function ScriptRunPanel({
     </div>
   );
 }
+
+/** The tenant's and workspace's IDs, from a workspace's API root. */
+const tenantOf = (root: string) => root.split("/tenants/")[1]?.split("/")[0] ?? "";
+const workspaceOf = (root: string) => root.split("/workspaces/")[1]?.split("/")[0];

@@ -346,6 +346,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["member_id", "tenant_id", "workspace_id", "kind", "ref"],
     export: "never",
   },
+  // A member's saved views of a list: preferences, like the recents above.
+  {
+    table: "member_saved_view",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "never",
+  },
   {
     table: "dashboard_share",
     ofTenant: own,
@@ -372,6 +380,8 @@ export const INSTANCE_TABLES = [
   "member_verification",
   // A member's own, like their password: shared by every tenant they are in.
   "member_recovery_code",
+  // A member's own settings, shared by every tenant they are in.
+  "member_preference",
   // An upload waiting to be imported belongs to no tenant yet.
   "import_staging",
   "database_location",

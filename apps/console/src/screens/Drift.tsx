@@ -1,7 +1,7 @@
 import { SideSheet } from "@vynxlabs/ui";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useLoad } from "../api.ts";
-import { folded, lineDiff, sortedJson } from "../kit/diff.ts";
+import { DiffView } from "../kit/DiffView.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, type State, StatePill } from "../kit/status.tsx";
@@ -140,10 +140,6 @@ function DriftSheet({
     there: unknown;
     about: string[];
   }>(`${root}/drift/${item.path}`);
-  const lines = useMemo(
-    () => (one.data ? folded(lineDiff(sortedJson(one.data.there), sortedJson(one.data.here))) : []),
-    [one.data],
-  );
   return (
     <SideSheet
       open
@@ -162,39 +158,13 @@ function DriftSheet({
           </ul>
         ) : null}
         {one.data ? (
-          <div className="flex flex-col gap-1">
-            <p className="m-0 flex flex-wrap gap-3 text-meta">
-              <span className="text-danger">− {thereName}</span>
-              <span className="text-success">+ {hereName}</span>
-            </p>
-            <pre
-              data-testid="drift-diff"
-              className="m-0 max-h-[60vh] overflow-auto rounded-control border border-line bg-sunken p-3 font-mono text-code-sm leading-5"
-            >
-              {lines.map((line, index) =>
-                line.type === "fold" ? (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: lines have no identity but their place
-                  <div key={index} className="text-ink-subtle">
-                    {`  ⋯ ${line.count} unchanged line${line.count === 1 ? "" : "s"}`}
-                  </div>
-                ) : (
-                  <div
-                    // biome-ignore lint/suspicious/noArrayIndexKey: lines have no identity but their place
-                    key={index}
-                    className={
-                      line.type === "added"
-                        ? "bg-success/10 text-success"
-                        : line.type === "removed"
-                          ? "bg-danger/10 text-danger"
-                          : "text-ink-muted"
-                    }
-                  >
-                    {`${line.type === "added" ? "+" : line.type === "removed" ? "−" : " "} ${line.text}`}
-                  </div>
-                ),
-              )}
-            </pre>
-          </div>
+          <DiffView
+            before={one.data.there}
+            after={one.data.here}
+            beforeLabel={thereName}
+            afterLabel={hereName}
+            testId="drift-diff"
+          />
         ) : (
           <Loading />
         )}

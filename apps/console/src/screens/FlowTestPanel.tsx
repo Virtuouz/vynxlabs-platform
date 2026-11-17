@@ -62,7 +62,7 @@ export function FlowTestPanel({
   return (
     <section
       aria-label="The test run"
-      className="flex max-h-[45vh] shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface px-4 py-3 md:px-5"
+      className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto border-line border-t bg-surface px-4 py-3 md:px-5"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="m-0 text-title">Test the draft</h2>

@@ -1,7 +1,9 @@
 import { SideSheet } from "@vynxlabs/ui";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { usePreference } from "../prefs.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
+import { useShortcut } from "./keys.ts";
 import { InsetRule, Junction, type JunctionKind } from "./motifs.tsx";
 
 /** Whether the window is at least this wide, kept up to date as it is resized. */
@@ -125,6 +127,13 @@ function DockedInspector({
   const heading = useRef<HTMLHeadingElement>(null);
   const closing = useRef(onClose);
   closing.current = onClose;
+  // How wide the docked inspector is, as its member left it: one width for every list.
+  const [width, setWidth] = usePreference<number | undefined>("split:inspector", undefined);
+  // Esc closes it, unless a dialog or menu over the page is open: that closes first, on its own.
+  useShortcut("close", () => {
+    if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return false;
+    closing.current();
+  });
 
   useEffect(() => {
     // What last had focus outside the inspector is where focus goes back to.
@@ -132,17 +141,9 @@ function DockedInspector({
     const track = (event: FocusEvent) => {
       if (!region.current?.contains(event.target as Node)) outside = event.target as Element;
     };
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      // A dialog or menu over the page closes first, on its own.
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
-      closing.current();
-    };
     document.addEventListener("focusin", track);
-    document.addEventListener("keydown", onEscape);
     return () => {
       document.removeEventListener("focusin", track);
-      document.removeEventListener("keydown", onEscape);
       // Back to where it was, if that is still on the page and focus was in here.
       const inside =
         document.activeElement === document.body ||
@@ -163,8 +164,12 @@ function DockedInspector({
     <aside
       ref={region}
       aria-label={label}
-      className="flex w-[22rem] shrink-0 flex-col border-line border-l bg-surface 2xl:w-[26rem]"
+      style={width ? { width } : undefined}
+      className={`relative flex shrink-0 flex-col border-line border-l bg-surface ${
+        width ? "" : "w-[22rem] 2xl:w-[26rem] 3xl:w-[32rem]"
+      }`}
     >
+      <InspectorEdge width={width} region={region} onWidth={setWidth} />
       <div className="flex items-start justify-between gap-3 border-line border-b px-4 py-4">
         <div className="flex min-w-0 flex-col gap-1">
           <InsetRule />
@@ -193,6 +198,76 @@ function DockedInspector({
         </div>
       ) : null}
     </aside>
+  );
+}
+
+const INSPECTOR_MIN = 288;
+const INSPECTOR_MAX = 720;
+
+/**
+ * The docked inspector's left edge: dragged, or moved with the arrow keys once
+ * focused, to make it wider or narrower; a double-click goes back to its own width.
+ */
+function InspectorEdge({
+  width,
+  region,
+  onWidth,
+}: {
+  width: number | undefined;
+  region: { current: HTMLElement | null };
+  onWidth: (next: number | undefined) => void;
+}) {
+  const dragging = useRef(false);
+  const clamp = (value: number) =>
+    Math.round(Math.min(INSPECTOR_MAX, Math.max(INSPECTOR_MIN, value)));
+  const current = () => width ?? region.current?.getBoundingClientRect().width ?? 352;
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      if (!dragging.current || !region.current) return;
+      const right = region.current.getBoundingClientRect().right;
+      onWidth(clamp(right - event.clientX));
+    };
+    const stop = () => {
+      dragging.current = false;
+      document.body.style.removeProperty("user-select");
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", stop);
+    return () => {
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", stop);
+    };
+  });
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a separator that moves is a widget, not an hr
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the panel"
+      aria-valuenow={Math.round(current())}
+      aria-valuemin={INSPECTOR_MIN}
+      aria-valuemax={INSPECTOR_MAX}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? 64 : 16;
+        // The edge is on the left: moving it left makes the panel wider.
+        if (event.key === "ArrowLeft") onWidth(clamp(current() + step));
+        else if (event.key === "ArrowRight") onWidth(clamp(current() - step));
+        else if (event.key === "Home") onWidth(INSPECTOR_MAX);
+        else if (event.key === "End") onWidth(INSPECTOR_MIN);
+        else return;
+        event.preventDefault();
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        dragging.current = true;
+        document.body.style.setProperty("user-select", "none");
+      }}
+      onDoubleClick={() => onWidth(undefined)}
+      className="group absolute inset-y-0 -left-1.5 layer-sticky flex w-3 cursor-col-resize justify-center outline-none"
+    >
+      <span className="w-0 group-hover:w-0.5 group-hover:bg-action group-focus-visible:w-0.5 group-focus-visible:bg-focus" />
+    </div>
   );
 }
 

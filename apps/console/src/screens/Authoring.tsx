@@ -18,6 +18,7 @@ import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
+import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
@@ -25,6 +26,7 @@ import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts"
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
+import { usePreference } from "../prefs.ts";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
@@ -260,8 +262,8 @@ export function ScriptEditor({
   const [testInput, setTestInput] = useState<unknown>({});
   const [testRun, setTestRun] = useState<string>();
   // The test pane's tab, and the run's own tab, stay as chosen from one run to the next.
-  const [paneTab, setPaneTab] = useKeptChoice("vx-editor-pane", "result");
-  const [runTab, setRunTab] = useKeptChoice("vx-editor-run", "logs");
+  const [paneTab, setPaneTab] = useKeptChoice("editor.pane", "result");
+  const [runTab, setRunTab] = useKeptChoice("editor.run", "logs");
   const [markers, setMarkers] = useState<Marker[]>([]);
   const [buildIssues, setBuildIssues] = useState<{ file: string; line: number; message: string }[]>(
     [],
@@ -330,29 +332,10 @@ export function ScriptEditor({
 
   // ⌘S or Ctrl+S saves the draft, from anywhere on the page.
   const saveShortcut = useRef<() => void>(() => {});
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        saveShortcut.current();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, []);
+  useShortcut("save", () => saveShortcut.current());
   // ⌘↵ or Ctrl+Enter runs the draft, from anywhere in the editor.
   const runShortcut = useRef<() => void>(() => {});
-  useEffect(() => {
-    if (kind !== "script") return;
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-        event.preventDefault();
-        runShortcut.current();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [kind]);
+  useShortcut("run", () => runShortcut.current(), { enabled: kind === "script" });
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab.
   useNavigationGuard(
@@ -824,7 +807,6 @@ export function ScriptEditor({
                           key={starter.id}
                           type="button"
                           aria-pressed={chosen}
-                          title={starter.about}
                           disabled={!untouchedStarter(body?.source?.code) && !chosen}
                           onClick={() =>
                             change({
@@ -1002,26 +984,10 @@ export function ScriptEditor({
   );
 }
 
-/** A choice kept in this browser, such as which tab of the test pane was last open. */
+/** A choice kept with the member's settings, such as which tab of the test pane was last open. */
 function useKeptChoice(key: string, fallback: string): [string, (value: string) => void] {
-  const [value, setValue] = useState(() => {
-    try {
-      return localStorage.getItem(key) ?? fallback;
-    } catch {
-      return fallback;
-    }
-  });
-  return [
-    value,
-    (next: string) => {
-      setValue(next);
-      try {
-        localStorage.setItem(key, next);
-      } catch {
-        // Storage that cannot be reached keeps the choice for this visit only.
-      }
-    },
-  ];
+  const [value, keep] = usePreference<string>(key, fallback);
+  return [value, (next: string) => keep(next)];
 }
 
 /** Build errors the server named by file and line, from a refused save or test run. */

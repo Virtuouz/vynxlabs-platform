@@ -1,11 +1,21 @@
 import { Button, JsonView, LogViewer, Menu, Notice, ResultView, Tabs } from "@vynxlabs/ui";
-import { ChevronDown, CircleX, Lightbulb, RotateCcw } from "lucide-react";
+import {
+  ChevronDown,
+  CircleX,
+  Copy,
+  FileCode2,
+  GitCompareArrows,
+  Lightbulb,
+  RotateCcw,
+  Workflow,
+} from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, copyText, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
+import { Current } from "../kit/current.ts";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
@@ -13,10 +23,11 @@ import { Junction } from "../kit/motifs.tsx";
 import { useDevWorkspace } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
+import { SplitPane } from "../kit/SplitPane.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { useRecordRecent } from "../recent.ts";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useUrlParam } from "../router.tsx";
 import {
   type LiveRun,
   LogWindowNote,
@@ -27,6 +38,7 @@ import {
 } from "./Execution.tsx";
 import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
 import { NotFound } from "./NotFound.tsx";
+import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
 
 const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
@@ -38,7 +50,8 @@ const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time
  */
 export function RunPage({ root, link, id }: { root: string; link: string; id: string }) {
   return (
-    <div className="px-4 py-4 md:px-6">
+    // A run page sits where lists sit, which do not scroll as a whole: it scrolls itself.
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
       <RunOfEitherKind root={root} link={link} id={id} />
     </div>
   );
@@ -221,6 +234,8 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
   const ended = run !== undefined && !LIVE.includes(run.state);
   const insight = useLoad<Insight>(ended ? `${root}/runs/${id}/insight` : null);
   const [editing, setEditing] = useState(false);
+  // Input or output: in the address, so a reload or a link keeps it.
+  const [ioTab, setIoTab] = useUrlParam("io", "input");
   const scripts = useLoad<{ items: { path: string; inputSchema: Record<string, unknown> }[] }>(
     editing ? `${root}/scripts` : null,
   );
@@ -247,8 +262,81 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
     if (sure) await rerun({ bundle }).catch(notify.error);
   };
 
+  const cancel = async () => {
+    const sure = await ask.confirm({
+      title: "Cancel this run?",
+      action: "Cancel run",
+      cancel: "Keep running",
+      danger: true,
+    });
+    if (!sure) return;
+    await api
+      .post(`${root}/runs/${id}/cancel`)
+      .then(() => notify.info("Canceling. The worker stops it at its next check."))
+      .catch(notify.error);
+  };
+
   return (
     <div className="flex flex-col gap-5">
+      <Current
+        object={{
+          heading: "This run",
+          commands: [
+            ...(active
+              ? [
+                  {
+                    key: "cancel",
+                    label: "Cancel this run",
+                    icon: CircleX,
+                    danger: true,
+                    run: cancel,
+                  },
+                ]
+              : []),
+            ...(run.trigger.type === "flow"
+              ? []
+              : [
+                  {
+                    key: "rerun",
+                    label: "Run again with the same input",
+                    icon: RotateCcw,
+                    run: () => confirmed("original"),
+                  },
+                  {
+                    key: "rerun-active",
+                    label: "Run again on the version deployed now",
+                    icon: RotateCcw,
+                    run: () => confirmed("active"),
+                  },
+                ]),
+            {
+              key: "edit",
+              label: `Open ${run.script} in the editor`,
+              icon: FileCode2,
+              run: () => navigate(`${link}/scripts/edit/${run.script}`),
+            },
+            {
+              key: "compare",
+              label: "Compare with the last success",
+              icon: GitCompareArrows,
+              run: () => compareWithLastSuccess(root, link, "run", run.id),
+            },
+            {
+              key: "copy",
+              label: "Copy the run ID",
+              icon: Copy,
+              run: () => copyText(run.id, "Run ID copied."),
+            },
+          ],
+          pin: {
+            kind: "run",
+            ref: run.id,
+            id: run.id,
+            workspaceId: workspaceIdOf(root),
+            title: run.script,
+          },
+        }}
+      />
       <RunHeader
         reconnecting={reconnecting}
         link={link}
@@ -279,23 +367,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         actions={
           <>
             {active ? (
-              <Button
-                size="small"
-                variant="danger"
-                onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: "Cancel this run?",
-                    action: "Cancel run",
-                    cancel: "Keep running",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await api
-                    .post(`${root}/runs/${id}/cancel`)
-                    .then(() => notify.info("Canceling. The worker stops it at its next check."))
-                    .catch(notify.error);
-                }}
-              >
+              <Button size="small" variant="danger" onClick={cancel}>
                 Cancel run
               </Button>
             ) : null}
@@ -330,176 +402,207 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
-        <aside className="flex flex-col gap-4">
-          {insight.data && insight.data.attempts.length > 0 ? (
-            <section aria-labelledby="attempts" className="flex flex-col gap-1.5">
-              <h2 id="attempts" className="m-0 text-label text-ink-subtle uppercase">
-                Attempts
-              </h2>
-              <ol className="m-0 flex list-none flex-col gap-1 p-0">
-                {insight.data.attempts.map((one) => (
-                  <li key={one.attempt} className="flex items-center gap-2 text-meta">
-                    <Junction kind={one.failed ? "danger" : "here"} size={5} />
-                    <span className={one.failed ? "text-danger" : "text-ink-muted"}>
-                      #{one.attempt} {one.failed ? "failed" : "succeeded"}
-                    </span>
-                    <Mono className="ml-auto text-ink-subtle">
-                      {stamp(one.startedAt).slice(11)}
-                    </Mono>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ) : null}
-          <KeyValues
-            rows={[
-              { label: "Received", value: stamp(run.createdAt), mono: true },
-              { label: "Started", value: run.startedAt ? stamp(run.startedAt) : "—", mono: true },
-              {
-                label: "Finished",
-                value: run.finishedAt ? stamp(run.finishedAt) : "—",
-                mono: true,
-              },
-              {
-                label: "Worker",
-                value: insight.data?.worker
-                  ? `${insight.data.worker.name}${insight.data.worker.pool ? ` · ${insight.data.worker.pool}` : ""}`
-                  : "—",
-              },
-              {
-                label: "Time limit",
-                value: insight.data?.timeoutSeconds ? `${insight.data.timeoutSeconds} s` : "—",
-              },
-              ...(run.concurrency
-                ? [
-                    {
-                      label: "Concurrency key",
-                      // A long value is kept as its hash; its start is enough to tell two apart.
-                      value: `${
-                        run.concurrency.value === ""
-                          ? "(none)"
-                          : run.concurrency.value.length > 40
-                            ? `${run.concurrency.value.slice(0, 19)}…`
-                            : run.concurrency.value
-                      } · ${
-                        run.concurrency.limit === 1
-                          ? "one at a time"
-                          : `${run.concurrency.limit} at a time`
-                      }`,
-                      mono: true,
-                    },
-                  ]
-                : []),
-            ]}
-          />
-          {insight.data && insight.data.uses.length > 0 ? (
-            <section aria-labelledby="uses" className="flex flex-col gap-1.5">
-              <h2 id="uses" className="m-0 text-label text-ink-subtle uppercase">
-                Uses
-              </h2>
-              {insight.data.uses.map((one) => (
-                <Link
-                  key={one.connection}
-                  to={`${link}/connections`}
-                  className="flex items-center justify-between gap-2"
-                >
-                  <Mono>{one.connection}</Mono>
-                  <Tag tone={one.bound ? "live" : "production"}>
-                    {one.bound ? "Bound" : "Not bound"}
-                  </Tag>
-                </Link>
-              ))}
-            </section>
-          ) : null}
-          {run.alert?.handlerRunId ? (
-            <Link to={`${link}/runs/${String(run.alert.handlerRunId)}`} className="text-meta">
-              The failure handler's run
-            </Link>
-          ) : null}
-          {run.alert?.suppressed && typeof run.alert.sameAs === "string" ? (
-            <p className="m-0 text-meta text-ink-muted">
-              No alert was sent: it is counted on{" "}
-              <Link to={`${link}/runs/${run.alert.sameAs}`}>the alert of an earlier failure</Link>,
-              sent less than ten minutes before.
-            </p>
-          ) : null}
-        </aside>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          {run.state === "failed" && run.error ? (
-            <div className="flex flex-col gap-2 rounded-panel border border-danger/40 bg-danger-soft/40 p-3">
-              <span className="flex items-center gap-2 font-medium text-danger">
-                <CircleX aria-hidden="true" size={14} /> Why it failed
-              </span>
-              <p className="m-0 font-mono text-code break-words whitespace-pre-wrap">
-                {run.error.message}
-              </p>
-            </div>
-          ) : null}
-          {diagnosis ? (
-            <div className="rounded-panel border border-line">
-              <NextStep
-                tone="attention"
-                icon={<Lightbulb aria-hidden="true" size={16} />}
-                title={diagnosis.cause}
-                detail={diagnosis.next}
-                action={
-                  diagnosis.section ? (
-                    <Button size="small" onClick={() => navigate(`${link}/${diagnosis.section}`)}>
-                      Open {diagnosis.section}
-                    </Button>
-                  ) : undefined
-                }
-              />
-            </div>
-          ) : null}
-          {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
-          <section aria-label="Log" className="flex flex-col gap-2">
-            <LogWindowNote earlier={earlier} onDownload={wholeLog} />
-            <LogViewer
-              lines={lines}
-              firstLine={earlier + 1}
-              live={active}
-              fileName={logFile}
-              onDownload={wholeLog}
-              empty={active ? "Waiting for the first line…" : "The script logged nothing."}
+      <SplitPane
+        id="run-page"
+        label="Resize the run's attempts and its details"
+        initial={22}
+        collapsible="first"
+        minFirst={200}
+        minSecond={420}
+        paneLabels={{ first: "the attempts", second: "the run's details" }}
+        first={
+          <aside className="flex flex-col gap-4 lg:pr-4">
+            {insight.data && insight.data.attempts.length > 0 ? (
+              <section aria-labelledby="attempts" className="flex flex-col gap-1.5">
+                <h2 id="attempts" className="m-0 text-label text-ink-subtle uppercase">
+                  Attempts
+                </h2>
+                <ol className="m-0 flex list-none flex-col gap-1 p-0">
+                  {insight.data.attempts.map((one) => (
+                    <li key={one.attempt} className="flex items-center gap-2 text-meta">
+                      <Junction kind={one.failed ? "danger" : "here"} size={5} />
+                      <span className={one.failed ? "text-danger" : "text-ink-muted"}>
+                        #{one.attempt} {one.failed ? "failed" : "succeeded"}
+                      </span>
+                      <Mono className="ml-auto text-ink-subtle">
+                        {stamp(one.startedAt).slice(11)}
+                      </Mono>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+            <KeyValues
+              rows={[
+                { label: "Received", value: stamp(run.createdAt), mono: true },
+                { label: "Started", value: run.startedAt ? stamp(run.startedAt) : "—", mono: true },
+                {
+                  label: "Finished",
+                  value: run.finishedAt ? stamp(run.finishedAt) : "—",
+                  mono: true,
+                },
+                {
+                  label: "Worker",
+                  value: insight.data?.worker
+                    ? `${insight.data.worker.name}${insight.data.worker.pool ? ` · ${insight.data.worker.pool}` : ""}`
+                    : "—",
+                },
+                {
+                  label: "Time limit",
+                  value: insight.data?.timeoutSeconds ? `${insight.data.timeoutSeconds} s` : "—",
+                },
+                ...(run.concurrency
+                  ? [
+                      {
+                        label: "Concurrency key",
+                        // A long value is kept as its hash; its start is enough to tell two apart.
+                        value: `${
+                          run.concurrency.value === ""
+                            ? "(none)"
+                            : run.concurrency.value.length > 40
+                              ? `${run.concurrency.value.slice(0, 19)}…`
+                              : run.concurrency.value
+                        } · ${
+                          run.concurrency.limit === 1
+                            ? "one at a time"
+                            : `${run.concurrency.limit} at a time`
+                        }`,
+                        mono: true,
+                      },
+                    ]
+                  : []),
+              ]}
             />
-          </section>
-          <Tabs
-            label="What it was given and what it gave"
-            tabs={[
-              {
-                id: "input",
-                label: "Input",
-                content: (
-                  <div className="pt-3">
-                    <JsonView label="Input" value={run.input} maxHeight="24rem" />
-                  </div>
-                ),
-              },
-              {
-                id: "output",
-                label: run.state === "failed" ? "Error" : "Output",
-                content: (
-                  <div className="pt-3">
-                    {run.state === "succeeded" ? (
-                      <ResultView label="Output" value={run.output} maxHeight="24rem" />
-                    ) : (
-                      <JsonView
-                        label={run.state === "failed" ? "Error" : "Output"}
-                        tone={run.state === "failed" ? "danger" : "plain"}
-                        maxHeight="24rem"
-                        value={run.state === "failed" ? { error: run.error } : undefined}
-                      />
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-          />
-        </div>
-      </div>
+            {insight.data && insight.data.uses.length > 0 ? (
+              <section aria-labelledby="uses" className="flex flex-col gap-1.5">
+                <h2 id="uses" className="m-0 text-label text-ink-subtle uppercase">
+                  Uses
+                </h2>
+                {insight.data.uses.map((one) => (
+                  <Link
+                    key={one.connection}
+                    to={`${link}/connections`}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <Mono>{one.connection}</Mono>
+                    <Tag tone={one.bound ? "live" : "production"}>
+                      {one.bound ? "Bound" : "Not bound"}
+                    </Tag>
+                  </Link>
+                ))}
+              </section>
+            ) : null}
+            {run.alert?.handlerRunId ? (
+              <Link to={`${link}/runs/${String(run.alert.handlerRunId)}`} className="text-meta">
+                The failure handler's run
+              </Link>
+            ) : null}
+            {run.alert?.suppressed && typeof run.alert.sameAs === "string" ? (
+              <p className="m-0 text-meta text-ink-muted">
+                No alert was sent: it is counted on{" "}
+                <Link to={`${link}/runs/${run.alert.sameAs}`}>the alert of an earlier failure</Link>
+                , sent less than ten minutes before.
+              </p>
+            ) : null}
+          </aside>
+        }
+        second={
+          <div className="flex min-w-0 flex-col gap-4 lg:pl-4">
+            {run.state === "failed" && run.error ? (
+              <div className="flex flex-col gap-2 rounded-panel border border-danger/40 bg-danger-soft/40 p-3">
+                <span className="flex items-center gap-2 font-medium text-danger">
+                  <CircleX aria-hidden="true" size={14} /> Why it failed
+                </span>
+                <p className="m-0 font-mono text-code break-words whitespace-pre-wrap">
+                  {run.error.message}
+                </p>
+              </div>
+            ) : null}
+            {diagnosis ? (
+              <div className="rounded-panel border border-line">
+                <NextStep
+                  tone="attention"
+                  icon={<Lightbulb aria-hidden="true" size={16} />}
+                  title={diagnosis.cause}
+                  detail={diagnosis.next}
+                  action={
+                    diagnosis.section ? (
+                      <Button size="small" onClick={() => navigate(`${link}/${diagnosis.section}`)}>
+                        Open {diagnosis.section}
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              </div>
+            ) : null}
+            {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
+            {/* From 1920 px the log and what the run was given stand side by side. */}
+            <div className="flex flex-col gap-4 3xl:grid 3xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] 3xl:items-start">
+              <section aria-label="Log" className="flex min-w-0 flex-col gap-2">
+                <LogWindowNote earlier={earlier} onDownload={wholeLog} />
+                <LogViewer
+                  lines={lines}
+                  firstLine={earlier + 1}
+                  live={active}
+                  fileName={logFile}
+                  onDownload={wholeLog}
+                  empty={active ? "Waiting for the first line…" : "The script logged nothing."}
+                />
+              </section>
+              <div className="flex min-w-0 flex-col gap-4">
+                {run.state === "failed" || run.state === "canceled" ? (
+                  <RunCompare
+                    root={root}
+                    link={link}
+                    kind="run"
+                    id={run.id}
+                    input={run.input}
+                    durationMs={
+                      run.startedAt && run.finishedAt
+                        ? Date.parse(run.finishedAt) - Date.parse(run.startedAt)
+                        : null
+                    }
+                  />
+                ) : null}
+                <Tabs
+                  value={ioTab}
+                  onChange={setIoTab}
+                  label="What it was given and what it gave"
+                  tabs={[
+                    {
+                      id: "input",
+                      label: "Input",
+                      content: (
+                        <div className="pt-3">
+                          <JsonView label="Input" value={run.input} maxHeight="24rem" />
+                        </div>
+                      ),
+                    },
+                    {
+                      id: "output",
+                      label: run.state === "failed" ? "Error" : "Output",
+                      content: (
+                        <div className="pt-3">
+                          {run.state === "succeeded" ? (
+                            <ResultView label="Output" value={run.output} maxHeight="24rem" />
+                          ) : (
+                            <JsonView
+                              label={run.state === "failed" ? "Error" : "Output"}
+                              tone={run.state === "failed" ? "danger" : "plain"}
+                              maxHeight="24rem"
+                              value={run.state === "failed" ? { error: run.error } : undefined}
+                            />
+                          )}
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            </div>
+          </div>
+        }
+      />
 
       {editing ? (
         <InputDialog
@@ -594,8 +697,92 @@ function FlowRunHeader({
     if (sure) await retry({ from: "start", bundle }).catch(notify.error);
   };
 
+  const cancel = async () => {
+    const sure = await ask.confirm({
+      title: "Cancel this flow run?",
+      text: "Steps in progress are canceled too.",
+      action: "Cancel flow run",
+      cancel: "Keep running",
+      danger: true,
+    });
+    if (!sure) return;
+    await api
+      .post(`${root}/flow-runs/${run.id}/cancel`)
+      .then(() => notify.info("Canceling. Steps that are running are stopped."))
+      .catch(notify.error);
+    refresh();
+  };
+
   return (
     <>
+      <Current
+        object={{
+          heading: "This run",
+          commands: live
+            ? [
+                {
+                  key: "cancel",
+                  label: "Cancel this flow run",
+                  icon: CircleX,
+                  danger: true,
+                  run: cancel,
+                },
+              ]
+            : [
+                ...(finishedBadly
+                  ? [
+                      {
+                        key: "retry",
+                        label: "Retry from the failed step",
+                        icon: RotateCcw,
+                        run: () => fromFailed(),
+                      },
+                    ]
+                  : []),
+                ...(finishedBadly && fix !== undefined
+                  ? [
+                      {
+                        key: "retry-fix",
+                        label: `Retry from the failed step on v${fix}`,
+                        icon: RotateCcw,
+                        run: () => fromFailed("active"),
+                      },
+                    ]
+                  : []),
+                {
+                  key: "rerun",
+                  label: "Run again from the start",
+                  icon: RotateCcw,
+                  run: () => fromStart("original"),
+                },
+                {
+                  key: "edit",
+                  label: `Open ${run.flow} in the editor`,
+                  icon: Workflow,
+                  run: () => navigate(`${link}/flows/edit/${run.flow}`),
+                },
+                {
+                  key: "compare",
+                  label: "Compare with the last success",
+                  icon: GitCompareArrows,
+                  run: () => compareWithLastSuccess(root, link, "flow_run", run.id),
+                },
+                {
+                  key: "copy",
+                  label: "Copy the run ID",
+                  icon: Copy,
+                  run: () => copyText(run.id, "Run ID copied."),
+                },
+              ],
+          pin: {
+            kind: "flow_run",
+            ref: run.id,
+            id: run.id,
+            workspaceId: workspaceIdOf(root),
+            title: run.flow,
+          },
+        }}
+      />
       <RunHeader
         reconnecting={reconnecting}
         link={link}
@@ -622,25 +809,7 @@ function FlowRunHeader({
         actions={
           <>
             {live ? (
-              <Button
-                size="small"
-                variant="danger"
-                onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: "Cancel this flow run?",
-                    text: "Steps in progress are canceled too.",
-                    action: "Cancel flow run",
-                    cancel: "Keep running",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await api
-                    .post(`${root}/flow-runs/${run.id}/cancel`)
-                    .then(() => notify.info("Canceling. Steps that are running are stopped."))
-                    .catch(notify.error);
-                  refresh();
-                }}
-              >
+              <Button size="small" variant="danger" onClick={cancel}>
                 Cancel flow run
               </Button>
             ) : (
@@ -682,6 +851,20 @@ function FlowRunHeader({
           </>
         }
       />
+      {finishedBadly ? (
+        <div className="mt-4">
+          <RunCompare
+            root={root}
+            link={link}
+            kind="flow_run"
+            id={run.id}
+            input={run.input}
+            durationMs={
+              run.finishedAt ? Date.parse(run.finishedAt) - Date.parse(run.createdAt) : null
+            }
+          />
+        </div>
+      ) : null}
       {editing ? (
         <InputDialog
           open
@@ -706,4 +889,25 @@ export function ToRunPage({ to }: { to: string }) {
     navigate(to, { replace: true });
   }, [to]);
   return null;
+}
+
+/** The workspace's ID, from its API root: `/tenants/:t/workspaces/:w`. */
+const workspaceIdOf = (root: string) => root.split("/workspaces/")[1]?.split("/")[0] ?? null;
+
+/** Opens the comparison with the last success, from the palette, or says there is none. */
+async function compareWithLastSuccess(
+  root: string,
+  link: string,
+  kind: "run" | "flow_run",
+  id: string,
+) {
+  try {
+    const previous = await api.get<PreviousSuccess>(
+      `${root}/${kind === "run" ? "runs" : "flow-runs"}/${id}/previous-success`,
+    );
+    if (previous.run) navigate(`${link}/runs/${id}/compare/${previous.run.id}`);
+    else notify.info("It has not succeeded before here, so there is nothing to compare it with.");
+  } catch (error) {
+    notify.error(error);
+  }
 }

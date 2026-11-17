@@ -1,6 +1,7 @@
 import { Button } from "@vynxlabs/ui";
 import { Redo2, Undo2 } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
+import { keysOf, useShortcut } from "../../kit/keys.ts";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";
 import { useNavigationGuard } from "../../router.tsx";
@@ -14,11 +15,6 @@ export function savingWords(saving: Saving, saved: string): string {
   if (saving === "waiting" || saving === "saving") return "Saving…";
   return `Not saved: ${saving.failed}`;
 }
-
-/** Whether a key press is meant for a field being typed in, which has its own undo. */
-const inField = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
 /**
  * The one shell around both page editors, an app's and a dashboard's (08
@@ -43,6 +39,7 @@ export function EditorShell({
   outline,
   canvas,
   inspector,
+  saveNow,
 }: {
   title: string;
   saving: Saving;
@@ -61,23 +58,17 @@ export function EditorShell({
   /** Under the toolbar: the field that names it. */
   after?: ReactNode;
   notices?: ReactNode;
+  /** Saves at once, rather than a moment after the last change: ⌘S. */
+  saveNow?: () => void;
   outline: ReactNode;
   canvas: ReactNode;
   inspector: ReactNode;
 }) {
   useNavigationGuard(saving !== "saved", "A change is not saved yet.");
   const { undo, redo } = history;
-  useEffect(() => {
-    const keys = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
-      if (inField(event.target)) return;
-      event.preventDefault();
-      if (event.shiftKey) redo();
-      else undo();
-    };
-    addEventListener("keydown", keys);
-    return () => removeEventListener("keydown", keys);
-  }, [undo, redo]);
+  useShortcut("undo", undo);
+  useShortcut("redo", redo);
+  useShortcut("save", () => saveNow?.(), { enabled: saveNow !== undefined });
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3">
@@ -99,7 +90,8 @@ export function EditorShell({
                 size="small"
                 variant="quiet"
                 aria-label={history.undoLabel ? `Undo ${history.undoLabel}` : "Undo"}
-                title={history.undoLabel ? `Undo ${history.undoLabel} (⌘Z)` : "Nothing to undo"}
+                tooltip={history.undoLabel ? `Undo ${history.undoLabel}` : "Nothing to undo"}
+                keys={keysOf("undo")}
                 disabled={!history.undoLabel}
                 onClick={undo}
               >
@@ -109,7 +101,8 @@ export function EditorShell({
                 size="small"
                 variant="quiet"
                 aria-label={history.redoLabel ? `Redo ${history.redoLabel}` : "Redo"}
-                title={history.redoLabel ? `Redo ${history.redoLabel} (⇧⌘Z)` : "Nothing to redo"}
+                tooltip={history.redoLabel ? `Redo ${history.redoLabel}` : "Nothing to redo"}
+                keys={keysOf("redo")}
                 disabled={!history.redoLabel}
                 onClick={redo}
               >

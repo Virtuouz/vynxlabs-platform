@@ -123,6 +123,8 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
+  // The theme is a setting kept on the server now: the admin is left on the default.
+  await api("DELETE", "/me/preferences/theme").catch(() => {});
   await api("PUT", "/instance/branding", {
     productName: before.productName,
     theme: { tokens: {}, dark: {} },

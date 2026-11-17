@@ -1,8 +1,10 @@
 import { Button, JsonView } from "@vynxlabs/ui";
+import { FileCode2, ListChecks } from "lucide-react";
 import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
+import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
@@ -554,58 +556,86 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
   return (
     <Gate found={found} list={`${link}/scripts`} noun="script">
       {(script) => (
-        <ObjectPage
-          back={{ to: `${link}/scripts`, label: "Scripts" }}
-          eyebrow="Script"
-          title={script.path}
-          state={
-            script.lastRun ? (
-              <span className="flex items-center gap-2 text-meta text-ink-muted">
-                Last run <StatePill state={script.lastRun.state} />
-                <Link to={`${link}/runs/${script.lastRun.id}`}>
-                  {fromNow(script.lastRun.createdAt)}
-                </Link>
-              </span>
-            ) : (
-              <span className="text-meta text-ink-muted">Not run yet</span>
-            )
-          }
-          actions={
-            <Button
-              variant="primary"
-              onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
-            >
-              Open the code
-            </Button>
-          }
-          meta={
-            script.description ? (
-              <p className="m-0 max-w-measure text-ink-muted">{script.description}</p>
-            ) : null
-          }
-          tabs={[
-            {
-              id: "runs",
-              label: "Runs",
-              content: <RecentRuns root={root} link={link} path={script.path} />,
-            },
-            {
-              id: "triggers",
-              label: "Triggers",
-              content: <TriggersOf root={root} link={link} kind="script" path={script.path} />,
-            },
-            {
-              id: "used-by",
-              label: "Used by",
-              content: <ReferenceList root={root} link={link} kind="script" name={script.path} />,
-            },
-            {
-              id: "source",
-              label: "Source",
-              content: <SourceAt root={root} link={link} path={script.path} />,
-            },
-          ]}
-        />
+        <>
+          <Current
+            object={{
+              heading: "This script",
+              commands: [
+                {
+                  key: "edit",
+                  label: "Open the code",
+                  icon: FileCode2,
+                  run: () => navigate(`${link}/scripts/edit/${script.path}`),
+                },
+                {
+                  key: "runs",
+                  label: "See its runs",
+                  icon: ListChecks,
+                  run: () => navigate(`${link}/runs?target=${encodeURIComponent(script.path)}`),
+                },
+              ],
+              pin: {
+                kind: "script",
+                ref: script.path,
+                id: script.path,
+                workspaceId: root.split("/workspaces/")[1] ?? null,
+                title: script.path,
+              },
+            }}
+          />
+          <ObjectPage
+            back={{ to: `${link}/scripts`, label: "Scripts" }}
+            eyebrow="Script"
+            title={script.path}
+            state={
+              script.lastRun ? (
+                <span className="flex items-center gap-2 text-meta text-ink-muted">
+                  Last run <StatePill state={script.lastRun.state} />
+                  <Link to={`${link}/runs/${script.lastRun.id}`}>
+                    {fromNow(script.lastRun.createdAt)}
+                  </Link>
+                </span>
+              ) : (
+                <span className="text-meta text-ink-muted">Not run yet</span>
+              )
+            }
+            actions={
+              <Button
+                variant="primary"
+                onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
+              >
+                Open the code
+              </Button>
+            }
+            meta={
+              script.description ? (
+                <p className="m-0 max-w-measure text-ink-muted">{script.description}</p>
+              ) : null
+            }
+            tabs={[
+              {
+                id: "runs",
+                label: "Runs",
+                content: <RecentRuns root={root} link={link} path={script.path} />,
+              },
+              {
+                id: "triggers",
+                label: "Triggers",
+                content: <TriggersOf root={root} link={link} kind="script" path={script.path} />,
+              },
+              {
+                id: "used-by",
+                label: "Used by",
+                content: <ReferenceList root={root} link={link} kind="script" name={script.path} />,
+              },
+              {
+                id: "source",
+                label: "Source",
+                content: <SourceAt root={root} link={link} path={script.path} />,
+              },
+            ]}
+          />
+        </>
       )}
     </Gate>
   );

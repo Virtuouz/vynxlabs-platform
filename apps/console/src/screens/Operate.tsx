@@ -1,11 +1,22 @@
 import { Button, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
-import { CirclePause, CirclePlay, Plus, ShieldAlert, Zap } from "lucide-react";
+import {
+  CircleCheck,
+  CirclePause,
+  CirclePlay,
+  CircleX,
+  Plus,
+  ShieldAlert,
+  Zap,
+} from "lucide-react";
 import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
+import { Current } from "../kit/current.ts";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
+import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { stamp } from "./Execution.tsx";
@@ -83,7 +94,8 @@ export function TriggersWorkbench({
         triggerKey(one) === triggerKey(trigger) ? { ...one, paused } : one,
       ),
     }));
-  const [type, setType] = useState("all");
+  // The kind shown is in the address, so a reload or a link keeps it.
+  const [type, setType] = useUrlParam("kind", "all");
   // The chosen trigger lives in the address, so a run can link straight to the trigger
   // that started it.
   const [chosen, choose] = useQueryValue("trigger");
@@ -93,6 +105,83 @@ export function TriggersWorkbench({
   const open = items.find((one) => triggerKey(one) === chosen);
   const pausedCount = items.filter((one) => one.paused).length;
   const [creating, setCreating] = useState(false);
+  const pauseAt = (trigger: Trigger) =>
+    `${root}/trigger-pauses/${trigger.path}${trigger.node ? `?node=${encodeURIComponent(trigger.node)}` : ""}`;
+  /** Pauses a trigger, with a reason everyone here sees. It shows paused at once. */
+  const pause = async (trigger: Trigger) => {
+    const reason = await ask.prompt({
+      title: `Pause ${trigger.path}?`,
+      label: "Why (shown to everyone here)",
+      action: "Pause",
+      danger: production,
+      required: false,
+    });
+    if (reason === null) return;
+    const undo = showPaused(trigger, {
+      at: new Date().toISOString(),
+      by: null,
+      reason: reason ?? "",
+    });
+    try {
+      await api.put(pauseAt(trigger), reason ? { reason } : {});
+      notify.success(`${trigger.path} is paused. Nothing it would start is started.`);
+    } catch (caught) {
+      undo();
+      notify.error(caught);
+    }
+  };
+  const resume = async (trigger: Trigger) => {
+    const undo = showPaused(trigger, null);
+    try {
+      await api.delete(pauseAt(trigger));
+      notify.success(`${trigger.path} runs again.`);
+    } catch (caught) {
+      undo();
+      notify.error(caught);
+    }
+  };
+  // Triggers checked, to pause or resume together.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const batch = useBatch();
+  const pauseMany = async (keys: string[], paused: boolean) => {
+    const chosen = items.filter((one) => keys.includes(triggerKey(one)));
+    let reason: string | null | undefined;
+    if (paused) {
+      reason = await ask.prompt({
+        title: `Pause ${chosen.length} trigger${chosen.length === 1 ? "" : "s"}?`,
+        text:
+          chosen.length > 3
+            ? `${chosen
+                .slice(0, 3)
+                .map((one) => one.path)
+                .join(", ")} and ${chosen.length - 3} more.`
+            : `${chosen.map((one) => one.path).join(", ")}.`,
+        label: "Why (shown to everyone here)",
+        action: "Pause",
+        danger: production,
+        required: false,
+      });
+      if (reason === null) return;
+    }
+    const send = (subset: Trigger[]) =>
+      api.post<BatchAnswer>(`${root}/trigger-pauses/batch`, {
+        paused,
+        ...(reason ? { reason } : {}),
+        triggers: subset.map((one) => ({
+          path: one.path,
+          ...(one.node ? { node: one.node } : {}),
+        })),
+      });
+    const idOf = (one: Trigger) => (one.node ? `${one.path}#${one.node}` : one.path);
+    await batch.run(() => send(chosen), {
+      title: paused ? "Pausing triggers" : "Resuming triggers",
+      done: (count) =>
+        `${count} trigger${count === 1 ? "" : "s"} ${paused ? "paused" : "resumed"}.`,
+      retry: (ids) => send(chosen.filter((one) => ids.includes(idOf(one)))),
+    });
+    setChecked(new Set());
+    list.reload();
+  };
   const fireNow = async (row: Trigger) => {
     try {
       const started = await api.post<{ id: string }>(`${root}/schedule-firings`, {
@@ -106,7 +195,10 @@ export function TriggersWorkbench({
     }
   };
   const newTrigger = production ? (
-    <Button disabled title="Triggers change in a dev workspace and reach production by promotion.">
+    <Button
+      disabled
+      tooltip="Triggers change in a dev workspace and reach production by promotion."
+    >
       <Plus aria-hidden="true" size={16} /> New trigger
     </Button>
   ) : (
@@ -244,6 +336,28 @@ export function TriggersWorkbench({
         rowKey={triggerKey}
         selected={chosen ?? undefined}
         onSelect={(row) => choose(triggerKey(row))}
+        table={{
+          checked,
+          onCheck: setChecked,
+          batch: (keys) => (
+            <>
+              <Button
+                size="small"
+                disabled={batch.busy}
+                onClick={() => void pauseMany([...keys], true)}
+              >
+                <CirclePause aria-hidden="true" size={14} /> Pause
+              </Button>
+              <Button
+                size="small"
+                disabled={batch.busy}
+                onClick={() => void pauseMany([...keys], false)}
+              >
+                <CirclePlay aria-hidden="true" size={14} /> Resume
+              </Button>
+            </>
+          ),
+        }}
         error={list.error}
         onRetry={list.reload}
         empty={{
@@ -252,171 +366,171 @@ export function TriggersWorkbench({
         }}
         inspector={
           open ? (
-            <Inspector
-              open
-              label="The chosen trigger"
-              title={open.path}
-              eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
-              onClose={() => choose(null)}
-              footer={
-                open.paused ? (
-                  <Button
-                    variant="primary"
-                    onClick={async () => {
-                      const undo = showPaused(open, null);
-                      try {
-                        await api.delete(
-                          `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
-                        );
-                        notify.success(`${open.path} runs again.`);
-                      } catch (caught) {
-                        undo();
-                        notify.error(caught);
-                      }
-                    }}
-                  >
-                    <CirclePlay aria-hidden="true" size={16} /> Resume
-                  </Button>
-                ) : (
-                  <span className="flex flex-wrap gap-2">
-                    {open.type === "schedule" && !open.node ? (
-                      <Button variant="primary" onClick={() => void fireNow(open)}>
-                        <Zap aria-hidden="true" size={16} /> Fire now
-                      </Button>
-                    ) : null}
-                    <Button
-                      onClick={async () => {
-                        const reason = await ask.prompt({
-                          title: `Pause ${open.path}?`,
-                          label: "Why (shown to everyone here)",
-                          action: "Pause",
-                          danger: production,
-                          required: false,
-                        });
-                        if (reason === null) return;
-                        const undo = showPaused(open, {
-                          at: new Date().toISOString(),
-                          by: null,
-                          reason: reason ?? "",
-                        });
-                        try {
-                          await api.put(
-                            `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
-                            reason ? { reason } : {},
-                          );
-                          notify.success(
-                            `${open.path} is paused. Nothing it would start is started.`,
-                          );
-                        } catch (caught) {
-                          undo();
-                          notify.error(caught);
-                        }
-                      }}
-                    >
-                      <CirclePause aria-hidden="true" size={16} /> Pause this trigger
+            <>
+              <Current
+                object={{
+                  heading: "This trigger",
+                  commands: open.paused
+                    ? [
+                        {
+                          key: "resume",
+                          label: `Resume ${open.path}`,
+                          icon: CirclePlay,
+                          run: () => resume(open),
+                        },
+                      ]
+                    : [
+                        {
+                          key: "pause",
+                          label: `Pause ${open.path}…`,
+                          icon: CirclePause,
+                          run: () => pause(open),
+                        },
+                        ...(open.type === "schedule" && !open.node
+                          ? [
+                              {
+                                key: "fire",
+                                label: "Fire it now",
+                                icon: Zap,
+                                run: () => fireNow(open),
+                              },
+                            ]
+                          : []),
+                      ],
+                  pin: {
+                    kind: open.type === "schedule" ? "schedule" : "trigger",
+                    ref: open.path,
+                    id: open.path,
+                    workspaceId: root.split("/workspaces/")[1] ?? null,
+                    title: open.path,
+                  },
+                }}
+              />
+              <Inspector
+                open
+                label="The chosen trigger"
+                title={open.path}
+                eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
+                onClose={() => choose(null)}
+                footer={
+                  open.paused ? (
+                    <Button variant="primary" onClick={() => void resume(open)}>
+                      <CirclePlay aria-hidden="true" size={16} /> Resume
                     </Button>
-                  </span>
-                )
-              }
-            >
-              <div className="flex flex-col gap-4">
-                {open.paused ? (
-                  <Notice tone="attention">
-                    Paused {fromNow(open.paused.at)}
-                    {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start is
-                    started until it is resumed.
-                  </Notice>
-                ) : null}
-                {open.lastRefusal ? (
-                  <div className="rounded-panel border border-line">
-                    <NextStep
-                      tone="danger"
-                      icon={<ShieldAlert aria-hidden="true" size={16} />}
-                      title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
-                      detail={open.lastRefusal.problem || undefined}
-                    />
-                  </div>
-                ) : null}
-                <KeyValues
-                  rows={[
-                    {
-                      label: "Starts",
-                      value: (
-                        <Link to={targetLink(link, open)}>
-                          {open.script} ({open.targetKind})
-                        </Link>
-                      ),
-                      mono: true,
-                    },
-                    ...(open.cron
-                      ? [
-                          {
-                            label: "Schedule",
-                            value: `${open.cron} · ${open.timezone ?? "UTC"}`,
-                            mono: true,
-                          },
-                        ]
-                      : []),
-                    ...(open.event ? [{ label: "Event", value: open.event, mono: true }] : []),
-                    ...(open.overlap === "skip"
-                      ? [
-                          {
-                            label: "Overlap",
-                            value:
-                              open.lastSkippedAt && open.lastSkipReason !== "backlog"
-                                ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
-                                : "Skips a time while its last run goes.",
-                          },
-                        ]
-                      : []),
-                    ...(open.lastSkipReason === "backlog" && open.lastSkippedAt
-                      ? [
-                          {
-                            label: "Backlog",
-                            value: `Skipped ${fromNow(open.lastSkippedAt)}: the workspace already had too many runs waiting.`,
-                          },
-                        ]
-                      : []),
-                    {
-                      label: "Next",
-                      value: open.nextFireAt
-                        ? `${stamp(open.nextFireAt)} (${fromNow(open.nextFireAt)})`
-                        : "On request",
-                    },
-                    {
-                      label: "Last fired",
-                      value: open.lastFiredAt
-                        ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
-                        : "Not fired yet. Runs started by hand are not counted.",
-                    },
-                  ]}
-                />
-                {open.lastRun ? (
-                  <Link to={runLink(link, open.lastRun)} className="text-meta">
-                    Open the last run it started
-                  </Link>
-                ) : null}
-                {open.url ? (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-label text-ink-subtle uppercase">
-                      {open.type === "form" ? "Form address" : "Webhook address"}
+                  ) : (
+                    <span className="flex flex-wrap gap-2">
+                      {open.type === "schedule" && !open.node ? (
+                        <Button variant="primary" onClick={() => void fireNow(open)}>
+                          <Zap aria-hidden="true" size={16} /> Fire now
+                        </Button>
+                      ) : null}
+                      <Button onClick={() => void pause(open)}>
+                        <CirclePause aria-hidden="true" size={16} /> Pause this trigger
+                      </Button>
                     </span>
-                    <code className="rounded-control bg-code-bg p-2 font-mono text-code break-all select-all">
-                      {open.type === "form" ? "" : "POST "}
-                      {open.url}
-                    </code>
-                    <CopyButton value={open.url} label="Copy address" />
-                  </div>
-                ) : open.type === "webhook" || open.type === "form" ? (
-                  <p className="m-0 text-meta text-ink-subtle">
-                    The address is shown to those who manage triggers.
-                  </p>
-                ) : null}
-              </div>
-            </Inspector>
+                  )
+                }
+              >
+                <div className="flex flex-col gap-4">
+                  {open.paused ? (
+                    <Notice tone="attention">
+                      Paused {fromNow(open.paused.at)}
+                      {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start
+                      is started until it is resumed.
+                    </Notice>
+                  ) : null}
+                  {open.lastRefusal ? (
+                    <div className="rounded-panel border border-line">
+                      <NextStep
+                        tone="danger"
+                        icon={<ShieldAlert aria-hidden="true" size={16} />}
+                        title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
+                        detail={open.lastRefusal.problem || undefined}
+                      />
+                    </div>
+                  ) : null}
+                  <KeyValues
+                    rows={[
+                      {
+                        label: "Starts",
+                        value: (
+                          <Link to={targetLink(link, open)}>
+                            {open.script} ({open.targetKind})
+                          </Link>
+                        ),
+                        mono: true,
+                      },
+                      ...(open.cron
+                        ? [
+                            {
+                              label: "Schedule",
+                              value: `${open.cron} · ${open.timezone ?? "UTC"}`,
+                              mono: true,
+                            },
+                          ]
+                        : []),
+                      ...(open.event ? [{ label: "Event", value: open.event, mono: true }] : []),
+                      ...(open.overlap === "skip"
+                        ? [
+                            {
+                              label: "Overlap",
+                              value:
+                                open.lastSkippedAt && open.lastSkipReason !== "backlog"
+                                  ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
+                                  : "Skips a time while its last run goes.",
+                            },
+                          ]
+                        : []),
+                      ...(open.lastSkipReason === "backlog" && open.lastSkippedAt
+                        ? [
+                            {
+                              label: "Backlog",
+                              value: `Skipped ${fromNow(open.lastSkippedAt)}: the workspace already had too many runs waiting.`,
+                            },
+                          ]
+                        : []),
+                      {
+                        label: "Next",
+                        value: open.nextFireAt
+                          ? `${stamp(open.nextFireAt)} (${fromNow(open.nextFireAt)})`
+                          : "On request",
+                      },
+                      {
+                        label: "Last fired",
+                        value: open.lastFiredAt
+                          ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
+                          : "Not fired yet. Runs started by hand are not counted.",
+                      },
+                    ]}
+                  />
+                  {open.lastRun ? (
+                    <Link to={runLink(link, open.lastRun)} className="text-meta">
+                      Open the last run it started
+                    </Link>
+                  ) : null}
+                  {open.url ? (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-label text-ink-subtle uppercase">
+                        {open.type === "form" ? "Form address" : "Webhook address"}
+                      </span>
+                      <code className="rounded-control bg-code-bg p-2 font-mono text-code break-all select-all">
+                        {open.type === "form" ? "" : "POST "}
+                        {open.url}
+                      </code>
+                      <CopyButton value={open.url} label="Copy address" />
+                    </div>
+                  ) : open.type === "webhook" || open.type === "form" ? (
+                    <p className="m-0 text-meta text-ink-subtle">
+                      The address is shown to those who manage triggers.
+                    </p>
+                  ) : null}
+                </div>
+              </Inspector>
+            </>
           ) : null
         }
       />
+      {batch.dialog}
     </>
   );
 }
@@ -442,8 +556,9 @@ const SOURCE: Record<string, string> = {
 
 /** What was published, newest first, with what each one started. */
 export function EventsWorkbench({ root, link }: { root: string; link: string }) {
-  const [name, setName] = useState("");
-  const [applied, setApplied] = useState("");
+  // The name searched for is in the address, so a reload, a link or a saved view keeps it.
+  const [applied, setApplied] = useUrlParam("name", "");
+  const [name, setName] = useState(applied);
   const list = useLoad<{ items: EventRow[] }>(
     `${root}/events?limit=100${applied ? `&name=${encodeURIComponent(applied)}` : ""}`,
   );
@@ -459,7 +574,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
           className="flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            setApplied(name.trim());
+            setApplied(name.trim() || undefined);
           }}
         >
           <div className="w-72 max-w-full">
@@ -478,12 +593,20 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
               variant="quiet"
               onClick={() => {
                 setName("");
-                setApplied("");
+                setApplied(undefined);
               }}
             >
               Show every event
             </Button>
           ) : null}
+          <span className="ml-auto">
+            <ViewsMenu
+              tenantId={root.split("/tenants/")[1]?.split("/")[0] ?? ""}
+              workspaceId={root.split("/workspaces/")[1]?.split("/")[0]}
+              list="events"
+              omit={["item"]}
+            />
+          </span>
         </form>
       }
       columns={[
@@ -651,6 +774,46 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const nameOf = (id: string) => workspaces.data?.items.find((one) => one.id === id)?.name ?? "";
   const key = (row: { flowRunId: string; node: string }) => `${row.flowRunId}-${row.node}`;
+  // Approvals checked for one decision, with one comment.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const batch = useBatch();
+  const decideMany = async (keys: string[], decision: "approve" | "reject") => {
+    const rows = (waiting.data?.items ?? []).filter((row) => keys.includes(key(row)));
+    const names = rows
+      .slice(0, 3)
+      .map((row) => row.title)
+      .join(", ");
+    const comment = await ask.prompt({
+      title: `${decision === "approve" ? "Approve" : "Reject"} ${rows.length} decision${rows.length === 1 ? "" : "s"}?`,
+      text: rows.length > 3 ? `${names} and ${rows.length - 3} more.` : `${names}.`,
+      label: "Comment, kept with each decision",
+      action: decision === "approve" ? "Approve" : "Reject",
+      danger: decision === "reject",
+      required: false,
+    });
+    if (comment === null) return;
+    const send = (subset: typeof rows) =>
+      api.post<BatchAnswer>(`/tenants/${tenantId}/approvals/batch`, {
+        decision,
+        ...(comment ? { comment } : {}),
+        approvals: subset.map((row) => ({
+          workspaceId: row.workspaceId,
+          flowRunId: row.flowRunId,
+          node: row.node,
+        })),
+      });
+    const titleOf = (id: string) =>
+      rows.find((row) => `${row.flowRunId}/${row.node}` === id)?.title ?? id;
+    await batch.run(() => send(rows), {
+      title: decision === "approve" ? "Approving" : "Rejecting",
+      done: (count) =>
+        `${count} decision${count === 1 ? "" : "s"} ${decision === "approve" ? "approved" : "rejected"}.`,
+      name: titleOf,
+      retry: (ids) => send(rows.filter((row) => ids.includes(`${row.flowRunId}/${row.node}`))),
+    });
+    setChecked(new Set());
+    waiting.reload();
+  };
   const open = waiting.data?.items.find((one) => key(one) === chosen);
 
   const decide = async (row: Waiting, decision: "approve" | "reject") => {
@@ -770,114 +933,165 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
   }
 
   return (
-    <CollectionView<Waiting>
-      title="Approvals"
-      description="Flows that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
-      toolbar={chips}
-      columns={[
-        {
-          header: "Decision",
-          cell: (row) => {
-            const about = detailSummary(row.detail);
-            return (
-              <span className="flex flex-col">
-                <span className="font-medium">{row.title}</span>
-                {about ? <span className="text-ink-muted">{about}</span> : null}
-                <span className="text-meta text-ink-subtle">
-                  <Mono>{row.flow}</Mono> · {nameOf(row.workspaceId)}
+    <>
+      {batch.dialog}
+      <CollectionView<Waiting>
+        title="Approvals"
+        description="Flows that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
+        toolbar={chips}
+        columns={[
+          {
+            header: "Decision",
+            cell: (row) => {
+              const about = detailSummary(row.detail);
+              return (
+                <span className="flex flex-col">
+                  <span className="font-medium">{row.title}</span>
+                  {about ? <span className="text-ink-muted">{about}</span> : null}
+                  <span className="text-meta text-ink-subtle">
+                    <Mono>{row.flow}</Mono> · {nameOf(row.workspaceId)}
+                  </span>
                 </span>
-              </span>
-            );
+              );
+            },
           },
-        },
-        {
-          header: "Waiting",
-          cell: (row) => (
-            <StatePill state="waiting">{fromNow(row.waitingSince).replace(" ago", "")}</StatePill>
-          ),
-        },
-        {
-          header: "Who decides",
-          priority: 3,
-          cell: (row) => (
-            <span className="text-ink-muted">
-              {row.approvers?.text ?? "Anyone who may approve"}
-            </span>
-          ),
-        },
-        {
-          header: "",
-          priority: 2,
-          align: "end",
-          cell: (row) => (
-            <span className="inline-flex gap-2">
-              <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
-                Approve
-              </Button>
-              <Button size="small" onClick={() => decide(row, "reject")}>
-                Reject
-              </Button>
-            </span>
-          ),
-        },
-      ]}
-      rows={waiting.data?.items}
-      rowKey={key}
-      selected={chosen}
-      onSelect={(row) => setChosen(key(row))}
-      error={waiting.error}
-      onRetry={waiting.reload}
-      empty={{
-        title: "Nothing is waiting for you",
-        text: "When a flow pauses for a decision you may make, it appears here.",
-      }}
-      inspector={
-        open ? (
-          <Inspector
-            open
-            label="The chosen approval"
-            title={open.title}
-            eyebrow={`${open.flow} · ${nameOf(open.workspaceId)}`}
-            onClose={() => setChosen(undefined)}
-            footer={
-              <>
-                <Button variant="primary" onClick={() => decide(open, "approve")}>
+          {
+            header: "Waiting",
+            cell: (row) => (
+              <StatePill state="waiting">{fromNow(row.waitingSince).replace(" ago", "")}</StatePill>
+            ),
+          },
+          {
+            header: "Who decides",
+            priority: 3,
+            cell: (row) => (
+              <span className="text-ink-muted">
+                {row.approvers?.text ?? "Anyone who may approve"}
+              </span>
+            ),
+          },
+          {
+            header: "",
+            priority: 2,
+            align: "end",
+            cell: (row) => (
+              <span className="inline-flex gap-2">
+                <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
                   Approve
                 </Button>
-                <Button onClick={() => decide(open, "reject")}>Reject</Button>
-              </>
-            }
-          >
-            <div className="flex flex-col gap-4">
-              <KeyValues
-                rows={[
-                  {
-                    label: "Waiting since",
-                    value: `${stamp(open.waitingSince)} (${fromNow(open.waitingSince)})`,
-                  },
-                  ...(open.timesOutAt
-                    ? [
-                        {
-                          label: "Times out",
-                          value: `${stamp(open.timesOutAt)} (${fromNow(open.timesOutAt)})`,
-                        },
-                      ]
-                    : []),
-                  { label: "Who decides", value: open.approvers?.text ?? "Anyone who may approve" },
-                  { label: "Step", value: open.node, mono: true },
-                ]}
-              />
-              <div className="flex flex-col gap-1.5">
-                <span className="text-label text-ink-subtle uppercase">What it asks about</span>
-                <JsonView label="Detail" value={open.detail} maxHeight="24rem" />
-              </div>
-              <Button variant="quiet" onClick={() => navigate(runLinkOf(open))}>
-                Open the run's graph
+                <Button size="small" onClick={() => decide(row, "reject")}>
+                  Reject
+                </Button>
+              </span>
+            ),
+          },
+        ]}
+        rows={waiting.data?.items}
+        rowKey={key}
+        selected={chosen}
+        onSelect={(row) => setChosen(key(row))}
+        table={{
+          checked,
+          onCheck: setChecked,
+          batch: (keys) => (
+            <>
+              <Button
+                size="small"
+                variant="primary"
+                disabled={batch.busy}
+                onClick={() => void decideMany([...keys], "approve")}
+              >
+                Approve
               </Button>
-            </div>
-          </Inspector>
-        ) : null
-      }
-    />
+              <Button
+                size="small"
+                disabled={batch.busy}
+                onClick={() => void decideMany([...keys], "reject")}
+              >
+                Reject
+              </Button>
+            </>
+          ),
+        }}
+        error={waiting.error}
+        onRetry={waiting.reload}
+        empty={{
+          title: "Nothing is waiting for you",
+          text: "When a flow pauses for a decision you may make, it appears here.",
+        }}
+        inspector={
+          open ? (
+            <>
+              <Current
+                object={{
+                  heading: "This approval",
+                  commands: [
+                    {
+                      key: "approve",
+                      label: "Approve…",
+                      icon: CircleCheck,
+                      run: () => decide(open, "approve"),
+                    },
+                    {
+                      key: "reject",
+                      label: "Reject…",
+                      icon: CircleX,
+                      danger: true,
+                      run: () => decide(open, "reject"),
+                    },
+                  ],
+                }}
+              />
+              <Inspector
+                open
+                label="The chosen approval"
+                title={open.title}
+                eyebrow={`${open.flow} · ${nameOf(open.workspaceId)}`}
+                onClose={() => setChosen(undefined)}
+                footer={
+                  <>
+                    <Button variant="primary" onClick={() => decide(open, "approve")}>
+                      Approve
+                    </Button>
+                    <Button onClick={() => decide(open, "reject")}>Reject</Button>
+                  </>
+                }
+              >
+                <div className="flex flex-col gap-4">
+                  <KeyValues
+                    rows={[
+                      {
+                        label: "Waiting since",
+                        value: `${stamp(open.waitingSince)} (${fromNow(open.waitingSince)})`,
+                      },
+                      ...(open.timesOutAt
+                        ? [
+                            {
+                              label: "Times out",
+                              value: `${stamp(open.timesOutAt)} (${fromNow(open.timesOutAt)})`,
+                            },
+                          ]
+                        : []),
+                      {
+                        label: "Who decides",
+                        value: open.approvers?.text ?? "Anyone who may approve",
+                      },
+                      { label: "Step", value: open.node, mono: true },
+                    ]}
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-label text-ink-subtle uppercase">What it asks about</span>
+                    <JsonView label="Detail" value={open.detail} maxHeight="24rem" />
+                  </div>
+                  <Button variant="quiet" onClick={() => navigate(runLinkOf(open))}>
+                    Open the run's graph
+                  </Button>
+                </div>
+              </Inspector>
+            </>
+          ) : null
+        }
+      />
+    </>
   );
 }

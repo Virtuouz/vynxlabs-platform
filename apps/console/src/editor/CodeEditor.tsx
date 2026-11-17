@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { openPalette } from "../kit/keys.ts";
 
 export interface CodeEditorProps {
   /** Names the editor for screen readers: "Source of orders/sync". */
@@ -109,6 +110,8 @@ export function CodeEditor({
             latest.current.onSave?.(),
           );
         }
+        // The editor keeps ⌘K for its own chords; the console's palette is worth more here.
+        created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, openPalette);
         goTo.current = (to, column) => {
           const at = Math.min(Math.max(1, to), model.getLineCount());
           created.revealLineInCenter(at);

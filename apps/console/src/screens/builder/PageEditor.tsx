@@ -175,7 +175,7 @@ export function PageEditor({
                     size="small"
                     variant="quiet"
                     className="lg:justify-start"
-                    title={one.about}
+                    tooltip={one.about}
                     onClick={() => addWidget(one.type)}
                   >
                     <Plus size={14} aria-hidden="true" /> {one.label}

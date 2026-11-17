@@ -20,6 +20,7 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
+import { ViewsMenu } from "../kit/views.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam, useUrlState } from "../router.tsx";
 import {
@@ -248,6 +249,9 @@ function RowsBrowser(props: RowsBrowserProps) {
           >
             {compact ? "Standard rows" : "Compact rows"}
           </Button>
+          {viewsOf(props.rowsPath) ? (
+            <ViewsMenu {...(viewsOf(props.rowsPath) as ViewsOf)} omit={["row", "page"]} />
+          ) : null}
           {exportHref ? (
             <Button size="small" href={exportHref} download>
               <Download aria-hidden="true" size={14} /> CSV
@@ -1407,4 +1411,16 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
       )}
     </Page>
   );
+}
+
+type ViewsOf = { tenantId: string; workspaceId: string; list: string };
+/** A table's rows have saved views of their own, named for the table, kept to what a list name may be. */
+function viewsOf(rowsPath: string): ViewsOf | undefined {
+  const match = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)\/rows\/(.+)$/.exec(rowsPath);
+  if (!match) return undefined;
+  const [, tenantId, workspaceId, table] = match as unknown as [string, string, string, string];
+  const slug = `rows-${table.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return { tenantId, workspaceId, list: slug };
 }

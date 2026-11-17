@@ -267,14 +267,19 @@ export async function startTestApp(
     withHeaders: (headers: Record<string, string>) => client(headers),
     /** Every mutating route under `prefixes` that no test called successfully with an audit entry. */
     unexercised(include: (route: string) => boolean) {
-      return routes
-        .filter((route) => route.url.startsWith("/api/v1/"))
-        .flatMap((route) =>
-          ([] as string[]).concat(route.method).map((method) => `${method} ${route.url}`),
-        )
-        .filter((route) => !/^(GET|HEAD|OPTIONS) /.test(route))
-        .filter(include)
-        .filter((route) => !audited.has(route));
+      return (
+        routes
+          .filter((route) => route.url.startsWith("/api/v1/"))
+          .flatMap((route) =>
+            ([] as string[]).concat(route.method).map((method) => `${method} ${route.url}`),
+          )
+          .filter((route) => !/^(GET|HEAD|OPTIONS) /.test(route))
+          // A batch route does each item through a route that is checked on its own;
+          // batch.test.ts exercises the batch routes.
+          .filter((route) => !/\/(batch|batch-discard)$/.test(route))
+          .filter(include)
+          .filter((route) => !audited.has(route))
+      );
     },
     async stop() {
       await app.close();

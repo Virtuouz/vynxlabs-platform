@@ -228,6 +228,18 @@ describe("runs of every kind, together", () => {
     expect(insight.diagnosis.cause).toContain("all 3 attempts");
   });
 
+  test("a run that failed without logging an error says its last attempt failed", async () => {
+    const run = (await alice.get(`${ws()}/activity?kind=script`)).body.items[0];
+    await sql`delete from run_log where run_id = ${run.id}`.execute(t.db);
+    await sql`update run set status = 'failed', attempt = 1, max_attempts = 1 where id = ${run.id}`.execute(
+      t.db,
+    );
+    await sql`insert into run_log (run_id, attempt, logged_at, level, message, fields)
+      values (${run.id}, 1, now(), 'info', 'Checked shelf 1', '{}')`.execute(t.db);
+    const insight = (await alice.get(`${ws()}/runs/${run.id}/insight`)).body;
+    expect(insight.attempts).toEqual([expect.objectContaining({ attempt: 1, failed: true })]);
+  });
+
   test("diagnosis knows the common shapes, and stays quiet about the rest", () => {
     const at = { attempt: 1, maxAttempts: 1 };
     expect(diagnose({ ...at, message: "x", unbound: ["erp"] })?.section).toBe("connections");

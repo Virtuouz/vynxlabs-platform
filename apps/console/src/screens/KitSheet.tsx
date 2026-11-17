@@ -3,7 +3,9 @@ import {
   Button,
   CheckboxField,
   ComboboxField,
+  ContextMenu,
   Grid,
+  Kbd,
   Notice,
   SelectField,
   Skeleton,
@@ -12,6 +14,8 @@ import {
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { DataTable } from "../kit/DataTable.tsx";
+import { DiffView } from "../kit/DiffView.tsx";
+import { formatCombo } from "../kit/keys.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import {
   EmptyCanvas,
@@ -26,7 +30,9 @@ import {
 import { InsetRule, JunctionList, PortBrackets, SignalPath } from "../kit/motifs.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
+import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, STATE_NAMES, StatePill, Tag } from "../kit/status.tsx";
+import { ColumnsMenu } from "../kit/views.tsx";
 
 const SWATCHES = [
   "canvas",
@@ -386,6 +392,98 @@ export function KitSheet() {
         <SectionLabel>Saving a page</SectionLabel>
         <div className="relative overflow-hidden rounded-panel border border-line">
           <SaveBar dirty guard={false} onSave={() => {}} onDiscard={() => {}} what="an example" />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Tooltips, keys and menus</SectionLabel>
+        <Panel className="flex flex-wrap items-center gap-4 p-4">
+          <Button tooltip="Undo moving a step" keys={formatCombo("Mod+Z")}>
+            With a tooltip
+          </Button>
+          <Button disabled tooltip="Triggers change in a dev workspace.">
+            Disabled, with why
+          </Button>
+          <span className="flex items-center gap-1">
+            <Kbd>{formatCombo("Mod+K")}</Kbd>
+            <Kbd>g then r</Kbd>
+            <Kbd>?</Kbd>
+          </span>
+          <ContextMenu
+            className="rounded-control border border-line border-dashed px-4 py-3 text-meta text-ink-muted"
+            items={[
+              { label: "Duplicate", keys: formatCombo("Mod+D"), onSelect: () => {} },
+              { label: "Copy", keys: formatCombo("Mod+C"), onSelect: () => {} },
+              { label: "Remove", danger: true, separated: true, onSelect: () => {} },
+            ]}
+          >
+            Right-click here for a menu
+          </ContextMenu>
+          <ColumnsMenu
+            columns={[
+              { key: "target", label: "Target" },
+              { key: "started", label: "Started" },
+            ]}
+            shown={undefined}
+            onChange={() => {}}
+          />
+        </Panel>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Rows checked, for a batch</SectionLabel>
+        <Panel className="flex flex-col">
+          <DataTable<{ id: string; path: string }>
+            label="Runs checked"
+            density="compact"
+            rows={[
+              { id: "1", path: "orders/sync" },
+              { id: "2", path: "orders/charge" },
+            ]}
+            rowKey={(row) => row.id}
+            columns={[{ header: "Path", cell: (row) => <Mono>{row.path}</Mono> }]}
+            checked={new Set(["1", "2"])}
+            onCheck={() => {}}
+            batch={() => (
+              <>
+                <Button size="small" variant="danger">
+                  Cancel
+                </Button>
+                <Button size="small">Run again</Button>
+              </>
+            )}
+            empty={{ title: "Nothing ran" }}
+          />
+        </Panel>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Panes, and a difference</SectionLabel>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Panel className="h-40 overflow-hidden">
+            <SplitPane
+              id="kit-sheet"
+              label="Resize the example panes"
+              className="h-full"
+              collapsible="second"
+              paneLabels={{ first: "the first pane", second: "the second pane" }}
+              minFirst={80}
+              minSecond={80}
+              first={
+                <p className="m-0 p-3 text-meta text-ink-muted">
+                  Drag, or Tab to the line and use the arrows; Enter folds the right.
+                </p>
+              }
+              second={<p className="m-0 p-3 text-meta text-ink-muted">The second pane</p>}
+            />
+          </Panel>
+          <DiffView
+            before={"export default async () => {\n  return { stock: 4 };\n};"}
+            after={'export default async () => {\n  throw new Error("The warehouse moved");\n};'}
+            beforeLabel="v1, the last success"
+            afterLabel="v2, the run that failed"
+            maxHeight="10rem"
+          />
         </div>
       </section>
 

@@ -1,16 +1,19 @@
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
 import { Button, Menu, type MenuItem, Skeleton } from "@vynxlabs/ui";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Rows3 } from "lucide-react";
 import {
   isValidElement,
   type KeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { usePreference } from "../prefs.ts";
 import { useRestoredScroll } from "../router.tsx";
+import { isTyping, singleKeysOn } from "./keys.ts";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
 
@@ -60,33 +63,15 @@ const HEIGHT: Record<Density, number> = { compact: 28, standard: 36, comfortable
 /** Rows are drawn only near the view once a list holds more than this many. */
 const VIRTUAL_AFTER = 200;
 
-const columnKey = <Row,>(column: DataColumn<Row>) => column.key ?? column.header;
+export const columnKey = <Row,>(column: DataColumn<Row>) => column.key ?? column.header;
 
-function readDensity(id: string | undefined, fallback: Density): Density {
-  if (!id) return fallback;
-  try {
-    const kept = localStorage.getItem(`vx-density:${id}`);
-    return kept === "compact" || kept === "standard" || kept === "comfortable" ? kept : fallback;
-  } catch {
-    return fallback;
-  }
-}
+const DENSITIES: Density[] = ["compact", "standard", "comfortable"];
 
-/** A table's density, kept per table in this browser. */
-export function useDensity(id: string | undefined, fallback: Density = "standard") {
-  const [density, setDensity] = useState<Density>(() => readDensity(id, fallback));
-  const change = useCallback(
-    (next: Density) => {
-      setDensity(next);
-      if (!id) return;
-      try {
-        localStorage.setItem(`vx-density:${id}`, next);
-      } catch {
-        // Storage that cannot be reached keeps the choice for this visit only.
-      }
-    },
-    [id],
-  );
+/** A table's density, kept per table with the member's other settings. */
+export function useDensity(id: string, fallback: Density = "standard") {
+  const [kept, keep] = usePreference<string>(`density:${id}`, fallback);
+  const density = DENSITIES.includes(kept as Density) ? (kept as Density) : fallback;
+  const change = useCallback((next: Density) => keep(next), [keep]);
   return [density, change] as const;
 }
 
@@ -127,6 +112,8 @@ export interface DataTableProps<Row> {
   batch?: ((keys: Set<string>) => ReactNode) | undefined;
   sort?: SortState | undefined;
   onSort?: ((sort: SortState) => void) | undefined;
+  /** The columns to show, by key, in order: the first column is always shown. All when absent. */
+  columnsShown?: string[] | undefined;
   /** The row's "⋯" menu. */
   actions?: ((row: Row) => MenuItem[]) | undefined;
   /** A second line under a row that needs one, such as a failed run's error. */
@@ -147,10 +134,26 @@ export interface DataTableProps<Row> {
   footer?: ReactNode | undefined;
 }
 
+/**
+ * The columns to draw: all of them, or those named in `shown`, in its order.
+ * The first column says what a row is, so it is always drawn, first.
+ */
+export function chooseColumns<Row>(columns: DataColumn<Row>[], shown: string[] | undefined) {
+  if (!shown || shown.length === 0) return columns;
+  const [first, ...rest] = columns;
+  if (!first) return columns;
+  const byKey = new Map(rest.map((column) => [columnKey(column), column]));
+  const picked = shown
+    .map((key) => byKey.get(key))
+    .filter((column): column is DataColumn<Row> => column !== undefined);
+  return [first, ...picked];
+}
+
 export function DataTable<Row>(props: DataTableProps<Row>) {
   const {
     label,
-    columns,
+    columns: allColumns,
+    columnsShown,
     rows,
     rowKey,
     variant = "interactive",
@@ -175,6 +178,10 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     filtered,
     footer,
   } = props;
+  const columns = useMemo(
+    () => chooseColumns(allColumns, columnsShown),
+    [allColumns, columnsShown],
+  );
   const density = props.density ?? "standard";
   const region = useRef<HTMLDivElement>(null);
   useRestoredScroll(region, `table:${id ?? label}`);
@@ -200,6 +207,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   // Roving focus: one cell of the grid is in the tab order; arrows move it.
   const [focus, setFocus] = useState<{ row: number; column: number }>({ row: 0, column: 0 });
   const [anchor, setAnchor] = useState<number | undefined>();
+  const ranged = useRef(false);
   const width = columns.length + (checking ? 1 : 0) + (actions ? 1 : 0);
   const placeFocus = useCallback(
     (row: number, column: number) => {
@@ -244,7 +252,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     if (!grid || shown.length === 0) return;
     const target = event.target as HTMLElement;
     // Typing in a field inside a cell is the field's business.
-    if (target.closest("input:not([type=checkbox]),textarea,select,[role=menu]")) return;
+    if (isTyping(target) || target.closest("[role=menu]")) return;
+    // j, k and x are single-key shortcuts, which a person may turn off (WCAG 2.1.4).
+    if (["j", "k", "x", "J", "K"].includes(event.key) && !singleKeysOn()) return;
     const { row, column } = focus;
     const page = Math.max(1, Math.floor((region.current?.clientHeight ?? 360) / HEIGHT[density]));
     const current = shown[row];
@@ -528,7 +538,27 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                             aria-label={`Select ${key}`}
                             checked={ticked}
                             tabIndex={-1}
+                            onClick={(event) => {
+                              // Shift and a click checks every row from the last one checked.
+                              if (!event.shiftKey || anchor === undefined) return;
+                              event.preventDefault();
+                              const range = shown
+                                .slice(Math.min(anchor, index), Math.max(anchor, index) + 1)
+                                .map(rowKey);
+                              toggle(range, true);
+                              setAnchor(index);
+                              // A browser sends no change after this; some test DOMs still do.
+                              ranged.current = true;
+                              setTimeout(() => {
+                                ranged.current = false;
+                              });
+                            }}
                             onChange={(event) => {
+                              // The click that checked a range has done its work.
+                              if (ranged.current) {
+                                ranged.current = false;
+                                return;
+                              }
                               toggle([key], event.target.checked);
                               setAnchor(index);
                             }}
@@ -622,10 +652,10 @@ export function DensityMenu({
   const choices: Density[] = ["compact", "standard", "comfortable"];
   return (
     <Menu
-      label={<span className="text-meta">Density</span>}
+      label={<Rows3 aria-hidden="true" size={16} />}
       ariaLabel="Row density"
       align="end"
-      triggerClassName="inline-flex h-8 items-center rounded-control border border-line-control px-3 text-ink-muted hover:bg-sunken"
+      triggerClassName="inline-flex size-7 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
       items={choices.map((choice) => ({
         label: choice[0]?.toUpperCase() + choice.slice(1),
         current: choice === density,

@@ -118,14 +118,3 @@ export function useHistory<T>(capture: () => T, restore: (state: T) => void) {
     redoLabel: history.redoLabel,
   };
 }
-
-/** Whether a key press is meant for a field rather than the screen: a field keeps its own undo. */
-export function typingIn(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    target.tagName === "INPUT" ||
-    target.tagName === "TEXTAREA" ||
-    target.tagName === "SELECT"
-  );
-}

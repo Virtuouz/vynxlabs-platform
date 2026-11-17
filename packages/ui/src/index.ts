@@ -8,6 +8,7 @@ export {
   type MultiSelectFieldProps,
   type Option,
 } from "./Combobox.tsx";
+export { ContextMenu } from "./ContextMenu.tsx";
 export { type ChartTokens, chartConfig, readChartTokens } from "./chartTheme.ts";
 export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
 export { Dialog } from "./Dialog.tsx";
@@ -87,6 +88,7 @@ export {
   type ToastTone,
   useToast,
 } from "./Toast.tsx";
+export { Kbd, Tooltip, TooltipProvider } from "./Tooltip.tsx";
 export {
   type CardsWidgetConfig,
   type CardWidgetConfig,

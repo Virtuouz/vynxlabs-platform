@@ -187,9 +187,14 @@ function DashboardEditor({
   };
 
   // A change is saved a moment after the last one, as an app's page is.
+  const hurried = useRef(false);
+  const [hurry, setHurry] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `hurry` only starts the save now
   useEffect(() => {
     if (!dirty.current || draft.title.trim() === "") return;
     setSaving("waiting");
+    const wait = hurried.current ? 0 : 700;
+    hurried.current = false;
     const timer = setTimeout(async () => {
       dirty.current = false;
       setSaving("saving");
@@ -205,9 +210,14 @@ function DashboardEditor({
       } catch (error) {
         setSaving({ failed: failureText(error) });
       }
-    }, 700);
+    }, wait);
     return () => clearTimeout(timer);
-  }, [draft, root, id]);
+  }, [draft, root, id, hurry]);
+  /** ⌘S saves at once. */
+  const saveNow = () => {
+    hurried.current = true;
+    setHurry((count) => count + 1);
+  };
 
   /** Sharing is said at once, as publishing an app is. */
   const share = async (body: Record<string, unknown>, done: string) => {
@@ -263,6 +273,7 @@ function DashboardEditor({
           saving,
           savedWords: audience ? `Saved. Seen by ${audience}.` : "Saved. Only you see it.",
           history,
+          saveNow,
           more: (
             <Menu
               ariaLabel="More for this dashboard"

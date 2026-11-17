@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CommandPalette, ShortcutSheet } from "./kit/CommandPalette.tsx";
+import { Current } from "./kit/current.ts";
+import { resetPreferences } from "./prefs.ts";
 import { show } from "./testing.tsx";
 
 const T = "t1";
@@ -9,8 +11,13 @@ const W = "w1";
 const RUN = "01a1dd14-0000-7000-8000-000000000123";
 let calls: { method: string; url: string; body: unknown }[];
 
+let searchFails = false;
+
 beforeEach(() => {
   calls = [];
+  searchFails = false;
+  localStorage.clear();
+  resetPreferences();
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     const body = init.body ? JSON.parse(init.body as string) : undefined;
@@ -32,6 +39,15 @@ beforeEach(() => {
       });
     }
     if (url.pathname.endsWith("/search")) {
+      if (searchFails) {
+        return new Response(
+          JSON.stringify({ status: 500, detail: "Broken", requestId: "req_search_1" }),
+          {
+            status: 500,
+            headers: { "content-type": "application/problem+json" },
+          },
+        );
+      }
       const q = url.searchParams.get("q") ?? "";
       if (q === RUN) {
         return json({
@@ -127,7 +143,8 @@ test("a name finds things here before other workspaces, and opens the one chosen
   expect(options[0]).toContain("reminders/send");
   expect(options[1]).toContain("reminders/hourly");
   press("Enter");
-  expect(location.pathname).toBe(`/t/${T}/workspaces/${W}/scripts/edit/reminders/send`);
+  // A script opens on its own page, where its runs, schedule and code are.
+  expect(location.pathname).toBe(`/t/${T}/workspaces/${W}/scripts/reminders/send`);
 });
 
 test("a pasted run ID opens its run", async () => {
@@ -167,7 +184,8 @@ test("⌘↵ runs what is chosen without opening its page", async () => {
   palette();
   type("reminders");
   await screen.findByText("This workspace");
-  expect(screen.getByText("⌘↵ Run")).toBeTruthy();
+  // Written as this computer writes it: ⌘↵ on a Mac, Ctrl+Enter elsewhere.
+  expect(screen.getByText(/(⌘↵|Ctrl\+Enter) Run/)).toBeTruthy();
   press("Enter", { metaKey: true });
   expect(await screen.findByLabelText("Name")).toBeTruthy();
   expect(location.pathname).toBe("/");
@@ -183,6 +201,64 @@ test("? opens the shortcuts, except while typing", async () => {
   fireEvent.keyDown(screen.getByLabelText("Somewhere to type"), { key: "?" });
   expect(screen.queryByText("Keyboard shortcuts")).toBeNull();
   fireEvent.keyDown(document.body, { key: "?" });
-  expect(await screen.findByText("Keyboard shortcuts")).toBeTruthy(); // Only shortcuts that do something are listed: nothing moves through a list with j and k.
-  expect(screen.queryByText("j k")).toBeNull();
+  expect(await screen.findByText("Keyboard shortcuts")).toBeTruthy();
+  // The list's own keys are listed, now that every list moves with them.
+  expect(screen.getByText("Move down or up the list")).toBeTruthy();
+});
+
+test("with a run open, its own commands come first, and one that ends something asks", async () => {
+  const cancel = vi.fn();
+  const rerun = vi.fn();
+  show(
+    <>
+      <Current
+        object={{
+          heading: "This run",
+          commands: [
+            { key: "rerun", label: "Run again with the same input", run: rerun },
+            { key: "cancel", label: "Cancel this run", danger: true, run: cancel },
+          ],
+          pin: { kind: "run", ref: RUN, id: RUN, workspaceId: W, title: "reminders/send" },
+        }}
+      />
+      <CommandPalette open onClose={() => {}} destinations={[]} tenantId={T} workspaceId={W} />
+    </>,
+  );
+  expect(await screen.findByText("This run")).toBeTruthy();
+  const options = screen.getAllByRole("option").map((one) => one.textContent ?? "");
+  expect(options[0]).toContain("Run again with the same input");
+  expect(options[2]).toContain("Pin to the palette");
+  // The results are grouped, each group named by its heading.
+  expect(screen.getByRole("group", { name: "This run" })).toBeTruthy();
+  press("Enter");
+  expect(rerun).toHaveBeenCalled();
+});
+
+test("what is pinned comes before what is recent, and ⌘P pins what is chosen", async () => {
+  palette();
+  type("reminders");
+  await screen.findByText("This workspace");
+  press("p", { ctrlKey: true });
+  type("");
+  expect(await screen.findByText("Pinned")).toBeTruthy();
+  const options = screen.getAllByRole("option").map((one) => one.textContent ?? "");
+  expect(options[0]).toContain("reminders/send");
+  expect(options[1]).toContain("orders/sync");
+  expect(JSON.parse(localStorage.getItem(`vx-pref:palette.pins:${T}`) ?? "[]")).toEqual([
+    expect.objectContaining({ kind: "script", ref: "reminders/send" }),
+  ]);
+});
+
+test("a search that failed says so, with its request ID, and can be tried again", async () => {
+  searchFails = true;
+  palette();
+  type("reminders");
+  const failed = await screen.findByRole("alert");
+  expect(failed.textContent).toMatch(/search failed/);
+  expect(failed.textContent).toContain("req_search_1");
+  expect(screen.queryByText(/Nothing matches/)).toBeNull();
+  searchFails = false;
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByText("This workspace")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
 });

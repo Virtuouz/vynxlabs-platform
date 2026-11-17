@@ -34,6 +34,11 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - When some items are not done, a dialog lists each one with why and its request ID, and offers to retry just those.
   - Release deploys, or sets aside, only the drafts chosen.
   - The triggers list's kind filter is now kept in the address.
+- **Saved views and columns.**
+  - The runs list, the audit log, events and a table's rows have a "Saved views" menu. It saves the list's filters, sort, columns and density by name, and puts them back in one choice.
+  - A view is private to whoever saved it. Its link carries the view, so anyone who may see the list opens it the same.
+  - The runs list and the audit log can hide columns and reorder them, with Move up and Move down. The choice is kept in the address and in views.
+  - The events list's name filter is now kept in the address.
 
 ### For tenant developers
 

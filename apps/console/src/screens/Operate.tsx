@@ -16,6 +16,7 @@ import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx
 import { Current } from "../kit/current.ts";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
+import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { stamp } from "./Execution.tsx";
@@ -555,8 +556,9 @@ const SOURCE: Record<string, string> = {
 
 /** What was published, newest first, with what each one started. */
 export function EventsWorkbench({ root, link }: { root: string; link: string }) {
-  const [name, setName] = useState("");
-  const [applied, setApplied] = useState("");
+  // The name searched for is in the address, so a reload, a link or a saved view keeps it.
+  const [applied, setApplied] = useUrlParam("name", "");
+  const [name, setName] = useState(applied);
   const list = useLoad<{ items: EventRow[] }>(
     `${root}/events?limit=100${applied ? `&name=${encodeURIComponent(applied)}` : ""}`,
   );
@@ -572,7 +574,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
           className="flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            setApplied(name.trim());
+            setApplied(name.trim() || undefined);
           }}
         >
           <div className="w-72 max-w-full">
@@ -591,12 +593,20 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
               variant="quiet"
               onClick={() => {
                 setName("");
-                setApplied("");
+                setApplied(undefined);
               }}
             >
               Show every event
             </Button>
           ) : null}
+          <span className="ml-auto">
+            <ViewsMenu
+              tenantId={root.split("/tenants/")[1]?.split("/")[0] ?? ""}
+              workspaceId={root.split("/workspaces/")[1]?.split("/")[0]}
+              list="events"
+              omit={["item"]}
+            />
+          </span>
         </form>
       }
       columns={[

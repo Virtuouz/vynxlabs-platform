@@ -7,6 +7,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -62,7 +63,7 @@ const HEIGHT: Record<Density, number> = { compact: 28, standard: 36, comfortable
 /** Rows are drawn only near the view once a list holds more than this many. */
 const VIRTUAL_AFTER = 200;
 
-const columnKey = <Row,>(column: DataColumn<Row>) => column.key ?? column.header;
+export const columnKey = <Row,>(column: DataColumn<Row>) => column.key ?? column.header;
 
 const DENSITIES: Density[] = ["compact", "standard", "comfortable"];
 
@@ -111,6 +112,8 @@ export interface DataTableProps<Row> {
   batch?: ((keys: Set<string>) => ReactNode) | undefined;
   sort?: SortState | undefined;
   onSort?: ((sort: SortState) => void) | undefined;
+  /** The columns to show, by key, in order: the first column is always shown. All when absent. */
+  columnsShown?: string[] | undefined;
   /** The row's "⋯" menu. */
   actions?: ((row: Row) => MenuItem[]) | undefined;
   /** A second line under a row that needs one, such as a failed run's error. */
@@ -131,10 +134,26 @@ export interface DataTableProps<Row> {
   footer?: ReactNode | undefined;
 }
 
+/**
+ * The columns to draw: all of them, or those named in `shown`, in its order.
+ * The first column says what a row is, so it is always drawn, first.
+ */
+export function chooseColumns<Row>(columns: DataColumn<Row>[], shown: string[] | undefined) {
+  if (!shown || shown.length === 0) return columns;
+  const [first, ...rest] = columns;
+  if (!first) return columns;
+  const byKey = new Map(rest.map((column) => [columnKey(column), column]));
+  const picked = shown
+    .map((key) => byKey.get(key))
+    .filter((column): column is DataColumn<Row> => column !== undefined);
+  return [first, ...picked];
+}
+
 export function DataTable<Row>(props: DataTableProps<Row>) {
   const {
     label,
-    columns,
+    columns: allColumns,
+    columnsShown,
     rows,
     rowKey,
     variant = "interactive",
@@ -159,6 +178,10 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     filtered,
     footer,
   } = props;
+  const columns = useMemo(
+    () => chooseColumns(allColumns, columnsShown),
+    [allColumns, columnsShown],
+  );
   const density = props.density ?? "standard";
   const region = useRef<HTMLDivElement>(null);
   useRestoredScroll(region, `table:${id ?? label}`);

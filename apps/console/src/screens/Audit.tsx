@@ -7,6 +7,7 @@ import { actionWords } from "../audit-words.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
 import { Tag, type TagTone } from "../kit/status.tsx";
+import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, useUrlState } from "../router.tsx";
 
 interface Entry {
@@ -137,6 +138,7 @@ const AUDIT_URL = {
   action: { type: "string" },
   kind: { type: "string" },
   q: { type: "string" },
+  cols: { type: "list" },
   entry: { type: "string", push: true },
 } as const;
 
@@ -402,13 +404,24 @@ export function AuditTable({
               />
             </label>
           </div>
-          {cursor ? (
-            <div>
+          <div className="flex flex-wrap items-center gap-2">
+            {cursor ? (
               <Button size="small" onClick={() => load(cursor)}>
                 Show older entries
               </Button>
-            </div>
-          ) : null}
+            ) : null}
+            <span className="ml-auto flex items-center gap-2">
+              <ColumnsMenu
+                columns={columns.slice(1).map((column) => ({
+                  key: column.key ?? column.header,
+                  label: column.header,
+                }))}
+                shown={url.cols.length > 0 ? url.cols : undefined}
+                onChange={(next) => setUrl({ cols: next ?? [] })}
+              />
+              {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
+            </span>
+          </div>
         </div>
       }
       columns={columns}
@@ -421,6 +434,7 @@ export function AuditTable({
       table={
         filtered
           ? {
+              columnsShown: url.cols.length > 0 ? url.cols : undefined,
               filtered: {
                 onClear: () => {
                   setTyped("");
@@ -435,7 +449,7 @@ export function AuditTable({
                 },
               },
             }
-          : {}
+          : { columnsShown: url.cols.length > 0 ? url.cols : undefined }
       }
       empty={{ title: "Nothing recorded yet" }}
       inspector={

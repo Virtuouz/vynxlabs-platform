@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–4 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–5 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -164,3 +164,22 @@ Some of the roadmap's evidence is out of date:
   - Release stays a list of panels rather than a `DataTable`. The checkbox is all the selection it needed.
   - The table rows' batch delete keeps its own answer (`deleted`, `missing`).
 - **e2e (`batch.spec.ts`):** 25 runs are run again in three interactions: check all shown, Run again, confirm. The toast reports 25, and the workspace then holds 50 runs. Axe runs on the list with rows checked.
+
+### Milestone 5: saved views and columns
+- **A view is the list's address.** It keeps the query, less the open row, plus the density. That needs no schema per list: any list whose state is in the address can have views. Choosing a view navigates to it, so Back returns to what was there before. "Copy a link to this view" copies that address, and because the link carries the whole view, anyone who may see the list opens it the same while the view stays private to its maker.
+- **Found by the e2e:** `viewQuery` first sorted every value, which reordered `cols`, and the order of columns is the choice itself. It now sorts names only and keeps a name's values in order. A unit test holds it.
+- **`ViewsMenu`** (`kit/views.tsx`):
+  - lists the member's views of this list and marks the one showing;
+  - offers "Save this view…", "Save over" the last one chosen when the list has moved on from it, and Rename and Delete for the view showing;
+  - lists views per tenant and workspace, or per tenant for the audit log.
+  
+  A table's rows have views named for the table (`rows-<table>`), so a filter from one table is never offered on another.
+- **Columns:** `DataTable` takes `columnsShown`, keys in order. The first column, which says what a row is, always shows. `ColumnsMenu` checks columns on and off and moves them with Move up and Move down, so the order changes as easily by keyboard as by pointer. Every column in its defined order is no choice at all and is kept out of the address. The runs list and the audit log have it, in the address as `cols`.
+- **Events:** the name filter moved from component state into the address (`?name=`).
+- **Not done as planned:** reordering a table's rows' columns through `Grid`. Hiding them was already in the address, and the views menu now saves it. Density is saved in a view when the list has a density control (runs); elsewhere it stays the member's preference.
+- **e2e (`views.spec.ts`):**
+  1. A failed run is seeded.
+  2. The list is filtered to failed, sorted by duration, with Trigger and Attempt hidden, and saved as "Slow failures".
+  3. Opening the plain list and choosing the view restores the filter, sort and columns.
+  4. A second member opens the link and sees the same list, while their own menu lists no views.
+- **A false alarm:** a fresh browser drew a blank page during the run. The console had been rebuilt while the instance served it, and the instance keeps `index.html` from when it started, which named assets that no longer existed. After a restart, the spec passed. Restarting after every rebuild is in the verification steps for this reason.

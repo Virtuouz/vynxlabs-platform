@@ -22,6 +22,7 @@ import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
+import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
 import { LogWindowNote, stamp, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
@@ -132,6 +133,7 @@ const RUNS_URL = {
   target: { type: "string" },
   sort: { type: "string" },
   dir: { type: "string" },
+  cols: { type: "list" },
   run: { type: "string", push: true },
 } as const;
 
@@ -691,7 +693,22 @@ export function RunsWorkbench({
                 Cancel {queued} queued
               </Button>
             ) : null}
+            <ColumnsMenu
+              columns={columns.slice(1).map((column) => ({
+                key: column.key ?? column.header,
+                label: column.header,
+              }))}
+              shown={url.cols.length > 0 ? url.cols : undefined}
+              onChange={(next) => setUrl({ cols: next ?? [] })}
+            />
             <DensityMenu density={density} onChange={setDensity} />
+            <ViewsMenu
+              tenantId={tenantOf(root)}
+              workspaceId={workspaceOf(root)}
+              list="runs"
+              omit={["run"]}
+              density={{ value: density, set: setDensity }}
+            />
           </span>
         </div>
       </div>
@@ -737,6 +754,7 @@ export function RunsWorkbench({
           fill
           density={density}
           columns={columns}
+          columnsShown={url.cols.length > 0 ? url.cols : undefined}
           rows={list.data ? items : undefined}
           rowKey={(one) => one.id}
           selected={selected}
@@ -1078,3 +1096,7 @@ export function ScriptRunPanel({
     </div>
   );
 }
+
+/** The tenant's and workspace's IDs, from a workspace's API root. */
+const tenantOf = (root: string) => root.split("/tenants/")[1]?.split("/")[0] ?? "";
+const workspaceOf = (root: string) => root.split("/workspaces/")[1]?.split("/")[0];

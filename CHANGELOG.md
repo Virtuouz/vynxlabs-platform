@@ -2,6 +2,39 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 13, the debugging and authoring loop
+
+### For operators
+
+- **Database changes.** Migration 0062 adds a short output summary to runs and flow runs, and 0063 adds a workspace's time zone. Runs that ended before 0062 have no summary.
+- **Payloads are masked where they are shown.** `GET runs/:id` and `GET flow-runs/:id` (input, output, each step's input, output and detail) and the approvals list replace secret-looking values with `"[redacted]"`. A value is masked when its schema marks it `writeOnly`, `format: "password"` or `x-secret`, or when its key names a secret (`password`, `token`, `apiKey`, `authorization`, `clientSecret`, and keys ending that way). What is stored, what workers receive and what a run again uses are unchanged. Clients that read payloads from the API, such as scripts that check another run's output, see the masked form.
+- **Workspaces have a time zone,** `UTC` until set in workspace settings or with `PATCH /workspaces/:id {"timeZone": "Europe/Berlin"}`. New schedules start in it; existing ones keep their own.
+- **"Cancel queued runs" from a filtered runs list cancels only what the list shows.** It used to cancel every queued script run in the workspace, flow steps included. `POST runs/cancel` takes the list's `filters`; without them it behaves as before.
+
+### For tenant developers
+
+- **New API:**
+  - `GET activity` takes `sort=started|duration` and `dir`, and its rows have `outputSummary` and `scheduledFor`.
+  - `GET connection-bindings/*` and `GET variable-values/*` read one.
+  - `GET triggers?target=`.
+  - `GET references?drafts=true`.
+  - `GET flow-runs/:id/definition` (the flow as the run ran it).
+  - `GET script-source/*?run=|bundle=`.
+  - `retry-plan?bundle=` reports `bundleVersion` and `changed`.
+  - `POST test-runs` takes `triggerNode` and `testFrom {flowRunId, node}`, and runs the deployed version when there are no drafts.
+  - `schedule-firings` takes `node`.
+- **A flow run can be retried from its failed step on a newer version** (`bundle: "active"` or `bundleId`), as long as the steps it keeps are the same there. It is refused, naming them, otherwise. `runs/:id/rerun` takes `bundleId` too. A step retry still keeps the original input.
+- **Bundles carry the console's sources and a source map** (`consoleSources`), so a failure in code written in the console points at its line.
+- **`LogViewer` from `@vynxlabs/ui`:**
+  - Search finds and steps through matches, and "Only matching" narrows to them.
+  - Lines are numbered and link as `#L42`.
+  - Lines, a selection or everything can be copied, and fields open in place.
+  - A mark starts each attempt, and follow pauses when scrolled up.
+  - Levels are chips with counts, where they were a `<select>`.
+  - Logs past 500 lines draw only the lines in view. The default height is now `min(70vh, 48rem)`.
+  - New optional props: `fill` and `firstLine`. `LogLine` gains `attempt`.
+  - Tests that read `role="list"` or the level select should use the `Log lines` region and the level buttons.
+
 ## Unreleased: phase 12, trust and access
 
 ### For operators

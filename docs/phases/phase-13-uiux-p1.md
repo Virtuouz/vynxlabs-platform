@@ -1,6 +1,6 @@
 # Phase 13: the debugging and authoring loop (UI/UX audit P1)
 
-Status: Milestone 0 (plan) on branch `phase-13-uiux-p1`.
+Status: all sixteen milestones built on branch `phase-13-uiux-p1`, not yet merged.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks ten items as P1 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They cover the screens used every day: find a run, read the failure, reach the code, fix it, ship the fix. Today that loop takes 27 interactions, 11 page loads, two workspace switches and two re-finds of the same object ([04 §4](../uiux/04-workflow-journey-audit.md)). Each item was re-checked against `main` at `744293a`. All hold, apart from what phase 12 already fixed (keyboard rows, log paging, `Reconnecting`).
@@ -201,3 +201,20 @@ Findings are recorded under each milestone as it lands.
 - **Overlap defaults.** Each kind keeps its own: a schedule resource allows overlap and a flow trigger skips. The box shows the real default and only writes a value that differs from it.
 - **Scheduling from the thing.** A script's or flow's page has "Add a schedule", with the target and a path filled in: two presses to a draft. Its triggers list offers "Run it now", Pause and Resume.
 - **Settings.** The workspace's zone is set in workspace settings.
+
+### Milestone 16: wrap-up and the whole e2e suite
+
+- **Changelog and spec.** `CHANGELOG.md` has a phase 13 section. `docs/master-spec.md` now says where payloads are masked, when a retry may run on a newer version, what testing from a step is, and that a workspace has a time zone.
+- **New `e2e/loop.spec.ts`, run at 1440 × 900 as a tenant admin under operator access:**
+  - Twenty or more runs are in view, and no cell spills into the next.
+  - A failed flow run opens on its failed step with no click.
+  - The whole loop takes **8 presses**: from a production failure, "Edit in Dev" with the failed input loaded, ⌘S, Deploy → "This change only", the toast's "Promote to Production", Promote and its confirmation, and the toast's "Run the failed run again". The audit counted 27 interactions with two re-finds; the target was 10 or fewer.
+- **What the suite found:**
+  - **Runs rows were too tall.** About 37 px, because the row's "⋯" button was 28 px; 16 runs fit. The runs header is now one row, with label-less controls named for screen readers. Runs default to compact density, and compact rows are about 28 px.
+  - **Follow stopped too early.** A log opened while its run was live was left where the last live page ended. It now follows through to the end once the run finishes, and stops when read upward.
+  - **A search didn't show its first match.** Typing a search now shows it.
+  - **Scrolling to a row missed.** Scrolls in a virtual list are repeated a frame later, since rows are measured as they draw.
+  - **Joins after a branch were wrong.** Adding a step after a branch or a fail step joined them by a plain edge, which neither has. A new step is now joined only after a step with a plain way on.
+  - **Two regions were named "Log".** The viewer's own region is now "Log lines", since the run page already has a "Log" section.
+  - **Specs written against the old UI were updated:** sign-in waits, grid cells for focus, `aria-selected`, the Deploy menu.
+- **Result:** the whole e2e suite passes, 23 of 23, run as CI runs it (`MANAGED_WORKER_USER=same`, with mail capture). `pnpm test` passes: 1,289 tests, 2 skipped.

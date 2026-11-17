@@ -686,7 +686,14 @@ export function FlowEditor({
     const made = entry.make();
     // After the chosen step, joined to it, taking over where it went next. A trigger,
     // or a step added with nothing chosen, goes to the right of everything.
-    const placed = insertAfter(nodes, edges, made.type === "trigger" ? undefined : selected, id);
+    // Joined only after a step that goes on to one next step: a branch goes on by its
+    // cases, and a fail step goes nowhere, so a step added after them stands apart.
+    const before = nodes.find((node) => node.id === selected)?.data.node;
+    const joinable =
+      made.type !== "trigger" &&
+      before !== undefined &&
+      outputs(before).some((output) => output.id === "next");
+    const placed = insertAfter(nodes, edges, joinable ? selected : undefined, id);
     const at = placed.position;
     setNodes((before) => [
       // The new step is the chosen one, on the canvas as in the panel beside it.

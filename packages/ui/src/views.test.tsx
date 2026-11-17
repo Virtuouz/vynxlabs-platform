@@ -19,7 +19,7 @@ const lines: LogLine[] = [
 
 test("the log is searched, narrowed to a level, and says how much of it is shown", () => {
   render(<LogViewer lines={lines} />);
-  const rows = () => screen.getByRole("region", { name: "Log" }).querySelectorAll("li");
+  const rows = () => screen.getByRole("region", { name: "Log lines" }).querySelectorAll("li");
   expect(rows()).toHaveLength(3);
   expect(screen.getByText("3 lines")).toBeTruthy();
 
@@ -31,7 +31,7 @@ test("the log is searched, narrowed to a level, and says how much of it is shown
   // A search finds and marks its matches, in the fields of a line too, and steps through them.
   fireEvent.change(screen.getByLabelText("Search the log"), { target: { value: "ACME-EU" } });
   expect(screen.getByText("1 of 1 match")).toBeTruthy();
-  expect(screen.getByRole("region", { name: "Log" }).querySelector("mark")?.textContent).toBe(
+  expect(screen.getByRole("region", { name: "Log lines" }).querySelector("mark")?.textContent).toBe(
     "acme-eu",
   );
   expect(rows()).toHaveLength(2);
@@ -80,7 +80,7 @@ test("each attempt begins with a mark, and fields open in place", () => {
   );
   expect(screen.getByText("Attempt 2")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Open the fields" }));
-  expect(screen.getByRole("region", { name: "Log" }).textContent).toContain('"order": 7');
+  expect(screen.getByRole("region", { name: "Log lines" }).textContent).toContain('"order": 7');
 });
 
 test("a #L link opens on its line, numbered from the start of the whole log", () => {
@@ -110,7 +110,7 @@ test("a long log draws only the lines near the view", () => {
   }));
   render(<LogViewer lines={many} />);
   expect(screen.getByText("50000 lines")).toBeTruthy();
-  const drawn = screen.getByRole("region", { name: "Log" }).querySelectorAll("li").length;
+  const drawn = screen.getByRole("region", { name: "Log lines" }).querySelectorAll("li").length;
   expect(drawn).toBeGreaterThan(0);
   expect(drawn).toBeLessThan(200);
 });

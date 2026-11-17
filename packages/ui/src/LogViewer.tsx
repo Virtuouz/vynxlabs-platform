@@ -227,12 +227,25 @@ export function LogViewer({
 
   const scrollTo = useCallback(
     (index: number) => {
-      if (virtual) virtualizer.scrollToIndex(index, { align: "center" });
-      else
+      if (virtual) {
+        // Rows are measured as they are drawn: a second go lands where the first aimed.
+        virtualizer.scrollToIndex(index, { align: "center" });
+        requestAnimationFrame(() => virtualizer.scrollToIndex(index, { align: "center" }));
+      } else
         list.current?.querySelector(`[data-row="${index}"]`)?.scrollIntoView?.({ block: "center" });
     },
     [virtual, virtualizer],
   );
+  // A new search shows its first match.
+  const shownFor = useRef("");
+  useEffect(() => {
+    if (needle === shownFor.current) return;
+    shownFor.current = needle;
+    const first = found[0];
+    if (first === undefined) return;
+    setFollow(false);
+    scrollTo(first);
+  }, [needle, found, scrollTo]);
   const step = (by: 1 | -1) => {
     if (found.length === 0) return;
     const next = (current + by + found.length) % found.length;
@@ -252,19 +265,30 @@ export function LogViewer({
     requestAnimationFrame(() => scrollTo(index));
   }, [rows, marked_, scrollTo]);
 
-  // Following keeps the newest line in view while lines arrive.
+  // Following keeps the newest line in view while lines arrive, and through the last
+  // ones, which may come just after the log stops being live.
   const count = rows.length;
+  const followed = useRef(false);
+  if (live) followed.current = follow;
   useEffect(() => {
     const element = list.current;
-    if (!live || !follow || !element || count === 0) return;
+    if (!(live ? follow : followed.current) || !element || count === 0) return;
     if (virtual) virtualizer.scrollToIndex(count - 1, { align: "end" });
-    else element.scrollTop = element.scrollHeight;
+    // And to the very bottom once the rows there are measured.
+    requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+    });
   }, [live, follow, count, virtual, virtualizer]);
   // Scrolling up to read stops following; reaching the end again picks it up.
   const onScroll = () => {
     const element = list.current;
-    if (!live || !element) return;
+    if (!element) return;
     const atEnd = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+    if (!live) {
+      // A finished log that followed to its end stops following once read upward.
+      if (!atEnd) followed.current = false;
+      return;
+    }
     if (!atEnd && follow) setFollow(false);
     if (atEnd && !follow) setFollow(true);
   };
@@ -518,7 +542,7 @@ export function LogViewer({
         <div className={`relative ${fill ? "flex min-h-0 flex-1 flex-col" : ""}`}>
           <section
             ref={list}
-            aria-label="Log"
+            aria-label="Log lines"
             // biome-ignore lint/a11y/noNoninteractiveTabindex: a list that scrolls must be reachable by keyboard
             tabIndex={0}
             onScroll={onScroll}

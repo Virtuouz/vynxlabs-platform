@@ -53,7 +53,7 @@ export type SortState = { key: string; dir: "asc" | "desc" } | undefined;
 export type Density = "compact" | "standard" | "comfortable";
 
 const SHOWN = { 1: "", 2: "hidden sm:table-cell", 3: "hidden lg:table-cell" } as const;
-const PAD: Record<Density, string> = { compact: "py-1", standard: "py-2", comfortable: "py-3" };
+const PAD: Record<Density, string> = { compact: "py-0.5", standard: "py-2", comfortable: "py-3" };
 /** Row heights the virtual list estimates with, matching the paddings above. */
 const HEIGHT: Record<Density, number> = { compact: 28, standard: 36, comfortable: 44 };
 /** Rows are drawn only near the view once a list holds more than this many. */
@@ -553,7 +553,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                               ariaLabel={`Actions for ${key}`}
                               items={items}
                               align="end"
-                              triggerClassName="inline-flex size-7 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+                              triggerClassName={`inline-flex ${density === "compact" ? "size-6" : "size-7"} items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink`}
                             />
                           ) : null}
                         </td>

@@ -348,6 +348,7 @@ The queue is implemented by embedding pg-boss, a Postgres-native library with an
 ### Triggers
 
 - Built-in triggers are schedule, webhook, event and manual.
+- Each workspace has a time zone. A new schedule is written in it unless it names another; a schedule keeps the zone it was made with.
 - Custom triggers, such as a message broker, a database change or a polling source, are added through the trigger extension point.
 - Built-in triggers are implemented through that same extension point.
 - One trigger can be paused while running, in any workspace, production included. The pause outlives deploys until someone resumes it, and both are audited.
@@ -401,7 +402,8 @@ Nodes can be placed freely on a canvas. Positions are stored apart from the logi
 
 - Flow state is saved after every step.
 - A run survives a restart of the control plane or a worker and resumes where it stopped.
-- A retry never re-runs a step that already completed.
+- A retry never re-runs a step that already completed. A retry from the failed step may run on a newer version, such as the fix, only when every step it keeps is the same in that version.
+- Testing a draft from one step keeps what an earlier run did before that step and runs the rest on the draft. It is a test run, not a retry.
 
 ### Authoring
 
@@ -545,6 +547,7 @@ One run model and one audit stream cover the whole platform.
 ### Runs
 
 - Every execution of a script or flow is recorded: what triggered it, inputs, outputs, status, timing, step-level detail, logs and the bundle version it ran on.
+- Where a payload is shown, values that look secret, by their schema or their name, are masked. What is stored, and what runs, is never changed.
 - Runs are searchable per workspace.
 - Retention is configurable per tenant.
 - A tenant can see its own runs and health. This visibility is a core part of what the platform offers over a bare script.

@@ -76,7 +76,7 @@ function Existing({ overlapDefault }: { overlapDefault: "allow" | "skip" }) {
   const [value, setValue] = useState<{
     cron?: string;
     timezone?: string;
-    overlap?: "allow" | "skip";
+    overlap?: "allow" | "skip" | undefined;
   }>({
     cron: "0 2 * * *",
   });

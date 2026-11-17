@@ -127,7 +127,7 @@ test("the access list shows the binding a link names, marked, whatever was filte
   show(<AccessList base={base} />);
   await screen.findByText("Engineers");
   await waitFor(() =>
-    expect(document.querySelector('[data-row="b2"]')?.getAttribute("aria-current")).toBe("true"),
+    expect(document.querySelector('[data-row="b2"]')?.getAttribute("aria-selected")).toBe("true"),
   );
   expect(document.querySelector('[data-row="b1"]')?.getAttribute("aria-current")).toBeNull();
 });

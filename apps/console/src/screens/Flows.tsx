@@ -6,7 +6,6 @@ import {
   LogViewer,
   Notice,
   ResultView,
-  Table,
   Tabs,
   Timeline,
   type TimelineRow,
@@ -18,15 +17,18 @@ import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../Fl
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
+import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page, when } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { LogWindowNote, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { TriggersOf } from "./ObjectPages.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
@@ -76,9 +78,9 @@ export function Flows({
   editable?: boolean;
 }) {
   const list = useLoad<{ items: FlowRow[] }>(`${root}/flows`);
-  const [filter, setFilter] = useState<FlowFilter>("all");
-  const [search, setSearch] = useState("");
-  const [chosen, setChosen] = useState<string>();
+  const [filter, setFilter] = useUrlParam<FlowFilter>("filter", "all");
+  const [search, setSearch] = useUrlParam("q", "");
+  const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = list.data?.items ?? [];
   const wanted = search.trim().toLowerCase();
   const rows = items.filter(
@@ -473,7 +475,10 @@ export function FlowView({
       ) : null}
       <section>
         <h2 className="mt-2 mb-2 text-base font-semibold">Recent runs</h2>
-        <Table
+        <DataTable
+          variant="static"
+          framed
+          label="Recent runs"
           rows={runs.data?.items ?? []}
           rowKey={(row) => row.id}
           empty={<EmptyState title="This flow has not run yet" />}
@@ -491,6 +496,18 @@ export function FlowView({
           ]}
         />
       </section>
+      <section aria-labelledby="flow-triggers">
+        <h2 id="flow-triggers" className="mt-2 mb-2 text-base font-semibold">
+          Schedules and triggers that start it
+        </h2>
+        <TriggersOf root={root} link={link} kind="flow" path={path} />
+      </section>
+      <section aria-labelledby="flow-used-by">
+        <h2 id="flow-used-by" className="mt-2 mb-2 text-base font-semibold">
+          Used by
+        </h2>
+        <ReferenceList root={root} link={link} kind="flow" name={path} />
+      </section>
     </Page>
   );
 }
@@ -501,6 +518,8 @@ export interface StepRow {
   status: string;
   state: RunState;
   outputName: string | null;
+  /** What the step was given; secret-looking values come masked. */
+  input?: unknown;
   output: unknown;
   error: { message: string } | null;
   handled: boolean;
@@ -651,8 +670,11 @@ export function FlowRunView({
   ) => ReactNode;
 }) {
   const { run, error, reconnecting, refresh } = useFlowRunLive(root, id);
-  const [selected, setSelected] = useState<string>();
+  // The step shown is in the address, so a link to a failed step can go in a ticket.
+  const [asked, setSelected] = useUrlParam("step", undefined, { push: true });
   const flow = useLoad<FlowDetail>(run ? `${root}/flows/${run.flow}` : null);
+  // The graph as it ran: the flow at this run's version, which may differ from today's.
+  const drawn = useLoad<RunDefinition>(run ? `${root}/flow-runs/${id}/definition` : null);
 
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <p className="text-ink-muted">Loading…</p>;
@@ -661,7 +683,17 @@ export function FlowRunView({
     .filter((step) => step.item === "")
     .sort((a, b) => Number(b.node === run.triggerNode) - Number(a.node === run.triggerNode));
   const statuses = Object.fromEntries(steps.map((step) => [step.node, step.state]));
+  const failedStep = steps.find((step) => step.status === "failed" && !step.handled);
+  // Opened with nothing chosen, the step that matters is shown: the one that failed,
+  // or else the one going or waiting.
+  const selected =
+    asked ??
+    failedStep?.node ??
+    steps.find((step) => step.status === "running" || step.status === "waiting")?.node;
   const chosen = steps.find((step) => step.node === selected);
+  const chosenNode = chosen ? (drawn.data ?? flow.data)?.nodes[chosen.node] : undefined;
+  const scriptOfChosen = (chosenNode as { script?: unknown } | undefined)?.script;
+  const chosenScript = typeof scriptOfChosen === "string" ? scriptOfChosen : undefined;
   const items = run.steps.filter((step) => step.node === selected && step.item !== "");
   const waitingApprovals = steps.filter((step) => step.status === "waiting" && step.detail.title);
 
@@ -705,8 +737,39 @@ export function FlowRunView({
         </div>
       )}
       {run.error ? (
-        <Notice tone="danger">
-          <strong>The flow failed.</strong> {run.error.message}
+        <Notice
+          tone="danger"
+          action={
+            failedStep && failedStep.node !== selected ? (
+              <Button size="small" onClick={() => setSelected(failedStep.node)}>
+                Show {failedStep.node}
+              </Button>
+            ) : undefined
+          }
+        >
+          {failedStep ? (
+            <>
+              <strong>
+                Failed at{" "}
+                <a
+                  href={`?step=${encodeURIComponent(failedStep.node)}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setSelected(failedStep.node);
+                  }}
+                  className="font-mono text-inherit"
+                >
+                  {failedStep.node}
+                </a>
+                :
+              </strong>{" "}
+              {failedStep.error?.message ?? run.error.message}
+            </>
+          ) : (
+            <>
+              <strong>The flow failed.</strong> {run.error.message}
+            </>
+          )}
         </Notice>
       ) : null}
       {waitingApprovals.map((step) => (
@@ -758,35 +821,56 @@ export function FlowRunView({
           {
             id: "graph",
             label: "Graph",
-            content: flow.data ? (
-              <FlowGraph
-                nodes={flow.data.nodes}
-                edges={flow.data.edges}
-                layout={flow.data.layout}
-                statuses={statuses}
-                selected={selected}
-                onSelect={setSelected}
-              />
-            ) : (
-              <p className="m-0 text-ink-muted">Loading…</p>
-            ),
+            content:
+              drawn.data || flow.data ? (
+                <div className="flex flex-col gap-2">
+                  {drawn.data?.changed ? (
+                    <p className="m-0 text-meta text-ink-muted">
+                      The flow has changed since this run. It is drawn as it ran, at version{" "}
+                      {drawn.data.bundleVersion}.
+                    </p>
+                  ) : null}
+                  <FlowGraph
+                    nodes={(drawn.data ?? flow.data)?.nodes ?? {}}
+                    edges={(drawn.data ?? flow.data)?.edges ?? []}
+                    layout={(drawn.data ?? flow.data)?.layout ?? {}}
+                    statuses={statuses}
+                    selected={selected}
+                    onSelect={setSelected}
+                  />
+                </div>
+              ) : (
+                <p className="m-0 text-ink-muted">Loading…</p>
+              ),
           },
         ]}
       />
       {chosen ? (
-        <section className="rounded-panel border border-line bg-surface p-4">
-          <h2 className="mt-0 mb-2 flex items-center gap-2 text-base font-semibold">
-            {code(chosen.node)} <StatePill state={chosen.state} />
-            {chosen.outputName ? (
-              <span className="font-normal text-ink-muted">took the case {chosen.outputName}</span>
+        <section
+          aria-label={`Step ${chosen.node}`}
+          className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h2 className="m-0 flex items-center gap-2 text-base font-semibold">
+              {code(chosen.node)} <StatePill state={chosen.state} />
+              {chosen.outputName ? (
+                <span className="font-normal text-ink-muted">
+                  took the case {chosen.outputName}
+                </span>
+              ) : null}
+            </h2>
+            {chosenScript ? (
+              <Link to={`${link}/scripts/edit/${chosenScript}`} className="text-meta">
+                Open script {chosenScript}
+              </Link>
             ) : null}
-          </h2>
+          </div>
           <div className="mb-3">
             <Facts
               facts={[
                 { label: "Started", value: when(chosen.startedAt) },
                 {
-                  label: "Waited",
+                  label: "Waited for a worker",
                   value:
                     chosen.pickedUpAt &&
                     Date.parse(chosen.pickedUpAt) - Date.parse(chosen.startedAt) >= 100
@@ -794,9 +878,12 @@ export function FlowRunView({
                       : "",
                 },
                 {
-                  label: "Took",
+                  label: "Ran",
                   value: chosen.finishedAt
-                    ? duration(Date.parse(chosen.finishedAt) - Date.parse(chosen.startedAt))
+                    ? duration(
+                        Date.parse(chosen.finishedAt) -
+                          Date.parse(chosen.pickedUpAt ?? chosen.startedAt),
+                      )
                     : "In progress",
                 },
                 { label: "Run ID", value: chosen.runId ?? "", code: true },
@@ -804,12 +891,18 @@ export function FlowRunView({
             />
           </div>
           {chosen.error ? (
-            <p className="mt-0 text-danger">
+            <p className="m-0 text-danger">
               {chosen.error.message}
               {chosen.handled ? (
                 <span className="text-ink-muted"> The flow carried on down its error path.</span>
               ) : null}
             </p>
+          ) : null}
+          {chosen.error && chosen.runId ? (
+            <StepDiagnosis root={root} link={link} runId={chosen.runId} />
+          ) : null}
+          {chosen.input !== undefined && chosen.input !== null ? (
+            <ResultView label={`Input of ${chosen.node}`} value={chosen.input} />
           ) : null}
           {chosen.wakeAt && chosen.status === "waiting" ? (
             <p className="mt-0 text-ink-muted">Waits until {when(chosen.wakeAt)}.</p>
@@ -855,14 +948,50 @@ export function FlowRunView({
           ) : null}
         </section>
       ) : (
-        <p className="m-0 text-ink-muted">Choose a step to see what it produced.</p>
+        <p className="m-0 text-ink-muted">Choose a step to see what it was given and produced.</p>
       )}
+      <section
+        aria-label="The flow's input and output"
+        className="grid gap-3 rounded-panel border border-line bg-surface p-4 md:grid-cols-2"
+      >
+        <ResultView label="Flow input" value={run.input} />
+        <ResultView label="Flow output" value={run.output} />
+      </section>
     </div>
   );
 }
 
+/** The flow as a run ran it. */
+interface RunDefinition extends Pick<FlowDetail, "nodes" | "edges" | "layout"> {
+  bundleVersion: number;
+  changed: boolean;
+}
+
+/** What went wrong in a failed code step, and what to do: the run's own diagnosis. */
+function StepDiagnosis({ root, link, runId }: { root: string; link: string; runId: string }) {
+  const insight = useLoad<{ diagnosis: { cause: string; next: string; section?: string } | null }>(
+    `${root}/runs/${runId}/insight`,
+  );
+  const diagnosis = insight.data?.diagnosis;
+  if (!diagnosis) return null;
+  return (
+    <Notice
+      tone="attention"
+      action={
+        diagnosis.section ? (
+          <Button size="small" onClick={() => navigate(`${link}/${diagnosis.section}`)}>
+            Open {diagnosis.section}
+          </Button>
+        ) : undefined
+      }
+    >
+      <strong>{diagnosis.cause}</strong> {diagnosis.next}
+    </Notice>
+  );
+}
+
 /** The log of the script run a step started, where the step is shown. */
-function StepLogs({ root, runId }: { root: string; runId: string }) {
+export function StepLogs({ root, runId }: { root: string; runId: string }) {
   const { run, lines, earlier, error, reconnecting } = useLiveRun(root, runId);
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
   const active = run?.state === "queued" || run?.state === "running";
@@ -874,6 +1003,7 @@ function StepLogs({ root, runId }: { root: string; runId: string }) {
       <LogWindowNote earlier={earlier} onDownload={wholeLog} />
       <LogViewer
         lines={lines}
+        firstLine={earlier + 1}
         live={active}
         onDownload={wholeLog}
         fileName={logFile}

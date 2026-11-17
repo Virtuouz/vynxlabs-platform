@@ -11,15 +11,15 @@ import {
   SelectField,
   SideSheet,
   showValue,
-  Table,
   TextField,
 } from "@vynxlabs/ui";
 import { Columns3 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useUrlParam } from "../router.tsx";
 import {
   type Policy,
   policyText,
@@ -96,7 +96,7 @@ function RowsBrowser(props: RowsBrowserProps) {
   const [adding, setAdding] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [compact, setCompact] = useState(false);
-  const [chosen, setChosen] = useState<string>();
+  const [chosen, setChosen] = useUrlParam("row", undefined, { push: true });
 
   let filter: object | undefined;
   try {
@@ -583,7 +583,7 @@ const SYSTEM_COLUMNS: RowColumn[] = [
 
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
   const table = useLoad<TableDetail>(`${root}/tables/${name}`);
-  const [view, setView] = useState<"rows" | "definition">("rows");
+  const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
   if (table.error) return <Notice tone="danger">{table.error.message}</Notice>;
   if (!table.data) return <p className="text-ink-muted">Loading…</p>;
   const data = table.data;
@@ -739,7 +739,10 @@ function Definition({
           <h2 className="m-0 text-base font-semibold">Columns</h2>
           {editable ? <Button onClick={() => setAdding(true)}>Add column</Button> : null}
         </div>
-        <Table<TableColumn>
+        <DataTable<TableColumn>
+          variant="static"
+          framed
+          label="Columns"
           rows={active}
           rowKey={(row) => row.name}
           empty={<p className="m-0 text-ink-muted">No columns.</p>}
@@ -836,7 +839,10 @@ function Definition({
             These left the definition. They are hidden from rows, and what they held is kept until
             someone deletes it here.
           </p>
-          <Table<TableColumn>
+          <DataTable<TableColumn>
+            variant="static"
+            framed
+            label="Retired columns"
             rows={retired}
             rowKey={(row) => row.name}
             empty={null}
@@ -1153,7 +1159,7 @@ interface SourceTable {
 
 export function SourceView({ root, path, link }: { root: string; path: string; link: string }) {
   const tables = useLoad<{ items: SourceTable[] }>(`${root}/data-source-tables/${path}`);
-  const [chosen, setChosen] = useState<string>();
+  const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = tables.data?.items ?? [];
   const table = items.find((candidate) => candidate.name === chosen) ?? items[0];
 

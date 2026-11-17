@@ -41,6 +41,8 @@ import {
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
+import { renameInNode } from "../flowRename.ts";
+import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { typingIn, useHistory } from "../kit/history.ts";
 import { retryAfter } from "../kit/retry.ts";
 import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
@@ -58,6 +60,7 @@ import {
 } from "./FlowSteps.tsx";
 import { useFlowRunLive } from "./Flows.tsx";
 import { FlowTestPanel, LastTest, stepsOf, took } from "./FlowTestPanel.tsx";
+import { WhenFields } from "./ScheduleForm.tsx";
 
 /** A node as the flow's manifest holds it. */
 type FlowNode = GraphNode & Record<string, unknown>;
@@ -312,26 +315,81 @@ const toFlowEdge = (edge: Edge): GraphEdge => ({
   ...(edge.sourceHandle?.startsWith("case:") ? { output: edge.sourceHandle.slice(5) } : {}),
 });
 
-/** What is wrong with a flow that can be seen without asking the server. */
-export function problemsOf(
+/**
+ * Where a new step goes, and the edges once it is in: after the step `after`,
+ * to its right and clear of any other, joined to it and taking over where it
+ * went next. With nothing to follow, to the right of everything, unjoined.
+ */
+export function insertAfter(
+  nodes: { id: string; position: { x: number; y: number } }[],
+  edges: Edge[],
+  after: string | undefined,
+  id: string,
+): { position: { x: number; y: number }; edges: Edge[] } {
+  const from = nodes.find((node) => node.id === after);
+  const last = nodes.reduce<(typeof nodes)[number] | undefined>(
+    (furthest, node) => (!furthest || node.position.x > furthest.position.x ? node : furthest),
+    undefined,
+  );
+  const position = from
+    ? { x: from.position.x + 280, y: from.position.y }
+    : { x: (last?.position.x ?? -280) + 280, y: last?.position.y ?? 0 };
+  while (
+    nodes.some(
+      (node) =>
+        Math.abs(node.position.x - position.x) < 200 && Math.abs(node.position.y - position.y) < 90,
+    )
+  ) {
+    position.y += 120;
+  }
+  if (!from) return { position, edges };
+  const onward = (edge: Edge) =>
+    edge.source === from.id && (edge.sourceHandle ?? "next") === "next";
+  return {
+    position,
+    edges: [
+      ...edges.map((edge) =>
+        onward(edge) ? { ...edge, id: `${id}->${edge.target}`, source: id } : edge,
+      ),
+      { id: `${from.id}->${id}`, source: from.id, target: id, sourceHandle: "next" },
+    ],
+  };
+}
+
+/** One thing wrong with a flow: what, and which step and field it is in, to go to it. */
+export interface Problem {
+  message: string;
+  node?: string;
+  /** The inspector field it is about: `script`, `title`, `inputs/<name>`… */
+  field?: string;
+}
+
+/** What is wrong with a flow that can be seen without asking the server, as words. */
+export const problemsOf = (...args: Parameters<typeof problemsAt>): string[] =>
+  problemsAt(...args).map((one) => one.message);
+
+/** What is wrong with a flow that can be seen without asking the server, each with its place. */
+export function problemsAt(
   nodes: Record<string, FlowNode>,
   edges: GraphEdge[],
   /** The scripts that are nodes with a form of their own, by path. */
   specs: ReadonlyMap<string, PickableNode> = new Map(),
-): string[] {
-  const problems: string[] = [];
+): Problem[] {
+  const problems: Problem[] = [];
   const ids = Object.keys(nodes);
   const answers = ids.some((id) => nodes[id]?.type === "respond");
   if (!ids.some((id) => nodes[id]?.type === "trigger"))
-    problems.push("Add a way for the flow to start.");
+    problems.push({ message: "Add a way for the flow to start." });
   const reached = new Set(edges.map((edge) => edge.to));
   for (const id of ids) {
     const node = nodes[id] as FlowNode;
-    if (node.type !== "trigger" && !reached.has(id)) problems.push(`Nothing leads to ${id}.`);
-    if (node.type === "script" && !node.script) problems.push(`${id} has no script chosen.`);
+    if (node.type !== "trigger" && !reached.has(id))
+      problems.push({ message: `Nothing leads to ${id}.`, node: id });
+    if (node.type === "script" && !node.script)
+      problems.push({ message: `${id} has no script chosen.`, node: id, field: "script" });
     const spec = node.type === "script" ? specs.get(String(node.script)) : undefined;
     for (const missing of spec ? missingInputs(spec, node) : []) {
-      problems.push(`${id} needs: ${missing}.`);
+      problems.push({ message: `${id} needs: ${missing}.`, node: id, field: "inputs" });
     }
     if (node.type === "trigger") {
       const trigger = node.trigger as {
@@ -342,42 +400,76 @@ export function problemsOf(
         fields?: { name: string; label: string; type: string; options?: string[] }[];
       };
       if (trigger.type === "webhook" && trigger.respond === "flow" && !answers) {
-        problems.push(`${id} waits for the flow to answer. Add an Answer step.`);
+        problems.push({
+          message: `${id} waits for the flow to answer. Add an Answer step.`,
+          node: id,
+        });
       }
       if (trigger.type === "webhook" && trigger.verify && !trigger.verify.secret) {
-        problems.push(`${id} checks a signature and has no secret chosen.`);
+        problems.push({
+          message: `${id} checks a signature and has no secret chosen.`,
+          node: id,
+          field: "secret",
+        });
       }
       if (trigger.type === "form") {
-        if (!trigger.title) problems.push(`${id} needs a title for its form.`);
+        if (!trigger.title)
+          problems.push({ message: `${id} needs a title for its form.`, node: id, field: "title" });
         const names = (trigger.fields ?? []).map((field) => field.name);
         if (new Set(names).size !== names.length || names.some((name) => !NODE_ID.test(name))) {
-          problems.push(`${id} needs a different name for each question, in lowercase letters.`);
+          problems.push({
+            message: `${id} needs a different name for each question, in lowercase letters.`,
+            node: id,
+            field: "fields",
+          });
         }
         for (const field of trigger.fields ?? []) {
-          if (!field.label) problems.push(`${id} has a question with no text.`);
+          if (!field.label)
+            problems.push({
+              message: `${id} has a question with no text.`,
+              node: id,
+              field: "fields",
+            });
           if (field.type === "select" && (field.options ?? []).length === 0) {
-            problems.push(`${id} has a list with nothing in it: ${field.label}.`);
+            problems.push({
+              message: `${id} has a list with nothing in it: ${field.label}.`,
+              node: id,
+              field: "fields",
+            });
           }
         }
       }
     }
     if (node.type === "subflow" && node.flowFrom === undefined && !node.flow) {
-      problems.push(`${id} has no flow chosen.`);
+      problems.push({ message: `${id} has no flow chosen.`, node: id, field: "flow" });
     }
     if (node.type === "subflow" && node.flowFrom !== undefined) {
-      if (!node.flowFrom) problems.push(`${id} needs an expression that gives the flow to start.`);
+      if (!node.flowFrom)
+        problems.push({
+          message: `${id} needs an expression that gives the flow to start.`,
+          node: id,
+          field: "flowFrom",
+        });
       if (((node.allow as string[] | undefined) ?? []).length === 0) {
-        problems.push(`${id} needs at least one flow it may start.`);
+        problems.push({
+          message: `${id} needs at least one flow it may start.`,
+          node: id,
+          field: "allow",
+        });
       }
     }
     if (node.type === "foreach" && !node.script && !node.flow)
-      problems.push(`${id} needs a script or a flow to run for each item.`);
+      problems.push({
+        message: `${id} needs a script or a flow to run for each item.`,
+        node: id,
+        field: "script",
+      });
     if (
       node.type === "trigger" &&
       (node.trigger as { type: string; event?: string }).type === "event" &&
       !(node.trigger as { event?: string }).event
     ) {
-      problems.push(`${id} has no event chosen.`);
+      problems.push({ message: `${id} has no event chosen.`, node: id, field: "event" });
     }
   }
   return problems;
@@ -406,6 +498,9 @@ export function FlowEditor({
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testRunId, setTestRunId] = useState<string>();
+  /** The steps the flow had when it was opened: a schedule among them keeps its own zone. */
+  const loadedIds = useRef(new Set<string>());
+  const [testTrigger, setTestTrigger] = useState<string>();
   const [editedSinceTest, setEditedSinceTest] = useState(false);
   const live = useFlowRunLive(root, testRunId);
   const [problem, setProblem] = useState<string>();
@@ -474,16 +569,20 @@ export function FlowEditor({
     value: one.name,
     label: one.name,
   }));
-  /** The scripts that are steps with a form of their own: the platform's, then the workspace's. */
+  /**
+   * Every script a step can run, each with a form for its input: the platform's,
+   * the workspace's labelled ones, then the rest by their path. A plain script's
+   * form is drawn from its input schema.
+   */
   const pickable = useMemo<PickableNode[]>(
     () => [
       ...(core.data?.items ?? []),
       ...(scripts.data?.items ?? [])
-        .filter((one) => one.node && !one.path.startsWith("core/"))
+        .filter((one) => !one.path.startsWith("core/"))
         .map((one) => ({
           path: one.path,
           label: one.node?.label ?? one.path,
-          category: one.node?.category ?? "This workspace's",
+          category: one.node?.category ?? (one.node ? "This workspace's" : "Scripts"),
           description: one.description,
           takes: one.node?.takes ?? [],
           input: one.inputSchema,
@@ -522,6 +621,7 @@ export function FlowEditor({
     (body: FlowBody) => {
       clearHistory();
       const positions = { ...autoLayout(body.nodes, body.edges), ...(body.layout ?? {}) };
+      loadedIds.current = new Set(Object.keys(body.nodes));
       setDescription(body.description ?? "");
       setNodes(
         Object.entries(body.nodes).map(([id, node]) => ({
@@ -574,7 +674,7 @@ export function FlowEditor({
   );
   const flowEdges = useMemo(() => edges.map(toFlowEdge), [edges]);
   const found = useMemo(
-    () => problemsOf(flowNodes, flowEdges, specs),
+    () => problemsAt(flowNodes, flowEdges, specs),
     [flowNodes, flowEdges, specs],
   );
   const chosen = nodes.find((node) => node.id === selected);
@@ -582,27 +682,32 @@ export function FlowEditor({
   const add = (entry: { base: string; make: () => FlowNode }) => {
     let id = entry.base;
     for (let n = 2; nodes.some((node) => node.id === id); n++) id = `${entry.base}_${n}`;
-    // To the right of whatever is furthest right, level with it.
     history.record(`Add ${id}`);
-    const last = nodes.reduce<CanvasNode | undefined>(
-      (furthest, node) => (!furthest || node.position.x > furthest.position.x ? node : furthest),
-      undefined,
-    );
+    const made = entry.make();
+    // After the chosen step, joined to it, taking over where it went next. A trigger,
+    // or a step added with nothing chosen, goes to the right of everything.
+    // Joined only after a step that goes on to one next step: a branch goes on by its
+    // cases, and a fail step goes nowhere, so a step added after them stands apart.
+    const before = nodes.find((node) => node.id === selected)?.data.node;
+    const joinable =
+      made.type !== "trigger" &&
+      before !== undefined &&
+      outputs(before).some((output) => output.id === "next");
+    const placed = insertAfter(nodes, edges, joinable ? selected : undefined, id);
+    const at = placed.position;
     setNodes((before) => [
       // The new step is the chosen one, on the canvas as in the panel beside it.
       ...before.map((node) => ({ ...node, selected: false })),
-      {
-        id,
-        type: "flow",
-        selected: true,
-        position: { x: (last?.position.x ?? -280) + 280, y: last?.position.y ?? 0 },
-        data: { id, node: entry.make() },
-      },
+      { id, type: "flow", selected: true, position: at, data: { id, node: made } },
     ]);
+    setEdges(placed.edges);
     setSelected(id);
     touch();
-    // Bring the new step into view once it has been drawn.
-    setTimeout(() => canvas?.fitView({ ...FIT, duration: 200 }), 50);
+    // Brought into view where it is, at the same zoom: the rest of the graph stays put.
+    setTimeout(() => {
+      if (!canvas) return;
+      canvas.setCenter(at.x + 90, at.y + 30, { zoom: canvas.getZoom(), duration: 200 });
+    }, 50);
   };
   const update = (id: string, change: Partial<FlowNode>) => {
     history.record(`Change ${id}`, `${id}:${Object.keys(change).sort().join(",")}`);
@@ -618,11 +723,24 @@ export function FlowEditor({
   const rename = (from: string, to: string) => {
     if (!NODE_ID.test(to) || nodes.some((node) => node.id === to)) return false;
     history.record(`Rename ${from}`);
-    setNodes((before) =>
-      before.map((node) =>
-        node.id === from ? { ...node, id: to, data: { id: to, node: node.data.node } } : node,
-      ),
-    );
+    // Every expression that reads the step reads it by its new name.
+    let updated = 0;
+    const renamed = nodes.map((node) => {
+      const { node: changed, count } = renameInNode(
+        node.data.node as unknown as Record<string, unknown>,
+        from,
+        to,
+      );
+      updated += count;
+      const id = node.id === from ? to : node.id;
+      return { ...node, id, data: { id, node: changed as unknown as FlowNode } };
+    });
+    setNodes(renamed);
+    if (updated > 0) {
+      notify.success(
+        `Renamed ${from} to ${to}, and updated ${updated} reference${updated === 1 ? "" : "s"} to it.`,
+      );
+    }
     setEdges((before) =>
       before.map((edge) => ({
         ...edge,
@@ -684,6 +802,27 @@ export function FlowEditor({
       ),
     );
     touch();
+  };
+  const inspector = useRef<HTMLElement>(null);
+  /** Chooses the step a problem is in and puts the cursor in the field it is about. */
+  const goToProblem = (problem: Problem) => {
+    if (!problem.node) return;
+    choose(problem.node);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const panel = inspector.current;
+        if (!panel) return;
+        const field =
+          (problem.field &&
+            panel.querySelector<HTMLElement>(
+              `[name="${problem.field}"], [name^="${problem.field}"], [data-field="${problem.field}"] input, [data-field="${problem.field}"] button`,
+            )) ||
+          panel.querySelector<HTMLElement>(
+            "input:not([type=hidden]), select, textarea, button[role=combobox]",
+          );
+        field?.focus();
+      }),
+    );
   };
   /** Chooses a step from outside the canvas, and brings it into view. */
   const choose = (id: string) => {
@@ -772,32 +911,52 @@ export function FlowEditor({
     const timer = setInterval(() => setTick((n) => n + 1), 10_000);
     return () => clearInterval(timer);
   }, []);
-  const manualStep = nodes
-    .map(
-      (one) =>
-        one.data.node as {
-          type: string;
-          trigger?: { type?: string; input?: Record<string, unknown> };
-        },
-    )
-    .find((step) => step.type === "trigger" && step.trigger?.type === "manual");
-  const hasManual = manualStep !== undefined;
+  // A test starts at any of the flow's triggers: the manual one when there is one.
+  const triggerNodes = nodes.filter((one) => one.data.node.type === "trigger");
+  const triggerOf = (id: string | undefined) =>
+    triggerNodes.find((one) => one.id === id)?.data.node as
+      | { type: string; trigger?: { type?: string; input?: Record<string, unknown> } }
+      | undefined;
+  const manualId = triggerNodes.find(
+    (one) => (one.data.node as { trigger?: { type?: string } }).trigger?.type === "manual",
+  )?.id;
+  const testFromTrigger =
+    testTrigger && triggerNodes.some((one) => one.id === testTrigger)
+      ? testTrigger
+      : (manualId ?? triggerNodes[0]?.id);
+  const chosenTrigger = triggerOf(testFromTrigger);
   // Errors are the form's to show, by field. The test runs what is saved, so a change is saved first.
   const runTest = async (input: unknown) => {
     if (dirty && !(await save())) throw new Error("The draft could not be saved. See above.");
     const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
       flow: path,
       input,
+      ...(testFromTrigger && testFromTrigger !== manualId ? { triggerNode: testFromTrigger } : {}),
     });
     setTestRunId(started.runId);
     setEditedSinceTest(false);
   };
-  const testBlocked = !hasManual
-    ? "A test starts at a manual trigger. Set the trigger to start by hand to test the flow here."
-    : state === "new"
-      ? "Save the flow first."
-      : state !== "draft" && !dirty
-        ? "This flow has no draft. Change something, and the test runs the draft."
+  /** Tests again from one step, keeping what came before it in the last test. */
+  const testFrom = async (node: string) => {
+    if (!live.run) return;
+    if (dirty && !(await save())) return;
+    try {
+      const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
+        flow: path,
+        testFrom: { flowRunId: live.run.id, node },
+      });
+      setTestRunId(started.runId);
+      setEditedSinceTest(false);
+      setTesting(true);
+    } catch (error) {
+      notify.error(error);
+    }
+  };
+  const testBlocked =
+    triggerNodes.length === 0
+      ? "Add a trigger: a test starts where the flow would."
+      : state === "new"
+        ? "Save the flow first."
         : undefined;
   // keyboard: ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo, except while typing in a field, which keeps its own.
   useEffect(() => {
@@ -815,12 +974,6 @@ export function FlowEditor({
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [undo, redo]);
-  // The canvas is shorter with the panel open: the whole graph is brought back into view.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: fitted again when the panel opens or closes
-  useEffect(() => {
-    const timer = setTimeout(() => canvas?.fitView({ ...FIT, duration: 200 }), 60);
-    return () => clearTimeout(timer);
-  }, [testing, canvas]);
   const shown = testing ? live.run : undefined;
   const nodeRuns = useMemo(
     () =>
@@ -1015,10 +1168,14 @@ export function FlowEditor({
           >
             Save draft
           </Button>
-          {state === "draft" && !dirty ? (
-            <Button size="small" variant="primary" onClick={() => navigate(`${link}/changes`)}>
-              Review and deploy
-            </Button>
+          {state === "draft" && !dirty && path ? (
+            <DeployMenu
+              root={root}
+              link={link}
+              path={path}
+              disabled={busy}
+              onDeployed={() => setState("deployed")}
+            />
           ) : null}
         </div>
       </header>
@@ -1032,9 +1189,21 @@ export function FlowEditor({
           {problem ? <Notice tone="danger">{problem}</Notice> : null}
           {found.length > 0 ? (
             <Notice tone="attention">
-              <ul className="m-0 pl-5">
+              <ul aria-label="To fix" className="m-0 flex list-none flex-col gap-0.5 p-0">
                 {found.map((one) => (
-                  <li key={one}>{one}</li>
+                  <li key={one.message}>
+                    {one.node ? (
+                      <button
+                        type="button"
+                        onClick={() => goToProblem(one)}
+                        className="text-left underline-offset-2 hover:underline"
+                      >
+                        {one.message}
+                      </button>
+                    ) : (
+                      one.message
+                    )}
+                  </li>
                 ))}
               </ul>
             </Notice>
@@ -1174,6 +1343,7 @@ export function FlowEditor({
           </div>
         </div>
         <aside
+          ref={inspector}
           aria-label="The chosen step"
           className="flex max-h-[60vh] w-full shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:max-h-none lg:w-[22rem] lg:border-t-0 lg:border-l"
         >
@@ -1182,7 +1352,9 @@ export function FlowEditor({
             {chosen && node ? (
               <>
                 <NameField key={chosen.id} id={chosen.id} rename={rename} />
-                {shown ? <LastTest run={shown} node={chosen.id} /> : null}
+                {shown ? (
+                  <LastTest run={shown} node={chosen.id} root={root} onTestFrom={testFrom} />
+                ) : null}
                 {node.type === "trigger" ? (
                   <>
                     <SelectField
@@ -1224,14 +1396,29 @@ export function FlowEditor({
                       />
                     ) : null}
                     {(node.trigger as { type: string }).type === "schedule" ? (
-                      <TextField
-                        name="cron"
-                        label="When, as a cron line"
-                        value={(node.trigger as { cron?: string }).cron ?? ""}
-                        hint="Minute, hour, day of month, month, day of week. 0 8 * * * is every day at 8."
-                        onChange={(cron) =>
-                          update(chosen.id, { trigger: { ...(node.trigger as object), cron } })
+                      <WhenFields
+                        root={root}
+                        value={
+                          node.trigger as {
+                            cron?: string;
+                            timezone?: string;
+                            overlap?: "allow" | "skip";
+                          }
                         }
+                        readOnly={false}
+                        // One added here is new; one that came with the flow keeps its zone.
+                        fresh={!loadedIds.current.has(chosen.id)}
+                        overlapDefault="skip"
+                        change={(next) => {
+                          const merged: Record<string, unknown> = {
+                            ...(node.trigger as object),
+                            ...next,
+                          };
+                          for (const key of Object.keys(merged)) {
+                            if (merged[key] === undefined) delete merged[key];
+                          }
+                          update(chosen.id, { trigger: merged as FlowNode["trigger"] });
+                        }}
                       />
                     ) : null}
                     {(node.trigger as { type: string }).type === "schedule" &&
@@ -1262,7 +1449,9 @@ export function FlowEditor({
                     ) : null}
                   </>
                 ) : null}
-                {node.type === "script" && specs.has(String(node.script)) ? (
+                {node.type === "script" &&
+                specs.has(String(node.script)) &&
+                node.input === undefined ? (
                   <p className="m-0 text-[13px]">
                     <span className="font-semibold">{specs.get(String(node.script))?.label}</span>{" "}
                     <code className="font-mono text-[12px] text-ink-muted">
@@ -1474,7 +1663,15 @@ export function FlowEditor({
         <FlowTestPanel
           link={link}
           path={path}
-          schema={manualStep?.trigger?.input}
+          schema={
+            chosenTrigger?.trigger?.type === "manual" ? chosenTrigger.trigger.input : undefined
+          }
+          triggers={triggerNodes.map((one) => ({
+            node: one.id,
+            label: `${one.id} (${(one.data.node as { trigger?: { type?: string } }).trigger?.type ?? "trigger"})`,
+          }))}
+          trigger={testFromTrigger}
+          onTrigger={setTestTrigger}
           blocked={testBlocked}
           run={live.run}
           error={live.error}
@@ -1513,7 +1710,7 @@ function NameField({ id, rename }: { id: string; rename: (from: string, to: stri
         label="Name"
         value={text}
         error={error}
-        hint="Press Enter to rename. Expressions refer to a step by this name."
+        hint="Press Enter to rename. Expressions that read this step are changed to the new name."
         onChange={setText}
       />
     </form>

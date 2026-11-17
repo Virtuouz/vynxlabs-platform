@@ -1,9 +1,9 @@
-import { Button, Facts, Notice, ResultView } from "@vynxlabs/ui";
+import { Button, Facts, Notice, ResultView, SelectField } from "@vynxlabs/ui";
 import { X } from "lucide-react";
 import { InputForm } from "../InputDialog.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { Link } from "../router.tsx";
-import type { FlowRunDetail, StepRow } from "./Flows.tsx";
+import { type FlowRunDetail, StepLogs, type StepRow } from "./Flows.tsx";
 
 /** How long a step took, said briefly. */
 export function took(step: { startedAt: string; finishedAt: string | null }): string | undefined {
@@ -29,6 +29,9 @@ export function FlowTestPanel({
   link,
   path,
   schema,
+  triggers = [],
+  trigger,
+  onTrigger,
   blocked,
   run,
   error,
@@ -39,8 +42,12 @@ export function FlowTestPanel({
 }: {
   link: string;
   path: string;
-  /** The manual trigger's input. */
+  /** The chosen trigger's input, for a manual one. */
   schema: Record<string, unknown> | undefined;
+  /** The flow's triggers, by node, to test it from any of them. */
+  triggers?: { node: string; label: string }[];
+  trigger?: string | undefined;
+  onTrigger?: ((node: string) => void) | undefined;
   /** Why a test cannot be run now. */
   blocked: string | undefined;
   run: FlowRunDetail | undefined;
@@ -71,7 +78,24 @@ export function FlowTestPanel({
           {blocked ? (
             <Notice tone="plain">{blocked}</Notice>
           ) : (
-            <InputForm schema={schema} action={run ? "Run again" : "Run a test"} onSubmit={onRun} />
+            <div className="flex flex-col gap-3">
+              {triggers.length > 1 && onTrigger ? (
+                <SelectField
+                  name="trigger"
+                  label="Start from"
+                  value={trigger ?? triggers[0]?.node ?? ""}
+                  onChange={onTrigger}
+                  options={triggers.map((one) => ({ value: one.node, label: one.label }))}
+                  hint="The input is what that trigger would receive."
+                />
+              ) : null}
+              <InputForm
+                key={trigger ?? ""}
+                schema={schema}
+                action={run ? "Run again" : "Run a test"}
+                onSubmit={onRun}
+              />
+            </div>
           )}
         </div>
         <div className="flex min-w-0 flex-col gap-2">
@@ -119,8 +143,22 @@ export function FlowTestPanel({
   );
 }
 
-/** What a step did in the last test: shown beside its settings. */
-export function LastTest({ run, node }: { run: FlowRunDetail; node: string }) {
+/**
+ * What a step did in the last test, shown beside its settings: its log, what it
+ * produced, and a way to test again from it, keeping what came before.
+ */
+export function LastTest({
+  run,
+  node,
+  root,
+  onTestFrom,
+}: {
+  run: FlowRunDetail;
+  node: string;
+  /** The workspace's API address, to read the step's log. */
+  root?: string | undefined;
+  onTestFrom?: ((node: string) => Promise<void>) | undefined;
+}) {
   const step = run.steps.find((one) => one.node === node && one.item === "");
   if (!step) {
     return <p className="m-0 text-meta text-ink-subtle">The last test did not reach this step.</p>;
@@ -162,6 +200,18 @@ export function LastTest({ run, node }: { run: FlowRunDetail; node: string }) {
       ) : null}
       {step.status === "succeeded" ? (
         <ResultView label={`Output of ${node}`} value={step.output} />
+      ) : null}
+      {step.runId && root ? <StepLogs root={root} runId={step.runId} /> : null}
+      {onTestFrom && node !== run.triggerNode && step.status !== "running" ? (
+        <div className="flex flex-col gap-1">
+          <Button size="small" onClick={() => void onTestFrom(node).catch(() => {})}>
+            Test from {node}
+          </Button>
+          <span className="text-meta text-ink-subtle">
+            Keeps what the steps before it did in this test, and runs {node} and what follows on the
+            draft as it is now.
+          </span>
+        </div>
       ) : null}
     </section>
   );

@@ -656,6 +656,18 @@ describe("running a flow", () => {
     ]);
     expect(step(done, "a").output).toEqual({ n: 6 });
     expect(step(done, "b").output).toEqual({ n: 12 });
+    // Each step says what it was given.
+    expect(step(done, "a").input).toEqual({ n: 3 });
+    expect(step(done, "b").input).toEqual({ n: 6 });
+
+    // The graph as it was when the run started, and whether the flow differs now.
+    const definition = (await alice.get(`${ws()}/flow-runs/${id}/definition`)).body;
+    expect(definition).toMatchObject({
+      path: "linear",
+      bundleVersion: done.bundleVersion,
+      changed: false,
+    });
+    expect(Object.keys(definition.nodes).sort()).toEqual(["a", "b", "c", "start"]);
 
     // A code step is an ordinary run, linked to its flow, with its own logs.
     const stepRun = (await alice.get(`${ws()}/runs/${step(done, "a").runId}`)).body;
@@ -1116,6 +1128,8 @@ describe("retrying a flow run", () => {
     expect(step(failed, "c")).toBeUndefined();
 
     expect((await alice.get(`${ws()}/flow-runs/${id}/retry-plan`)).body).toEqual({
+      bundleVersion: failed.bundleVersion,
+      changed: [],
       kept: ["a"],
       again: ["b", "c"],
       approvalsKept: [],
@@ -1190,10 +1204,9 @@ describe("retrying a flow run", () => {
     await alice.post(`${ws()}/flow-runs/${asked.id}/cancel`);
   });
 
-  test("from the start it runs whole, with new input if given; a step retry cannot change either", async () => {
+  test("from the start it runs whole, with new input if given; a step retry cannot change its input", async () => {
     const id = await start("retrying", { n: 1, failUntil: soon() });
     await finished(id);
-    expect((await retry(id, { from: "failed", bundle: "active" })).status).toBe(409);
     expect((await retry(id, { from: "failed", input: { n: 2 } })).status).toBe(409);
     const again = await retry(id, {
       from: "start",
@@ -1206,6 +1219,68 @@ describe("retrying a flow run", () => {
     expect(step(done, "c").output).toEqual({ total: 10 });
     // A flow run still going cannot be retried, and a succeeded one has nothing failed.
     expect((await retry(again.body.id, { from: "failed" })).status).toBe(409);
+  });
+});
+
+describe("retrying on a newer version", () => {
+  const soon = () => new Date(Date.now() + 1500).toISOString();
+  const retry = (id: string, body: object) => alice.post(`${ws()}/flow-runs/${id}/retry`, body);
+  /** The bundle with the "retrying" flow's node changed, uploaded and not made active. */
+  async function uploadWith(
+    node: string,
+    changed: object,
+  ): Promise<{ id: string; version: number }> {
+    const uploaded = await alice.post(
+      `${ws()}/bundles`,
+      bundle("one", (manifests) =>
+        manifests.map((one) =>
+          one.kind === "flow" && one.path === "retrying"
+            ? {
+                ...one,
+                body: {
+                  ...one.body,
+                  nodes: { ...(one.body.nodes as Record<string, object>), [node]: changed },
+                },
+              }
+            : one,
+        ),
+      ),
+    );
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(201);
+    return { id: uploaded.body.id, version: uploaded.body.version };
+  }
+
+  test("from the failed step on a fix: what is kept stays, the rest runs on the fix", async () => {
+    const id = await start("retrying", { n: 4, failUntil: soon() });
+    const failed = await finished(id);
+    expect(failed.state).toBe("failed");
+    // Only c changes in the fix: a is kept as it was.
+    const fix = await uploadWith("c", set({ total: "steps.a.output.n + 1.0" }));
+    const plan = (await alice.get(`${ws()}/flow-runs/${id}/retry-plan?bundle=${fix.id}`)).body;
+    expect(plan).toMatchObject({ bundleVersion: fix.version, changed: [], kept: ["a"] });
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const started = await retry(id, { from: "failed", bundleId: fix.id });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect(started.body.bundleId).toBe(fix.id);
+    const done = await finished(started.body.id);
+    expect(
+      done.state,
+      JSON.stringify(done.steps.map((one: Any) => [one.node, one.status, one.error])),
+    ).toBe("succeeded");
+    expect(step(done, "a").copiedFrom).toMatchObject({ flowRunId: id });
+    expect(step(done, "c").output).toEqual({ total: 9 });
+  });
+
+  test("a fix that changes a step the retry would keep is refused, naming it", async () => {
+    const id = await start("retrying", { n: 2, failUntil: soon() });
+    await finished(id);
+    const changed = await uploadWith("a", run("double", "{'n': trigger.n + 1}"));
+    expect(
+      (await alice.get(`${ws()}/flow-runs/${id}/retry-plan?bundle=${changed.id}`)).body.changed,
+    ).toEqual(["a"]);
+    const refused = await retry(id, { from: "failed", bundleId: changed.id });
+    expect(refused.status).toBe(409);
+    expect(refused.body.detail).toContain("(a)");
   });
 });
 
@@ -1237,6 +1312,18 @@ describe("events and triggers", () => {
       triggerNode: "by_hook",
       trigger: { type: "webhook", trigger: "many-triggers#by_hook" },
       output: { hook_path: { via: "hook", name: "Ada" } },
+    });
+
+    // A flow's own schedule can be fired now, from its page, by its node.
+    const fired = await alice.post(`${ws()}/schedule-firings`, {
+      path: "many-triggers",
+      node: "nightly",
+    });
+    expect(fired.status, JSON.stringify(fired.body)).toBe(201);
+    expect(fired.body.kind).toBe("flow");
+    expect(await finished(fired.body.id)).toMatchObject({
+      triggerNode: "nightly",
+      output: { night_path: { via: "schedule" } },
     });
 
     const night = new Date(detail.triggers.find((x: Any) => x.type === "schedule").nextFireAt);

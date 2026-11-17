@@ -1,19 +1,9 @@
-import { Notice } from "@vynxlabs/ui";
 import type { ReactNode } from "react";
-import { EmptyCanvas, MasterDetail } from "./layout.tsx";
+import { type DataColumn, DataTable, type DataTableProps } from "./DataTable.tsx";
+import { MasterDetail } from "./layout.tsx";
 
-export interface CollectionColumn<Row> {
-  header: string;
-  cell: (row: Row) => ReactNode;
-  /**
-   * Which widths show it: 1 always, 2 from a tablet up, 3 on a wide screen.
-   * On a phone a row keeps only what says what it is and its state.
-   */
-  priority?: 1 | 2 | 3;
-  align?: "start" | "end";
-}
-
-const SHOWN = { 1: "", 2: "hidden sm:table-cell", 3: "hidden lg:table-cell" } as const;
+/** A column of a collection: the same shape as `DataTable`'s. */
+export type CollectionColumn<Row> = DataColumn<Row>;
 
 /**
  * A collection that fills the work area: a heading with the screen's one primary
@@ -37,6 +27,7 @@ export function CollectionView<Row>({
   error,
   loading,
   label,
+  table,
 }: {
   title: string;
   description?: ReactNode;
@@ -54,6 +45,8 @@ export function CollectionView<Row>({
   loading?: boolean;
   /** Names the list for screen readers. */
   label?: string;
+  /** Anything else the table takes: sort, row actions, checkboxes, density, a footer. */
+  table?: Partial<Omit<DataTableProps<Row>, "columns" | "rows" | "rowKey">>;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -70,76 +63,18 @@ export function CollectionView<Row>({
         {toolbar}
       </div>
       <MasterDetail inspector={inspector} side={side}>
-        {error ? (
-          <div className="p-4 md:px-6">
-            <Notice tone="danger">{error}</Notice>
-          </div>
-        ) : loading || rows === undefined ? (
-          <p className="m-0 px-4 py-6 text-ink-muted md:px-6">Loading…</p>
-        ) : rows.length === 0 ? (
-          <div className="p-4 md:p-6">
-            <EmptyCanvas title={empty.title} text={empty.text} action={empty.action} />
-          </div>
-        ) : (
-          <table aria-label={label ?? title} className="w-full border-collapse text-left">
-            <thead className="sticky top-0 z-10 bg-canvas">
-              <tr className="border-line border-b text-meta text-ink-subtle">
-                {columns.map((column, index) => (
-                  <th
-                    key={column.header}
-                    scope="col"
-                    className={`px-3 py-2 font-medium ${SHOWN[column.priority ?? 1]} ${
-                      column.align === "end" ? "text-right" : ""
-                    } ${index === 0 ? "pl-4 md:pl-6" : ""} ${index === columns.length - 1 ? "pr-4 md:pr-6" : ""}`}
-                  >
-                    {column.header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const key = rowKey(row);
-                const on = key === selected;
-                return (
-                  <tr
-                    key={key}
-                    data-row={key}
-                    // The chosen row. A table row cannot be "selected" outside a grid; it can be current.
-                    aria-current={on ? "true" : undefined}
-                    tabIndex={onSelect ? 0 : undefined}
-                    onClick={onSelect ? () => onSelect(row) : undefined}
-                    onKeyDown={
-                      onSelect
-                        ? (event) => {
-                            if (event.target !== event.currentTarget) return;
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              onSelect(row);
-                            }
-                          }
-                        : undefined
-                    }
-                    className={`border-line border-b align-top ${onSelect ? "cursor-pointer" : ""} ${
-                      on ? "bg-selected" : onSelect ? "hover:bg-surface" : ""
-                    }`}
-                  >
-                    {columns.map((column, index) => (
-                      <td
-                        key={column.header}
-                        className={`px-3 py-2.5 ${SHOWN[column.priority ?? 1]} ${
-                          column.align === "end" ? "text-right" : ""
-                        } ${index === 0 ? "pl-4 md:pl-6" : ""} ${index === columns.length - 1 ? "pr-4 md:pr-6" : ""}`}
-                      >
-                        {column.cell(row)}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+        <DataTable
+          {...table}
+          label={label ?? title}
+          columns={columns}
+          rows={rows}
+          rowKey={rowKey}
+          selected={selected}
+          {...(onSelect ? { onOpen: onSelect } : {})}
+          empty={empty}
+          error={error}
+          loading={loading}
+        />
       </MasterDetail>
     </div>
   );

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const listeners = new Set<() => void>();
 
@@ -34,11 +34,15 @@ if (typeof addEventListener === "function") {
       letPass = false;
       lastChange = "pop";
       shown = `${location.pathname}${location.search}`;
+      // The page still shows the entry being left: keep its scroll, then put back the one returned to.
+      remember();
+      showing = entryOf();
+      restore();
       return;
     }
     event.stopImmediatePropagation();
     // The address has already moved: put the page's own back, then ask.
-    history.pushState(null, "", shown);
+    history.pushState({ entry: showing }, "", shown);
     void askToLeave(messageOfBlockers()).then((leave) => {
       if (!leave) return;
       blockers.clear();
@@ -57,16 +61,88 @@ if (typeof addEventListener === "function") {
 const messageOfBlockers = () =>
   [...blockers][0]?.message ?? "Changes on this page are not saved. Leave anyway?";
 
+/**
+ * Each history entry carries a key, so the scroll of the page and of its own
+ * scrolling regions can be put back when Back or Forward returns to it.
+ */
+let entry = 0;
+const entryOf = () => {
+  const state = typeof history === "object" ? (history.state as { entry?: number } | null) : null;
+  return typeof state?.entry === "number" ? state.entry : 0;
+};
+if (typeof history === "object" && typeof history.state?.entry !== "number") {
+  history.replaceState({ ...(history.state ?? {}), entry: 0 }, "");
+}
+entry = typeof history === "object" ? Math.max(entry, entryOf()) : 0;
+/** Scroll offsets by entry, then by region. Kept for this tab only. */
+const scrolls = new Map<number, Map<string, number>>();
+const regions = new Map<string, HTMLElement>();
+/** The entry on show, known also while the browser is already moving to another. */
+let showing = typeof history === "object" ? entryOf() : 0;
+const remember = (here = showing) => {
+  const saved = scrolls.get(here) ?? new Map<string, number>();
+  for (const [id, element] of regions) saved.set(id, element.scrollTop);
+  scrolls.set(here, saved);
+};
+/** Puts each region's offset back for the entry now shown, over a few frames while content loads. */
+const restore = () => {
+  const saved = scrolls.get(entryOf());
+  if (!saved || typeof requestAnimationFrame !== "function") return;
+  let frames = 0;
+  const step = () => {
+    let pending = false;
+    for (const [id, top] of saved) {
+      const element = regions.get(id);
+      if (!element) {
+        pending = true;
+        continue;
+      }
+      element.scrollTop = top;
+      if (Math.abs(element.scrollTop - top) > 1) pending = true;
+    }
+    frames += 1;
+    if (pending && frames < 30) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+};
+
+/**
+ * Keeps the scroll of `ref` (the page's `main`, or a list's own scrolling
+ * region) for each history entry, and puts it back on Back and Forward.
+ */
+export function useRestoredScroll(ref: { current: HTMLElement | null }, id: string) {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    regions.set(id, element);
+    if (lastChange === "pop") restore();
+    return () => {
+      if (regions.get(id) === element) {
+        remember();
+        regions.delete(id);
+      }
+    };
+  }, [ref, id]);
+}
+
 function go(to: string, options: { replace?: boolean }) {
   lastChange = options.replace ? "replace" : "push";
-  if (options.replace) history.replaceState(null, "", to);
-  else history.pushState(null, "", to);
+  if (options.replace) history.replaceState({ ...(history.state ?? {}), entry: entryOf() }, "", to);
+  else {
+    remember();
+    entry += 1;
+    history.pushState({ entry }, "", to);
+    showing = entry;
+  }
   shown = `${location.pathname}${location.search}`;
   for (const listener of listeners) listener();
 }
 
+const pathOf = (to: string) => new URL(to, location.href).pathname;
+
 export function navigate(to: string, options: { replace?: boolean } = {}) {
-  if (blockers.size === 0 || options.replace) {
+  // The same page changing its query, such as opening a row's inspector, is not leaving it.
+  if (blockers.size === 0 || options.replace || pathOf(to) === location.pathname) {
     go(to, options);
     return;
   }
@@ -133,6 +209,146 @@ export function useQueryValue(name: string): [string | null, (value: string | nu
     [name],
   );
   return [value, change];
+}
+
+/**
+ * One key of a screen's view state in the address. `push` keys make a history
+ * entry when they change, so Back undoes them: opening a row, a tab, a step.
+ * Others replace, so filtering and searching never pile up entries.
+ */
+type UrlKey =
+  | { type: "string"; default?: string; push?: boolean }
+  | { type: "number"; default?: number; push?: boolean }
+  | { type: "boolean"; default?: boolean; push?: boolean }
+  | { type: "list"; push?: boolean };
+type UrlValue<K extends UrlKey> = K extends { type: "list" }
+  ? string[]
+  : K extends { type: "number"; default: number }
+    ? number
+    : K extends { type: "number" }
+      ? number | undefined
+      : K extends { type: "boolean" }
+        ? boolean
+        : K extends { type: "string"; default: string }
+          ? string
+          : string | undefined;
+export type UrlState<S extends Record<string, UrlKey>> = { [Name in keyof S]: UrlValue<S[Name]> };
+
+function readUrlState<S extends Record<string, UrlKey>>(schema: S, search: string): UrlState<S> {
+  const query = new URLSearchParams(search);
+  const state: Record<string, unknown> = {};
+  for (const [name, key] of Object.entries(schema)) {
+    const raw = query.get(name);
+    if (key.type === "list") state[name] = query.getAll(name).filter(Boolean);
+    else if (key.type === "number") {
+      const number = raw === null ? Number.NaN : Number(raw);
+      state[name] = Number.isFinite(number) ? number : key.default;
+    } else if (key.type === "boolean") {
+      state[name] = raw === null ? (key.default ?? false) : raw === "1" || raw === "true";
+    } else state[name] = raw === null || raw === "" ? key.default : raw;
+  }
+  return state as UrlState<S>;
+}
+
+/** The address for `changes` applied over the current query, with defaults and empties left out. */
+export function urlWith<S extends Record<string, UrlKey>>(
+  schema: S,
+  changes: Partial<UrlState<S>>,
+  search = location.search,
+): string {
+  const query = new URLSearchParams(search);
+  for (const [name, value] of Object.entries(changes)) {
+    const key = schema[name];
+    if (!key) continue;
+    query.delete(name);
+    if (key.type === "list") {
+      for (const one of (value as string[] | undefined) ?? []) if (one) query.append(name, one);
+    } else if (value === undefined || value === null || value === "") {
+      // Absent means the default.
+    } else if ("default" in key && value === key.default) {
+      // Defaults are left out, so addresses stay short.
+    } else if (key.type === "boolean") {
+      if (value) query.set(name, "1");
+    } else query.set(name, String(value));
+  }
+  const text = query.toString();
+  return `${location.pathname}${text ? `?${text}` : ""}`;
+}
+
+/**
+ * A screen's view state (filters, search, sort, tab, the open item) kept in the
+ * address, so a reload or a shared link shows the same view, and Back closes
+ * what was opened before it leaves the screen.
+ */
+export function useUrlState<S extends Record<string, UrlKey>>(
+  schema: S,
+): [UrlState<S>, (changes: Partial<UrlState<S>>) => void] {
+  // The schema is written inline by callers, so a new object each render: its text stands for it.
+  const shape = JSON.stringify(schema);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the schema's text
+  const stable = useMemo(() => schema, [shape]);
+  const read = useCallback(() => readUrlState(stable, location.search), [stable]);
+  const [state, setState] = useState(read);
+  const [search, setSearch] = useState(() => location.search);
+  useEffect(() => {
+    const update = () => {
+      if (location.search === search) return;
+      setSearch(location.search);
+      setState(read());
+    };
+    update();
+    listeners.add(update);
+    addEventListener("popstate", update);
+    return () => {
+      listeners.delete(update);
+      removeEventListener("popstate", update);
+    };
+  }, [read, search]);
+  const change = useCallback(
+    (changes: Partial<UrlState<S>>) => {
+      const to = urlWith(stable, changes);
+      if (to === `${location.pathname}${location.search}`) return;
+      const push = Object.keys(changes).some((name) => stable[name]?.push);
+      navigate(to, { replace: !push });
+    },
+    [stable],
+  );
+  return [state, change];
+}
+
+/**
+ * One string of view state in the address, used like `useState`: a filter, a
+ * search, a tab, the open item. With `push`, changing it makes a history entry,
+ * so Back undoes it (opening something); otherwise it replaces (filtering).
+ * Names must be unique on a screen.
+ */
+export function useUrlParam<T extends string = string>(
+  name: string,
+  fallback: NoInfer<T>,
+  options?: { push?: boolean },
+): [T, (value: T | undefined) => void];
+export function useUrlParam<T extends string = string>(
+  name: string,
+  fallback?: undefined,
+  options?: { push?: boolean },
+): [T | undefined, (value: T | undefined) => void];
+export function useUrlParam(
+  name: string,
+  fallback?: string,
+  options: { push?: boolean } = {},
+): [string | undefined, (value: string | undefined) => void] {
+  const [state, set] = useUrlState({
+    [name]: {
+      type: "string" as const,
+      ...(fallback === undefined ? {} : { default: fallback }),
+      ...(options.push ? { push: true } : {}),
+    },
+  });
+  const change = useCallback(
+    (value: string | undefined) => set({ [name]: value === "" ? undefined : value }),
+    [name, set],
+  );
+  return [state[name] as string | undefined, change];
 }
 
 /** Matches `/t/:tenant/members` style patterns. A trailing `/*` matches any deeper path. */

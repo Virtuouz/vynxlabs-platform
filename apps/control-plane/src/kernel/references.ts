@@ -18,6 +18,8 @@ export interface Reference {
   by: { kind: string; path: string };
   /** How, in a few words: "reads it", "starts it", "is given it in step send". */
   how: string;
+  /** Set when the use is in a draft, not yet deployed. */
+  draft?: boolean;
 }
 
 interface ScriptLike {
@@ -31,22 +33,45 @@ interface ScriptLike {
  * flows that flows and triggers start, the events flows listen for, and the
  * interfaces apps serve. Nothing is stored: it is read from the bodies each time.
  */
-export async function workspaceReferences(db: Db, workspaceId: string): Promise<Reference[]> {
-  const resources = await db
+export async function workspaceReferences(
+  db: Db,
+  workspaceId: string,
+  options: { drafts?: boolean } = {},
+): Promise<Reference[]> {
+  const deployed = await db
     .selectFrom("resource")
     .select(["kind", "path", "body"])
     .where("workspace_id", "=", workspaceId)
     .execute();
+  // With drafts, a draft speaks for its path in place of what is deployed there, and a
+  // draft that deletes a resource takes its uses away.
+  const drafts = options.drafts
+    ? await db
+        .selectFrom("resource_draft")
+        .select(["kind", "path", "body", "deleted"])
+        .where("workspace_id", "=", workspaceId)
+        .execute()
+    : [];
+  const drafted = new Set(drafts.map((draft) => draft.path));
+  const resources = [
+    ...deployed
+      .filter((resource) => !drafted.has(resource.path))
+      .map((one) => ({ ...one, draft: false })),
+    ...drafts.filter((draft) => !draft.deleted).map((one) => ({ ...one, draft: true })),
+  ];
   const found: Reference[] = [];
+  let fromDraft = false;
   const add = (
     kind: TargetKind,
     name: string | undefined,
     by: { kind: string; path: string },
     how: string,
   ) => {
-    if (name) found.push({ target: { kind, name }, by, how });
+    if (name)
+      found.push({ target: { kind, name }, by, how, ...(fromDraft ? { draft: true } : {}) });
   };
   for (const resource of resources) {
+    fromDraft = resource.draft;
     const by = { kind: resource.kind, path: resource.path };
     const body = resource.body as Record<string, unknown>;
     if (

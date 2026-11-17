@@ -177,6 +177,16 @@ describe("tenancy", () => {
       type: "production",
     });
     expect(patched.body).toMatchObject({ name: "Development", type: "dev" });
+    // Schedules here are written in UTC until the workspace says otherwise.
+    expect(patched.body.timeZone).toBe("UTC");
+    const zoned = await alice.client.patch(`/tenants/${acme}/workspaces/${dev}`, {
+      timeZone: "Europe/Berlin",
+    });
+    expect(zoned.body.timeZone).toBe("Europe/Berlin");
+    const nowhere = await alice.client.patch(`/tenants/${acme}/workspaces/${dev}`, {
+      timeZone: "Mars/Olympus",
+    });
+    expect(nowhere.status).toBe(400);
     await expect(
       t.db.updateTable("workspace").set({ type: "production" }).where("id", "=", dev).execute(),
     ).rejects.toThrow(/type of a workspace cannot be changed/);

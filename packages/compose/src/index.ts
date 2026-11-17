@@ -6,6 +6,7 @@ import {
   type BundleManifest,
   bundleDigest,
   CORE_PREFIX,
+  type ConsoleSources,
   entryFor,
   type FlowBody,
   flowReferences,
@@ -43,6 +44,13 @@ const EXPORT_SHAPE: Record<string, string> = {
 export const SOURCE_KINDS: readonly string[] = Object.keys(EXPORT_SHAPE);
 
 /** Something wrong with console-written source. Each problem names its file and line. */
+/** The map esbuild wrote, with its sources named as the console names them: `<path>.<kind>.ts`. */
+function consoleMap(text: string): string {
+  const parsed = JSON.parse(text) as { sources?: string[] };
+  parsed.sources = (parsed.sources ?? []).map((source) => source.replace(/^(\.\.\/)*vx:/, ""));
+  return JSON.stringify(parsed);
+}
+
 export class ComposeError extends Error {
   constructor(readonly problems: string[]) {
     super(problems.join("\n"));
@@ -192,13 +200,29 @@ export async function composeCode(
   manifests: readonly BundleManifest[],
   options: ComposeOptions,
 ): Promise<string> {
+  return (await composeWithSources(baseCode, manifests, options)).code;
+}
+
+/** The section's lines before the compiled code: the import, the wrapper, `exports`. */
+const SECTION_HEAD_LINES = 3;
+
+/**
+ * As `composeCode`, with the console's sources and a map from the compiled code
+ * back to them, so a failure in console-written code can be pointed at its line.
+ */
+export async function composeWithSources(
+  baseCode: string,
+  manifests: readonly BundleManifest[],
+  options: ComposeOptions,
+): Promise<{ code: string; consoleSources?: ConsoleSources }> {
   const base = baseCode.split(CONSOLE_MARKER)[0] as string;
   const sources = sourcesOf(manifests);
-  if (sources.length === 0) return base;
+  if (sources.length === 0) return { code: base };
 
   // An empty directory of its own: the compiler looks for nothing beside the sources.
   const scratch = await mkdtemp(join(tmpdir(), "vx-compose-"));
   let compiled: string;
+  let map = "";
   try {
     const result = await build({
       absWorkingDir: scratch,
@@ -208,12 +232,18 @@ export async function composeCode(
       platform: "node",
       target: "node24",
       write: false,
+      outfile: "out.js",
+      sourcemap: "external",
+      sourcesContent: false,
       logLevel: "silent",
       // No tsconfig.json is looked for or honored.
       tsconfigRaw: {},
       plugins: [lockdown(sources, options.sdkEntry)],
     });
-    compiled = result.outputFiles[0]?.text ?? "";
+    compiled = result.outputFiles.find((file) => file.path.endsWith(".js"))?.text ?? "";
+    map = result.outputFiles.find((file) => file.path.endsWith(".map"))?.text ?? "";
+    // The compiled code names its map; nothing reads it there, and it would point nowhere.
+    compiled = compiled.replace(/\n\/\/# sourceMappingURL=.*\n?$/, "\n");
   } catch (error) {
     const failures = (error as EsbuildFailure).errors;
     throw new ComposeError(
@@ -248,6 +278,7 @@ export async function composeCode(
       ? "export const __vx_describe = __vx_console.__vx_describe;\n"
       : "");
   const code = base + CONSOLE_MARKER + section;
+  const line = (base + CONSOLE_MARKER).split("\n").length - 1 + SECTION_HEAD_LINES;
   // The whole module must still parse: an export of the repository's own could clash with one of these.
   try {
     await transform(code, { loader: "js", format: "esm", logLevel: "silent" });
@@ -257,7 +288,18 @@ export async function composeCode(
       `The bundle's code and the console-managed code do not fit together: ${failures?.[0]?.text ?? (error as Error).message}`,
     ]);
   }
-  return code;
+  return {
+    code,
+    ...(map
+      ? {
+          consoleSources: {
+            files: sources.map((source) => ({ path: source.file, content: source.code })),
+            line,
+            map: consoleMap(map),
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -318,10 +360,19 @@ export async function composeBundle(
     ),
     ...consoleManaged,
   ];
-  const code = await composeCode(base.code, consoleManaged, options);
+  const { code, consoleSources } = await composeWithSources(base.code, consoleManaged, options);
+  // A base composed before carries the console's old sources; these replace them.
+  const { consoleSources: _old, ...rest } = base;
   const unsigned: UnsignedBundle =
     consoleManaged.length === 0
-      ? { ...base, manifests, code }
-      : { ...base, formatVersion: 3, manifests, code, assets: base.assets ?? [] };
+      ? { ...rest, manifests, code }
+      : {
+          ...rest,
+          formatVersion: 3,
+          manifests,
+          code,
+          assets: base.assets ?? [],
+          ...(consoleSources ? { consoleSources } : {}),
+        };
   return { ...unsigned, digest: bundleDigest(unsigned) };
 }

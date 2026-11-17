@@ -529,3 +529,22 @@ test("a branding preview says which colors would be hard to read, and still lets
   rerender(<ContrastCheck values={{ ...KIT.dark, ...KIT.tokens, "line-control": "#d3dae2" }} />);
   expect(screen.getByText("2 pairs are hard to read:")).toBeTruthy();
 });
+
+test("the end users screen keeps its search and the person open in the address, and Back closes them first", async () => {
+  routes[`GET /api/v1${base}/end-users`] = () => [200, { items: [ada], nextCursor: null }];
+  routes[`GET /api/v1${base}/end-users/u1`] = () => [200, ada];
+  wide();
+  history.replaceState(null, "", "/t/t1/end-users?q=ada");
+  show(<EndUsers base={base} />);
+  // A reload, or a link, comes back to the same search.
+  expect(
+    (await screen.findByLabelText("Search by email or name")) as HTMLInputElement,
+  ).toHaveProperty("value", "ada");
+  fireEvent.click(await screen.findByText(ada.email));
+  await waitFor(() => expect(new URLSearchParams(location.search).get("user")).toBe("u1"));
+  history.back();
+  await waitFor(() => expect(new URLSearchParams(location.search).get("user")).toBeNull());
+  expect(location.pathname).toBe("/t/t1/end-users");
+  expect(new URLSearchParams(location.search).get("q")).toBe("ada");
+  history.replaceState(null, "", "/");
+});

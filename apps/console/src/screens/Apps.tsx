@@ -6,6 +6,7 @@ import { ask, failureText } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
+import { useUrlParam } from "../router.tsx";
 
 export interface AppSummary {
   id: string;
@@ -400,7 +401,7 @@ export function Apps({ root }: { root: string }) {
 function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) => void }) {
   const list = useLoad<{ items: AppSummary[] }>(`${root}/apps`);
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
-  const [chosen, setChosen] = useState<string>();
+  const [chosen, setChosen] = useUrlParam("app", undefined, { push: true });
   const open = list.data?.items.find((row) => row.id === chosen);
   const unserved =
     instance.data?.appsAddress === "none" &&

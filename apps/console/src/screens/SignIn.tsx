@@ -39,7 +39,7 @@ function takeSsoError(): string | undefined {
   const reason = url.searchParams.get("sso_error");
   if (reason === null) return undefined;
   url.searchParams.delete("sso_error");
-  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   return SSO_ERRORS[reason] ?? "You could not be signed in. Try again.";
 }
 

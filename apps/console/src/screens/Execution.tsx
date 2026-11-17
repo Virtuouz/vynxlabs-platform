@@ -12,13 +12,15 @@ import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
+import { consoleLink, ObjectLink } from "../kit/objects.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate, useQueryValue } from "../router.tsx";
+import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
 import {
@@ -114,8 +116,8 @@ export function Scripts({
 }) {
   const runsLink = `${link}/runs`;
   const list = useLoad<{ items: ScriptRow[] }>(`${root}/scripts`);
-  const [filter, setFilter] = useState<"all" | "failing" | "never">("all");
-  const [chosen, setChosen] = useState<string>();
+  const [filter, setFilter] = useUrlParam<"all" | "failing" | "never">("filter", "all");
+  const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = list.data?.items ?? [];
   const rows = items.filter(
     (row) =>
@@ -291,16 +293,17 @@ export function Scripts({
                   <div key={kind} className="flex flex-col gap-1">
                     <span className="text-label text-ink-subtle uppercase">{kind}</span>
                     {open.uses[kind].map((name) => (
-                      <Mono key={name}>{name}</Mono>
+                      <ObjectLink key={name} link={link} kind={kind.slice(0, -1)} path={name} />
                     ))}
                   </div>
                 ) : null,
               )}
-              {open.lastRun ? (
-                <Link to={`${runsLink}/${open.lastRun.id}`} className="text-meta">
-                  Open the last run
-                </Link>
-              ) : null}
+              <span className="flex flex-wrap gap-x-4 gap-y-1 text-meta">
+                <Link to={`${link}/scripts/${open.path}`}>Its page: runs, triggers, used by</Link>
+                {open.lastRun ? (
+                  <Link to={`${runsLink}/${open.lastRun.id}`}>Open the last run</Link>
+                ) : null}
+              </span>
             </div>
           </Inspector>
         ) : null
@@ -355,10 +358,11 @@ export type LiveRun = Run & {
 /** Log lines read at once: the most the route gives. */
 const LOG_PAGE = 1000;
 /**
- * The most log lines a page holds. The viewer draws every line it is given, and
- * what went wrong is usually near the end, so the oldest are left out first.
+ * The most log lines a page holds. The viewer draws only the lines in view, but
+ * each line held costs memory, and what went wrong is usually near the end, so
+ * past this the oldest are left out first. "Download the whole log" has them all.
  */
-export const LOG_WINDOW = 5000;
+export const LOG_WINDOW = 50_000;
 
 /**
  * A run and its log lines, asked for again whenever the run changes or logs: on
@@ -708,10 +712,25 @@ export function Connections({ root }: { root: string }) {
         rowKey={(row) => row.path}
         action={newButton}
         columns={[
-          { header: "Connection", cell: (row) => code(row.path) },
+          {
+            header: "Connection",
+            cell: (row) => (
+              <ObjectLink link={consoleLink(root)} kind="connection" path={row.path} />
+            ),
+          },
           // Second, so a phone shows it without scrolling the table.
           { header: "Health", cell: (row) => <ConnectionHealth root={root} row={row} /> },
-          { header: "Used by", cell: (row) => <UsedBy uses={connectionUses(row.path)} /> },
+          {
+            header: "Used by",
+            cell: (row) => (
+              <UsedBy
+                uses={connectionUses(row.path)}
+                failed={connectionUses.failed}
+                link={consoleLink(root)}
+                all={`${consoleLink(root)}/connections/${row.path}?tab=used-by`}
+              />
+            ),
+          },
           { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
           {
             header: "Points to",
@@ -783,8 +802,21 @@ export function Variables({ root }: { root: string }) {
       path={`${root}/variable-values`}
       rowKey={(row) => row.path}
       columns={[
-        { header: "Variable", cell: (row) => code(row.path) },
-        { header: "Read by", cell: (row) => <UsedBy uses={variableUses(row.path)} /> },
+        {
+          header: "Variable",
+          cell: (row) => <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />,
+        },
+        {
+          header: "Read by",
+          cell: (row) => (
+            <UsedBy
+              uses={variableUses(row.path)}
+              failed={variableUses.failed}
+              link={consoleLink(root)}
+              all={`${consoleLink(root)}/variables/${row.path}?tab=used-by`}
+            />
+          ),
+        },
         { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         {
           header: "Value here",
@@ -967,40 +999,36 @@ export function QueuePanel({ base }: { base: string }) {
               })()}
             </Notice>
           ) : null}
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[32rem] border-collapse text-left text-[14px]">
-              <thead>
-                <tr className="text-[13px] text-ink-muted">
-                  <th className="py-1.5 pr-3 font-medium">Workspace</th>
-                  <th className="py-1.5 pr-3 font-medium">Pool</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">Waiting</th>
-                  <th className="py-1.5 pr-3 font-medium">Oldest</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">Later</th>
-                  <th className="py-1.5 text-right font-medium">Running</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={`${row.workspaceId}:${row.pool ?? ""}`} className="border-line border-t">
-                    <td className="py-1.5 pr-3">
-                      <Link to={`${tenantLink}/workspaces/${row.workspaceId}/runs?status=queued`}>
-                        {row.workspace}
-                      </Link>
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-telemetry">
-                      {row.pool ?? "default"}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{row.due}</td>
-                    <td className="py-1.5 pr-3">
-                      {row.oldestSeconds === null ? "—" : waitWords(row.oldestSeconds)}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{row.later}</td>
-                    <td className="py-1.5 text-right tabular-nums">{row.running}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable<(typeof rows)[number]>
+            variant="static"
+            label="Runs waiting, by workspace and pool"
+            rows={rows}
+            rowKey={(row) => `${row.workspaceId}:${row.pool ?? ""}`}
+            empty={null}
+            columns={[
+              {
+                header: "Workspace",
+                cell: (row) => (
+                  <Link to={`${tenantLink}/workspaces/${row.workspaceId}/runs?status=queued`}>
+                    {row.workspace}
+                  </Link>
+                ),
+              },
+              {
+                header: "Pool",
+                cell: (row) => (
+                  <span className="font-mono text-telemetry">{row.pool ?? "default"}</span>
+                ),
+              },
+              { header: "Waiting", align: "end", cell: (row) => row.due },
+              {
+                header: "Oldest",
+                cell: (row) => (row.oldestSeconds === null ? "—" : waitWords(row.oldestSeconds)),
+              },
+              { header: "Later", align: "end", priority: 2, cell: (row) => row.later },
+              { header: "Running", align: "end", cell: (row) => row.running },
+            ]}
+          />
           {tasks > 0 ? (
             <p className="m-0 text-meta text-ink-muted">
               {tasks} task{tasks === 1 ? "" : "s"} for the platform waiting too: reading schemas,
@@ -1286,37 +1314,45 @@ export function ConnectionGroups({ root }: { root: string }) {
               No members yet. A script that asks this group for a key will fail until one is added.
             </p>
           ) : (
-            <table className="w-full border-collapse text-left">
-              <thead>
-                <tr className="text-[12.5px] text-ink-muted">
-                  {["Key", "Name", "Points to", "Credential", ""].map((header, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: fixed headers, one of them empty
-                    <th key={index} scope="col" className="px-4 py-2 font-medium">
-                      {header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {group.members.map((member) => (
-                  <tr key={member.key} className="border-line border-t">
-                    <td className="px-4 py-2">{code(member.key)}</td>
-                    <td className="px-4 py-2 text-ink-muted">{member.label}</td>
-                    <td className="px-4 py-2">{member.config.baseUrl ?? ""}</td>
-                    <td className="px-4 py-2">{member.hasCredential ? "Set" : "None"}</td>
-                    <td className="px-4 py-2 text-right">
-                      <RemoveButton
-                        confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
-                        run={() =>
-                          api.delete(`${root}/connection-group-members/${member.key}/${group.path}`)
-                        }
-                        onDone={groups.reload}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable<(typeof group.members)[number]>
+              variant="static"
+              label={`Members of ${group.path}`}
+              rows={group.members}
+              rowKey={(member) => member.key}
+              empty={null}
+              columns={[
+                { header: "Key", cell: (member) => code(member.key) },
+                {
+                  header: "Name",
+                  priority: 2,
+                  cell: (member) => <span className="text-ink-muted">{member.label}</span>,
+                },
+                {
+                  header: "Points to",
+                  truncate: true,
+                  cell: (member) => member.config.baseUrl ?? "",
+                },
+                {
+                  header: "Credential",
+                  priority: 2,
+                  cell: (member) => (member.hasCredential ? "Set" : "None"),
+                },
+                {
+                  key: "remove",
+                  header: "",
+                  align: "end",
+                  cell: (member) => (
+                    <RemoveButton
+                      confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
+                      run={() =>
+                        api.delete(`${root}/connection-group-members/${member.key}/${group.path}`)
+                      }
+                      onDone={groups.reload}
+                    />
+                  ),
+                },
+              ]}
+            />
           )}
         </div>
       ))}

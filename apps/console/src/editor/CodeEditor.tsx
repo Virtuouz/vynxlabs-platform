@@ -18,6 +18,23 @@ export interface CodeEditorProps {
    * for itself otherwise, so a page-level shortcut never sees it.
    */
   onRun?: (() => void) | undefined;
+  /** Called on ⌘S or Ctrl+S while the code has focus, in place of the browser saving the page. */
+  onSave?: (() => void) | undefined;
+  /** Called with the editor's diagnostics each time they change: type errors and the like. */
+  onMarkers?: ((markers: Marker[]) => void) | undefined;
+  /**
+   * A place to show: the editor scrolls to it, selects the line and takes focus.
+   * A new `at` asks again for the same line.
+   */
+  reveal?: { line: number; column?: number; at: number } | undefined;
+}
+
+/** One diagnostic of the code, as the editor's language service reports it. */
+export interface Marker {
+  line: number;
+  column: number;
+  message: string;
+  severity: "error" | "warning" | "info";
 }
 
 /**
@@ -35,12 +52,17 @@ export function CodeEditor({
   height = "28rem",
   revealLine,
   onRun,
+  onSave,
+  onMarkers,
+  reveal,
 }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "plain">("loading");
-  const latest = useRef({ value, onChange, revealLine, onRun, label });
-  latest.current = { value, onChange, revealLine, onRun, label };
+  const latest = useRef({ value, onChange, revealLine, onRun, onSave, onMarkers, label });
+  latest.current = { value, onChange, revealLine, onRun, onSave, onMarkers, label };
   const runs = onRun !== undefined;
+  const saves = onSave !== undefined;
+  const goTo = useRef<(line: number, column: number) => void>(() => {});
   const editor = useRef<{
     getValue(): string;
     setValue(text: string): void;
@@ -82,6 +104,39 @@ export function CodeEditor({
             latest.current.onRun?.(),
           );
         }
+        if (saves) {
+          created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
+            latest.current.onSave?.(),
+          );
+        }
+        goTo.current = (to, column) => {
+          const at = Math.min(Math.max(1, to), model.getLineCount());
+          created.revealLineInCenter(at);
+          created.setSelection(new monaco.Range(at, 1, at, model.getLineMaxColumn(at)));
+          created.setPosition({ lineNumber: at, column: Math.max(1, column) });
+          created.focus();
+        };
+        // The language service's diagnostics for this document, each time they change.
+        const SEVERITY: Record<number, Marker["severity"]> = {
+          [monaco.MarkerSeverity.Error]: "error",
+          [monaco.MarkerSeverity.Warning]: "warning",
+        };
+        const report = () =>
+          latest.current.onMarkers?.(
+            monaco.editor
+              .getModelMarkers({ resource: uri })
+              .filter((marker) => marker.severity >= monaco.MarkerSeverity.Warning)
+              .map((marker) => ({
+                line: marker.startLineNumber,
+                column: marker.startColumn,
+                message: marker.message,
+                severity: SEVERITY[marker.severity] ?? "info",
+              })),
+          );
+        const marking = monaco.editor.onDidChangeMarkers((changed) => {
+          if (changed.some((one) => one.toString() === uri.toString())) report();
+        });
+        report();
         const listening = created.onDidChangeModelContent(() =>
           latest.current.onChange?.(created.getValue()),
         );
@@ -91,6 +146,8 @@ export function CodeEditor({
         const watching = new MutationObserver(applyTheme);
         watching.observe(document.documentElement, { attributeFilter: ["data-theme"] });
         cleanup = () => {
+          marking.dispose();
+          goTo.current = () => {};
           listening.dispose();
           media.removeEventListener("change", applyTheme);
           watching.disconnect();
@@ -109,7 +166,23 @@ export function CodeEditor({
       cleanup();
     };
     // The label is not here: it changes as a path is typed, and a new editor would lose the undo history.
-  }, [path, language, readOnly, runs]);
+  }, [path, language, readOnly, runs, saves]);
+
+  // A place asked for is shown, in Monaco or, where it is not loaded, in the text box.
+  useEffect(() => {
+    if (!reveal) return;
+    if (state === "ready") {
+      goTo.current(reveal.line, reveal.column ?? 1);
+      return;
+    }
+    const box = host.current?.parentElement?.querySelector("textarea");
+    if (!box) return;
+    const lines = box.value.split("\n");
+    const start =
+      lines.slice(0, Math.max(0, reveal.line - 1)).join("\n").length + (reveal.line > 1 ? 1 : 0);
+    box.focus();
+    box.setSelectionRange(start, start + (lines[reveal.line - 1]?.length ?? 0));
+  }, [reveal, state]);
 
   useEffect(() => {
     editor.current?.updateOptions({ ariaLabel: label });
@@ -130,6 +203,16 @@ export function CodeEditor({
         <textarea
           aria-label={label}
           value={value}
+          onKeyDown={(event) => {
+            if (!(event.metaKey || event.ctrlKey)) return;
+            if (event.key === "s" && onSave) {
+              event.preventDefault();
+              onSave();
+            } else if (event.key === "Enter" && onRun) {
+              event.preventDefault();
+              onRun();
+            }
+          }}
           readOnly={readOnly || state === "loading"}
           spellCheck={false}
           onChange={(event) => onChange?.(event.currentTarget.value)}

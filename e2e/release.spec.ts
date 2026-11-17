@@ -150,6 +150,9 @@ test("a developer asks, a promoter decides from the overview, drift shows the ch
   await admin.getByLabel("Find or check a permission").fill("secret:read");
   await admin.getByRole("link", { name: "developer" }).first().click();
   await admin.waitForURL(/\/access\?binding=/);
-  await expect(admin.locator(`[data-row="${binding.id}"]`)).toHaveAttribute("aria-current", "true");
+  await expect(admin.locator(`[data-row="${binding.id}"]`)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   expect(errors).toEqual([]);
 });

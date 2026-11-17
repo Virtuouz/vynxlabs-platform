@@ -13,7 +13,7 @@ import {
 } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
 import { Deployments } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
@@ -114,14 +114,16 @@ export function Release({
   step: ReleaseStep;
   reload: () => void;
 }) {
-  const [step, setStep] = useState<ReleaseStep>(
+  // The step is in the address: a link, a reload or Back lands on the same one.
+  const [step, setStep] = useUrlParam<ReleaseStep>(
+    "step",
     workspace.type === "production" ? "deploy" : initial,
+    { push: true },
   );
   const drafts = useLoad<{ items: DraftRow[] }>(workspace.type === "dev" ? `${root}/drafts` : null);
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
   const target = workspaces.data?.items.find((one) => one.id === workspace.linkedWorkspaceId);
   const count = drafts.data?.items.length ?? 0;
-  const [deployed, setDeployed] = useState<string>();
 
   const steps =
     workspace.type === "production"
@@ -155,7 +157,6 @@ export function Release({
           <Stepper steps={steps} current={step} onChoose={(key) => setStep(key as ReleaseStep)} />
         </Panel>
       ) : null}
-      {deployed ? <Notice tone="success">{deployed}</Notice> : null}
       {step === "review" ? (
         <ReviewStep
           root={root}
@@ -164,10 +165,20 @@ export function Release({
           error={drafts.error?.message}
           reload={drafts.reload}
           onDeployed={(text) => {
-            setDeployed(text);
             drafts.reload();
             reload();
             setStep("deploy");
+            notify.success(
+              text,
+              target
+                ? {
+                    action: {
+                      label: `Promote to ${target.name}`,
+                      onClick: () => setStep("promote"),
+                    },
+                  }
+                : undefined,
+            );
           }}
         />
       ) : step === "deploy" ? (
@@ -514,8 +525,12 @@ function PromoteStep({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     bundleVersion: number;
+    bundleId: string;
+    workspaceId: string;
     release?: { status: string; branch: string | null; problem?: string };
   }>();
+  // A fix made from a failed run there: once promoted, it can be run again on the fix.
+  const [fromRun] = useUrlParam("fromRun");
   const [problem, setProblem] = useState<string>();
   const data = preview.data;
 
@@ -596,8 +611,40 @@ function PromoteStep({
               setBusy(true);
               setProblem(undefined);
               try {
-                setResult(await api.post(`${root}/promotions`, {}));
+                const promoted = await api.post<NonNullable<typeof result>>(
+                  `${root}/promotions`,
+                  {},
+                );
+                setResult(promoted);
                 preview.reload();
+                const [runWorkspace, runId] = (fromRun ?? "").split(":");
+                const tenantRoot = root.split("/workspaces/")[0] as string;
+                const targetLink = `${link.split("/workspaces/")[0]}/workspaces/${promoted.workspaceId}`;
+                notify.success(
+                  `${target.name} runs version ${promoted.bundleVersion}.`,
+                  runWorkspace === promoted.workspaceId && runId
+                    ? {
+                        action: {
+                          label: `Run the failed run again on v${promoted.bundleVersion}`,
+                          onClick: () =>
+                            void api
+                              .post<{ id: string }>(
+                                `${tenantRoot}/workspaces/${promoted.workspaceId}/runs/${runId}/rerun`,
+                                { bundleId: promoted.bundleId },
+                              )
+                              .then(
+                                (again) => navigate(`${targetLink}/runs/${again.id}`),
+                                notify.error,
+                              ),
+                        },
+                      }
+                    : {
+                        action: {
+                          label: `Open ${target.name}`,
+                          onClick: () => navigate(`${targetLink}/overview`),
+                        },
+                      },
+                );
               } catch (caught) {
                 setProblem(failureText(caught));
               } finally {

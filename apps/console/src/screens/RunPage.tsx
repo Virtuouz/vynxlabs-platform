@@ -6,8 +6,10 @@ import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
+import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { useDevWorkspace } from "../kit/objects.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
@@ -18,7 +20,6 @@ import {
   LogWindowNote,
   stamp,
   TRIGGER,
-  took,
   useLiveRun,
   wholeLogDownload,
 } from "./Execution.tsx";
@@ -94,6 +95,8 @@ function RunHeader({
   tags,
   related,
   actions,
+  timing,
+  versionTo,
   reconnecting = false,
 }: {
   link: string;
@@ -107,6 +110,10 @@ function RunHeader({
   tags: string[];
   related: ReactNode;
   actions: ReactNode;
+  /** How long it waited and ran, counting while it goes. */
+  timing?: ReactNode;
+  /** Where "version N" leads: the code at that version, when there is one to show. */
+  versionTo?: string;
   /** A read failed and is being tried again: what is shown may be behind. */
   reconnecting?: boolean;
 }) {
@@ -131,10 +138,11 @@ function RunHeader({
           </h1>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted">
             <StatePill state={state} detail={detail} />
+            {timing}
             <StateAnnouncer state={state} label={`Run of ${path}`} />
             <Reconnecting show={reconnecting} />
             {started ? <span>{started}</span> : null}
-            <Link to={`${link}/deployments`}>version {version}</Link>
+            <Link to={versionTo ?? `${link}/deployments`}>version {version}</Link>
             {related}
           </div>
           {tags.length > 0 ? (
@@ -163,6 +171,17 @@ function RunHeader({
  */
 function startedBy(link: string, trigger: { type: string; [detail: string]: unknown }) {
   if (trigger.type === "retry" || trigger.type === "rerun") return null;
+  // A step of a flow: its flow run, opened on the step.
+  if (trigger.type === "flow" && typeof trigger.flowRunId === "string") {
+    const node = typeof trigger.node === "string" ? trigger.node : "";
+    return (
+      <Link
+        to={`${link}/runs/${trigger.flowRunId}${node ? `?step=${encodeURIComponent(node)}` : ""}`}
+      >
+        Step {node} of a flow run
+      </Link>
+    );
+  }
   const word = TRIGGER[trigger.type] ?? trigger.type;
   if (typeof trigger.trigger === "string") {
     return (
@@ -172,6 +191,30 @@ function startedBy(link: string, trigger: { type: string; [detail: string]: unkn
     );
   }
   return word;
+}
+
+/**
+ * Opens the script in a dev workspace's editor with this run's input loaded:
+ * here when this is a dev workspace, or the dev workspace that promotes here.
+ */
+function EditInDev({ root, path, runId }: { root: string; path: string; runId: string }) {
+  const dev = useDevWorkspace(root);
+  if (!dev) return null;
+  const here = root.split("/workspaces/")[1] as string;
+  const to = `${dev.link}/scripts/edit/${path}?fromRun=${encodeURIComponent(`${here}:${runId}`)}`;
+  return (
+    <Button size="small" onClick={() => navigate(to)}>
+      {dev.here ? "Edit with this input" : `Edit in ${dev.name}`}
+    </Button>
+  );
+}
+
+interface RetryPlan {
+  bundleVersion: number;
+  changed: string[];
+  kept: string[];
+  again: string[];
+  approvalsKept: { node: string; decidedBy: string | null }[];
 }
 
 function ScriptRunPage({ root, link, id }: { root: string; link: string; id: string }) {
@@ -214,12 +257,13 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         path={run.script}
         pathLink={`${link}/scripts/edit/${run.script}`}
         state={run.state}
-        detail={[
-          took(run),
-          run.maxAttempts > 1 ? `attempt ${Math.max(run.attempt, 1)} of ${run.maxAttempts}` : "",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+        detail={
+          run.maxAttempts > 1
+            ? `attempt ${Math.max(run.attempt, 1)} of ${run.maxAttempts}`
+            : undefined
+        }
+        timing={<WaitedAndRan run={run} />}
+        versionTo={`${link}/scripts/${run.script}?tab=source&run=${run.id}`}
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
         tags={run.tags ?? []}
@@ -252,25 +296,29 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                 Cancel run
               </Button>
             ) : null}
-            <Menu
-              label={
-                <span className="flex items-center gap-1.5">
-                  <RotateCcw aria-hidden="true" size={13} /> Re-run
-                  <ChevronDown aria-hidden="true" size={13} />
-                </span>
-              }
-              triggerClassName="flex h-8 items-center rounded-control border border-line px-2.5 text-meta hover:bg-surface"
-              align="end"
-              items={[
-                { label: "With the same input", onSelect: () => void confirmed("original") },
-                { label: "With other input…", onSelect: () => setEditing(true) },
-                {
-                  label: "On the version deployed now",
-                  onSelect: () => void confirmed("active"),
-                  separated: true,
-                },
-              ]}
-            />
+            {/* A step of a flow is run again by retrying its flow run. */}
+            {run.trigger.type === "flow" ? null : (
+              <Menu
+                label={
+                  <span className="flex items-center gap-1.5">
+                    <RotateCcw aria-hidden="true" size={13} /> Re-run
+                    <ChevronDown aria-hidden="true" size={13} />
+                  </span>
+                }
+                triggerClassName="flex h-8 items-center rounded-control border border-line px-2.5 text-meta hover:bg-surface"
+                align="end"
+                items={[
+                  { label: "With the same input", onSelect: () => void confirmed("original") },
+                  { label: "With other input…", onSelect: () => setEditing(true) },
+                  {
+                    label: "On the version deployed now",
+                    onSelect: () => void confirmed("active"),
+                    separated: true,
+                  },
+                ]}
+              />
+            )}
+            <EditInDev root={root} path={run.script} runId={run.id} />
             <CopyIcon
               value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
               label="Copy as curl: start this script again with the same input"
@@ -408,6 +456,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             <LogWindowNote earlier={earlier} onDownload={wholeLog} />
             <LogViewer
               lines={lines}
+              firstLine={earlier + 1}
               live={active}
               fileName={logFile}
               onDownload={wholeLog}
@@ -488,22 +537,27 @@ function FlowRunHeader({
   const trigger = flow?.nodes[run.triggerNode] as
     | { type: string; trigger?: { type: string; input?: Record<string, unknown> } }
     | undefined;
-  const elapsed = run.finishedAt
-    ? Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.createdAt))
-    : undefined;
 
   const retry = async (body: { from: "failed" | "start"; input?: unknown; bundle?: string }) => {
     const started = await api.post<{ id: string }>(`${root}/flow-runs/${run.id}/retry`, body);
     navigate(`${link}/runs/${started.id}`);
   };
-  const fromFailed = async () => {
-    let plan: {
-      kept: string[];
-      again: string[];
-      approvalsKept: { node: string; decidedBy: string | null }[];
-    };
+  // A newer version, such as a fix just promoted, can be retried on from the failed step
+  // when the steps kept are the same in it.
+  const onFix = useLoad<RetryPlan>(
+    finishedBadly ? `${root}/flow-runs/${run.id}/retry-plan?bundle=active` : null,
+  );
+  const fix =
+    onFix.data &&
+    typeof onFix.data.bundleVersion === "number" &&
+    onFix.data.bundleVersion !== run.bundleVersion &&
+    (onFix.data.changed ?? []).length === 0
+      ? onFix.data.bundleVersion
+      : undefined;
+  const fromFailed = async (bundle: "original" | "active" = "original") => {
+    let plan: RetryPlan;
     try {
-      plan = await api.get(`${root}/flow-runs/${run.id}/retry-plan`);
+      plan = await api.get(`${root}/flow-runs/${run.id}/retry-plan?bundle=${bundle}`);
     } catch (caught) {
       notify.error(caught);
       return;
@@ -517,10 +571,13 @@ function FlowRunHeader({
         `Runs again: ${plan.again.join(", ") || "nothing"}. ` +
         `Kept as it was: ${plan.kept.join(", ") || "nothing"}. ` +
         (approvals ? `Approvals kept, not asked again: ${approvals}. ` : "") +
-        `On version ${run.bundleVersion}, with the same input.`,
+        `On version ${plan.bundleVersion}${bundle === "active" ? ", the one deployed now" : ""}, with the same input.`,
       action: "Retry",
     });
-    if (sure) await retry({ from: "failed" }).catch(notify.error);
+    if (sure)
+      await retry({ from: "failed", ...(bundle === "active" ? { bundle } : {}) }).catch(
+        notify.error,
+      );
   };
   const fromStart = async (bundle: "original" | "active") => {
     const sure = await ask.confirm({
@@ -543,7 +600,13 @@ function FlowRunHeader({
         path={run.flow}
         pathLink={`${link}/flows/${run.flow}`}
         state={run.state}
-        detail={elapsed !== undefined ? `${(elapsed / 1000).toFixed(1)} s` : undefined}
+        timing={
+          <Elapsed
+            from={run.createdAt}
+            to={run.finishedAt}
+            className="text-telemetry text-ink-muted"
+          />
+        }
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
         tags={run.tags}
@@ -591,6 +654,14 @@ function FlowRunHeader({
                 items={[
                   ...(finishedBadly
                     ? [{ label: "Retry from the failed step…", onSelect: () => void fromFailed() }]
+                    : []),
+                  ...(finishedBadly && fix !== undefined
+                    ? [
+                        {
+                          label: `Retry from the failed step on v${fix} (deployed now)…`,
+                          onSelect: () => void fromFailed("active"),
+                        },
+                      ]
                     : []),
                   { label: "Again from the start", onSelect: () => void fromStart("original") },
                   { label: "Again, with other input…", onSelect: () => setEditing(true) },

@@ -2,9 +2,10 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@vynxlabs/db";
 import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
-import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
-import { bundleManifest } from "../kernel/execution/bundles.js";
+import { bundleManifest, payloadSchemas } from "../kernel/execution/bundles.js";
+import { redact } from "../kernel/execution/redact.js";
 import { readPayload } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
@@ -122,6 +123,10 @@ const Step = Type.Object({
   status: Type.String(),
   state: RunStateSchema,
   outputName: NullableString,
+  input: Type.Unknown({
+    description:
+      "What the step was given: a code step's input, a sub-flow's, a foreach's items, an approval's detail. Secret-looking values are masked.",
+  }),
   output: Type.Unknown(),
   error: ErrorShape,
   handled: Type.Boolean({ description: "True when the step failed and its error path was taken." }),
@@ -147,6 +152,46 @@ const Step = Type.Object({
   }),
   finishedAt: NullableTime,
 });
+
+/** JSON with object keys in order, so two equal values always read the same. */
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, inner) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => a.localeCompare(b)))
+      : inner,
+  );
+}
+
+interface StepInputRow {
+  run_id: string | null;
+  run_script: string | null;
+  run_input: unknown;
+  run_input_ref: string | null;
+  child_flow_run_id: string | null;
+  child_input: unknown;
+  child_input_ref: string | null;
+  detail: unknown;
+}
+
+/** What a step was given, from wherever its kind keeps it, masked. */
+function stepInput(
+  step: StepInputRow,
+  schemaOf: (script: string) => Record<string, unknown> | undefined,
+): unknown {
+  if (step.run_id) {
+    if (step.run_input_ref) return { stored: step.run_input_ref };
+    return redact(step.run_input ?? null, step.run_script ? schemaOf(step.run_script) : undefined);
+  }
+  if (step.child_flow_run_id) {
+    return step.child_input_ref
+      ? { stored: step.child_input_ref }
+      : redact(step.child_input ?? null);
+  }
+  const detail = (step.detail ?? null) as { items?: unknown; detail?: unknown } | null;
+  if (detail && "items" in detail) return redact(detail.items);
+  if (detail && "detail" in detail) return redact(detail.detail);
+  return null;
+}
 
 const Approval = Type.Object({
   flowRunId: Id,
@@ -711,6 +756,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       );
       return {
         row,
+        body,
         plan: {
           kept: nodes.filter((node) => kept.has(node)),
           again: nodes.filter((node) => !kept.has(node)),
@@ -729,7 +775,60 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       };
     };
+    /**
+     * The version a retry runs on: the run's own, the workspace's active one, or a
+     * bundle named outright, so a promotion in between cannot change which.
+     */
+    const retryTarget = async (
+      workspaceId: string,
+      row: { bundle_id: string; flow_path: string },
+      spec: string | undefined,
+    ) => {
+      const bundleId =
+        spec === undefined || spec === "original"
+          ? row.bundle_id
+          : spec === "active"
+            ? (
+                await db
+                  .selectFrom("workspace")
+                  .select("active_bundle_id")
+                  .where("id", "=", workspaceId)
+                  .executeTakeFirst()
+              )?.active_bundle_id
+            : spec;
+      const bundle = bundleId
+        ? await db
+            .selectFrom("bundle")
+            .select(["id", "storage_key", "version"])
+            .where("id", "=", bundleId)
+            .where("workspace_id", "=", workspaceId)
+            .executeTakeFirst()
+        : undefined;
+      if (!bundle) throw notFound("The version to retry on");
+      const manifest = await bundleManifest(kernel, bundle, "flow", row.flow_path);
+      if (!manifest) throw conflict(`Version ${bundle.version} has no flow ${row.flow_path}.`);
+      return {
+        bundleId: bundle.id,
+        version: Number(bundle.version),
+        body: manifest.body as unknown as FlowBody,
+      };
+    };
+    /** The kept steps that a version draws differently: retrying from them would not be the same. */
+    const changedKept = (kept: string[], from: FlowBody, to: FlowBody) =>
+      kept.filter(
+        (node) =>
+          stableJson(from.nodes[node] ?? null) !== stableJson(to.nodes[node] ?? null) ||
+          stableJson(from.edges.filter((edge) => edge.to === node)) !==
+            stableJson(to.edges.filter((edge) => edge.to === node)),
+      );
+
     const RetryPlan = Type.Object({
+      bundleVersion: Type.Integer({ description: "The version the retry would run on." }),
+      changed: Type.Array(Type.String(), {
+        description:
+          "Kept steps that are different, or gone, in that version. A retry from the failed step " +
+          "is refused while any is.",
+      }),
       kept: Type.Array(Type.String(), { description: "Nodes whose steps are kept as they were." }),
       again: Type.Array(Type.String(), {
         description: "Nodes that run again, or for the first time.",
@@ -738,6 +837,87 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         description: "Approvals already granted, which are not asked again.",
       }),
     });
+
+    app.get(
+      `${base}/flow-runs/:id/definition`,
+      {
+        config: { access: access.workspace("flow_run:read") },
+        schema: {
+          summary: "The flow as it was when this run started",
+          description:
+            "The graph of the flow at the run's own version, so a run is drawn as it ran even " +
+            "after the flow has changed. `changed` says whether the deployed flow differs now. " +
+            "Positions are the run's version's own, with the flow's current ones for nodes it lacks.",
+          tags: ["flows"],
+          params: Type.Object({ t: Id, w: Id, id: Id }),
+          response: {
+            200: Type.Object({
+              path: Type.String(),
+              bundleVersion: Type.Integer(),
+              nodes: AnyObject,
+              edges: Type.Array(AnyObject),
+              layout: Type.Record(Type.String(), Position),
+              changed: Type.Boolean(),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const row = await flowRuns(params.w)
+          .where("flow_run.id", "=", params.id)
+          .executeTakeFirst();
+        if (!row) throw notFound("The flow run");
+        const bundle = await db
+          .selectFrom("bundle")
+          .select(["id", "storage_key"])
+          .where("id", "=", row.bundle_id)
+          .executeTakeFirstOrThrow();
+        const manifest = await bundleManifest(kernel, bundle, "flow", row.flow_path);
+        if (!manifest) throw notFound(`The flow ${row.flow_path} at version ${row.bundle_version}`);
+        const body = manifest.body as unknown as FlowBody;
+        const current = await db
+          .selectFrom("resource")
+          .select(["id", "body"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "flow")
+          .where("path", "=", row.flow_path)
+          .executeTakeFirst();
+        const positions = current
+          ? (
+              await db
+                .selectFrom("flow_layout")
+                .select("positions")
+                .where("resource_id", "=", current.id)
+                .executeTakeFirst()
+            )?.positions
+          : undefined;
+        // Changed when the active version's flow is drawn differently from the run's.
+        const active = await db
+          .selectFrom("workspace")
+          .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+          .select(["bundle.id", "bundle.storage_key"])
+          .where("workspace.id", "=", params.w)
+          .executeTakeFirst();
+        const now =
+          active && active.id !== bundle.id
+            ? await bundleManifest(kernel, active, "flow", row.flow_path)
+            : manifest;
+        const shape = (one: { body: Record<string, unknown> } | undefined) =>
+          one ? stableJson({ nodes: one.body.nodes, edges: one.body.edges }) : "";
+        return {
+          path: row.flow_path,
+          bundleVersion: row.bundle_version,
+          nodes: body.nodes as unknown as Record<string, unknown>,
+          edges: body.edges as unknown as Record<string, unknown>[],
+          layout: {
+            ...(positions ?? {}),
+            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
+          },
+          changed: shape(now) !== shape(manifest),
+        };
+      },
+    );
 
     app.get(
       `${base}/flow-runs/:id/retry-plan`,
@@ -751,12 +931,26 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "pending or rejected ones are asked again.",
           tags: ["flows"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
+          querystring: Type.Object({
+            bundle: Type.Optional(
+              Type.String({
+                description:
+                  "`original` (the default), `active`, or a bundle's ID: the version to retry on.",
+              }),
+            ),
+          }),
           response: { 200: RetryPlan },
         },
       },
-      async ({ params }) => {
+      async ({ params, query }) => {
         await findWorkspace(kernel, params.t, params.w);
-        return (await retryPlanOf(params.w, params.id)).plan;
+        const { row, body, plan } = await retryPlanOf(params.w, params.id);
+        const target = await retryTarget(params.w, row, query.bundle);
+        return {
+          ...plan,
+          bundleVersion: target.version,
+          changed: changedKept(plan.kept, body, target.body),
+        };
       },
     );
 
@@ -777,13 +971,14 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             from: Type.Union([Type.Literal("failed"), Type.Literal("start")]),
             input: Type.Optional(Type.Unknown()),
             bundle: Type.Optional(Type.Union([Type.Literal("original"), Type.Literal("active")])),
+            bundleId: Type.Optional(Id),
           }),
           response: { 201: FlowRun },
         },
       },
       async ({ ctx, params, body }, reply) => {
         await findWorkspace(kernel, params.t, params.w);
-        const { row } = await retryPlanOf(params.w, params.id);
+        const { row, body: ranOn, plan } = await retryPlanOf(params.w, params.id);
         if (row.status === "running") {
           throw new HttpError(409, "conflict", "The flow run has not ended. Cancel it first.");
         }
@@ -798,13 +993,25 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (fromFailed && row.status === "succeeded") {
           throw new HttpError(409, "conflict", "The flow run succeeded: nothing failed to retry.");
         }
-        if (fromFailed && (body.bundle === "active" || body.input !== undefined)) {
+        if (fromFailed && body.input !== undefined) {
           throw new HttpError(
             409,
             "conflict",
-            "A retry from the failed step keeps what was done, so it runs on the same version " +
-              "with the same input. Retry from the start to change either.",
+            "A retry from the failed step keeps what was done, so it runs with the same input. " +
+              "Retry from the start to change it.",
           );
+        }
+        // On another version, such as the fix just promoted, what is kept must still be the same.
+        const target = await retryTarget(params.w, row, body.bundleId ?? body.bundle);
+        if (fromFailed && target.bundleId !== row.bundle_id) {
+          const changed = changedKept(plan.kept, ranOn, target.body);
+          if (changed.length > 0) {
+            throw new HttpError(
+              409,
+              "conflict",
+              `Version ${target.version} changes steps this retry would keep (${changed.join(", ")}). Retry from the start.`,
+            );
+          }
         }
         const input =
           body.input !== undefined
@@ -819,7 +1026,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             input,
             trigger: { type: "retry", detail: { of: row.id, from: body.from } },
             startedBy: { type: ctx.principal.type, id: ctx.principal.id },
-            bundleId: fromFailed || body.bundle !== "active" ? row.bundle_id : undefined,
+            bundleId: target.bundleId,
             tags: row.tags,
             retryOf: row.id,
             seed: fromFailed,
@@ -834,7 +1041,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               flow: row.flow_path,
               of: row.id,
               from: body.from,
-              bundle: fromFailed || body.bundle !== "active" ? "original" : "active",
+              bundle:
+                target.bundleId === row.bundle_id
+                  ? "original"
+                  : body.bundleId
+                    ? target.bundleId
+                    : "active",
             },
           });
           return result;
@@ -894,8 +1106,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!mayReadAll) {
           return {
             ...toFlowRun(row),
-            input: row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
-            output: row.output ?? null,
+            input: redact(row.input_ref ? { stored: row.input_ref } : (row.input ?? null)),
+            output: redact(row.output ?? null),
             steps: [],
             retries: [],
           };
@@ -915,11 +1127,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             steps: await trx
               .selectFrom("step_run")
               .leftJoin("run", "run.id", "step_run.run_id")
+              .leftJoin("flow_run as child", "child.id", "step_run.child_flow_run_id")
               .selectAll("step_run")
               .select([
                 "run.output as run_output",
                 "run.output_ref as run_output_ref",
                 "run.started_at as run_started_at",
+                "run.script_path as run_script",
+                "run.input as run_input",
+                "run.input_ref as run_input_ref",
+                "child.input as child_input",
+                "child.input_ref as child_input_ref",
               ])
               .where("step_run.flow_run_id", "=", params.id)
               .orderBy("step_run.started_at")
@@ -931,10 +1149,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .limit(20)
               .execute(),
           }));
+        // A code step's output is masked by its script's schema; everything else by its keys.
+        const scriptSchemas = new Map<string, Awaited<ReturnType<typeof payloadSchemas>>>();
+        for (const script of new Set(
+          steps.flatMap((step) => (step.run_script ? [step.run_script] : [])),
+        )) {
+          scriptSchemas.set(script, await payloadSchemas(kernel, run.bundle_id, script));
+        }
         return {
           ...toFlowRun(run),
-          input: run.input_ref ? { stored: run.input_ref } : (run.input ?? null),
-          output: run.output ?? null,
+          input: redact(run.input_ref ? { stored: run.input_ref } : (run.input ?? null)),
+          output: redact(run.output ?? null),
           retries: retries.map((one) => ({
             id: one.id,
             state: one.state,
@@ -946,25 +1171,33 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             status: step.status,
             state: stepState(step),
             outputName: step.output_name,
+            // What the step was given: a code step's run input, a sub-flow's input, the items
+            // of a foreach, the detail an approval showed. Masked as payloads are.
+            input: stepInput(step, (script) => scriptSchemas.get(script)?.input),
             // A code step's output is its run's. Something large is named, not sent.
             output: step.run_id
               ? step.run_output_ref
                 ? { stored: step.run_output_ref }
-                : (step.run_output ?? null)
+                : redact(
+                    step.run_output ?? null,
+                    step.run_script ? scriptSchemas.get(step.run_script)?.output : undefined,
+                  )
               : step.output_ref
                 ? { stored: step.output_ref }
-                : (step.output ?? null),
+                : redact(step.output ?? null),
             error: step.error ? { message: step.error.message } : null,
             handled: step.handled,
             runId: step.run_id,
             childFlowRunId: step.child_flow_run_id,
             wakeAt: isoOrNull(step.wake_at),
             // A foreach keeps its items here. They are shown through its item steps instead.
-            detail: Object.fromEntries(
-              Object.entries(step.detail).filter(
-                ([name]) => name !== "items" && name !== "copiedFrom",
+            detail: redact(
+              Object.fromEntries(
+                Object.entries(step.detail).filter(
+                  ([name]) => name !== "items" && name !== "copiedFrom",
+                ),
               ),
-            ),
+            ) as Record<string, unknown>,
             copiedFrom:
               (step.detail.copiedFrom as
                 | { flowRunId: string; runId?: string; childFlowRunId?: string }
@@ -1070,7 +1303,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       flow: row.flow_path,
       node: row.node_id,
       title: String(row.detail.title),
-      detail: row.detail.detail ?? null,
+      detail: redact(row.detail.detail ?? null),
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
       approvers: (() => {

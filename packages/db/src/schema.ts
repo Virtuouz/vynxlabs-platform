@@ -68,6 +68,8 @@ export interface WorkspaceTable {
   linked_workspace_id: string | null;
   active_bundle_id: string | null;
   triggers_paused: Generated<boolean>;
+  /** The zone schedules are written in unless they say otherwise. */
+  time_zone: Generated<string>;
   concurrency_limit: Generated<number>;
   failure_alert: ColumnType<FailureAlert, string | undefined, string>;
   created_at: Generated<Date>;
@@ -505,6 +507,8 @@ export interface RunTable {
   tags: Generated<string[]>;
   /** The first line of the error, kept by the database. */
   error_summary: Generated<string | null>;
+  /** A short, redacted line of the output, written when the run ends. */
+  output_summary: Generated<string | null>;
   /** The value of the script's concurrency key in this run's input, when it has one. */
   concurrency_key: Generated<string | null>;
 }
@@ -586,6 +590,8 @@ export interface FlowRunTable {
   tags: Generated<string[]>;
   /** The first line of the error, kept by the database. */
   error_summary: Generated<string | null>;
+  /** A short, redacted line of the output, written when the run ends. */
+  output_summary: Generated<string | null>;
   /** The flow run this one retries. */
   retry_of: string | null;
 }

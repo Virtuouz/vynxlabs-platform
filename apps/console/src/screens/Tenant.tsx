@@ -60,11 +60,13 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
+import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { EndUserGroups } from "./Groups.tsx";
 import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
+import { ConnectionPage, EventPage, ScriptPage, SecretPage, VariablePage } from "./ObjectPages.tsx";
 import type { Role } from "./Roles.tsx";
 import { TenantOverview } from "./TenantOverview.tsx";
 
@@ -452,10 +454,11 @@ function WorkspaceDetail({
             />
           </Suspense>
         ) : (
-          <Notice tone="attention">
-            This is a production workspace. Flows are edited in a dev workspace and reach production
-            by promotion.
-          </Notice>
+          <ProductionNotice
+            root={root}
+            noun="Flows"
+            edit={rest.startsWith("edit/") ? `flows/${rest}` : undefined}
+          />
         )
       ) : tab === "flows" && rest ? (
         <FlowView
@@ -496,6 +499,8 @@ function WorkspaceDetail({
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           editable={workspace.data.type === "dev"}
         />
+      ) : tab === "events" && rest ? (
+        <EventPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
       ) : tab === "events" ? (
         <EventsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "tables" && rest ? (
@@ -555,6 +560,8 @@ function WorkspaceDetail({
         />
       ) : tab === "git" ? (
         <GitSync root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "scripts" && rest ? (
+        <ScriptPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
       ) : tab === "scripts" ? (
         <Scripts
           root={root}
@@ -577,11 +584,15 @@ function WorkspaceDetail({
           workspacePaused={workspace.data.triggersPaused}
           production={workspace.data.type === "production"}
         />
+      ) : tab === "connections" && rest ? (
+        <ConnectionPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
       ) : tab === "connections" ? (
         <div className="flex flex-col gap-8">
           <Connections root={root} />
           <ConnectionGroups root={root} />
         </div>
+      ) : tab === "variables" && rest ? (
+        <VariablePage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
       ) : tab === "variables" ? (
         <Variables root={root} />
       ) : tab === "alerts" ? (
@@ -662,6 +673,8 @@ function WorkspaceDetail({
             text: "Resources appear here when they are deployed from the tenant's repository.",
           }}
         />
+      ) : tab === "secrets" && rest ? (
+        <SecretPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} name={rest} />
       ) : tab === "secrets" ? (
         <ListScreen<{ name: string; updatedAt: string; updatedBy?: string | null }>
           title="Secrets"
@@ -669,8 +682,27 @@ function WorkspaceDetail({
           path={`${root}/secrets`}
           rowKey={(row) => row.name}
           columns={[
-            { header: "Name", cell: (row) => code(row.name) },
-            { header: "Used by", cell: (row) => <UsedBy uses={secretUses(row.name)} /> },
+            {
+              header: "Name",
+              cell: (row) => (
+                <ObjectLink
+                  link={`/t/${tenantId}/workspaces/${workspaceId}`}
+                  kind="secret"
+                  path={row.name}
+                />
+              ),
+            },
+            {
+              header: "Used by",
+              cell: (row) => (
+                <UsedBy
+                  uses={secretUses(row.name)}
+                  failed={secretUses.failed}
+                  link={`/t/${tenantId}/workspaces/${workspaceId}`}
+                  all={`/t/${tenantId}/workspaces/${workspaceId}/secrets/${row.name}?tab=used-by`}
+                />
+              ),
+            },
             {
               header: "Last set",
               cell: (row) => (

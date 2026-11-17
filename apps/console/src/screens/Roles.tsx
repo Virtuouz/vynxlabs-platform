@@ -5,6 +5,7 @@ import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { RemoveButton } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 export interface Role {
@@ -151,6 +152,7 @@ export function PermissionPicker({
         </label>
       </div>
       <div className="max-h-[46vh] overflow-y-auto rounded-control border border-line">
+        {/* table-allowed: a form, one checkbox per permission, grouped under row headers. */}
         <table className="w-full border-collapse text-left">
           <thead className="sticky top-0 bg-sunken text-[12px] text-ink-muted">
             <tr>
@@ -398,8 +400,8 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
   const roles = useLoad<{ items: Role[] }>(`${base}/roles`);
   const catalog = useLoad<{ items: PermissionKind[] }>("/permissions");
   const [open, setOpen] = useState<Role | "new">();
-  const [selected, setSelected] = useState<string>();
-  const [show, setShow] = useState<Show>("all");
+  const [selected, setSelected] = useUrlParam("role", undefined, { push: true });
+  const [show, setShow] = useUrlParam<Show>("show", "all");
   const kinds = catalog.data?.items ?? [];
   const failure = roles.error ?? catalog.error;
   const all = roles.data?.items;

@@ -332,6 +332,20 @@ describe("deploying", () => {
       config: { baseUrl: apiUrl, headers: { "x-client": "platform" }, auth: { type: "bearer" } },
     });
     expect((await alice.get(`${ws()}/connection-bindings`)).body.items[0].hasCredential).toBe(true);
+    // Each connection and variable has an address of its own.
+    const one = await alice.get(`${ws()}/connection-bindings/api`);
+    expect(one.body).toMatchObject({ path: "api", bound: true, hasCredential: true });
+    expect(JSON.stringify(one.body)).not.toContain("api-credential-123");
+    expect((await alice.get(`${ws()}/connection-bindings/nowhere`)).status).toBe(404);
+    expect((await alice.put(`${ws()}/variable-values/config/size`, { value: "7" })).status).toBe(
+      204,
+    );
+    expect((await alice.get(`${ws()}/variable-values/config/size`)).body).toMatchObject({
+      path: "config/size",
+      value: "7",
+    });
+    expect((await alice.get(`${ws()}/variable-values/config/none`)).status).toBe(404);
+    expect((await alice.delete(`${ws()}/variable-values/config/size`)).status).toBe(204);
   });
 
   test("a binding can be removed, and a deploy then names it as missing again", async () => {
@@ -493,6 +507,9 @@ describe("running", () => {
 
     const listed = await alice.get(`${ws()}/runs?script=greet&status=succeeded`);
     expect(listed.body.items.map((r: { id: string }) => r.id)).toEqual([id]);
+    // The runs list shows a short line of what it produced.
+    const row = (await alice.get(`${ws()}/activity?q=${id}`)).body.items[0];
+    expect(row).toMatchObject({ outputSummary: '{"greeting":"Hello Ada","version":1}' });
     expect(
       (await alice.get(`${ws()}/scripts`)).body.items.find(
         (s: { path: string }) => s.path === "greet",
@@ -580,6 +597,26 @@ describe("running", () => {
     }
     expect(everything).not.toContain(SECRET_VALUE);
     expect(everything).not.toContain("api-credential-123");
+  });
+
+  test("a secret-looking value is masked wherever a run is shown, and kept as it was", async () => {
+    const id = await start("greet", { name: "Ada", apiKey: "k-live-123" });
+    const run = await finished(id);
+    expect(run.input).toEqual({ name: "Ada", apiKey: "[redacted]" });
+    // What is stored, and what a run again is given, is the real value.
+    const stored = await t.db
+      .selectFrom("run")
+      .select("input")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    expect(stored.input).toEqual({ name: "Ada", apiKey: "k-live-123" });
+    const again = await alice.post(`${ws()}/runs/${id}/rerun`, { bundle: "original" });
+    const rerun = await t.db
+      .selectFrom("run")
+      .select("input")
+      .where("id", "=", again.body.id)
+      .executeTakeFirstOrThrow();
+    expect(rerun.input).toEqual({ name: "Ada", apiKey: "k-live-123" });
   });
 
   test("a failed attempt is retried, and the run succeeds on a later attempt", async () => {
@@ -856,6 +893,11 @@ describe("triggers", () => {
       timezone: "UTC",
       enabled: true,
     });
+    // A script's page asks for its own triggers only.
+    const own = (await alice.get(`${ws()}/triggers?target=greet`)).body.items;
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.every((trigger: { script: string }) => trigger.script === "greet")).toBe(true);
+    expect((await alice.get(`${ws()}/triggers?target=nothing`)).body.items).toEqual([]);
     const due = new Date(schedule.nextFireAt);
     expect(due.getUTCMinutes()).toBe(0);
 

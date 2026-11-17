@@ -130,6 +130,8 @@ export interface Loaded<T> {
   data: T | undefined;
   error: ApiError | undefined;
   loading: boolean;
+  /** When the data shown was read, for "Updated 14:02" while nothing is live. */
+  updatedAt?: number | undefined;
   reload: () => void;
 }
 
@@ -159,6 +161,7 @@ export function useLoad<T>(path: string | null): Loaded<T> {
     data: query.data,
     error: query.error ?? undefined,
     loading: query.isPending || query.isFetching,
+    updatedAt: query.dataUpdatedAt || undefined,
     reload,
   };
 }

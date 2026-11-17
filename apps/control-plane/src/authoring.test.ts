@@ -362,6 +362,62 @@ describe("trying a draft out", () => {
     await alice.delete(`${ws()}/drafts/orders/broken`);
     await alice.delete(`${ws()}/drafts/orders/reads`);
   });
+
+  test("what a draft would use is told apart from what is deployed", async () => {
+    await draft(
+      "orders/uses-erp",
+      scriptBody("export default async () => ({});\n", {
+        uses: { connections: ["erp"], secrets: [], variables: [] },
+      }),
+    );
+    const deployed = (await alice.get(`${ws()}/references?kind=connection&name=erp`)).body.items;
+    expect(
+      deployed.some((one: { by: { path: string } }) => one.by.path === "orders/uses-erp"),
+    ).toBe(false);
+    const withDrafts = (await alice.get(`${ws()}/references?kind=connection&name=erp&drafts=true`))
+      .body.items;
+    expect(withDrafts).toContainEqual(
+      expect.objectContaining({ by: { kind: "script", path: "orders/uses-erp" }, draft: true }),
+    );
+    await alice.delete(`${ws()}/drafts/orders/uses-erp`);
+  });
+
+  test("a failure in code written in the console points at its own line", async () => {
+    await draft(
+      "orders/throws",
+      scriptBody(
+        [
+          "type Order = { id: string };",
+          "",
+          "function check(order: Order) {",
+          '  throw new Error("No warehouse for " + order.id);',
+          "}",
+          "",
+          "export default async (input: Order) => {",
+          "  check(input);",
+          "  return {};",
+          "};",
+          "",
+        ].join("\n"),
+      ),
+    );
+    const started = await alice.post(`${ws()}/test-runs`, {
+      script: "orders/throws",
+      input: { id: "o-1" },
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const done = await finished(started.body.runId);
+    expect(done.status).toBe("failed");
+    const insight = (await alice.get(`${ws()}/runs/${started.body.runId}/insight`)).body;
+    expect(insight.location).toMatchObject({ file: "orders/throws.script.ts", line: 4 });
+    // The code as that run ran it, to show beside the failure.
+    const source = (
+      await alice.get(`${ws()}/script-source/orders/throws?run=${started.body.runId}`)
+    ).body;
+    expect(source).toMatchObject({ available: true, file: "orders/throws.script.ts" });
+    expect(source.files[0].content).toContain("No warehouse for");
+    await alice.delete(`${ws()}/drafts/orders/throws`);
+  });
 });
 
 describe("deploying drafts", () => {
@@ -527,6 +583,93 @@ describe("flows drawn in the console", () => {
     }
     expect(run?.status).toBe("succeeded");
     expect(run?.steps.find((step) => step.node === "hello")?.output).toEqual({ hello: "changed" });
+  });
+});
+
+describe("testing a flow", () => {
+  const flowRun = async (id: string) => {
+    let run:
+      | {
+          status: string;
+          steps: { node: string; status: string; output: unknown; copiedFrom: unknown }[];
+        }
+      | undefined;
+    for (let i = 0; i < 200; i++) {
+      run = (await alice.get(`${ws()}/flow-runs/${id}`)).body;
+      if (run?.status !== "running") break;
+      await sleep(100);
+    }
+    return run as NonNullable<typeof run>;
+  };
+  const pipe = (input: string) => ({
+    description: "",
+    nodes: {
+      start: { type: "trigger", trigger: { type: "manual" } },
+      nightly: { type: "trigger", trigger: { type: "schedule", cron: "0 3 * * *" } },
+      a: { type: "script", script: "pipe/double", input },
+      b: { type: "script", script: "pipe/check", input: "{'n': steps.a.output.n}" },
+    },
+    edges: [
+      { from: "start", to: "a" },
+      { from: "nightly", to: "a" },
+      { from: "a", to: "b" },
+    ],
+  });
+  const check = (limit: number) =>
+    scriptBody(
+      `export default async (input: { n: number }) => {\n  if (input.n > ${limit}) throw new Error("too big: " + input.n);\n  return { ok: true };\n};\n`,
+    );
+
+  test("from a step: what came before is kept from an earlier run, and only the rest runs on the draft", async () => {
+    await draft(
+      "pipe/double",
+      scriptBody("export default async (input: { n?: number }) => ({ n: (input.n ?? 1) * 2 });\n"),
+    );
+    await draft("pipe/check", check(10));
+    await draft("pipe/flow", pipe("{'n': trigger.n}"), "flow");
+    const first = await alice.post(`${ws()}/test-runs`, { flow: "pipe/flow", input: { n: 6 } });
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const failed = await flowRun(first.body.runId);
+    expect(failed.status).toBe("failed");
+
+    // The check is fixed; a stays as it ran, b runs again on the fix.
+    await draft("pipe/check", check(100));
+    const again = await alice.post(`${ws()}/test-runs`, {
+      flow: "pipe/flow",
+      testFrom: { flowRunId: first.body.runId, node: "b" },
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    const done = await flowRun(again.body.runId);
+    expect(done.status).toBe("succeeded");
+    expect(done.steps.find((one) => one.node === "a")?.copiedFrom).toMatchObject({
+      flowRunId: first.body.runId,
+    });
+    expect(done.steps.find((one) => one.node === "b")?.output).toEqual({ ok: true });
+
+    // A draft that changes a step before it cannot reuse what that step did.
+    await draft("pipe/flow", pipe("{'n': trigger.n + 1}"), "flow");
+    const refused = await alice.post(`${ws()}/test-runs`, {
+      flow: "pipe/flow",
+      testFrom: { flowRunId: first.body.runId, node: "b" },
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.detail).toContain("(a)");
+  });
+
+  test("a flow is tested from any of its triggers, with what that trigger would receive", async () => {
+    await draft("pipe/flow", pipe("{'n': 3}"), "flow");
+    const started = await alice.post(`${ws()}/test-runs`, {
+      flow: "pipe/flow",
+      triggerNode: "nightly",
+      input: {},
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const done = await flowRun(started.body.runId);
+    expect(done.status).toBe("succeeded");
+    expect(done.steps.map((one) => one.node).sort()).toEqual(["a", "b", "nightly"]);
+    for (const path of ["pipe/flow", "pipe/check", "pipe/double"]) {
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
   });
 });
 

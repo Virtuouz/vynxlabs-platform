@@ -7,14 +7,13 @@ import {
   Notice,
   type Option,
   SelectField,
-  Table,
   TextField,
 } from "@vynxlabs/ui";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
-
+import { DataTable } from "./kit/DataTable.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 export interface FormField {
   name: string;
@@ -263,7 +262,10 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           {list.error.message}
         </Notice>
       ) : list.data ? (
-        <Table
+        <DataTable
+          variant="static"
+          framed
+          label={props.title}
           columns={columns}
           rows={list.data.items}
           rowKey={props.rowKey}

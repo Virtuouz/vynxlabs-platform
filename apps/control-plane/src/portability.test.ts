@@ -917,8 +917,11 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
     // Runs are still queued there, so the tenant is not yet idle.
     const busy = await a.admin.post(`/tenants/${tenant}/deletion`, { confirm: "acme" });
     expect(busy.status).toBe(409);
-    for (const run of (await alice.get(`${ws(main)}/runs`)).body.items) {
-      if (run.status === "queued") await alice.post(`${ws(main)}/runs/${run.id}/cancel`);
+    // Everything going is cancelled, in every workspace: a run listed as queued may have been
+    // taken by a worker before it could be cancelled on its own.
+    for (const one of (await alice.get(`/tenants/${tenant}/workspaces`)).body.items) {
+      await alice.post(`/tenants/${tenant}/workspaces/${one.id}/runs/cancel`, { include: "all" });
+      await alice.post(`/tenants/${tenant}/workspaces/${one.id}/flow-runs/cancel`, {});
     }
     expect((await a.admin.post(`/tenants/${tenant}/deletion`, { confirm: "acme" })).status).toBe(
       204,

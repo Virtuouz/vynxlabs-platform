@@ -279,7 +279,7 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   await ada.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
   await ada.mouse.up();
   await ada.getByRole("button", { name: "Save draft" }).click();
-  await expect(ada.getByRole("button", { name: "Review and deploy" })).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Deploy" })).toBeVisible();
   const saved = ok(await asAda("GET", `${W}/drafts/orders/intake`), "the drawn flow").body.body;
   expect(saved.edges).toEqual([{ from: "start", to: "subflow" }]);
   expect(saved.nodes.start.trigger.verify).toMatchObject({
@@ -288,7 +288,8 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   });
 
   // Deployed from the Changes screen, with a word about what changed.
-  await ada.getByRole("button", { name: "Review and deploy" }).click();
+  await ada.getByRole("button", { name: "Deploy" }).click();
+  await ada.getByRole("menuitem", { name: "Review all drafts" }).click();
   await expect(ada.getByText(/Deploying creates/)).toBeVisible();
   await ada.getByLabel("What changed").fill("Take orders in");
   await ada.getByRole("button", { name: /^Deploy \d+ changes?$/ }).click();

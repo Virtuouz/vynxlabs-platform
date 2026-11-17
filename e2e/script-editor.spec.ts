@@ -79,10 +79,17 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   // ⌘↵ with the code focused saves the draft and runs it, and the run shows beside the code.
   const lines = await editor.locator(".view-line").count();
   await page.keyboard.press("Control+Enter");
-  const run = page.getByRole("region", { name: "The test run" });
-  await run.waitFor();
+  const run = page.getByRole("region", { name: "Test pane" });
+  await run.getByRole("tablist", { name: "About this run" }).waitFor();
   await expect(page).toHaveURL(/\/scripts\/edit\/hello\/greet$/);
   await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
+  // The code has most of the width, and its result is in view beside it, not below the fold.
+  const codeBox = await editor.boundingBox();
+  const runBox = await run.boundingBox();
+  const width = page.viewportSize()?.width ?? 1;
+  expect((codeBox?.width ?? 0) / width).toBeGreaterThanOrEqual(0.55);
+  expect(runBox && codeBox && runBox.x > codeBox.x + codeBox.width - 1).toBe(true);
+  expect((runBox?.y ?? 9999) < (page.viewportSize()?.height ?? 0)).toBe(true);
   // The key ran the script; Monaco did not also insert a line, as it does with Ctrl+Enter by default.
   expect(await editor.locator(".view-line").count()).toBe(lines);
   // The tab says what is open, and the first save, which only refines the address, kept focus in the code.

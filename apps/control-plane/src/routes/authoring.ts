@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
+  type FlowBody,
   type InterfaceBody,
   PATH_PATTERN,
   platformKinds,
@@ -18,9 +19,9 @@ import {
 } from "../kernel/authoring.js";
 import { describeChange } from "../kernel/describe.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
-import { storeBundle } from "../kernel/execution/bundles.js";
-import { startRun } from "../kernel/execution/runs.js";
-import { kickFlow, startFlowRun } from "../kernel/flows/engine.js";
+import { bundleManifest, storeBundle } from "../kernel/execution/bundles.js";
+import { readPayload, startRun } from "../kernel/execution/runs.js";
+import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { draftFiles, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -691,6 +692,94 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    /**
+     * What testing a flow from one of its steps keeps from an earlier run: the
+     * trigger and input, and the steps before that one. Refused when one of them is
+     * drawn differently in what will run.
+     */
+    const testFromPlan = async (
+      workspaceId: string,
+      flowPath: string,
+      testFrom: { flowRunId: string; node: string },
+      composed: {
+        manifests: { kind: string; path: string; body: Record<string, unknown> }[];
+      } | null,
+      bundleId: string | undefined,
+    ) => {
+      const earlier = await db
+        .selectFrom("flow_run")
+        .innerJoin("bundle", "bundle.id", "flow_run.bundle_id")
+        .select([
+          "flow_run.id",
+          "flow_run.flow_path",
+          "flow_run.trigger_node",
+          "flow_run.input",
+          "flow_run.input_ref",
+          "bundle.id as bundle_id",
+          "bundle.storage_key",
+        ])
+        .where("flow_run.id", "=", testFrom.flowRunId)
+        .where("flow_run.workspace_id", "=", workspaceId)
+        .executeTakeFirst();
+      if (!earlier || earlier.flow_path !== flowPath) throw notFound("The flow run to test from");
+      const ranOn = (
+        await bundleManifest(
+          kernel,
+          { id: earlier.bundle_id, storage_key: earlier.storage_key },
+          "flow",
+          flowPath,
+        )
+      )?.body as unknown as FlowBody | undefined;
+      const now = composed
+        ? (composed.manifests.find((one) => one.kind === "flow" && one.path === flowPath)
+            ?.body as unknown as FlowBody | undefined)
+        : bundleId
+          ? await (async () => {
+              const row = await db
+                .selectFrom("bundle")
+                .select(["id", "storage_key"])
+                .where("id", "=", bundleId)
+                .executeTakeFirst();
+              return row
+                ? ((await bundleManifest(kernel, row, "flow", flowPath))?.body as unknown as
+                    | FlowBody
+                    | undefined)
+                : undefined;
+            })()
+          : undefined;
+      if (!ranOn || !now) throw notFound(`The flow ${flowPath}`);
+      if (!now.nodes[testFrom.node]) throw badRequest(`The flow has no step ${testFrom.node}.`);
+      const steps = await db
+        .selectFrom("step_run")
+        .select(["node_id", "item_key", "status", "handled"])
+        .where("flow_run_id", "=", earlier.id)
+        .execute();
+      const kept = keptNodes(ranOn, steps, earlier.trigger_node);
+      for (const node of downstreamOf(now, testFrom.node)) kept.delete(node);
+      const same = (one: unknown, other: unknown) =>
+        JSON.stringify(sorted(one)) === JSON.stringify(sorted(other));
+      const changed = [...kept].filter(
+        (node) =>
+          !same(ranOn.nodes[node], now.nodes[node]) ||
+          !same(
+            ranOn.edges.filter((edge) => edge.to === node),
+            now.edges.filter((edge) => edge.to === node),
+          ),
+      );
+      if (changed.length > 0) {
+        throw new HttpError(
+          409,
+          "conflict",
+          `Steps before ${testFrom.node} changed since that run (${changed.join(", ")}). Test the whole flow.`,
+        );
+      }
+      return {
+        flowRunId: earlier.id,
+        triggerNode: earlier.trigger_node,
+        input: await readPayload(kernel, earlier.input, earlier.input_ref),
+      };
+    };
+
     app.post(
       `${base}/test-runs`,
       {
@@ -715,6 +804,25 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "A bundle uploaded to this workspace with `preview`, such as a local build " +
                   "(`platform run --remote`): run from it as it is, in a dev workspace only.",
               }),
+            ),
+            triggerNode: Type.Optional(
+              Type.String({
+                maxLength: 100,
+                description:
+                  "For a flow: the trigger to start it from, of any kind, with `input` as what " +
+                  "that trigger would receive. Default: its manual trigger.",
+              }),
+            ),
+            testFrom: Type.Optional(
+              Type.Object(
+                { flowRunId: Id, node: Type.String({ maxLength: 100 }) },
+                {
+                  description:
+                    "For a flow: start at this node, keeping what the earlier flow run did " +
+                    "before it, with that run's input. Refused when a step it keeps is different " +
+                    "in the draft.",
+                },
+              ),
             ),
           }),
           response: {
@@ -774,14 +882,44 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         } else if (body.bundleId === undefined) {
           await mayWriteCode(ctx, workspace);
         }
-        // The drafts, made into a bundle; or the bundle given, as it is.
-        const composed =
-          body.bundleId === undefined ? (await composeDrafts(kernel, db, workspace)).bundle : null;
+        // The drafts, made into a bundle; or the bundle given, as it is. With no drafts at all,
+        // what is deployed is what runs.
+        let composed: Awaited<ReturnType<typeof composeDrafts>>["bundle"] | null = null;
+        let activeId: string | undefined;
+        if (body.bundleId === undefined) {
+          try {
+            composed = (await composeDrafts(kernel, db, workspace)).bundle;
+          } catch (error) {
+            if (!(error instanceof HttpError) || error.problemCode !== "nothing_to_deploy")
+              throw error;
+            activeId =
+              (
+                await db
+                  .selectFrom("workspace")
+                  .select("active_bundle_id")
+                  .where("id", "=", workspace.id)
+                  .executeTakeFirst()
+              )?.active_bundle_id ?? undefined;
+            if (!activeId) throw error;
+          }
+        }
+        // Testing from a step: what came before it is kept from an earlier run, so it must
+        // be the same in what runs now.
+        const from =
+          kind === "flow" && body.testFrom
+            ? await testFromPlan(
+                workspace.id,
+                path,
+                body.testFrom,
+                composed,
+                body.bundleId ?? activeId,
+              )
+            : undefined;
         const result = await ctx.mutate(async (trx, audit) => {
           const bundleId = composed
             ? (await storeBundle(kernel, trx, audit, workspace, ctx.principal, composed, "preview"))
                 .bundle.id
-            : (body.bundleId as string);
+            : ((body.bundleId ?? activeId) as string);
           const detail = { draft: true, ...(composed ? {} : { local: true }) };
           const startedBy = { type: ctx.principal.type, id: ctx.principal.id };
           if (kind === "flow") {
@@ -789,10 +927,17 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               tenantId: workspace.tenantId,
               workspaceId: workspace.id,
               flow: path,
-              input: body.input ?? {},
-              trigger: { type: "manual", detail },
+              triggerNode: from?.triggerNode ?? body.triggerNode,
+              input: from ? from.input : (body.input ?? {}),
+              trigger: {
+                type: "manual",
+                detail: from ? { ...detail, testFrom: body.testFrom } : detail,
+              },
               startedBy,
               bundleId,
+              ...(from
+                ? { retryOf: from.flowRunId, seed: true, rerunFrom: body.testFrom?.node }
+                : {}),
             });
             await audit({
               action: "flow_run.started",
@@ -828,4 +973,17 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
   };
+}
+
+/** A value with object keys in order, so two equal values compare equal as text. */
+function sorted(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sorted);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, inner]) => [key, sorted(inner)]),
+    );
+  }
+  return value;
 }

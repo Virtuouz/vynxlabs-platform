@@ -78,8 +78,10 @@ test("a run that logs 1,200 lines shows them all, and opens from a link to the l
   await expect(page.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
   const log = page.getByRole("region", { name: "Log" });
   await expect(log.getByText("1200 lines")).toBeVisible({ timeout: 15_000 });
-  await expect(log.getByText("line 1200", { exact: true })).toBeAttached();
-  await expect(log.getByText("line 1", { exact: true })).toBeAttached();
+  // Past 500 lines only those in view are drawn: the viewer's own search finds the last one.
+  await log.getByLabel("Search the log").fill("line 1200");
+  await expect(log.getByText("1 of 1 match")).toBeVisible();
+  await expect(log.locator("mark", { hasText: "line 1200" })).toBeVisible();
 
   // A link to the run in the list opens it after a reload.
   await page.goto(`${link}/runs?run=${started.runId}`);
@@ -88,13 +90,15 @@ test("a run that logs 1,200 lines shows them all, and opens from a link to the l
   await expect(inspector.getByText("1200 lines")).toBeVisible({ timeout: 15_000 });
 
   // By keyboard alone: Esc closes it and focus goes back to the run's row; Enter opens it again.
+  // The list is one tab stop: a cell of a row.
   const row = page.getByRole("row").filter({ hasText: "logs/chatty" });
-  await row.focus();
+  const cell = row.getByRole("gridcell").first();
+  await cell.focus();
   await page.keyboard.press("Enter");
   await expect(inspector.getByRole("heading", { level: 2 })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(inspector).toHaveCount(0);
-  await expect(row).toBeFocused();
+  await expect(cell).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(inspector).toBeVisible();
 

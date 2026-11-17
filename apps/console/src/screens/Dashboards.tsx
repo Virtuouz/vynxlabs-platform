@@ -7,13 +7,13 @@ import {
   EmptyState,
   MultiSelectField,
   Notice,
-  Table,
   TextField,
 } from "@vynxlabs/ui";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { PageEditor, PageView } from "./Interfaces.tsx";
@@ -67,7 +67,10 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
           {list.error.message}
         </Notice>
       ) : list.data ? (
-        <Table<Summary>
+        <DataTable<Summary>
+          variant="static"
+          framed
+          label="Dashboards"
           rows={list.data.items}
           rowKey={(row) => row.id}
           empty={

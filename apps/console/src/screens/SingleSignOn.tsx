@@ -9,7 +9,6 @@ import {
   JsonView,
   Notice,
   SelectField,
-  Table,
   Tabs,
   TextAreaField,
   TextField,
@@ -18,8 +17,10 @@ import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 import { Provisioning } from "./Provisioning.tsx";
 
 type Audience = "members" | "end_users";
@@ -884,7 +885,10 @@ function People({ root }: { root: string }) {
   return list.error ? (
     <Notice tone="danger">{list.error.message}</Notice>
   ) : (
-    <Table<Link>
+    <DataTable<Link>
+      variant="static"
+      framed
+      label="People who signed in"
       rows={list.data?.items ?? []}
       rowKey={(row) => row.id}
       empty={
@@ -949,7 +953,7 @@ function ProviderDetail({
 }) {
   const root = `${base}/identity-providers/${provider.id}`;
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState("setup");
+  const [tab, setTab] = useUrlParam("tab", "setup", { push: true });
   const domains = useLoad<{ items: Domain[] }>(`${root}/domains`);
   const maps = useLoad<{ items: GroupMap[] }>(instance ? null : `${root}/group-maps`);
   const proved = (domains.data?.items ?? []).some((domain) => domain.verified);
@@ -1209,7 +1213,10 @@ export function SingleSignOn({ base }: { base: string }) {
           {list.error.message}
         </Notice>
       ) : list.data ? (
-        <Table<IdentityProvider>
+        <DataTable<IdentityProvider>
+          variant="static"
+          framed
+          label="Identity providers"
           rows={list.data.items}
           rowKey={(row) => row.id}
           empty={

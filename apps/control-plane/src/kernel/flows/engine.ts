@@ -13,6 +13,7 @@ import {
 import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
+import { summarize } from "../execution/redact.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
@@ -42,6 +43,11 @@ export interface StartFlowRun {
   retryOf?: string | undefined;
   /** Keep what the retried flow run already did, and run only what failed and what follows. */
   seed?: boolean | undefined;
+  /**
+   * With `seed`: run this node and everything after it again even where it was
+   * done, keeping only what comes before it. Testing a flow from one step.
+   */
+  rerunFrom?: string | undefined;
 }
 
 type StepRow = {
@@ -176,7 +182,13 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
     })
     .execute();
   if (request.seed && request.retryOf) {
-    await seedRetry(kernel, trx, { from: request.retryOf, to: id, body, triggerNode });
+    await seedRetry(kernel, trx, {
+      from: request.retryOf,
+      to: id,
+      body,
+      triggerNode,
+      rerunFrom: request.rerunFrom,
+    });
   }
   return { created: true, flowRun };
 }
@@ -219,6 +231,21 @@ export function keptNodes(
   return kept;
 }
 
+/** A node and every node after it, by the flow's edges. */
+export function downstreamOf(body: FlowBody, start: string): Set<string> {
+  const found = new Set([start]);
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const edge of body.edges) {
+      if (found.has(edge.from) && !found.has(edge.to)) {
+        found.add(edge.to);
+        changed = true;
+      }
+    }
+  }
+  return found;
+}
+
 /**
  * Copies what a retried flow run already did into its retry: the steps of every
  * kept node, each with its output in the step itself, and anything stored copied
@@ -233,7 +260,14 @@ async function seedRetry(
     to,
     body,
     triggerNode,
-  }: { from: string; to: string; body: FlowBody; triggerNode: string },
+    rerunFrom,
+  }: {
+    from: string;
+    to: string;
+    body: FlowBody;
+    triggerNode: string;
+    rerunFrom?: string | undefined;
+  },
 ) {
   const steps = await trx
     .selectFrom("step_run")
@@ -241,6 +275,7 @@ async function seedRetry(
     .where("flow_run_id", "=", from)
     .execute();
   const kept = keptNodes(body, steps, triggerNode);
+  if (rerunFrom) for (const node of downstreamOf(body, rerunFrom)) kept.delete(node);
   const copyStored = async (ref: string, name: string) => {
     const key = `flow-runs/${to}/${name}.json`;
     await kernel.storage.put(key, await kernel.storage.get(ref), "application/json");
@@ -1031,6 +1066,7 @@ class Advance {
       .set({
         status,
         output: stored.inline ?? JSON.stringify({ stored: stored.ref }),
+        output_summary: summarize(output),
         error: error ? JSON.stringify(error) : null,
         finished_at: new Date(),
       })

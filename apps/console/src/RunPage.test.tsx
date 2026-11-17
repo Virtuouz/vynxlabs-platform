@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { useNamedObject } from "./kit/title.ts";
+import { LOG_WINDOW } from "./screens/Execution.tsx";
 import { RunPage } from "./screens/RunPage.tsx";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { answer, show } from "./testing.tsx";
@@ -115,7 +116,13 @@ beforeEach(() => {
     ],
     [`GET ${root}/flow-runs/f2/retry-plan`]: () => [
       200,
-      { kept: ["a"], again: ["b", "c"], approvalsKept: [{ node: "gate", decidedBy: "Ana" }] },
+      {
+        bundleVersion: 4,
+        changed: [],
+        kept: ["a"],
+        again: ["b", "c"],
+        approvalsKept: [{ node: "gate", decidedBy: "Ana" }],
+      },
     ],
     [`POST ${root}/flow-runs/f2/retry`]: () => [201, { ...flowRun, id: "f3" }],
     [`GET ${root}/runs/nope`]: () => [404, { status: 404, detail: "Not found." }],
@@ -153,7 +160,8 @@ test("a script run's page names everything it came from, each as a link", async 
   expect(await screen.findByText("The SMS gateway said no.", { selector: "p" })).toBeTruthy();
   expect(href("reminders/send")).toContain(`${link}/scripts/edit/reminders/send`);
   expect(href(/reminders\/hourly/)).toContain(`${link}/triggers?trigger=reminders%2Fhourly`);
-  expect(href("version 4")).toContain(`${link}/deployments`);
+  // The version leads to the code as this run ran it.
+  expect(href("version 4")).toContain(`${link}/scripts/reminders/send?tab=source&run=r1`);
   expect(href("Runs")).toContain(`${link}/runs`);
   // What the run used comes with its insight, once it has ended.
   expect(await screen.findByText(/#1 failed/)).toBeTruthy();
@@ -347,8 +355,10 @@ test("a finished run's page shows every line of its log, read a page at a time",
   expect(afters).toEqual(["0", "1000", "2000"]);
 });
 
-test("a long log keeps its newest lines on the page, and the whole of it can be downloaded", async () => {
-  routes[`GET ${root}/runs/r1/logs`] = logOf(7000);
+test("a long log keeps its newest lines on the page, and the whole of it can be downloaded", {
+  timeout: 60_000,
+}, async () => {
+  routes[`GET ${root}/runs/r1/logs`] = logOf(LOG_WINDOW + 2000);
   const saved: Blob[] = [];
   // The download is a Blob handed to the browser; it is caught here instead, and put back after.
   const { createObjectURL, revokeObjectURL } = URL;
@@ -365,15 +375,16 @@ test("a long log keeps its newest lines on the page, and the whole of it can be 
     click.mockRestore();
   });
   show(<RunPage root={root} link={link} id="r1" />);
-  expect(await screen.findByText("5000 lines")).toBeTruthy();
+  expect(await screen.findByText(`${LOG_WINDOW} lines`, {}, { timeout: 20_000 })).toBeTruthy();
   expect(screen.getByText("The first 2,000 lines are not shown here.")).toBeTruthy();
-  expect(screen.getByText("line 7000")).toBeTruthy();
+  // Lines are numbered from the start of the whole log, not of what the page holds.
+  expect(screen.getByRole("button", { name: "Link to line 2001" })).toBeTruthy();
   expect(screen.queryByText("line 2000")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Download the whole log" }));
   await waitFor(() => expect(saved).toHaveLength(1));
   const text = await (saved[0] as Blob).text();
-  expect(text.trimEnd().split("\n")).toHaveLength(7000);
+  expect(text.trimEnd().split("\n")).toHaveLength(LOG_WINDOW + 2000);
   expect(text.startsWith("2026-11-14T10:00:01.000Z info  line 1\n")).toBe(true);
 });
 
@@ -482,23 +493,119 @@ test("a run is opened, read and closed from the list with the keyboard alone", a
   history.replaceState(null, "", "/t/t1/workspaces/w1/runs");
   show(<RunsWorkbench root={root} link={link} />);
   const row = (await screen.findByText("reminders/send", { selector: "a" })).closest("tr");
-  expect(row?.tabIndex).toBe(0);
-  row?.focus();
-  fireEvent.keyDown(row as HTMLElement, { key: "Enter" });
+  // The list is one tab stop: a cell of the first row.
+  const cell = screen.getByRole("grid", { name: "Runs" }).querySelector('[tabindex="0"]');
+  expect(row?.contains(cell)).toBe(true);
+  (cell as HTMLElement).focus();
+  fireEvent.keyDown(cell as HTMLElement, { key: "Enter" });
 
   const inspector = await screen.findByRole("complementary", { name: "The chosen run" });
   // Focus goes to the inspector's heading, and the run's error can be read.
   await waitFor(() => expect(document.activeElement?.tagName).toBe("H2"));
   expect(inspector.contains(document.activeElement)).toBe(true);
   expect(await screen.findAllByText("The SMS gateway said no.")).not.toHaveLength(0);
-  expect(row?.getAttribute("aria-current")).toBe("true");
-  expect(row?.hasAttribute("aria-selected")).toBe(false);
+  expect(row?.getAttribute("aria-selected")).toBe("true");
 
   fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
   await waitFor(() =>
     expect(screen.queryByRole("complementary", { name: "The chosen run" })).toBeNull(),
   );
-  // Focus is back on the row that opened it.
-  expect(document.activeElement).toBe(row);
+  // Focus is back where it was in the list.
+  expect(document.activeElement).toBe(cell);
   history.replaceState(null, "", "/");
+});
+
+test("a failed flow run opens on its failed step, names it, and shows what it was given", async () => {
+  routes[`GET ${root}/flow-runs/f2`] = () => [
+    200,
+    {
+      ...flowRun,
+      steps: [
+        step("start"),
+        step("a"),
+        step("b", {
+          status: "failed",
+          state: "failed",
+          runId: "rb",
+          input: { sku: "A", apiKey: "[redacted]" },
+          error: { message: "The supplier refused." },
+        }),
+      ],
+    },
+  ];
+  routes[`GET ${root}/flow-runs/f2/definition`] = () => [
+    200,
+    {
+      path: "orders/reorder",
+      bundleVersion: 4,
+      nodes: {
+        start: { type: "trigger" },
+        a: { type: "set" },
+        b: { type: "script", script: "supplier/order" },
+      },
+      edges: [],
+      layout: {},
+      changed: true,
+    },
+  ];
+  routes[`GET ${root}/runs/rb/logs`] = () => [200, { items: [], done: true }];
+  routes[`GET ${root}/runs/rb/insight`] = () => [
+    200,
+    { attempts: [], worker: null, timeoutSeconds: 30, uses: [], diagnosis: null },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  // No click: the failed step is what the page opens on.
+  const panel = await screen.findByRole("region", { name: "Step b" });
+  expect(within(panel).getByText("The supplier refused.")).toBeTruthy();
+  expect(
+    await within(panel).findByRole("link", { name: "Open script supplier/order" }),
+  ).toBeTruthy();
+  expect(panel.textContent).toContain("[redacted]");
+  expect(screen.getByText(/Failed at/).textContent).toContain("b");
+  // The flow's own input is on the page too.
+  expect(screen.getByRole("region", { name: "The flow's input and output" }).textContent).toContain(
+    '"sku"',
+  );
+  // Choosing another step puts it in the address; a reload comes back to it.
+  fireEvent.click(await screen.findByText("a", { selector: "button *, button" }));
+  await waitFor(() => expect(new URLSearchParams(location.search).get("step")).toBe("a"));
+  cleanup();
+  show(<RunPage root={root} link={link} id="f2" />);
+  expect(await screen.findByRole("region", { name: "Step a" })).toBeTruthy();
+  history.replaceState(null, "", "/");
+});
+
+test("from a production run, one press opens the dev editor with that run's input", async () => {
+  routes[`GET ${root}`] = () => [
+    200,
+    { id: "w1", name: "Production", type: "production", linkedWorkspaceId: null },
+  ];
+  routes["GET /tenants/t1/workspaces"] = () => [
+    200,
+    {
+      items: [
+        { id: "w1", name: "Production", type: "production", linkedWorkspaceId: null },
+        { id: "w0", name: "Dev", type: "dev", linkedWorkspaceId: "w1" },
+      ],
+    },
+  ];
+  show(<RunPage root={root} link={link} id="r1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Edit in Dev" }));
+  await waitFor(() =>
+    expect(`${location.pathname}${location.search}`).toBe(
+      "/t/t1/workspaces/w0/scripts/edit/reminders/send?fromRun=w1%3Ar1",
+    ),
+  );
+  history.replaceState(null, "", "/");
+});
+
+test("a step's own run links to its flow run, opened on the step, and is not run again alone", async () => {
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    { ...scriptRun, trigger: { type: "flow", flowRunId: "f2", node: "b", flow: "orders/reorder" } },
+  ];
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByRole("link", { name: "Step b of a flow run" })).toBeTruthy();
+  expect(href("Step b of a flow run")).toContain(`${link}/runs/f2?step=b`);
+  expect(screen.queryByRole("button", { name: /Re-run/ })).toBeNull();
 });

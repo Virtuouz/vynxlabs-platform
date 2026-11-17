@@ -13,6 +13,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
 import {
@@ -413,20 +415,25 @@ export function ResourceEditor({
             <Button variant="primary" disabled={busy || (!dirty && state !== "new")} onClick={save}>
               Save draft
             </Button>
-            {state === "draft" && !dirty ? (
-              <Link to={`${link}/changes`} className="text-action">
-                Review and deploy
-              </Link>
+            {state === "draft" && !dirty && path ? (
+              <DeployMenu
+                root={root}
+                link={link}
+                path={path}
+                disabled={busy}
+                onDeployed={() => setState("deployed")}
+              />
             ) : null}
           </div>
         )}
       </header>
       <p className="m-0 max-w-3xl text-ink-muted">{about.says}</p>
       {!editable ? (
-        <Notice tone="attention">
-          This is a production workspace. Resources are changed in a dev workspace and reach
-          production by promotion.
-        </Notice>
+        <ProductionNotice
+          root={root}
+          noun="Resources"
+          edit={path ? `resources/edit/${kind}/${path}` : undefined}
+        />
       ) : state === "repository" ? (
         <Notice tone="attention">
           This {about.noun} is managed in the tenant's repository. Saving a draft of it takes it
@@ -525,6 +532,7 @@ export function ResourceEditor({
             readOnly={readOnly}
             sources={ofKind("trigger_source", "poll")}
             onProblems={setScheduleProblems}
+            fresh={state === "new"}
           />
         ) : null}
         {kind === "trigger" ? (

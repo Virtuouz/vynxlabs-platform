@@ -180,6 +180,48 @@
       },
       "additionalProperties": false
     },
+    "consoleSources": {
+      "type": "object",
+      "required": [
+        "files",
+        "line",
+        "map"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "content"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "`<path>.<kind>.ts`."
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 2000
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many lines of `code` come before the console's compiled code."
+        },
+        "map": {
+          "type": "string",
+          "description": "A source map (version 3) from the console's compiled code to the files."
+        }
+      },
+      "additionalProperties": false
+    },
     "digest": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",

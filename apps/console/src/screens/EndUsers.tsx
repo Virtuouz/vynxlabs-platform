@@ -6,6 +6,7 @@ import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, CreateDialog, when } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 import { AttributesDialog } from "./Groups.tsx";
 
 interface EndUser {
@@ -86,14 +87,14 @@ function LinkDialog({ link, onClose }: { link: ShownLink | undefined; onClose: (
 }
 
 export function EndUsers({ base }: { base: string }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useUrlParam("q", "");
   // The cursor of each page opened so far, so that Previous can go back.
   const [trail, setTrail] = useState<(string | null)[]>([null]);
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<ShownLink>();
   const [attributesOf, setAttributesOf] = useState<EndUser>();
   const [problem, setProblem] = useState<string>();
-  const [selected, setSelected] = useState<string>();
+  const [selected, setSelected] = useUrlParam("user", undefined, { push: true });
 
   const query = new URLSearchParams({ limit: String(PAGE) });
   const cursor = trail[trail.length - 1];

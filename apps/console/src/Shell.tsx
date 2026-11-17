@@ -14,7 +14,7 @@ import {
   Sun,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isOperator, type Me, useLoad } from "./api.ts";
+import { api, isOperator, type Me, useLoad } from "./api.ts";
 import { BrandMark, useBrand } from "./kit/brand.tsx";
 import {
   CommandPalette,
@@ -23,6 +23,7 @@ import {
   useCommandKey,
 } from "./kit/CommandPalette.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
+import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { EnvTag, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
@@ -42,7 +43,7 @@ import {
   whereIs,
 } from "./nav.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
-import { Link, navigate, navigationKind } from "./router.tsx";
+import { Link, navigate, navigationKind, useRestoredScroll } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
@@ -304,6 +305,49 @@ function SectionList({
   );
 }
 
+/**
+ * The resource an address inside a workspace names, when it names one that
+ * another workspace may have too: a script, a flow, a table, a connection.
+ */
+export function objectAt(rest: string): { path: string } | undefined {
+  const found =
+    /^scripts\/(?:edit\/)?(?!new$)(.+)$/.exec(rest) ??
+    /^flows\/(?:edit\/)?(?!new$)(.+)$/.exec(rest) ??
+    /^(?:connections|variables|events|tables)\/(.+)$/.exec(rest);
+  return found?.[1] ? { path: found[1] } : undefined;
+}
+
+/**
+ * Goes to the same place in another workspace: the same object, with the same
+ * filters, when it is there too, or else the same section.
+ */
+export async function switchWorkspace(
+  tenantId: string,
+  from: string,
+  to: string,
+  section: string | undefined,
+) {
+  const rest = location.pathname.split(`/workspaces/${from}/`)[1] ?? "";
+  const target = `/t/${tenantId}/workspaces/${to}`;
+  const object = objectAt(rest);
+  if (object) {
+    const there = await api
+      .get(`/tenants/${tenantId}/workspaces/${to}/resources/${object.path}`)
+      .then(
+        () => true,
+        () => false,
+      );
+    if (there) {
+      navigate(`${target}/${rest}${location.search}`);
+      return;
+    }
+  }
+  // Filters belong to a list, and a list of the same section takes them; a run or an
+  // object of this workspace does not exist there.
+  const listOnly = rest === section;
+  navigate(`${target}/${section || "overview"}${listOnly ? location.search : ""}`);
+}
+
 /** Draft, this workspace, and where it promotes to, as a short vertical path. */
 function ReleasePath({ counts }: { counts: WorkspaceCounts }) {
   const rows: {
@@ -561,6 +605,7 @@ export function Shell({
   // A new page takes focus to its heading, so a screen reader starts there. The
   // same page refining its address (a filter, a first save) keeps focus where it is.
   const main = useRef<HTMLElement>(null);
+  useRestoredScroll(main, "main");
   const shownPath = useRef(path);
   useEffect(() => {
     // The first page keeps the browser's own focus; so does the same page refining its address.
@@ -805,9 +850,7 @@ export function Shell({
                       label: `${one.name} (${one.type === "production" ? "production" : "dev"})`,
                       current: one.id === workspaceId,
                       onSelect: () =>
-                        navigate(
-                          `/t/${tenantId}/workspaces/${one.id}/${where.section || "overview"}`,
-                        ),
+                        void switchWorkspace(tenantId, workspaceId, one.id, where.section),
                     }))}
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
@@ -822,7 +865,13 @@ export function Shell({
                         />
                       </span>
                       <span className="text-ink-subtle">
-                        promotes to <span className="text-ink-muted">{ws.linked.name}</span>
+                        promotes to{" "}
+                        <Link
+                          to={`/t/${tenantId}/workspaces/${ws.linked.id}/overview`}
+                          className="text-ink-muted"
+                        >
+                          {ws.linked.name}
+                        </Link>
                       </span>
                     </span>
                   ) : null}
@@ -906,6 +955,7 @@ export function Shell({
             </nav>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {tenantId ? <LiveIndicator /> : null}
             {tenantId && workspaceId && drafts > 0 ? (
               <Link
                 to={`/t/${tenantId}/workspaces/${workspaceId}/release`}

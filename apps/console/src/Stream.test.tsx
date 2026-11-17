@@ -2,6 +2,7 @@
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useLoad } from "./api.ts";
+import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { useStreamConnected, useTenantStream } from "./stream.ts";
 import { show } from "./testing.tsx";
@@ -10,6 +11,7 @@ import { show } from "./testing.tsx";
 class FakeSource {
   static last: FakeSource | undefined;
   static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   readyState = 0;
   readonly url: string;
   onopen: (() => void) | null = null;
@@ -131,11 +133,11 @@ test("the runs list stops polling while events arrive, and starts again when the
     </Tab>,
   );
   await screen.findByText("orders/sync");
-  expect(screen.getByText("Live · updates every 5s")).toBeTruthy();
+  expect(screen.getByText(/asked again every 5 s/)).toBeTruthy();
   act(() => FakeSource.last?.emit("ready", {}));
-  expect(await screen.findByText("Live")).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText(/asked again every 5 s/)).toBeNull());
   act(() => FakeSource.last?.fail());
-  expect(await screen.findByText("Live · updates every 5s")).toBeTruthy();
+  expect(await screen.findByText(/asked again every 5 s/)).toBeTruthy();
 });
 
 test("the stream is closed when nothing on screen needs it", async () => {
@@ -143,4 +145,29 @@ test("the stream is closed when nothing on screen needs it", async () => {
   const source = FakeSource.last;
   unmount();
   expect(source?.closed).toBe(true);
+});
+
+test("the shell says Live, then Reconnecting after a few seconds down, then Offline with the time", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    function Header() {
+      useTenantStream("t1");
+      return <LiveIndicator />;
+    }
+    show(<Header />);
+    act(() => FakeSource.last?.emit("ready", {}));
+    expect(screen.getByRole("status").textContent).toBe("Live");
+    act(() => FakeSource.last?.fail());
+    // A short drop does not flicker.
+    act(() => vi.advanceTimersByTime(1500));
+    expect(screen.getByRole("status").textContent).toBe("Live");
+    act(() => vi.advanceTimersByTime(2500));
+    expect(screen.getByRole("status").textContent).toBe("Reconnecting…");
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(screen.getByRole("status").textContent).toMatch(/^Offline · last updated \d\d:\d\d/);
+    act(() => FakeSource.last?.emit("ready", {}));
+    expect(screen.getByRole("status").textContent).toBe("Live");
+  } finally {
+    vi.useRealTimers();
+  }
 });

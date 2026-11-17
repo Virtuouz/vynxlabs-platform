@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button, Panel } from "@vynxlabs/ui";
 import { Redo2, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { keysOf, useShortcut } from "../../kit/keys.ts";
@@ -134,12 +134,13 @@ export function EditorShell({
             </div>
           }
           second={
-            <aside
+            <Panel
+              as="aside"
               aria-label="Settings"
-              className="rounded-panel border border-line bg-surface p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
+              className="p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
             >
               {inspector}
-            </aside>
+            </Panel>
           }
         />
       </div>

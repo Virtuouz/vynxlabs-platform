@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
+import { ago, duration, hm } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
@@ -49,21 +50,6 @@ const TRIGGER_ICON: Record<string, typeof Timer> = {
   manual: Hand,
 };
 
-/** "in 2m 14s", "3h ago": how far a time is from now, in the largest two units. */
-export function fromNow(iso: string, now = Date.now()): string {
-  const ms = Date.parse(iso) - now;
-  const seconds = Math.round(Math.abs(ms) / 1000);
-  const parts =
-    seconds < 60
-      ? `${seconds}s`
-      : seconds < 3600
-        ? `${Math.floor(seconds / 60)}m${seconds % 60 ? ` ${seconds % 60}s` : ""}`
-        : seconds < 86400
-          ? `${Math.floor(seconds / 3600)}h${Math.floor((seconds % 3600) / 60) ? ` ${Math.floor((seconds % 3600) / 60)}m` : ""}`
-          : `${Math.floor(seconds / 86400)}d`;
-  return ms >= 0 ? `in ${parts}` : `${parts} ago`;
-}
-
 export interface RunStats {
   from: string;
   to: string;
@@ -74,18 +60,11 @@ export interface RunStats {
   hours: { start: string; succeeded: number; failed: number }[];
 }
 
-const seconds = (value: number) =>
-  value < 1
-    ? `${Math.round(value * 1000)} ms`
-    : value < 60
-      ? `${value.toFixed(1)}s`
-      : `${Math.round(value / 60)}m`;
+const seconds = (value: number) => duration(value * 1000);
 
 /** Totals as figures, and each hour as one bar of succeeded under failed. */
 function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
   const peak = Math.max(1, ...stats.hours.map((hour) => hour.succeeded + hour.failed));
-  const hourOf = (iso: string) =>
-    new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return (
     <Panel className="flex flex-col gap-4 p-4">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -148,14 +127,14 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
                   </div>
                 )}
                 <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-control border border-line bg-raised px-2 py-1 text-meta shadow-overlay group-hover:block">
-                  {hourOf(hour.start)} · {hour.succeeded} succeeded · {hour.failed} failed
+                  {hm(hour.start)} · {hour.succeeded} succeeded · {hour.failed} failed
                 </span>
               </div>
             );
           })}
         </div>
         <div className="flex items-center justify-between text-meta text-ink-subtle">
-          <span data-volatile>{hourOf(stats.from)}</span>
+          <span data-volatile>{hm(stats.from)}</span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span aria-hidden="true" className="size-2 rounded-inner bg-success" /> Succeeded
@@ -179,7 +158,7 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
           <tbody>
             {stats.hours.map((hour) => (
               <tr key={hour.start}>
-                <td>{hourOf(hour.start)}</td>
+                <td>{hm(hour.start)}</td>
                 <td>{hour.succeeded}</td>
                 <td>{hour.failed}</td>
               </tr>
@@ -603,9 +582,9 @@ export function Overview({
                       {!trigger.enabled || workspace.triggersPaused ? (
                         <StatePill state="paused" />
                       ) : trigger.nextFireAt ? (
-                        <span className="text-ink-muted">Next {fromNow(trigger.nextFireAt)}</span>
+                        <span className="text-ink-muted">Next {ago(trigger.nextFireAt)}</span>
                       ) : trigger.lastFiredAt ? (
-                        <span className="text-ink-muted">Last {fromNow(trigger.lastFiredAt)}</span>
+                        <span className="text-ink-muted">Last {ago(trigger.lastFiredAt)}</span>
                       ) : (
                         <span className="text-ink-subtle">Waiting</span>
                       )}

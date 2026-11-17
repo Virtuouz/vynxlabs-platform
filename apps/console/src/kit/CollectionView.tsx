@@ -3,6 +3,15 @@ import { type DataColumn, DataTable, type DataTableProps } from "./DataTable.tsx
 import { MasterDetail } from "./layout.tsx";
 import { PageHeader } from "./PageHeader.tsx";
 
+/** "End-user groups" → "end-user-groups": a list's id from its title. */
+export const keyOf = (title: string) =>
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/^([^a-z])/, "x$1")
+    .slice(0, 40);
+
 /** A column of a collection: the same shape as `DataTable`'s. */
 export type CollectionColumn<Row> = DataColumn<Row>;
 
@@ -30,6 +39,8 @@ export function CollectionView<Row>({
   loading,
   label,
   table,
+  helpKey,
+  state,
 }: {
   title: string;
   description?: ReactNode;
@@ -52,11 +63,23 @@ export function CollectionView<Row>({
   label?: string;
   /** Anything else the table takes: sort, row actions, checkboxes, density, a footer. */
   table?: Partial<Omit<DataTableProps<Row>, "columns" | "rows" | "rowKey">>;
+  /** The list's id, for its description once read; its title's words by default. */
+  helpKey?: string;
+  /** Something about the whole list, beside its title: a `HeadNote`. */
+  state?: ReactNode;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-line border-b px-4 py-4 md:px-6">
-        <PageHeader title={title} description={description} actions={actions} toolbar={toolbar} />
+      <div className="border-line border-b px-4 py-3 md:px-6">
+        <PageHeader
+          title={title}
+          description={description}
+          actions={actions}
+          toolbar={toolbar}
+          helpKey={helpKey ?? keyOf(title)}
+          state={state}
+          oneRow
+        />
       </div>
       <MasterDetail inspector={inspector} side={side}>
         <DataTable
@@ -68,7 +91,11 @@ export function CollectionView<Row>({
           selected={selected}
           {...(onSelect ? { onOpen: onSelect } : {})}
           // An empty list offers what the page offers: making the first one.
-          empty={empty.action || !actions ? empty : { ...empty, action: actions }}
+          empty={{
+            ...(empty.action || !actions ? empty : { ...empty, action: actions }),
+            // The sentence that was folded into help stays where a first list is made.
+            text: empty.text ?? description,
+          }}
           error={error}
           onRetry={onRetry}
           loading={loading}

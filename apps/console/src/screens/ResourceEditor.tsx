@@ -4,6 +4,7 @@ import {
   ComboboxField,
   Notice,
   type Option,
+  Panel,
   SelectField,
   TextAreaField,
   TextField,
@@ -473,7 +474,7 @@ export function ResourceEditor({
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
 
-      <div className="flex max-w-2xl flex-col gap-3 rounded-panel border border-line bg-surface p-4">
+      <Panel as="div" className="flex max-w-2xl flex-col gap-3 p-4">
         {kind === "connection" || kind === "connection_group" ? (
           <>
             <ComboboxField
@@ -615,7 +616,7 @@ export function ResourceEditor({
             {enabled}
           </>
         ) : null}
-      </div>
+      </Panel>
       {found.length > 0 && tried ? (
         <Notice tone="attention">
           <ul className="m-0 pl-5">

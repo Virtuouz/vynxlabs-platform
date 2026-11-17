@@ -5,7 +5,9 @@ import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
 import { KeyValues } from "../kit/layout.tsx";
+import { setOperatorAccess } from "../kit/OperatorStrip.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
+import { Time } from "../kit/Time.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -63,7 +65,7 @@ const FlowEditor = lazy(() =>
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
-import { EnvTag, StatePill } from "../kit/status.tsx";
+import { Code, EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
@@ -96,8 +98,6 @@ interface Grant {
   expiresAt: string;
   active: boolean;
 }
-
-const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 /** Production is always marked. It is the one thing nobody should have to look for. */
 export const TypeBadge = ({ type }: { type: "production" | "dev" }) => <EnvTag type={type} />;
@@ -168,6 +168,23 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
     (grant) => grant.active && grant.memberId === me.principal.id,
   );
 
+  const reloadGrants = grants.reload;
+  // The shell says it under its header on every screen while the grant lasts.
+  useEffect(() => {
+    setOperatorAccess(
+      mine
+        ? {
+            grant: mine,
+            end: async () => {
+              await api.delete(`${base}/access-grants/${mine.id}`);
+              reloadGrants();
+            },
+          }
+        : null,
+    );
+  }, [mine, base, reloadGrants]);
+  useEffect(() => () => setOperatorAccess(null), []);
+
   if (operator && !isMember && !grants.data && !grants.error) return null;
   if (operator && !isMember && !mine) {
     return (
@@ -199,26 +216,6 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
-      {mine ? (
-        <Notice
-          tone="attention"
-          action={
-            <Button
-              size="small"
-              onClick={async () => {
-                await api.delete(`${base}/access-grants/${mine.id}`);
-                grants.reload();
-              }}
-            >
-              End access now
-            </Button>
-          }
-        >
-          <strong>Operator access</strong> as {mine.roleName}, until{" "}
-          <time dateTime={mine.expiresAt}>{when(mine.expiresAt)}</time>. Reason: {mine.reason}.
-          Everything you do here is recorded for the tenant.
-        </Notice>
-      ) : null}
       {workspace?.w ? (
         <WorkspaceDetail
           base={base}
@@ -299,7 +296,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
             </Link>
           ),
         },
-        { header: "Slug", cell: (row) => code(row.slug) },
+        { header: "Slug", cell: (row) => <Code>{row.slug}</Code> },
         { header: "Type", cell: (row) => <TypeBadge type={row.type} /> },
         {
           header: "Promotes to",
@@ -679,7 +676,7 @@ function WorkspaceDetail({
                     {row.path}
                   </Link>
                 ) : (
-                  code(row.path)
+                  <Code>{row.path}</Code>
                 ),
             },
             { header: "Kind", cell: (row) => row.kind },
@@ -688,7 +685,7 @@ function WorkspaceDetail({
               cell: (row) => (row.ownership === "code" ? "Repository" : "Console"),
             },
             { header: "Version", cell: (row) => row.version, align: "end" },
-            { header: "Changed", cell: (row) => when(row.updatedAt) },
+            { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
           ]}
           empty={{
             title: "No resources yet",
@@ -957,7 +954,11 @@ function ServiceAccountList({ base }: { base: string }) {
                 <span className="text-ink-subtle">Not said</span>
               ),
           },
-          { header: "Created", priority: 3, cell: (row) => when(row.createdAt) },
+          {
+            header: "Created",
+            priority: 3,
+            cell: (row) => <Time value={row.createdAt} mode="ago" />,
+          },
         ]}
         empty={{
           title: "No service accounts yet",
@@ -1025,7 +1026,7 @@ function DescriptionForm({
         }
       }}
     >
-      <KeyValues rows={[{ label: "Created", value: when(account.createdAt) }]} />
+      <KeyValues rows={[{ label: "Created", value: <Time value={account.createdAt} /> }]} />
       <TextField
         name="description"
         label="What it is for"
@@ -1053,8 +1054,8 @@ function OperatorAccess({ base }: { base: string }) {
       columns={[
         { header: "Operator", cell: (row) => row.memberEmail },
         { header: "Reason", cell: (row) => row.reason },
-        { header: "Access level", cell: (row) => code(row.roleName) },
-        { header: "Opened", cell: (row) => when(row.createdAt) },
+        { header: "Access level", cell: (row) => <Code>{row.roleName}</Code> },
+        { header: "Opened", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
         {
           header: "Status",
           cell: (row) =>

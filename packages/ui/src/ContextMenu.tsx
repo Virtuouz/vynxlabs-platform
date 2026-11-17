@@ -31,7 +31,7 @@ export function ContextMenu({
       </Base.Trigger>
       <Base.Portal>
         <Base.Positioner className="layer-popover">
-          <Base.Popup className="max-h-[70vh] min-w-44 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-overlay transition-opacity motion-fast data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
+          <Base.Popup className="max-h-[70vh] min-w-44 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-[starting-style]:-translate-y-1">
             {items.map((item) => (
               <div key={item.label}>
                 {item.separated ? <Base.Separator className="my-1 h-px bg-line" /> : null}

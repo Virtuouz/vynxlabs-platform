@@ -246,7 +246,7 @@ export function PageEditor({
           ) : null}
           <div
             data-preview={viewport}
-            className="mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width]"
+            className="mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width] motion-slow"
             style={{
               maxWidth: VIEWPORTS[viewport].width ? `${VIEWPORTS[viewport].width}px` : undefined,
             }}

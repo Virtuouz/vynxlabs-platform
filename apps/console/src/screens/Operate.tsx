@@ -14,13 +14,14 @@ import { ask, notify } from "../ask.tsx";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
-import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
+import { ago, stamp } from "../kit/format.ts";
+import { FilterChips, HeadNote, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
-import { stamp } from "./Execution.tsx";
-import { fromNow } from "./Overview.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 // ----- Triggers -----
@@ -225,10 +226,10 @@ export function TriggersWorkbench({
       header: "Trigger",
       cell: (row) => (
         <span className="flex min-w-0 flex-col">
-          <Mono className="truncate">
-            {row.path}
-            {row.node ? <span className="text-ink-subtle">#{row.node}</span> : null}
-          </Mono>
+          <span className="flex min-w-0 font-mono text-code">
+            <Truncate mode="middle">{row.path}</Truncate>
+            {row.node ? <span className="shrink-0 text-ink-subtle">#{row.node}</span> : null}
+          </span>
           <span className="text-meta text-ink-subtle">
             {row.type}
             {row.type === "event" && row.event ? ` · ${row.event}` : ""}
@@ -261,7 +262,7 @@ export function TriggersWorkbench({
         ) : workspacePaused ? (
           <StatePill state="paused">Workspace paused</StatePill>
         ) : row.nextFireAt ? (
-          <span className="text-ink-muted">Next {fromNow(row.nextFireAt)}</span>
+          <span className="text-ink-muted">Next {ago(row.nextFireAt)}</span>
         ) : (
           <StatePill state="on" />
         ),
@@ -273,10 +274,10 @@ export function TriggersWorkbench({
         row.lastRun ? (
           <span className="flex flex-col">
             <StatePill state={row.lastRun.state} />
-            <span className="text-meta text-ink-subtle">{fromNow(row.lastRun.createdAt)}</span>
+            <span className="text-meta text-ink-subtle">{ago(row.lastRun.createdAt)}</span>
           </span>
         ) : row.lastFiredAt ? (
-          <span className="text-ink-muted">{fromNow(row.lastFiredAt)}</span>
+          <span className="text-ink-muted">{ago(row.lastFiredAt)}</span>
         ) : (
           <span
             className="text-ink-subtle"
@@ -304,18 +305,20 @@ export function TriggersWorkbench({
         actions={newTrigger}
         title="Triggers"
         description="What starts work here without anyone asking. Pause one to stop just it, in any workspace; the pause lasts through deploys until it is resumed."
+        state={
+          workspacePaused ? (
+            <HeadNote>
+              Every trigger here is paused. Resume them under{" "}
+              <Link to={`${link}/settings`}>Workspace settings</Link>.
+            </HeadNote>
+          ) : production && pausedCount > 0 ? (
+            <HeadNote>
+              {pausedCount} trigger{pausedCount === 1 ? " is" : "s are"} paused in production.
+            </HeadNote>
+          ) : undefined
+        }
         toolbar={
           <div className="flex flex-col gap-3">
-            {workspacePaused ? (
-              <Notice tone="attention">
-                Every trigger in this workspace is paused. Resume them under Workspace settings.
-              </Notice>
-            ) : null}
-            {production && pausedCount > 0 ? (
-              <Notice tone="attention">
-                {pausedCount} trigger{pausedCount === 1 ? " is" : "s are"} paused in production.
-              </Notice>
-            ) : null}
             <FilterChips
               label="Kind"
               value={type}
@@ -434,7 +437,7 @@ export function TriggersWorkbench({
                 <div className="flex flex-col gap-4">
                   {open.paused ? (
                     <Notice tone="attention">
-                      Paused {fromNow(open.paused.at)}
+                      Paused {ago(open.paused.at)}
                       {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start
                       is started until it is resumed.
                     </Notice>
@@ -444,7 +447,7 @@ export function TriggersWorkbench({
                       <NextStep
                         tone="danger"
                         icon={<ShieldAlert aria-hidden="true" size={16} />}
-                        title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
+                        title={`Last refused ${ago(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
                         detail={open.lastRefusal.problem || undefined}
                       />
                     </div>
@@ -476,7 +479,7 @@ export function TriggersWorkbench({
                               label: "Overlap",
                               value:
                                 open.lastSkippedAt && open.lastSkipReason !== "backlog"
-                                  ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
+                                  ? `Skips a time while its last run goes. Last skipped ${ago(open.lastSkippedAt)}.`
                                   : "Skips a time while its last run goes.",
                             },
                           ]
@@ -485,21 +488,21 @@ export function TriggersWorkbench({
                         ? [
                             {
                               label: "Backlog",
-                              value: `Skipped ${fromNow(open.lastSkippedAt)}: the workspace already had too many runs waiting.`,
+                              value: `Skipped ${ago(open.lastSkippedAt)}: the workspace already had too many runs waiting.`,
                             },
                           ]
                         : []),
                       {
                         label: "Next",
-                        value: open.nextFireAt
-                          ? `${stamp(open.nextFireAt)} (${fromNow(open.nextFireAt)})`
-                          : "On request",
+                        value: open.nextFireAt ? <Time value={open.nextFireAt} /> : "On request",
                       },
                       {
                         label: "Last fired",
-                        value: open.lastFiredAt
-                          ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
-                          : "Not fired yet. Runs started by hand are not counted.",
+                        value: open.lastFiredAt ? (
+                          <Time value={open.lastFiredAt} />
+                        ) : (
+                          "Not fired yet. Runs started by hand are not counted."
+                        ),
                       },
                     ]}
                   />
@@ -580,10 +583,10 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
           <div className="w-72 max-w-full">
             <TextField
               label="Event name"
+              labelHidden
               name="event"
               value={name}
-              placeholder="orders/placed"
-              required={false}
+              placeholder="An event's name, such as orders/placed"
               onChange={setName}
             />
           </div>
@@ -613,7 +616,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
         {
           header: "When",
           cell: (row) => (
-            <span className="whitespace-nowrap text-ink-muted">{fromNow(row.occurredAt)}</span>
+            <span className="whitespace-nowrap text-ink-muted">{ago(row.occurredAt)}</span>
           ),
         },
         { header: "Event", cell: (row) => <Mono>{row.name}</Mono> },
@@ -918,7 +921,7 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
             header: "When",
             cell: (row) => (
               <Link to={runLinkOf(row)} className="whitespace-nowrap">
-                {row.decidedAt ? fromNow(row.decidedAt) : "—"}
+                {row.decidedAt ? ago(row.decidedAt) : "—"}
               </Link>
             ),
           },
@@ -958,7 +961,7 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
           {
             header: "Waiting",
             cell: (row) => (
-              <StatePill state="waiting">{fromNow(row.waitingSince).replace(" ago", "")}</StatePill>
+              <StatePill state="waiting">{ago(row.waitingSince).replace(" ago", "")}</StatePill>
             ),
           },
           {
@@ -1062,13 +1065,13 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
                     rows={[
                       {
                         label: "Waiting since",
-                        value: `${stamp(open.waitingSince)} (${fromNow(open.waitingSince)})`,
+                        value: <Time value={open.waitingSince} />,
                       },
                       ...(open.timesOutAt
                         ? [
                             {
                               label: "Times out",
-                              value: `${stamp(open.timesOutAt)} (${fromNow(open.timesOutAt)})`,
+                              value: <Time value={open.timesOutAt} />,
                             },
                           ]
                         : []),

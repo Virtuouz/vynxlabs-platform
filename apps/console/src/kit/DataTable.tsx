@@ -16,6 +16,7 @@ import { useRestoredScroll } from "../router.tsx";
 import { isTyping, singleKeysOn } from "./keys.ts";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
+import { fullOnHover } from "./Truncate.tsx";
 
 /**
  * The one list: rows of like things, scannable, sortable, selectable, opened by
@@ -36,7 +37,11 @@ export interface DataColumn<Row> {
   align?: "start" | "end";
   /** A width class, such as `w-40`, for columns whose content has a known size. */
   width?: string;
-  /** Long values end in an ellipsis rather than wrapping the row. */
+  /**
+   * Long values end in an ellipsis rather than wrapping the row, with the
+   * whole value on hover. For a path or a name, put `Truncate mode="middle"`
+   * in the cell instead, so its last part stays.
+   */
   truncate?: boolean;
   /** The sort key the server or caller understands; the header becomes a sort button. */
   sort?: string;
@@ -132,6 +137,8 @@ export interface DataTableProps<Row> {
   filtered?: { onClear: () => void } | undefined;
   /** Load more, or Previous and Next. */
   footer?: ReactNode | undefined;
+  /** Rows that have just arrived live: they fade in, over `motion-base`, in place (07 §7.10). */
+  arriving?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -177,6 +184,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     framed = false,
     filtered,
     footer,
+    arriving,
   } = props;
   const columns = useMemo(
     () => chooseColumns(allColumns, columnsShown),
@@ -502,7 +510,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                   onAuxClick={(event) => {
                     if (event.button === 1 && href?.(row)) open(row, true);
                   }}
-                  className={`border-line border-b align-top ${onOpen ? "cursor-pointer" : ""} ${
+                  className={`border-line border-b align-top ${arriving?.has(key) ? "animate-arrive" : ""} ${onOpen ? "cursor-pointer" : ""} ${
                     on
                       ? "bg-selected shadow-[inset_2px_0_0_var(--color-action)]"
                       : ticked
@@ -594,6 +602,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         className={`px-3 ${PAD[density]} ${SHOWN[column.priority ?? 1]} ${
                           column.align === "end" ? "text-right tabular-nums" : ""
                         } ${column.truncate ? "truncate" : ""} ${edges} ${ring}`}
+                        onPointerEnter={column.truncate ? fullOnHover : undefined}
                       >
                         {column.cell(row)}
                         {position === (checking ? 1 : 0) && extra ? (
@@ -632,7 +641,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   return (
     <div
       ref={region}
+      data-table={id}
       className={`${fill ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} ${
+        // panel-allowed: a table drawn on its own carries the panel's edge itself.
         framed ? "rounded-panel border border-line bg-surface" : ""
       }`}
     >

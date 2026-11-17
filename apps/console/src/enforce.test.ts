@@ -148,3 +148,137 @@ test("no Badge says a state", () => {
   }
   expect(found).toEqual([]);
 });
+
+/** Source files of any kind, tests left out. */
+function sources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return sources(path);
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+  });
+}
+
+/**
+ * Times, durations, counts and sizes are turned into text in one place,
+ * `kit/format.ts` (07 §7.3), so that "1.2s" and "1.2 s" never stand in one
+ * column. Names in the code face go through `Code`, not a helper of each screen's own.
+ */
+test("every time, duration and count is formatted by kit/format.ts", () => {
+  const found: string[] = [];
+  for (const path of sources(here)) {
+    if (path.endsWith("kit/format.ts")) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const where = `${path.slice(here.length)}:${index + 1}`;
+      if (/\.toLocale(String|DateString|TimeString)\(/.test(line)) found.push(`${where} toLocale…`);
+      if (/new Intl\.(DateTimeFormat|RelativeTimeFormat|NumberFormat)/.test(line)) {
+        found.push(`${where} new Intl…`);
+      }
+      if (/const code = \(/.test(line)) found.push(`${where} a code helper of its own`);
+      if (/\b(ms|seconds?) < (1000|60)\b.*`\$\{/.test(line))
+        found.push(`${where} a duration by hand`);
+    });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * `Panel` is the one container (07 §7.5): a notice or a set of facts inside it
+ * drops its own border, so no box is drawn inside another. A screen that
+ * draws a panel by hand loses that, and fails here.
+ */
+test("no screen draws a panel by hand", () => {
+  const found: string[] = [];
+  for (const path of [
+    ...files(join(here, "screens")),
+    ...files(join(here, "kit")),
+    ...files(here),
+  ]) {
+    // The kit's sheet shows boxes as boxes; branding previews a tenant's own theme.
+    if (path.endsWith("KitSheet.tsx") || path.endsWith("Branding.tsx")) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const why = `${lines[index - 1] ?? ""}${lines[index - 2] ?? ""}`;
+      if (
+        /rounded-panel border border-line bg-surface/.test(line) &&
+        !why.includes("panel-allowed:")
+      ) {
+        found.push(`${path.slice(here.length)}:${index + 1}`);
+      }
+    });
+  }
+  expect([...new Set(found)]).toEqual([]);
+});
+
+/**
+ * Icons come in three sizes, 14, 16 and 20 px, at one stroke (07, P4-3), and a
+ * mark the kit draws is an icon, not a character that each font draws its own
+ * way. The brand mark and the junction motif have sizes of their own.
+ */
+test("icons are 14, 16 or 20 px, and no character stands in for one", () => {
+  const kit = join(here, "../../../packages/ui/src");
+  const found: string[] = [];
+  for (const path of [...files(here), ...files(kit)]) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const where = `${path.includes("packages/ui") ? "kit:" : ""}${path.split("/src/")[1]}:${index + 1}`;
+      const size = /\bsize=\{(\d+)\}/.exec(line)?.[1];
+      const motif = /BrandMark|Junction/.test(
+        `${lines[index - 3]}${lines[index - 2]}${lines[index - 1]}${line}`,
+      );
+      if (size && !["14", "16", "20"].includes(size) && !motif) {
+        found.push(`${where} size ${size}`);
+      }
+      if (/>\s*[✓×▲▼▾▸‹›↑↓]\s*</.test(line) || /^\s*[✓×▲▼▾▸‹›↑↓]\s*$/.test(line)) {
+        found.push(`${where} a character for an icon`);
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * Motion is named by a token (07 §7.10): a transition says how long with
+ * `motion-instant`, `motion-fast`, `motion-base` or `motion-slow`, never a
+ * duration of its own, and the only things that loop or play are the running
+ * icon, a spinner, a loading shape and a row arriving. Under reduced motion,
+ * nothing moves at all.
+ */
+test("every transition is timed by a motion token, and reduced motion stops all of them", () => {
+  const kit = join(here, "../../../packages/ui/src");
+  const found: string[] = [];
+  for (const path of [...files(here), ...files(kit)]) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const where = `${path.split("/src/")[1]}:${index + 1}`;
+      if (
+        /\btransition(-[\w[\],-]+)?\b/.test(line) &&
+        /className/.test(`${lines[index - 1]}${line}`)
+      ) {
+        const classes = line.match(/\btransition(-[\w[\],-]+)?/g) ?? [];
+        if (classes.length > 0 && !/\bmotion-(instant|fast|base|slow)\b/.test(line)) {
+          found.push(`${where} a transition without a motion token`);
+        }
+      }
+      if (/\bduration-\d+\b/.test(line)) found.push(`${where} a duration of its own`);
+      for (const kind of line.match(/\banimate-[\w-]+/g) ?? []) {
+        if (
+          ![
+            "animate-spin",
+            "animate-spin-slow",
+            "animate-pulse",
+            "animate-arrive",
+            "animate-none",
+          ].includes(kind)
+        ) {
+          found.push(`${where} ${kind}`);
+        }
+      }
+    });
+  }
+  expect(found).toEqual([]);
+  const tokens = readFileSync(join(kit, "tokens.css"), "utf8");
+  expect(tokens).toMatch(
+    /@media \(prefers-reduced-motion: reduce\) \{\s*\* \{\s*transition: none !important;\s*animation: none !important;/,
+  );
+});

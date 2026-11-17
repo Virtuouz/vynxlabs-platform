@@ -18,7 +18,8 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { useHistory } from "../kit/history.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
-import { Page, when } from "../ListScreen.tsx";
+import { Time } from "../kit/Time.tsx";
+import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import type { Saving } from "./builder/EditorShell.tsx";
 import { PageEditor, PageView } from "./builder/PageEditor.tsx";
@@ -104,7 +105,7 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
                   <span className="text-ink-muted">Only you</span>
                 ),
             },
-            { header: "Changed", cell: (row) => when(row.updatedAt) },
+            { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
           ]}
         />
       ) : null}

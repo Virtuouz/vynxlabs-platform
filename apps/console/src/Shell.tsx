@@ -28,6 +28,7 @@ import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { openShortcuts, useShortcut } from "./kit/keys.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
+import { OperatorMark, OperatorStrip } from "./kit/OperatorStrip.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
 import {
@@ -932,13 +933,14 @@ export function Shell({
                         <span className="truncate">{workspace?.name ?? "Workspace"}</span>
                         <ChevronsUpDown
                           aria-hidden="true"
-                          size={12}
+                          size={14}
                           className="shrink-0 text-ink-subtle"
                         />
                       </>
                     }
                     items={(workspaces.data?.items ?? []).map((one) => ({
-                      label: `${one.name} (${one.type === "production" ? "production" : "dev"})`,
+                      label: one.name,
+                      detail: <EnvTag type={one.type} />,
                       current: one.id === workspaceId,
                       onSelect: () =>
                         void switchWorkspace(tenantId, workspaceId, one.id, where.section),
@@ -951,7 +953,7 @@ export function Shell({
                     </span>
                   ) : null}
                   {ws?.linked ? (
-                    <span className="hidden items-center gap-2 xl:flex">
+                    <span className="hidden items-center gap-2 lg:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
                         <Wire dashed width={14} />
                         <Junction
@@ -982,7 +984,7 @@ export function Shell({
                         <span className="truncate">{tenant?.name ?? "Tenant"}</span>
                         <ChevronsUpDown
                           aria-hidden="true"
-                          size={12}
+                          size={14}
                           className="shrink-0 text-ink-subtle"
                         />
                       </>
@@ -1029,7 +1031,7 @@ export function Shell({
                   ) : null}
                   <span className="hidden sm:inline-flex">
                     {where.area === "instance" ? (
-                      <Tag tone="attention">Instance · operator</Tag>
+                      <Tag tone="neutral">Instance · operator</Tag>
                     ) : where.area === "account" ? (
                       <Tag>Personal</Tag>
                     ) : null}
@@ -1039,6 +1041,7 @@ export function Shell({
             </nav>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {tenantId ? <OperatorMark /> : null}
             {tenantId ? <LiveIndicator /> : null}
             {tenantId && workspaceId && drafts > 0 ? (
               <Link
@@ -1073,6 +1076,11 @@ export function Shell({
             </button>
           </div>
         </header>
+        {/* The third mark of production, under every screen of it: a rule in production's amber. */}
+        {workspace?.type === "production" ? (
+          <div data-production-rule="" aria-hidden="true" className="h-0.5 shrink-0 bg-attention" />
+        ) : null}
+        {tenantId ? <OperatorStrip /> : null}
 
         <main
           id="main"

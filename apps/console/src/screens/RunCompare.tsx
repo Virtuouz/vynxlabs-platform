@@ -1,14 +1,14 @@
-import { Button } from "@vynxlabs/ui";
+import { Button, Panel } from "@vynxlabs/ui";
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DiffView } from "../kit/DiffView.tsx";
+import { ago, duration } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Mono } from "../kit/status.tsx";
 import { Link } from "../router.tsx";
-import { fromNow } from "./Overview.tsx";
 
 /**
  * What changed since it last worked (phase 15, P3-7). A run that fails is most
@@ -30,7 +30,7 @@ export interface PreviousSuccess {
 }
 
 const took = (ms: number | null | undefined) =>
-  ms === null || ms === undefined ? "–" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  ms === null || ms === undefined ? "–" : duration(ms);
 
 export function RunCompare({
   root,
@@ -66,10 +66,7 @@ export function RunCompare({
   }
   const { versionChanged, inputChanged, bundleVersion } = previous.data;
   return (
-    <section
-      aria-labelledby="since-it-worked"
-      className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
-    >
+    <Panel aria-labelledby="since-it-worked" className="flex flex-col gap-3  p-4">
       <h2 id="since-it-worked" className="m-0 flex items-center gap-2 text-title">
         <GitCompareArrows aria-hidden="true" size={16} className="text-ink-muted" />
         Since it last worked
@@ -77,7 +74,7 @@ export function RunCompare({
       <p className="m-0">
         It last succeeded{" "}
         <Link to={`${link}/runs/${last.id}`}>
-          {last.finishedAt ? fromNow(last.finishedAt) : "before"}
+          {last.finishedAt ? ago(last.finishedAt) : "before"}
         </Link>
         {last.bundleVersion !== null ? ` on v${last.bundleVersion}` : ""}.
       </p>
@@ -134,7 +131,7 @@ export function RunCompare({
           <Pending of={before} />
         )
       ) : null}
-    </section>
+    </Panel>
   );
 }
 

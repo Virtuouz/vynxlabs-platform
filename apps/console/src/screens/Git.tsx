@@ -1,4 +1,4 @@
-import { Button, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import { Button, Notice, Panel, SelectField, TextField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
@@ -58,6 +58,7 @@ export function RepositorySettings({ base }: { base: string }) {
           still push to the same branches. Check the details below and save to turn sync on.
         </Notice>
       ) : null}
+      {/* panel-allowed: a form, drawn as a panel; what it holds is marked as inside one. */}
       <form
         className="flex max-w-xl flex-col gap-3 rounded-panel border border-line bg-surface p-4"
         onSubmit={async (event) => {
@@ -194,11 +195,10 @@ export function GitPanel({
   if (status.error) return <ErrorState error={status.error} onRetry={status.reload} />;
   if (!status.data) return <Loading />;
   const { repository, state } = status.data;
-  const frame = "flex flex-col gap-3 rounded-panel border border-line bg-surface p-4";
 
   if (!repository) {
     return (
-      <section className={frame}>
+      <Panel className="flex flex-col gap-3 p-4">
         <h2 className="m-0 text-title font-semibold">Repository</h2>
         <p className="m-0 text-ink-muted">
           No repository is connected, so what is deployed here lives in this workspace only.{" "}
@@ -207,12 +207,12 @@ export function GitPanel({
           </Link>{" "}
           to keep it in git.
         </p>
-      </section>
+      </Panel>
     );
   }
   if (!status.data.branch || !state) {
     return (
-      <section className={frame}>
+      <Panel className="flex flex-col gap-3 p-4">
         <h2 className="m-0 text-title font-semibold">Repository</h2>
         <p className="m-0 text-ink-muted">
           Choose the branch this workspace keeps its console-written resources on. It is created
@@ -244,7 +244,7 @@ export function GitPanel({
             Follow this branch
           </Button>
         </form>
-      </section>
+      </Panel>
     );
   }
 
@@ -290,7 +290,7 @@ export function GitPanel({
   };
 
   return (
-    <section className={frame}>
+    <Panel className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h2 className="m-0 text-title font-semibold">Repository</h2>
@@ -367,6 +367,6 @@ export function GitPanel({
           </div>
         </div>
       ) : null}
-    </section>
+    </Panel>
   );
 }

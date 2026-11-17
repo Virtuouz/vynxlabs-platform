@@ -216,6 +216,14 @@ html[data-theme="dark"] {
   /* Motion: only to show where something came from, or that it finished. */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --animate-spin-slow: spin 2.4s linear infinite;
+  --animate-arrive: arrive 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    background-color: var(--vx-action-soft);
+  }
 }
 
 /*
@@ -241,7 +249,15 @@ html[data-theme="dark"] {
   z-index: 90;
 }
 
-/* Motion durations: 120 ms for hover and press, 180 ms for menus, 240 ms for sheets and dialogs. */
+/*
+ * Motion durations (07 §7.10): none for selection, hover and tab change; 120 ms
+ * for hover and press backgrounds; 180 ms for menus, popovers and tooltips; 240
+ * ms for sheets and dialogs. Every transition names one; under reduced motion
+ * none runs. A row that arrives live fades in over `motion-base`.
+ */
+@utility motion-instant {
+  transition-duration: 0ms;
+}
 @utility motion-fast {
   transition-duration: 120ms;
   transition-timing-function: var(--ease-out);

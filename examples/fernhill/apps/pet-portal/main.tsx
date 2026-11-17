@@ -15,11 +15,11 @@ import {
   Badge,
   type BadgeTone,
   Button,
-  Card,
   DateStepper,
   EmptyState,
   Notice,
   PageShell,
+  Panel,
   SegmentedControl,
   SelectField,
   Skeleton,
@@ -312,7 +312,7 @@ function Home({ mine }: { mine: Mine }) {
               .join(" · ");
             return (
               <li key={pet.id} className="flex">
-                <Card className="w-full">
+                <Panel padded className="w-full">
                   <div className="flex items-start gap-3">
                     <PetAvatar pet={pet} />
                     <div className="min-w-0">
@@ -353,7 +353,7 @@ function Home({ mine }: { mine: Mine }) {
                       </div>
                     )}
                   </div>
-                </Card>
+                </Panel>
               </li>
             );
           })}
@@ -377,7 +377,7 @@ function VisitCard({
   const at = new Date(visit.starts_at);
   return (
     <li>
-      <Card>
+      <Panel padded>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
             <div className="flex w-14 shrink-0 flex-col items-center rounded-control bg-action-soft py-1.5 text-action">
@@ -409,7 +409,7 @@ function VisitCard({
             <StatusBadge status={visit.status} />
           </div>
         </div>
-      </Card>
+      </Panel>
     </li>
   );
 }
@@ -557,7 +557,7 @@ function Book({
         title="Book a visit"
         text="Choose a time and we will text you a reminder the day before."
       />
-      <Card>
+      <Panel padded>
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             label="Who is it for?"
@@ -593,9 +593,9 @@ function Book({
           />
         </div>
         <ClinicLine clinic={place} />
-      </Card>
+      </Panel>
 
-      <Card>
+      <Panel padded>
         <fieldset className="m-0 grid gap-3 border-0 p-0">
           <legend className="mb-1 flex items-center gap-1.5 p-0 font-semibold">
             <Clock aria-hidden="true" size={16} />
@@ -645,9 +645,9 @@ function Book({
             </div>
           )}
         </fieldset>
-      </Card>
+      </Panel>
 
-      <Card>
+      <Panel padded>
         <TextAreaField
           label="Anything we should know? (optional)"
           name="notes"
@@ -671,7 +671,7 @@ function Book({
             {busy ? "Booking…" : "Book this visit"}
           </Button>
         </div>
-      </Card>
+      </Panel>
     </div>
   );
 }
@@ -697,7 +697,8 @@ function InvoiceCard({ invoice, mine }: { invoice: Invoice; mine: Mine }) {
   const paid = invoice.status === "paid";
   return (
     <li>
-      <Card
+      <Panel
+        padded
         footer={
           !paid ? (
             <Button
@@ -753,7 +754,7 @@ function InvoiceCard({ invoice, mine }: { invoice: Invoice; mine: Mine }) {
             </table>
           </details>
         ) : null}
-      </Card>
+      </Panel>
     </li>
   );
 }

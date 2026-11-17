@@ -1,5 +1,5 @@
-import { SideSheet } from "@vynxlabs/ui";
-import { X } from "lucide-react";
+import { Panel, SideSheet } from "@vynxlabs/ui";
+import { CircleAlert, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { usePreference } from "../prefs.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
@@ -38,18 +38,8 @@ export function SectionLabel({ children, action }: { children: ReactNode; action
   );
 }
 
-/** A working surface with a hairline border. */
-export function Panel({
-  children,
-  className = "",
-  as: As = "section",
-}: {
-  children: ReactNode;
-  className?: string;
-  as?: "section" | "div";
-}) {
-  return <As className={`rounded-panel border border-line bg-surface ${className}`}>{children}</As>;
-}
+/** The one container (07 §7.5), the kit's: a notice inside it drops its border. */
+export { Panel };
 
 /**
  * The details of what is chosen. Beside the list on a wide screen; on a narrower
@@ -400,7 +390,10 @@ export function EmptyCanvas({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-panel border border-line-strong border-dashed px-6 py-10 text-center">
+    <div
+      data-empty-state=""
+      className="flex flex-col items-center gap-3 rounded-panel border border-line-strong border-dashed px-6 py-10 text-center"
+    >
       <span aria-hidden="true" className="flex items-center gap-1.5">
         <Junction kind="here" />
         <span className="h-px w-6 bg-line-strong" />
@@ -473,5 +466,53 @@ export function KeyValues({
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * One line beside a list's title that says something about the whole list:
+ * "3 runs are waiting for a person. Decide". It takes no height of its own
+ * where a Notice above the table would push the list down (P4-1).
+ */
+export function HeadNote({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-meta text-ink">
+      <CircleAlert aria-hidden="true" size={14} className="shrink-0 text-attention" />
+      <span className="min-w-0">{children}</span>
+    </span>
+  );
+}
+
+/**
+ * One setting or action on a settings page (07 §7.5): what it is, one sentence,
+ * and its control on the right. Rows stand in one `SettingsRows` panel, a rule
+ * between each, where they would otherwise be a card each.
+ */
+export function SettingsRow({
+  title,
+  children,
+  action,
+}: {
+  title: ReactNode;
+  children?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+        <div className="font-medium">{title}</div>
+        {children ? <div className="text-meta text-ink-muted">{children}</div> : null}
+      </div>
+      {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
+    </div>
+  );
+}
+
+/** Settings rows in one panel. */
+export function SettingsRows({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <Panel aria-label={label} className="divide-y divide-line">
+      {children}
+    </Panel>
   );
 }

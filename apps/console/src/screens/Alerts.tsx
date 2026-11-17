@@ -2,12 +2,12 @@ import { Badge, Button, SelectField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
-import { fromNow } from "./Overview.tsx";
 
 interface AlertRow {
   kind: "run" | "flow_run";
@@ -209,7 +209,7 @@ export function Alerts({
                   <Link to={`${link}/runs/${one.id}`} className="font-mono text-code">
                     {one.name}
                   </Link>
-                  <span className="text-meta text-ink-muted">{fromNow(one.at)}</span>
+                  <span className="text-meta text-ink-muted">{ago(one.at)}</span>
                   {one.notified === true ? (
                     <StatePill state="posted" />
                   ) : one.notified === false ? (

@@ -2,6 +2,34 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 16, visual refinement
+
+### For operators
+
+- **No database change.** The preferences API accepts two more keys: `seen:<list>` (whether a member has read a list's description) and `operator.strip` (the operator-access strip a member hid).
+- **Lists start higher.**
+  - A list's description shows on a member's first visit, then folds behind an ⓘ beside its title.
+  - A list's title, filters and actions share one row from a laptop's width. Filters' labels are read by screen readers, not shown.
+  - A note about the whole list ("3 runs are waiting for a person") sits beside its title instead of above the table.
+  - On every list the first row now starts within 160 px of the top of the work area.
+- **Operator access** is a one-line strip under the header, instead of a notice above every screen. "Hide" folds it to an "Operator" mark in the header, from which it comes back or access ends. A new grant shows the strip again. What is recorded for the tenant does not change.
+- **Production** is marked three ways that agree: a filled amber tag in the header, the same tag in the workspace switcher, and an amber rule under the header. Dev shows none of them. "Instance · operator" is now a neutral tag.
+- **Times and durations** read the same everywhere: "420 ms", "3.0 s", "4m 12s"; "5m ago" in lists; "16:38:54" today and "2026-11-16 16:38:54" otherwise. Pointing at a time shows it in local time, in UTC and how long ago. IDs are cut in their middle (`01a1e7…00999`), with the whole on hover and a copy button.
+- **Long paths keep their last part** (`bil…/record-payment`), and cut text shows whole on hover.
+- **Fewer boxes.** A notice inside a panel drops its border. Workspace settings is one panel of rows, its delete a row with a red action.
+- **Motion.** A run that starts while the runs list is open fades in; while you are down the list, or have rows checked, it waits behind an "N new runs" button. Tooltips open as menus do. Under reduced motion nothing moves, the flow canvas included.
+
+### For tenant developers
+
+- **Breaking: `Card` is now `Panel`.** Rename the import and the tag. A `Panel` with no `title`, `action` or `footer` draws only its border and surface; add `padded` for `Card`'s padding.
+- **`Panel`** is the kit's one container. A `Notice` or `Facts` inside it drops its border. `ContainedArea` marks other containers the same way; `Notice` takes `bare`.
+- **`Popover`**, a small panel opened from a control, closed by Escape or a click outside.
+- **Icons.** The kit's marks are now lucide icons: checks in menus and comboboxes, clear and remove, the grid's sort arrows, the log viewer's arrows, the day picker's arrows, and the close of dialogs and sheets. `@vynxlabs/ui/icons` exports `ICON` (14, 16 and 20 px) and `STROKE`, and `PageShell` draws every icon at that stroke.
+- **`duration`** now writes "4m 12s" and "2h 5m", not "4 m 12 s".
+- `TextField` and `SelectField` take `labelHidden`, for a field in a toolbar. `Menu` items take `detail`, drawn after the label.
+- Tooltips and context menus now use `motion-base` with a 4 px shift; `motion-instant` and the `animate-arrive` animation are new.
+
+
 ## Unreleased: phase 15, expert efficiency
 
 ### For operators

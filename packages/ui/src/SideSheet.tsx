@@ -1,4 +1,5 @@
 import { Dialog as Base } from "@base-ui/react/dialog";
+import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
 export interface SideSheetProps {
@@ -63,14 +64,7 @@ export function SideSheet({
               aria-label="Close"
               className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
             >
-              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M4 4l8 8M12 4l-8 8"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                />
-              </svg>
+              <X aria-hidden="true" size={16} />
             </Base.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>

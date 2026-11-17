@@ -3,12 +3,12 @@ import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal } from
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { EmptyCanvas, KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { GitPanel } from "./Git.tsx";
-import { fromNow } from "./Overview.tsx";
 
 interface Compare {
   branch: string;
@@ -110,7 +110,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                 <Mono className="text-title">{compare.data.ahead}</Mono> changed here
               </span>
               <span className="text-meta text-ink-muted">
-                Last agreed {status.data?.updatedAt ? fromNow(status.data.updatedAt) : "never"}
+                Last agreed {status.data?.updatedAt ? ago(status.data.updatedAt) : "never"}
                 {compare.data.syncedCommit ? (
                   <>
                     {" "}
@@ -135,7 +135,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                 <span className="flex items-center gap-1.5 text-meta text-ink-muted">
                   <GitCommitHorizontal aria-hidden="true" size={14} />
                   <Mono>{compare.data.head.commit.slice(0, 7)}</Mono> {compare.data.head.message} ·{" "}
-                  {compare.data.head.author}, {fromNow(compare.data.head.at)}
+                  {compare.data.head.author}, {ago(compare.data.head.at)}
                 </span>
               ) : (
                 <span className="text-meta text-ink-muted">
@@ -244,7 +244,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                             </span>
                             <pre
                               className={`m-0 max-h-72 overflow-auto rounded-control border bg-code-bg p-3 font-mono text-code ${
-                                choices[stem] === side ? "border-action" : "border-line"
+                                choices[stem] === side ? "border-action" : "border-transparent"
                               }`}
                             >
                               {(side === "mine" ? file.mine : file.theirs) ?? "(removed)"}

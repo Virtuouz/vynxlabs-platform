@@ -1,17 +1,15 @@
 import { Button, Facts, Notice, ResultView, SelectField } from "@vynxlabs/ui";
 import { X } from "lucide-react";
 import { InputForm } from "../InputDialog.tsx";
+import { between } from "../kit/format.ts";
 import { StatePill } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { Link } from "../router.tsx";
 import { type FlowRunDetail, StepLogs, type StepRow } from "./Flows.tsx";
 
 /** How long a step took, said briefly. */
 export function took(step: { startedAt: string; finishedAt: string | null }): string | undefined {
-  if (!step.finishedAt) return undefined;
-  const ms = Date.parse(step.finishedAt) - Date.parse(step.startedAt);
-  if (ms < 1000) return `${Math.max(0, ms)} ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
-  return `${Math.round(ms / 60_000)} min`;
+  return step.finishedAt ? between(step.startedAt, step.finishedAt) : undefined;
 }
 
 /** The steps of a run as the editor's graph shows them: one per node, the trigger first. */
@@ -174,7 +172,7 @@ export function LastTest({
       <Facts
         columns={2}
         facts={[
-          { label: "Started", value: new Date(step.startedAt).toLocaleTimeString() },
+          { label: "Started", value: <Time value={step.startedAt} /> },
           { label: "Took", value: took(step) ?? "In progress" },
         ]}
       />

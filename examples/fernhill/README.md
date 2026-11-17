@@ -136,7 +136,7 @@ Building Fernhill and using it as its people and its agent turned up these probl
 **The UI kit, for custom apps**
 
 - **Fixed: icons.** They come from `@vynxlabs/ui/icons`.
-- **Fixed: missing pieces.** There are now `SegmentedControl`, `Card`, `Avatar`, `Skeleton` and `DateStepper`, and `Button` takes `href`.
+- **Fixed: missing pieces.** There are now `SegmentedControl`, `Card` (since phase 16, `Panel`), `Avatar`, `Skeleton` and `DateStepper`, and `Button` takes `href`.
 - **Fixed: `PageShell` suits apps that switch screens in the browser.** Its navigation takes `onSelect`, and it takes `width="full"`.
 - **Fixed: `DateField` takes `timeZone`.**
 - **Fixed: `logoUrl()` is null when there is no logo.**

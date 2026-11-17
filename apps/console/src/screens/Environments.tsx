@@ -10,13 +10,20 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
-import { KeyValues, Panel, SectionLabel, Stepper } from "../kit/layout.tsx";
+import { count } from "../kit/format.ts";
+import {
+  KeyValues,
+  Panel,
+  SectionLabel,
+  SettingsRow,
+  SettingsRows,
+  Stepper,
+} from "../kit/layout.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
-import { Mono, StatePill, Tag } from "../kit/status.tsx";
+import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { navigate } from "../router.tsx";
-
-const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 export interface WorkspaceSummary {
   id: string;
@@ -77,64 +84,50 @@ export function WorkspaceControls({
   return (
     <div className="flex max-w-[60rem] flex-col gap-6">
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Runtime controls</SectionLabel>
-        {workspace.triggersPaused ? (
-          <Notice
-            tone="attention"
-            action={
+      <SettingsRows label="Workspace actions">
+        <SettingsRow
+          title={
+            workspace.triggersPaused ? (
+              <StatePill state="paused">Triggers are paused</StatePill>
+            ) : (
+              <StatePill state="on">Triggers are on</StatePill>
+            )
+          }
+          action={
+            workspace.triggersPaused ? (
               <Button size="small" onClick={() => setPaused(false)}>
                 Resume triggers
               </Button>
-            }
-          >
-            <strong>Triggers are paused.</strong> No schedule, webhook or event starts anything in
-            this workspace. Runs you start by hand still work.
-            {workspace.type === "dev"
-              ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
-              : ""}
-          </Notice>
-        ) : (
-          <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <StatePill state="on">Triggers are on</StatePill>
-              <span className="text-meta text-ink-muted">
-                Pausing stops every schedule, webhook and event here at once. One trigger can be
-                paused alone under Triggers.
-              </span>
-            </span>
-            <Button size="small" onClick={() => setPaused(true)}>
-              Pause triggers
+            ) : (
+              <Button size="small" onClick={() => setPaused(true)}>
+                Pause triggers
+              </Button>
+            )
+          }
+        >
+          {workspace.triggersPaused
+            ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
+                workspace.type === "dev"
+                  ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
+                  : ""
+              }`
+            : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
+        </SettingsRow>
+        <SettingsRow
+          title="Copy workspace"
+          action={
+            <Button size="small" onClick={() => setCloning(true)}>
+              Clone workspace
             </Button>
-          </Panel>
-        )}
-      </section>
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Copy workspace</SectionLabel>
-        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <span className="min-w-0 flex-1 basis-64 text-ink-muted">
-            A new dev workspace with what is deployed here, and its rows and files if you choose. It
-            gets no connection, data source or secret value until you bind them.
-          </span>
-          <Button size="small" onClick={() => setCloning(true)}>
-            Clone workspace
-          </Button>
-        </Panel>
-      </section>
-      {promotion && workspace.type === "dev" ? (
-        <section className="flex flex-col gap-3">
-          <SectionLabel>Promotion target</SectionLabel>
-          {promotion}
-        </section>
-      ) : null}
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Danger zone</SectionLabel>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-danger/40 p-4">
-          {workspace.type === "dev" ? (
-            <>
-              <span className="min-w-0 flex-1 basis-64 text-ink-muted">
-                Deletes the workspace with its resources, secrets, run history, tables and files.
-              </span>
+          }
+        >
+          A new dev workspace with what is deployed here, and its rows and files if you choose. It
+          gets no connection, data source or secret value until you bind them.
+        </SettingsRow>
+        {workspace.type === "dev" ? (
+          <SettingsRow
+            title={<span className="text-danger">Delete workspace</span>}
+            action={
               <Button
                 size="small"
                 variant="danger"
@@ -157,14 +150,22 @@ export function WorkspaceControls({
               >
                 Delete workspace
               </Button>
-            </>
-          ) : (
-            <span className="text-ink-muted">
-              A production workspace is not deleted from here. It goes when its tenant is deleted.
-            </span>
-          )}
-        </div>
-      </section>
+            }
+          >
+            Deletes the workspace with its resources, secrets, run history, tables and files.
+          </SettingsRow>
+        ) : (
+          <SettingsRow title="Delete workspace">
+            A production workspace is not deleted from here. It goes when its tenant is deleted.
+          </SettingsRow>
+        )}
+      </SettingsRows>
+      {promotion && workspace.type === "dev" ? (
+        <section className="flex flex-col gap-3">
+          <SectionLabel>Promotion target</SectionLabel>
+          {promotion}
+        </section>
+      ) : null}
       <CloneDialog
         open={cloning}
         onClose={() => setCloning(false)}
@@ -329,8 +330,8 @@ function CloneDialog({
     problem instanceof ApiError
       ? problem.fields.find((entry) => entry.path === `/body/${path}`)?.message
       : undefined;
-  const count = (n: number | undefined, one: string, many: string) =>
-    `${(n ?? 0).toLocaleString()} ${n === 1 ? one : many}`;
+  const counted = (n: number | undefined, one: string, many: string) =>
+    `${count(n ?? 0)} ${n === 1 ? one : many}`;
 
   return (
     <SideSheet
@@ -357,10 +358,10 @@ function CloneDialog({
             </Notice>
           ) : (
             <p className="m-0" role="status">
-              Copied {count(clone.report.resources, "resource", "resources")},{" "}
-              {count(clone.report.rows, "row", "rows")} in{" "}
-              {count(clone.report.tables, "table", "tables")} and{" "}
-              {count(clone.report.files, "file", "files")}.{" "}
+              Copied {counted(clone.report.resources, "resource", "resources")},{" "}
+              {counted(clone.report.rows, "row", "rows")} in{" "}
+              {counted(clone.report.tables, "table", "tables")} and{" "}
+              {counted(clone.report.files, "file", "files")}.{" "}
               {clone.report.connections || clone.report.secrets
                 ? "Its connections and secrets were copied: it can reach the same systems as the original."
                 : "It has no connections or secret values, so it cannot reach a real system until you bind it."}
@@ -518,7 +519,7 @@ export function Promotion({
   };
 
   return (
-    <section className="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4">
+    <Panel className="flex flex-col gap-2 p-4">
       <h2 className="m-0 text-title">Promotion</h2>
       <p className="m-0 max-w-measure text-ink-muted">
         Promoting activates the bundle that is running here in the workspace this one is linked to.
@@ -619,7 +620,7 @@ export function Promotion({
           </div>
         ) : null}
       </Dialog>
-    </section>
+    </Panel>
   );
 }
 
@@ -650,7 +651,7 @@ function PreviewBody({ summary, target }: { summary: Summary; target: string }) 
                 {CHANGE[entry.change] ?? entry.change}
               </Tag>
               <span className="text-ink-muted">{entry.kind}</span>
-              {code(entry.path)}
+              <Code>{entry.path}</Code>
             </li>
           ))}
         </ul>
@@ -760,7 +761,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
         <p className="m-0 text-body-sm text-ink-muted">
           The passphrase protects the secrets in the file. The rest of it, rows and files included,
           can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
-          the command line instead: {code("platform tenant export")}.
+          the command line instead: <Code>{"platform tenant export"}</Code>.
         </p>
       </form>
     </Page>
@@ -787,7 +788,7 @@ export function DatabaseLocations() {
       path="/instance/database-locations"
       rowKey={(row) => row.name}
       columns={[
-        { header: "Name", cell: (row) => code(row.name) },
+        { header: "Name", cell: (row) => <Code>{row.name}</Code> },
         { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
         { header: "Database", cell: (row) => `${row.database} on ${row.host}` },
         { header: "Tenants", cell: (row) => row.tenants, align: "end" },
@@ -992,12 +993,9 @@ export function TenantImport() {
         <div className="flex max-w-measure flex-col gap-3">
           <Notice tone="attention">
             <strong>{report.tenant.name}</strong> was imported:{" "}
-            {Object.values(report.counts)
-              .reduce((sum, n) => sum + n, 0)
-              .toLocaleString()}{" "}
-            rows and {report.objects.toLocaleString()} stored objects. Members created:{" "}
-            {report.members.created}. Members linked to accounts already here:{" "}
-            {report.members.linked}.
+            {count(Object.values(report.counts).reduce((sum, n) => sum + n, 0))} rows and{" "}
+            {count(report.objects)} stored objects. Members created: {report.members.created}.
+            Members linked to accounts already here: {report.members.linked}.
           </Notice>
           <ul className="m-0 flex list-disc flex-col gap-1 pl-5">
             <li>
@@ -1047,7 +1045,7 @@ export function TenantImport() {
               rows={[
                 {
                   label: "Exported",
-                  value: inspection.exportedAt ? when(inspection.exportedAt) : "Unknown",
+                  value: inspection.exportedAt ? <Time value={inspection.exportedAt} /> : "Unknown",
                 },
                 { label: "From version", value: inspection.coreVersion ?? "Unknown", mono: true },
                 {
@@ -1059,7 +1057,7 @@ export function TenantImport() {
                           .join(", ")
                       : "None",
                 },
-                { label: "Rows", value: <Mono>{inspection.rows.toLocaleString()}</Mono> },
+                { label: "Rows", value: <Mono>{count(inspection.rows)}</Mono> },
                 { label: "Members", value: <Mono>{inspection.members}</Mono> },
                 {
                   label: "Run history",
@@ -1241,7 +1239,7 @@ export function TenantImport() {
           </div>
           <p className="m-0 text-body-sm text-ink-muted">
             The export must come from an instance at the same version as this one. For a large file,
-            use the command line: {code("platform tenant import <file>")}.
+            use the command line: <Code>{"platform tenant import <file>"}</Code>.
           </p>
         </form>
       )}

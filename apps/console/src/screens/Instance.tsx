@@ -4,7 +4,8 @@ import { ask, notify } from "../ask.tsx";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
-import { RemoveButton, when } from "../ListScreen.tsx";
+import { Time } from "../kit/Time.tsx";
+import { RemoveButton } from "../ListScreen.tsx";
 import { AuditTable } from "./Audit.tsx";
 
 const OPERATOR_ROLE = "00000000-0000-7000-8000-000000000001";
@@ -61,7 +62,7 @@ export function InstanceMembers() {
             </span>
           ),
         },
-        { header: "Email", priority: 2, cell: (row) => row.email },
+        { header: "Email", priority: 2, truncate: true, cell: (row) => row.email },
         {
           header: "Tenants",
           priority: 3,
@@ -77,7 +78,11 @@ export function InstanceMembers() {
           cell: (row) =>
             row.disabled ? <Tag tone="danger">Disabled</Tag> : <StatePill state="active" />,
         },
-        { header: "Created", priority: 3, cell: (row) => when(row.createdAt) },
+        {
+          header: "Created",
+          priority: 3,
+          cell: (row) => <Time value={row.createdAt} mode="ago" />,
+        },
       ]}
       empty={{ title: "No members" }}
       create={{
@@ -111,7 +116,7 @@ export function InstanceMembers() {
                     : "Belongs to no tenant",
               },
               { label: "State", value: row.disabled ? "Disabled: signs in nowhere" : "Active" },
-              { label: "Created", value: when(row.createdAt) },
+              { label: "Created", value: <Time value={row.createdAt} /> },
               { label: "ID", value: row.id, mono: true },
             ]}
           />
@@ -132,7 +137,7 @@ export function Operators() {
       columns={[
         { header: "Member", cell: (row) => row.memberEmail },
         { header: "Role", priority: 2, cell: (row) => row.roleName },
-        { header: "Since", priority: 3, cell: (row) => when(row.createdAt) },
+        { header: "Since", priority: 3, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
       ]}
       empty={{ title: "No operators" }}
       create={{

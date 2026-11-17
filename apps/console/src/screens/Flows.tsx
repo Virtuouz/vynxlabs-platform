@@ -20,22 +20,22 @@ import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
-import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
+import { FilterChips, HeadNote, Inspector, KeyValues, Panel } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
-import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { LogWindowNote, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { TriggersOf } from "./ObjectPages.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
-import { fromNow } from "./Overview.tsx";
-
-const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
 /** How a run began, as the end of a sentence. */
@@ -110,14 +110,16 @@ export function Flows({
           </Button>
         ) : undefined
       }
+      state={
+        waiting > 0 ? (
+          <HeadNote>
+            {waiting} run{waiting === 1 ? " is" : "s are"} waiting for a person.{" "}
+            <Link to={link.replace(/\/workspaces\/.*$/, "/approvals")}>Decide</Link>
+          </HeadNote>
+        ) : undefined
+      }
       toolbar={
         <div className="flex flex-col gap-3">
-          {waiting > 0 ? (
-            <Notice tone="attention">
-              {waiting} run{waiting === 1 ? " is" : "s are"} waiting for a person.{" "}
-              <Link to={link.replace(/\/workspaces\/.*$/, "/approvals")}>Decide</Link>
-            </Notice>
-          ) : null}
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-3 text-ink-subtle">
               <span className="sr-only">Find a flow</span>
@@ -161,9 +163,9 @@ export function Flows({
             <span className="flex min-w-0 flex-col">
               <Link
                 to={`${link}/flows/${row.path}`}
-                className="truncate font-mono text-code text-ink no-underline"
+                className="min-w-0 font-mono text-code text-ink no-underline"
               >
-                {row.path}
+                <Truncate mode="middle">{row.path}</Truncate>
               </Link>
               <span className="truncate text-meta text-ink-subtle">
                 {row.description || "No description"}
@@ -200,7 +202,7 @@ export function Flows({
           cell: (row) =>
             row.lastRun ? (
               <span className="flex flex-col">
-                <StatePill state={row.lastRun.state} detail={fromNow(row.lastRun.createdAt)} />
+                <StatePill state={row.lastRun.state} detail={ago(row.lastRun.createdAt)} />
                 <span className="text-meta text-ink-subtle">
                   {row.runs.lastDay} today
                   {row.runs.failedLastDay ? ` · ${row.runs.failedLastDay} failed` : ""}
@@ -489,7 +491,7 @@ export function FlowView({
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {data.triggers.map((trigger) => (
               <li key={trigger.node}>
-                {code(trigger.node)}{" "}
+                <Code>{trigger.node}</Code>{" "}
                 {trigger.type === "schedule" && trigger.nextFireAt ? (
                   <span>runs next at {when(trigger.nextFireAt)}</span>
                 ) : trigger.type === "webhook" ? (
@@ -844,7 +846,7 @@ export function FlowRunView({
                 id: "timeline",
                 label: "Timeline",
                 content: (
-                  <div className="rounded-panel border border-line bg-surface p-4">
+                  <Panel as="div" className="p-4">
                     {steps.length === 0 ? (
                       <p className="m-0 text-ink-muted">No step has started yet.</p>
                     ) : (
@@ -859,7 +861,7 @@ export function FlowRunView({
                         }}
                       />
                     )}
-                  </div>
+                  </Panel>
                 ),
               },
               {
@@ -892,13 +894,11 @@ export function FlowRunView({
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           {chosen ? (
-            <section
-              aria-label={`Step ${chosen.node}`}
-              className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
-            >
+            <Panel aria-label={`Step ${chosen.node}`} className="flex flex-col gap-3  p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <h2 className="m-0 flex items-center gap-2 text-title font-semibold">
-                  {code(chosen.node)} <StatePill state={chosen.state} until={chosen.wakeAt} />
+                  <Code>{chosen.node}</Code>{" "}
+                  <StatePill state={chosen.state} until={chosen.wakeAt} />
                   {chosen.outputName ? (
                     <span className="font-normal text-ink-muted">
                       took the case {chosen.outputName}
@@ -914,7 +914,7 @@ export function FlowRunView({
               <div className="mb-3">
                 <Facts
                   facts={[
-                    { label: "Started", value: when(chosen.startedAt) },
+                    { label: "Started", value: <Time value={chosen.startedAt} /> },
                     {
                       label: "Waited for a worker",
                       value:
@@ -995,19 +995,19 @@ export function FlowRunView({
               {chosen.status === "succeeded" ? (
                 <ResultView label={`Output of ${chosen.node}`} value={chosen.output} />
               ) : null}
-            </section>
+            </Panel>
           ) : (
             <p className="m-0 text-ink-muted">
               Choose a step to see what it was given and produced.
             </p>
           )}
-          <section
+          <Panel
             aria-label="The flow's input and output"
-            className="grid gap-3 rounded-panel border border-line bg-surface p-4 md:grid-cols-2"
+            className="grid gap-3  p-4 md:grid-cols-2"
           >
             <ResultView label="Flow input" value={run.input} />
             <ResultView label="Flow output" value={run.output} />
-          </section>
+          </Panel>
         </div>
       </div>
     </div>

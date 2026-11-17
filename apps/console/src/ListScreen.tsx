@@ -16,6 +16,7 @@ import { useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
 import { DataTable } from "./kit/DataTable.tsx";
+import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 export interface FormField {
@@ -458,5 +459,5 @@ export function CopyButton({
   );
 }
 
-export const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+/** A time in text: "16:38:54" today, "2026-11-16 16:38:54" another day. */
+export const when = (iso: string) => clock(iso);

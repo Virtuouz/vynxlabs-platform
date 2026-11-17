@@ -5,6 +5,7 @@ import {
   Notice,
   NumberField,
   type Option,
+  Panel,
   SelectField,
   Tabs,
   TextAreaField,
@@ -18,6 +19,7 @@ import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
+import { ago } from "../kit/format.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
@@ -30,7 +32,6 @@ import { usePreference } from "../prefs.ts";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
-import { fromNow } from "./Overview.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 import { SCRIPT_STARTERS, untouchedStarter } from "./starters.ts";
 
@@ -896,6 +897,7 @@ export function ScriptEditor({
           <Link to={`${link}/release`}>See what would change</Link>
         </Notice>
       ) : null}
+      {/* panel-allowed: a disclosure, drawn as a panel. */}
       <details
         className="rounded-panel border border-line bg-surface"
         open={!opened || kind !== "script"}
@@ -916,9 +918,9 @@ export function ScriptEditor({
           className="h-[calc(100dvh-13rem)] min-h-[30rem]"
           first={codeArea("100%")}
           second={
-            <section
+            <Panel
               aria-label="Test pane"
-              className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto rounded-panel border border-line bg-surface p-4"
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto  p-4"
             >
               {trying}
               <Tabs
@@ -974,7 +976,7 @@ export function ScriptEditor({
                   },
                 ]}
               />
-            </section>
+            </Panel>
           }
         />
       ) : (
@@ -1071,7 +1073,7 @@ export function RecentRuns({ root, link, path }: { root: string; link: string; p
           header: "Started",
           cell: (run) => (
             <span className="text-ink-muted">
-              {fromNow(run.startedAt ?? run.createdAt)}
+              {ago(run.startedAt ?? run.createdAt)}
               {run.trigger.draft ? " · test" : ""}
             </span>
           ),

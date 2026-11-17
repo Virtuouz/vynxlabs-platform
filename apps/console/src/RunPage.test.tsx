@@ -491,7 +491,7 @@ test("a run is opened, read and closed from the list with the keyboard alone", a
   ];
   history.replaceState(null, "", "/t/t1/workspaces/w1/runs");
   show(<RunsWorkbench root={root} link={link} />);
-  const row = (await screen.findByText("reminders/send", { selector: "a" })).closest("tr");
+  const row = (await screen.findByRole("link", { name: "reminders/send" })).closest("tr");
   // The list is one tab stop: a cell of the first row.
   const cell = screen.getByRole("grid", { name: "Runs" }).querySelector('[tabindex="0"]');
   expect(row?.contains(cell)).toBe(true);

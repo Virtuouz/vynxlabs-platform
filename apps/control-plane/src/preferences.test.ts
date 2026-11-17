@@ -90,6 +90,12 @@ describe("a member's own settings", () => {
       value: [{ kind: "script", ref: "orders/sync", workspaceId: ws }],
     });
     expect(pins.status).toBe(204);
+    // Which lists' descriptions a member has read, and the operator strip they hid (phase 16).
+    expect((await alice.put("/me/preferences/seen:runs", { value: true })).status).toBe(204);
+    expect(
+      (await alice.put("/me/preferences/operator.strip", { value: { hidden: tenant } })).status,
+    ).toBe(204);
+    expect((await alice.put("/me/preferences/seen:Runs", { value: true })).status).toBe(400);
   });
 });
 

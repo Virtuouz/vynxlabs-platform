@@ -5,6 +5,7 @@ import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { StatePill } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { CopyButton, ListScreen, RemoveButton, when } from "../ListScreen.tsx";
 
 export interface KeyRow {
@@ -104,7 +105,7 @@ export function RecoveryCodes() {
       <KeyValues
         rows={[
           { label: "Codes left", value: madeAt ? String(left) : "None made yet" },
-          ...(madeAt ? [{ label: "Made", value: when(madeAt) }] : []),
+          ...(madeAt ? [{ label: "Made", value: <Time value={madeAt} /> }] : []),
         ]}
       />
       {madeAt && left <= 2 && !codes ? (
@@ -118,7 +119,7 @@ export function RecoveryCodes() {
           <Notice tone="attention">Copy these codes now. They are not shown again.</Notice>
           <ul
             aria-label="New recovery codes"
-            className="m-0 grid list-none grid-cols-1 gap-2 rounded-control border border-line bg-code-bg p-3 font-mono text-code sm:grid-cols-2"
+            className="m-0 grid list-none grid-cols-1 gap-2 rounded-control bg-code-bg p-3 font-mono text-code sm:grid-cols-2"
           >
             {codes.map((code) => (
               <li key={code} className="select-all">

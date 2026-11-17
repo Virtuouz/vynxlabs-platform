@@ -1,0 +1,68 @@
+import type { PointerEvent } from "react";
+
+/**
+ * Gives an element that cuts its text the whole of it as a hover title, only
+ * while it is cut. Put on `onPointerEnter`. The text itself stays whole in the
+ * page, so a screen reader reads all of it.
+ */
+export function fullOnHover(event: PointerEvent<HTMLElement>) {
+  const element = event.currentTarget;
+  const cut = [element, ...element.querySelectorAll<HTMLElement>("[data-cut]")].some(
+    (one) => one.scrollWidth > one.clientWidth + 1,
+  );
+  if (cut) element.title = (element.dataset.full ?? element.textContent ?? "").trim();
+  else element.removeAttribute("title");
+}
+
+/** Where a value is cut: its start and its last part show ("billing/…/record-payment"). */
+function split(value: string): [string, string] {
+  const slash = value.lastIndexOf("/");
+  if (slash > 0 && slash < value.length - 1) return [value.slice(0, slash), value.slice(slash)];
+  const tail = Math.min(8, Math.floor(value.length / 3));
+  return [value.slice(0, value.length - tail), value.slice(value.length - tail)];
+}
+
+/**
+ * Text that may not fit (07 §7.3, P4-7). Prose is cut at its end. A path or a
+ * name is cut in its middle: what comes before its last part gives way first,
+ * so `billing/record-payment` reads `bil…/record-payment` and stays
+ * recognisable. The whole value shows on hover while it is cut, and is always
+ * read whole by a screen reader. Never wraps.
+ */
+export function Truncate({
+  children,
+  mode = "end",
+  className = "",
+}: {
+  children: string;
+  mode?: "end" | "middle";
+  className?: string;
+}) {
+  if (mode === "end") {
+    return (
+      <span
+        data-cut=""
+        onPointerEnter={fullOnHover}
+        className={`block min-w-0 truncate ${className}`}
+      >
+        {children}
+      </span>
+    );
+  }
+  const [head, tail] = split(children);
+  return (
+    <span
+      data-full={children}
+      onPointerEnter={fullOnHover}
+      className={`flex min-w-0 max-w-full whitespace-nowrap ${className}`}
+    >
+      <span className="sr-only">{children}</span>
+      <span aria-hidden="true" data-cut="" className="min-w-0 shrink-[1000] truncate">
+        {head}
+      </span>
+      <span aria-hidden="true" data-cut="" className="min-w-0 truncate">
+        {tail}
+      </span>
+    </span>
+  );
+}

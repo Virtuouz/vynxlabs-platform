@@ -34,6 +34,7 @@ export {
   utcInstant,
 } from "./Fields.tsx";
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
+export { duration } from "./format.ts";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
 export { JsonView, type JsonViewProps } from "./JsonView.tsx";
 export {
@@ -48,12 +49,14 @@ export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";
+export { ContainedArea, Panel, useContained } from "./Panel.tsx";
 export {
   DateStepper,
   isoDay,
   SegmentedControl,
   type SegmentOption,
 } from "./Pickers.tsx";
+export { Popover } from "./Popover.tsx";
 export {
   columnsOf,
   MAX_TABLE_ROWS,
@@ -71,11 +74,10 @@ export {
   startValue,
 } from "./SchemaForm.tsx";
 export { SideSheet, type SideSheetProps } from "./SideSheet.tsx";
-export { Avatar, Card, initialsOf, Skeleton } from "./Surfaces.tsx";
+export { Avatar, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
 export {
-  duration,
   Timeline,
   type TimelineProps,
   type TimelineRow,

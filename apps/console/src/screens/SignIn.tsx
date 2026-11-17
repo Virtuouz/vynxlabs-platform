@@ -1,4 +1,4 @@
-import { Button, Notice, TextField } from "@vynxlabs/ui";
+import { Button, ContainedArea, Notice, TextField } from "@vynxlabs/ui";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api } from "../api.ts";
@@ -85,170 +85,178 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           <span className="text-ink-subtle">Console</span>
         </div>
         <div className="flex flex-col gap-4 rounded-panel border border-line bg-canvas p-6 sm:p-8">
-          <ol
-            aria-label="Steps"
-            className="m-0 flex list-none items-center gap-2 p-0 text-meta text-ink-subtle"
-          >
-            <li className="flex items-center gap-2" aria-current={step === 0 ? "step" : undefined}>
-              <Junction kind="here" />
-              <span className={step === 0 ? "text-ink" : ""}>Email</span>
-            </li>
-            <li aria-hidden="true" className="h-px flex-1 bg-line-strong" />
-            <li className="flex items-center gap-2" aria-current={step === 1 ? "step" : undefined}>
-              <Junction kind={step === 1 ? "here" : "pending"} />
-              <span className={step === 1 ? "text-ink" : ""}>How you sign in</span>
-            </li>
-          </ol>
-          <h1 className="m-0 text-display-lg">Sign in</h1>
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              setBusy(true);
-              setError(undefined);
-              try {
-                if (!ways) {
-                  // A password is asked for only once it is known that one is any use.
-                  const found = await api
-                    .get<Ways>(`/sso/providers?email=${encodeURIComponent(email.trim())}`)
-                    .catch((): Ways => ({ providers: [], password: true }));
-                  setWays(found);
-                  return;
+          <ContainedArea>
+            <ol
+              aria-label="Steps"
+              className="m-0 flex list-none items-center gap-2 p-0 text-meta text-ink-subtle"
+            >
+              <li
+                className="flex items-center gap-2"
+                aria-current={step === 0 ? "step" : undefined}
+              >
+                <Junction kind="here" />
+                <span className={step === 0 ? "text-ink" : ""}>Email</span>
+              </li>
+              <li aria-hidden="true" className="h-px flex-1 bg-line-strong" />
+              <li
+                className="flex items-center gap-2"
+                aria-current={step === 1 ? "step" : undefined}
+              >
+                <Junction kind={step === 1 ? "here" : "pending"} />
+                <span className={step === 1 ? "text-ink" : ""}>How you sign in</span>
+              </li>
+            </ol>
+            <h1 className="m-0 text-display-lg">Sign in</h1>
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setBusy(true);
+                setError(undefined);
+                try {
+                  if (!ways) {
+                    // A password is asked for only once it is known that one is any use.
+                    const found = await api
+                      .get<Ways>(`/sso/providers?email=${encodeURIComponent(email.trim())}`)
+                      .catch((): Ways => ({ providers: [], password: true }));
+                    setWays(found);
+                    return;
+                  }
+                  if (recovering) await signInWithCode(email, password, code);
+                  else await api.post("/auth/sign-in/email", { email, password });
+                  onSignedIn();
+                } catch (caught) {
+                  const failure = caught as ApiError;
+                  setError(
+                    failure.status === 401
+                      ? "That email and password do not match an account."
+                      : recovering && failure.status === 403
+                        ? "That recovery code is not right, or was already used. Each code works once."
+                        : failure.message,
+                  );
+                } finally {
+                  setBusy(false);
                 }
-                if (recovering) await signInWithCode(email, password, code);
-                else await api.post("/auth/sign-in/email", { email, password });
-                onSignedIn();
-              } catch (caught) {
-                const failure = caught as ApiError;
-                setError(
-                  failure.status === 401
-                    ? "That email and password do not match an account."
-                    : recovering && failure.status === 403
-                      ? "That recovery code is not right, or was already used. Each code works once."
-                      : failure.message,
-                );
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {ways ? (
-              <div className="flex items-center justify-between gap-2 rounded-control border border-line bg-structure px-3 py-2">
-                <span className="min-w-0 truncate">{email}</span>
+              }}
+            >
+              {ways ? (
+                <div className="flex items-center justify-between gap-2 rounded-control bg-structure px-3 py-2">
+                  <span className="min-w-0 truncate">{email}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 text-meta text-action hover:underline"
+                    onClick={() => {
+                      setWays(undefined);
+                      setPassword("");
+                      setRecovering(false);
+                      setCode("");
+                      setError(undefined);
+                    }}
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <TextField
+                  label="Email"
+                  name="email"
+                  type="email"
+                  autoComplete="username"
+                  value={email}
+                  required
+                  onChange={(value) => setEmail(value)}
+                />
+              )}
+              {ways?.providers.map((provider) => (
+                <a
+                  key={provider.id}
+                  href={withReturn(provider.url)}
+                  className="flex h-10 items-center justify-center rounded-control bg-action px-3 font-semibold text-action-ink no-underline hover:brightness-110"
+                >
+                  Sign in with {provider.name}
+                </a>
+              ))}
+              {asksPassword ? (
+                <div className="relative">
+                  <TextField
+                    label="Password"
+                    name="password"
+                    type={reveal ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={password}
+                    required
+                    onChange={setPassword}
+                  />
+                  <button
+                    type="button"
+                    aria-label={reveal ? "Hide what you typed" : "Show what you typed"}
+                    aria-pressed={reveal}
+                    onClick={() => setReveal((shown) => !shown)}
+                    className="absolute right-1 bottom-0.5 flex size-8 items-center justify-center rounded-control text-ink-subtle hover:text-ink"
+                  >
+                    {reveal ? (
+                      <EyeOff aria-hidden="true" size={16} />
+                    ) : (
+                      <Eye aria-hidden="true" size={16} />
+                    )}
+                  </button>
+                </div>
+              ) : null}
+              {recovering ? (
+                <TextField
+                  label="Recovery code"
+                  name="recovery-code"
+                  autoComplete="one-time-code"
+                  value={code}
+                  required
+                  hint="One of the codes you made on your account page. It works once."
+                  onChange={setCode}
+                />
+              ) : null}
+              {ways && !ways.password && !recovering ? (
+                <p className="m-0 text-ink-muted">
+                  Your organization requires its own sign-in. There is no password to enter here.
+                </p>
+              ) : null}
+              {error ? <Notice tone="danger">{error}</Notice> : null}
+              {!ways ? (
+                <Button type="submit" variant="primary" loading={busy} className="h-10">
+                  {busy ? "Checking…" : "Continue"}
+                </Button>
+              ) : recovering ? (
+                <Button type="submit" variant="primary" loading={busy} className="h-10">
+                  Sign in with the recovery code
+                </Button>
+              ) : ways.password ? (
+                <Button
+                  type="submit"
+                  {...(ways.providers.length > 0 ? {} : { variant: "primary" as const })}
+                  disabled={busy}
+                  className="h-10"
+                >
+                  {ways.providers.length > 0 ? "Sign in with a password" : "Sign in"}
+                </Button>
+              ) : null}
+              {ways && !ways.password ? (
                 <button
                   type="button"
-                  className="shrink-0 text-meta text-action hover:underline"
+                  className="self-start text-meta text-action hover:underline"
                   onClick={() => {
-                    setWays(undefined);
-                    setPassword("");
-                    setRecovering(false);
+                    setRecovering((on) => !on);
                     setCode("");
                     setError(undefined);
                   }}
                 >
-                  Change
+                  {recovering ? "Back to your organization's sign-in" : "Use a recovery code"}
                 </button>
-              </div>
-            ) : (
-              <TextField
-                label="Email"
-                name="email"
-                type="email"
-                autoComplete="username"
-                value={email}
-                required
-                onChange={(value) => setEmail(value)}
-              />
-            )}
-            {ways?.providers.map((provider) => (
-              <a
-                key={provider.id}
-                href={withReturn(provider.url)}
-                className="flex h-10 items-center justify-center rounded-control bg-action px-3 font-semibold text-action-ink no-underline hover:brightness-110"
-              >
-                Sign in with {provider.name}
-              </a>
-            ))}
-            {asksPassword ? (
-              <div className="relative">
-                <TextField
-                  label="Password"
-                  name="password"
-                  type={reveal ? "text" : "password"}
-                  autoComplete="current-password"
-                  value={password}
-                  required
-                  onChange={setPassword}
-                />
-                <button
-                  type="button"
-                  aria-label={reveal ? "Hide what you typed" : "Show what you typed"}
-                  aria-pressed={reveal}
-                  onClick={() => setReveal((shown) => !shown)}
-                  className="absolute right-1 bottom-0.5 flex size-8 items-center justify-center rounded-control text-ink-subtle hover:text-ink"
-                >
-                  {reveal ? (
-                    <EyeOff aria-hidden="true" size={16} />
-                  ) : (
-                    <Eye aria-hidden="true" size={16} />
-                  )}
-                </button>
-              </div>
-            ) : null}
-            {recovering ? (
-              <TextField
-                label="Recovery code"
-                name="recovery-code"
-                autoComplete="one-time-code"
-                value={code}
-                required
-                hint="One of the codes you made on your account page. It works once."
-                onChange={setCode}
-              />
-            ) : null}
-            {ways && !ways.password && !recovering ? (
-              <p className="m-0 text-ink-muted">
-                Your organization requires its own sign-in. There is no password to enter here.
+              ) : null}
+              <p className="m-0 text-meta text-ink-subtle">
+                {ways
+                  ? "Use the account your administrator created for you, or your organization's sign-in."
+                  : "We check which ways of signing in your address has. Nothing is sent to you yet."}
               </p>
-            ) : null}
-            {error ? <Notice tone="danger">{error}</Notice> : null}
-            {!ways ? (
-              <Button type="submit" variant="primary" loading={busy} className="h-10">
-                {busy ? "Checking…" : "Continue"}
-              </Button>
-            ) : recovering ? (
-              <Button type="submit" variant="primary" loading={busy} className="h-10">
-                Sign in with the recovery code
-              </Button>
-            ) : ways.password ? (
-              <Button
-                type="submit"
-                {...(ways.providers.length > 0 ? {} : { variant: "primary" as const })}
-                disabled={busy}
-                className="h-10"
-              >
-                {ways.providers.length > 0 ? "Sign in with a password" : "Sign in"}
-              </Button>
-            ) : null}
-            {ways && !ways.password ? (
-              <button
-                type="button"
-                className="self-start text-meta text-action hover:underline"
-                onClick={() => {
-                  setRecovering((on) => !on);
-                  setCode("");
-                  setError(undefined);
-                }}
-              >
-                {recovering ? "Back to your organization's sign-in" : "Use a recovery code"}
-              </button>
-            ) : null}
-            <p className="m-0 text-meta text-ink-subtle">
-              {ways
-                ? "Use the account your administrator created for you, or your organization's sign-in."
-                : "We check which ways of signing in your address has. Nothing is sent to you yet."}
-            </p>
-          </form>
+            </form>
+          </ContainedArea>
         </div>
         <p className="m-0 flex items-center gap-2 font-mono text-tag text-ink-subtle">
           <Junction kind="plain" size={5} />

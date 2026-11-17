@@ -9,7 +9,7 @@ export function Reconnecting({ show }: { show: boolean }) {
     <span role="status" className="inline-flex items-center gap-1 text-meta text-ink-muted">
       {show ? (
         <>
-          <RefreshCw aria-hidden="true" size={12} className="animate-spin" />
+          <RefreshCw aria-hidden="true" size={14} className="animate-spin" />
           Reconnecting…
         </>
       ) : null}

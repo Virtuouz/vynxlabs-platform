@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { inZone } from "../kit/format.ts";
 import { Link } from "../router.tsx";
 
 /** A schedule's body, as the manifest has it. */
@@ -47,15 +48,7 @@ function timeZones(): Option[] {
   }));
 }
 
-const when = (instant: string, zone: string) =>
-  new Date(instant).toLocaleString(undefined, {
-    timeZone: zone,
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const when = (instant: string, zone: string) => inZone(instant, zone);
 
 /**
  * A schedule's settings: what it starts, when, in which time zone, and with

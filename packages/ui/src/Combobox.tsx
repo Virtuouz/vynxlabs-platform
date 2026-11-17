@@ -1,4 +1,5 @@
 import { Combobox as Base } from "@base-ui/react/combobox";
+import { Check, X } from "lucide-react";
 import { FieldFrame } from "./Fields.tsx";
 
 export interface Option {
@@ -44,7 +45,9 @@ function Items({ empty }: { empty: string }) {
                 className={row}
                 {...(option.disabled ? { disabled: true } : {})}
               >
-                <Base.ItemIndicator className="w-3 text-action">✓</Base.ItemIndicator>
+                <Base.ItemIndicator className="flex w-3.5 text-action">
+                  <Check aria-hidden="true" size={14} />
+                </Base.ItemIndicator>
                 <span className="col-start-2 flex min-w-0 flex-col data-[selected]:font-medium">
                   <span className="truncate">{option.label}</span>
                   {option.hint ? (
@@ -104,7 +107,7 @@ export function ComboboxField({
         <div className={box}>
           <Base.Input className={input} {...(placeholder ? { placeholder } : {})} />
           <Base.Clear aria-label="Clear" className="px-1 text-ink-muted hover:text-ink">
-            ×
+            <X aria-hidden="true" size={14} />
           </Base.Clear>
         </div>
         <Items empty={empty} />
@@ -160,7 +163,7 @@ export function MultiSelectField({
                       aria-label={`Remove ${option.label}`}
                       className="text-ink-muted hover:text-ink"
                     >
-                      ×
+                      <X aria-hidden="true" size={14} />
                     </Base.ChipRemove>
                   </Base.Chip>
                 ))}

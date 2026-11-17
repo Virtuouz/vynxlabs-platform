@@ -1,11 +1,21 @@
 import { Button, JsonView, LogViewer, type MenuItem, Notice, ResultView, Tabs } from "@vynxlabs/ui";
-import { ArrowUpRight, CircleX, FileCode2, Lightbulb, RotateCcw, Workflow, X } from "lucide-react";
+import {
+  ArrowUp,
+  ArrowUpRight,
+  CircleX,
+  FileCode2,
+  Lightbulb,
+  RotateCcw,
+  Workflow,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { useArrivals } from "../kit/arrivals.ts";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
-import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
+import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,
   DataTable,
@@ -14,19 +24,20 @@ import {
   useDensity,
 } from "../kit/DataTable.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
-import { clockTime } from "../kit/LiveIndicator.tsx";
+import { hm } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
-import { LogWindowNote, stamp, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
-import { fromNow } from "./Overview.tsx";
+import { LogWindowNote, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 
 /** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
 type Filter =
@@ -88,12 +99,6 @@ const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = 
 ];
 /** States in which a run may still change. */
 const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
-
-/** How long ago, or the date when it is older than a day. */
-function started(iso: string) {
-  const age = Date.now() - Date.parse(iso);
-  return age < 86_400_000 ? fromNow(iso) : stamp(iso).slice(0, 16);
-}
 
 interface Page {
   items: Activity[];
@@ -308,6 +313,17 @@ export function RunsWorkbench({
   };
   // Rows checked for a batch: cancel them, run them again, retry them.
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Runs that start while the reader is down the list, or has some checked, wait at the top.
+  const arrivals = useArrivals(
+    list.data ? items : undefined,
+    (one) => one.id,
+    base,
+    () => {
+      const table = document.querySelector<HTMLElement>('[data-table="runs"]');
+      const away = (table?.scrollTop ?? 0) > 0 || (table?.parentElement?.scrollTop ?? 0) > 0;
+      return away || checked.size > 0;
+    },
+  );
   const batch = useBatch();
   const kindOf = (id: string) => items.find((one) => one.id === id);
   const nameOf = (id: string) => kindOf(id)?.target ?? id;
@@ -508,9 +524,9 @@ export function RunsWorkbench({
           <KindIcon kind={one.kind} />
           <Link
             to={`${link}/runs/${one.id}`}
-            className="min-w-0 truncate font-mono text-code text-ink no-underline hover:underline"
+            className="min-w-0 font-mono text-code text-ink no-underline hover:underline"
           >
-            {one.target}
+            <Truncate mode="middle">{one.target}</Truncate>
           </Link>
           {one.tags.map((tag) => (
             <button
@@ -557,11 +573,7 @@ export function RunsWorkbench({
       sort: "started",
       cell: (one) => {
         const at = one.startedAt ?? one.scheduledFor ?? one.createdAt;
-        return (
-          <time dateTime={at} title={stamp(at)} className="whitespace-nowrap text-ink-muted">
-            {started(at)}
-          </time>
-        );
+        return <Time value={at} mode="ago" className="text-ink-muted" />;
       },
     },
     {
@@ -612,7 +624,7 @@ export function RunsWorkbench({
               {!streaming && list.updatedAt ? (
                 <>
                   {" "}
-                  Updated {clockTime(list.updatedAt)}
+                  Updated {hm(list.updatedAt)}
                   {live ? ", asked again every 5 s." : "."}
                 </>
               ) : null}
@@ -675,7 +687,7 @@ export function RunsWorkbench({
               aria-label={`Stop showing only runs of ${url.target}`}
               className="flex items-center gap-1 rounded-control border border-line px-2 py-0.5 text-meta hover:bg-surface"
             >
-              Of <Mono>{url.target}</Mono> <X aria-hidden="true" size={12} />
+              Of <Mono>{url.target}</Mono> <X aria-hidden="true" size={14} />
             </button>
           ) : null}
           {tags.map((one) => (
@@ -686,7 +698,7 @@ export function RunsWorkbench({
               aria-label={`Stop showing only runs tagged ${one}`}
               className="flex items-center gap-1 rounded-control border border-line px-2 py-0.5 text-meta hover:bg-surface"
             >
-              Tagged <Mono>{one}</Mono> <X aria-hidden="true" size={12} />
+              Tagged <Mono>{one}</Mono> <X aria-hidden="true" size={14} />
             </button>
           ))}
           <span className="ml-auto flex items-center gap-2">
@@ -750,14 +762,34 @@ export function RunsWorkbench({
           ) : null
         }
       >
+        {arrivals.waiting > 0 ? (
+          // A pill over the list, below its header and batch bar: it moves nothing the reader is looking at.
+          <div className="sticky top-0 layer-sticky flex h-0 translate-y-20 justify-center">
+            <Button
+              size="small"
+              variant="primary"
+              className="shadow-overlay"
+              onClick={() => {
+                arrivals.release();
+                const table = document.querySelector<HTMLElement>('[data-table="runs"]');
+                table?.scrollTo({ top: 0 });
+                table?.parentElement?.scrollTo({ top: 0 });
+              }}
+            >
+              <ArrowUp aria-hidden="true" size={14} /> {arrivals.waiting} new run
+              {arrivals.waiting === 1 ? "" : "s"}
+            </Button>
+          </div>
+        ) : null}
         <DataTable<Activity>
           id="runs"
+          arriving={arrivals.arriving}
           label="Runs"
           fill
           density={density}
           columns={columns}
           columnsShown={url.cols.length > 0 ? url.cols : undefined}
-          rows={list.data ? items : undefined}
+          rows={arrivals.shown}
           rowKey={(one) => one.id}
           selected={selected}
           onOpen={open}
@@ -823,8 +855,12 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
       {run.error ? <Notice tone="danger">{run.error}</Notice> : null}
       <KeyValues
         rows={[
-          { label: "Started", value: stamp(run.createdAt), mono: true },
-          { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "—", mono: true },
+          { label: "Started", value: <Time value={run.createdAt} />, mono: true },
+          {
+            label: "Finished",
+            value: run.finishedAt ? <Time value={run.finishedAt} /> : "—",
+            mono: true,
+          },
           { label: "Started by", value: TRIGGER[run.trigger] ?? run.trigger },
           {
             label: "Flow",
@@ -836,7 +872,7 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
             value: <Link to={`${link}/deployments`}>v{run.bundleVersion}</Link>,
             mono: true,
           },
-          { label: "Run ID", value: <CopyableId value={run.id} label="Copy the run ID" /> },
+          { label: "Run ID", value: <Identifier value={run.id} label="Copy the run ID" /> },
         ]}
       />
       <Button variant="primary" onClick={() => navigate(`${link}/runs/${run.id}`)}>
@@ -964,7 +1000,7 @@ export function ScriptRunPanel({
                 {index > 0 ? <span aria-hidden="true" className="h-px w-3 bg-line-strong" /> : null}
                 <Junction kind={one.failed ? "danger" : "here"} size={5} />
                 <span className={one.failed ? "text-danger" : "text-ink-muted"}>
-                  #{one.attempt} <Mono>{stamp(one.startedAt).slice(11)}</Mono>
+                  #{one.attempt} <Time value={one.startedAt} className="font-mono text-code" />
                 </span>
               </span>
             ))}
@@ -1020,15 +1056,15 @@ export function ScriptRunPanel({
               <div className="flex flex-col gap-4 pt-3">
                 <KeyValues
                   rows={[
-                    { label: "Received", value: stamp(run.createdAt), mono: true },
+                    { label: "Received", value: <Time value={run.createdAt} />, mono: true },
                     {
                       label: "Started",
-                      value: run.startedAt ? stamp(run.startedAt) : "—",
+                      value: run.startedAt ? <Time value={run.startedAt} /> : "—",
                       mono: true,
                     },
                     {
                       label: "Finished",
-                      value: run.finishedAt ? stamp(run.finishedAt) : "—",
+                      value: run.finishedAt ? <Time value={run.finishedAt} /> : "—",
                       mono: true,
                     },
                     {
@@ -1067,7 +1103,7 @@ export function ScriptRunPanel({
                     },
                     {
                       label: "Run ID",
-                      value: <CopyableId value={run.id} label="Copy the run ID" />,
+                      value: <Identifier value={run.id} label="Copy the run ID" />,
                     },
                   ]}
                 />

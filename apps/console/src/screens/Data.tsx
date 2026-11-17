@@ -17,9 +17,10 @@ import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { count } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
-import { StatePill } from "../kit/status.tsx";
+import { Code, StatePill } from "../kit/status.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam, useUrlState } from "../router.tsx";
@@ -32,7 +33,6 @@ import {
   SeeItAs,
 } from "./RowRules.tsx";
 
-const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 const PAGE = 50;
 
 const TYPES: { value: string; label: string }[] = [
@@ -377,7 +377,7 @@ function RowsBrowser(props: RowsBrowserProps) {
             ? ""
             : `${rows.length} ${rows.length === 1 ? "row" : "rows"} on this page${
                 typeof counted === "number"
-                  ? `, of ${counted.toLocaleString()}${filter ? " that match" : ""}`
+                  ? `, of ${count(counted)}${filter ? " that match" : ""}`
                   : ""
               }`}
         </span>
@@ -708,7 +708,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
         },
         { header: "Who sees rows", cell: (row) => policyText(row.policy) },
         { header: "Columns", cell: (row) => row.columnCount, align: "end" },
-        { header: "Rows", cell: (row) => row.rowCount.toLocaleString(), align: "end" },
+        { header: "Rows", cell: (row) => count(row.rowCount), align: "end" },
       ]}
       empty={{
         title: "No tables yet",
@@ -795,7 +795,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
   return (
     <Page
       title={data.name}
-      description={`${data.rowCount.toLocaleString()} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
+      description={`${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
     >
       {retired ? (
         <Notice
@@ -805,8 +805,8 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           }
         >
           This table is retired. It left its definition, so nothing can read or write it, and its{" "}
-          {data.rowCount.toLocaleString()} rows are kept. Deploying a definition with this name
-          brings it back.
+          {count(data.rowCount)} rows are kept. Deploying a definition with this name brings it
+          back.
         </Notice>
       ) : (
         <div className="flex gap-1">
@@ -917,7 +917,7 @@ function Definition({
       {table.status === "active" && !editable ? (
         <Notice tone="attention">
           This table is defined in the tenant's repository. To change it, change{" "}
-          {code("defineTable")} there and deploy.
+          <Code>{"defineTable"}</Code> there and deploy.
         </Notice>
       ) : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
@@ -934,7 +934,7 @@ function Definition({
           rowKey={(row) => row.name}
           empty={<p className="m-0 text-ink-muted">No columns.</p>}
           columns={[
-            { header: "Column", cell: (row) => code(row.name) },
+            { header: "Column", cell: (row) => <Code>{row.name}</Code> },
             {
               header: "Holds",
               cell: (row) => (row.references ? `A row of ${row.references}` : typeLabel(row.type)),
@@ -949,9 +949,11 @@ function Definition({
             {
               header: "When not given",
               cell: (row) =>
-                row.default === null || row.default === undefined
-                  ? ""
-                  : code(JSON.stringify(row.default)),
+                row.default === null || row.default === undefined ? (
+                  ""
+                ) : (
+                  <Code>{JSON.stringify(row.default)}</Code>
+                ),
             },
             ...(editable
               ? [
@@ -1014,8 +1016,8 @@ function Definition({
           ]}
         />
         <p className="m-0 text-body-sm text-ink-muted">
-          Every table also has {code("id")}, {code("created_at")} and {code("updated_at")}, which
-          the platform fills in.
+          Every table also has <Code>{"id"}</Code>, <Code>{"created_at"}</Code> and{" "}
+          <Code>{"updated_at"}</Code>, which the platform fills in.
         </p>
       </section>
 
@@ -1034,12 +1036,11 @@ function Definition({
             rowKey={(row) => row.name}
             empty={null}
             columns={[
-              { header: "Column", cell: (row) => code(row.name) },
+              { header: "Column", cell: (row) => <Code>{row.name}</Code> },
               { header: "Held", cell: (row) => typeLabel(row.type) },
               {
                 header: "Still holds",
-                cell: (row) =>
-                  `${(row.held ?? 0).toLocaleString()} ${row.held === 1 ? "value" : "values"}`,
+                cell: (row) => `${count(row.held ?? 0)} ${row.held === 1 ? "value" : "values"}`,
               },
               {
                 header: "",
@@ -1106,8 +1107,8 @@ function Definition({
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-title font-semibold">Where it is stored</h2>
         <p className="m-0 max-w-measure text-ink-muted">
-          In Postgres, as {code(`${table.stored.schema}.${table.stored.table}`)}. It is your data:
-          you can read it there directly at any time.
+          In Postgres, as <Code>{`${table.stored.schema}.${table.stored.table}`}</Code>. It is your
+          data: you can read it there directly at any time.
         </p>
       </section>
 
@@ -1216,7 +1217,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
                 {row.path}
               </Link>
             ) : (
-              code(row.path)
+              <Code>{row.path}</Code>
             ),
         },
         { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },

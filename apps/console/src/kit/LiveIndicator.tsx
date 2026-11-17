@@ -1,10 +1,7 @@
 import { RefreshCw, WifiOff } from "lucide-react";
 import { useStreamStatus } from "../stream.ts";
+import { hm } from "./format.ts";
 import { Junction } from "./motifs.tsx";
-
-/** "14:02", in the reader's own clock. */
-export const clockTime = (at: number) =>
-  new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /**
  * Whether what the page shows is current: Live while run events arrive,
@@ -21,7 +18,7 @@ export function LiveIndicator() {
         : status === "reconnecting"
           ? "Reconnecting…"
           : status === "offline"
-            ? `Offline${lastLiveAt ? ` · last updated ${clockTime(lastLiveAt)}` : ""}`
+            ? `Offline${lastLiveAt ? ` · last updated ${hm(lastLiveAt)}` : ""}`
             : "";
   return (
     <span
@@ -43,9 +40,9 @@ export function LiveIndicator() {
       {status === "live" ? (
         <Junction kind="here" size={5} />
       ) : status === "reconnecting" || status === "connecting" ? (
-        <RefreshCw aria-hidden="true" size={12} className="animate-spin" />
+        <RefreshCw aria-hidden="true" size={14} className="animate-spin" />
       ) : status === "offline" ? (
-        <WifiOff aria-hidden="true" size={12} />
+        <WifiOff aria-hidden="true" size={14} />
       ) : null}
       {words}
     </span>

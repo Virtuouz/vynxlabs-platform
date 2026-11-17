@@ -5,6 +5,8 @@ import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { CopyButton, CreateDialog, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import { AttributesDialog } from "./Groups.tsx";
@@ -204,6 +206,7 @@ export function EndUsers({ base }: { base: string }) {
               <div className="w-full max-w-xs">
                 <TextField
                   label="Search by email or name"
+                  labelHidden
                   name="search"
                   value={search}
                   onChange={(value) => {
@@ -229,7 +232,7 @@ export function EndUsers({ base }: { base: string }) {
             header: "Email",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
-                <span className="font-medium">{row.email}</span>
+                <Truncate className="font-medium">{row.email}</Truncate>
                 {row.name ? (
                   <span className="text-meta text-ink-muted md:hidden">{row.name}</span>
                 ) : null}
@@ -254,7 +257,7 @@ export function EndUsers({ base }: { base: string }) {
             priority: 3,
             cell: (row) =>
               row.lastSignedInAt ? (
-                <span className="whitespace-nowrap">{when(row.lastSignedInAt)}</span>
+                <Time value={row.lastSignedInAt} mode="ago" />
               ) : (
                 <span className="text-ink-muted">Never</span>
               ),
@@ -298,9 +301,13 @@ export function EndUsers({ base }: { base: string }) {
                     { label: "Status", value: <Status user={chosen} /> },
                     {
                       label: "Last signed in",
-                      value: chosen.lastSignedInAt ? when(chosen.lastSignedInAt) : "Never",
+                      value: chosen.lastSignedInAt ? (
+                        <Time value={chosen.lastSignedInAt} />
+                      ) : (
+                        "Never"
+                      ),
                     },
-                    { label: "Added", value: when(chosen.createdAt) },
+                    { label: "Added", value: <Time value={chosen.createdAt} /> },
                     {
                       label: "Groups",
                       value:

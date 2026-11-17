@@ -26,6 +26,8 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { clock } from "./format.ts";
+import { fullOnHover } from "./Truncate.tsx";
 
 /**
  * What a run, a flow run or a step is doing, as the server says it (`state`):
@@ -129,14 +131,6 @@ export const lookUp = (state: string): [string, LucideIcon, string] => {
   return [known[0], known[1], TONE[known[2] as Tone]];
 };
 
-const time = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
 /**
  * A state as an icon and a word in its color, never a filled chip, so color is
  * never the only sign. `children` says the same state in more words; `detail`
@@ -155,16 +149,22 @@ export function StatePill({
   until?: string | null | undefined;
 }) {
   const [label, Icon, tone] = lookUp(state);
-  const word = state === "waiting_time" && until ? `Waiting until ${time(until)}` : label;
+  const word = state === "waiting_time" && until ? `Waiting until ${clock(until)}` : label;
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
+    <span onPointerEnter={fullOnHover} className="inline-flex min-w-0 items-center gap-1.5">
       <Icon
         aria-hidden="true"
         size={14}
         className={`shrink-0 ${tone} ${state === "running" ? "animate-spin-slow" : ""}`}
       />
-      <span className={`truncate ${tone}`}>{children ?? word}</span>
-      {detail ? <span className="truncate text-meta text-ink-subtle">{detail}</span> : null}
+      <span data-cut="" className={`truncate ${tone}`}>
+        {children ?? word}
+      </span>
+      {detail ? (
+        <span data-cut="" className="truncate text-meta text-ink-subtle">
+          {detail}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -199,7 +199,8 @@ export type TagTone =
 
 const TAGS: Record<TagTone, string> = {
   dev: "border-action/45 text-action",
-  production: "border-attention/45 text-attention",
+  /** Filled, where everything else is outlined: production is the one thing never to miss. */
+  production: "border-attention bg-attention text-canvas",
   draft: "border-action/60 border-dashed text-action",
   repository: "border-line-strong text-ink-muted",
   live: "border-success/45 text-success",
@@ -209,7 +210,7 @@ const TAGS: Record<TagTone, string> = {
   danger: "border-danger/45 text-danger",
 };
 
-/** An outlined tag in capitals: an environment, where something comes from, or a lifecycle. */
+/** A tag in capitals, outlined (production filled): an environment, where something comes from, or a lifecycle. */
 export function Tag({ tone = "neutral", children }: { tone?: TagTone; children: ReactNode }) {
   return (
     <span
@@ -227,6 +228,11 @@ export function EnvTag({ type }: { type: "production" | "dev" }) {
       {type === "production" ? "Production" : "Dev"}
     </Tag>
   );
+}
+
+/** A name as it is typed: a path, a header, a command. `wrap` lets a long one break anywhere. */
+export function Code({ children, wrap = false }: { children: ReactNode; wrap?: boolean }) {
+  return <code className={`font-mono text-code${wrap ? " break-all" : ""}`}>{children}</code>;
 }
 
 /** Counts, durations, identifiers and versions are set in the code face, so columns line up. */

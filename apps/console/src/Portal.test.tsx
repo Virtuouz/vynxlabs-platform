@@ -50,7 +50,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-const sent = (method: string) => calls.filter((call) => call.method === method);
+// A member's own settings are written in the background (which lists' descriptions they have
+// read): not what these screens send.
+const sent = (method: string) =>
+  calls.filter((call) => call.method === method && !call.url.includes("/me/preferences"));
 
 // ----- Apps -----
 

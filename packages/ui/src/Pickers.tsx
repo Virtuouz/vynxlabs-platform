@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useId } from "react";
 
 export interface SegmentOption<Value extends string> {
@@ -117,7 +118,7 @@ export function DateStepper({
         disabled={min !== undefined && value <= min}
         onClick={() => shift(-1)}
       >
-        ‹
+        <ChevronLeft aria-hidden="true" size={16} />
       </button>
       <span className="min-w-0 truncate font-semibold" aria-live="polite">
         {value === today ? `Today, ${written}` : written}
@@ -129,7 +130,7 @@ export function DateStepper({
         disabled={max !== undefined && value >= max}
         onClick={() => shift(1)}
       >
-        ›
+        <ChevronRight aria-hidden="true" size={16} />
       </button>
       {value !== today ? (
         <button

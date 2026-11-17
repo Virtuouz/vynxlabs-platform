@@ -47,3 +47,50 @@ export async function expectNoAxeViolations(page: Page, where: string) {
     );
   expect(serious, `accessibility violations on ${where}`).toEqual([]);
 }
+
+/**
+ * The lists whose description is shown on a first visit and kept behind help
+ * after (phase 16, P4-1), by their help key. A picture is taken with each one
+ * read, so it does not depend on which spec opened the list first.
+ */
+const LISTS = [
+  "approvals",
+  "end-users",
+  "end-user-groups",
+  "events",
+  "flows",
+  "published-apps",
+  "scripts",
+  "service-accounts",
+  "triggers",
+  "access",
+  "groups",
+  "members",
+  "roles",
+  "audit-log",
+  "all-members",
+  "operators",
+  "tenants",
+  "workspaces",
+  "resources",
+  "instance-audit-log",
+];
+
+/** Marks every list's description read for the signed-in member. */
+export async function readEveryList(page: Page) {
+  await page.evaluate(async (keys) => {
+    for (const key of keys) {
+      await fetch(`/api/v1/me/preferences/seen:${key}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ value: true }),
+      });
+    }
+  }, LISTS);
+  // The console keeps the server's settings in this browser as it loads: loaded once more, it
+  // has them before the next screen draws.
+  const loaded = page.waitForResponse((response) => response.url().endsWith("/me/preferences"));
+  await page.reload();
+  await loaded;
+  await page.waitForTimeout(200);
+}

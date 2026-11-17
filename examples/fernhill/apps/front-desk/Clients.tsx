@@ -1,5 +1,5 @@
 import { totalOf, useQuery } from "@vynxlabs/app";
-import { Avatar, Badge, Button, Card, EmptyState, Notice, TextField } from "@vynxlabs/ui";
+import { Avatar, Badge, Button, EmptyState, Notice, TextField, Panel as Tile } from "@vynxlabs/ui";
 import { ChevronLeft, TriangleAlert } from "@vynxlabs/ui/icons";
 import { useEffect, useState } from "react";
 import {
@@ -207,7 +207,8 @@ export function ClientDetail({ code, onBook }: { code: string; onBook: (code: st
           <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2">
             {pets.map((pet) => (
               <li key={pet.id}>
-                <Card
+                <Tile
+                  padded
                   title={pet.name}
                   description={[
                     pet.species,
@@ -226,7 +227,7 @@ export function ClientDetail({ code, onBook }: { code: string; onBook: (code: st
                       </Badge>
                     </span>
                   ) : null}
-                </Card>
+                </Tile>
               </li>
             ))}
           </ul>

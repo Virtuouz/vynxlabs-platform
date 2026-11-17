@@ -6,6 +6,7 @@ import {
   Facts,
   JsonView,
   Notice,
+  Panel,
   SelectField,
   SideSheet,
   Tabs,
@@ -312,7 +313,7 @@ function SetUp({
     <div className="flex max-w-measure flex-col gap-5">
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-title font-semibold">1. Enter these at the provider</h2>
-        <div className="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
+        <div className="flex flex-col gap-3 rounded-control bg-sunken p-3">
           {provider.protocol === "oidc" ? (
             <CopyLine label="Redirect address" value={provider.addresses.callback} />
           ) : (
@@ -369,7 +370,7 @@ function SetUp({
           ) : null}
         </div>
         {test ? (
-          <div className="flex flex-col gap-3 rounded-control border border-line p-3">
+          <Panel as="div" className="flex flex-col gap-3 p-3">
             <Notice tone={test.ok ? "success" : "danger"}>
               {test.ok
                 ? `The provider answered ${when(test.at)}. ${test.would ?? ""}`
@@ -412,7 +413,7 @@ function SetUp({
                 </div>
               </details>
             ) : null}
-          </div>
+          </Panel>
         ) : null}
       </section>
       <section className="flex flex-col gap-2">
@@ -476,7 +477,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
       </form>
       {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
       {(list.data?.items ?? []).map((row) => (
-        <div key={row.id} className="flex flex-col gap-3 rounded-control border border-line p-3">
+        <Panel as="div" key={row.id} className="flex flex-col gap-3 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex flex-wrap items-center gap-2">
               <strong>{row.domain}</strong>
@@ -522,7 +523,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
             </div>
           ) : null}
           {row.problem ? <Notice tone="attention">{row.problem}</Notice> : null}
-        </div>
+        </Panel>
       ))}
       {list.data && list.data.items.length === 0 ? (
         <EmptyState title="No domains yet">

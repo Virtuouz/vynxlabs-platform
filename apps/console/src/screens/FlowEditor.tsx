@@ -28,6 +28,8 @@ import {
   useNodesState,
   type Viewport,
 } from "@xyflow/react";
+import { ago } from "../kit/format.ts";
+import { glide } from "../kit/motion.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import {
@@ -728,7 +730,7 @@ export function FlowEditor({
     // Brought into view where it is, at the same zoom: the rest of the graph stays put.
     setTimeout(() => {
       if (!canvas) return;
-      canvas.setCenter(at.x + 90, at.y + 30, { zoom: canvas.getZoom(), duration: 200 });
+      canvas.setCenter(at.x + 90, at.y + 30, { zoom: canvas.getZoom(), duration: glide(200) });
     }, 50);
   };
   const update = (id: string, change: Partial<FlowNode>) => {
@@ -1024,7 +1026,7 @@ export function FlowEditor({
         Boolean(node.selected) === (node.id === id) ? node : { ...node, selected: node.id === id },
       ),
     );
-    canvas?.fitView({ nodes: [{ id }], maxZoom: 1, padding: 0.6, duration: 200 });
+    canvas?.fitView({ nodes: [{ id }], maxZoom: 1, padding: 0.6, duration: glide(200) });
   };
 
   const save = async (): Promise<boolean> => {
@@ -1235,7 +1237,7 @@ export function FlowEditor({
           ? "Could not save. Trying again…"
           : "Saving…"
     : savedAt
-      ? `Draft saved ${Math.max(1, Math.round((Date.now() - savedAt) / 1000)) < 60 ? `${Math.max(1, Math.round((Date.now() - savedAt) / 1000))}s` : `${Math.round((Date.now() - savedAt) / 60000)}m`} ago`
+      ? `Draft saved ${ago(savedAt)}`
       : stateLabel(state);
 
   const keepViewport = (viewport: Viewport) => {

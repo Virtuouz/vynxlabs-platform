@@ -5,7 +5,8 @@ import { failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { Mono } from "../kit/status.tsx";
-import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
+import { Time } from "../kit/Time.tsx";
+import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 interface Person {
@@ -162,7 +163,11 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
         rowKey={(row) => row.id}
         columns={[
           { header: "Name", cell: (row) => <span className="font-medium">{row.name}</span> },
-          { header: "Created", priority: 2, cell: (row) => when(row.createdAt) },
+          {
+            header: "Created",
+            priority: 2,
+            cell: (row) => <Time value={row.createdAt} mode="ago" />,
+          },
           {
             header: "",
             align: "end",

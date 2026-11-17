@@ -5,8 +5,10 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
 import { actionWords } from "../audit-words.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
+import { stamp } from "../kit/format.ts";
 import { Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
 import { Tag, type TagTone } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, useUrlState } from "../router.tsx";
 
@@ -87,11 +89,6 @@ export function verbOf(action: string): Verb {
   return VERBS.find(([, pattern]) => pattern.test(last))?.[0] ?? "Other";
 }
 
-const stamp = (iso: string) => {
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-};
 const who = (entry: Entry) =>
   entry.actorLabel ??
   (entry.actorId ? `${entry.actorType} ${entry.actorId.slice(-8)}` : entry.actorType);
@@ -299,6 +296,11 @@ export function AuditTable({
     },
   ];
 
+  const older = cursor ? (
+    <Button size="small" onClick={() => load(cursor)}>
+      Show older entries
+    </Button>
+  ) : undefined;
   return (
     <CollectionView<Entry>
       title={title}
@@ -313,9 +315,9 @@ export function AuditTable({
       }
       toolbar={
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-meta text-ink-muted">
-              Area
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col text-meta text-ink-muted">
+              <span className="sr-only">Area</span>
               <select
                 value={url.area ?? ""}
                 onChange={(event) => setUrl({ area: event.currentTarget.value || undefined })}
@@ -328,8 +330,8 @@ export function AuditTable({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-meta text-ink-muted">
-              Since
+            <label className="flex flex-col text-meta text-ink-muted">
+              <span className="sr-only">Since</span>
               <select
                 value={url.since}
                 onChange={(event) => setUrl({ since: event.currentTarget.value })}
@@ -344,8 +346,8 @@ export function AuditTable({
             </label>
             {tenantLog ? (
               <>
-                <label className="flex flex-col gap-1 text-meta text-ink-muted">
-                  Who
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">Who</span>
                   <select
                     value={url.actor ?? ""}
                     onChange={(event) => setUrl({ actor: event.currentTarget.value || undefined })}
@@ -361,8 +363,8 @@ export function AuditTable({
                       ))}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1 text-meta text-ink-muted">
-                  Action
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">Action</span>
                   <select
                     value={url.action ?? ""}
                     onChange={(event) => setUrl({ action: event.currentTarget.value || undefined })}
@@ -376,8 +378,8 @@ export function AuditTable({
                     ))}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1 text-meta text-ink-muted">
-                  Done to
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">Done to</span>
                   <select
                     value={url.kind ?? ""}
                     onChange={(event) => setUrl({ kind: event.currentTarget.value || undefined })}
@@ -393,8 +395,8 @@ export function AuditTable({
                 </label>
               </>
             ) : null}
-            <label className="flex min-w-48 flex-1 flex-col gap-1 text-meta text-ink-muted sm:max-w-80">
-              Search
+            <label className="flex min-w-48 flex-1 flex-col text-meta text-ink-muted sm:max-w-64">
+              <span className="sr-only">Search</span>
               <input
                 type="search"
                 value={typed}
@@ -403,14 +405,7 @@ export function AuditTable({
                 className={select}
               />
             </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {cursor ? (
-              <Button size="small" onClick={() => load(cursor)}>
-                Show older entries
-              </Button>
-            ) : null}
-            <span className="ml-auto flex items-center gap-2">
+            <span className="ml-auto flex items-center gap-2 self-center">
               <ColumnsMenu
                 columns={columns.slice(1).map((column) => ({
                   key: column.key ?? column.header,
@@ -434,6 +429,7 @@ export function AuditTable({
       table={
         filtered
           ? {
+              footer: older,
               columnsShown: url.cols.length > 0 ? url.cols : undefined,
               filtered: {
                 onClear: () => {
@@ -449,7 +445,7 @@ export function AuditTable({
                 },
               },
             }
-          : { columnsShown: url.cols.length > 0 ? url.cols : undefined }
+          : { footer: older, columnsShown: url.cols.length > 0 ? url.cols : undefined }
       }
       empty={{ title: "Nothing recorded yet" }}
       inspector={
@@ -481,7 +477,7 @@ export function AuditTable({
             <div className="flex flex-col gap-4">
               <KeyValues
                 rows={[
-                  { label: "When", value: stamp(chosen.occurredAt), mono: true },
+                  { label: "When", value: <Time value={chosen.occurredAt} />, mono: true },
                   { label: "Who", value: who(chosen) },
                   { label: "Action", value: chosen.action, mono: true },
                   { label: "Kind", value: chosen.targetType },

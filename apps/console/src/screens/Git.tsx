@@ -208,7 +208,7 @@ export function GitPanel({
   if (!repository) {
     return (
       <section className={frame}>
-        <h2 className="m-0 text-base font-semibold">Repository</h2>
+        <h2 className="m-0 text-title font-semibold">Repository</h2>
         <p className="m-0 text-ink-muted">
           No repository is connected, so what is deployed here lives in this workspace only.{" "}
           <Link to={`${tenantLink}/repository`} className="text-action">
@@ -222,11 +222,11 @@ export function GitPanel({
   if (!status.data.branch || !state) {
     return (
       <section className={frame}>
-        <h2 className="m-0 text-base font-semibold">Repository</h2>
+        <h2 className="m-0 text-title font-semibold">Repository</h2>
         <p className="m-0 text-ink-muted">
           Choose the branch this workspace keeps its console-written resources on. It is created
-          from <code className="font-mono text-[13px]">{repository.defaultBranch}</code> by the
-          first push.
+          from <code className="font-mono text-code">{repository.defaultBranch}</code> by the first
+          push.
         </p>
         <form
           className="flex flex-wrap items-end gap-2"
@@ -299,13 +299,11 @@ export function GitPanel({
     <section className={frame}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 className="m-0 text-base font-semibold">Repository</h2>
-          <code className="truncate font-mono text-[13px] text-ink-muted">
-            {status.data.branch}
-          </code>
+          <h2 className="m-0 text-title font-semibold">Repository</h2>
+          <code className="truncate font-mono text-code text-ink-muted">{status.data.branch}</code>
           <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
           {status.data.syncedCommit ? (
-            <code className="font-mono text-[12.5px] text-ink-muted">
+            <code className="font-mono text-code-sm text-ink-muted">
               {status.data.syncedCommit.slice(0, 7)}
             </code>
           ) : null}

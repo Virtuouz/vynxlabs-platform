@@ -63,7 +63,7 @@ function LinkDialog({ link, onClose }: { link: ShownLink | undefined; onClose: (
       {link ? (
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2 rounded-control border border-line bg-sunken p-3">
-            <code className="font-mono text-[13px] break-all select-all">{link.url}</code>
+            <code className="font-mono text-code break-all select-all">{link.url}</code>
             <div>
               <CopyButton value={link.url} label="Copy link" />
             </div>

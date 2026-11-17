@@ -125,14 +125,14 @@ export function GitSync({ root, link }: { root: string; link: string }) {
             </span>
             <Panel className="flex flex-col gap-2 p-4">
               <span className="flex items-center gap-2 text-label text-ink-subtle uppercase">
-                <GitBranch aria-hidden="true" size={13} /> {compare.data.branch}
+                <GitBranch aria-hidden="true" size={14} /> {compare.data.branch}
               </span>
               <span className="text-title">
                 <Mono className="text-title">{compare.data.behind}</Mono> changed there
               </span>
               {compare.data.head ? (
                 <span className="flex items-center gap-1.5 text-meta text-ink-muted">
-                  <GitCommitHorizontal aria-hidden="true" size={13} />
+                  <GitCommitHorizontal aria-hidden="true" size={14} />
                   <Mono>{compare.data.head.commit.slice(0, 7)}</Mono> {compare.data.head.message} ·{" "}
                   {compare.data.head.author}, {fromNow(compare.data.head.at)}
                 </span>
@@ -241,7 +241,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                               {choices[stem] === side ? <Tag tone="live">Kept</Tag> : null}
                             </span>
                             <pre
-                              className={`m-0 max-h-72 overflow-auto rounded-control border bg-code-bg p-3 font-mono text-telemetry ${
+                              className={`m-0 max-h-72 overflow-auto rounded-control border bg-code-bg p-3 font-mono text-code ${
                                 choices[stem] === side ? "border-action" : "border-line"
                               }`}
                             >

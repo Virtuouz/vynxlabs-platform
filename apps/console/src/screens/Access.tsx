@@ -205,7 +205,7 @@ export function EffectiveAccess({
         {groups.map((group) => (
           <Panel key={group} className="flex flex-col gap-2 p-4">
             <h3 className="m-0 text-label text-ink-subtle uppercase">{group}</h3>
-            <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+            <ul className="m-0 flex list-none flex-col gap-2 p-0">
               {shown
                 .filter((one) => one.group === group)
                 .map((one) => (

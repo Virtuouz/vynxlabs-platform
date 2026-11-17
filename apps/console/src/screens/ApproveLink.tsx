@@ -76,12 +76,12 @@ export function ApproveLink({ token }: { token: string }) {
   return (
     <main className="flex min-h-full flex-col items-center justify-center bg-structure px-4 py-10">
       <div className="flex w-full max-w-[34rem] flex-col gap-6">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <BrandMark size={30} decorative />
-          <span className="text-base font-semibold tracking-tight">{brand.productName}</span>
+          <span className="text-title font-semibold">{brand.productName}</span>
           <span className="text-ink-subtle">Approval</span>
         </div>
-        <div className="flex min-w-0 flex-col gap-4 rounded-panel border border-line bg-canvas p-6 sm:p-7">
+        <div className="flex min-w-0 flex-col gap-4 rounded-panel border border-line bg-canvas p-6 sm:p-8">
           {gone ? (
             <>
               <h1 className="m-0 text-title">Nothing to decide here</h1>

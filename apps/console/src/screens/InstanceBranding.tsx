@@ -153,7 +153,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
 
       <Panel className="flex flex-col gap-4 p-4">
         <SectionLabel>Colors, corners and fonts</SectionLabel>
-        <p className="m-0 max-w-[75ch] text-ink-muted">
+        <p className="m-0 max-w-measure text-ink-muted">
           Set a token to a plain color, length or font list, or leave it empty to keep the console's
           own value. Production is always marked in the attention color, so keep it clearly amber.
         </p>

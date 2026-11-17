@@ -382,7 +382,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           <div
             role="toolbar"
             aria-label="Batch actions"
-            className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-line border-b bg-action-soft px-4 py-1.5 md:px-6"
+            className="sticky top-0 layer-sticky flex flex-wrap items-center gap-2 border-line border-b bg-action-soft px-4 py-1.5 md:px-6"
           >
             <span className="text-meta font-medium">{checked?.size} selected</span>
             {batch(new Set(checked))}
@@ -399,7 +399,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           className="w-full table-fixed border-collapse text-left"
           aria-busy={refreshing || undefined}
         >
-          <thead className={`sticky ${anyChecked && batch ? "top-9" : "top-0"} z-10 bg-canvas`}>
+          <thead
+            className={`sticky ${anyChecked && batch ? "top-9" : "top-0"} layer-sticky bg-canvas`}
+          >
             <tr className="border-line border-b text-meta text-ink-subtle">
               {cells.map((cell, index) => {
                 const edges = edge(index, cells.length);
@@ -639,7 +641,7 @@ export function DensityMenu({
       label={<span className="text-meta">Density</span>}
       ariaLabel="Row density"
       align="end"
-      triggerClassName="inline-flex h-8 items-center rounded-control border border-line-control px-2.5 text-ink-muted hover:bg-sunken"
+      triggerClassName="inline-flex h-8 items-center rounded-control border border-line-control px-3 text-ink-muted hover:bg-sunken"
       items={choices.map((choice) => ({
         label: choice[0]?.toUpperCase() + choice.slice(1),
         current: choice === density,

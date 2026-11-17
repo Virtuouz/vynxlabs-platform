@@ -41,7 +41,7 @@ export function KitSheet() {
   const [chip, setChip] = useState("all");
   const [stage, setStage] = useState("review");
   return (
-    <div className="flex flex-col gap-9">
+    <div className="flex flex-col gap-8">
       <PageHeader
         eyebrow="Instance"
         title="Component kit"
@@ -66,13 +66,43 @@ export function KitSheet() {
       <section className="flex flex-col gap-3">
         <SectionLabel>Type roles</SectionLabel>
         <Panel className="flex flex-col gap-3 p-4">
-          <p className="m-0 text-display">Display — a screen's title</p>
-          <p className="m-0 text-title">Title — a section or an inspector</p>
-          <p className="m-0 text-body">Body — what people read, at 14px.</p>
-          <p className="m-0 text-label text-ink-subtle uppercase">Label — a group's heading</p>
-          <p className="m-0 text-meta text-ink-muted">Meta — when, who, and how long</p>
-          <p className="m-0 font-mono text-telemetry">telemetry · run_8812 · 2.41s · v14</p>
+          <p className="m-0 text-display-lg">Display large: an overview's title, 26 px</p>
+          <p className="m-0 text-display">Display: a screen's title, 20 px</p>
+          <p className="m-0 text-title">Title: a section, panel or dialog, 16 px</p>
+          <p className="m-0 text-emphasis">Emphasis: a row's main line, 15 px</p>
+          <p className="m-0 text-body">Body: what people read, 14 px</p>
+          <p className="m-0 text-body-sm text-ink-muted">
+            Body small: labels, hints, errors, 13 px
+          </p>
+          <p className="m-0 text-meta text-ink-muted">Meta: when, who, how long, 12 px</p>
+          <p className="m-0 text-label text-ink-subtle uppercase">
+            Label: a group's heading, 11 px
+          </p>
+          <p className="m-0 font-mono text-code">code · orders/sync · run_8812 · 2.41 s</p>
+          <p className="m-0 font-mono text-code-sm">
+            code small · 10:42:07 started step place_order
+          </p>
         </Panel>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Corners and elevation</SectionLabel>
+        <div className="flex flex-wrap gap-4">
+          {[
+            ["rounded-inner", "Inner: tags, chips, cells"],
+            ["rounded-control", "Control: buttons, inputs"],
+            ["rounded-panel", "Panel: tables, panels"],
+            ["rounded-overlay shadow-modal", "Overlay: dialogs, sheets"],
+            ["rounded-panel shadow-overlay", "Raised: menus, toasts"],
+          ].map(([classes, label]) => (
+            <div
+              key={label}
+              className={`flex h-20 w-44 items-end border border-line bg-raised p-3 text-meta ${classes}`}
+            >
+              {label}
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -192,7 +222,7 @@ export function KitSheet() {
         <SectionLabel>Status with a next step</SectionLabel>
         <Panel>
           <NextStep
-            icon={<GitCompareArrows aria-hidden="true" size={15} />}
+            icon={<GitCompareArrows aria-hidden="true" size={16} />}
             title="3 drafts not deployed"
             detail="Saved here, and not yet running."
             action={<Button size="small">Review</Button>}

@@ -599,7 +599,7 @@ export function CommandPalette({
       <Dialog open={open} onClose={onClose} title="Go to" size="palette">
         <div className="flex flex-col gap-2">
           <label className="flex h-10 items-center gap-2 rounded-control border border-line-strong bg-structure px-3">
-            <Search aria-hidden="true" size={15} className="text-ink-subtle" />
+            <Search aria-hidden="true" size={16} className="text-ink-subtle" />
             <input
               autoFocus
               role="combobox"
@@ -651,7 +651,7 @@ export function CommandPalette({
                   item.section !== lastSection ? (
                     <div
                       role="presentation"
-                      className="px-3 pt-2 pb-1 text-[12px] font-medium tracking-wide text-ink-subtle uppercase"
+                      className="px-3 pt-2 pb-1 text-meta font-medium tracking-wide text-ink-subtle uppercase"
                     >
                       {item.section}
                     </div>
@@ -671,17 +671,12 @@ export function CommandPalette({
                         event.preventDefault();
                         item.open();
                       }}
-                      className={`flex cursor-default items-center gap-2.5 rounded-control px-3 py-2 ${
+                      className={`flex cursor-default items-center gap-2 rounded-control px-3 py-2 ${
                         index === active ? "bg-selected" : ""
                       }`}
                     >
                       {Icon ? (
-                        <Icon
-                          aria-hidden="true"
-                          size={15}
-                          strokeWidth={1.75}
-                          className="shrink-0 text-ink-muted"
-                        />
+                        <Icon aria-hidden="true" size={16} className="shrink-0 text-ink-muted" />
                       ) : null}
                       {/* The name keeps its room; what it is, and where, gives way. */}
                       <span className="max-w-[75%] shrink-0 truncate">{item.label}</span>
@@ -695,7 +690,7 @@ export function CommandPalette({
                           {item.secondary ? (
                             <span className="hidden md:inline">⌘↵ {item.secondary.label}</span>
                           ) : null}
-                          <CornerDownLeft aria-hidden="true" size={13} />
+                          <CornerDownLeft aria-hidden="true" size={14} />
                         </span>
                       ) : null}
                     </div>
@@ -766,8 +761,8 @@ export function ShortcutSheet() {
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         {SHORTCUTS.map(([keys, does]) => (
           <div key={keys} className="contents">
-            <dt className="font-mono text-telemetry whitespace-nowrap">
-              <Keyboard aria-hidden="true" size={13} className="mr-1.5 inline text-ink-subtle" />
+            <dt className="font-mono text-code whitespace-nowrap">
+              <Keyboard aria-hidden="true" size={14} className="mr-1.5 inline text-ink-subtle" />
               {keys}
             </dt>
             <dd className="m-0 text-ink-muted">{does}</dd>

@@ -32,7 +32,7 @@ import { TriggersOf } from "./ObjectPages.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
 /** How a run began, as the end of a sentence. */
@@ -116,7 +116,7 @@ export function Flows({
             </Notice>
           ) : null}
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-2.5 text-ink-subtle">
+            <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-3 text-ink-subtle">
               <span className="sr-only">Find a flow</span>
               <input
                 value={search}
@@ -158,7 +158,7 @@ export function Flows({
             <span className="flex min-w-0 flex-col">
               <Link
                 to={`${link}/flows/${row.path}`}
-                className="truncate font-mono text-telemetry text-ink no-underline"
+                className="truncate font-mono text-code text-ink no-underline"
               >
                 {row.path}
               </Link>
@@ -179,10 +179,7 @@ export function Flows({
                     <span key={`${one.type}-${one.detail}`} className="truncate">
                       {TRIGGER[one.type] ?? one.type}
                       {one.detail ? (
-                        <span className="font-mono text-telemetry text-ink-subtle">
-                          {" "}
-                          · {one.detail}
-                        </span>
+                        <span className="font-mono text-code text-ink-subtle"> · {one.detail}</span>
                       ) : null}
                     </span>
                   ))}
@@ -438,7 +435,7 @@ export function FlowView({
           }
         }}
       />
-      <p className="m-0 text-[13px] text-ink-muted" aria-live="polite">
+      <p className="m-0 text-body-sm text-ink-muted" aria-live="polite">
         {saved === "saving"
           ? "Saving the arrangement…"
           : saved === "saved"
@@ -448,7 +445,7 @@ export function FlowView({
       </p>
       {data.triggers.length > 0 ? (
         <section>
-          <h2 className="mt-2 mb-2 text-base font-semibold">How it starts</h2>
+          <h2 className="mt-2 mb-2 text-title font-semibold">How it starts</h2>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {data.triggers.map((trigger) => (
               <li key={trigger.node}>
@@ -457,7 +454,7 @@ export function FlowView({
                   <span>runs next at {when(trigger.nextFireAt)}</span>
                 ) : trigger.type === "webhook" ? (
                   trigger.url ? (
-                    <span className="font-mono text-[13px] break-all select-all">
+                    <span className="font-mono text-code break-all select-all">
                       POST {trigger.url}
                     </span>
                   ) : (
@@ -474,7 +471,7 @@ export function FlowView({
         </section>
       ) : null}
       <section>
-        <h2 className="mt-2 mb-2 text-base font-semibold">Recent runs</h2>
+        <h2 className="mt-2 mb-2 text-title font-semibold">Recent runs</h2>
         <DataTable
           variant="static"
           framed
@@ -497,13 +494,13 @@ export function FlowView({
         />
       </section>
       <section aria-labelledby="flow-triggers">
-        <h2 id="flow-triggers" className="mt-2 mb-2 text-base font-semibold">
+        <h2 id="flow-triggers" className="mt-2 mb-2 text-title font-semibold">
           Schedules and triggers that start it
         </h2>
         <TriggersOf root={root} link={link} kind="flow" path={path} />
       </section>
       <section aria-labelledby="flow-used-by">
-        <h2 id="flow-used-by" className="mt-2 mb-2 text-base font-semibold">
+        <h2 id="flow-used-by" className="mt-2 mb-2 text-title font-semibold">
           Used by
         </h2>
         <ReferenceList root={root} link={link} kind="flow" name={path} />
@@ -789,7 +786,7 @@ export function FlowRunView({
         >
           <strong>Waiting for approval:</strong> {step.detail.title}
           {step.detail.detail ? (
-            <span className="ml-2 font-mono text-[13px]">{JSON.stringify(step.detail.detail)}</span>
+            <span className="ml-2 font-mono text-code">{JSON.stringify(step.detail.detail)}</span>
           ) : null}
         </Notice>
       ))}
@@ -851,7 +848,7 @@ export function FlowRunView({
           className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <h2 className="m-0 flex items-center gap-2 text-base font-semibold">
+            <h2 className="m-0 flex items-center gap-2 text-title font-semibold">
               {code(chosen.node)} <StatePill state={chosen.state} />
               {chosen.outputName ? (
                 <span className="font-normal text-ink-muted">

@@ -87,7 +87,7 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
       {drawn || failure ? null : (
         <div
           aria-hidden="true"
-          className="absolute inset-0 flex animate-pulse items-center justify-center rounded-control bg-sunken text-[13px] text-ink-muted"
+          className="absolute inset-0 flex animate-pulse items-center justify-center rounded-control bg-sunken text-body-sm text-ink-muted"
         >
           Loading chart
         </div>

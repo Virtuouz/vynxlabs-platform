@@ -19,9 +19,9 @@ export function Facts({ facts, columns = 4 }: { facts: readonly Fact[]; columns?
     >
       {shown.map((fact) => (
         <div key={fact.label} className="flex min-w-0 items-baseline gap-3">
-          <dt className="w-16 shrink-0 text-[12.5px] text-ink-muted">{fact.label}</dt>
+          <dt className="w-16 shrink-0 text-meta text-ink-muted">{fact.label}</dt>
           <dd
-            className={`m-0 min-w-0 truncate text-[13px] ${fact.code ? "font-mono text-[12.5px]" : ""}`}
+            className={`m-0 min-w-0 truncate text-code ${fact.code ? "font-mono text-code-sm" : ""}`}
           >
             {fact.value}
           </dd>

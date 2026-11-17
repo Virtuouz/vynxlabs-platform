@@ -253,7 +253,7 @@ function ReviewStep({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-2">
                           {to ? (
-                            <Link to={to} className="truncate font-mono text-telemetry">
+                            <Link to={to} className="truncate font-mono text-code">
                               {row.path}
                             </Link>
                           ) : (
@@ -266,7 +266,7 @@ function ReviewStep({
                             saved {fromNow(row.updatedAt)}
                           </span>
                           <Button size="small" variant="quiet" onClick={() => setHistory(row.path)}>
-                            <History aria-hidden="true" size={13} /> Earlier
+                            <History aria-hidden="true" size={14} /> Earlier
                           </Button>
                           <Button
                             size="small"
@@ -549,7 +549,7 @@ function PromoteStep({
         <ArrowRight
           aria-hidden="true"
           className="mx-auto rotate-90 text-ink-subtle md:rotate-0"
-          size={18}
+          size={20}
         />
         <Panel className="flex flex-col gap-1.5 border-attention/40 p-4">
           <span className="text-label text-ink-subtle uppercase">To</span>
@@ -652,7 +652,7 @@ function PromoteStep({
               }
             }}
           >
-            <Rocket aria-hidden="true" size={15} /> Promote to{" "}
+            <Rocket aria-hidden="true" size={16} /> Promote to{" "}
             {target.type === "production" ? "production" : target.name}
           </Button>
         )}

@@ -499,7 +499,7 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
           }
           meta={
             script.description ? (
-              <p className="m-0 max-w-[75ch] text-ink-muted">{script.description}</p>
+              <p className="m-0 max-w-measure text-ink-muted">{script.description}</p>
             ) : null
           }
           tabs={[

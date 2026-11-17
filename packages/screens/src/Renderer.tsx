@@ -259,7 +259,7 @@ function WidgetView({
   if (widget.type === "action") {
     if (!widget.action) return null;
     if (!actions.canStart(widget.action)) {
-      return <p className="m-0 text-[13px] text-ink-muted">You may not do this here.</p>;
+      return <p className="m-0 text-body-sm text-ink-muted">You may not do this here.</p>;
     }
     return <ActionButton action={widget.action} scope={scope} actions={actions} />;
   }
@@ -422,12 +422,12 @@ function WidgetView({
       <div className="flex h-full flex-col justify-center gap-1">
         {/* The widget's heading names it. Without one, the total's own name does. */}
         {widget.title ? null : (
-          <span className="text-[13px] text-ink-muted">{heading(first?.as ?? "total")}</span>
+          <span className="text-body-sm text-ink-muted">{heading(first?.as ?? "total")}</span>
         )}
         <span className="font-mono text-3xl font-semibold tabular-nums">
           {data.loading && data.rows.length === 0 ? "…" : shown}
         </span>
-        {data.error ? <span className="text-[13px] text-danger">{data.error}</span> : null}
+        {data.error ? <span className="text-body-sm text-danger">{data.error}</span> : null}
       </div>
     );
   }
@@ -626,7 +626,7 @@ function ValueFilter({
 
   if (choices === null) {
     return (
-      <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+      <label className="flex flex-col gap-1 text-body-sm text-ink-muted">
         {label}
         <input
           className={className}
@@ -638,7 +638,7 @@ function ValueFilter({
     );
   }
   return (
-    <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+    <label className="flex flex-col gap-1 text-body-sm text-ink-muted">
       {label}
       <select
         className={`${className} min-w-32`}
@@ -692,7 +692,7 @@ function PageFilters({
         const set = values[one.id] ?? {};
         return one.type === "date" ? (
           <fieldset key={one.id} className="m-0 flex items-end gap-1.5 border-0 p-0">
-            <legend className="mb-1 p-0 text-[13px] text-ink-muted">{one.label}</legend>
+            <legend className="mb-1 p-0 text-body-sm text-ink-muted">{one.label}</legend>
             <input
               type="date"
               aria-label={`${one.label} from`}
@@ -868,7 +868,7 @@ function PageBody({
               }
               className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
                 active ? "border-action ring-2 ring-action/30" : "border-line"
-              } ${held?.id === widget.id ? "z-10 opacity-90 shadow-lg" : ""}`}
+              } ${held?.id === widget.id ? "z-10 opacity-90 shadow-overlay" : ""}`}
             >
               {widget.title || editing ? (
                 <header
@@ -883,7 +883,7 @@ function PageBody({
                       }
                     : {})}
                 >
-                  <h2 className="m-0 truncate text-[14px] font-semibold">
+                  <h2 className="m-0 truncate text-body font-semibold">
                     {widget.title || heading(widget.id)}
                   </h2>
                   {editing ? (

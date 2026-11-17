@@ -13,7 +13,8 @@ export async function snap(page: Page, name: string) {
   if (size) await page.mouse.move(size.width - 1, size.height - 1);
   await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(300);
-  await expect(page).toHaveScreenshot(`${name}.png`, {
+  // Soft: one run reports every screen that differs, not just the first.
+  await expect.soft(page).toHaveScreenshot(`${name}.png`, {
     mask: [
       page.locator("time"),
       page.locator("[data-volatile]"),

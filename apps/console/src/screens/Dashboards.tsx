@@ -148,7 +148,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
       <section className="flex flex-col gap-4">
         {back}
         <header>
-          <h1 className="m-0 text-xl font-semibold tracking-tight">{loaded.title}</h1>
+          <h1 className="m-0 text-display font-semibold">{loaded.title}</h1>
           <p className="mt-1 mb-0 text-ink-muted">
             Shared by {loaded.owner}. You see the rows you may read, which may not be the rows they
             see.
@@ -201,7 +201,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           />
         </div>
         <span className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] text-ink-muted" role="status">
+          <span className="text-body-sm text-ink-muted" role="status">
             {dirty ? "Changes not saved." : `Saved ${when(loaded.updatedAt)}.`}
           </span>
           <Button

@@ -7,7 +7,7 @@ import { Mono, StatePill } from "../kit/status.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { navigate } from "../router.tsx";
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 export interface WorkspaceSummary {
   id: string;
@@ -472,7 +472,7 @@ export function Promotion({
   return (
     <section className="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4">
       <h2 className="m-0 text-title">Promotion</h2>
-      <p className="m-0 max-w-[70ch] text-ink-muted">
+      <p className="m-0 max-w-measure text-ink-muted">
         Promoting activates the bundle that is running here in the workspace this one is linked to.
         It is the same bundle: nothing is rebuilt.
       </p>
@@ -699,7 +699,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
             {state === "working" ? "Exporting…" : "Export tenant"}
           </Button>
         </div>
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           The passphrase protects the secrets in the file. The rest of it, rows and files included,
           can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
           the command line instead: {code("platform tenant export")}.
@@ -933,7 +933,7 @@ export function TenantImport() {
         ]}
       />
       {report ? (
-        <div className="flex max-w-[70ch] flex-col gap-3">
+        <div className="flex max-w-measure flex-col gap-3">
           <Notice tone="attention">
             <strong>{report.tenant.name}</strong> was imported:{" "}
             {Object.values(report.counts)
@@ -1157,7 +1157,7 @@ export function TenantImport() {
             });
           }}
         >
-          <label className="flex flex-col gap-1 text-[13px] font-medium">
+          <label className="flex flex-col gap-1 text-body-sm font-medium">
             Export file
             <input
               type="file"
@@ -1183,7 +1183,7 @@ export function TenantImport() {
               {working ? "Uploading…" : "Upload and check"}
             </Button>
           </div>
-          <p className="m-0 text-[13px] text-ink-muted">
+          <p className="m-0 text-body-sm text-ink-muted">
             The export must come from an instance at the same version as this one. For a large file,
             use the command line: {code("platform tenant import <file>")}.
           </p>

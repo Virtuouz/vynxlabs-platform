@@ -118,7 +118,7 @@ function cell(value: unknown): ReactNode {
   }
   const text = JSON.stringify(value);
   return (
-    <code className="font-mono text-[12px] text-ink-muted" title={text}>
+    <code className="font-mono text-code-sm text-ink-muted" title={text}>
       {text.length > 80 ? `${text.slice(0, 79)}…` : text}
     </code>
   );
@@ -144,7 +144,7 @@ function ResultTable({ rows, schema, label }: { rows: Plain[]; schema?: unknown;
         tabIndex={0}
         className="max-h-[24rem] overflow-auto rounded-control border border-line bg-surface"
       >
-        <table className="w-full border-collapse text-left text-[13px]">
+        <table className="w-full border-collapse text-left text-body-sm">
           <thead className="sticky top-0 bg-surface">
             <tr>
               {columns.map((column) => (
@@ -172,7 +172,7 @@ function ResultTable({ rows, schema, label }: { rows: Plain[]; schema?: unknown;
           </tbody>
         </table>
       </section>
-      <p className="m-0 text-[12px] text-ink-muted">
+      <p className="m-0 text-meta text-ink-muted">
         {rows.length} row{rows.length === 1 ? "" : "s"}
         {hidden.length > 0 ? `; ${hidden.join(" and ")} in the JSON` : ""}
       </p>
@@ -194,7 +194,7 @@ function MediaPreview({ media }: { media: Media }) {
         <img
           src={media.url}
           alt={media.name ?? ""}
-          className="max-h-[20rem] max-w-full rounded-[4px]"
+          className="max-h-[20rem] max-w-full rounded-inner"
         />
       ) : null}
       <div className="flex max-w-full flex-wrap items-center gap-2">
@@ -211,7 +211,7 @@ function MediaPreview({ media }: { media: Media }) {
         {media.image && !show ? (
           <button
             type="button"
-            className="rounded-[4px] border border-line bg-surface px-1.5 py-0.5 text-[12px] text-ink-muted hover:text-ink"
+            className="rounded-inner border border-line bg-surface px-1.5 py-0.5 text-meta text-ink-muted hover:text-ink"
             onClick={() => setShow(true)}
           >
             Show image

@@ -3,7 +3,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import { useId, useState } from "react";
 
 const control =
-  "h-9 w-full rounded-control border border-line-control bg-surface px-2.5 text-ink placeholder:text-ink-muted/70 disabled:opacity-60";
+  "h-control w-full rounded-control border border-line-control bg-surface px-3 text-ink placeholder:text-ink-muted/70 disabled:opacity-60";
 
 interface Common {
   label: string;
@@ -15,14 +15,14 @@ interface Common {
 function Frame({ label, hint, error, children }: Common & { children: ReactNode }) {
   return (
     <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
-      <Field.Label className="text-[13px] font-medium text-ink">{label}</Field.Label>
+      <Field.Label className="text-body-sm font-medium text-ink">{label}</Field.Label>
       {children}
       {error ? (
-        <p role="alert" className="m-0 text-[13px] text-danger">
+        <p role="alert" className="m-0 text-body-sm text-danger">
           {error}
         </p>
       ) : hint ? (
-        <Field.Description className="m-0 text-[13px] text-ink-muted">{hint}</Field.Description>
+        <Field.Description className="m-0 text-body-sm text-ink-muted">{hint}</Field.Description>
       ) : null}
     </Field.Root>
   );
@@ -267,7 +267,7 @@ export function CheckboxField({ label, hint, error, onChange, ...input }: Checkb
   const note = error || hint ? `${id}-note` : undefined;
   return (
     <div className="flex flex-col gap-1">
-      <label className="flex items-center gap-2 text-[13px] font-medium text-ink">
+      <label className="flex items-center gap-2 text-body-sm font-medium text-ink">
         <input
           {...input}
           type="checkbox"
@@ -279,11 +279,11 @@ export function CheckboxField({ label, hint, error, onChange, ...input }: Checkb
         {label}
       </label>
       {error ? (
-        <p id={note} role="alert" className="m-0 text-[13px] text-danger">
+        <p id={note} role="alert" className="m-0 text-body-sm text-danger">
           {error}
         </p>
       ) : hint ? (
-        <p id={note} className="m-0 text-[13px] text-ink-muted">
+        <p id={note} className="m-0 text-body-sm text-ink-muted">
           {hint}
         </p>
       ) : null}

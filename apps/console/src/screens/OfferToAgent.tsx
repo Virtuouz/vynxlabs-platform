@@ -103,8 +103,8 @@ function OfferForm({
         </Notice>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="min-w-0">
-            <span className="block text-[13px] text-ink-muted">Address for the agent</span>
-            <code className="font-mono text-[13px] break-all">{done.address}</code>
+            <span className="block text-body-sm text-ink-muted">Address for the agent</span>
+            <code className="font-mono text-code break-all">{done.address}</code>
           </span>
           <CopyButton value={done.address} label="Copy the address" />
         </div>
@@ -189,7 +189,7 @@ function OfferForm({
         onChange={setChosen}
       />
       {already(account) ? (
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           It is offered to this account already. Continue to see where the agent connects.
         </p>
       ) : null}

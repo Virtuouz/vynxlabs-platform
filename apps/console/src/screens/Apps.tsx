@@ -43,9 +43,7 @@ function RowsFor({ root, table, group }: { root: string; table: string; group: s
   );
   if (counted.error) return <span className="text-ink-subtle">—</span>;
   if (!counted.data) return <span className="text-ink-subtle">…</span>;
-  return (
-    <span className="font-mono text-telemetry">{counted.data.items[0]?.values.count ?? 0}</span>
-  );
+  return <span className="font-mono text-code">{counted.data.items[0]?.values.count ?? 0}</span>;
 }
 
 const external = (url: string, text: string) => (
@@ -495,7 +493,7 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 text-meta"
                   >
-                    Open the live app <ArrowUpRight aria-hidden="true" size={13} />
+                    Open the live app <ArrowUpRight aria-hidden="true" size={14} />
                   </a>
                 </>
               }

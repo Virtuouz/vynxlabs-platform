@@ -33,7 +33,7 @@ import {
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 /** The badge tone of a run's state, for the run page's mark. */
@@ -167,7 +167,7 @@ export function Scripts({
             <span className="flex min-w-0 flex-col">
               <Link
                 to={`${link}/scripts/edit/${row.path}`}
-                className="truncate font-mono text-telemetry text-ink no-underline"
+                className="truncate font-mono text-code text-ink no-underline"
               >
                 {row.path}
               </Link>
@@ -979,7 +979,7 @@ export function QueuePanel({ base }: { base: string }) {
   const tasks = queue.data?.tasks?.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
   return (
     <section aria-label="Queue" className="flex flex-col gap-3">
-      <h2 className="m-0 text-base font-semibold">Queue</h2>
+      <h2 className="m-0 text-title font-semibold">Queue</h2>
       {queue.error ? (
         <Notice tone="danger">{queue.error.message}</Notice>
       ) : !queue.data ? (
@@ -1016,9 +1016,7 @@ export function QueuePanel({ base }: { base: string }) {
               },
               {
                 header: "Pool",
-                cell: (row) => (
-                  <span className="font-mono text-telemetry">{row.pool ?? "default"}</span>
-                ),
+                cell: (row) => <span className="font-mono text-code">{row.pool ?? "default"}</span>,
               },
               { header: "Waiting", align: "end", cell: (row) => row.due },
               {
@@ -1040,9 +1038,9 @@ export function QueuePanel({ base }: { base: string }) {
       {(workers.data?.items.length ?? 0) > 0 ? (
         <ul aria-label="Workers online" className="m-0 flex list-none flex-col gap-1.5 p-0">
           {workers.data?.items.map((worker) => (
-            <li key={worker.id} className="flex flex-wrap items-center gap-2 text-[14px]">
+            <li key={worker.id} className="flex flex-wrap items-center gap-2 text-body">
               <span className="font-medium">{worker.credentialName}</span>
-              <span className="font-mono text-telemetry text-ink-muted">
+              <span className="font-mono text-code text-ink-muted">
                 {worker.version ?? "version unknown"}
               </span>
               {worker.outdated ? (
@@ -1230,7 +1228,7 @@ export function Workers({ base }: { base: string }) {
               <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
                 <p className="m-0">Start a worker with it:</p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-[13px] break-all select-all">
+                  <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-code break-all select-all">
                     {command}
                   </code>
                   <CopyButton value={command} label="Copy the command" />
@@ -1283,8 +1281,8 @@ export function ConnectionGroups({ root }: { root: string }) {
   return (
     <section className="flex flex-col gap-4">
       <header>
-        <h2 className="m-0 text-lg font-semibold">Connection groups</h2>
-        <p className="mt-1 mb-0 max-w-[70ch] text-ink-muted">
+        <h2 className="m-0 text-title font-semibold">Connection groups</h2>
+        <p className="mt-1 mb-0 max-w-measure text-ink-muted">
           A group holds many connections of one kind, and a script picks one by its key when it
           runs. Add a member for each customer or account. It is used from the next run, with no
           deploy.
@@ -1300,7 +1298,7 @@ export function ConnectionGroups({ root }: { root: string }) {
         <div key={group.path} className="rounded-panel border border-line bg-surface">
           <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">
             <div className="min-w-0">
-              <code className="font-mono text-[13px] font-semibold">{group.path}</code>
+              <code className="font-mono text-code font-semibold">{group.path}</code>
               {group.description ? (
                 <span className="ml-3 text-ink-muted">{group.description}</span>
               ) : null}

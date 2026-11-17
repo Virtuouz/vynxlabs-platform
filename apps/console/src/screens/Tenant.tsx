@@ -92,7 +92,7 @@ interface Grant {
   active: boolean;
 }
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 /** Production is always marked. It is the one thing nobody should have to look for. */
 export const TypeBadge = ({ type }: { type: "production" | "dev" }) =>
@@ -653,7 +653,7 @@ function WorkspaceDetail({
                 isEditedKind(row.kind) ? (
                   <Link
                     to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                    className="font-mono text-[13px] text-action"
+                    className="font-mono text-code text-action"
                   >
                     {row.path}
                   </Link>
@@ -874,7 +874,7 @@ function ServiceAccountList({ base }: { base: string }) {
                 <>
                   <Link
                     to={`/t/${tenantId}/service-accounts/${chosen.id}`}
-                    className="font-medium text-[13px] text-action hover:underline"
+                    className="font-medium text-body-sm text-action hover:underline"
                   >
                     Keys and agent access
                   </Link>

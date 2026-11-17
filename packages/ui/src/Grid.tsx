@@ -135,7 +135,7 @@ function EditableCell<Row extends Record<string, unknown>>({
           onChange={(event) => save(event.currentTarget.checked)}
         />
         {error ? (
-          <span role="alert" className="text-xs text-danger">
+          <span role="alert" className="text-meta text-danger">
             {error}
           </span>
         ) : null}
@@ -148,7 +148,7 @@ function EditableCell<Row extends Record<string, unknown>>({
       <button
         type="button"
         title="Change this value"
-        className={`-mx-1.5 block min-h-6 w-[calc(100%+0.75rem)] cursor-text rounded-[4px] px-1.5 text-inherit hover:bg-sunken ${
+        className={`-mx-1.5 block min-h-6 w-[calc(100%+0.75rem)] cursor-text rounded-inner px-1.5 text-inherit hover:bg-sunken ${
           NUMERIC.has(column.type) ? "text-right" : "text-left"
         }`}
         onClick={() => setText(editText(column.type, value))}
@@ -175,7 +175,7 @@ function EditableCell<Row extends Record<string, unknown>>({
         aria-invalid={error !== undefined}
         value={text}
         disabled={busy}
-        className="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-24 rounded-[4px] border border-action bg-surface px-1.5 text-ink"
+        className="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-24 rounded-inner border border-action bg-surface px-1.5 text-ink"
         onChange={(event) => setText(event.currentTarget.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -187,7 +187,7 @@ function EditableCell<Row extends Record<string, unknown>>({
         }}
       />
       {error ? (
-        <span role="alert" className="text-xs text-danger">
+        <span role="alert" className="text-meta text-danger">
           {error}
         </span>
       ) : null}
@@ -202,7 +202,7 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
   const choosing = props.onSelect !== undefined;
   const group = useId();
   const width = columns.length + (props.rowActions ? 1 : 0) + (choosing ? 1 : 0);
-  const head = "border-b border-line bg-sunken/50 px-3 text-[13px] font-medium text-ink-muted";
+  const head = "border-b border-line bg-sunken/50 px-3 text-body-sm font-medium text-ink-muted";
 
   return (
     <div className="overflow-x-auto rounded-panel border border-line bg-surface">
@@ -249,7 +249,7 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
                       aria-label={`Filter by ${column.label ?? column.name}`}
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
-                      className="h-7 w-full min-w-20 rounded-[4px] border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
+                      className="h-7 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") event.currentTarget.blur();

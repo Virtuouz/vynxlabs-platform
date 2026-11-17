@@ -74,19 +74,19 @@ export function AgentAccess({ base, account }: { base: string; account: string }
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="min-w-0">
-              <span className="block text-[13px] text-ink-muted">Address for the agent</span>
-              <code className="font-mono text-[13px] break-all">{offered.data.address}</code>
+              <span className="block text-body-sm text-ink-muted">Address for the agent</span>
+              <code className="font-mono text-code break-all">{offered.data.address}</code>
             </span>
             <CopyButton value={offered.data.address} label="Copy the address" />
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-ink-muted">
+              <span className="text-body-sm text-ink-muted">
                 For an agent's settings. Put a key of this account where it says.
               </span>
               <CopyButton value={settings} label="Copy the settings" />
             </div>
-            <pre className="m-0 overflow-x-auto rounded-control border border-line bg-sunken p-3 font-mono text-[12.5px]">
+            <pre className="m-0 overflow-x-auto rounded-control border border-line bg-sunken p-3 font-mono text-code-sm">
               {settings}
             </pre>
           </div>
@@ -111,7 +111,7 @@ export function AgentAccess({ base, account }: { base: string; account: string }
             columns={[
               {
                 header: "Tool",
-                cell: (row) => <code className="font-mono text-[13px]">{row.name}</code>,
+                cell: (row) => <code className="font-mono text-code">{row.name}</code>,
               },
               { header: "What it does", cell: (row) => row.description },
               {

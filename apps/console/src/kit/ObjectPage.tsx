@@ -42,7 +42,7 @@ export function ObjectPage({
         </nav>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1.5">
-            <h1 className="m-0 font-mono text-lg break-all">{title}</h1>
+            <h1 className="m-0 font-mono text-title break-all">{title}</h1>
             {state ? <div className="flex flex-wrap items-center gap-2">{state}</div> : null}
           </div>
           {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}

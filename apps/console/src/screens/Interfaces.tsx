@@ -392,7 +392,7 @@ function FormatSettings({
           }}
         />
       ) : null}
-      {example ? <p className="m-0 text-[12.5px] text-ink-muted">Shown as {example}</p> : null}
+      {example ? <p className="m-0 text-meta text-ink-muted">Shown as {example}</p> : null}
     </div>
   );
 }
@@ -441,7 +441,7 @@ function WidgetSettings({
       if (next.length === 0) delete draft.filter;
       else draft.filter = next.length === 1 ? next[0] : { and: next };
     });
-  const section = "mt-4 mb-0 text-[13px] font-semibold tracking-wide text-ink-muted uppercase";
+  const section = "mt-4 mb-0 text-body-sm font-semibold tracking-wide text-ink-muted uppercase";
 
   return (
     <div className="flex flex-col gap-3">
@@ -761,7 +761,7 @@ function WidgetSettings({
         <>
           <h3 className={section}>{widget.type === "form" ? "Asks for" : "Shows"}</h3>
           {fields.length === 0 && widget.type !== "form" ? (
-            <p className="m-0 text-[13px] text-ink-muted">
+            <p className="m-0 text-body-sm text-ink-muted">
               {summary ? "Every group and total." : "The table's first columns. Add one to choose."}
             </p>
           ) : null}
@@ -774,7 +774,7 @@ function WidgetSettings({
                 className="flex flex-col gap-2 rounded-control border border-line p-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <strong className="truncate text-[13px]">{heading(field.column)}</strong>
+                  <strong className="truncate text-body-sm">{heading(field.column)}</strong>
                   <span className="flex gap-1">
                     <Button
                       size="small"
@@ -925,7 +925,7 @@ function WidgetSettings({
             }}
           />
           {widget.type !== "form" ? (
-            <p className="m-0 text-[12.5px] text-ink-muted">
+            <p className="m-0 text-meta text-ink-muted">
               Leaving a value out only keeps it off the screen. Whoever may read the row can still
               be sent it. What keeps rows from people is the table's row rules.
             </p>
@@ -1027,7 +1027,7 @@ function WidgetSettings({
             );
           })}
           {summary && conditions.length === 0 ? (
-            <p className="m-0 text-[12.5px] text-ink-muted">
+            <p className="m-0 text-meta text-ink-muted">
               A condition narrows what is counted or added up here, besides the page's filters: for
               example, only the invoices whose status is unpaid.
             </p>
@@ -1147,7 +1147,7 @@ function WidgetSettings({
       ) : null}
 
       <h3 className={section}>Place and size</h3>
-      <p className="m-0 text-[12.5px] text-ink-muted">
+      <p className="m-0 text-meta text-ink-muted">
         The page is twelve columns wide. A widget can also be dragged by its heading and stretched
         by its bottom right corner.
       </p>
@@ -1327,7 +1327,7 @@ export function PageEditor({
                   role="radio"
                   aria-checked={viewport === one}
                   onClick={() => setViewport(one)}
-                  className={`flex items-center gap-1.5 rounded-[4px] px-2.5 py-1 text-meta ${
+                  className={`flex items-center gap-1.5 rounded-inner px-3 py-1 text-meta ${
                     viewport === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
                   }`}
                 >
@@ -1398,7 +1398,7 @@ export function PageEditor({
         <PageFilterSettings page={page} known={known} onChange={onChange} />
         {page.widgets.length < 12 ? (
           <fieldset className="mt-4 rounded-panel border border-line border-dashed p-3">
-            <legend className="px-1 text-[13px] text-ink-muted">Add a widget</legend>
+            <legend className="px-1 text-body-sm text-ink-muted">Add a widget</legend>
             <div className="flex flex-wrap gap-2">
               {TYPES.map((one) => (
                 <Button key={one.type} title={one.about} onClick={() => addWidget(one.type)}>
@@ -1501,12 +1501,12 @@ function PageFilterSettings({
   const filters = page.filters ?? [];
   return (
     <fieldset className="mt-4 rounded-panel border border-line p-3">
-      <legend className="px-1 text-[13px] text-ink-muted">
+      <legend className="px-1 text-body-sm text-ink-muted">
         Filters for whoever reads this page
       </legend>
       <div className="flex flex-col gap-2">
         {filters.length === 0 ? (
-          <p className="m-0 text-[13px] text-ink-muted">
+          <p className="m-0 text-body-sm text-ink-muted">
             None. A filter narrows every widget whose table has its column.
           </p>
         ) : null}
@@ -1757,7 +1757,7 @@ export function InterfaceBuilder({
           />
         </div>
         <span className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] text-ink-muted" role="status">
+          <span className="text-body-sm text-ink-muted" role="status">
             {saving === "saved"
               ? hasChanges
                 ? "Saved. Not published yet."
@@ -1995,7 +1995,7 @@ export function Interfaces({
                   ) : (
                     <span className="font-medium">{row.title}</span>
                   )}
-                  <code className="font-mono text-[13px] text-ink-muted">{row.path}</code>
+                  <code className="font-mono text-code text-ink-muted">{row.path}</code>
                 </span>
               ),
             },

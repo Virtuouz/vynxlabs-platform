@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestone 0 (plan) on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–2 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -64,3 +64,22 @@ Findings are recorded under each milestone as it lands.
   - The "promotes to" link, added in phase 13, sat in muted text marked only by colour. It is now underlined.
   - A widget's scrolling body in served apps couldn't be reached by keyboard. It now takes focus, with a ring.
 - **CI.** The pictures were made on this machine's Linux Chromium with its system fonts. If CI's runner draws text differently, its first run will show it, and its `actual` pictures (kept in the uploaded results) become the baseline.
+
+### Milestone 2: token foundation v2
+
+- **Tokens** (`packages/ui/src/tokens.css`): eleven type roles from 07 §7.3, `rounded-inner` and `rounded-overlay`, panels at 8 px, three shadows (overlay, modal, drag) deeper in dark, six layer utilities, three motion durations, a prose measure and a control height. Brand tokens are unchanged apart from the panel radius. The values a brand doesn't set (shadow depth, control height) live on `html`, apart from the `:root` blocks, so Branding's copy of the brand tokens and its test still match.
+- **Density.** A control's height is one variable, `--vx-control-height`: 36 px in tenant apps, and the console sets 32 px for itself in `styles.css`. Buttons, inputs, selects and the combobox read it as `h-control`, so no call site passes a size for the common case.
+- **Migration.** A codemod (token-boundary matches inside string literals, prefix-aware) moved about 450 values across 89 files of the console, the kit and the renderer:
+  - type: 147 arbitrary 13 px values, 39 of 12 and 12.5 px, and the rest;
+  - 28 hard-coded small corners;
+  - 10 shadows and 9 z-index values;
+  - 37 retired spacing steps;
+  - 24 prose widths onto one measure;
+  - 57 icon sizes onto 12, 14, 16 and 20.
+
+  The stroke is set once, by a `LucideProvider` at the console's root. The examples are tenant code and keep plain Tailwind. A few local `z-10` values stay, where they stack siblings inside a canvas or chart.
+- **Found on the way.**
+  - The first codemod run collapsed runs of spaces inside every template literal, which would have flattened the indentation of the script starters. It was reverted and rerun so that it changes only the classes it replaces.
+  - `biome --write` on a file that didn't parse stripped JSX braces (`items={[` became `items=[`). They were restored by hand.
+  - Tailwind's preflight already zeroes margins, so the base reset 07 asks for exists. The 294 `m-0` are redundant but harmless.
+- **Pictures.** 92 of the 96 changed, all as intended: 20 px titles, 32 px controls, 8 px corners, 12 px meta and lighter icons. The served app changed only in line heights and corners. Two compare runs then passed unchanged. `snap` now asserts softly, so one run reports every screen that differs.

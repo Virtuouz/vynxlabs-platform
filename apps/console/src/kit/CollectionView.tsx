@@ -54,7 +54,7 @@ export function CollectionView<Row>({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="m-0 text-display">{title}</h1>
-            {description ? <p className="m-0 max-w-[75ch] text-ink-muted">{description}</p> : null}
+            {description ? <p className="m-0 max-w-measure text-ink-muted">{description}</p> : null}
           </div>
           {actions ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>

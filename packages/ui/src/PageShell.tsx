@@ -51,9 +51,9 @@ export function PageShell({
         <div className="flex min-w-0 items-center gap-2">
           {logo ? <img src={logo} alt="" className="size-7 shrink-0 rounded-control" /> : null}
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-base font-semibold">{title}</span>
+            <span className="truncate text-title font-semibold">{title}</span>
             {subtitle ? (
-              <span className="truncate text-[13px] text-ink-muted">{subtitle}</span>
+              <span className="truncate text-body-sm text-ink-muted">{subtitle}</span>
             ) : null}
           </div>
         </div>
@@ -63,14 +63,14 @@ export function PageShell({
             className="order-last -mx-1 flex w-full gap-1 overflow-x-auto px-1 pb-1 sm:order-none sm:mx-0 sm:w-auto sm:px-0 sm:pb-0"
           >
             {nav.map((item) => {
-              const classes = `inline-flex shrink-0 items-center gap-1.5 rounded-control px-2.5 py-1.5 font-medium whitespace-nowrap no-underline ${
+              const classes = `inline-flex shrink-0 items-center gap-1.5 rounded-control px-3 py-1.5 font-medium whitespace-nowrap no-underline ${
                 item.current ? "bg-action-soft text-action" : "text-ink-muted hover:bg-sunken"
               }`;
               const content = (
                 <>
                   {item.label}
                   {item.count !== undefined && item.count > 0 ? (
-                    <span className="rounded-full bg-attention-soft px-1.5 text-xs text-attention tabular-nums">
+                    <span className="rounded-full bg-attention-soft px-1.5 text-meta text-attention tabular-nums">
                       {item.count}
                     </span>
                   ) : null}

@@ -90,7 +90,7 @@ export const KIT: Theme = {
     "code-bg": "#f5f7f9",
     focus: "#0e5f7a",
     "radius-control": "6px",
-    "radius-panel": "10px",
+    "radius-panel": "8px",
     font: 'ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     "font-code": 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace',
   },
@@ -126,7 +126,7 @@ export const MAX_LOGO_BYTES = 512 * 1024;
 
 const panel = "flex flex-col gap-3 rounded-panel border border-line bg-surface p-4";
 const control =
-  "h-9 w-full min-w-0 rounded-control border border-line bg-surface px-2.5 text-ink placeholder:text-ink-muted/70";
+  "h-control w-full min-w-0 rounded-control border border-line bg-surface px-3 text-ink placeholder:text-ink-muted/70";
 
 /** The values that are set: what is sent, and what the preview lays over the kit's. */
 export const set = (values: Tokens): Tokens =>
@@ -167,7 +167,7 @@ export function TokenRows({
         return (
           <div key={token} className="flex flex-col gap-1">
             <div className="grid grid-cols-[7.5rem_minmax(0,1fr)_1.5rem] items-center gap-2">
-              <code className="font-mono text-[13px]">{token}</code>
+              <code className="font-mono text-code">{token}</code>
               <input
                 type="text"
                 name={`${mode}-${token}`}
@@ -193,7 +193,7 @@ export function TokenRows({
               )}
             </div>
             {problem ? (
-              <p role="alert" className="m-0 text-[13px] text-danger">
+              <p role="alert" className="m-0 text-body-sm text-danger">
                 {token} {problem}
               </p>
             ) : null}
@@ -229,7 +229,7 @@ export function Preview({ scheme, values }: { scheme: "light" | "dark"; values: 
           <Button variant="primary">Save</Button>
           <Button>Cancel</Button>
         </div>
-        <code className="font-mono text-[13px] text-ink-muted">orders/record</code>
+        <code className="font-mono text-code text-ink-muted">orders/record</code>
       </div>
       <ContrastCheck values={values} />
     </div>
@@ -321,8 +321,8 @@ function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
   return (
     <>
       <section className={panel}>
-        <h2 className="m-0 text-base font-semibold">Theme</h2>
-        <p className="m-0 max-w-[75ch] text-ink-muted">
+        <h2 className="m-0 text-title font-semibold">Theme</h2>
+        <p className="m-0 max-w-measure text-ink-muted">
           The colors, corners and fonts of this tenant's portal, sign-in pages and apps. The console
           keeps its own look. Set a token to a plain color, length or font list, or leave it empty
           to keep the component kit's value. A workspace can override these with a theme resource in
@@ -386,7 +386,7 @@ function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
         </form>
       </section>
       <section className={panel}>
-        <h2 className="m-0 text-base font-semibold">Preview</h2>
+        <h2 className="m-0 text-title font-semibold">Preview</h2>
         <p className="m-0 text-ink-muted">
           Kit components under the values in the fields above, saved or not.
         </p>
@@ -425,8 +425,8 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
 
   return (
     <section className={panel}>
-      <h2 className="m-0 text-base font-semibold">Logo</h2>
-      <p className="m-0 max-w-[75ch] text-ink-muted">
+      <h2 className="m-0 text-title font-semibold">Logo</h2>
+      <p className="m-0 max-w-measure text-ink-muted">
         Shown on the sign-in pages, and there for apps to use.
       </p>
       {has ? (
@@ -446,7 +446,7 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
       ) : (
         <p className="m-0">No logo yet.</p>
       )}
-      <label className="flex flex-col gap-1 text-[13px] font-medium">
+      <label className="flex flex-col gap-1 text-body-sm font-medium">
         {has ? "Replace the logo" : "Upload a logo"}
         <input
           type="file"
@@ -488,8 +488,8 @@ export function Branding({ base }: { base: string }) {
       description="How this tenant's portal and apps look to its end users, and whether people may create their own account there."
     >
       <section className={panel}>
-        <h2 className="m-0 text-base font-semibold">Portal</h2>
-        <p className="m-0 max-w-[75ch]">
+        <h2 className="m-0 text-title font-semibold">Portal</h2>
+        <p className="m-0 max-w-measure">
           <a
             href={data.portalUrl}
             target="_blank"
@@ -499,7 +499,7 @@ export function Branding({ base }: { base: string }) {
             {data.portalUrl}
           </a>
         </p>
-        <p className="m-0 max-w-[75ch] text-ink-muted">
+        <p className="m-0 max-w-measure text-ink-muted">
           The portal is where this tenant's end users sign in, choose or reset their password, and
           find the apps that are open to them.{" "}
           {data.mail

@@ -105,7 +105,7 @@ export function RequestPromotion({
                   })
                 }
               >
-                <GitPullRequestArrow aria-hidden="true" size={15} /> Request promotion of v
+                <GitPullRequestArrow aria-hidden="true" size={16} /> Request promotion of v
                 {version ?? "…"}
               </Button>
             </div>

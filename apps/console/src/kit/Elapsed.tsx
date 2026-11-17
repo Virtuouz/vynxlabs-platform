@@ -73,8 +73,6 @@ export function WaitedAndRan({ run }: { run: Parameters<typeof waitedAndRan>[0] 
   ].filter(Boolean);
   if (parts.length === 0) return null;
   return (
-    <span className="font-mono text-telemetry tabular-nums text-ink-muted">
-      {parts.join(" · ")}
-    </span>
+    <span className="font-mono text-code tabular-nums text-ink-muted">{parts.join(" · ")}</span>
   );
 }

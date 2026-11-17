@@ -28,7 +28,7 @@ export const keyColumns = [
     header: "Key",
     cell: (row: KeyRow) => (
       <code
-        className="font-mono text-telemetry"
+        className="font-mono text-code"
         title={row.suffix ? undefined : "Made before the last four characters were kept"}
       >
         {keyLabel(row)}
@@ -96,7 +96,7 @@ export function RecoveryCodes() {
   return (
     <Panel className="flex flex-col gap-4 p-4 md:p-5">
       <SectionLabel>Recovery codes</SectionLabel>
-      <p className="m-0 max-w-[70ch] text-ink-muted">
+      <p className="m-0 max-w-measure text-ink-muted">
         You own a tenant. If your organization's sign-in breaks while it is required, a recovery
         code with your password lets you in once, to put it right. Each code works one time.
       </p>
@@ -117,7 +117,7 @@ export function RecoveryCodes() {
           <Notice tone="attention">Copy these codes now. They are not shown again.</Notice>
           <ul
             aria-label="New recovery codes"
-            className="m-0 grid list-none grid-cols-1 gap-2 rounded-control border border-line bg-code-bg p-3 font-mono text-telemetry sm:grid-cols-2"
+            className="m-0 grid list-none grid-cols-1 gap-2 rounded-control border border-line bg-code-bg p-3 font-mono text-code sm:grid-cols-2"
           >
             {codes.map((code) => (
               <li key={code} className="select-all">

@@ -34,7 +34,7 @@ const linkClass = "text-action hover:underline";
 
 /** A link that reads as the step to take, beside a notice. */
 const Go = ({ to, children }: { to: string; children: ReactNode }) => (
-  <Link to={to} className={`${linkClass} text-[13px] font-medium`}>
+  <Link to={to} className={`${linkClass} text-body-sm font-medium`}>
     {children}
   </Link>
 );
@@ -64,7 +64,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="approvals"
         tone="attention"
-        icon={<CirclePause aria-hidden="true" size={15} />}
+        icon={<CirclePause aria-hidden="true" size={16} />}
         title={`${plural(c.approvalsWaiting, "approval")} waiting`}
         detail={
           instance.data?.mail === false
@@ -80,7 +80,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="domains"
         tone="attention"
-        icon={<Globe aria-hidden="true" size={15} />}
+        icon={<Globe aria-hidden="true" size={16} />}
         title={`${plural(c.domainsToFix, "hostname")} to check`}
         detail="Its last check failed, or it is waiting on its DNS record before it can serve."
         action={<Go to={t("domains")}>Check</Go>}
@@ -92,7 +92,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="operators"
         tone="attention"
-        icon={<LifeBuoy aria-hidden="true" size={15} />}
+        icon={<LifeBuoy aria-hidden="true" size={16} />}
         title={`${plural(c.operatorAccessActive, "operator")} inside this tenant now`}
         detail="Under an access grant you can end at any time."
         action={<Go to={t("operator-access")}>Review</Go>}
@@ -104,7 +104,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="workers"
         tone="danger"
-        icon={<Cpu aria-hidden="true" size={15} />}
+        icon={<Cpu aria-hidden="true" size={16} />}
         title="No worker is online"
         detail="Runs wait in the queue until one connects."
         action={<Go to={t("workers")}>Workers</Go>}
@@ -141,7 +141,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                 ) : (
                   <NextStep
                     tone="success"
-                    icon={<CircleCheck aria-hidden="true" size={15} />}
+                    icon={<CircleCheck aria-hidden="true" size={16} />}
                     title="Nothing needs you"
                     detail="No approvals or promotions waiting, every hostname works, and workers are online."
                   />
@@ -236,7 +236,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                   {changes.map((entry) => (
                     <li
                       key={entry.id}
-                      className="flex flex-col gap-0.5 border-line border-b px-4 py-2.5 last:border-b-0"
+                      className="flex flex-col gap-0.5 border-line border-b px-4 py-2 last:border-b-0"
                     >
                       <span className="truncate font-medium" title={entry.action}>
                         {actionWords(entry.action)}

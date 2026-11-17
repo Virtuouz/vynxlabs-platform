@@ -149,13 +149,13 @@ export function ToastProvider({
       key={toast.id}
       role={toast.tone === "danger" ? "alert" : undefined}
       data-tone={toast.tone}
-      className={`pointer-events-auto flex max-w-full items-center gap-3 rounded-control border px-3 py-2 text-ink shadow-lg sm:max-w-96 ${tones[toast.tone]}`}
+      className={`pointer-events-auto flex max-w-full items-center gap-3 rounded-control border px-3 py-2 text-ink shadow-overlay sm:max-w-96 ${tones[toast.tone]}`}
     >
       <span className="min-w-0 flex-1">{toast.message}</span>
       {toast.action ? (
         <button
           type="button"
-          className="shrink-0 rounded-[4px] px-1.5 py-0.5 font-medium text-action hover:bg-action-soft"
+          className="shrink-0 rounded-inner px-1.5 py-0.5 font-medium text-action hover:bg-action-soft"
           onClick={() => {
             toast.action?.onClick();
             dismiss(toast.id);
@@ -167,7 +167,7 @@ export function ToastProvider({
       <button
         type="button"
         aria-label="Dismiss"
-        className="shrink-0 rounded-[4px] px-1 text-ink-muted hover:text-ink"
+        className="shrink-0 rounded-inner px-1 text-ink-muted hover:text-ink"
         onClick={() => dismiss(toast.id)}
       >
         <span aria-hidden="true">×</span>
@@ -180,7 +180,7 @@ export function ToastProvider({
       {children}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: holding the messages while they are pointed at is not an action */}
       <div
-        className="pointer-events-none fixed right-4 bottom-4 left-4 z-[80] flex flex-col items-end gap-2"
+        className="pointer-events-none fixed right-4 bottom-4 left-4 layer-toast flex flex-col items-end gap-2"
         onMouseEnter={hold}
         onMouseLeave={release}
         onFocus={hold}

@@ -129,8 +129,8 @@ function CopyLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="min-w-0">
-        <span className="block text-[13px] text-ink-muted">{label}</span>
-        <code className="font-mono text-[13px] break-all">{value}</code>
+        <span className="block text-body-sm text-ink-muted">{label}</span>
+        <code className="font-mono text-code break-all">{value}</code>
       </span>
       <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
     </div>
@@ -310,9 +310,9 @@ function SetUp({
   const [tried, setTried] = useState(false);
   const test = provider.lastTest;
   return (
-    <div className="flex max-w-[80ch] flex-col gap-5">
+    <div className="flex max-w-measure flex-col gap-5">
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">1. Enter these at the provider</h2>
+        <h2 className="m-0 text-title font-semibold">1. Enter these at the provider</h2>
         <div className="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
           {provider.protocol === "oidc" ? (
             <CopyLine label="Redirect address" value={provider.addresses.callback} />
@@ -331,7 +331,7 @@ function SetUp({
         </p>
       </section>
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">2. Try it</h2>
+        <h2 className="m-0 text-title font-semibold">2. Try it</h2>
         <p className="m-0 text-ink-muted">
           Opens the provider in a new tab. Signing in there signs nobody in here and changes
           nothing: it shows what the provider sent and what would happen.
@@ -417,7 +417,7 @@ function SetUp({
         ) : null}
       </section>
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">3. Turn it on</h2>
+        <h2 className="m-0 text-title font-semibold">3. Turn it on</h2>
         <p className="m-0 text-ink-muted">
           {provider.audience === "members"
             ? "A provider of members needs an email domain first: see Domains. Then use Turn on, above."
@@ -445,7 +445,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
   };
   return (
     <div className="flex flex-col gap-4">
-      <p className="m-0 max-w-[75ch] text-ink-muted">
+      <p className="m-0 max-w-measure text-ink-muted">
         {instance
           ? "The email domains this provider signs in. As the instance's operator you answer for them, so no proof is asked."
           : "The email domains this provider signs in. Each is proved with a DNS record before an email in it is believed. A member is signed in only by an email in a proved domain."}
@@ -548,12 +548,12 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
     label: group.name,
   }));
   return (
-    <div className="flex max-w-[80ch] flex-col gap-4">
+    <div className="flex max-w-measure flex-col gap-4">
       <p className="m-0 text-ink-muted">
         On every sign-in a person is put in exactly the groups listed here that the provider names
         for them, and taken out of the listed groups it does not. A group that is not listed is
-        never touched. Use <code className="font-mono text-[13px]">*</code> for everyone the
-        provider signs in.
+        never touched. Use <code className="font-mono text-code">*</code> for everyone the provider
+        signs in.
       </p>
       {rows.map((row, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity until saved
@@ -671,7 +671,7 @@ function Settings({
 
   return (
     <form
-      className="flex max-w-[80ch] flex-col gap-3"
+      className="flex max-w-measure flex-col gap-3"
       onSubmit={async (event) => {
         event.preventDefault();
         setBusy(true);
@@ -819,7 +819,7 @@ function Settings({
           />
         </>
       )}
-      <h2 className="mt-3 mb-0 text-base font-semibold">Which claims to read</h2>
+      <h2 className="mt-3 mb-0 text-title font-semibold">Which claims to read</h2>
       <p className="m-0 text-ink-muted">Leave a field empty to use the usual name.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         {claim("subject", "Subject", saml ? "The name ID" : "sub")}
@@ -847,7 +847,7 @@ function Settings({
           />
         </>
       ) : null}
-      <h2 className="mt-3 mb-0 text-base font-semibold">New people</h2>
+      <h2 className="mt-3 mb-0 text-title font-semibold">New people</h2>
       <CheckboxField
         label="Create people the first time they sign in"
         name="provision"
@@ -901,7 +901,7 @@ function People({ root }: { root: string }) {
         { header: "Email at the provider", cell: (row) => row.email ?? "" },
         {
           header: "Subject",
-          cell: (row) => <code className="font-mono text-[13px] break-all">{row.subject}</code>,
+          cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
         },
         {
           header: "Last signed in",
@@ -1018,7 +1018,7 @@ function ProviderDetail({
       </button>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h1 className="m-0 text-xl font-semibold tracking-tight">{provider.name}</h1>
+          <h1 className="m-0 text-display font-semibold">{provider.name}</h1>
           <span className="flex flex-wrap items-center gap-2 text-ink-muted">
             {PROTOCOL[provider.protocol]}, for {who} <State provider={provider} />
           </span>

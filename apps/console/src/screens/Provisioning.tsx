@@ -101,15 +101,15 @@ export function Provisioning({
       </p>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="min-w-0">
-          <span className="block text-[13px] text-ink-muted">SCIM base address</span>
-          <code className="font-mono text-[13px] break-all">{data.address}</code>
+          <span className="block text-body-sm text-ink-muted">SCIM base address</span>
+          <code className="font-mono text-code break-all">{data.address}</code>
         </span>
         <CopyButton value={data.address} label="Copy the address" />
       </div>
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="m-0 text-[15px] font-semibold">Tokens</h3>
+          <h3 className="m-0 text-emphasis font-semibold">Tokens</h3>
           <Button variant="primary" onClick={make}>
             Make a token
           </Button>
@@ -135,7 +135,7 @@ export function Provisioning({
             { header: "Name", cell: (row) => row.name },
             {
               header: "Begins",
-              cell: (row) => <code className="font-mono text-[13px]">{row.prefix}…</code>,
+              cell: (row) => <code className="font-mono text-code">{row.prefix}…</code>,
             },
             { header: "Made", cell: (row) => when(row.createdAt) },
             {
@@ -169,7 +169,7 @@ export function Provisioning({
       </section>
 
       <section className="flex max-w-xl flex-col gap-3">
-        <h3 className="m-0 text-[15px] font-semibold">How pushes are taken</h3>
+        <h3 className="m-0 text-emphasis font-semibold">How pushes are taken</h3>
         <SelectField
           name="subject-from"
           label="The name the provider signs a person in by is pushed as"
@@ -220,7 +220,7 @@ export function Provisioning({
       </section>
 
       <section className="flex flex-col gap-2">
-        <h3 className="m-0 text-[15px] font-semibold">What has been pushed</h3>
+        <h3 className="m-0 text-emphasis font-semibold">What has been pushed</h3>
         <Facts
           facts={[
             { label: "People", value: String(data.users.pushed) },
@@ -229,7 +229,7 @@ export function Provisioning({
             { label: "Last change", value: data.lastPushAt ? when(data.lastPushAt) : "Never" },
           ]}
         />
-        <p className="m-0 max-w-3xl text-[13px] text-ink-muted">
+        <p className="m-0 max-w-3xl text-body-sm text-ink-muted">
           {audience === "members"
             ? instance
               ? "A person the provider turns off has their account disabled everywhere: their sessions end and their API keys stop working."

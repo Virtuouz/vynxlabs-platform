@@ -324,7 +324,7 @@ export function ConnectionWizard({
           <SectionLabel>1 · What it is</SectionLabel>
           {row ? (
             <p className="m-0">
-              <code className="font-mono text-[13px]">{row.path}</code> ·{" "}
+              <code className="font-mono text-code">{row.path}</code> ·{" "}
               {CONNECTOR_NAMES[row.connector] ?? row.connector}
               {row.description ? (
                 <span className="text-ink-muted"> · {row.description}</span>
@@ -407,14 +407,12 @@ export function ConnectionWizard({
                 ) : null}
               </div>
               <div className="flex flex-col gap-1">
-                <span className="text-[13px] font-medium">Redirect address</span>
+                <span className="text-body-sm font-medium">Redirect address</span>
                 <span className="flex min-w-0 items-center gap-2">
-                  <code className="min-w-0 font-mono text-[13px] break-all">
-                    {callbackAddress()}
-                  </code>
+                  <code className="min-w-0 font-mono text-code break-all">{callbackAddress()}</code>
                   <CopyButton value={callbackAddress()} />
                 </span>
-                <span className="text-[13px] text-ink-muted">
+                <span className="text-body-sm text-ink-muted">
                   Add it to the app you register with the provider, which gives you the client ID
                   and secret.
                 </span>

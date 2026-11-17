@@ -173,7 +173,7 @@ export function AuditTable({
       cell: (entry) => (
         <button
           type="button"
-          className="font-mono text-telemetry whitespace-nowrap text-ink-muted"
+          className="font-mono text-code whitespace-nowrap text-ink-muted"
           aria-label={`Open the entry of ${stamp(entry.occurredAt)}`}
           onClick={(event) => {
             event.stopPropagation();
@@ -197,7 +197,7 @@ export function AuditTable({
           <span className="flex flex-wrap items-center gap-1.5">
             {kind === "Other" ? null : <Badge tone={VERB_TONE[kind]}>{kind}</Badge>}
             <span className="font-medium">{actionWords(entry.action)}</span>
-            <code className="rounded-[4px] bg-sunken px-1.5 py-0.5 font-mono text-meta text-ink-subtle">
+            <code className="rounded-inner bg-sunken px-1.5 py-0.5 font-mono text-code-sm text-ink-subtle">
               {entry.action}
             </code>
             {entry.accessGrantId ? <Badge tone="attention">Operator</Badge> : null}
@@ -209,7 +209,7 @@ export function AuditTable({
       header: "To",
       priority: 3,
       cell: (entry) => (
-        <span className="block max-w-56 truncate font-mono text-telemetry">
+        <span className="block max-w-56 truncate font-mono text-code">
           {entry.targetId ?? entry.targetType}
         </span>
       ),

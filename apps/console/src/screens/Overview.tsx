@@ -134,19 +134,19 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
                   >
                     {hour.failed > 0 ? (
                       <span
-                        className="w-full rounded-t-[3px] bg-danger"
+                        className="w-full rounded-t-inner bg-danger"
                         style={{ flexGrow: hour.failed }}
                       />
                     ) : null}
                     {hour.succeeded > 0 ? (
                       <span
-                        className={`w-full bg-success ${hour.failed > 0 ? "" : "rounded-t-[3px]"}`}
+                        className={`w-full bg-success ${hour.failed > 0 ? "" : "rounded-t-inner"}`}
                         style={{ flexGrow: hour.succeeded }}
                       />
                     ) : null}
                   </div>
                 )}
-                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-control border border-line bg-raised px-2 py-1 text-meta shadow-lg group-hover:block">
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-control border border-line bg-raised px-2 py-1 text-meta shadow-overlay group-hover:block">
                   {hourOf(hour.start)} · {hour.succeeded} succeeded · {hour.failed} failed
                 </span>
               </div>
@@ -157,10 +157,10 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
           <span data-volatile>{hourOf(stats.from)}</span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
-              <span aria-hidden="true" className="size-2 rounded-[2px] bg-success" /> Succeeded
+              <span aria-hidden="true" className="size-2 rounded-inner bg-success" /> Succeeded
             </span>
             <span className="flex items-center gap-1.5">
-              <span aria-hidden="true" className="size-2 rounded-[2px] bg-danger" /> Failed
+              <span aria-hidden="true" className="size-2 rounded-inner bg-danger" /> Failed
             </span>
           </span>
           <span>now</span>
@@ -216,7 +216,7 @@ export function Overview({
         node: (
           <NextStep
             tone="danger"
-            icon={<CircleX aria-hidden="true" size={15} />}
+            icon={<CircleX aria-hidden="true" size={16} />}
             title={`${failed} run${failed === 1 ? "" : "s"} failed in the last 24 hours`}
             detail="Open the failed runs to see which step and which log line."
             action={
@@ -233,7 +233,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<GitMerge aria-hidden="true" size={15} />}
+            icon={<GitMerge aria-hidden="true" size={16} />}
             title="The branch and this workspace both changed the same files"
             detail="Choose which version to keep for each file."
             action={
@@ -251,7 +251,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<CirclePause aria-hidden="true" size={15} />}
+            icon={<CirclePause aria-hidden="true" size={16} />}
             title={`${approvals} run${approvals === 1 ? " is" : "s are"} waiting for a person`}
             detail="An approval step pauses a flow until someone decides."
             action={
@@ -272,7 +272,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<Plug aria-hidden="true" size={15} />}
+            icon={<Plug aria-hidden="true" size={16} />}
             title={`${unbound} connection${unbound === 1 ? " has" : "s have"} nothing bound here`}
             detail="A run that reaches it fails until it points somewhere."
             action={
@@ -290,7 +290,7 @@ export function Overview({
         node: (
           <NextStep
             tone="action"
-            icon={<GitCompareArrows aria-hidden="true" size={15} />}
+            icon={<GitCompareArrows aria-hidden="true" size={16} />}
             title={`${drafts} draft${drafts === 1 ? "" : "s"} not deployed`}
             detail="Saved here, and not yet running."
             action={
@@ -307,7 +307,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<CirclePause aria-hidden="true" size={15} />}
+            icon={<CirclePause aria-hidden="true" size={16} />}
             title="Triggers are paused"
             detail={
               workspace.type === "dev"
@@ -335,7 +335,7 @@ export function Overview({
     );
 
   return (
-    <div className="flex flex-col gap-7">
+    <div className="flex flex-col gap-8">
       <PageHeader
         eyebrow="Overview"
         title={workspace.name}
@@ -357,7 +357,7 @@ export function Overview({
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
-          <section className="flex flex-col gap-2.5">
+          <section className="flex flex-col gap-2">
             <SectionLabel>Needs attention</SectionLabel>
             <Panel className="divide-y divide-line">
               {!counts ? (
@@ -365,7 +365,7 @@ export function Overview({
               ) : attention.length === 0 ? (
                 <NextStep
                   tone="success"
-                  icon={<CircleCheck aria-hidden="true" size={15} />}
+                  icon={<CircleCheck aria-hidden="true" size={16} />}
                   title="Nothing needs you here"
                   detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
                 />
@@ -376,7 +376,7 @@ export function Overview({
           </section>
 
           {stats.data ? (
-            <section className="flex flex-col gap-2.5">
+            <section className="flex flex-col gap-2">
               <SectionLabel
                 action={
                   <Link to={`${link}/runs`} className="text-meta">
@@ -391,7 +391,7 @@ export function Overview({
           ) : null}
 
           {counts ? (
-            <section className="flex flex-col gap-2.5">
+            <section className="flex flex-col gap-2">
               <SectionLabel
                 action={
                   <Link to={`${link}/release`} className="text-meta">
@@ -402,7 +402,7 @@ export function Overview({
                 Release
               </SectionLabel>
               <Panel className="flex flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <div className="flex flex-wrap items-center gap-2 text-body-sm">
                   <span className="flex items-center gap-1.5">
                     <Junction kind="pending" />
                     Draft <Mono className="text-action">{counts.drafts ?? "—"}</Mono>
@@ -444,7 +444,7 @@ export function Overview({
           ) : null}
         </div>
 
-        <section className="flex flex-col gap-2.5">
+        <section className="flex flex-col gap-2">
           <SectionLabel
             action={
               <Link to={`${link}/triggers`} className="text-meta">
@@ -469,14 +469,9 @@ export function Overview({
                 const Icon = TRIGGER_ICON[trigger.type] ?? Radio;
                 return (
                   <div key={trigger.path} className="flex items-start gap-3 px-4 py-3">
-                    <Icon
-                      aria-hidden="true"
-                      size={15}
-                      strokeWidth={1.75}
-                      className="mt-0.5 shrink-0 text-ink-muted"
-                    />
+                    <Icon aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-ink-muted" />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate font-mono text-telemetry">{trigger.path}</span>
+                      <span className="truncate font-mono text-code">{trigger.path}</span>
                       <span className="truncate text-meta text-ink-subtle">
                         {trigger.type}
                         {(trigger.script ?? trigger.target)

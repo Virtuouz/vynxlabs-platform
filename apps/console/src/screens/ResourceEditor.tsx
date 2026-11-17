@@ -355,13 +355,13 @@ export function ResourceEditor({
 
   return (
     <section className="flex flex-col gap-4">
-      <Link to={`${link}/resources`} className="text-[13px] text-action">
+      <Link to={`${link}/resources`} className="text-body-sm text-action">
         All resources
       </Link>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           {opened ? (
-            <h1 className="m-0 truncate font-mono text-lg font-semibold">{path}</h1>
+            <h1 className="m-0 truncate font-mono text-title font-semibold">{path}</h1>
           ) : (
             <div className="w-72">
               <TextField

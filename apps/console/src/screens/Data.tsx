@@ -29,7 +29,7 @@ import {
   SeeItAs,
 } from "./RowRules.tsx";
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 const PAGE = 50;
 
 const TYPES: { value: string; label: string }[] = [
@@ -143,14 +143,14 @@ function RowsBrowser(props: RowsBrowserProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           {props.readOnlyNote ??
             "Select a value to change it. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
         </p>
         <span className="flex flex-wrap items-center gap-2">
           <Menu
             ariaLabel="Columns shown"
-            triggerClassName="inline-flex h-7 items-center gap-1.5 rounded-control border border-line px-2.5 text-[13px] hover:bg-sunken"
+            triggerClassName="inline-flex h-7 items-center gap-1.5 rounded-control border border-line px-3 text-body-sm hover:bg-sunken"
             label={
               <>
                 <Columns3 aria-hidden="true" size={14} /> Columns
@@ -236,7 +236,7 @@ function RowsBrowser(props: RowsBrowserProps) {
               );
             }
             if (column.name === keyColumn && column.type === "uuid") {
-              return <span className="font-mono text-[12px] text-ink-muted">{String(value)}</span>;
+              return <span className="font-mono text-code-sm text-ink-muted">{String(value)}</span>;
             }
             return undefined;
           }}
@@ -249,7 +249,7 @@ function RowsBrowser(props: RowsBrowserProps) {
           }
         />
       </div>
-      <div className="flex items-center justify-between gap-3 text-[13px] text-ink-muted">
+      <div className="flex items-center justify-between gap-3 text-body-sm text-ink-muted">
         <span>
           {rows.length === 0
             ? ""
@@ -301,8 +301,8 @@ function RowsBrowser(props: RowsBrowserProps) {
           <dl className="m-0 grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2">
             {columns.map((column) => (
               <div key={column.name} className="contents">
-                <dt className="text-[13px] text-ink-muted">{column.name}</dt>
-                <dd className="m-0 font-mono text-[13px] break-words">
+                <dt className="text-body-sm text-ink-muted">{column.name}</dt>
+                <dd className="m-0 font-mono text-code break-words">
                   {showValue(column.type, open[column.name]) || "—"}
                 </dd>
               </div>
@@ -442,7 +442,7 @@ function AddRow({
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
           ) : column.type === "file" ? (
-            <label key={column.name} className="flex flex-col gap-1 text-[13px] font-medium">
+            <label key={column.name} className="flex flex-col gap-1 text-body-sm font-medium">
               {column.name}
               <input
                 type="file"
@@ -736,7 +736,7 @@ function Definition({
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="m-0 text-base font-semibold">Columns</h2>
+          <h2 className="m-0 text-title font-semibold">Columns</h2>
           {editable ? <Button onClick={() => setAdding(true)}>Add column</Button> : null}
         </div>
         <DataTable<TableColumn>
@@ -826,7 +826,7 @@ function Definition({
               : []),
           ]}
         />
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           Every table also has {code("id")}, {code("created_at")} and {code("updated_at")}, which
           the platform fills in.
         </p>
@@ -834,8 +834,8 @@ function Definition({
 
       {retired.length > 0 ? (
         <section className="flex flex-col gap-2">
-          <h2 className="m-0 text-base font-semibold">Retired columns</h2>
-          <p className="m-0 max-w-[70ch] text-ink-muted">
+          <h2 className="m-0 text-title font-semibold">Retired columns</h2>
+          <p className="m-0 max-w-measure text-ink-muted">
             These left the definition. They are hidden from rows, and what they held is kept until
             someone deletes it here.
           </p>
@@ -887,7 +887,7 @@ function Definition({
       ) : null}
 
       <section className="flex flex-col gap-3">
-        <h2 className="m-0 text-base font-semibold">Who sees rows</h2>
+        <h2 className="m-0 text-title font-semibold">Who sees rows</h2>
         {editable ? (
           <RowRulesEditor
             key={JSON.stringify(table.policy)}
@@ -900,7 +900,7 @@ function Definition({
             }
           />
         ) : (
-          <div className="max-w-[70ch]">
+          <div className="max-w-measure">
             <p className="m-0">{policyText(table.policy)}.</p>
             {table.policy.type === "rules" ? (
               <ul className="mt-2 mb-0 pl-5">
@@ -917,8 +917,8 @@ function Definition({
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">Where it is stored</h2>
-        <p className="m-0 max-w-[70ch] text-ink-muted">
+        <h2 className="m-0 text-title font-semibold">Where it is stored</h2>
+        <p className="m-0 max-w-measure text-ink-muted">
           In Postgres, as {code(`${table.stored.schema}.${table.stored.table}`)}. It is your data:
           you can read it there directly at any time.
         </p>
@@ -926,8 +926,8 @@ function Definition({
 
       {editable ? (
         <section className="flex flex-col items-start gap-2">
-          <h2 className="m-0 text-base font-semibold">Retire this table</h2>
-          <p className="m-0 max-w-[70ch] text-ink-muted">
+          <h2 className="m-0 text-title font-semibold">Retire this table</h2>
+          <p className="m-0 max-w-measure text-ink-muted">
             The table is hidden and its rows kept. Deleting them for good is a separate step.
           </p>
           <RemoveButton
@@ -1191,7 +1191,7 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
                 type="button"
                 key={item.name}
                 aria-current={item.name === table.name ? "true" : undefined}
-                className={`truncate rounded-control px-2.5 py-1.5 text-left ${
+                className={`truncate rounded-control px-3 py-1.5 text-left ${
                   item.name === table.name
                     ? "bg-action-soft font-medium text-action"
                     : "text-ink-muted hover:text-ink"

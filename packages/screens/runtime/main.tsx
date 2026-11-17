@@ -87,7 +87,7 @@ function App() {
         <h1 className="m-0 text-xl font-semibold tracking-tight">
           {view?.interface.title ?? context.app.title}
         </h1>
-        <span className="flex flex-wrap items-center gap-3 text-[14px] text-ink-muted">
+        <span className="flex flex-wrap items-center gap-3 text-body text-ink-muted">
           {who.type === "anonymous" ? (
             <a href={signInUrl()} className="text-action">
               Sign in

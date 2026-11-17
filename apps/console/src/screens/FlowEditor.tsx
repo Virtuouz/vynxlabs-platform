@@ -240,19 +240,19 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   const ran = useContext(NodeRuns).get(id);
   return (
     <div
-      className={`w-52 rounded-control border bg-surface px-3 py-2 shadow-sm ${
+      className={`w-52 rounded-control border bg-surface px-3 py-2 [.dragging_&]:shadow-drag ${
         selected ? "border-action ring-2 ring-action/30" : "border-line"
       } ${ran ? "border-2" : ""} ${node.type === "trigger" ? "rounded-full px-5" : ""}`}
       style={ran && !selected ? { borderColor: STATE_STROKE[ran.state] } : undefined}
     >
       {node.type === "trigger" ? null : <Handle type="target" position={Position.Left} />}
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate font-mono text-[13px] font-semibold">{id}</span>
+        <span className="truncate font-mono text-code font-semibold">{id}</span>
         <Badge tone={TYPE_TONE[node.type] ?? "neutral"}>{node.type}</Badge>
       </div>
-      <div className="truncate text-[12px] text-ink-muted">{named ?? describe(node)}</div>
+      <div className="truncate text-meta text-ink-muted">{named ?? describe(node)}</div>
       {ran ? (
-        <div className="mt-1 text-[12px]">
+        <div className="mt-1 text-meta">
           <StatePill state={ran.state} detail={ran.took} />
         </div>
       ) : null}
@@ -1068,8 +1068,8 @@ export function FlowEditor({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-2.5 md:px-5">
-        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-2 md:px-5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Link
             to={`${link}/flows`}
             className="text-meta text-ink-subtle no-underline hover:text-ink"
@@ -1080,7 +1080,7 @@ export function FlowEditor({
             /
           </span>
           {opened ? (
-            <h1 className="m-0 truncate font-mono text-base font-semibold">{path}</h1>
+            <h1 className="m-0 truncate font-mono text-title font-semibold">{path}</h1>
           ) : (
             <div className="w-56">
               <TextField
@@ -1101,7 +1101,7 @@ export function FlowEditor({
           )}
           {found.length > 0 ? (
             <span className="flex items-center gap-1 text-meta text-attention">
-              <TriangleAlert aria-hidden="true" size={13} /> {found.length} to fix
+              <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
             </span>
           ) : null}
           <span
@@ -1158,7 +1158,7 @@ export function FlowEditor({
             <Redo2 aria-hidden="true" size={14} />
           </Button>
           <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
-            <Play aria-hidden="true" size={13} /> Test
+            <Play aria-hidden="true" size={14} /> Test
           </Button>
           <Button
             size="small"
@@ -1224,14 +1224,14 @@ export function FlowEditor({
             {adding ? (
               <aside
                 aria-label="Steps to add"
-                className="flex max-h-[60vh] w-64 flex-col gap-3 overflow-y-auto rounded-panel border border-line bg-raised p-3 shadow-xl"
+                className="flex max-h-[60vh] w-64 flex-col gap-3 overflow-y-auto rounded-panel border border-line bg-raised p-3 shadow-modal"
               >
                 <input
                   aria-label="Find a step"
                   placeholder="Find a step"
                   value={addSearch}
                   onChange={(event) => setAddSearch(event.target.value)}
-                  className="h-8 rounded-control border border-line bg-structure px-2.5 text-ink outline-none placeholder:text-ink-subtle"
+                  className="h-8 rounded-control border border-line bg-structure px-3 text-ink outline-none placeholder:text-ink-subtle"
                 />
                 {[...new Set(PALETTE.map((entry) => entry.group))].map((group) => {
                   const shown = PALETTE.filter(
@@ -1452,9 +1452,9 @@ export function FlowEditor({
                 {node.type === "script" &&
                 specs.has(String(node.script)) &&
                 node.input === undefined ? (
-                  <p className="m-0 text-[13px]">
+                  <p className="m-0 text-body-sm">
                     <span className="font-semibold">{specs.get(String(node.script))?.label}</span>{" "}
-                    <code className="font-mono text-[12px] text-ink-muted">
+                    <code className="font-mono text-code-sm text-ink-muted">
                       {String(node.script)}
                     </code>
                   </p>
@@ -1763,7 +1763,7 @@ function StepOutline({
   const byId = new Map(nodes.map((node) => [node.id, node.data.node]));
   return (
     <details open className="rounded-control border border-line">
-      <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium">
+      <summary className="cursor-pointer px-3 py-2 text-body-sm font-medium">
         Steps ({order.length})
       </summary>
       <nav aria-label="Steps in order" className="max-h-48 overflow-y-auto px-1 pb-1">
@@ -1774,13 +1774,13 @@ function StepOutline({
                 type="button"
                 aria-current={id === chosen ? "true" : undefined}
                 onClick={() => onChoose(id)}
-                className={`flex w-full items-center justify-between gap-2 rounded-[4px] px-2 py-1 text-left ${
+                className={`flex w-full items-center justify-between gap-2 rounded-inner px-2 py-1 text-left ${
                   id === chosen
                     ? "bg-selected text-ink"
                     : "text-ink-muted hover:bg-sunken hover:text-ink"
                 }`}
               >
-                <span className="truncate font-mono text-[13px]">{id}</span>
+                <span className="truncate font-mono text-code">{id}</span>
                 <span className="text-meta">{byId.get(id)?.type}</span>
               </button>
             </li>
@@ -1823,7 +1823,7 @@ function ConnectionsEditor({
       .map((edge) => edge.target);
   return (
     <fieldset className="m-0 flex flex-col gap-3 border-0 border-line border-t p-0 pt-3">
-      <legend className="float-left mb-1 p-0 text-[13px] font-medium">Where it goes next</legend>
+      <legend className="float-left mb-1 p-0 text-body-sm font-medium">Where it goes next</legend>
       {outs.map((out) => {
         if (out.id === "next") {
           const now = leaving("next");
@@ -1834,7 +1834,7 @@ function ConnectionsEditor({
                 <ul aria-label="Goes on to" className="m-0 flex list-none flex-col gap-1 p-0">
                   {now.map((target) => (
                     <li key={target} className="flex items-center justify-between gap-2">
-                      <span className="truncate font-mono text-[13px]">→ {target}</span>
+                      <span className="truncate font-mono text-code">→ {target}</span>
                       <Button
                         size="small"
                         variant="quiet"
@@ -1897,7 +1897,7 @@ function CasesEditor({
 }) {
   return (
     <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-      <legend className="p-0 text-[13px] font-medium">Cases, tried in order</legend>
+      <legend className="p-0 text-body-sm font-medium">Cases, tried in order</legend>
       {cases.map((one, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a case has no identity but its place while its name is being typed
         <div key={index} className="flex flex-col gap-1 rounded-control border border-line p-2">
@@ -1959,7 +1959,7 @@ function CasesEditor({
           Add a case
         </Button>
       </div>
-      <p className="m-0 text-[12.5px] text-ink-muted">
+      <p className="m-0 text-meta text-ink-muted">
         When no case holds, the flow leaves by “otherwise”.
       </p>
     </fieldset>
@@ -1980,7 +1980,7 @@ function ValuesEditor({
   const entries = Object.entries(values);
   return (
     <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-      <legend className="p-0 text-[13px] font-medium">{legend}</legend>
+      <legend className="p-0 text-body-sm font-medium">{legend}</legend>
       {entries.map(([name, value], index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a value has no identity but its place while its name is being typed
         <div key={index} className="grid grid-cols-[1fr_1.4fr] gap-2">

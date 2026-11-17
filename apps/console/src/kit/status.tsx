@@ -82,7 +82,7 @@ export function StatePill({
   const [label, Icon, tone] = lookUp(state);
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      <Icon aria-hidden="true" size={14} strokeWidth={1.75} className={`shrink-0 ${tone}`} />
+      <Icon aria-hidden="true" size={14} className={`shrink-0 ${tone}`} />
       <span className={`truncate ${tone}`}>{children ?? label}</span>
       {detail ? <span className="truncate text-meta text-ink-subtle">{detail}</span> : null}
     </span>
@@ -123,7 +123,7 @@ const TAGS: Record<TagTone, string> = {
 export function Tag({ tone = "neutral", children }: { tone?: TagTone; children: ReactNode }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-[4px] border px-1.5 py-1 font-mono text-tag uppercase ${TAGS[tone]}`}
+      className={`inline-flex shrink-0 items-center rounded-inner border px-1.5 py-1 font-mono text-tag uppercase ${TAGS[tone]}`}
     >
       {children}
     </span>
@@ -141,5 +141,5 @@ export function EnvTag({ type }: { type: "production" | "dev" }) {
 
 /** Counts, durations, identifiers and versions are set in the code face, so columns line up. */
 export function Mono({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <span className={`font-mono text-telemetry ${className}`}>{children}</span>;
+  return <span className={`font-mono text-code ${className}`}>{children}</span>;
 }

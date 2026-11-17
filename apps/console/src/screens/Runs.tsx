@@ -396,7 +396,7 @@ export function RunsWorkbench({
           <KindIcon kind={one.kind} />
           <Link
             to={`${link}/runs/${one.id}`}
-            className="min-w-0 truncate font-mono text-telemetry text-ink no-underline hover:underline"
+            className="min-w-0 truncate font-mono text-code text-ink no-underline hover:underline"
           >
             {one.target}
           </Link>
@@ -425,7 +425,7 @@ export function RunsWorkbench({
             {one.errorSummary}
           </span>
         ) : one.outputSummary ? (
-          <span className="font-mono text-telemetry text-ink-muted" title={one.outputSummary}>
+          <span className="font-mono text-code text-ink-muted" title={one.outputSummary}>
             {one.outputSummary}
           </span>
         ) : (
@@ -510,7 +510,7 @@ export function RunsWorkbench({
               placeholder="A path, a run ID, a tag or an error"
               value={typed}
               onChange={(event) => setTyped(event.currentTarget.value)}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-[13px] w-full sm:w-64"
+              className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm w-full sm:w-64"
             />
             <select
               aria-label="Kind"
@@ -519,7 +519,7 @@ export function RunsWorkbench({
                 const value = event.currentTarget.value;
                 setUrl({ kind: value === "all" ? undefined : value });
               }}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-[13px]"
+              className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
             >
               <option value="all">Scripts and flows</option>
               <option value="script">Scripts</option>
@@ -529,7 +529,7 @@ export function RunsWorkbench({
               aria-label="When"
               value={hours}
               onChange={(event) => setUrl({ when: event.currentTarget.value })}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-[13px]"
+              className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
             >
               {WINDOWS.map((one) => (
                 <option key={one.value} value={one.value}>
@@ -695,7 +695,7 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
         ]}
       />
       <Button variant="primary" onClick={() => navigate(`${link}/runs/${run.id}`)}>
-        Open full view <ArrowUpRight aria-hidden="true" size={15} />
+        Open full view <ArrowUpRight aria-hidden="true" size={16} />
       </Button>
     </div>
   );
@@ -758,7 +758,7 @@ export function ScriptRunPanel({
             </Button>
           ) : null}
           <Button size="small" onClick={() => navigate(`${link}/runs/${runId}`)}>
-            Open full view <ArrowUpRight aria-hidden="true" size={13} />
+            Open full view <ArrowUpRight aria-hidden="true" size={14} />
           </Button>
           <CopyIcon
             value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
@@ -772,7 +772,7 @@ export function ScriptRunPanel({
           <span className="flex items-center gap-2 font-medium text-danger">
             <CircleX aria-hidden="true" size={14} /> Why it failed
           </span>
-          <p className="m-0 font-mono text-telemetry break-words">{run.error.message}</p>
+          <p className="m-0 font-mono text-code break-words">{run.error.message}</p>
           {insight.data?.location ? (
             onLocation ? (
               <Button
@@ -795,7 +795,7 @@ export function ScriptRunPanel({
         <div className="rounded-panel border border-line">
           <NextStep
             tone="attention"
-            icon={<Lightbulb aria-hidden="true" size={15} />}
+            icon={<Lightbulb aria-hidden="true" size={16} />}
             title={diagnosis.cause}
             detail={diagnosis.next}
             action={

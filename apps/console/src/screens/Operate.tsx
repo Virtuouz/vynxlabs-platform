@@ -98,13 +98,13 @@ export function TriggersWorkbench({
   };
   const newTrigger = production ? (
     <Button disabled title="Triggers change in a dev workspace and reach production by promotion.">
-      <Plus aria-hidden="true" size={15} /> New trigger
+      <Plus aria-hidden="true" size={16} /> New trigger
     </Button>
   ) : (
     <Menu
       label={
         <span className="inline-flex items-center gap-1.5">
-          <Plus aria-hidden="true" size={15} /> New trigger
+          <Plus aria-hidden="true" size={16} /> New trigger
         </span>
       }
       align="end"
@@ -141,7 +141,7 @@ export function TriggersWorkbench({
       priority: 3,
       cell: (row) => (
         <span className="flex flex-col">
-          <Link to={targetLink(link, row)} className="font-mono text-telemetry">
+          <Link to={targetLink(link, row)} className="font-mono text-code">
             {row.script}
           </Link>
           <span className="text-meta text-ink-subtle">
@@ -263,13 +263,13 @@ export function TriggersWorkbench({
                       }
                     }}
                   >
-                    <CirclePlay aria-hidden="true" size={15} /> Resume
+                    <CirclePlay aria-hidden="true" size={16} /> Resume
                   </Button>
                 ) : (
                   <span className="flex flex-wrap gap-2">
                     {open.type === "schedule" && !open.node ? (
                       <Button variant="primary" onClick={() => void fireNow(open)}>
-                        <Zap aria-hidden="true" size={15} /> Fire now
+                        <Zap aria-hidden="true" size={16} /> Fire now
                       </Button>
                     ) : null}
                     <Button
@@ -293,7 +293,7 @@ export function TriggersWorkbench({
                         }
                       }}
                     >
-                      <CirclePause aria-hidden="true" size={15} /> Pause this trigger
+                      <CirclePause aria-hidden="true" size={16} /> Pause this trigger
                     </Button>
                   </span>
                 )
@@ -311,7 +311,7 @@ export function TriggersWorkbench({
                   <div className="rounded-panel border border-line">
                     <NextStep
                       tone="danger"
-                      icon={<ShieldAlert aria-hidden="true" size={15} />}
+                      icon={<ShieldAlert aria-hidden="true" size={16} />}
                       title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
                       detail={open.lastRefusal.problem || undefined}
                     />
@@ -381,7 +381,7 @@ export function TriggersWorkbench({
                     <span className="text-label text-ink-subtle uppercase">
                       {open.type === "form" ? "Form address" : "Webhook address"}
                     </span>
-                    <code className="rounded-control bg-code-bg p-2 font-mono text-telemetry break-all select-all">
+                    <code className="rounded-control bg-code-bg p-2 font-mono text-code break-all select-all">
                       {open.type === "form" ? "" : "POST "}
                       {open.url}
                     </code>

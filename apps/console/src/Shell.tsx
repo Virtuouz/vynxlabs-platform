@@ -399,9 +399,9 @@ function ReleasePath({ counts }: { counts: WorkspaceCounts }) {
       ),
     });
   return (
-    <div className="flex flex-col gap-2.5 border-line border-t px-3 pt-3 pb-4">
+    <div className="flex flex-col gap-2 border-line border-t px-3 pt-3 pb-4">
       <p className="m-0 text-label text-ink-subtle uppercase">Release path</p>
-      <ol className="relative m-0 flex list-none flex-col gap-2.5 p-0 pl-4">
+      <ol className="relative m-0 flex list-none flex-col gap-2 p-0 pl-4">
         <span
           aria-hidden="true"
           className="absolute top-1.5 bottom-1.5 left-[3px] w-px bg-line-strong"
@@ -455,8 +455,8 @@ function RailItem({
             />
           </>
         ) : null}
-        <Icon aria-hidden="true" size={18} strokeWidth={1.75} />
-        <span className="text-micro">{label}</span>
+        <Icon aria-hidden="true" size={20} />
+        <span className="text-label font-medium tracking-normal">{label}</span>
       </Link>
     </span>
   );
@@ -473,7 +473,7 @@ function ThemeMenu({ compact = false }: { compact?: boolean }) {
       label={<ThemeIcon aria-hidden="true" size={16} />}
       items={THEMES.map(([choice, label, Icon]) => ({
         label,
-        icon: <Icon aria-hidden="true" size={15} />,
+        icon: <Icon aria-hidden="true" size={16} />,
         current: theme === choice,
         onSelect: () => setTheme(choice),
       }))}
@@ -492,12 +492,12 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       items={[
         {
           label: "API keys",
-          icon: <KeyRound aria-hidden="true" size={15} />,
+          icon: <KeyRound aria-hidden="true" size={16} />,
           onSelect: () => navigate("/account/api-keys"),
         },
         {
           label: "Sign out",
-          icon: <LogOut aria-hidden="true" size={15} />,
+          icon: <LogOut aria-hidden="true" size={16} />,
           separated: true,
           onSelect: onSignOut,
         },
@@ -733,7 +733,7 @@ export function Shell({
     <div className="flex h-full min-h-0">
       <a
         href="#main"
-        className="sr-only z-[90] rounded-control border border-line bg-surface font-medium text-action shadow-lg focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2"
+        className="sr-only layer-skip rounded-control border border-line bg-surface font-medium text-action shadow-overlay focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2"
       >
         Skip to content
       </a>
@@ -741,7 +741,7 @@ export function Shell({
         aria-label="Main"
         className="hidden w-16 shrink-0 flex-col items-center gap-1 border-line border-r bg-structure py-3 md:flex"
       >
-        <Link to="/" className="mb-3.5 flex no-underline">
+        <Link to="/" className="mb-4 flex no-underline">
           <BrandMark />
         </Link>
         {rail()}
@@ -765,12 +765,12 @@ export function Shell({
               onClick={() => togglePanel(false)}
               className="flex size-7 items-center justify-center rounded-control text-ink-subtle hover:bg-surface hover:text-ink"
             >
-              <PanelLeftClose aria-hidden="true" size={15} />
+              <PanelLeftClose aria-hidden="true" size={16} />
             </button>
           </div>
           <div className="px-3 pt-3 pb-1.5">
-            <label className="flex h-[30px] items-center gap-2 rounded-control border border-line px-2.5 text-ink-subtle focus-within:border-line-strong">
-              <Search aria-hidden="true" size={13} />
+            <label className="flex h-[30px] items-center gap-2 rounded-control border border-line px-3 text-ink-subtle focus-within:border-line-strong">
+              <Search aria-hidden="true" size={14} />
               <input
                 aria-label="Filter the sections"
                 placeholder="Filter"
@@ -788,7 +788,7 @@ export function Shell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-line border-b bg-canvas pr-3 pl-2 md:pr-4 md:pl-3.5">
+        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-line border-b bg-canvas pr-3 pl-2 md:pr-4 md:pl-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
@@ -796,7 +796,7 @@ export function Shell({
               onClick={() => setDrawer(true)}
               className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-surface hover:text-ink md:hidden"
             >
-              <MenuIcon aria-hidden="true" size={17} />
+              <MenuIcon aria-hidden="true" size={16} />
             </button>
             {hasPanel ? (
               <button
@@ -810,12 +810,12 @@ export function Shell({
                   panelOpen ? "hidden md:flex lg:hidden" : "hidden md:flex"
                 }`}
               >
-                <PanelLeftOpen aria-hidden="true" size={15} />
+                <PanelLeftOpen aria-hidden="true" size={16} />
               </button>
             ) : null}
             <nav
               aria-label="Where you are"
-              className="flex min-w-0 items-center gap-2 overflow-hidden text-[13px] whitespace-nowrap"
+              className="flex min-w-0 items-center gap-2 overflow-hidden text-body-sm whitespace-nowrap"
             >
               {tenantId && workspaceId ? (
                 <>
@@ -959,7 +959,7 @@ export function Shell({
             {tenantId && workspaceId && drafts > 0 ? (
               <Link
                 to={`/t/${tenantId}/workspaces/${workspaceId}/release`}
-                className="hidden h-7 items-center gap-1.5 rounded-control border border-line px-2.5 text-meta text-ink no-underline hover:bg-surface lg:flex"
+                className="hidden h-7 items-center gap-1.5 rounded-control border border-line px-3 text-meta text-ink no-underline hover:bg-surface lg:flex"
               >
                 <Junction kind="pending" size={5} />
                 <span className="font-mono">{drafts}</span> draft{drafts === 1 ? "" : "s"}
@@ -969,9 +969,9 @@ export function Shell({
             {tenantId && workspaceId && failed > 0 ? (
               <Link
                 to={`/t/${tenantId}/workspaces/${workspaceId}/runs?status=failed`}
-                className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-2.5 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
+                className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-3 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
               >
-                <CircleX aria-hidden="true" size={13} className="text-danger" />
+                <CircleX aria-hidden="true" size={14} className="text-danger" />
                 <span className="font-mono">{failed}</span> failed run{failed === 1 ? "" : "s"}
               </Link>
             ) : null}
@@ -979,11 +979,11 @@ export function Shell({
               type="button"
               onClick={openPalette}
               aria-label="Search or jump to"
-              className="flex h-8 items-center gap-2 rounded-control text-meta text-ink-subtle hover:text-ink md:h-7 md:w-56 md:border md:border-line md:bg-structure md:pr-1.5 md:pl-2.5"
+              className="flex h-8 items-center gap-2 rounded-control text-meta text-ink-subtle hover:text-ink md:h-7 md:w-56 md:border md:border-line md:bg-structure md:pr-1.5 md:pl-3"
             >
-              <Search aria-hidden="true" size={15} className="mx-1.5 md:mx-0" />
+              <Search aria-hidden="true" size={16} className="mx-1.5 md:mx-0" />
               <span className="hidden flex-1 text-left md:inline">Search or jump to…</span>
-              <kbd className="hidden rounded-[4px] border border-line px-1 font-mono text-tag md:inline">
+              <kbd className="hidden rounded-inner border border-line px-1 font-mono text-tag md:inline">
                 ⌘K
               </kbd>
             </button>
@@ -1018,7 +1018,7 @@ export function Shell({
         side="left"
         size="narrow"
         title={
-          <span className="flex items-center gap-2.5">
+          <span className="flex items-center gap-2">
             <BrandMark size={24} decorative />
             {brand.productName}
           </span>

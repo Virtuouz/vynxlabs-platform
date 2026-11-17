@@ -102,7 +102,7 @@ export function JunctionList({
   items: { key: string; kind: JunctionKind; content: ReactNode }[];
 }) {
   return (
-    <ol className="relative m-0 flex list-none flex-col gap-2.5 p-0 pl-4">
+    <ol className="relative m-0 flex list-none flex-col gap-2 p-0 pl-4">
       <span
         aria-hidden="true"
         className="absolute top-1.5 bottom-1.5 left-[3px] w-px bg-line-strong"

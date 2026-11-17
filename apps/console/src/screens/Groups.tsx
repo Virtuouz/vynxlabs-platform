@@ -107,9 +107,7 @@ function MembersDialog({
                 <span className="min-w-0">
                   <span className="block truncate">{person.email}</span>
                   {person.name ? (
-                    <span className="block truncate text-[12.5px] text-ink-muted">
-                      {person.name}
-                    </span>
+                    <span className="block truncate text-meta text-ink-muted">{person.name}</span>
                   ) : null}
                 </span>
                 <Button
@@ -245,7 +243,7 @@ export function EndUserGroups({ base }: { base: string }) {
           {
             header: "People",
             align: "end",
-            cell: (row) => <span className="font-mono text-telemetry">{row.memberCount}</span>,
+            cell: (row) => <span className="font-mono text-code">{row.memberCount}</span>,
           },
           {
             header: "",
@@ -392,7 +390,7 @@ export function AttributesDialog({
             Add an attribute
           </Button>
         </div>
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           Names are lowercase letters, digits and underscores.
         </p>
         {problem ? <Notice tone="danger">{problem}</Notice> : null}

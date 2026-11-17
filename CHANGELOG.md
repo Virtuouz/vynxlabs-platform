@@ -2,6 +2,19 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 14, one design system
+
+### For tenant developers
+
+- **The kit's tokens are version 2, and apps built on `@vynxlabs/ui` look slightly different.** What moved:
+  - **Type.** New roles `text-display-lg` (26 px), `text-emphasis` (15), `text-body-sm` (13), `text-code` (13, mono) and `text-code-sm` (12, mono). `text-display` is now 20 px (was 26), `text-title` 16 (was 18), `text-meta` 12 (was 12.5) and `text-label` 11 (was 12). Line heights are whole pixels. `text-telemetry` and `text-micro` are gone: use `font-mono text-code` and `text-meta`.
+  - **Corners.** Panels are 8 px (was 10). New `rounded-inner` (2 px inside the control radius, for tags, chips and cells) and `rounded-overlay` (dialogs and sheets). A theme's `radius-panel` still overrides it.
+  - **Elevation and layers.** `shadow-overlay` (menus, popovers, toasts), `shadow-modal` (dialogs, sheets) and `shadow-drag`, deeper in dark. `layer-sticky`, `layer-sheet`, `layer-dialog`, `layer-popover`, `layer-toast` and `layer-skip` in place of z-index numbers.
+  - **Controls.** `h-control` is the page's control height: 36 px by default, set by `--vx-control-height`. `Button` takes `size="large"` (always 36 px) beside `regular` and `small`, and shows a pressed state. Inputs pad 12 px.
+  - **Motion.** Dialogs fade and settle, sheets slide in from their edge, menus and comboboxes fade in (`motion-fast`, `motion-base`, `motion-slow`). Nothing moves under `prefers-reduced-motion`.
+  - **Prose** is set to one measure, `max-w-measure` (72ch).
+- **What to do.** Nothing, unless an app used `text-telemetry` or `text-micro`, or depends on the old sizes. Look over your app's screens after upgrading.
+
 ## Unreleased: phase 13, the debugging and authoring loop
 
 ### For operators

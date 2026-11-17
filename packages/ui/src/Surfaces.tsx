@@ -30,8 +30,8 @@ export function Card({
     title || action ? (
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
-          {title ? <h3 className="m-0 text-base font-semibold">{title}</h3> : null}
-          {description ? <p className="m-0 text-[13px] text-ink-muted">{description}</p> : null}
+          {title ? <h3 className="m-0 text-title font-semibold">{title}</h3> : null}
+          {description ? <p className="m-0 text-body-sm text-ink-muted">{description}</p> : null}
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
@@ -66,9 +66,9 @@ export function Card({
 }
 
 const AVATAR_SIZES = {
-  small: "size-7 text-xs",
-  regular: "size-9 text-sm",
-  large: "size-12 text-base",
+  small: "size-7 text-meta",
+  regular: "size-9 text-body",
+  large: "size-12 text-emphasis",
 };
 
 /** The first letters of a name's first and last words, for an avatar. */

@@ -168,7 +168,7 @@ function DriftSheet({
             </p>
             <pre
               data-testid="drift-diff"
-              className="m-0 max-h-[60vh] overflow-auto rounded-control border border-line bg-sunken p-3 font-mono text-[12px] leading-5"
+              className="m-0 max-h-[60vh] overflow-auto rounded-control border border-line bg-sunken p-3 font-mono text-code-sm leading-5"
             >
               {lines.map((line, index) =>
                 line.type === "fold" ? (

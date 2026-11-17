@@ -320,7 +320,7 @@ function ListFrame({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="m-0 text-title">{title}</h2>
-          {description ? <p className="m-0 max-w-[70ch] text-ink-muted">{description}</p> : null}
+          {description ? <p className="m-0 max-w-measure text-ink-muted">{description}</p> : null}
         </div>
         {action}
       </div>

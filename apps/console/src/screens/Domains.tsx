@@ -36,7 +36,7 @@ interface WorkspaceName {
   name: string;
 }
 
-const code = (text: string) => <code className="font-mono text-[13px] break-all">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code break-all">{text}</code>;
 
 const failed = (error: unknown) => {
   const failure = error as ApiError;
@@ -189,7 +189,7 @@ function RecordLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="min-w-0">
-        <span className="block text-[13px] text-ink-muted">{label}</span>
+        <span className="block text-body-sm text-ink-muted">{label}</span>
         {code(value)}
       </span>
       <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
@@ -372,7 +372,7 @@ export function Domains({ base }: { base: string }) {
 
   return (
     <Page title="Domains" action={addButton}>
-      <div className="flex max-w-[75ch] flex-col gap-2 text-ink-muted">
+      <div className="flex max-w-measure flex-col gap-2 text-ink-muted">
         <p className="m-0">
           A hostname of the client's own, public or internal to their network, serves one app at its
           root, or the portal with every app of a workspace by its path. Point the name at this

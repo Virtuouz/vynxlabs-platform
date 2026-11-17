@@ -674,7 +674,7 @@ export function ScriptEditor({
         />
       ) : null}
       {kind === "script" && schemaReading.waiting ? (
-        <p className="m-0 text-[13px] text-ink-muted" role="status">
+        <p className="m-0 text-body-sm text-ink-muted" role="status">
           {schemaReading.slow
             ? "Your schema will be read from the code once a worker is available."
             : "Reading the schema from your code…"}
@@ -686,13 +686,13 @@ export function ScriptEditor({
         </Notice>
       ) : null}
       {kind === "trigger_source" ? (
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           Nobody starts a trigger source by hand. To try it, deploy it and name it in a webhook or a
           schedule.
         </p>
       ) : null}
       {kind === "connector" ? (
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           A connection names this connector by its path. To try it, deploy it, set up a connection
           of this kind, and use the connection from a script.
         </p>
@@ -714,9 +714,9 @@ export function ScriptEditor({
           onSubmit={test}
         />
       )}
-      <p className="m-0 text-[13px] text-ink-muted">
+      <p className="m-0 text-body-sm text-ink-muted">
         Runs the script as its draft has it, on a worker, without deploying anything.{" "}
-        <kbd className="rounded-[4px] border border-line px-1 font-mono text-tag">⌘↵</kbd>
+        <kbd className="rounded-inner border border-line px-1 font-mono text-tag">⌘↵</kbd>
       </p>
     </div>
   );
@@ -748,13 +748,13 @@ export function ScriptEditor({
 
   return (
     <section className="flex flex-col gap-4">
-      <Link to={`${link}/${about.list}`} className="text-[13px] text-action">
+      <Link to={`${link}/${about.list}`} className="text-body-sm text-action">
         {about.all}
       </Link>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           {opened ? (
-            <h1 className="m-0 truncate font-mono text-lg font-semibold">{path}</h1>
+            <h1 className="m-0 truncate font-mono text-title font-semibold">{path}</h1>
           ) : (
             <div className="w-72">
               <TextField
@@ -1026,7 +1026,7 @@ function ProblemList({
             className="flex w-full items-start gap-2 rounded-control px-2 py-1 text-left hover:bg-sunken"
           >
             <span
-              className={`shrink-0 font-mono text-telemetry ${
+              className={`shrink-0 font-mono text-code ${
                 item.severity === "error" ? "text-danger" : "text-attention"
               }`}
             >
@@ -1191,7 +1191,7 @@ export function Extensions({
               cell: (row) => (
                 <Link
                   to={`${link}/${CODE_KINDS[row.kind].edit}/${row.path}`}
-                  className="font-mono text-[13px] text-action"
+                  className="font-mono text-code text-action"
                 >
                   {row.path}
                 </Link>
@@ -1236,7 +1236,7 @@ function PublishedEvents({ root, runId }: { root: string; runId: string }) {
         <span className="text-meta text-ink-subtle">None.</span>
       ) : (
         events.data?.items.map((event) => (
-          <span key={event.id} className="font-mono text-telemetry">
+          <span key={event.id} className="font-mono text-code">
             {event.name}
           </span>
         ))

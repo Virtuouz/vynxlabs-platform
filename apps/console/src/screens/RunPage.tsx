@@ -131,7 +131,7 @@ function RunHeader({
       </nav>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="m-0 font-mono text-lg break-all">
+          <h1 className="m-0 font-mono text-title break-all">
             <Link to={pathLink} className="text-ink">
               {path}
             </Link>
@@ -301,11 +301,11 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               <Menu
                 label={
                   <span className="flex items-center gap-1.5">
-                    <RotateCcw aria-hidden="true" size={13} /> Re-run
-                    <ChevronDown aria-hidden="true" size={13} />
+                    <RotateCcw aria-hidden="true" size={14} /> Re-run
+                    <ChevronDown aria-hidden="true" size={14} />
                   </span>
                 }
-                triggerClassName="flex h-8 items-center rounded-control border border-line px-2.5 text-meta hover:bg-surface"
+                triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
                 align="end"
                 items={[
                   { label: "With the same input", onSelect: () => void confirmed("original") },
@@ -429,7 +429,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               <span className="flex items-center gap-2 font-medium text-danger">
                 <CircleX aria-hidden="true" size={14} /> Why it failed
               </span>
-              <p className="m-0 font-mono text-telemetry break-words whitespace-pre-wrap">
+              <p className="m-0 font-mono text-code break-words whitespace-pre-wrap">
                 {run.error.message}
               </p>
             </div>
@@ -438,7 +438,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             <div className="rounded-panel border border-line">
               <NextStep
                 tone="attention"
-                icon={<Lightbulb aria-hidden="true" size={15} />}
+                icon={<Lightbulb aria-hidden="true" size={16} />}
                 title={diagnosis.cause}
                 detail={diagnosis.next}
                 action={
@@ -601,11 +601,7 @@ function FlowRunHeader({
         pathLink={`${link}/flows/${run.flow}`}
         state={run.state}
         timing={
-          <Elapsed
-            from={run.createdAt}
-            to={run.finishedAt}
-            className="text-telemetry text-ink-muted"
-          />
+          <Elapsed from={run.createdAt} to={run.finishedAt} className="text-code text-ink-muted" />
         }
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
@@ -645,11 +641,11 @@ function FlowRunHeader({
               <Menu
                 label={
                   <span className="flex items-center gap-1.5">
-                    <RotateCcw aria-hidden="true" size={13} /> Re-run
-                    <ChevronDown aria-hidden="true" size={13} />
+                    <RotateCcw aria-hidden="true" size={14} /> Re-run
+                    <ChevronDown aria-hidden="true" size={14} />
                   </span>
                 }
-                triggerClassName="flex h-8 items-center rounded-control border border-line px-2.5 text-meta hover:bg-surface"
+                triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
                 align="end"
                 items={[
                   ...(finishedBadly

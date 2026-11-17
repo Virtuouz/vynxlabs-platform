@@ -566,6 +566,7 @@ Failures can notify people and can start an error-handling script or flow, confi
 ### Audit log
 
 - The audit log records every change to a resource, binding or secret, and every deploy, clone, export and import.
+- A member's own preferences (their settings, the items they opened last, and their saved views of a list) change nothing anyone else can see or do. They are kept without an audit entry, through a short, tested list of routes that may do so. A batch action is audited item by item, as each item would be alone.
 - It also records who started a run, and any operator access to tenant data.
 - Each entry states who, what, when and from where.
 - The log is append-only.

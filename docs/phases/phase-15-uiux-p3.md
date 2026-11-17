@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–9 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: built, all ten milestones, on branch `phase-15-uiux-p3`, off `main`. Not pushed.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -269,3 +269,51 @@ Some of the roadmap's evidence is out of date:
   - A run page scrolls on a short window.
   
   The whole e2e suite passed: 38 tests.
+
+### Milestone 10: journeys, the kit sheet, wrap-up
+- **Keyboard journeys** (`keyboard.spec.ts`, three tests):
+  1. a failed run opened from the runs list, and access given;
+  2. ⌘K inside the code editor, `g r`, `/`, and the sheet from the account menu with single keys turned off, and back on;
+  3. three runs checked with `x`, `j`, `x`, `j`, `x`, run again from the batch bar by Tab and Enter, then ⌘K on a run's page offering "Run again with the same input" first, and Enter asking before it does.
+  
+  Axe runs on the sheet, the palette with a run open, the runs list with rows checked, a failed run compared, and the wide runs list.
+- **The kit sheet** gained:
+  - a tooltip with its keys, and a disabled button that says why;
+  - `Kbd`;
+  - a context menu;
+  - the columns chooser;
+  - a list with rows checked and its batch bar;
+  - a split pane that folds;
+  - a `DiffView`.
+  
+  Its pictures were taken again in light and dark. The batch result dialog and the views menu are not on the sheet: one is a dialog, and the other needs a tenant's saved views. Their unit tests draw them.
+- **`master-spec.md`** now says that a member's own preferences (settings, recent items, saved views) are kept without an audit entry through a short tested list of routes, and that a batch is audited item by item.
+- **Checks on the last commit:**
+  - `pnpm test`: 1,391 tests.
+  - Lint, typecheck, `check:schemas`, `check:migrations` (67 files) and `check:licenses`.
+  - The whole e2e suite: 39 tests, with 104 compared pictures.
+
+## Exit criterion
+
+| Item | Met by |
+| --- | --- |
+| P3-1 keyboard | Milestone 2: one registry; every shortcut the console binds is pressed in `keys.test.tsx`; tooltips and menus show keys; single keys can be turned off, from the sheet in the account menu |
+| P3-2 palette | Milestone 3: with a run open, Run again is first (e2e); every result opens an object; a failed search says so with its request ID; pins |
+| P3-3 batch | Milestone 4: 25 runs run again in 3 interactions, a result for each (e2e); approvals, triggers, drafts |
+| P3-4 saved views | Milestone 5: a view restores filters, sort and columns, and its link opens the same list for another member (e2e) |
+| P3-5 panes | Milestone 6: sizes and folds survive a reload; every divider works from the keyboard (unit and e2e) |
+| P3-6 canvas | Milestone 7: duplicating gives valid, uniquely named steps in one action, undone in one (e2e); copy between flows; context menu; the case-rename fix |
+| P3-7 comparison | Milestone 8: a failed run whose last success was on another version shows the change and opens the diff (e2e) |
+| P3-8 wide | Milestone 9: at 2200 × 1100 no growing column is more than twice its content, and a run's log and input stand together (e2e) |
+
+**What is left, and why:**
+- **Apps have no page of their own.** The palette opens an app in its list, with its inspector open.
+- **"Select all N matching"** was not built. The runs list's "Cancel N queued" already acts on the filter on the server.
+- **Some panes stay fixed:** the App Builder's outline column, and a table's rows reordering their columns.
+- **Flow steps can't be aligned** to one another.
+- **Bugs found and fixed along the way:**
+  - renaming a branch case broke its connection;
+  - a run page could not scroll on a short window;
+  - a failed attempt read "succeeded" when nothing was logged as an error;
+  - typing in Monaco set off page shortcuts;
+  - a builder test was flaky.

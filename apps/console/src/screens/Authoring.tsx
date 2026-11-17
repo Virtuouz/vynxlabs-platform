@@ -18,6 +18,7 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
@@ -803,10 +804,17 @@ export function ScriptEditor({
               >
                 Save draft
               </Button>
-              {state === "draft" && !dirty ? (
-                <Link to={`${link}/changes`} className="text-action">
-                  Review and deploy
-                </Link>
+              {state === "draft" && !dirty && opened ? (
+                <DeployMenu
+                  root={root}
+                  link={link}
+                  path={opened}
+                  disabled={busy}
+                  onDeployed={() => {
+                    setState("deployed");
+                    setRevision(undefined);
+                  }}
+                />
               ) : null}
             </div>
           )}

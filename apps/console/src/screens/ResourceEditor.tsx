@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
@@ -414,10 +415,14 @@ export function ResourceEditor({
             <Button variant="primary" disabled={busy || (!dirty && state !== "new")} onClick={save}>
               Save draft
             </Button>
-            {state === "draft" && !dirty ? (
-              <Link to={`${link}/changes`} className="text-action">
-                Review and deploy
-              </Link>
+            {state === "draft" && !dirty && path ? (
+              <DeployMenu
+                root={root}
+                link={link}
+                path={path}
+                disabled={busy}
+                onDeployed={() => setState("deployed")}
+              />
             ) : null}
           </div>
         )}

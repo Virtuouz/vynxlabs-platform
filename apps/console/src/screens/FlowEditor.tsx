@@ -41,6 +41,7 @@ import {
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
+import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { typingIn, useHistory } from "../kit/history.ts";
 import { retryAfter } from "../kit/retry.ts";
 import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
@@ -1015,10 +1016,14 @@ export function FlowEditor({
           >
             Save draft
           </Button>
-          {state === "draft" && !dirty ? (
-            <Button size="small" variant="primary" onClick={() => navigate(`${link}/changes`)}>
-              Review and deploy
-            </Button>
+          {state === "draft" && !dirty && path ? (
+            <DeployMenu
+              root={root}
+              link={link}
+              path={path}
+              disabled={busy}
+              onDeployed={() => setState("deployed")}
+            />
           ) : null}
         </div>
       </header>

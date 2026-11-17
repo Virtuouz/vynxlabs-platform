@@ -169,3 +169,14 @@ Findings are recorded under each milestone as it lands.
   - The switcher keeps the object and its view when the other workspace has it (one `GET resources/*`), otherwise the section, and a list keeps its filters.
   - "promotes to X" is a link.
   - Production notices on the code, flow and resource editors link to the same thing in the dev workspace (`useDevWorkspace`).
+
+### Milestone 13: deploy and promote hand-offs
+
+- **No new server work.** Deploying a subset of drafts (`changes/deploy {paths}`, with `changes/preview?paths=`) was already supported.
+- **Deploying from the editor.** The script, flow and resource editors have a Deploy menu (`kit/DeployMenu.tsx`): "This change only" checks the preview for that one path, deploys it, and names the problems when it can't go alone; "Review all drafts" opens Release. Deploying to dev never touches production and the preview already guards it, so it isn't confirmed twice: it takes two presses.
+- **Toasts that lead on.**
+  - After a deploy: "Promote to <target>".
+  - After a promotion that started from a failed run (`?fromRun=`, carried from "Edit in dev" through the editor and Release): "Run the failed run again on vN", which re-runs it there on exactly the promoted `bundleId`.
+  - After any other promotion: "Open <target>".
+  - The deploy's inline success notice went: the toast says the same thing and offers the next step.
+- **The release step** is in the address (`?step=`).

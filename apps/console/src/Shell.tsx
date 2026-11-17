@@ -933,7 +933,7 @@ export function Shell({
                         <span className="truncate">{workspace?.name ?? "Workspace"}</span>
                         <ChevronsUpDown
                           aria-hidden="true"
-                          size={12}
+                          size={14}
                           className="shrink-0 text-ink-subtle"
                         />
                       </>
@@ -983,7 +983,7 @@ export function Shell({
                         <span className="truncate">{tenant?.name ?? "Tenant"}</span>
                         <ChevronsUpDown
                           aria-hidden="true"
-                          size={12}
+                          size={14}
                           className="shrink-0 text-ink-subtle"
                         />
                       </>

@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 
@@ -402,8 +403,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                 >
                   {column.label ?? column.name}
                   {sorted ? (
-                    <span aria-hidden="true" className="ml-1 text-action">
-                      {sorted.descending ? "▼" : "▲"}
+                    <span aria-hidden="true" className="ml-1 inline-flex align-middle text-action">
+                      {sorted.descending ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                     </span>
                   ) : null}
                 </th>
@@ -568,8 +569,11 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                       onClick={() => props.onSort?.(column.name)}
                     >
                       {column.label ?? column.name}
-                      <span aria-hidden="true" className={sorted ? "text-action" : "opacity-0"}>
-                        {sorted?.descending ? "▼" : "▲"}
+                      <span
+                        aria-hidden="true"
+                        className={`inline-flex ${sorted ? "text-action" : "opacity-0"}`}
+                      >
+                        {sorted?.descending ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                       </span>
                     </button>
                   ) : (

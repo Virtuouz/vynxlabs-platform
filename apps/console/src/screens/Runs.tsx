@@ -666,7 +666,7 @@ export function RunsWorkbench({
               aria-label={`Stop showing only runs of ${url.target}`}
               className="flex items-center gap-1 rounded-control border border-line px-2 py-0.5 text-meta hover:bg-surface"
             >
-              Of <Mono>{url.target}</Mono> <X aria-hidden="true" size={12} />
+              Of <Mono>{url.target}</Mono> <X aria-hidden="true" size={14} />
             </button>
           ) : null}
           {tags.map((one) => (
@@ -677,7 +677,7 @@ export function RunsWorkbench({
               aria-label={`Stop showing only runs tagged ${one}`}
               className="flex items-center gap-1 rounded-control border border-line px-2 py-0.5 text-meta hover:bg-surface"
             >
-              Tagged <Mono>{one}</Mono> <X aria-hidden="true" size={12} />
+              Tagged <Mono>{one}</Mono> <X aria-hidden="true" size={14} />
             </button>
           ))}
           <span className="ml-auto flex items-center gap-2">

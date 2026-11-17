@@ -1,3 +1,4 @@
+import { LucideProvider } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
@@ -46,66 +47,70 @@ export function PageShell({
   children,
 }: PageShellProps) {
   return (
-    <div className="min-h-screen bg-canvas text-ink">
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-line bg-surface px-4 py-2 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          {logo ? <img src={logo} alt="" className="size-7 shrink-0 rounded-control" /> : null}
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-title font-semibold">{title}</span>
-            {subtitle ? (
-              <span className="truncate text-body-sm text-ink-muted">{subtitle}</span>
-            ) : null}
+    <LucideProvider strokeWidth={1.75}>
+      <div className="min-h-screen bg-canvas text-ink">
+        <header className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-line bg-surface px-4 py-2 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            {logo ? <img src={logo} alt="" className="size-7 shrink-0 rounded-control" /> : null}
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-title font-semibold">{title}</span>
+              {subtitle ? (
+                <span className="truncate text-body-sm text-ink-muted">{subtitle}</span>
+              ) : null}
+            </div>
           </div>
-        </div>
-        {nav && nav.length > 0 ? (
-          <nav
-            aria-label="Main"
-            className="order-last -mx-1 flex w-full gap-1 overflow-x-auto px-1 pb-1 sm:order-none sm:mx-0 sm:w-auto sm:px-0 sm:pb-0"
-          >
-            {nav.map((item) => {
-              const classes = `inline-flex shrink-0 items-center gap-1.5 rounded-control px-3 py-1.5 font-medium whitespace-nowrap no-underline ${
-                item.current ? "bg-action-soft text-action" : "text-ink-muted hover:bg-sunken"
-              }`;
-              const content = (
-                <>
-                  {item.label}
-                  {item.count !== undefined && item.count > 0 ? (
-                    <span className="rounded-full bg-attention-soft px-1.5 text-meta text-attention tabular-nums">
-                      {item.count}
-                    </span>
-                  ) : null}
-                </>
-              );
-              return item.href !== undefined ? (
-                <a
-                  key={item.label}
-                  href={item.href}
-                  aria-current={item.current ? "page" : undefined}
-                  className={classes}
-                >
-                  {content}
-                </a>
-              ) : (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={item.onSelect}
-                  aria-current={item.current ? "page" : undefined}
-                  className={classes}
-                >
-                  {content}
-                </button>
-              );
-            })}
-          </nav>
-        ) : null}
-        {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
-      </header>
-      <main
-        className={`mx-auto w-full px-4 py-5 sm:px-6 ${width === "full" ? "max-w-none" : "max-w-6xl"}`}
-      >
-        {children}
-      </main>
-    </div>
+          {nav && nav.length > 0 ? (
+            <nav
+              aria-label="Main"
+              className="order-last -mx-1 flex w-full gap-1 overflow-x-auto px-1 pb-1 sm:order-none sm:mx-0 sm:w-auto sm:px-0 sm:pb-0"
+            >
+              {nav.map((item) => {
+                const classes = `inline-flex shrink-0 items-center gap-1.5 rounded-control px-3 py-1.5 font-medium whitespace-nowrap no-underline ${
+                  item.current ? "bg-action-soft text-action" : "text-ink-muted hover:bg-sunken"
+                }`;
+                const content = (
+                  <>
+                    {item.label}
+                    {item.count !== undefined && item.count > 0 ? (
+                      <span className="rounded-full bg-attention-soft px-1.5 text-meta text-attention tabular-nums">
+                        {item.count}
+                      </span>
+                    ) : null}
+                  </>
+                );
+                return item.href !== undefined ? (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    aria-current={item.current ? "page" : undefined}
+                    className={classes}
+                  >
+                    {content}
+                  </a>
+                ) : (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={item.onSelect}
+                    aria-current={item.current ? "page" : undefined}
+                    className={classes}
+                  >
+                    {content}
+                  </button>
+                );
+              })}
+            </nav>
+          ) : null}
+          {actions ? (
+            <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
+          ) : null}
+        </header>
+        <main
+          className={`mx-auto w-full px-4 py-5 sm:px-6 ${width === "full" ? "max-w-none" : "max-w-6xl"}`}
+        >
+          {children}
+        </main>
+      </div>
+    </LucideProvider>
   );
 }

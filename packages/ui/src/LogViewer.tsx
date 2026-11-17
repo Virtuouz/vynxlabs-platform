@@ -1,4 +1,5 @@
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -379,7 +380,11 @@ export function LogViewer({
                 }}
                 className="text-ink-muted hover:text-ink"
               >
-                {expanded ? "▾" : "▸"}
+                {expanded ? (
+                  <ChevronDown aria-hidden="true" size={14} />
+                ) : (
+                  <ChevronRight aria-hidden="true" size={14} />
+                )}
               </button>
               {expanded ? (
                 <span className="mt-0.5 block rounded-inner bg-surface px-2 py-1 whitespace-pre text-ink-muted">
@@ -448,7 +453,7 @@ export function LogViewer({
               disabled={found.length === 0}
               onClick={() => step(-1)}
             >
-              ↑
+              <ArrowUp aria-hidden="true" size={14} />
             </button>
             <button
               type="button"
@@ -457,7 +462,7 @@ export function LogViewer({
               disabled={found.length === 0}
               onClick={() => step(1)}
             >
-              ↓
+              <ArrowDown aria-hidden="true" size={14} />
             </button>
             <button
               type="button"

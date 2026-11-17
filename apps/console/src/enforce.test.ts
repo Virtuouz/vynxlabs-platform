@@ -209,3 +209,30 @@ test("no screen draws a panel by hand", () => {
   }
   expect([...new Set(found)]).toEqual([]);
 });
+
+/**
+ * Icons come in three sizes, 14, 16 and 20 px, at one stroke (07, P4-3), and a
+ * mark the kit draws is an icon, not a character that each font draws its own
+ * way. The brand mark and the junction motif have sizes of their own.
+ */
+test("icons are 14, 16 or 20 px, and no character stands in for one", () => {
+  const kit = join(here, "../../../packages/ui/src");
+  const found: string[] = [];
+  for (const path of [...files(here), ...files(kit)]) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const where = `${path.includes("packages/ui") ? "kit:" : ""}${path.split("/src/")[1]}:${index + 1}`;
+      const size = /\bsize=\{(\d+)\}/.exec(line)?.[1];
+      const motif = /BrandMark|Junction/.test(
+        `${lines[index - 3]}${lines[index - 2]}${lines[index - 1]}${line}`,
+      );
+      if (size && !["14", "16", "20"].includes(size) && !motif) {
+        found.push(`${where} size ${size}`);
+      }
+      if (/>\s*[✓×▲▼▾▸‹›↑↓]\s*</.test(line) || /^\s*[✓×▲▼▾▸‹›↑↓]\s*$/.test(line)) {
+        found.push(`${where} a character for an icon`);
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});

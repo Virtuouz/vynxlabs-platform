@@ -18,3 +18,8 @@ time {
   vertical-align: bottom !important;
   visibility: hidden !important;
 }
+
+/* A time inside words read but not shown has no place in the picture, and nothing to mask. */
+.sr-only time {
+  display: none !important;
+}

@@ -40,9 +40,9 @@ export function LiveIndicator() {
       {status === "live" ? (
         <Junction kind="here" size={5} />
       ) : status === "reconnecting" || status === "connecting" ? (
-        <RefreshCw aria-hidden="true" size={12} className="animate-spin" />
+        <RefreshCw aria-hidden="true" size={14} className="animate-spin" />
       ) : status === "offline" ? (
-        <WifiOff aria-hidden="true" size={12} />
+        <WifiOff aria-hidden="true" size={14} />
       ) : null}
       {words}
     </span>

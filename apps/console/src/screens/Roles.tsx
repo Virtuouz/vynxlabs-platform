@@ -1,4 +1,5 @@
 import { Button, Notice, SideSheet, TextField } from "@vynxlabs/ui";
+import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
@@ -248,7 +249,7 @@ export function PermissionPicker({
                   className="text-ink-muted hover:text-ink"
                   onClick={() => onChange(value.filter((held) => held !== one))}
                 >
-                  ×
+                  <X aria-hidden="true" size={14} />
                 </button>
               </span>
             ))}

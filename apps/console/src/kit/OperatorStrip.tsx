@@ -69,7 +69,12 @@ export function OperatorStrip() {
     >
       <ShieldAlert aria-hidden="true" size={14} className="shrink-0 text-attention" />
       <span className="min-w-0 truncate">
-        <strong>Operator access</strong> as {grant.roleName} until <Time value={grant.expiresAt} />
+        <strong>Operator access</strong>
+        {/* On a phone the line keeps its room for the buttons: the role and the time are read, not shown. */}
+        <span className="sr-only sm:not-sr-only">
+          {" "}
+          as {grant.roleName} until <Time value={grant.expiresAt} />
+        </span>
       </span>
       <span className="hidden min-w-0 flex-1 text-ink-muted sm:flex">
         <span className="shrink-0">·&nbsp;</span>

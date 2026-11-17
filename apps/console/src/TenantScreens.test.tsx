@@ -222,9 +222,17 @@ test("a service account says what it is for, and it is changed in place", async 
     tenants: [{ id: "t1", name: "Acme", slug: "acme" }],
     instancePermissions: [],
   } as never;
-  show(<Tenant tenantId="t1" me={me} path="/t/t1/service-accounts" />);
+  const { unmount } = show(<Tenant tenantId="t1" me={me} path="/t/t1/service-accounts" />);
   expect(await screen.findByText("Not said")).toBeTruthy();
-  fireEvent.click(screen.getByText("ci"));
+  // The account's name leads to its own page, where everything about it is.
+  expect(screen.getByRole("link", { name: "ci" }).getAttribute("href")).toBe(
+    "/t/t1/service-accounts/s1",
+  );
+  unmount();
+  show(<Tenant tenantId="t1" me={me} path="/t/t1/service-accounts/s1" />);
+  for (const tab of ["Identity", "Keys", "Access", "Agent tools"]) {
+    expect(await screen.findByRole("tab", { name: tab })).toBeTruthy();
+  }
   fireEvent.change(await screen.findByLabelText("What it is for"), {
     target: { value: "Deploys from CI" },
   });
@@ -236,4 +244,42 @@ test("a service account says what it is for, and it is changed in place", async 
       body: { description: "Deploys from CI" },
     }),
   );
+});
+
+test("access is given starting from the person, found by name on the server, with a role of where", async () => {
+  routes[`GET ${base}/principals`] = () => ({
+    items: [{ type: "member", id: "m7", label: "bob@acme.test", detail: "Bob Ray" }],
+  });
+  routes[`GET ${base}/workspaces`] = () => ({ items: [{ id: "w1", name: "Orders dev" }] });
+  routes[`GET ${base}/roles`] = () => ({
+    items: [
+      { id: "r1", name: "tenant_viewer", workspaceId: null },
+      { id: "r2", name: "orders_operator", workspaceId: "w1" },
+    ],
+  });
+  const { GiveAccess } = await import("./screens/GiveAccess.tsx");
+  const given = vi.fn();
+  show(<GiveAccess base={base} open onClose={() => {}} onGiven={given} />);
+  const who = await screen.findByLabelText("Who");
+  // The people offered come from the server's search (typing is walked in a browser, in e2e).
+  await waitFor(() =>
+    expect(calls.some((call) => call.url.includes(`${base}/principals?limit=10`))).toBe(true),
+  );
+  fireEvent.click(who);
+  fireEvent.keyDown(who, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: /bob@acme\.test/ }));
+  // A role defined in a workspace is offered only once that workspace is chosen.
+  expect(screen.queryByRole("option", { name: /orders_operator/ })).toBeNull();
+  fireEvent.change(screen.getByLabelText("Where"), { target: { value: "w1" } });
+  fireEvent.change(screen.getByLabelText("Role"), { target: { value: "r2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Give access" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+      principalType: "member",
+      principalId: "m7",
+      roleId: "r2",
+      workspaceId: "w1",
+    }),
+  );
+  await waitFor(() => expect(given).toHaveBeenCalled());
 });

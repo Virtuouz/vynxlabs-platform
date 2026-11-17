@@ -67,6 +67,11 @@ export interface ComboboxFieldProps extends Common {
   /** The chosen option's value, or nothing. */
   value: string | undefined;
   onChange: (value: string | undefined) => void;
+  /**
+   * Called with what is typed, for a list the server searches: `options` are
+   * then shown as given, without being narrowed here.
+   */
+  onSearch?: (typed: string) => void;
 }
 
 /** One choice from a list that can be searched by typing. Use it when a list is too long for a select. */
@@ -77,6 +82,7 @@ export function ComboboxField({
   options,
   value,
   onChange,
+  onSearch,
   placeholder,
   disabled,
   empty = "Nothing matches.",
@@ -90,6 +96,9 @@ export function ComboboxField({
         onValueChange={(next: Option | null) => onChange(next?.value)}
         itemToStringLabel={text}
         isItemEqualToValue={same}
+        {...(onSearch
+          ? { filter: null, onInputValueChange: (typed: string) => onSearch(typed) }
+          : {})}
         {...(disabled ? { disabled: true } : {})}
       >
         <div className={box}>

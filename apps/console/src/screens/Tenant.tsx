@@ -4,7 +4,7 @@ import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
-import { Inspector, KeyValues } from "../kit/layout.tsx";
+import { KeyValues } from "../kit/layout.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import {
   type CreateConfig,
@@ -61,11 +61,13 @@ const FlowEditor = lazy(() =>
 );
 
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
 import { EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
+import { GiveAccess } from "./GiveAccess.tsx";
 import { EndUserGroups } from "./Groups.tsx";
 import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
 import { ConnectionPage, EventPage, ScriptPage, SecretPage, VariablePage } from "./ObjectPages.tsx";
@@ -768,54 +770,7 @@ function WorkspaceDetail({
 
 function ServiceAccounts({ base, path }: { base: string; path: string }) {
   const selected = match("/t/:t/service-accounts/:id", path)?.id;
-  if (selected) {
-    const keys = `${base}/service-accounts/${selected}/api-keys`;
-    return (
-      <>
-        <ListScreen<KeyRow>
-          title="Service account keys"
-          description="A key acts as the service account, with the access the account has been given."
-          path={keys}
-          rowKey={(row) => row.id}
-          columns={keyColumns}
-          empty={{ title: "No keys yet" }}
-          create={{
-            action: "Create API key",
-            fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
-            submit: (values) => api.post(keys, values),
-            afterCreate: showNewKey,
-          }}
-          rowActions={(row, reload) =>
-            row.revokedAt ? null : (
-              <RemoveButton
-                label="Revoke"
-                confirm={`Revoke the key "${row.name}"?`}
-                run={() => api.delete(`${keys}/${row.id}`)}
-                onDone={reload}
-              />
-            )
-          }
-        />
-        <Page
-          title="Agent access"
-          description="What an AI agent gets when it connects with one of these keys."
-        >
-          <AgentAccess base={base} account={selected} />
-        </Page>
-        <Page
-          title="Access"
-          description="Everything this account may do in the tenant, where, and what gives it."
-        >
-          <EffectiveAccess
-            base={base}
-            tenantId={base.split("/")[2] as string}
-            principalType="service_account"
-            id={selected}
-          />
-        </Page>
-      </>
-    );
-  }
+  if (selected) return <ServiceAccountPage base={base} id={selected} />;
   return <ServiceAccountList base={base} />;
 }
 
@@ -826,12 +781,128 @@ interface ServiceAccount {
   createdAt: string;
 }
 
+/**
+ * One service account, all in one place (08 §6.3): what it is and what it is
+ * for, its keys, what it may do and where, and what an agent gets with it.
+ */
+function ServiceAccountPage({ base, id }: { base: string; id: string }) {
+  const tenantId = base.split("/")[2] as string;
+  const accounts = useLoad<{ items: ServiceAccount[] }>(`${base}/service-accounts`);
+  const account = accounts.data?.items.find((one) => one.id === id);
+  const [giving, setGiving] = useState(false);
+  const [accessVersion, setAccessVersion] = useState(0);
+  if (accounts.error) return <ErrorState error={accounts.error} onRetry={accounts.reload} />;
+  if (!accounts.data) return <Loading />;
+  if (!account) {
+    return (
+      <NotFound home={`/t/${tenantId}/service-accounts`} homeLabel="Go to the service accounts" />
+    );
+  }
+  const keys = `${base}/service-accounts/${id}/api-keys`;
+  return (
+    <>
+      <ObjectPage
+        eyebrow="Service account"
+        title={account.name}
+        meta={
+          <p className="m-0 mt-2 text-ink-muted">
+            {account.description || "What it is for is not said."} Made {when(account.createdAt)}.
+          </p>
+        }
+        actions={
+          <RemoveButton
+            label="Delete"
+            confirm={`Delete ${account.name}? Its keys stop working at once.`}
+            run={() => api.delete(`${base}/service-accounts/${id}`)}
+            onDone={() => navigate(`/t/${tenantId}/service-accounts`)}
+          />
+        }
+        tabs={[
+          {
+            id: "identity",
+            label: "Identity",
+            content: (
+              <div className="max-w-xl">
+                <DescriptionForm base={base} account={account} onSaved={accounts.reload} />
+              </div>
+            ),
+          },
+          {
+            id: "keys",
+            label: "Keys",
+            content: (
+              <ListScreen<KeyRow>
+                as="section"
+                title="Keys"
+                description="A key acts as the service account, with the access the account has been given."
+                path={keys}
+                rowKey={(row) => row.id}
+                columns={keyColumns}
+                empty={{ title: "No keys yet" }}
+                create={{
+                  action: "Create API key",
+                  fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
+                  submit: (values) => api.post(keys, values),
+                  afterCreate: showNewKey,
+                }}
+                rowActions={(row, reload) =>
+                  row.revokedAt ? null : (
+                    <RemoveButton
+                      label="Revoke"
+                      confirm={`Revoke the key "${row.name}"?`}
+                      run={() => api.delete(`${keys}/${row.id}`)}
+                      onDone={reload}
+                    />
+                  )
+                }
+              />
+            ),
+          },
+          {
+            id: "access",
+            label: "Access",
+            content: (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="m-0 text-ink-muted">
+                    Everything this account may do in the tenant, where, and what gives it.
+                  </p>
+                  <Button variant="primary" onClick={() => setGiving(true)}>
+                    Give access
+                  </Button>
+                </div>
+                <EffectiveAccess
+                  key={accessVersion}
+                  base={base}
+                  tenantId={tenantId}
+                  principalType="service_account"
+                  id={id}
+                />
+              </div>
+            ),
+          },
+          {
+            id: "agent",
+            label: "Agent tools",
+            content: <AgentAccess base={base} account={id} />,
+          },
+        ]}
+      />
+      <GiveAccess
+        base={base}
+        open={giving}
+        onClose={() => setGiving(false)}
+        onGiven={() => setAccessVersion((n) => n + 1)}
+        who={{ type: "service_account", id, label: account.name }}
+      />
+    </>
+  );
+}
+
 function ServiceAccountList({ base }: { base: string }) {
   const tenantId = base.split("/")[2];
   const accounts = useLoad<{ items: ServiceAccount[] }>(`${base}/service-accounts`);
-  const [selected, setSelected] = useState<string>();
   const [creating, setCreating] = useState(false);
-  const chosen = accounts.data?.items.find((row) => row.id === selected);
   return (
     <>
       <CollectionView<ServiceAccount>
@@ -847,14 +918,18 @@ function ServiceAccountList({ base }: { base: string }) {
         error={accounts.error}
         onRetry={accounts.reload}
         rowKey={(row) => row.id}
-        selected={selected}
-        onSelect={(row) => setSelected(row.id)}
+        onSelect={(row) => navigate(`/t/${tenantId}/service-accounts/${row.id}`)}
         columns={[
           {
             header: "Name",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
-                <span className="font-medium">{row.name}</span>
+                <Link
+                  to={`/t/${tenantId}/service-accounts/${row.id}`}
+                  className="font-medium text-action"
+                >
+                  {row.name}
+                </Link>
                 {row.description ? (
                   <span className="text-meta text-ink-muted md:hidden">{row.description}</span>
                 ) : null}
@@ -877,53 +952,14 @@ function ServiceAccountList({ base }: { base: string }) {
           title: "No service accounts yet",
           text: "Create one for each system that calls this tenant, so each can be given only what it needs.",
         }}
-        inspector={
-          <Inspector
-            open={chosen !== undefined}
-            label="Service account"
-            eyebrow="Service account"
-            title={chosen?.name}
-            onClose={() => setSelected(undefined)}
-            footer={
-              chosen ? (
-                <>
-                  <Link
-                    to={`/t/${tenantId}/service-accounts/${chosen.id}`}
-                    className="font-medium text-body-sm text-action hover:underline"
-                  >
-                    Keys and agent access
-                  </Link>
-                  <span className="flex-1" />
-                  <RemoveButton
-                    label="Delete"
-                    confirm={`Delete ${chosen.name}? Its keys stop working.`}
-                    run={() => api.delete(`${base}/service-accounts/${chosen.id}`)}
-                    onDone={() => {
-                      setSelected(undefined);
-                      accounts.reload();
-                    }}
-                  />
-                </>
-              ) : null
-            }
-          >
-            {chosen ? (
-              <DescriptionForm
-                key={chosen.id}
-                base={base}
-                account={chosen}
-                onSaved={accounts.reload}
-              />
-            ) : null}
-          </Inspector>
-        }
       />
       <CreateDialog
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={() => {
+        onCreated={(made) => {
           setCreating(false);
           accounts.reload();
+          navigate(`/t/${tenantId}/service-accounts/${(made as { id: string }).id}?tab=keys`);
         }}
         config={{
           action: "Create service account",
@@ -941,6 +977,7 @@ function ServiceAccountList({ base }: { base: string }) {
               name,
               ...(description ? { description } : {}),
             }),
+          done: (_made, values) => `${values.name} is made. Give it a key, then access.`,
         }}
       />
     </>

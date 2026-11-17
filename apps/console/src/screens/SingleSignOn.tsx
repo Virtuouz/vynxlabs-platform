@@ -12,12 +12,12 @@ import {
   TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
-import { ErrorState } from "../kit/LoadState.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
@@ -939,14 +939,12 @@ function ProviderDetail({
   base,
   instance,
   provider,
-  onBack,
   onChanged,
   onRemoved,
 }: {
   base: string;
   instance: boolean;
   provider: IdentityProvider;
-  onBack: () => void;
   onChanged: (provider: IdentityProvider) => void;
   onRemoved: () => void;
 }) {
@@ -1008,13 +1006,6 @@ function ProviderDetail({
 
   return (
     <section className="flex flex-col gap-4">
-      <button
-        type="button"
-        className="flex w-fit cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-action"
-        onClick={onBack}
-      >
-        <ArrowLeft size={16} aria-hidden="true" /> All providers
-      </button>
       <PageHeader
         title={provider.name}
         state={<State provider={provider} />}
@@ -1174,19 +1165,28 @@ export function SingleSignOn({ base }: { base: string }) {
   const instance = base === "/instance";
   const list = useLoad<{ items: IdentityProvider[] }>(`${base}/identity-providers`);
   const [connecting, setConnecting] = useState(false);
-  const [shown, setShown] = useState<IdentityProvider>();
+  // The provider open is in the address: a link opens it, and the breadcrumb leads back.
+  const [open, setOpen] = useUrlParam("provider", undefined, { push: true });
+  const [fresh, setFresh] = useState<IdentityProvider>();
+  const shown =
+    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const setShown = (provider: IdentityProvider | undefined) => {
+    setFresh(provider);
+    setOpen(provider?.id);
+  };
 
+  if (open && !shown && list.error) return <ErrorState error={list.error} onRetry={list.reload} />;
+  if (open && !shown && !list.data) return <Loading />;
   if (shown) {
     return (
       <ProviderDetail
         base={base}
         instance={instance}
         provider={shown}
-        onBack={() => {
-          setShown(undefined);
+        onChanged={(provider) => {
+          setFresh(provider);
           list.reload();
         }}
-        onChanged={setShown}
         onRemoved={() => {
           setShown(undefined);
           list.reload();

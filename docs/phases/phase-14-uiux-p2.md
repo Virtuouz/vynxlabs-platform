@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–9 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–10 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -268,3 +268,21 @@ Findings are recorded under each milestone as it lands.
   - The builder tests go through the publish dialog.
   - In e2e: the canvas's share at 1440 × 900, the phone preview stacking, and axe on the App Builder. `exit-criterion.spec.ts` publishes through the dialog.
   - The whole e2e suite passed: 26 tests.
+
+### Milestone 10: admin information architecture
+
+- **Giving access starts from the person** (`screens/GiveAccess.tsx`). A side sheet finds who by name or email through `GET principals?q=` (members, groups, service accounts, end users, groups of end users, and "every end user"), then where (the tenant or a workspace), then the role from those that can be held there. A workspace's own roles are offered once that workspace is chosen. `ComboboxField` gained `onSearch`, for lists the server searches, which turns off narrowing in the browser.
+- **Adding a member ends with the same step.** "Add member" offers where and a role, sent as `bindings` on `POST members` and made in the member's own transaction through `insertBinding`, which is extracted from the bindings route and shared. A role that can't be held there undoes the whole change, so there is no member without the access they were meant to have; `kernel.test.ts` checks this.
+- **One service-account page.** `/service-accounts/:id` is an `ObjectPage` with tabs: Identity (what it is for), Keys, Access (with Give access already pointed at the account) and Agent tools, plus Delete. The list leads to it, and a new account opens on its Keys tab. The list's inspector, and the page of three unrelated sections, are gone.
+- **In the address.** The SSO provider open (`?provider=`) and the hostname open (`?hostname=`), each keeping the server's fresher copy after a change. The SSO "All providers" button went with that: the breadcrumb's section link leads back.
+- **Worker pools** are a `DataTable`: state first, then pool, workspaces and credentials, with Remove in the row's menu.
+- **Audit search is the server's:**
+  - Server: `auditSelect` is shared by the page, a single entry, the facets and the export. Filters are action, area, actor, target, target type, workspace, text and time, all within retention. Target names are resolved by kind (member, workspace, tenant, end user, service account, group, role, identity provider, hostname), and migration 0065 indexes the log by actor and by target.
+  - Console: who, the action and the kind of target are chosen from the facets, with counts. Every filter and the open entry are in the address, and the search is debounced and sent to the server. Targets show by name and link where they have a page. An entry linked to is fetched when it isn't loaded, there is a "Copy a link to it" button, and a CSV of the same filters.
+  - The kind chips counted loaded rows only, so they are gone.
+- **Tests:**
+  - `kernel.test.ts` covers target type, workspace and text, target names, one entry and 404, facets, CSV, principal search, and a member added with access or refused as a whole.
+  - `Audit.test.tsx` covers server-side filters chosen from facets, server search, and opening a linked entry that isn't loaded.
+  - `TenantScreens.test.tsx` covers the service account page's tabs, and giving access with workspace roles only where they apply.
+  - Typing into the server-searched combobox couldn't be driven under happy-dom, since Base UI doesn't report the input there. Milestone 12's "give access" journey does it in a browser.
+  - The whole suite (1,335 tests) and the whole e2e suite (26) passed.

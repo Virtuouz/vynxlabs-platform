@@ -7,6 +7,7 @@ import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.t
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
+import { GiveAccess } from "./GiveAccess.tsx";
 import { Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 
@@ -116,6 +117,7 @@ const whereOf = (binding: Binding, workspaces: WorkspaceRef[]) =>
 
 export function MemberList({ base, framed }: { base: string; framed?: Framed }) {
   const members = useLoad<{ items: Member[] }>(`${base}/members?limit=200`);
+  const roles = useLoad<{ items: Role[] }>(`${base}/roles?limit=200`);
   const bindings = useLoad<{ items: Binding[] }>(`${base}/bindings`);
   const workspaces = useLoad<{ items: WorkspaceRef[] }>(`${base}/workspaces`);
   const [search, setSearch] = useUrlParam("q", "");
@@ -289,7 +291,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
         config={{
           action: "Add member",
           description:
-            "For someone who already has an account, the email is enough. Otherwise fill in all three to create one.",
+            "For someone who already has an account, the email is enough. Otherwise fill in name and password to create one. Belonging grants nothing by itself: give them a role here, or later.",
           fields: [
             { name: "email", label: "Email", type: "email" },
             { name: "name", label: "Name", required: false, hint: "Only for a new account." },
@@ -300,13 +302,39 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               required: false,
               hint: "Only for a new account. At least 12 characters.",
             },
+            {
+              name: "workspaceId",
+              label: "Where they work",
+              options: [
+                { value: "", label: "The whole tenant" },
+                ...(workspaces.data?.items ?? []).map((w) => ({ value: w.id, label: w.name })),
+              ],
+            },
+            {
+              name: "roleId",
+              label: "Role",
+              options: [
+                { value: "", label: "No access yet" },
+                ...(roles.data?.items ?? [])
+                  .filter((role) => !role.workspaceId)
+                  .map((role) => ({ value: role.id, label: role.name })),
+              ],
+              hint: "Given with the membership, in the same change.",
+            },
           ],
-          submit: ({ email, name, password }) =>
+          submit: ({ email, name, password, roleId, workspaceId }) =>
             api.post(`${base}/members`, {
               email,
               ...(name ? { name } : {}),
               ...(password ? { password } : {}),
+              ...(roleId
+                ? { bindings: [{ roleId, ...(workspaceId ? { workspaceId } : {}) }] }
+                : {}),
             }),
+          done: (_made, values) =>
+            values.roleId
+              ? `${values.email} is a member, with ${roles.data?.items.find((one) => one.id === values.roleId)?.name ?? "their role"}.`
+              : `${values.email} is a member. They hold no role yet.`,
         }}
       />
     </>
@@ -335,16 +363,6 @@ const KIND_LABEL: Record<string, string> = {
 /** Who holds which role, and where. */
 export function AccessList({ base, framed }: { base: string; framed?: Framed }) {
   const bindings = useLoad<{ items: Binding[] }>(`${base}/bindings`);
-  const roles = useLoad<{ items: Role[] }>(`${base}/roles`);
-  const members = useLoad<{ items: { id: string; email: string }[] }>(`${base}/members?limit=200`);
-  const groups = useLoad<{ items: { id: string; name: string }[] }>(`${base}/groups`);
-  const accounts = useLoad<{ items: { id: string; name: string }[] }>(`${base}/service-accounts`);
-  const endUserGroups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${base}/end-user-groups`,
-  );
-  const endUsers = useLoad<{ items: { id: string; email: string }[] }>(
-    `${base}/end-users?limit=200`,
-  );
   const workspaces = useLoad<{ items: WorkspaceRef[] }>(`${base}/workspaces`);
   const [who, setWho] = useState<Who>("all");
   const [giving, setGiving] = useState(false);
@@ -363,28 +381,6 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
   const rows = all?.filter((row) => who === "all" || WHO_OF[row.principalType] === who);
   const countOf = (kind: Who) =>
     all ? all.filter((row) => WHO_OF[row.principalType] === kind).length : null;
-
-  const principals = [
-    ...(members.data?.items ?? []).map((m) => ({ value: `member:${m.id}`, label: m.email })),
-    ...(groups.data?.items ?? []).map((g) => ({
-      value: `group:${g.id}`,
-      label: `Group: ${g.name}`,
-    })),
-    ...(accounts.data?.items ?? []).map((a) => ({
-      value: `service_account:${a.id}`,
-      label: `Service account: ${a.name}`,
-    })),
-    // Every end user is one principal with no ID: whoever has signed in to this tenant's portal.
-    { value: "end_users:", label: "Every end user" },
-    ...(endUserGroups.data?.items ?? []).map((g) => ({
-      value: `end_user_group:${g.id}`,
-      label: `End-user group: ${g.name}`,
-    })),
-    ...(endUsers.data?.items ?? []).map((u) => ({
-      value: `end_user:${u.id}`,
-      label: `End user: ${u.email}`,
-    })),
-  ];
 
   return (
     <>
@@ -463,44 +459,11 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
             : { title: "Nothing of this kind holds a role" }
         }
       />
-      <CreateDialog
+      <GiveAccess
+        base={base}
         open={giving}
         onClose={() => setGiving(false)}
-        onCreated={() => {
-          setGiving(false);
-          bindings.reload();
-        }}
-        config={{
-          action: "Give access",
-          fields: [
-            { name: "principal", label: "Who", options: principals },
-            {
-              name: "roleId",
-              label: "Role",
-              options: (roles.data?.items ?? [])
-                .filter((role) => !role.workspaceId)
-                .map((role) => ({ value: role.id, label: role.name })),
-            },
-            {
-              name: "workspaceId",
-              label: "Where",
-              options: [
-                { value: "", label: "Whole tenant" },
-                ...(workspaces.data?.items ?? []).map((w) => ({ value: w.id, label: w.name })),
-              ],
-            },
-          ],
-          submit: ({ principal = "", roleId, workspaceId }) => {
-            const [principalType, principalId] = principal.split(":");
-            return api.post(`${base}/bindings`, {
-              principalType,
-              ...(principalId ? { principalId } : {}),
-              roleId,
-              ...(workspaceId ? { workspaceId } : {}),
-            });
-          },
-          done: () => "Access given. It counts from the next request they make.",
-        }}
+        onGiven={bindings.reload}
       />
     </>
   );

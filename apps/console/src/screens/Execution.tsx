@@ -868,66 +868,19 @@ interface WorkerPool {
   managed: boolean;
 }
 
-/** One place code runs: whether a worker is there now, and what runs on it. */
-function PoolCard({
-  pool,
-  remove,
-  onRemoved,
-}: {
-  pool: WorkerPool;
-  remove: (() => Promise<unknown>) | undefined;
-  onRemoved: () => void;
-}) {
-  const label = pool.name ?? "Default pool";
-  return (
-    <li className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="m-0 flex flex-wrap items-center gap-2 text-title">
-            {pool.name ? <Mono>{pool.name}</Mono> : label}
-            {pool.managed ? <Tag>Instance-run</Tag> : null}
-            {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
-          </h3>
-          {pool.description ? (
-            <p className="m-0 text-meta text-ink-muted">{pool.description}</p>
-          ) : null}
-        </div>
-        {pool.online > 0 ? (
-          <StatePill state="ok" detail={pool.lastSeenAt ? fromNow(pool.lastSeenAt) : undefined}>
-            {pool.online} online
-          </StatePill>
-        ) : (
-          <StatePill
-            state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "off"}
-            detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
-          >
-            No worker online
-          </StatePill>
-        )}
-      </div>
-      <KeyValues
-        rows={[
-          {
-            label: "Runs code of",
-            value:
-              pool.workspaces.length > 0
-                ? pool.workspaces.map((workspace) => workspace.name).join(", ")
-                : "No workspace yet",
-          },
-          { label: "Credentials", value: <Mono>{pool.credentials}</Mono> },
-        ]}
-      />
-      {remove ? (
-        <div>
-          <RemoveButton
-            label="Remove pool"
-            confirm={`Remove the pool "${label}"? Scripts that name it wait until it is made again.`}
-            run={remove}
-            onDone={onRemoved}
-          />
-        </div>
-      ) : null}
-    </li>
+/** Whether a worker is in a pool now, as its state. */
+function PoolState({ pool }: { pool: WorkerPool }) {
+  return pool.online > 0 ? (
+    <StatePill state="ok" detail={pool.lastSeenAt ? fromNow(pool.lastSeenAt) : undefined}>
+      {pool.online} online
+    </StatePill>
+  ) : (
+    <StatePill
+      state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "off"}
+      detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
+    >
+      No worker online
+    </StatePill>
   );
 }
 
@@ -1084,19 +1037,77 @@ export function Workers({ base }: { base: string }) {
         ) : !pools.data ? (
           <Loading />
         ) : (
-          <ul
-            aria-label="Worker pools"
-            className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2 2xl:grid-cols-3"
-          >
-            {pools.data.items.map((pool) => (
-              <PoolCard
-                key={pool.id ?? pool.name ?? "default"}
-                pool={pool}
-                remove={pool.id ? () => api.delete(`${base}/worker-pools/${pool.id}`) : undefined}
-                onRemoved={pools.reload}
-              />
-            ))}
-          </ul>
+          <DataTable<WorkerPool>
+            label="Worker pools"
+            rows={pools.data.items}
+            rowKey={(pool) => pool.id ?? pool.name ?? "default"}
+            columns={[
+              {
+                header: "State",
+                width: "w-56",
+                cell: (pool) => <PoolState pool={pool} />,
+              },
+              {
+                header: "Pool",
+                cell: (pool) => (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="flex flex-wrap items-center gap-2">
+                      {pool.name ? <Mono>{pool.name}</Mono> : "Default pool"}
+                      {pool.managed ? <Tag>Instance-run</Tag> : null}
+                      {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
+                    </span>
+                    {pool.description ? (
+                      <span className="truncate text-meta text-ink-muted">{pool.description}</span>
+                    ) : null}
+                  </span>
+                ),
+              },
+              {
+                header: "Runs code of",
+                priority: 2,
+                cell: (pool) =>
+                  pool.workspaces.length > 0 ? (
+                    pool.workspaces.map((workspace) => workspace.name).join(", ")
+                  ) : (
+                    <span className="text-ink-subtle">No workspace yet</span>
+                  ),
+              },
+              {
+                header: "Credentials",
+                priority: 3,
+                align: "end",
+                cell: (pool) => <Mono>{pool.credentials}</Mono>,
+              },
+            ]}
+            actions={(pool) =>
+              pool.id
+                ? [
+                    {
+                      label: "Remove the pool",
+                      danger: true,
+                      onSelect: async () => {
+                        const label = pool.name ?? "Default pool";
+                        const sure = await ask.confirm({
+                          title: `Remove the pool "${label}"?`,
+                          text: "Scripts that name it wait until it is made again.",
+                          action: "Remove",
+                          danger: true,
+                        });
+                        if (!sure) return;
+                        try {
+                          await api.delete(`${base}/worker-pools/${pool.id}`);
+                          notify.success(`The pool "${label}" is removed.`);
+                          pools.reload();
+                        } catch (error) {
+                          notify.error(error);
+                        }
+                      },
+                    },
+                  ]
+                : []
+            }
+            empty={{ title: "No pool yet", text: "Scripts that name no pool use the default." }}
+          />
         )}
         {managed.data?.state === "refused" ? (
           <Notice tone="attention">

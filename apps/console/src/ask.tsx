@@ -88,3 +88,13 @@ export const notify = {
   error: (error: unknown, options?: ToastOptions) =>
     need(toasts).danger(failureText(error), options),
 };
+
+/** Puts text on the clipboard and says so. */
+export async function copyText(text: string, done: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    notify.success(done);
+  } catch {
+    notify.error(new Error("The clipboard could not be reached. Copy it from the page instead."));
+  }
+}

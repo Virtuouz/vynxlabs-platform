@@ -11,6 +11,15 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - Row cursors now point after the last row seen (keyset), wherever a table has a key and is sorted by one column or none. Pages no longer repeat or skip rows when rows are added meanwhile, and deep pages cost the same as the first. Cursors stay opaque, and old offset cursors still work.
   - New `POST rows-deletions/*`, written `POST /workspaces/:w/row-deletions/<table> {ids}`. It deletes up to 1,000 rows the policy allows, in one statement, and returns `deleted` and `missing`.
   - New `GET rows-export/<table>?filter=&sort=` streams the rows the caller may read as CSV, up to 100,000. Values a spreadsheet would run as a formula start with an apostrophe.
+- **Database change.** Migration 0065 adds two indexes to the audit log, by actor and by target, for searching a tenant's log. Made on the partitioned table, they reach every month's partition.
+- **Audit API.**
+  - `GET audit` takes `targetType`, `workspaceId` and `q` (text in the action, target or kind of target), and its entries carry `targetLabel`, what the target is called now.
+  - New `GET audit/:id` for a link to one entry.
+  - New `GET audit-facets` gives the actions, actors and kinds of target among the entries the same filters keep, with counts.
+  - New `GET audit-export` streams the same entries as CSV, up to 100,000.
+- **People API.**
+  - New `GET principals?q=` finds members, groups, service accounts, end users and groups of end users by name or email.
+  - `POST members` takes optional `bindings` (role, and workspace), given in the same change as the membership. Each needs `binding:write` where it applies.
 - **New API.** `POST /workspaces/:w/secrets {name, value}` makes a secret and refuses a name already in use (409). `PUT secrets/:name` still sets or replaces one. Connection, data source, group member, Git repository and identity provider responses carry `credentialSetAt` and `credentialSetBy`.
 
 ### For tenant developers

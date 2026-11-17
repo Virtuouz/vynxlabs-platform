@@ -2,7 +2,7 @@ import { Button, JsonView, LogViewer, type MenuItem, Notice, ResultView, Tabs } 
 import { ArrowUpRight, CircleX, FileCode2, Lightbulb, Workflow, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import {
@@ -678,16 +678,6 @@ export function RunsWorkbench({
       </MasterDetail>
     </div>
   );
-}
-
-/** Puts text on the clipboard and says so. */
-async function copyText(text: string, done: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    notify.success(done);
-  } catch {
-    notify.error(new Error("The clipboard could not be reached. Copy it from the page instead."));
-  }
 }
 
 function FlowRunSummary({ run, link }: { run: Activity; link: string }) {

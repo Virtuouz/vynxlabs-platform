@@ -639,6 +639,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     <div
       ref={region}
       className={`${fill ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} ${
+        // panel-allowed: a table drawn on its own carries the panel's edge itself.
         framed ? "rounded-panel border border-line bg-surface" : ""
       }`}
     >

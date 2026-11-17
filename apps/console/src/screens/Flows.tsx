@@ -22,7 +22,7 @@ import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
-import { FilterChips, HeadNote, Inspector, KeyValues } from "../kit/layout.tsx";
+import { FilterChips, HeadNote, Inspector, KeyValues, Panel } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { ReferenceList } from "../kit/references.tsx";
@@ -846,7 +846,7 @@ export function FlowRunView({
                 id: "timeline",
                 label: "Timeline",
                 content: (
-                  <div className="rounded-panel border border-line bg-surface p-4">
+                  <Panel as="div" className="p-4">
                     {steps.length === 0 ? (
                       <p className="m-0 text-ink-muted">No step has started yet.</p>
                     ) : (
@@ -861,7 +861,7 @@ export function FlowRunView({
                         }}
                       />
                     )}
-                  </div>
+                  </Panel>
                 ),
               },
               {
@@ -894,10 +894,7 @@ export function FlowRunView({
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           {chosen ? (
-            <section
-              aria-label={`Step ${chosen.node}`}
-              className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
-            >
+            <Panel aria-label={`Step ${chosen.node}`} className="flex flex-col gap-3  p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <h2 className="m-0 flex items-center gap-2 text-title font-semibold">
                   <Code>{chosen.node}</Code>{" "}
@@ -998,19 +995,19 @@ export function FlowRunView({
               {chosen.status === "succeeded" ? (
                 <ResultView label={`Output of ${chosen.node}`} value={chosen.output} />
               ) : null}
-            </section>
+            </Panel>
           ) : (
             <p className="m-0 text-ink-muted">
               Choose a step to see what it was given and produced.
             </p>
           )}
-          <section
+          <Panel
             aria-label="The flow's input and output"
-            className="grid gap-3 rounded-panel border border-line bg-surface p-4 md:grid-cols-2"
+            className="grid gap-3  p-4 md:grid-cols-2"
           >
             <ResultView label="Flow input" value={run.input} />
             <ResultView label="Flow output" value={run.output} />
-          </section>
+          </Panel>
         </div>
       </div>
     </div>

@@ -244,7 +244,7 @@ test("no text draws over what is beside it, at any width", async () => {
   }
 });
 
-test.fixme("no bordered box sits inside another", async () => {
+test("no bordered box sits inside another", async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
   for (const [name, path] of screens()) {
     await open(path as string);

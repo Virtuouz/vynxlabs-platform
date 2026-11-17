@@ -244,7 +244,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                             </span>
                             <pre
                               className={`m-0 max-h-72 overflow-auto rounded-control border bg-code-bg p-3 font-mono text-code ${
-                                choices[stem] === side ? "border-action" : "border-line"
+                                choices[stem] === side ? "border-action" : "border-transparent"
                               }`}
                             >
                               {(side === "mine" ? file.mine : file.theirs) ?? "(removed)"}

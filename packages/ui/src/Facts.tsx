@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useContained } from "./Panel.tsx";
 
 export interface Fact {
   label: string;
@@ -13,10 +14,10 @@ export function Facts({ facts, columns = 4 }: { facts: readonly Fact[]; columns?
     (fact) => fact.value !== undefined && fact.value !== null && fact.value !== "",
   );
   const grid = { 2: "", 3: "md:grid-cols-3", 4: "md:grid-cols-2 xl:grid-cols-4" }[columns];
+  // Inside a panel it is already in a box (07 §7.5): no second border.
+  const box = useContained() ? "" : "rounded-control border border-line p-3";
   return (
-    <dl
-      className={`m-0 grid grid-cols-1 gap-x-6 gap-y-2 rounded-control border border-line p-3 ${grid}`}
-    >
+    <dl className={`m-0 grid grid-cols-1 gap-x-6 gap-y-2 ${box} ${grid}`}>
       {shown.map((fact) => (
         <div key={fact.label} className="flex min-w-0 items-baseline gap-3">
           <dt className="w-16 shrink-0 text-meta text-ink-muted">{fact.label}</dt>

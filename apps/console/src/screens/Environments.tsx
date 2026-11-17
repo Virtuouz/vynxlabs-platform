@@ -11,7 +11,14 @@ import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { count } from "../kit/format.ts";
-import { KeyValues, Panel, SectionLabel, Stepper } from "../kit/layout.tsx";
+import {
+  KeyValues,
+  Panel,
+  SectionLabel,
+  SettingsRow,
+  SettingsRows,
+  Stepper,
+} from "../kit/layout.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
@@ -77,64 +84,50 @@ export function WorkspaceControls({
   return (
     <div className="flex max-w-[60rem] flex-col gap-6">
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Runtime controls</SectionLabel>
-        {workspace.triggersPaused ? (
-          <Notice
-            tone="attention"
-            action={
+      <SettingsRows label="Workspace actions">
+        <SettingsRow
+          title={
+            workspace.triggersPaused ? (
+              <StatePill state="paused">Triggers are paused</StatePill>
+            ) : (
+              <StatePill state="on">Triggers are on</StatePill>
+            )
+          }
+          action={
+            workspace.triggersPaused ? (
               <Button size="small" onClick={() => setPaused(false)}>
                 Resume triggers
               </Button>
-            }
-          >
-            <strong>Triggers are paused.</strong> No schedule, webhook or event starts anything in
-            this workspace. Runs you start by hand still work.
-            {workspace.type === "dev"
-              ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
-              : ""}
-          </Notice>
-        ) : (
-          <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <StatePill state="on">Triggers are on</StatePill>
-              <span className="text-meta text-ink-muted">
-                Pausing stops every schedule, webhook and event here at once. One trigger can be
-                paused alone under Triggers.
-              </span>
-            </span>
-            <Button size="small" onClick={() => setPaused(true)}>
-              Pause triggers
+            ) : (
+              <Button size="small" onClick={() => setPaused(true)}>
+                Pause triggers
+              </Button>
+            )
+          }
+        >
+          {workspace.triggersPaused
+            ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
+                workspace.type === "dev"
+                  ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
+                  : ""
+              }`
+            : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
+        </SettingsRow>
+        <SettingsRow
+          title="Copy workspace"
+          action={
+            <Button size="small" onClick={() => setCloning(true)}>
+              Clone workspace
             </Button>
-          </Panel>
-        )}
-      </section>
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Copy workspace</SectionLabel>
-        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <span className="min-w-0 flex-1 basis-64 text-ink-muted">
-            A new dev workspace with what is deployed here, and its rows and files if you choose. It
-            gets no connection, data source or secret value until you bind them.
-          </span>
-          <Button size="small" onClick={() => setCloning(true)}>
-            Clone workspace
-          </Button>
-        </Panel>
-      </section>
-      {promotion && workspace.type === "dev" ? (
-        <section className="flex flex-col gap-3">
-          <SectionLabel>Promotion target</SectionLabel>
-          {promotion}
-        </section>
-      ) : null}
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Danger zone</SectionLabel>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-danger/40 p-4">
-          {workspace.type === "dev" ? (
-            <>
-              <span className="min-w-0 flex-1 basis-64 text-ink-muted">
-                Deletes the workspace with its resources, secrets, run history, tables and files.
-              </span>
+          }
+        >
+          A new dev workspace with what is deployed here, and its rows and files if you choose. It
+          gets no connection, data source or secret value until you bind them.
+        </SettingsRow>
+        {workspace.type === "dev" ? (
+          <SettingsRow
+            title={<span className="text-danger">Delete workspace</span>}
+            action={
               <Button
                 size="small"
                 variant="danger"
@@ -157,14 +150,22 @@ export function WorkspaceControls({
               >
                 Delete workspace
               </Button>
-            </>
-          ) : (
-            <span className="text-ink-muted">
-              A production workspace is not deleted from here. It goes when its tenant is deleted.
-            </span>
-          )}
-        </div>
-      </section>
+            }
+          >
+            Deletes the workspace with its resources, secrets, run history, tables and files.
+          </SettingsRow>
+        ) : (
+          <SettingsRow title="Delete workspace">
+            A production workspace is not deleted from here. It goes when its tenant is deleted.
+          </SettingsRow>
+        )}
+      </SettingsRows>
+      {promotion && workspace.type === "dev" ? (
+        <section className="flex flex-col gap-3">
+          <SectionLabel>Promotion target</SectionLabel>
+          {promotion}
+        </section>
+      ) : null}
       <CloneDialog
         open={cloning}
         onClose={() => setCloning(false)}
@@ -518,7 +519,7 @@ export function Promotion({
   };
 
   return (
-    <section className="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4">
+    <Panel className="flex flex-col gap-2 p-4">
       <h2 className="m-0 text-title">Promotion</h2>
       <p className="m-0 max-w-measure text-ink-muted">
         Promoting activates the bundle that is running here in the workspace this one is linked to.
@@ -619,7 +620,7 @@ export function Promotion({
           </div>
         ) : null}
       </Dialog>
-    </section>
+    </Panel>
   );
 }
 

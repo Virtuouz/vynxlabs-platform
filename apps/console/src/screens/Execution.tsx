@@ -1,4 +1,12 @@
-import { type BadgeTone, Button, type LogLine, logText, Notice, saveText } from "@vynxlabs/ui";
+import {
+  type BadgeTone,
+  Button,
+  type LogLine,
+  logText,
+  Notice,
+  Panel,
+  saveText,
+} from "@vynxlabs/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -1309,7 +1317,7 @@ export function ConnectionGroups({ root }: { root: string }) {
         </p>
       ) : null}
       {groups.data.items.map((group) => (
-        <div key={group.path} className="rounded-panel border border-line bg-surface">
+        <Panel as="div" key={group.path} className="">
           <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">
             <div className="min-w-0">
               <code className="font-mono text-code font-semibold">{group.path}</code>
@@ -1366,7 +1374,7 @@ export function ConnectionGroups({ root }: { root: string }) {
               ]}
             />
           )}
-        </div>
+        </Panel>
       ))}
       <CreateDialog
         key={adding}

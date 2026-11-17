@@ -6,12 +6,13 @@ import { Calendar } from "./icons.ts";
 import {
   Avatar,
   Button,
-  Card,
   DateField,
   DateStepper,
   initialsOf,
   isoDay,
+  Notice,
   PageShell,
+  Panel,
   SegmentedControl,
   Skeleton,
   utcInputValue,
@@ -72,29 +73,39 @@ describe("the kit for apps", () => {
     expect(north.checked).toBe(false);
   });
 
-  test("a card has a heading, an action and a footer, and can be one button", () => {
+  test("a panel has a heading, an action and a footer, can be one button, and keeps notices borderless inside", () => {
     const onSelect = vi.fn();
     const { rerender } = render(
-      <Card
+      <Panel
         title="Biscuit"
         description="Dog · 4 years"
         action={<span>Booked</span>}
         footer="Next visit Tuesday"
       >
         Allergic to penicillin
-      </Card>,
+      </Panel>,
     );
     expect(screen.getByRole("heading", { name: "Biscuit" })).toBeTruthy();
     expect(screen.getByText("Next visit Tuesday")).toBeTruthy();
     rerender(
-      <Card title="Biscuit" onSelect={onSelect} selected>
+      <Panel title="Biscuit" onSelect={onSelect} selected>
         Dog
-      </Card>,
+      </Panel>,
     );
     const button = screen.getByRole("button", { name: /Biscuit/ });
     expect(button.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(button);
     expect(onSelect).toHaveBeenCalledOnce();
+    rerender(
+      <>
+        <Notice tone="attention">Outside</Notice>
+        <Panel>
+          <Notice tone="attention">Inside</Notice>
+        </Panel>
+      </>,
+    );
+    expect(screen.getByText("Outside").parentElement?.className).toContain("border-attention");
+    expect(screen.getByText("Inside").parentElement?.className).not.toContain("border");
   });
 
   test("an avatar is a picture or the name's initials, named for screen readers", () => {

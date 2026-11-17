@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button, Panel } from "@vynxlabs/ui";
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
@@ -66,10 +66,7 @@ export function RunCompare({
   }
   const { versionChanged, inputChanged, bundleVersion } = previous.data;
   return (
-    <section
-      aria-labelledby="since-it-worked"
-      className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
-    >
+    <Panel aria-labelledby="since-it-worked" className="flex flex-col gap-3  p-4">
       <h2 id="since-it-worked" className="m-0 flex items-center gap-2 text-title">
         <GitCompareArrows aria-hidden="true" size={16} className="text-ink-muted" />
         Since it last worked
@@ -134,7 +131,7 @@ export function RunCompare({
           <Pending of={before} />
         )
       ) : null}
-    </section>
+    </Panel>
   );
 }
 

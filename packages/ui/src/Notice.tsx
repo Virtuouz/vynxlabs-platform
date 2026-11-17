@@ -1,26 +1,41 @@
 import type { ReactNode } from "react";
+import { useContained } from "./Panel.tsx";
 
 const tones = {
-  attention: "border-attention/40 bg-attention-soft text-ink",
-  danger: "border-danger/40 bg-danger-soft text-ink",
-  success: "border-success/40 bg-success-soft text-ink",
-  plain: "border-line bg-surface text-ink",
+  attention: "bg-attention-soft text-ink",
+  danger: "bg-danger-soft text-ink",
+  success: "bg-success-soft text-ink",
+  plain: "bg-surface text-ink",
+};
+const edges = {
+  attention: "border border-attention/40",
+  danger: "border border-danger/40",
+  success: "border border-success/40",
+  plain: "border border-line",
 };
 
-/** A message that needs to be seen: an error, a state the person must not miss, or that something worked. */
+/**
+ * A message that needs to be seen: an error, a state the person must not miss, or that something worked.
+ * Inside a `Panel` it drops its border and keeps its tint (07 §7.5), so no box sits in another.
+ */
 export function Notice({
   tone,
   children,
   action,
+  bare,
 }: {
   tone: keyof typeof tones;
   children: ReactNode;
   action?: ReactNode;
+  /** Without its border: where it sits inside a container that is not a `Panel`. */
+  bare?: boolean;
 }) {
+  const contained = useContained();
+  const edge = (bare ?? contained) ? "" : edges[tone];
   return (
     <div
       role={tone === "danger" ? "alert" : "status"}
-      className={`flex flex-wrap items-center justify-between gap-3 rounded-control border px-3 py-2 ${tones[tone]}`}
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-control px-3 py-2 ${tones[tone]} ${edge}`}
     >
       <div>{children}</div>
       {action}

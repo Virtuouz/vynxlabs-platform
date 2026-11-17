@@ -119,7 +119,7 @@ export function RecoveryCodes() {
           <Notice tone="attention">Copy these codes now. They are not shown again.</Notice>
           <ul
             aria-label="New recovery codes"
-            className="m-0 grid list-none grid-cols-1 gap-2 rounded-control border border-line bg-code-bg p-3 font-mono text-code sm:grid-cols-2"
+            className="m-0 grid list-none grid-cols-1 gap-2 rounded-control bg-code-bg p-3 font-mono text-code sm:grid-cols-2"
           >
             {codes.map((code) => (
               <li key={code} className="select-all">

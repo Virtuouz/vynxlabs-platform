@@ -160,7 +160,8 @@ test("triggers are paused and resumed, and only a dev workspace can be deleted",
       reload={reload}
     />,
   );
-  expect(screen.getByRole("status").textContent).toContain("Triggers are paused.");
+  expect(screen.getByText("Triggers are paused")).toBeTruthy();
+  expect(screen.getByText(/No schedule, webhook or event starts anything/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Resume triggers" }));
   await waitFor(() => expect(sent("PATCH")[1]?.body).toEqual({ triggersPaused: false }));
 

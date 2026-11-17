@@ -1,4 +1,5 @@
 import dagre from "@dagrejs/dagre";
+import { Panel } from "@vynxlabs/ui";
 import { useMemo, useRef, useState } from "react";
 import { type RunState, STATE_STROKE, stateLabel } from "./kit/status.tsx";
 
@@ -110,7 +111,7 @@ export function FlowGraph({
   };
 
   return (
-    <div className="relative overflow-auto rounded-panel border border-line bg-surface">
+    <Panel as="div" className="relative overflow-auto">
       {onMove ? null : (
         <button
           type="button"
@@ -312,6 +313,6 @@ export function FlowGraph({
           );
         })}
       </svg>
-    </div>
+    </Panel>
   );
 }

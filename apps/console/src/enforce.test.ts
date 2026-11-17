@@ -181,3 +181,31 @@ test("every time, duration and count is formatted by kit/format.ts", () => {
   }
   expect(found).toEqual([]);
 });
+
+/**
+ * `Panel` is the one container (07 §7.5): a notice or a set of facts inside it
+ * drops its own border, so no box is drawn inside another. A screen that
+ * draws a panel by hand loses that, and fails here.
+ */
+test("no screen draws a panel by hand", () => {
+  const found: string[] = [];
+  for (const path of [
+    ...files(join(here, "screens")),
+    ...files(join(here, "kit")),
+    ...files(here),
+  ]) {
+    // The kit's sheet shows boxes as boxes; branding previews a tenant's own theme.
+    if (path.endsWith("KitSheet.tsx") || path.endsWith("Branding.tsx")) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const why = `${lines[index - 1] ?? ""}${lines[index - 2] ?? ""}`;
+      if (
+        /rounded-panel border border-line bg-surface/.test(line) &&
+        !why.includes("panel-allowed:")
+      ) {
+        found.push(`${path.slice(here.length)}:${index + 1}`);
+      }
+    });
+  }
+  expect([...new Set(found)]).toEqual([]);
+});

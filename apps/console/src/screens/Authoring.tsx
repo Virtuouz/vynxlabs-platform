@@ -5,6 +5,7 @@ import {
   Notice,
   NumberField,
   type Option,
+  Panel,
   SelectField,
   Tabs,
   TextAreaField,
@@ -896,6 +897,7 @@ export function ScriptEditor({
           <Link to={`${link}/release`}>See what would change</Link>
         </Notice>
       ) : null}
+      {/* panel-allowed: a disclosure, drawn as a panel. */}
       <details
         className="rounded-panel border border-line bg-surface"
         open={!opened || kind !== "script"}
@@ -916,9 +918,9 @@ export function ScriptEditor({
           className="h-[calc(100dvh-13rem)] min-h-[30rem]"
           first={codeArea("100%")}
           second={
-            <section
+            <Panel
               aria-label="Test pane"
-              className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto rounded-panel border border-line bg-surface p-4"
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto  p-4"
             >
               {trying}
               <Tabs
@@ -974,7 +976,7 @@ export function ScriptEditor({
                   },
                 ]}
               />
-            </section>
+            </Panel>
           }
         />
       ) : (

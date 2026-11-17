@@ -17,7 +17,7 @@ import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import { Current } from "../kit/current.ts";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
-import { clock, } from "../kit/format.ts";
+import { clock } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";

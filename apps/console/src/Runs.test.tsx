@@ -152,14 +152,14 @@ test("each run is one row with what it produced, and the order is chosen by its 
 test("tags add up as filters, and a run's target can be the only one shown", async () => {
   history.replaceState(null, "", "/t/t1/workspaces/w1/runs?tag=vip");
   show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
-  await screen.findByText("reminders/send", { selector: "a" });
+  await screen.findByRole("link", { name: "reminders/send" });
   fireEvent.click(screen.getByRole("button", { name: "Show only runs tagged clinic:north" }));
   expect(new URLSearchParams(location.search).getAll("tag")).toEqual(["vip", "clinic:north"]);
   await waitFor(() => expect(lists().at(-1)).toContain("tag=vip&tag=clinic%3Anorth"));
   history.replaceState(null, "", "/t/t1/workspaces/w1/runs?target=reminders%2Fsend");
   cleanup();
   show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
-  await screen.findByText("reminders/send", { selector: "a" });
+  await screen.findByRole("link", { name: "reminders/send" });
   expect(lists().at(-1)).toContain("target=reminders%2Fsend");
   expect(
     screen.getByRole("button", { name: "Stop showing only runs of reminders/send" }),

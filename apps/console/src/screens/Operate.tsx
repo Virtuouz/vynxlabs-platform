@@ -18,6 +18,7 @@ import { ago, stamp } from "../kit/format.ts";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
@@ -225,10 +226,10 @@ export function TriggersWorkbench({
       header: "Trigger",
       cell: (row) => (
         <span className="flex min-w-0 flex-col">
-          <Mono className="truncate">
-            {row.path}
-            {row.node ? <span className="text-ink-subtle">#{row.node}</span> : null}
-          </Mono>
+          <span className="flex min-w-0 font-mono text-code">
+            <Truncate mode="middle">{row.path}</Truncate>
+            {row.node ? <span className="shrink-0 text-ink-subtle">#{row.node}</span> : null}
+          </span>
           <span className="text-meta text-ink-subtle">
             {row.type}
             {row.type === "event" && row.event ? ` · ${row.event}` : ""}

@@ -39,6 +39,7 @@ import {
 import { useDelayed } from "./LoadState.tsx";
 import { objectHref } from "./objects.tsx";
 import { SCOPES, SHORTCUTS, type ShortcutId } from "./shortcuts.ts";
+import { Truncate } from "./Truncate.tsx";
 
 export interface Destination {
   key: string;
@@ -841,7 +842,9 @@ export function CommandPalette({
                             />
                           ) : null}
                           {/* The name keeps its room; what it is, and where, gives way. */}
-                          <span className="max-w-[75%] shrink-0 truncate">{item.label}</span>
+                          <Truncate mode="middle" className="max-w-[75%] shrink-0">
+                            {item.label}
+                          </Truncate>
                           {item.where ? (
                             <span className="min-w-0 flex-1 truncate text-meta text-ink-subtle">
                               {item.where}

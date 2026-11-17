@@ -224,7 +224,7 @@ test.fixme("every workbench's first row starts within 160 px of the top", async 
   }
 });
 
-test.fixme("no text draws over what is beside it, at any width", async () => {
+test("no text draws over what is beside it, at any width", async () => {
   test.setTimeout(300_000);
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 900 });

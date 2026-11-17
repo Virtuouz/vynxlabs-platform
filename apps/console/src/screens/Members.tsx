@@ -6,7 +6,7 @@ import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CreateDialog, RemoveButton, } from "../ListScreen.tsx";
+import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { GiveAccess } from "./GiveAccess.tsx";
 import { Groups } from "./Groups.tsx";
@@ -189,7 +189,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               </span>
             ),
           },
-          { header: "Email", priority: 2, cell: (row) => row.email },
+          { header: "Email", priority: 2, truncate: true, cell: (row) => row.email },
           {
             header: "Status",
             cell: (row) =>

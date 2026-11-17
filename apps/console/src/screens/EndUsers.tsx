@@ -6,6 +6,7 @@ import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { CopyButton, CreateDialog, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import { AttributesDialog } from "./Groups.tsx";
@@ -230,7 +231,7 @@ export function EndUsers({ base }: { base: string }) {
             header: "Email",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
-                <span className="font-medium">{row.email}</span>
+                <Truncate className="font-medium">{row.email}</Truncate>
                 {row.name ? (
                   <span className="text-meta text-ink-muted md:hidden">{row.name}</span>
                 ) : null}

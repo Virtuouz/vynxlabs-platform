@@ -14,7 +14,7 @@ import {
   useDensity,
 } from "../kit/DataTable.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
-import { hm, } from "../kit/format.ts";
+import { hm } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
@@ -22,6 +22,7 @@ import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
@@ -502,9 +503,9 @@ export function RunsWorkbench({
           <KindIcon kind={one.kind} />
           <Link
             to={`${link}/runs/${one.id}`}
-            className="min-w-0 truncate font-mono text-code text-ink no-underline hover:underline"
+            className="min-w-0 font-mono text-code text-ink no-underline hover:underline"
           >
-            {one.target}
+            <Truncate mode="middle">{one.target}</Truncate>
           </Link>
           {one.tags.map((tag) => (
             <button

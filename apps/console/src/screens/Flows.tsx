@@ -29,6 +29,7 @@ import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
@@ -160,9 +161,9 @@ export function Flows({
             <span className="flex min-w-0 flex-col">
               <Link
                 to={`${link}/flows/${row.path}`}
-                className="truncate font-mono text-code text-ink no-underline"
+                className="min-w-0 font-mono text-code text-ink no-underline"
               >
-                {row.path}
+                <Truncate mode="middle">{row.path}</Truncate>
               </Link>
               <span className="truncate text-meta text-ink-subtle">
                 {row.description || "No description"}

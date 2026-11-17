@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { clock } from "./format.ts";
+import { fullOnHover } from "./Truncate.tsx";
 
 /**
  * What a run, a flow run or a step is doing, as the server says it (`state`):
@@ -150,14 +151,20 @@ export function StatePill({
   const [label, Icon, tone] = lookUp(state);
   const word = state === "waiting_time" && until ? `Waiting until ${clock(until)}` : label;
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
+    <span onPointerEnter={fullOnHover} className="inline-flex min-w-0 items-center gap-1.5">
       <Icon
         aria-hidden="true"
         size={14}
         className={`shrink-0 ${tone} ${state === "running" ? "animate-spin-slow" : ""}`}
       />
-      <span className={`truncate ${tone}`}>{children ?? word}</span>
-      {detail ? <span className="truncate text-meta text-ink-subtle">{detail}</span> : null}
+      <span data-cut="" className={`truncate ${tone}`}>
+        {children ?? word}
+      </span>
+      {detail ? (
+        <span data-cut="" className="truncate text-meta text-ink-subtle">
+          {detail}
+        </span>
+      ) : null}
     </span>
   );
 }

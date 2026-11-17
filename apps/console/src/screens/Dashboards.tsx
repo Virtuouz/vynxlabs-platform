@@ -19,7 +19,7 @@ import { useHistory } from "../kit/history.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Time } from "../kit/Time.tsx";
-import { Page, } from "../ListScreen.tsx";
+import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import type { Saving } from "./builder/EditorShell.tsx";
 import { PageEditor, PageView } from "./builder/PageEditor.tsx";

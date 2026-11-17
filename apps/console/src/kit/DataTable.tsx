@@ -16,6 +16,7 @@ import { useRestoredScroll } from "../router.tsx";
 import { isTyping, singleKeysOn } from "./keys.ts";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
+import { fullOnHover } from "./Truncate.tsx";
 
 /**
  * The one list: rows of like things, scannable, sortable, selectable, opened by
@@ -36,7 +37,11 @@ export interface DataColumn<Row> {
   align?: "start" | "end";
   /** A width class, such as `w-40`, for columns whose content has a known size. */
   width?: string;
-  /** Long values end in an ellipsis rather than wrapping the row. */
+  /**
+   * Long values end in an ellipsis rather than wrapping the row, with the
+   * whole value on hover. For a path or a name, put `Truncate mode="middle"`
+   * in the cell instead, so its last part stays.
+   */
   truncate?: boolean;
   /** The sort key the server or caller understands; the header becomes a sort button. */
   sort?: string;
@@ -594,6 +599,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         className={`px-3 ${PAD[density]} ${SHOWN[column.priority ?? 1]} ${
                           column.align === "end" ? "text-right tabular-nums" : ""
                         } ${column.truncate ? "truncate" : ""} ${edges} ${ring}`}
+                        onPointerEnter={column.truncate ? fullOnHover : undefined}
                       >
                         {column.cell(row)}
                         {position === (checking ? 1 : 0) && extra ? (

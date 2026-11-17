@@ -14,7 +14,8 @@ import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton, } from "../ListScreen.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
+import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -168,9 +169,9 @@ export function Scripts({
               <span className="flex min-w-0 items-center gap-2">
                 <Link
                   to={`${link}/scripts/edit/${row.path}`}
-                  className="truncate font-mono text-code text-ink no-underline"
+                  className="min-w-0 font-mono text-code text-ink no-underline"
                 >
-                  {row.path}
+                  <Truncate mode="middle">{row.path}</Truncate>
                 </Link>
                 {row.draft ? (
                   <StatePill state="draft">

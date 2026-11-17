@@ -18,6 +18,7 @@ import {
 import { Junction } from "../kit/motifs.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
 import { Deployments } from "./Execution.tsx";
@@ -337,11 +338,13 @@ function ReviewStep({
                                 className="size-4 accent-[var(--color-action)]"
                               />
                               {to ? (
-                                <Link to={to} className="truncate font-mono text-code">
-                                  {row.path}
+                                <Link to={to} className="min-w-0 font-mono text-code">
+                                  <Truncate mode="middle">{row.path}</Truncate>
                                 </Link>
                               ) : (
-                                <Mono className="truncate">{row.path}</Mono>
+                                <span className="min-w-0 font-mono text-code">
+                                  <Truncate mode="middle">{row.path}</Truncate>
+                                </span>
                               )}
                               <Tag tone={CHANGE_TAG[row.change][1]}>
                                 {CHANGE_TAG[row.change][0]}

@@ -6,7 +6,7 @@ import { CollectionView } from "../kit/CollectionView.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { Mono } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CreateDialog, RemoveButton, } from "../ListScreen.tsx";
+import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 interface Person {

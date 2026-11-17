@@ -13,18 +13,23 @@ import {
 } from "@vynxlabs/ui";
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
+import { Identifier } from "../kit/copy.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DiffView } from "../kit/DiffView.tsx";
+import { duration } from "../kit/format.ts";
 import { formatCombo } from "../kit/keys.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import {
   EmptyCanvas,
   FilterChips,
+  HeadNote,
   KeyValues,
   NextStep,
   PageHeader,
   Panel,
   SectionLabel,
+  SettingsRow,
+  SettingsRows,
   Stepper,
 } from "../kit/layout.tsx";
 import { InsetRule, JunctionList, PortBrackets, SignalPath } from "../kit/motifs.tsx";
@@ -32,6 +37,8 @@ import { SaveBar } from "../kit/SaveBar.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, STATE_NAMES, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { ColumnsMenu } from "../kit/views.tsx";
 
 const SWATCHES = [
@@ -484,6 +491,64 @@ export function KitSheet() {
             afterLabel="v2, the run that failed"
             maxHeight="10rem"
           />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Values, cut and whole</SectionLabel>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Panel className="flex flex-col gap-3 p-4">
+            <KeyValues
+              rows={[
+                { label: "Took", value: duration(252_000), mono: true },
+                { label: "Started", value: <Time value="2026-11-16T16:38:54Z" mode="stamp" /> },
+                {
+                  label: "Run ID",
+                  value: <Identifier value="01a1e7f7-0000-7000-8000-000000000999" label="Copy" />,
+                },
+              ]}
+            />
+            <div className="w-56 font-mono text-code">
+              <Truncate mode="middle">billing/record-payment-and-reconcile-ledger</Truncate>
+            </div>
+            <div className="w-56">
+              <Truncate>
+                The SMS gateway refused the message because the sender is not registered
+              </Truncate>
+            </div>
+            <Notice tone="attention">
+              Inside a panel a notice keeps its tint and drops its border.
+            </Notice>
+          </Panel>
+          <div className="flex flex-col gap-3">
+            <PageHeader
+              title="A list"
+              description="What the list is for, kept behind help once it has been read."
+              helpKey="kit-sheet"
+              oneRow
+              state={<HeadNote>2 runs are waiting for a person.</HeadNote>}
+            />
+            <span className="flex flex-wrap gap-2">
+              <EnvTag type="production" />
+              <EnvTag type="dev" />
+              <Tag tone="neutral">Instance · operator</Tag>
+            </span>
+            <SettingsRows label="Settings rows">
+              <SettingsRow title="Copy workspace" action={<Button size="small">Clone</Button>}>
+                One sentence on what it does, and its control on the right.
+              </SettingsRow>
+              <SettingsRow
+                title={<span className="text-danger">Delete workspace</span>}
+                action={
+                  <Button size="small" variant="danger">
+                    Delete
+                  </Button>
+                }
+              >
+                A row, not a red box.
+              </SettingsRow>
+            </SettingsRows>
+          </div>
         </div>
       </section>
 

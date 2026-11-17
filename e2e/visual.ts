@@ -85,7 +85,12 @@ export async function readEveryList(page: Page) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ value: true }),
       });
-      localStorage.setItem(`vx-pref:seen:${key}`, "true");
     }
   }, LISTS);
+  // The console keeps the server's settings in this browser as it loads: loaded once more, it
+  // has them before the next screen draws.
+  const loaded = page.waitForResponse((response) => response.url().endsWith("/me/preferences"));
+  await page.reload();
+  await loaded;
+  await page.waitForTimeout(200);
 }

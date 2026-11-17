@@ -3,7 +3,8 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { InterfaceBody } from "@vynxlabs/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { InterfaceBuilder, Interfaces } from "./screens/Interfaces.tsx";
+import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
+import { Interfaces } from "./screens/Interfaces.tsx";
 import { answer, show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";

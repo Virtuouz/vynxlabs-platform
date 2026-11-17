@@ -16,7 +16,7 @@ import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
-import { PageEditor, PageView } from "./Interfaces.tsx";
+import { PageEditor, PageView } from "./builder/PageEditor.tsx";
 
 interface Summary {
   id: string;

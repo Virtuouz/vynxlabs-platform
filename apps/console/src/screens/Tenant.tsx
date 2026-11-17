@@ -48,7 +48,7 @@ const DashboardView = lazy(() =>
   import("./Dashboards.tsx").then((m) => ({ default: m.DashboardView })),
 );
 const InterfaceBuilder = lazy(() =>
-  import("./Interfaces.tsx").then((m) => ({ default: m.InterfaceBuilder })),
+  import("./builder/AppBuilder.tsx").then((m) => ({ default: m.AppBuilder })),
 );
 const Interfaces = lazy(() => import("./Interfaces.tsx").then((m) => ({ default: m.Interfaces })));
 const SingleSignOn = lazy(() =>

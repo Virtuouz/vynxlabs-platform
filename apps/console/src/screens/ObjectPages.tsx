@@ -6,6 +6,7 @@ import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
@@ -13,11 +14,11 @@ import { kindName, ObjectLink } from "../kit/objects.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
 import { NotFound } from "./NotFound.tsx";
-import { fromNow } from "./Overview.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 /**
@@ -106,7 +107,9 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
                   label: "Declared",
                   value: one.defined ? "Deployed" : "Only set up here, or in a draft",
                 },
-                ...(one.updatedAt ? [{ label: "Last changed", value: when(one.updatedAt) }] : []),
+                ...(one.updatedAt
+                  ? [{ label: "Last changed", value: <Time value={one.updatedAt} /> }]
+                  : []),
                 ...(one.health && !one.health.ok && one.health.problem
                   ? [{ label: "Last check", value: one.health.problem }]
                   : []),
@@ -165,7 +168,9 @@ export function VariablePage({ root, link, path }: { root: string; link: string;
                 ...(one.default !== null
                   ? [{ label: "Default", value: one.default, mono: true }]
                   : []),
-                ...(one.updatedAt ? [{ label: "Last set", value: when(one.updatedAt) }] : []),
+                ...(one.updatedAt
+                  ? [{ label: "Last set", value: <Time value={one.updatedAt} /> }]
+                  : []),
               ]}
             />
           }
@@ -470,7 +475,7 @@ export function TriggersOf({
                   <Mono>{one.cron}</Mono>
                   {one.timezone ? <span className="text-ink-muted"> {one.timezone}</span> : null}
                   {one.nextFireAt ? (
-                    <span className="text-ink-muted"> · next {fromNow(one.nextFireAt)}</span>
+                    <span className="text-ink-muted"> · next {ago(one.nextFireAt)}</span>
                   ) : null}
                 </span>
               ) : (
@@ -592,7 +597,7 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
                 <span className="flex items-center gap-2 text-meta text-ink-muted">
                   Last run <StatePill state={script.lastRun.state} />
                   <Link to={`${link}/runs/${script.lastRun.id}`}>
-                    {fromNow(script.lastRun.createdAt)}
+                    {ago(script.lastRun.createdAt)}
                   </Link>
                 </span>
               ) : (

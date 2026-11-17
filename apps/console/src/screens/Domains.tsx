@@ -5,7 +5,7 @@ import { ask } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
-import { StatePill } from "../kit/status.tsx";
+import { Code, StatePill } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import type { AppSummary } from "./Apps.tsx";
@@ -28,8 +28,6 @@ interface WorkspaceName {
   id: string;
   name: string;
 }
-
-const code = (text: string) => <code className="font-mono text-code break-all">{text}</code>;
 
 const failed = (error: unknown) => {
   const failure = error as ApiError;
@@ -180,7 +178,7 @@ function RecordLine({ label, value }: { label: string; value: string }) {
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="min-w-0">
         <span className="block text-body-sm text-ink-muted">{label}</span>
-        {code(value)}
+        <Code wrap>{value}</Code>
       </span>
       <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
     </div>
@@ -414,7 +412,7 @@ export function Domains({ base }: { base: string }) {
               header: "Serves",
               cell: (row) => (
                 <span>
-                  {row.app === "" ? "The portal and every app" : code(row.app)}{" "}
+                  {row.app === "" ? "The portal and every app" : <Code wrap>{row.app}</Code>}{" "}
                   <span className="text-ink-muted">in {workspaceName(row.workspaceId)}</span>
                 </span>
               ),

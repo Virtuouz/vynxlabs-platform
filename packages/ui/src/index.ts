@@ -34,6 +34,7 @@ export {
   utcInstant,
 } from "./Fields.tsx";
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
+export { duration } from "./format.ts";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
 export { JsonView, type JsonViewProps } from "./JsonView.tsx";
 export {
@@ -75,7 +76,6 @@ export { Avatar, Card, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
 export {
-  duration,
   Timeline,
   type TimelineProps,
   type TimelineRow,

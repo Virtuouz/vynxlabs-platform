@@ -148,3 +148,36 @@ test("no Badge says a state", () => {
   }
   expect(found).toEqual([]);
 });
+
+/** Source files of any kind, tests left out. */
+function sources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return sources(path);
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+  });
+}
+
+/**
+ * Times, durations, counts and sizes are turned into text in one place,
+ * `kit/format.ts` (07 §7.3), so that "1.2s" and "1.2 s" never stand in one
+ * column. Names in the code face go through `Code`, not a helper of each screen's own.
+ */
+test("every time, duration and count is formatted by kit/format.ts", () => {
+  const found: string[] = [];
+  for (const path of sources(here)) {
+    if (path.endsWith("kit/format.ts")) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const where = `${path.slice(here.length)}:${index + 1}`;
+      if (/\.toLocale(String|DateString|TimeString)\(/.test(line)) found.push(`${where} toLocale…`);
+      if (/new Intl\.(DateTimeFormat|RelativeTimeFormat|NumberFormat)/.test(line)) {
+        found.push(`${where} new Intl…`);
+      }
+      if (/const code = \(/.test(line)) found.push(`${where} a code helper of its own`);
+      if (/\b(ms|seconds?) < (1000|60)\b.*`\$\{/.test(line))
+        found.push(`${where} a duration by hand`);
+    });
+  }
+  expect(found).toEqual([]);
+});

@@ -5,14 +5,16 @@ import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ago, between, clock, count, duration } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { consoleLink, ObjectLink } from "../kit/objects.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
-import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
-import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
+import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton, } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -24,9 +26,6 @@ import {
   testText,
 } from "./ConnectionWizard.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
-import { fromNow } from "./Overview.tsx";
-
-const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 /** The badge tone of a run's state, for the run page's mark. */
@@ -61,9 +60,7 @@ export interface Run {
 }
 
 export function took(run: Pick<Run, "startedAt" | "finishedAt">) {
-  if (!run.startedAt || !run.finishedAt) return "";
-  const ms = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  return between(run.startedAt, run.finishedAt);
 }
 
 export const TRIGGER: Record<string, string> = {
@@ -200,7 +197,7 @@ export function Scripts({
           cell: (row) =>
             row.lastRun ? (
               <Link to={`${runsLink}/${row.lastRun.id}`} className="flex flex-col no-underline">
-                <StatePill state={row.lastRun.state} detail={fromNow(row.lastRun.createdAt)} />
+                <StatePill state={row.lastRun.state} detail={ago(row.lastRun.createdAt)} />
                 {row.failedInARow > 1 ? (
                   <span className="text-meta text-danger">{row.failedInARow} in a row</span>
                 ) : null}
@@ -527,7 +524,7 @@ export function LogWindowNote({
   return (
     <p className="m-0 flex flex-wrap items-center gap-x-2 text-meta text-ink-muted">
       <span>
-        The first {earlier.toLocaleString()} line{earlier === 1 ? " is" : "s are"} not shown here.
+        The first {count(earlier)} line{earlier === 1 ? " is" : "s are"} not shown here.
       </span>
       {onDownload ? (
         <Button size="small" variant="quiet" onClick={onDownload}>
@@ -537,13 +534,6 @@ export function LogWindowNote({
     </p>
   );
 }
-
-/** A date and time to the second, in the same shape on every line so that they compare by eye. */
-export const stamp = (iso: string) => {
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-};
 
 interface BundleRow {
   id: string;
@@ -572,9 +562,9 @@ export function Deployments({ root }: { root: string }) {
             </span>
           ),
         },
-        { header: "Digest", cell: (row) => code(row.digest.slice(0, 12)) },
+        { header: "Digest", cell: (row) => <Code>{row.digest.slice(0, 12)}</Code> },
         { header: "Resources", cell: (row) => row.manifestCount, align: "end" },
-        { header: "Uploaded", cell: (row) => when(row.createdAt) },
+        { header: "Uploaded", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
       ]}
       empty={{
         title: "Nothing has been deployed",
@@ -669,7 +659,7 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
     );
   }
   if (!row.health) return <StatePill state="queued">Not tested</StatePill>;
-  const when = `Tested ${new Date(row.health.checkedAt).toLocaleString()}`;
+  const when = `Tested ${clock(row.health.checkedAt)}`;
   return (
     <span
       title={row.health.ok ? when : `${row.health.problem ?? ""}\n${when}`}
@@ -743,7 +733,10 @@ export function Connections({ root }: { root: string }) {
               />
             ),
           },
-          { header: "Kind", cell: (row) => CONNECTOR_NAMES[row.connector] ?? code(row.connector) },
+          {
+            header: "Kind",
+            cell: (row) => CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>,
+          },
           {
             header: "Points to",
             cell: (row) =>
@@ -834,7 +827,7 @@ export function Variables({ root }: { root: string }) {
           header: "Value here",
           cell: (row) =>
             row.value !== null ? (
-              code(row.value)
+              <Code>{row.value}</Code>
             ) : (
               <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
             ),
@@ -888,13 +881,13 @@ interface WorkerPool {
 /** Whether a worker is in a pool now, as its state. */
 function PoolState({ pool }: { pool: WorkerPool }) {
   return pool.online > 0 ? (
-    <StatePill state="ok" detail={pool.lastSeenAt ? fromNow(pool.lastSeenAt) : undefined}>
+    <StatePill state="ok" detail={pool.lastSeenAt ? ago(pool.lastSeenAt) : undefined}>
       {pool.online} online
     </StatePill>
   ) : (
     <StatePill
       state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "off"}
-      detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
+      detail={pool.lastSeenAt ? `last seen ${ago(pool.lastSeenAt)}` : "never seen"}
     >
       No worker online
     </StatePill>
@@ -917,15 +910,6 @@ interface WorkerRow {
   version: string | null;
   outdated: boolean;
   running: { runId: string; workspaceId: string; script: string; startedAt: string | null }[];
-}
-
-/** A wait in words: "40s", "3m", "2h 5m". */
-export function waitWords(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
 /**
@@ -960,7 +944,7 @@ export function QueuePanel({ base }: { base: string }) {
                 : `Runs are waiting in ${backlog.length} places`}
               {(() => {
                 const oldest = Math.max(...backlog.map((row) => row.oldestSeconds ?? 0));
-                return `, the oldest for ${waitWords(oldest)}.`;
+                return `, the oldest for ${duration(oldest * 1000)}.`;
               })()}
             </Notice>
           ) : null}
@@ -986,7 +970,8 @@ export function QueuePanel({ base }: { base: string }) {
               { header: "Waiting", align: "end", cell: (row) => row.due },
               {
                 header: "Oldest",
-                cell: (row) => (row.oldestSeconds === null ? "—" : waitWords(row.oldestSeconds)),
+                cell: (row) =>
+                  row.oldestSeconds === null ? "—" : duration(row.oldestSeconds * 1000),
               },
               { header: "Later", align: "end", priority: 2, cell: (row) => row.later },
               { header: "Running", align: "end", cell: (row) => row.running },
@@ -1214,12 +1199,12 @@ export function Workers({ base }: { base: string }) {
         rowKey={(row) => row.id}
         columns={[
           { header: "Name", cell: (row) => row.name },
-          { header: "Credential", cell: (row) => code(`${row.prefix}…`) },
+          { header: "Credential", cell: (row) => <Code>{`${row.prefix}…`}</Code> },
           {
             header: "Pool",
             cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
           },
-          { header: "Created", cell: (row) => when(row.createdAt) },
+          { header: "Created", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
           {
             header: "Status",
             cell: (row) =>
@@ -1347,7 +1332,7 @@ export function ConnectionGroups({ root }: { root: string }) {
               rowKey={(member) => member.key}
               empty={null}
               columns={[
-                { header: "Key", cell: (member) => code(member.key) },
+                { header: "Key", cell: (member) => <Code>{member.key}</Code> },
                 {
                   header: "Name",
                   priority: 2,

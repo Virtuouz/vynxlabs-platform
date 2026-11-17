@@ -26,6 +26,7 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { clock } from "./format.ts";
 
 /**
  * What a run, a flow run or a step is doing, as the server says it (`state`):
@@ -129,14 +130,6 @@ export const lookUp = (state: string): [string, LucideIcon, string] => {
   return [known[0], known[1], TONE[known[2] as Tone]];
 };
 
-const time = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
 /**
  * A state as an icon and a word in its color, never a filled chip, so color is
  * never the only sign. `children` says the same state in more words; `detail`
@@ -155,7 +148,7 @@ export function StatePill({
   until?: string | null | undefined;
 }) {
   const [label, Icon, tone] = lookUp(state);
-  const word = state === "waiting_time" && until ? `Waiting until ${time(until)}` : label;
+  const word = state === "waiting_time" && until ? `Waiting until ${clock(until)}` : label;
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <Icon
@@ -227,6 +220,11 @@ export function EnvTag({ type }: { type: "production" | "dev" }) {
       {type === "production" ? "Production" : "Dev"}
     </Tag>
   );
+}
+
+/** A name as it is typed: a path, a header, a command. `wrap` lets a long one break anywhere. */
+export function Code({ children, wrap = false }: { children: ReactNode; wrap?: boolean }) {
+  return <code className={`font-mono text-code${wrap ? " break-all" : ""}`}>{children}</code>;
 }
 
 /** Counts, durations, identifiers and versions are set in the code face, so columns line up. */

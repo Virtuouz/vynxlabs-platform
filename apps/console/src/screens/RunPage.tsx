@@ -14,9 +14,10 @@ import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
-import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
+import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import { Current } from "../kit/current.ts";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
+import { clock, } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
@@ -25,13 +26,13 @@ import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { useRecordRecent } from "../recent.ts";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import {
   type LiveRun,
   LogWindowNote,
-  stamp,
   TRIGGER,
   useLiveRun,
   wholeLogDownload,
@@ -136,7 +137,7 @@ function RunHeader({
   return (
     <div className="border-line border-b pb-4">
       <PageHeader
-        eyebrow={<CopyableId value={id} label="Copy the run ID" />}
+        eyebrow={<Identifier value={id} label="Copy the run ID" full />}
         mono
         title={
           <Link to={pathLink} className="text-ink">
@@ -424,9 +425,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                       <span className={one.failed ? "text-danger" : "text-ink-muted"}>
                         #{one.attempt} {one.failed ? "failed" : "succeeded"}
                       </span>
-                      <Mono className="ml-auto text-ink-subtle">
-                        {stamp(one.startedAt).slice(11)}
-                      </Mono>
+                      <Mono className="ml-auto text-ink-subtle">{clock(one.startedAt)}</Mono>
                     </li>
                   ))}
                 </ol>
@@ -434,11 +433,15 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             ) : null}
             <KeyValues
               rows={[
-                { label: "Received", value: stamp(run.createdAt), mono: true },
-                { label: "Started", value: run.startedAt ? stamp(run.startedAt) : "—", mono: true },
+                { label: "Received", value: <Time value={run.createdAt} />, mono: true },
+                {
+                  label: "Started",
+                  value: run.startedAt ? <Time value={run.startedAt} /> : "—",
+                  mono: true,
+                },
                 {
                   label: "Finished",
-                  value: run.finishedAt ? stamp(run.finishedAt) : "—",
+                  value: run.finishedAt ? <Time value={run.finishedAt} /> : "—",
                   mono: true,
                 },
                 {

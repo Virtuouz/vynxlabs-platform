@@ -193,12 +193,12 @@ test("a timeline puts rows on one axis, cuts them into parts, and says how long 
   // Only the kinds of part that appear are explained, and the whole span is given.
   expect(screen.getByText("Waiting")).toBeTruthy();
   expect(screen.getByText("On hold")).toBeTruthy();
-  expect(screen.getAllByText("1 m 0 s").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("1m 0s").length).toBeGreaterThan(0);
 });
 
 test("lengths of time read as a person would say them", () => {
   expect(duration(400)).toBe("400 ms");
   expect(duration(13_800)).toBe("13.8 s");
-  expect(duration(125_000)).toBe("2 m 5 s");
-  expect(duration(3_900_000)).toBe("1 h 5 m");
+  expect(duration(125_000)).toBe("2m 5s");
+  expect(duration(3_900_000)).toBe("1h 5m");
 });

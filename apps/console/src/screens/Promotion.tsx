@@ -3,10 +3,10 @@ import { GitPullRequestArrow } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
-import { fromNow } from "./Overview.tsx";
 import { PreviewPanels, type PromotionPreview } from "./Release.tsx";
 
 /** A request for a promotion, as the API shows it. */
@@ -129,7 +129,7 @@ export function RequestState({ request }: { request: PromotionRequest }) {
       <p className="m-0 flex flex-wrap items-center gap-2">
         <StatePill state="waiting" />
         <span className="text-meta text-ink-muted">
-          Asked {fromNow(request.createdAt)} by {request.requestedBy.name} for v{request.version}.
+          Asked {ago(request.createdAt)} by {request.requestedBy.name} for v{request.version}.
           {moved}
         </span>
       </p>
@@ -141,7 +141,7 @@ export function RequestState({ request }: { request: PromotionRequest }) {
         <StatePill state="succeeded">Promoted</StatePill>
         <span className="text-meta text-ink-muted">
           v{request.version}, by {request.decidedBy?.name}{" "}
-          {request.decidedAt ? fromNow(request.decidedAt) : ""}.
+          {request.decidedAt ? ago(request.decidedAt) : ""}.
         </span>
       </p>
     );
@@ -153,7 +153,7 @@ export function RequestState({ request }: { request: PromotionRequest }) {
           <StatePill state="declined" />
           <span className="text-meta text-ink-muted">
             v{request.version}, by {request.decidedBy?.name}{" "}
-            {request.decidedAt ? fromNow(request.decidedAt) : ""}.
+            {request.decidedAt ? ago(request.decidedAt) : ""}.
           </span>
         </p>
         {request.comment ? (
@@ -197,7 +197,7 @@ export function PromotionRequests({
                   {request.source.name} to {request.target.name}
                 </span>
                 <span className="text-meta text-ink-muted">
-                  {fromNow(request.createdAt)}
+                  {ago(request.createdAt)}
                   {request.note ? ` · “${request.note}”` : ""}
                   {request.sourceVersionNow !== null && request.sourceVersionNow > request.version
                     ? ` · ${request.source.name} is now at v${request.sourceVersionNow}`
@@ -289,7 +289,7 @@ function ReviewRequest({
       size="wide"
       onClose={onClose}
       title={`Promote v${request.version} to ${request.target.name}?`}
-      description={`Asked by ${request.requestedBy.name} ${fromNow(request.createdAt)}, from ${request.source.name}.`}
+      description={`Asked by ${request.requestedBy.name} ${ago(request.createdAt)}, from ${request.source.name}.`}
       footer={
         <div className="flex flex-wrap justify-end gap-2">
           <Button disabled={busy} onClick={() => decide("decline")}>

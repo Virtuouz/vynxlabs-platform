@@ -3,7 +3,7 @@ import { api, isOperator, type Me } from "../api.ts";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
-import { when } from "../ListScreen.tsx";
+import { Time } from "../kit/Time.tsx";
 import { Link, navigate } from "../router.tsx";
 import { DeleteTenantButton } from "./Environments.tsx";
 
@@ -64,7 +64,11 @@ export function Tenants({ me }: { me: Me }) {
               },
             ]
           : []),
-        { header: "Created", priority: 3, cell: (row) => when(row.createdAt) },
+        {
+          header: "Created",
+          priority: 3,
+          cell: (row) => <Time value={row.createdAt} mode="ago" />,
+        },
       ]}
       empty={{
         title: "No tenants yet",
@@ -94,7 +98,7 @@ export function Tenants({ me }: { me: Me }) {
                     },
                   ]
                 : []),
-              { label: "Created", value: when(row.createdAt) },
+              { label: "Created", value: <Time value={row.createdAt} /> },
               { label: "ID", value: row.id, mono: true },
             ]}
           />

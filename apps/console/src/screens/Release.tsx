@@ -5,6 +5,7 @@ import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { Current } from "../kit/current.ts";
+import { ago } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
   EmptyCanvas,
@@ -20,7 +21,6 @@ import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
 import { Deployments } from "./Execution.tsx";
-import { fromNow } from "./Overview.tsx";
 import { type PromotionRequest, RequestPromotion } from "./Promotion.tsx";
 
 interface Workspace {
@@ -349,7 +349,7 @@ function ReviewStep({
                             </span>
                             <span className="flex items-center gap-1">
                               <span className="text-meta text-ink-subtle">
-                                saved {fromNow(row.updatedAt)}
+                                saved {ago(row.updatedAt)}
                               </span>
                               <Button
                                 size="small"
@@ -538,14 +538,14 @@ function DraftHistory({
                   Revision <Mono>{one.revision}</Mono>{" "}
                   {one.reason === "set_aside" ? <Tag tone="neutral">Set aside</Tag> : null}
                 </span>
-                <span className="text-meta text-ink-subtle">saved {fromNow(one.savedAt)}</span>
+                <span className="text-meta text-ink-subtle">saved {ago(one.savedAt)}</span>
               </span>
               <Button
                 size="small"
                 onClick={async () => {
                   try {
                     await api.post(`${root}/draft-history/${one.id}/restore`, {});
-                    notify.success(`The draft saved ${fromNow(one.savedAt)} is back.`);
+                    notify.success(`The draft saved ${ago(one.savedAt)} is back.`);
                     onRestored();
                     onClose();
                   } catch (caught) {
@@ -584,7 +584,7 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
                   {row.message ?? (row.promotedFromWorkspaceId ? "Promoted" : "No message")}
                 </span>
                 <span className="text-meta text-ink-subtle">
-                  {row.createdBy ?? "—"} · {fromNow(row.createdAt)}
+                  {row.createdBy ?? "—"} · {ago(row.createdAt)}
                 </span>
                 <span className="flex gap-1">
                   {(row.runningIn ?? []).map((one) => (

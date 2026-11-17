@@ -5,6 +5,7 @@ import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { StatePill } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { CopyButton, ListScreen, RemoveButton, when } from "../ListScreen.tsx";
 
 export interface KeyRow {
@@ -104,7 +105,7 @@ export function RecoveryCodes() {
       <KeyValues
         rows={[
           { label: "Codes left", value: madeAt ? String(left) : "None made yet" },
-          ...(madeAt ? [{ label: "Made", value: when(madeAt) }] : []),
+          ...(madeAt ? [{ label: "Made", value: <Time value={madeAt} /> }] : []),
         ]}
       />
       {madeAt && left <= 2 && !codes ? (

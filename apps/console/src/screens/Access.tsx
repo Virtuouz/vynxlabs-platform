@@ -1,6 +1,7 @@
 import { Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
+import { clock } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
@@ -82,8 +83,7 @@ function SourceLine({ tenantId, source }: { tenantId: string; source: Source }) 
       ) : null}
       {source.source === "access_grant" ? (
         <span className="text-ink-muted">
-          · {source.role.name}, until{" "}
-          {source.expiresAt ? new Date(source.expiresAt).toLocaleString() : "it is revoked"}
+          · {source.role.name}, until {source.expiresAt ? clock(source.expiresAt) : "it is revoked"}
         </span>
       ) : null}
       {!source.counts ? <span className="text-attention">· not while suspended</span> : null}

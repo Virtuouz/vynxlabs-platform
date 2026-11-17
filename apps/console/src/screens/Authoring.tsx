@@ -18,6 +18,7 @@ import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
+import { ago } from "../kit/format.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
@@ -30,7 +31,6 @@ import { usePreference } from "../prefs.ts";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
-import { fromNow } from "./Overview.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 import { SCRIPT_STARTERS, untouchedStarter } from "./starters.ts";
 
@@ -1071,7 +1071,7 @@ export function RecentRuns({ root, link, path }: { root: string; link: string; p
           header: "Started",
           cell: (run) => (
             <span className="text-ink-muted">
-              {fromNow(run.startedAt ?? run.createdAt)}
+              {ago(run.startedAt ?? run.createdAt)}
               {run.trigger.draft ? " · test" : ""}
             </span>
           ),

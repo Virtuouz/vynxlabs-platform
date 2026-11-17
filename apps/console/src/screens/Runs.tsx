@@ -5,7 +5,7 @@ import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
-import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
+import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,
   DataTable,
@@ -14,19 +14,19 @@ import {
   useDensity,
 } from "../kit/DataTable.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
-import { clockTime } from "../kit/LiveIndicator.tsx";
+import { hm, } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
-import { LogWindowNote, stamp, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
-import { fromNow } from "./Overview.tsx";
+import { LogWindowNote, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 
 /** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
 type Filter =
@@ -88,12 +88,6 @@ const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = 
 ];
 /** States in which a run may still change. */
 const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
-
-/** How long ago, or the date when it is older than a day. */
-function started(iso: string) {
-  const age = Date.now() - Date.parse(iso);
-  return age < 86_400_000 ? fromNow(iso) : stamp(iso).slice(0, 16);
-}
 
 interface Page {
   items: Activity[];
@@ -557,11 +551,7 @@ export function RunsWorkbench({
       sort: "started",
       cell: (one) => {
         const at = one.startedAt ?? one.scheduledFor ?? one.createdAt;
-        return (
-          <time dateTime={at} title={stamp(at)} className="whitespace-nowrap text-ink-muted">
-            {started(at)}
-          </time>
-        );
+        return <Time value={at} mode="ago" className="text-ink-muted" />;
       },
     },
     {
@@ -612,7 +602,7 @@ export function RunsWorkbench({
               {!streaming && list.updatedAt ? (
                 <>
                   {" "}
-                  Updated {clockTime(list.updatedAt)}
+                  Updated {hm(list.updatedAt)}
                   {live ? ", asked again every 5 s." : "."}
                 </>
               ) : null}
@@ -823,8 +813,12 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
       {run.error ? <Notice tone="danger">{run.error}</Notice> : null}
       <KeyValues
         rows={[
-          { label: "Started", value: stamp(run.createdAt), mono: true },
-          { label: "Finished", value: run.finishedAt ? stamp(run.finishedAt) : "—", mono: true },
+          { label: "Started", value: <Time value={run.createdAt} />, mono: true },
+          {
+            label: "Finished",
+            value: run.finishedAt ? <Time value={run.finishedAt} /> : "—",
+            mono: true,
+          },
           { label: "Started by", value: TRIGGER[run.trigger] ?? run.trigger },
           {
             label: "Flow",
@@ -836,7 +830,7 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
             value: <Link to={`${link}/deployments`}>v{run.bundleVersion}</Link>,
             mono: true,
           },
-          { label: "Run ID", value: <CopyableId value={run.id} label="Copy the run ID" /> },
+          { label: "Run ID", value: <Identifier value={run.id} label="Copy the run ID" /> },
         ]}
       />
       <Button variant="primary" onClick={() => navigate(`${link}/runs/${run.id}`)}>
@@ -964,7 +958,7 @@ export function ScriptRunPanel({
                 {index > 0 ? <span aria-hidden="true" className="h-px w-3 bg-line-strong" /> : null}
                 <Junction kind={one.failed ? "danger" : "here"} size={5} />
                 <span className={one.failed ? "text-danger" : "text-ink-muted"}>
-                  #{one.attempt} <Mono>{stamp(one.startedAt).slice(11)}</Mono>
+                  #{one.attempt} <Time value={one.startedAt} className="font-mono text-code" />
                 </span>
               </span>
             ))}
@@ -1020,15 +1014,15 @@ export function ScriptRunPanel({
               <div className="flex flex-col gap-4 pt-3">
                 <KeyValues
                   rows={[
-                    { label: "Received", value: stamp(run.createdAt), mono: true },
+                    { label: "Received", value: <Time value={run.createdAt} />, mono: true },
                     {
                       label: "Started",
-                      value: run.startedAt ? stamp(run.startedAt) : "—",
+                      value: run.startedAt ? <Time value={run.startedAt} /> : "—",
                       mono: true,
                     },
                     {
                       label: "Finished",
-                      value: run.finishedAt ? stamp(run.finishedAt) : "—",
+                      value: run.finishedAt ? <Time value={run.finishedAt} /> : "—",
                       mono: true,
                     },
                     {
@@ -1067,7 +1061,7 @@ export function ScriptRunPanel({
                     },
                     {
                       label: "Run ID",
-                      value: <CopyableId value={run.id} label="Copy the run ID" />,
+                      value: <Identifier value={run.id} label="Copy the run ID" />,
                     },
                   ]}
                 />

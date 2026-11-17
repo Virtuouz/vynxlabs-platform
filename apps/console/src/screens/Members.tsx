@@ -5,7 +5,8 @@ import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
-import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
+import { Time } from "../kit/Time.tsx";
+import { CreateDialog, RemoveButton, } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { GiveAccess } from "./GiveAccess.tsx";
 import { Groups } from "./Groups.tsx";
@@ -208,7 +209,11 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               );
             },
           },
-          { header: "Added", priority: 3, cell: (row) => when(row.createdAt) },
+          {
+            header: "Added",
+            priority: 3,
+            cell: (row) => <Time value={row.createdAt} mode="ago" />,
+          },
         ]}
         empty={
           needle
@@ -253,7 +258,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                   rows={[
                     { label: "Email", value: chosen.email },
                     { label: "Status", value: chosen.suspended ? "Suspended" : "Active" },
-                    { label: "Added", value: when(chosen.createdAt) },
+                    { label: "Added", value: <Time value={chosen.createdAt} /> },
                   ]}
                 />
                 <div className="flex flex-col gap-2">

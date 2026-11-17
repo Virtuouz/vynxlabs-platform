@@ -7,6 +7,7 @@ import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { CopyButton, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 
@@ -138,7 +139,7 @@ export function Provisioning({
               header: "Begins",
               cell: (row) => <code className="font-mono text-code">{row.prefix}…</code>,
             },
-            { header: "Made", cell: (row) => when(row.createdAt) },
+            { header: "Made", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
             {
               header: "Last used",
               cell: (row) => (row.lastUsedAt ? when(row.lastUsedAt) : "Never"),
@@ -230,7 +231,10 @@ export function Provisioning({
             { label: "People", value: String(data.users.pushed) },
             { label: "Of them, turned off", value: String(data.users.pushed - data.users.active) },
             ...(instance ? [] : [{ label: "Groups", value: String(data.groups) }]),
-            { label: "Last change", value: data.lastPushAt ? when(data.lastPushAt) : "Never" },
+            {
+              label: "Last change",
+              value: data.lastPushAt ? <Time value={data.lastPushAt} /> : "Never",
+            },
           ]}
         />
         <p className="m-0 max-w-3xl text-body-sm text-ink-muted">
@@ -309,7 +313,7 @@ function Pushed({ root }: { root: string }) {
               cell: (row) =>
                 row.active ? <StatePill state="active" /> : <StatePill state="off" />,
             },
-            { header: "Last change", cell: (row) => when(row.updatedAt) },
+            { header: "Last change", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
           ]}
         />
       </section>
@@ -331,7 +335,7 @@ function Pushed({ root }: { root: string }) {
               empty={null}
               rowKey={(row) => `${row.at} ${row.method} ${row.resource}`}
               columns={[
-                { header: "When", cell: (row) => when(row.at) },
+                { header: "When", cell: (row) => <Time value={row.at} mode="ago" /> },
                 {
                   header: "Push",
                   cell: (row) => (

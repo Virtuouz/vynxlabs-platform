@@ -42,6 +42,7 @@ test.describe.configure({ mode: "serial" });
 let page: Page;
 let tenant: { id: string; slug: string };
 let ws: string;
+let failedRun: string;
 
 const script = (code: string) => ({
   kind: "script",
@@ -111,6 +112,7 @@ test.beforeAll(async ({ browser }) => {
   });
   await call(page, "POST", `${W}/changes/deploy`, {});
   const failing = (await call(page, "POST", `${W}/runs`, { script: LONG, input: {} })).id;
+  failedRun = failing;
   await call(page, "POST", `${W}/runs`, { script: "stock/check", input: {} });
   const waiting = (
     await call(page, "POST", `${W}/flow-runs`, { flow: "refunds/approve", input: {} })
@@ -238,5 +240,25 @@ test.fixme("no bordered box sits inside another", async () => {
   for (const [name, path] of screens()) {
     await open(path as string);
     expect(await nested(page), name as string).toEqual([]);
+  }
+});
+
+/** P4-6: a time is one line, wherever it stands, from 1280 px up. */
+test("no time wraps onto a second line at 1280 px or wider", async () => {
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const path of [`${ws}/runs`, `${ws}/runs/${failedRun}`, `/t/${tenant.id}/audit`]) {
+      await open(path);
+      const wrapped = await page.evaluate(() =>
+        [...document.querySelectorAll("main time")]
+          .filter((time) => {
+            const box = time.getBoundingClientRect();
+            const line = Number.parseFloat(getComputedStyle(time).lineHeight) || 20;
+            return box.width > 0 && box.height > line * 1.5;
+          })
+          .map((time) => time.textContent),
+      );
+      expect(wrapped, `${path} at ${width}px`).toEqual([]);
+    }
   }
 });

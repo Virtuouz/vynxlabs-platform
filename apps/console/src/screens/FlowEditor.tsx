@@ -28,6 +28,7 @@ import {
   useNodesState,
   type Viewport,
 } from "@xyflow/react";
+import { ago } from "../kit/format.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import {
@@ -1235,7 +1236,7 @@ export function FlowEditor({
           ? "Could not save. Trying again…"
           : "Saving…"
     : savedAt
-      ? `Draft saved ${Math.max(1, Math.round((Date.now() - savedAt) / 1000)) < 60 ? `${Math.max(1, Math.round((Date.now() - savedAt) / 1000))}s` : `${Math.round((Date.now() - savedAt) / 60000)}m`} ago`
+      ? `Draft saved ${ago(savedAt)}`
       : stateLabel(state);
 
   const keepViewport = (viewport: Viewport) => {

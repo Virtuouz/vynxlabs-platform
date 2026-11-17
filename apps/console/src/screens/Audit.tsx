@@ -5,8 +5,10 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
 import { actionWords } from "../audit-words.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
+import { stamp } from "../kit/format.ts";
 import { Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
 import { Tag, type TagTone } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, useUrlState } from "../router.tsx";
 
@@ -87,11 +89,6 @@ export function verbOf(action: string): Verb {
   return VERBS.find(([, pattern]) => pattern.test(last))?.[0] ?? "Other";
 }
 
-const stamp = (iso: string) => {
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-};
 const who = (entry: Entry) =>
   entry.actorLabel ??
   (entry.actorId ? `${entry.actorType} ${entry.actorId.slice(-8)}` : entry.actorType);
@@ -481,7 +478,7 @@ export function AuditTable({
             <div className="flex flex-col gap-4">
               <KeyValues
                 rows={[
-                  { label: "When", value: stamp(chosen.occurredAt), mono: true },
+                  { label: "When", value: <Time value={chosen.occurredAt} />, mono: true },
                   { label: "Who", value: who(chosen) },
                   { label: "Action", value: chosen.action, mono: true },
                   { label: "Kind", value: chosen.targetType },

@@ -117,7 +117,7 @@ test("the default is changed and saved; overrides and recent alerts are listed",
 
 test("the queue says where runs wait and for how long, and what each worker holds", async () => {
   show(<QueuePanel base="/tenants/t1" />);
-  expect(await screen.findByText("Runs are waiting in main, the oldest for 12m.")).toBeTruthy();
+  expect(await screen.findByText("Runs are waiting in main, the oldest for 12m 30s.")).toBeTruthy();
   expect(screen.getByRole("link", { name: "main" }).getAttribute("href")).toBe(
     "/t/t1/workspaces/w1/runs?status=queued",
   );

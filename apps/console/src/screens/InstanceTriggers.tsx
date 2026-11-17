@@ -2,10 +2,10 @@ import { Button, Notice } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
-import { fromNow } from "./Overview.tsx";
 
 interface Triggers {
   paused: boolean;
@@ -78,7 +78,7 @@ export function InstanceTriggers() {
               <strong>Every trigger is paused.</strong>{" "}
               {state.byEnvironment
                 ? "TRIGGERS_PAUSED is set where the instance runs. Unset it and restart to resume."
-                : `Paused ${state.updatedAt ? fromNow(state.updatedAt) : ""}${state.reason ? `: ${state.reason}` : "."}`}
+                : `Paused ${state.updatedAt ? ago(state.updatedAt) : ""}${state.reason ? `: ${state.reason}` : "."}`}
             </Notice>
           ) : (
             <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">

@@ -20,22 +20,21 @@ import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
-import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { LogWindowNote, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { TriggersOf } from "./ObjectPages.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
-import { fromNow } from "./Overview.tsx";
-
-const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
 /** How a run began, as the end of a sentence. */
@@ -200,7 +199,7 @@ export function Flows({
           cell: (row) =>
             row.lastRun ? (
               <span className="flex flex-col">
-                <StatePill state={row.lastRun.state} detail={fromNow(row.lastRun.createdAt)} />
+                <StatePill state={row.lastRun.state} detail={ago(row.lastRun.createdAt)} />
                 <span className="text-meta text-ink-subtle">
                   {row.runs.lastDay} today
                   {row.runs.failedLastDay ? ` · ${row.runs.failedLastDay} failed` : ""}
@@ -489,7 +488,7 @@ export function FlowView({
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {data.triggers.map((trigger) => (
               <li key={trigger.node}>
-                {code(trigger.node)}{" "}
+                <Code>{trigger.node}</Code>{" "}
                 {trigger.type === "schedule" && trigger.nextFireAt ? (
                   <span>runs next at {when(trigger.nextFireAt)}</span>
                 ) : trigger.type === "webhook" ? (
@@ -898,7 +897,8 @@ export function FlowRunView({
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <h2 className="m-0 flex items-center gap-2 text-title font-semibold">
-                  {code(chosen.node)} <StatePill state={chosen.state} until={chosen.wakeAt} />
+                  <Code>{chosen.node}</Code>{" "}
+                  <StatePill state={chosen.state} until={chosen.wakeAt} />
                   {chosen.outputName ? (
                     <span className="font-normal text-ink-muted">
                       took the case {chosen.outputName}
@@ -914,7 +914,7 @@ export function FlowRunView({
               <div className="mb-3">
                 <Facts
                   facts={[
-                    { label: "Started", value: when(chosen.startedAt) },
+                    { label: "Started", value: <Time value={chosen.startedAt} /> },
                     {
                       label: "Waited for a worker",
                       value:

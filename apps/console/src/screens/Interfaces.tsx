@@ -3,11 +3,11 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ago } from "../kit/format.ts";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { type Listed, slug } from "./builder/data.ts";
-import { fromNow } from "./Overview.tsx";
 
 /** The apps made in the console: each an interface, and the app that serves it. */
 export function Interfaces({
@@ -104,9 +104,7 @@ export function Interfaces({
                     <StatePill state="draft">Edits not published</StatePill>
                   ) : null}
                   {row.editedAt ? (
-                    <span className="text-meta text-ink-subtle">
-                      edited {fromNow(row.editedAt)}
-                    </span>
+                    <span className="text-meta text-ink-subtle">edited {ago(row.editedAt)}</span>
                   ) : null}
                 </span>
               ),

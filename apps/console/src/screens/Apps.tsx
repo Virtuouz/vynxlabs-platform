@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { bytes, count } from "../kit/format.ts";
 import { Inspector, KeyValues } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { useUrlParam } from "../router.tsx";
@@ -52,12 +53,7 @@ const external = (url: string, text: string) => (
   </a>
 );
 
-export const size = (bytes: number) =>
-  bytes < 1024
-    ? `${bytes} B`
-    : bytes < 1024 * 1024
-      ? `${(bytes / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB`
-      : `${(bytes / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB`;
+export const size = (n: number) => bytes(n);
 
 interface Binding {
   id: string;
@@ -529,7 +525,7 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                       ? [
                           {
                             label: "Files",
-                            value: `${open.files.toLocaleString()}, ${size(open.bytes)}`,
+                            value: `${count(open.files)}, ${size(open.bytes)}`,
                             mono: true,
                           },
                         ]

@@ -1,6 +1,7 @@
 import { Tooltip } from "@vynxlabs/ui";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
+import { middle } from "./format.ts";
 
 /**
  * A quiet copy control beside an identifier. It says what it copied, and falls
@@ -37,14 +38,38 @@ export function CopyIcon({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** An identifier in mono type with its copy control. */
-export function CopyableId({ value, label }: { value: string; label: string }) {
+/**
+ * An identifier (07 §7.3): in the code face, cut in its middle to 12
+ * characters so that both ends show, the whole of it on hover and in its
+ * accessible name, with a copy control.
+ */
+export function Identifier({
+  value,
+  label,
+  copy = true,
+  full = false,
+}: {
+  value: string;
+  /** What the copy control says it copies: "Copy the run ID". */
+  label: string;
+  copy?: boolean;
+  /** Show it whole: where it is the subject of the page and there is room. */
+  full?: boolean;
+}) {
+  const shown = full ? value : middle(value);
   return (
     <span className="inline-flex max-w-full items-center gap-1">
-      <span className="min-w-0 truncate font-mono text-code" title={value}>
-        {value}
-      </span>
-      <CopyIcon value={value} label={label} />
+      {shown === value ? (
+        <span className="min-w-0 truncate font-mono text-code">{value}</span>
+      ) : (
+        <Tooltip label={value}>
+          <span className="min-w-0 whitespace-nowrap font-mono text-code">
+            <span aria-hidden="true">{shown}</span>
+            <span className="sr-only">{value}</span>
+          </span>
+        </Tooltip>
+      )}
+      {copy ? <CopyIcon value={value} label={label} /> : null}
     </span>
   );
 }

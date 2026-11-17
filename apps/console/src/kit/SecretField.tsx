@@ -1,7 +1,7 @@
 import { Button, TextField } from "@vynxlabs/ui";
 import { KeyRound } from "lucide-react";
 import { useState } from "react";
-import { fromNow } from "../screens/Overview.tsx";
+import { ago } from "../kit/format.ts";
 
 /**
  * A credential that is stored sealed and never shown (08 §3.31): whether one is
@@ -49,7 +49,7 @@ export function SecretField({
               {setAt ? (
                 <span className="text-ink-muted">
                   {" "}
-                  · set <time dateTime={setAt}>{fromNow(setAt)}</time>
+                  · set <time dateTime={setAt}>{ago(setAt)}</time>
                   {setBy ? ` by ${setBy}` : ""}
                 </span>
               ) : null}

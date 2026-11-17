@@ -1,3 +1,4 @@
+import { duration } from "./format.ts";
 export type TimelineSegmentKind = "wait" | "run" | "hold";
 
 export interface TimelineRow {
@@ -30,15 +31,6 @@ const FILL: Record<TimelineSegmentKind, string> = {
   run: "bg-action",
   hold: "bg-attention",
 };
-
-/** A length of time for a person: "400 ms", "13.8 s", "2 m 5 s". */
-export function duration(ms: number): string {
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${minutes} m ${Math.round((ms % 60_000) / 1000)} s`;
-  return `${Math.floor(minutes / 60)} h ${minutes % 60} m`;
-}
 
 /** Things that took time, on one axis: what ran side by side, what waited, and for how long. */
 export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }: TimelineProps) {

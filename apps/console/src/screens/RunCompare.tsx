@@ -3,12 +3,12 @@ import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DiffView } from "../kit/DiffView.tsx";
+import { ago, duration } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Mono } from "../kit/status.tsx";
 import { Link } from "../router.tsx";
-import { fromNow } from "./Overview.tsx";
 
 /**
  * What changed since it last worked (phase 15, P3-7). A run that fails is most
@@ -30,7 +30,7 @@ export interface PreviousSuccess {
 }
 
 const took = (ms: number | null | undefined) =>
-  ms === null || ms === undefined ? "–" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  ms === null || ms === undefined ? "–" : duration(ms);
 
 export function RunCompare({
   root,
@@ -77,7 +77,7 @@ export function RunCompare({
       <p className="m-0">
         It last succeeded{" "}
         <Link to={`${link}/runs/${last.id}`}>
-          {last.finishedAt ? fromNow(last.finishedAt) : "before"}
+          {last.finishedAt ? ago(last.finishedAt) : "before"}
         </Link>
         {last.bundleVersion !== null ? ` on v${last.bundleVersion}` : ""}.
       </p>

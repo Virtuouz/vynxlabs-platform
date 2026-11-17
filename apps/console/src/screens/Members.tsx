@@ -167,6 +167,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
             <TextField
               name="search"
               label="Search by email or name"
+              labelHidden
               value={search}
               onChange={setSearch}
             />

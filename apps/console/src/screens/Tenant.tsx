@@ -5,6 +5,7 @@ import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
 import { KeyValues } from "../kit/layout.tsx";
+import { setOperatorAccess } from "../kit/OperatorStrip.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { Time } from "../kit/Time.tsx";
 import {
@@ -167,6 +168,23 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
     (grant) => grant.active && grant.memberId === me.principal.id,
   );
 
+  const reloadGrants = grants.reload;
+  // The shell says it under its header on every screen while the grant lasts.
+  useEffect(() => {
+    setOperatorAccess(
+      mine
+        ? {
+            grant: mine,
+            end: async () => {
+              await api.delete(`${base}/access-grants/${mine.id}`);
+              reloadGrants();
+            },
+          }
+        : null,
+    );
+  }, [mine, base, reloadGrants]);
+  useEffect(() => () => setOperatorAccess(null), []);
+
   if (operator && !isMember && !grants.data && !grants.error) return null;
   if (operator && !isMember && !mine) {
     return (
@@ -198,26 +216,6 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   const workspace = match("/t/:t/workspaces/:w/:tab/*", path);
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
-      {mine ? (
-        <Notice
-          tone="attention"
-          action={
-            <Button
-              size="small"
-              onClick={async () => {
-                await api.delete(`${base}/access-grants/${mine.id}`);
-                grants.reload();
-              }}
-            >
-              End access now
-            </Button>
-          }
-        >
-          <strong>Operator access</strong> as {mine.roleName}, until{" "}
-          <time dateTime={mine.expiresAt}>{when(mine.expiresAt)}</time>. Reason: {mine.reason}.
-          Everything you do here is recorded for the tenant.
-        </Notice>
-      ) : null}
       {workspace?.w ? (
         <WorkspaceDetail
           base={base}

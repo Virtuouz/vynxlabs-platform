@@ -15,7 +15,7 @@ import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { ago, stamp } from "../kit/format.ts";
-import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
+import { FilterChips, HeadNote, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -305,18 +305,20 @@ export function TriggersWorkbench({
         actions={newTrigger}
         title="Triggers"
         description="What starts work here without anyone asking. Pause one to stop just it, in any workspace; the pause lasts through deploys until it is resumed."
+        state={
+          workspacePaused ? (
+            <HeadNote>
+              Every trigger here is paused. Resume them under{" "}
+              <Link to={`${link}/settings`}>Workspace settings</Link>.
+            </HeadNote>
+          ) : production && pausedCount > 0 ? (
+            <HeadNote>
+              {pausedCount} trigger{pausedCount === 1 ? " is" : "s are"} paused in production.
+            </HeadNote>
+          ) : undefined
+        }
         toolbar={
           <div className="flex flex-col gap-3">
-            {workspacePaused ? (
-              <Notice tone="attention">
-                Every trigger in this workspace is paused. Resume them under Workspace settings.
-              </Notice>
-            ) : null}
-            {production && pausedCount > 0 ? (
-              <Notice tone="attention">
-                {pausedCount} trigger{pausedCount === 1 ? " is" : "s are"} paused in production.
-              </Notice>
-            ) : null}
             <FilterChips
               label="Kind"
               value={type}
@@ -581,10 +583,10 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
           <div className="w-72 max-w-full">
             <TextField
               label="Event name"
+              labelHidden
               name="event"
               value={name}
-              placeholder="orders/placed"
-              required={false}
+              placeholder="An event's name, such as orders/placed"
               onChange={setName}
             />
           </div>

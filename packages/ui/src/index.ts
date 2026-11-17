@@ -55,6 +55,7 @@ export {
   SegmentedControl,
   type SegmentOption,
 } from "./Pickers.tsx";
+export { Popover } from "./Popover.tsx";
 export {
   columnsOf,
   MAX_TABLE_ROWS,

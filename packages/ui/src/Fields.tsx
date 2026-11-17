@@ -11,6 +11,11 @@ interface Common {
   /** Shown under the control. Says what is expected, not what went wrong. It stays beside an error. */
   hint?: string;
   error?: string | undefined;
+  /**
+   * For a field in a toolbar, beside others whose purpose its placeholder or
+   * value makes plain: the label is read, not shown (P4-1).
+   */
+  labelHidden?: boolean;
 }
 
 /**
@@ -26,11 +31,12 @@ export function FieldFrame({
   hint,
   error,
   required,
+  labelHidden = false,
   children,
 }: Common & { required?: boolean | undefined; children: ReactNode }) {
   return (
     <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
-      <div className="flex items-baseline gap-1 text-body-sm">
+      <div className={labelHidden ? "sr-only" : "flex items-baseline gap-1 text-body-sm"}>
         <Field.Label className="font-medium text-ink">{label}</Field.Label>
         {/* Seen, not read: the control's own `required` is what a screen reader says. */}
         {required === true ? (
@@ -69,9 +75,23 @@ export interface TextFieldProps extends Common {
   onChange?: (value: string) => void;
 }
 
-export function TextField({ label, hint, error, onChange, ...input }: TextFieldProps) {
+export function TextField({
+  label,
+  hint,
+  error,
+  onChange,
+  labelHidden = false,
+  ...input
+}: TextFieldProps) {
+  if (labelHidden && input.placeholder === undefined) input.placeholder = label;
   return (
-    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={input.required}>
+    <FieldFrame
+      label={label}
+      {...(hint ? { hint } : {})}
+      error={error}
+      required={input.required}
+      labelHidden={labelHidden}
+    >
       <Field.Control
         {...input}
         className={control}
@@ -97,10 +117,17 @@ export function SelectField({
   error,
   options,
   onChange,
+  labelHidden = false,
   ...select
 }: SelectFieldProps) {
   return (
-    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={select.required}>
+    <FieldFrame
+      label={label}
+      {...(hint ? { hint } : {})}
+      error={error}
+      required={select.required}
+      labelHidden={labelHidden}
+    >
       <Field.Control
         render={
           <select

@@ -132,6 +132,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
+  await call(page, "DELETE", "/me/preferences/operator.strip").catch(() => {});
   await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
     () => {},
   );
@@ -172,7 +173,15 @@ const screens = () => [
 ];
 
 async function open(path: string) {
-  await page.goto(path);
+  if (path === "/") {
+    // Opened fresh, "/" reopens the last place a member was: the list is reached from inside.
+    await page.goto("/instance/members");
+    await page.locator("main").first().waitFor();
+    await page.evaluate(() => {
+      history.pushState(null, "", "/");
+      dispatchEvent(new PopStateEvent("popstate"));
+    });
+  } else await page.goto(path);
   await page.locator("main").first().waitFor();
   await expect(page.getByText(/^Loading/).first()).toBeHidden({ timeout: 15_000 });
   await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
@@ -214,7 +223,7 @@ test("the measures are recorded", async () => {
   console.log(JSON.stringify(record, null, 2));
 });
 
-test.fixme("every workbench's first row starts within 160 px of the top", async () => {
+test("every workbench's first row starts within 160 px of the top", async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
   for (const [name, path] of workbenches()) {
     await open(path as string);
@@ -261,4 +270,30 @@ test("no time wraps onto a second line at 1280 px or wider", async () => {
       expect(wrapped, `${path} at ${width}px`).toEqual([]);
     }
   }
+});
+
+/** P4-1: what a list is for is said once, then kept behind help; operator access is one line. */
+test("a list says what it is for once, and operator access hides to a mark and comes back", async () => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await call(page, "DELETE", "/me/preferences/seen:flows").catch(() => {});
+  await page.evaluate(() => localStorage.removeItem("vx-pref:seen:flows"));
+  await open(`${ws}/flows`);
+  const sentence = page.getByText(/A flow is a graph of steps/);
+  await expect(sentence).toBeVisible();
+  await open(`${ws}/flows`);
+  await expect(sentence).toBeHidden();
+  await page.getByRole("button", { name: "About Flows" }).click();
+  await expect(page.getByRole("dialog").getByText(/A flow is a graph of steps/)).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const strip = page.getByRole("region", { name: "Operator access" });
+  await expect(strip).toContainText("Operator access as tenant_admin until");
+  expect((await strip.boundingBox())?.height ?? 99).toBeLessThanOrEqual(40);
+  await strip.getByRole("button", { name: "Hide" }).click();
+  await expect(strip).toBeHidden();
+  await open(`${ws}/runs`);
+  await expect(strip).toBeHidden();
+  await page.getByRole("button", { name: /^Operator access as tenant_admin/ }).click();
+  await page.getByRole("menuitem", { name: "Show the notice" }).click();
+  await expect(strip).toBeVisible();
 });

@@ -1,5 +1,5 @@
 import { SideSheet } from "@vynxlabs/ui";
-import { X } from "lucide-react";
+import { CircleAlert, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { usePreference } from "../prefs.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
@@ -476,5 +476,19 @@ export function KeyValues({
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * One line beside a list's title that says something about the whole list:
+ * "3 runs are waiting for a person. Decide". It takes no height of its own
+ * where a Notice above the table would push the list down (P4-1).
+ */
+export function HeadNote({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-meta text-ink">
+      <CircleAlert aria-hidden="true" size={14} className="shrink-0 text-attention" />
+      <span className="min-w-0">{children}</span>
+    </span>
   );
 }

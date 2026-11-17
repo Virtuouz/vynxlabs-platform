@@ -8,7 +8,7 @@ import type { Page } from "@playwright/test";
  */
 
 /**
- * The top, in px from the top of the window, of the first row of data in the
+ * The top, in px from the top of the work area (`main`), of the first row of data in the
  * work area: a table's first body row, a grid's first data row, a list's first
  * item, or the empty state when there is nothing to list. Null when none is shown.
  */
@@ -24,10 +24,13 @@ export function firstRowTop(page: Page): Promise<number | null> {
       ...main.querySelectorAll("[data-list] > li, [data-list] > a"),
       ...main.querySelectorAll("[data-empty-state]"),
     ];
+    // From the top of the work area: the shell's header, and the operator strip under it, are
+    // the console's, not the page's.
+    const origin = main.getBoundingClientRect().top;
     const tops = candidates
       .map((element) => element.getBoundingClientRect())
       .filter((box) => box.width > 0 && box.height > 0)
-      .map((box) => Math.round(box.top));
+      .map((box) => Math.round(box.top - origin));
     return tops.length > 0 ? Math.min(...tops) : null;
   });
 }

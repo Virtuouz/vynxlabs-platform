@@ -296,6 +296,11 @@ export function AuditTable({
     },
   ];
 
+  const older = cursor ? (
+    <Button size="small" onClick={() => load(cursor)}>
+      Show older entries
+    </Button>
+  ) : undefined;
   return (
     <CollectionView<Entry>
       title={title}
@@ -310,9 +315,9 @@ export function AuditTable({
       }
       toolbar={
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-meta text-ink-muted">
-              Area
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col text-meta text-ink-muted">
+              <span className="sr-only">Area</span>
               <select
                 value={url.area ?? ""}
                 onChange={(event) => setUrl({ area: event.currentTarget.value || undefined })}
@@ -325,8 +330,8 @@ export function AuditTable({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-meta text-ink-muted">
-              Since
+            <label className="flex flex-col text-meta text-ink-muted">
+              <span className="sr-only">Since</span>
               <select
                 value={url.since}
                 onChange={(event) => setUrl({ since: event.currentTarget.value })}
@@ -341,8 +346,8 @@ export function AuditTable({
             </label>
             {tenantLog ? (
               <>
-                <label className="flex flex-col gap-1 text-meta text-ink-muted">
-                  Who
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">Who</span>
                   <select
                     value={url.actor ?? ""}
                     onChange={(event) => setUrl({ actor: event.currentTarget.value || undefined })}
@@ -358,8 +363,8 @@ export function AuditTable({
                       ))}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1 text-meta text-ink-muted">
-                  Action
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">Action</span>
                   <select
                     value={url.action ?? ""}
                     onChange={(event) => setUrl({ action: event.currentTarget.value || undefined })}
@@ -373,8 +378,8 @@ export function AuditTable({
                     ))}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1 text-meta text-ink-muted">
-                  Done to
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">Done to</span>
                   <select
                     value={url.kind ?? ""}
                     onChange={(event) => setUrl({ kind: event.currentTarget.value || undefined })}
@@ -390,8 +395,8 @@ export function AuditTable({
                 </label>
               </>
             ) : null}
-            <label className="flex min-w-48 flex-1 flex-col gap-1 text-meta text-ink-muted sm:max-w-80">
-              Search
+            <label className="flex min-w-48 flex-1 flex-col text-meta text-ink-muted sm:max-w-64">
+              <span className="sr-only">Search</span>
               <input
                 type="search"
                 value={typed}
@@ -400,14 +405,7 @@ export function AuditTable({
                 className={select}
               />
             </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {cursor ? (
-              <Button size="small" onClick={() => load(cursor)}>
-                Show older entries
-              </Button>
-            ) : null}
-            <span className="ml-auto flex items-center gap-2">
+            <span className="ml-auto flex items-center gap-2 self-center">
               <ColumnsMenu
                 columns={columns.slice(1).map((column) => ({
                   key: column.key ?? column.header,
@@ -431,6 +429,7 @@ export function AuditTable({
       table={
         filtered
           ? {
+              footer: older,
               columnsShown: url.cols.length > 0 ? url.cols : undefined,
               filtered: {
                 onClear: () => {
@@ -446,7 +445,7 @@ export function AuditTable({
                 },
               },
             }
-          : { columnsShown: url.cols.length > 0 ? url.cols : undefined }
+          : { footer: older, columnsShown: url.cols.length > 0 ? url.cols : undefined }
       }
       empty={{ title: "Nothing recorded yet" }}
       inspector={

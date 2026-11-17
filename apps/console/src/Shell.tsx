@@ -28,6 +28,7 @@ import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { openShortcuts, useShortcut } from "./kit/keys.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
+import { OperatorMark, OperatorStrip } from "./kit/OperatorStrip.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
 import {
@@ -1039,6 +1040,7 @@ export function Shell({
             </nav>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {tenantId ? <OperatorMark /> : null}
             {tenantId ? <LiveIndicator /> : null}
             {tenantId && workspaceId && drafts > 0 ? (
               <Link
@@ -1073,6 +1075,7 @@ export function Shell({
             </button>
           </div>
         </header>
+        {tenantId ? <OperatorStrip /> : null}
 
         <main
           id="main"

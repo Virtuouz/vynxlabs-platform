@@ -206,6 +206,7 @@ export function EndUsers({ base }: { base: string }) {
               <div className="w-full max-w-xs">
                 <TextField
                   label="Search by email or name"
+                  labelHidden
                   name="search"
                   value={search}
                   onChange={(value) => {

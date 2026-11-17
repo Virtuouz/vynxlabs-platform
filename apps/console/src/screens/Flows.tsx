@@ -22,7 +22,7 @@ import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
-import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
+import { FilterChips, HeadNote, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { ReferenceList } from "../kit/references.tsx";
@@ -110,14 +110,16 @@ export function Flows({
           </Button>
         ) : undefined
       }
+      state={
+        waiting > 0 ? (
+          <HeadNote>
+            {waiting} run{waiting === 1 ? " is" : "s are"} waiting for a person.{" "}
+            <Link to={link.replace(/\/workspaces\/.*$/, "/approvals")}>Decide</Link>
+          </HeadNote>
+        ) : undefined
+      }
       toolbar={
         <div className="flex flex-col gap-3">
-          {waiting > 0 ? (
-            <Notice tone="attention">
-              {waiting} run{waiting === 1 ? " is" : "s are"} waiting for a person.{" "}
-              <Link to={link.replace(/\/workspaces\/.*$/, "/approvals")}>Decide</Link>
-            </Notice>
-          ) : null}
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-3 text-ink-subtle">
               <span className="sr-only">Find a flow</span>

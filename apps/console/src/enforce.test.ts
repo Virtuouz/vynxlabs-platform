@@ -39,3 +39,26 @@ test("no screen draws a list of its own", () => {
   }
   expect(found).toEqual([]);
 });
+
+/**
+ * Something loading is shown by `LoadState`, `Pending` or `Loading` (08 §3.24):
+ * nothing for the first moments, then the shape of what comes, and what failed
+ * when it fails. A paragraph that says "Loading…" never ends if the read fails.
+ * The words may still stand inside a control, such as a button that loads more.
+ */
+test("nothing says Loading… in a paragraph of its own", () => {
+  const found: string[] = [];
+  for (const path of [
+    ...files(join(here, "screens")),
+    ...files(join(here, "kit")),
+    ...files(here),
+  ]) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/<(p|Panel|div)\b[^>]*>\s*Loading…\s*<\/(p|Panel|div)>/.test(line)) {
+        found.push(`${path.slice(here.length)}:${index + 1}`);
+      }
+    });
+  }
+  expect([...new Set(found)]).toEqual([]);
+});

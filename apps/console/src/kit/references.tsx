@@ -1,6 +1,7 @@
 import { Button, Notice } from "@vynxlabs/ui";
 import { useLoad } from "../api.ts";
 import { Link } from "../router.tsx";
+import { Pending } from "./LoadState.tsx";
 import { kindName, objectHref } from "./objects.tsx";
 
 export interface Reference {
@@ -103,7 +104,7 @@ export function ReferenceList({
       </Notice>
     );
   }
-  if (!found.data) return <p className="m-0 text-ink-muted">Loading…</p>;
+  if (!found.data) return <Pending of={found} />;
   if (found.data.items.length === 0) {
     return <p className="m-0 text-ink-muted">Nothing uses it, deployed or in a draft.</p>;
   }

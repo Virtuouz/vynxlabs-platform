@@ -3,6 +3,7 @@ import { GitPullRequestArrow } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { fromNow } from "./Overview.tsx";
@@ -314,7 +315,7 @@ function ReviewRequest({
           </Notice>
         ) : null}
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
+        {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
         {preview.data ? (
           preview.data.tried ? (
             <PreviewPanels data={preview.data} targetName={request.target.name} link={link} />

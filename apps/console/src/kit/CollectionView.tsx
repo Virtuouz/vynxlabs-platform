@@ -25,6 +25,7 @@ export function CollectionView<Row>({
   side,
   empty,
   error,
+  onRetry,
   loading,
   label,
   table,
@@ -41,7 +42,10 @@ export function CollectionView<Row>({
   inspector?: ReactNode;
   side?: ReactNode;
   empty: { title: string; text?: ReactNode; action?: ReactNode };
-  error?: string | undefined;
+  /** What failed: the error itself, so its request ID shows, or a sentence. */
+  error?: unknown;
+  /** Asks again, offered beside an error. */
+  onRetry?: (() => void) | undefined;
   loading?: boolean;
   /** Names the list for screen readers. */
   label?: string;
@@ -73,6 +77,7 @@ export function CollectionView<Row>({
           {...(onSelect ? { onOpen: onSelect } : {})}
           empty={empty}
           error={error}
+          onRetry={onRetry}
           loading={loading}
         />
       </MasterDetail>

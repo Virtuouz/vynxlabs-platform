@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { Mono } from "../kit/status.tsx";
 import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
@@ -94,7 +95,7 @@ function MembersDialog({
           </Button>
         </form>
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {detail.error ? <Notice tone="danger">{detail.error.message}</Notice> : null}
+        {detail.error ? <ErrorState error={detail.error} onRetry={detail.reload} /> : null}
         {members.length === 0 ? (
           <EmptyState title={detail.loading ? "Loading…" : "Nobody is in this group yet"} />
         ) : (
@@ -152,7 +153,8 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
         toolbar={toolbarOf(framed)}
         label="Groups"
         rows={groups.data?.items}
-        error={groups.error?.message}
+        error={groups.error}
+        onRetry={groups.reload}
         rowKey={(row) => row.id}
         columns={[
           { header: "Name", cell: (row) => <span className="font-medium">{row.name}</span> },
@@ -231,7 +233,8 @@ export function EndUserGroups({ base }: { base: string }) {
         }
         label="End-user groups"
         rows={groups.data?.items}
-        error={groups.error?.message}
+        error={groups.error}
+        onRetry={groups.reload}
         rowKey={(row) => row.id}
         columns={[
           { header: "Name", cell: (row) => <Mono>{row.name}</Mono> },

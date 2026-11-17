@@ -1,8 +1,8 @@
-import { Notice } from "@vynxlabs/ui";
 import { CircleCheck, CirclePause, Cpu, Globe, LifeBuoy } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { actionWords } from "../audit-words.ts";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
@@ -124,7 +124,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         description="What asks for someone, how each workspace stands, and what changed last."
         meta={tenant.data ? <Mono>{tenant.data.slug}</Mono> : null}
       />
-      {counts.error ? <Notice tone="danger">{counts.error.message}</Notice> : null}
+      {counts.error ? <ErrorState error={counts.error} onRetry={counts.reload} /> : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -135,7 +135,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
             {c?.promotionRequests && attention.length === 0 ? null : (
               <Panel className="divide-y divide-line">
                 {!c ? (
-                  <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                  <Loading />
                 ) : attention.length > 0 ? (
                   attention
                 ) : (
@@ -158,11 +158,11 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
               <span id="workspaces">Workspaces</span>
             </SectionLabel>
             {workspaces.error ? (
-              <Notice tone="danger">{workspaces.error.message}</Notice>
+              <ErrorState error={workspaces.error} onRetry={workspaces.reload} />
             ) : (
               <Panel className="divide-y divide-line">
                 {!workspaces.data ? (
-                  <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                  <Loading />
                 ) : ordered.length === 0 ? (
                   <p className="m-0 px-4 py-3 text-ink-muted">
                     No workspaces yet. <Go to={t("workspaces")}>Create one</Go>
@@ -228,7 +228,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                   The audit log is not open to you here.
                 </p>
               ) : !recent.data ? (
-                <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                <Loading />
               ) : !changes?.length ? (
                 <p className="m-0 px-4 py-3 text-ink-muted">Nothing has changed yet.</p>
               ) : (

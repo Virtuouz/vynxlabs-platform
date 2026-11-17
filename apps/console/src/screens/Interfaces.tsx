@@ -43,6 +43,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -1695,7 +1696,7 @@ export function InterfaceBuilder({
   };
 
   if (missing) return <Notice tone="danger">{missing}</Notice>;
-  if (!body) return <p className="text-ink-muted">Loading…</p>;
+  if (!body) return <Loading />;
   const page = body.pages.find((candidate) => candidate.id === pageId) ?? body.pages[0];
   const listed = list.data?.items.find((item) => item.path === path);
   const appPath = listed?.app ?? null;

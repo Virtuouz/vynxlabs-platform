@@ -119,7 +119,7 @@ test("rows are checked by box, by Space, and as a range with Shift, and the batc
   expect(screen.queryByText(/selected$/)).toBeNull();
 });
 
-test("loading, empty, filtered-empty and error each have their own state", () => {
+test("loading, empty, filtered-empty and error each have their own state", async () => {
   const retry = vi.fn();
   const clear = vi.fn();
   const base = {
@@ -129,7 +129,9 @@ test("loading, empty, filtered-empty and error each have their own state", () =>
     empty: { title: "No runs yet" },
   };
   const { rerender } = render(<DataTable {...base} rows={undefined} />);
-  expect(screen.getByRole("status", { name: "Loading runs" })).toBeTruthy();
+  // A skeleton only once loading takes long enough to notice.
+  expect(screen.queryByRole("status", { name: "Loading runs" })).toBeNull();
+  expect(await screen.findByRole("status", { name: "Loading runs" })).toBeTruthy();
   rerender(<DataTable {...base} rows={[]} />);
   expect(screen.getByText("No runs yet")).toBeTruthy();
   rerender(<DataTable {...base} rows={[]} filtered={{ onClear: clear }} />);

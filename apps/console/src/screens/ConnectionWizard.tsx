@@ -10,6 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CopyButton } from "../ListScreen.tsx";
@@ -431,7 +432,7 @@ export function ConnectionWizard({
               onChange={(value) => setConfig((value ?? {}) as Record<string, unknown>)}
             />
           ) : (
-            <p className="m-0 text-ink-muted">Loading…</p>
+            <Loading />
           )}
         </section>
 

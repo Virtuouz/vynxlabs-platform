@@ -18,6 +18,7 @@ import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
@@ -223,7 +224,8 @@ export function Flows({
       rowKey={(row) => row.path}
       selected={chosen}
       onSelect={(row) => setChosen(row.path)}
-      error={list.error?.message}
+      error={list.error}
+      onRetry={list.reload}
       empty={{
         title: items.length > 0 ? "No flow matches" : "No flows yet",
         text:
@@ -367,8 +369,8 @@ export function FlowView({
   );
   const [saved, setSaved] = useState<"saving" | "saved" | string>();
   const [starting, setStarting] = useState(false);
-  if (flow.error) return <Notice tone="danger">{flow.error.message}</Notice>;
-  if (!flow.data) return <p className="text-ink-muted">Loading…</p>;
+  if (flow.error) return <ErrorState error={flow.error} onRetry={flow.reload} />;
+  if (!flow.data) return <Pending of={flow} />;
   const data = flow.data;
   const manualNode = Object.values(data.nodes).find(
     (node) => node.type === "trigger" && (node.trigger as { type: string }).type === "manual",
@@ -674,7 +676,7 @@ export function FlowRunView({
   const drawn = useLoad<RunDefinition>(run ? `${root}/flow-runs/${id}/definition` : null);
 
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p className="text-ink-muted">Loading…</p>;
+  if (!run) return <Loading />;
   // The trigger first, then the steps as they began.
   const steps = run.steps
     .filter((step) => step.item === "")
@@ -837,7 +839,7 @@ export function FlowRunView({
                   />
                 </div>
               ) : (
-                <p className="m-0 text-ink-muted">Loading…</p>
+                <Loading />
               ),
           },
         ]}

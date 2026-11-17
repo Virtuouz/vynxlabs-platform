@@ -10,6 +10,7 @@ import {
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { Page, RemoveButton } from "../ListScreen.tsx";
 import { size } from "./Apps.tsx";
 
@@ -479,7 +480,7 @@ export function Branding({ base }: { base: string }) {
       </Page>
     );
   }
-  if (!portal.data) return null;
+  if (!portal.data) return <Loading />;
   const data = portal.data;
 
   return (

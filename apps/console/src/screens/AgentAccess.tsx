@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { InputForm } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 
@@ -29,8 +30,8 @@ export function AgentAccess({ base, account }: { base: string; account: string }
     workspace ? `${base}/service-accounts/${account}/tools?workspace=${workspace}` : null,
   );
 
-  if (workspaces.error) return <Notice tone="danger">{workspaces.error.message}</Notice>;
-  if (!workspaces.data) return <p className="text-ink-muted">Loading…</p>;
+  if (workspaces.error) return <ErrorState error={workspaces.error} onRetry={workspaces.reload} />;
+  if (!workspaces.data) return <Pending of={workspaces} />;
   if (workspaces.data.items.length === 0) {
     return <EmptyState title="This tenant has no workspaces yet" />;
   }
@@ -69,7 +70,7 @@ export function AgentAccess({ base, account }: { base: string; account: string }
           onChange={setChosen}
         />
       </div>
-      {offered.error ? <Notice tone="danger">{offered.error.message}</Notice> : null}
+      {offered.error ? <ErrorState error={offered.error} onRetry={offered.reload} /> : null}
       {offered.data ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -148,7 +149,7 @@ export function AgentAccess({ base, account }: { base: string; account: string }
           ) : null}
         </>
       ) : offered.error ? null : (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       )}
     </div>
   );

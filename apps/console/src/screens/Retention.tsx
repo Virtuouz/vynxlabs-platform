@@ -1,7 +1,8 @@
-import { Button, Notice, TextField } from "@vynxlabs/ui";
+import { Button, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
+import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { Page } from "../ListScreen.tsx";
 
 type Kind = "runsDays" | "eventsDays" | "refusalsDays" | "auditDays";
@@ -37,8 +38,8 @@ export function RetentionSettings({ base }: { base: string }) {
   const loaded = useLoad<Retention>(`${base}/retention`);
   const [draft, setDraft] = useState<Partial<Record<Kind, string>>>({});
   const [busy, setBusy] = useState(false);
-  if (loaded.error) return <Notice tone="danger">{loaded.error.message}</Notice>;
-  if (!loaded.data) return <p className="text-ink-muted">Loading…</p>;
+  if (loaded.error) return <ErrorState error={loaded.error} onRetry={loaded.reload} />;
+  if (!loaded.data) return <Pending of={loaded} />;
   const data = loaded.data;
 
   const value = (key: Kind) => draft[key] ?? (data[key] === null ? "" : String(data[key]));

@@ -1,9 +1,10 @@
-import { Button, JsonView, Notice } from "@vynxlabs/ui";
+import { Button, JsonView } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { kindName, ObjectLink } from "../kit/objects.tsx";
@@ -22,9 +23,11 @@ import { NewScheduleSheet } from "./ScheduleForm.tsx";
  * linked to, and each says what uses it.
  */
 
+/** What a page loaded, or found in a list it loaded. */
 interface Loaded<T> {
   data: T | undefined;
   error: { status?: number; message: string } | undefined;
+  reload?: () => void;
 }
 
 /** Loading, not found, or a failure, said the same way on every page. */
@@ -40,8 +43,8 @@ function Gate<T>({
   children: (data: T) => React.ReactNode;
 }) {
   if (found.error?.status === 404) return <NotFound home={list} homeLabel={`Go to the ${noun}s`} />;
-  if (found.error) return <Notice tone="danger">{found.error.message}</Notice>;
-  if (!found.data) return <p className="text-ink-muted">Loading…</p>;
+  if (found.error) return <ErrorState error={found.error} onRetry={found.reload} />;
+  if (!found.data) return <Loading />;
   return <>{children(found.data)}</>;
 }
 
@@ -188,6 +191,7 @@ export function SecretPage({ root, link, name }: { root: string; link: string; n
   const found: Loaded<Secret> = {
     data: one,
     error: list.error ?? (list.data && !one ? { status: 404, message: "Not found" } : undefined),
+    reload: list.reload,
   };
   return (
     <Gate found={found} list={`${link}/secrets`} noun="secret">
@@ -368,7 +372,7 @@ export function TriggersOf({
         label={`Triggers of ${path}`}
         rows={rows}
         rowKey={(one) => `${one.path}:${one.node}`}
-        error={triggers.error?.message}
+        error={triggers.error}
         onRetry={triggers.reload}
         onOpen={(one) => navigate(`${link}/triggers?trigger=${encodeURIComponent(one.path)}`)}
         empty={{ title: "Nothing starts it on its own", text: "It runs when started by hand." }}
@@ -421,8 +425,8 @@ function SourceAt({ root, link, path }: { root: string; link: string; path: stri
   const insight = useLoad<{ location?: { file: string; line: number } | null }>(
     run ? `${root}/runs/${run}/insight` : null,
   );
-  if (source.error) return <Notice tone="danger">{source.error.message}</Notice>;
-  if (!source.data) return <p className="m-0 text-ink-muted">Loading…</p>;
+  if (source.error) return <ErrorState error={source.error} onRetry={source.reload} />;
+  if (!source.data) return <Pending of={source} />;
   if (!source.data.available) {
     return (
       <p className="m-0 text-ink-muted">
@@ -469,6 +473,7 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
     data: one,
     error:
       scripts.error ?? (scripts.data && !one ? { status: 404, message: "Not found" } : undefined),
+    reload: scripts.reload,
   };
   return (
     <Gate found={found} list={`${link}/scripts`} noun="script">

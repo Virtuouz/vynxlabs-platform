@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–3 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–4 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -113,3 +113,23 @@ Findings are recorded under each milestone as it lands.
 - **Server.** Activity rows have `wakeAt`: the earliest waiting step's time, so the list can say until when.
 - **Found.** Milestone 2 broke `apps.test.ts`, which reads the kit's stylesheet by position and keeps the server's own copy of the brand values. Only the console's tests ran for that commit. Here, the non-brand block moved after `@theme inline` and the server's panel radius became 8 px. The whole suite has run since, as the plan says.
 - **Test.** `kit/status.test.tsx` is table-driven, asserting word, icon and tone for each state. It also checks that canceled and skipped differ, that no two run states share a mark, that an unknown value shows verbatim, and "Waiting until".
+
+### Milestone 4: load states and request IDs
+
+- **The client** (`api.ts`). `ApiError` keeps `requestId`, from the problem document or the `x-request-id` header. An answer that isn't JSON, such as a proxy's HTML 502, becomes an `ApiError` (`unreadable_response`) that says the server couldn't be reached, with its status and request ID. Before, it was a `SyntaxError` with no message a person could act on. Uploads read answers the same way. `failureText`, and with it every error toast and dialog error, ends with "Request ID …".
+- **`kit/LoadState.tsx`** has four parts:
+  - `LoadState` covers one read: nothing for 300 ms, then a skeleton; the error with Try again and the request ID (with Copy); the empty state; and the content, marked `aria-busy` while it is asked again.
+  - `ErrorState` is the error alone.
+  - `Pending` is for a screen that has nothing yet: the error, or the delayed skeleton.
+  - `Loading` is the delayed skeleton alone.
+- **Lists.** `DataTable` shows `ErrorState`, with the request ID, both in place of rows and under them, and holds back its skeleton for 300 ms. `CollectionView` passes `onRetry`. All 18 list callers now hand over the error itself, with their `reload`, so every list has Try again.
+- **Adopted** by a codemod:
+  - Nine `if (!x.data) return "Loading…"` became `Pending`. Each of those had shown "Loading…" for ever when its read failed.
+  - 31 other "Loading…" paragraphs became `Loading`.
+  - 38 error notices on a read became `ErrorState` with Try again.
+  - Six screens that drew nothing while loading now show the delayed skeleton.
+  
+  Notices about a write that failed (`problem`, 23 of them) stay, for Milestone 7 to place beside their fields. "Loading…" inside a control, such as Load more, stays too.
+- **Rule.** `enforce.test.ts` fails on "Loading…" in a paragraph, panel or div of its own.
+- **Tests.** An HTML 502 becomes an `ApiError` with its status and request ID. A problem document's request ID is kept. `LoadState` shows nothing at first and then a skeleton, an error with Try again and the ID, the empty state, and `aria-busy` while it refreshes.
+- **Pictures.** None changed: they are taken of settled screens.

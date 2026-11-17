@@ -14,6 +14,7 @@ import {
 } from "../kit/DataTable.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { clockTime } from "../kit/LiveIndicator.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
@@ -618,9 +619,9 @@ export function RunsWorkbench({
                   </button>
                 </p>
               ) : looked.error && !picked ? (
-                <Notice tone="danger">{looked.error.message}</Notice>
+                <ErrorState error={looked.error} onRetry={looked.reload} />
               ) : !picked ? (
-                <p className="m-0 text-ink-muted">Loading…</p>
+                <Loading />
               ) : picked.kind === "flow" ? (
                 <FlowRunSummary run={picked} link={link} />
               ) : (
@@ -735,7 +736,7 @@ export function ScriptRunPanel({
     run && !["queued", "running"].includes(run.status) ? `${root}/runs/${runId}/insight` : null,
   );
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p className="m-0 text-ink-muted">Loading…</p>;
+  if (!run) return <Loading />;
   const active = run.status === "queued" || run.status === "running";
   const failed = run.status === "failed";
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;

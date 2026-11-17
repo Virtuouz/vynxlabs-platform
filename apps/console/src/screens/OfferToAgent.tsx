@@ -2,6 +2,7 @@ import { Button, Dialog, Notice, SelectField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 
@@ -125,7 +126,7 @@ function OfferForm({
 
   if (failed) return <Notice tone="danger">{failed.message}</Notice>;
   if (!accounts.data || !roles.data || !resource.data) {
-    return <p className="m-0 text-ink-muted">Loading…</p>;
+    return <Loading />;
   }
   if (accounts.data.items.length === 0) {
     return (

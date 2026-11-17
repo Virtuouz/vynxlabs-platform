@@ -6,6 +6,8 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly fields: { path: string; message: string }[];
+  /** The server's ID for the request, for a report to whoever runs the instance. */
+  readonly requestId: string | undefined;
 
   constructor(
     status: number,
@@ -14,13 +16,51 @@ export class ApiError extends Error {
       detail?: string;
       title?: string;
       errors?: { path: string; message: string }[];
+      requestId?: string;
     },
+    requestId?: string | null,
   ) {
     super(problem.detail ?? problem.title ?? `The request failed (${status}).`);
     this.status = status;
     this.code = problem.code ?? "error";
     this.fields = problem.errors ?? [];
+    this.requestId = problem.requestId ?? requestId ?? undefined;
   }
+}
+
+/**
+ * Reads an answer. Something between the console and the server, such as a
+ * proxy with its own error page, can answer with HTML: that is an `ApiError`
+ * that says so, not a parse failure.
+ */
+async function read<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  const requestId = response.headers.get("x-request-id");
+  let parsed: unknown = null;
+  if (text !== "") {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new ApiError(
+        response.status,
+        {
+          code: "unreadable_response",
+          title: response.ok
+            ? "The server's answer could not be read."
+            : `The server could not be reached (${response.status}${response.statusText ? ` ${response.statusText}` : ""}). Try again in a moment.`,
+        },
+        requestId,
+      );
+    }
+  }
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      (parsed ?? {}) as ConstructorParameters<typeof ApiError>[1],
+      requestId,
+    );
+  }
+  return parsed as T;
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -31,11 +71,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
       ? {}
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   });
-  const text = await response.text();
-  const parsed = text === "" ? null : JSON.parse(text);
-  if (!response.ok) throw new ApiError(response.status, parsed ?? {});
+  const parsed = await read<T>(response);
   if (method !== "GET") afterWrite(path);
-  return parsed as T;
+  return parsed;
 }
 
 /** A cache for the console's reads. One is made for each page, and for each test. */
@@ -119,10 +157,7 @@ export const api = {
       headers: { "content-type": file.type || "application/octet-stream" },
       body: file,
     });
-    const text = await response.text();
-    const parsed = text === "" ? null : JSON.parse(text);
-    if (!response.ok) throw new ApiError(response.status, parsed ?? {});
-    return parsed as T;
+    return read<T>(response);
   },
 };
 

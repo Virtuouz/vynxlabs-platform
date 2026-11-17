@@ -18,6 +18,7 @@ import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
@@ -424,7 +425,7 @@ export function ScriptEditor({
   revisionRef.current = revision;
   dirtyRef.current = dirty;
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
-  if (!body) return <p className="text-ink-muted">Loading…</p>;
+  if (!body) return <Loading />;
 
   const fromRepository = state === "repository" && !body.source;
   /** A step that comes with the platform. It is the platform's to change. */
@@ -1052,7 +1053,7 @@ export function RecentRuns({ root, link, path }: { root: string; link: string; p
       label={`Runs of ${path}`}
       rows={runs.data?.items}
       rowKey={(run) => run.id}
-      error={runs.error?.message}
+      error={runs.error}
       onRetry={runs.reload}
       onOpen={(run) => navigate(`${link}/runs/${run.id}`)}
       href={(run) => `${link}/runs/${run.id}`}
@@ -1195,7 +1196,7 @@ export function Extensions({
           ]}
         />
       ) : error ? null : (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       )}
     </Page>
   );
@@ -1243,7 +1244,7 @@ function RepositorySource({ root, path }: { root: string; path: string }) {
     files: { path: string; content: string }[];
   }>(`${root}/script-source/${path}`);
   const [chosen, setChosen] = useState<string>();
-  if (source.error) return <Notice tone="danger">{source.error.message}</Notice>;
+  if (source.error) return <ErrorState error={source.error} onRetry={source.reload} />;
   if (!source.data) return <p className="text-ink-muted">Loading the source…</p>;
   if (!source.data.available)
     return (

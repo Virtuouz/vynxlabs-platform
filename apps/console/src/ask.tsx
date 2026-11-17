@@ -67,13 +67,17 @@ export const ask: Dialogs = {
   typeToConfirm: (options) => need(dialogs).typeToConfirm(options),
 };
 
-/** What an error says to a person: its message, then each field it names. */
+/**
+ * What an error says to a person: its message, each field it names, and the
+ * server's request ID, which whoever runs the instance can look up.
+ */
 export function failureText(error: unknown): string {
   const failure = error as Partial<ApiError> & Error;
   const fields = (failure.fields ?? []).map((field) =>
     field.path ? `${field.path}: ${field.message}` : field.message,
   );
-  return [failure.message, ...fields].join(" ");
+  const id = failure.requestId ? `Request ID ${failure.requestId}.` : "";
+  return [failure.message, ...fields, id].filter(Boolean).join(" ");
 }
 
 /** Says what just happened, in a corner of the page. */

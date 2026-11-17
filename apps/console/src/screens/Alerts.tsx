@@ -1,7 +1,8 @@
-import { Badge, Button, Notice, SelectField } from "@vynxlabs/ui";
+import { Badge, Button, SelectField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
@@ -195,7 +196,7 @@ export function Alerts({
       <section aria-label="Recent alerts" className="flex flex-col gap-2">
         <h2 className="m-0 text-title font-semibold">Recent alerts</h2>
         {alerts.error ? (
-          <Notice tone="danger">{alerts.error.message}</Notice>
+          <ErrorState error={alerts.error} onRetry={alerts.reload} />
         ) : shown.length === 0 ? (
           <p className="m-0 text-ink-muted">
             {alerts.data ? "No alert has been sent from this workspace." : "Loading…"}

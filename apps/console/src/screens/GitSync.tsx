@@ -3,6 +3,7 @@ import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal } from
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { EmptyCanvas, KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
@@ -86,7 +87,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
         title="Git sync"
         description="This workspace beside the branch it follows. A push commits what is deployed here; a pull deploys what developers changed there."
       />
-      {status.error ? <Notice tone="danger">{status.error.message}</Notice> : null}
+      {status.error ? <ErrorState error={status.error} onRetry={status.reload} /> : null}
       {status.data && !following ? (
         <EmptyCanvas
           title={
@@ -97,7 +98,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
           text="Connect the tenant's repository, then choose a branch below for this dev workspace."
         />
       ) : null}
-      {compare.error ? <Notice tone="danger">{compare.error.message}</Notice> : null}
+      {compare.error ? <ErrorState error={compare.error} onRetry={compare.reload} /> : null}
       {compare.data ? (
         <>
           <div className="grid items-stretch gap-3 md:grid-cols-[1fr_auto_1fr]">

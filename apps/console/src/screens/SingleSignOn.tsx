@@ -17,6 +17,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
@@ -468,7 +469,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
           Add domain
         </Button>
       </form>
-      {list.error ? <Notice tone="danger">{list.error.message}</Notice> : null}
+      {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
       {(list.data?.items ?? []).map((row) => (
         <div key={row.id} className="flex flex-col gap-3 rounded-control border border-line p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -877,7 +878,7 @@ function Settings({
 function People({ root }: { root: string }) {
   const list = useLoad<{ items: Link[] }>(`${root}/links`);
   return list.error ? (
-    <Notice tone="danger">{list.error.message}</Notice>
+    <ErrorState error={list.error} onRetry={list.reload} />
   ) : (
     <DataTable<Link>
       variant="static"

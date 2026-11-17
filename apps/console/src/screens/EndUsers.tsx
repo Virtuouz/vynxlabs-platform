@@ -212,7 +212,8 @@ export function EndUsers({ base }: { base: string }) {
         }
         label="End users"
         rows={page.data ? rows : undefined}
-        error={page.error?.message}
+        error={page.error}
+        onRetry={page.reload}
         rowKey={(row) => row.id}
         selected={selected}
         onSelect={(row) => setSelected(row.id)}

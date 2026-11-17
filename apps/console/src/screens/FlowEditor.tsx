@@ -42,6 +42,7 @@ import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGra
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { typingIn, useHistory } from "../kit/history.ts";
+import { Loading } from "../kit/LoadState.tsx";
 import { retryAfter } from "../kit/retry.ts";
 import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
 import { Link, navigate, useNavigationGuard } from "../router.tsx";
@@ -1006,12 +1007,7 @@ export function FlowEditor({
     [root, testRunId, state, path, live.run],
   );
 
-  if (!loaded)
-    return problem ? (
-      <Notice tone="danger">{problem}</Notice>
-    ) : (
-      <p className="text-ink-muted">Loading…</p>
-    );
+  if (!loaded) return problem ? <Notice tone="danger">{problem}</Notice> : <Loading />;
 
   const node = chosen?.data.node;
   const expression = (label: string, key: string, hint?: string) =>

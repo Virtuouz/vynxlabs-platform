@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { type ApiError, api } from "../api.ts";
 import { failureText } from "../ask.tsx";
 import { BrandMark, useBrand } from "../kit/brand.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { EnvTag, Mono } from "../kit/status.tsx";
 
 interface Asked {
@@ -114,7 +115,7 @@ export function ApproveLink({ token }: { token: string }) {
               </p>
             </>
           ) : !asked ? (
-            <p className="m-0 text-ink-muted">Loading…</p>
+            <Loading />
           ) : (
             <>
               <div className="flex flex-col gap-1">

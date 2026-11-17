@@ -7,6 +7,7 @@ import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { useDevWorkspace } from "../kit/objects.tsx";
@@ -79,7 +80,7 @@ function RunOfEitherKind({ root, link, id }: { root: string; link: string; id: s
   }
   const failed = script.error?.status !== 404 ? script.error : flow.error;
   if (failed) return <Notice tone="danger">{failed.message}</Notice>;
-  return <p className="text-ink-muted">Loading…</p>;
+  return <Loading />;
 }
 
 /** What every run page starts with: where it is, how it stands, where it came from, and what to do. */
@@ -226,7 +227,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
     editing ? `${root}/scripts` : null,
   );
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p className="text-ink-muted">Loading…</p>;
+  if (!run) return <Loading />;
   const active = run.state === "queued" || run.state === "running";
   const diagnosis = insight.data?.diagnosis;
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;

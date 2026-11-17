@@ -3,6 +3,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
 import { type Branding, BrandMark, useBrand } from "../kit/brand.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { RemoveButton } from "../ListScreen.tsx";
 import { refreshInstanceTheme } from "../theme.ts";
@@ -25,7 +26,7 @@ export function InstanceBranding() {
       </Notice>
     );
   }
-  if (!loaded.data) return null;
+  if (!loaded.data) return <Loading />;
   return <Editor stored={loaded.data} reload={loaded.reload} />;
 }
 

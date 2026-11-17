@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
@@ -55,8 +56,8 @@ export function Provisioning({
     if (state.data) setSettings(state.data.settings);
   }, [state.data]);
 
-  if (state.error) return <Notice tone="danger">{state.error.message}</Notice>;
-  if (!state.data || !settings) return <p className="text-ink-muted">Loading…</p>;
+  if (state.error) return <ErrorState error={state.error} onRetry={state.reload} />;
+  if (!state.data || !settings) return <Loading />;
   const { data } = state;
   const dirty = JSON.stringify(settings) !== JSON.stringify(data.settings);
   const who = audience === "members" ? "member" : "end user";
@@ -262,7 +263,7 @@ interface Refusal {
 function Pushed({ root }: { root: string }) {
   const pushed = useLoad<{ people: PushedPerson[]; refusals: Refusal[] }>(`${root}/pushed`);
   const [filter, setFilter] = useUrlParam<"all" | "active" | "off">("people", "all");
-  if (pushed.error) return <Notice tone="danger">{pushed.error.message}</Notice>;
+  if (pushed.error) return <ErrorState error={pushed.error} onRetry={pushed.reload} />;
   const people = pushed.data?.people ?? [];
   const refusals = pushed.data?.refusals ?? [];
   const shown = people.filter((person) =>

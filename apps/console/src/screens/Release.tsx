@@ -3,6 +3,7 @@ import { ArrowRight, History, Rocket, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
   EmptyCanvas,
   KeyValues,
@@ -214,7 +215,7 @@ function ReviewStep({
   const [history, setHistory] = useState<string>();
 
   if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!drafts) return <p className="text-ink-muted">Loading…</p>;
+  if (!drafts) return <Loading />;
   if (drafts.length === 0)
     return (
       <div className="flex flex-col gap-3">
@@ -310,7 +311,7 @@ function ReviewStep({
       </div>
       <Panel className="flex h-fit flex-col gap-3 p-4">
         <SectionLabel>Deploy to this dev workspace</SectionLabel>
-        {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
+        {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
         {preview.data?.refusal ? (
           <Notice tone="danger">
             <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
@@ -426,9 +427,9 @@ function DraftHistory({
       description="Each save keeps what it replaced. Bringing one back makes it the draft again."
     >
       {history.error ? (
-        <Notice tone="danger">{history.error.message}</Notice>
+        <ErrorState error={history.error} onRetry={history.reload} />
       ) : !history.data ? (
-        <p className="m-0 text-ink-muted">Loading…</p>
+        <Loading />
       ) : history.data.items.length === 0 ? (
         <p className="m-0 text-ink-muted">No earlier versions yet.</p>
       ) : (
@@ -474,9 +475,9 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
       <section className="flex flex-col gap-2">
         <SectionLabel>Versions of {workspace.name}</SectionLabel>
         {ledger.error ? (
-          <Notice tone="danger">{ledger.error.message}</Notice>
+          <ErrorState error={ledger.error} onRetry={ledger.reload} />
         ) : !ledger.data ? (
-          <p className="text-ink-muted">Loading…</p>
+          <Loading />
         ) : ledger.data.items.length === 0 ? (
           <EmptyCanvas title="Nothing deployed here yet" />
         ) : (
@@ -562,7 +563,7 @@ function PromoteStep({
         </Panel>
       </div>
 
-      {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
+      {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
       {!data ? (
         <p className="text-ink-muted">Working out what promoting would do…</p>
       ) : (

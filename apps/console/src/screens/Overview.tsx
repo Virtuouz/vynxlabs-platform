@@ -1,4 +1,4 @@
-import { Button, Notice } from "@vynxlabs/ui";
+import { Button } from "@vynxlabs/ui";
 import {
   CircleCheck,
   CirclePause,
@@ -14,9 +14,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
-import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { Link, navigate } from "../router.tsx";
 import type { WorkspaceCounts } from "../Shell.tsx";
 
@@ -355,7 +356,7 @@ export function Overview({
         actions={primary}
       />
 
-      {summary.error ? <Notice tone="danger">{summary.error.message}</Notice> : null}
+      {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} /> : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
@@ -457,9 +458,9 @@ export function Overview({
             What starts work here
           </SectionLabel>
           {triggers.error ? (
-            <Notice tone="danger">{triggers.error.message}</Notice>
+            <ErrorState error={triggers.error} onRetry={triggers.reload} />
           ) : !triggers.data ? (
-            <Panel className="px-4 py-3 text-ink-muted">Loading…</Panel>
+            <Loading />
           ) : triggers.data.items.length === 0 ? (
             <EmptyCanvas
               title="Nothing starts by itself yet"

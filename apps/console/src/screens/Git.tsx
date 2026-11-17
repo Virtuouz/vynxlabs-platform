@@ -2,6 +2,7 @@ import { Button, Notice, SelectField, TextField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { type State as StateName, StatePill } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
@@ -40,8 +41,8 @@ export function RepositorySettings({ base }: { base: string }) {
     setFolder(repository.folder);
   }, [repository]);
 
-  if (loaded.error) return <Notice tone="danger">{loaded.error.message}</Notice>;
-  if (!loaded.data) return <p className="text-ink-muted">Loading…</p>;
+  if (loaded.error) return <ErrorState error={loaded.error} onRetry={loaded.reload} />;
+  if (!loaded.data) return <Pending of={loaded} />;
 
   return (
     <Page
@@ -186,8 +187,8 @@ export function GitPanel({
   const [choices, setChoices] = useState<Record<string, "mine" | "theirs">>({});
   const [said, setSaid] = useState<{ tone: "success" | "danger" | "attention"; text: string }>();
 
-  if (status.error) return <Notice tone="danger">{status.error.message}</Notice>;
-  if (!status.data) return null;
+  if (status.error) return <ErrorState error={status.error} onRetry={status.reload} />;
+  if (!status.data) return <Loading />;
   const { repository, state } = status.data;
   const frame = "flex flex-col gap-3 rounded-panel border border-line bg-surface p-4";
 

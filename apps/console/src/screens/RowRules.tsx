@@ -1,7 +1,8 @@
-import { Button, ComboboxField, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import { Button, ComboboxField, SelectField, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 
 type Condition =
   | { everyone: true }
@@ -304,7 +305,7 @@ export function SeeItAs({
           onChange={setAs}
         />
       </div>
-      {rows.error ? <Notice tone="danger">{rows.error.message}</Notice> : null}
+      {rows.error ? <ErrorState error={rows.error} onRetry={rows.reload} /> : null}
       {as && rows.data ? (
         shown.length === 0 ? (
           <p className="m-0 text-ink-muted">This person would see no rows.</p>

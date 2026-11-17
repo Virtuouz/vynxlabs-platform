@@ -14,6 +14,7 @@ import { useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
 import { DataTable } from "./kit/DataTable.tsx";
+import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 export interface FormField {
   name: string;
@@ -276,7 +277,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           }
         />
       ) : (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       )}
       {create ? (
         <CreateDialog

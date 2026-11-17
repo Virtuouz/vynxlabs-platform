@@ -60,6 +60,7 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
 import { EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
@@ -350,8 +351,8 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
 
 function ExportSection({ base }: { base: string }) {
   const tenant = useLoad<{ slug: string }>(base);
-  if (tenant.error) return <Notice tone="danger">{tenant.error.message}</Notice>;
-  if (!tenant.data) return null;
+  if (tenant.error) return <ErrorState error={tenant.error} onRetry={tenant.reload} />;
+  if (!tenant.data) return <Loading />;
   return <TenantExport base={base} slug={tenant.data.slug} />;
 }
 
@@ -416,8 +417,8 @@ function WorkspaceDetail({
     if (named || (!all.data && !all.error)) return null;
     return <NotFound home={`/t/${tenantId}/workspaces`} homeLabel="Go to the workspaces" />;
   }
-  if (workspace.error) return <Notice tone="danger">{workspace.error.message}</Notice>;
-  if (!workspace.data) return null;
+  if (workspace.error) return <ErrorState error={workspace.error} onRetry={workspace.reload} />;
+  if (!workspace.data) return <Loading />;
   if (!WORKSPACE_TABS.has(tab)) {
     return (
       <NotFound
@@ -830,7 +831,8 @@ function ServiceAccountList({ base }: { base: string }) {
         }
         label="Service accounts"
         rows={accounts.data?.items}
-        error={accounts.error?.message}
+        error={accounts.error}
+        onRetry={accounts.reload}
         rowKey={(row) => row.id}
         selected={selected}
         onSelect={(row) => setSelected(row.id)}

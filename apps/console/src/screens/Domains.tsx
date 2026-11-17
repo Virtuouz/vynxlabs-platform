@@ -11,6 +11,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
@@ -448,7 +449,7 @@ export function Domains({ base }: { base: string }) {
           }
         />
       ) : (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       )}
       <AddDialog
         base={base}

@@ -17,6 +17,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
@@ -584,8 +585,8 @@ const SYSTEM_COLUMNS: RowColumn[] = [
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
   const table = useLoad<TableDetail>(`${root}/tables/${name}`);
   const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
-  if (table.error) return <Notice tone="danger">{table.error.message}</Notice>;
-  if (!table.data) return <p className="text-ink-muted">Loading…</p>;
+  if (table.error) return <ErrorState error={table.error} onRetry={table.reload} />;
+  if (!table.data) return <Pending of={table} />;
   const data = table.data;
   const retired = data.status === "retired";
   const active = data.columns.filter((column) => column.status === "active");
@@ -1178,7 +1179,7 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
           {tables.error.message}
         </Notice>
       ) : !tables.data ? (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       ) : !table ? (
         <EmptyState title="No tables found">
           The database was reached, but the schema it is connected to has no tables.

@@ -2,6 +2,7 @@ import { Button, Notice } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { fromNow } from "./Overview.tsx";
@@ -58,7 +59,7 @@ export function InstanceTriggers() {
         title="Triggers"
         description="Stop every schedule, webhook, form and event in every tenant at once."
       />
-      {loaded.error ? <Notice tone="danger">{loaded.error.message}</Notice> : null}
+      {loaded.error ? <ErrorState error={loaded.error} onRetry={loaded.reload} /> : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {state ? (
         <section className="flex flex-col gap-3">

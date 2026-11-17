@@ -235,7 +235,8 @@ export function TriggersWorkbench({
         rowKey={triggerKey}
         selected={chosen ?? undefined}
         onSelect={(row) => choose(triggerKey(row))}
-        error={list.error?.message}
+        error={list.error}
+        onRetry={list.reload}
         empty={{
           title: "Nothing starts by itself yet",
           text: "A schedule, a webhook, a form or an event in a flow or a script starts work here once it is deployed.",
@@ -503,7 +504,8 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
       rowKey={(row) => row.id}
       selected={chosen}
       onSelect={(row) => setChosen(row.id)}
-      error={list.error?.message}
+      error={list.error}
+      onRetry={list.reload}
       empty={{
         title: applied ? `No ${applied} events yet` : "No events yet",
         text: "Declare an event with defineEvent, and publish it from a script with ctx.events.publish.",
@@ -730,7 +732,8 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
         ]}
         rows={decided.data?.items}
         rowKey={key}
-        error={decided.error?.message}
+        error={decided.error}
+        onRetry={decided.reload}
         empty={{ title: "Nothing decided yet" }}
       />
     );
@@ -792,7 +795,8 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
       rowKey={key}
       selected={chosen}
       onSelect={(row) => setChosen(key(row))}
-      error={waiting.error?.message}
+      error={waiting.error}
+      onRetry={waiting.reload}
       empty={{
         title: "Nothing is waiting for you",
         text: "When a flow pauses for a decision you may make, it appears here.",

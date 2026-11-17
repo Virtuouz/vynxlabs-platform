@@ -5,6 +5,7 @@ import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { consoleLink, ObjectLink } from "../kit/objects.tsx";
@@ -207,7 +208,8 @@ export function Scripts({
       rowKey={(row) => row.path}
       selected={chosen}
       onSelect={(row) => setChosen(row.path)}
-      error={list.error?.message}
+      error={list.error}
+      onRetry={list.reload}
       empty={{
         title: items.length > 0 ? "No script matches" : "No scripts yet",
         text:
@@ -973,9 +975,9 @@ export function QueuePanel({ base }: { base: string }) {
     <section aria-label="Queue" className="flex flex-col gap-3">
       <h2 className="m-0 text-title font-semibold">Queue</h2>
       {queue.error ? (
-        <Notice tone="danger">{queue.error.message}</Notice>
+        <ErrorState error={queue.error} onRetry={queue.reload} />
       ) : !queue.data ? (
-        <p className="m-0 text-ink-muted">Loading…</p>
+        <Loading />
       ) : rows.length === 0 ? (
         <p className="m-0 text-ink-muted">Nothing is waiting, and nothing is running.</p>
       ) : (
@@ -1077,9 +1079,9 @@ export function Workers({ base }: { base: string }) {
       >
         <QueuePanel base={base} />
         {pools.error ? (
-          <Notice tone="danger">{pools.error.message}</Notice>
+          <ErrorState error={pools.error} onRetry={pools.reload} />
         ) : !pools.data ? (
-          <p className="m-0 text-ink-muted">Loading…</p>
+          <Loading />
         ) : (
           <ul
             aria-label="Worker pools"
@@ -1261,8 +1263,8 @@ interface ConnectionGroup {
 export function ConnectionGroups({ root }: { root: string }) {
   const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
   const [adding, setAdding] = useState<string>();
-  if (groups.error) return <Notice tone="danger">{groups.error.message}</Notice>;
-  if (!groups.data) return null;
+  if (groups.error) return <ErrorState error={groups.error} onRetry={groups.reload} />;
+  if (!groups.data) return <Loading />;
 
   return (
     <section className="flex flex-col gap-4">

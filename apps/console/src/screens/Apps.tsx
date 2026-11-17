@@ -469,7 +469,8 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
         rowKey={(row) => row.id}
         selected={chosen}
         onSelect={(row) => setChosen(row.id)}
-        error={list.error?.message}
+        error={list.error}
+        onRetry={list.reload}
         empty={{
           title: "No apps yet",
           text: "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",

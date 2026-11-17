@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { PageEditor, PageView } from "./Interfaces.tsx";
@@ -133,7 +134,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   }, [root, id]);
 
   if (missing) return <Notice tone="danger">{missing}</Notice>;
-  if (!loaded || !page) return <p className="text-ink-muted">Loading…</p>;
+  if (!loaded || !page) return <Loading />;
 
   const back = (
     <Link to={`${link}/dashboards`} className="flex w-fit items-center gap-1 text-action">

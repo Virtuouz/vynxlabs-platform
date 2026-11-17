@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -231,7 +232,7 @@ export function ResourceEditor({
   }, [dirty, busy, editable, state, body, json]);
 
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
-  if (!body) return <p className="text-ink-muted">Loading…</p>;
+  if (!body) return <Loading />;
 
   const readOnly = !editable;
   const change = (next: Body) => {

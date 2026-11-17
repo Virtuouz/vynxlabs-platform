@@ -172,7 +172,8 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
         )}
         label="Members"
         rows={rows}
-        error={members.error?.message}
+        error={members.error}
+        onRetry={members.reload}
         rowKey={(row) => row.id}
         selected={selected}
         onSelect={(row) => setSelected(row.id)}
@@ -417,7 +418,8 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
         label="Access grants"
         rows={rows}
         selected={linked ?? undefined}
-        error={bindings.error?.message}
+        error={bindings.error}
+        onRetry={bindings.reload}
         rowKey={(row) => row.id}
         columns={[
           {

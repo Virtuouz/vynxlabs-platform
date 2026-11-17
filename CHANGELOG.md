@@ -25,6 +25,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - Every result opens its own page: a script opens its page rather than its editor, a person opens their member page, and an app opens in its list.
   - A failed search says so, with the request ID and Try again, rather than "Nothing matches".
   - ⌘↵ "Run again" now asks first.
+- **Database change.** Migration 0067 adds two partial indexes, on succeeded script runs and on succeeded top-level flow runs, by workspace, path and ID. They make the last success before a run a short read however long the history.
+- **Comparison API.** New `GET runs/:id/previous-success` and `GET flow-runs/:id/previous-success`. Each gives the last success of the same script or flow before this run (or `null`), its version and timing, and whether the version and the input differ from this run's.
 - **Batch API.**
   - New `POST runs/batch {action: cancel|rerun, ids}`, `POST flow-runs/batch {action: cancel|retry|restart, ids}`, `POST trigger-pauses/batch {paused, reason?, triggers}`, `POST drafts/batch-discard {paths}` and `POST /tenants/:t/approvals/batch {decision, comment?, approvals}`.
   - Each takes up to 100 items. Each item is done by its single action's own route, as the caller, so it is checked and audited exactly as it would be alone.
@@ -51,6 +53,10 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - A right-click, or Shift+F10, opens a menu on a step (Duplicate, Copy, Rename…, Remove) or on the canvas (Paste, Select every step, Fit the flow in view).
   - With several steps chosen, the panel says so and offers Duplicate and Remove. Dragging a box of steps is one step to undo.
   - **Fixed:** renaming a branch's case now keeps the connection that leaves it. Before, the connection still named the old case.
+- **Since it last worked.**
+  - A failed or canceled run's page says when the script or flow last succeeded, on which version, whether the input and version differ, and how long each took.
+  - When the input differs, the difference can be shown. When the version differs, "Compare the source" (or "Compare the flow") opens the two versions side by side.
+  - The palette offers "Compare with the last success" on a run's page.
 
 ### For tenant developers
 

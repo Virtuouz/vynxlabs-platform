@@ -72,6 +72,7 @@ import { EndUserGroups } from "./Groups.tsx";
 import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
 import { ConnectionPage, EventPage, ScriptPage, SecretPage, VariablePage } from "./ObjectPages.tsx";
 import type { Role } from "./Roles.tsx";
+import { RunComparePage } from "./RunCompare.tsx";
 import { TenantOverview } from "./TenantOverview.tsx";
 
 const isAccessTab = (slug: string): slug is AccessTab =>
@@ -578,6 +579,14 @@ function WorkspaceDetail({
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           editable={workspace.data.type === "dev"}
+        />
+      ) : tab === "runs" && /^[^/]+\/compare\/[^/]+$/.test(rest) ? (
+        <RunComparePage
+          key={rest}
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          id={rest.split("/")[0] as string}
+          other={rest.split("/")[2] as string}
         />
       ) : tab === "runs" && rest ? (
         <RunPage

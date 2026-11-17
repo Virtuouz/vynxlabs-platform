@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–7 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–8 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -233,3 +233,22 @@ Some of the roadmap's evidence is out of date:
   - the two copied with ⌘C and pasted with ⌘V into another flow;
   - a step duplicated from its right-click menu;
   - a branch case renamed, after which the saved draft's edge names the new case.
+
+### Milestone 8: run comparison
+- **`GET runs/:id/previous-success` and `GET flow-runs/:id/previous-success`** (`routes/compare.ts`) give the newest succeeded run of the same script or flow, in the same workspace, older than this one.
+  - Run IDs are time-ordered, so that is `id < this`. A flow run started by another flow's step doesn't count.
+  - They say whether the version differs, and whether the input does. The input is compared in the database (`is not distinct from`); an input too large to be kept inline gives `null`, which reads "too large to compare here", rather than a guess from its reference.
+- **Migration 0067** adds two partial indexes, on succeeded runs only, newest first per path. They make that read a few rows however long the history.
+- **`DiffView`** (`kit/DiffView.tsx`) is the one diff the console draws: removed lines in red with −, added in green with +, long runs of what stayed folded to a count. Drift's own renderer was replaced by it. It takes text, or any value, which it compares as sorted JSON.
+- **`RunCompare`** shows on a failed or canceled run's page, script or flow:
+  - when it last succeeded, linked to that run, and on which version;
+  - the input (the same, different, or too large to compare), then the version, then how long each took;
+  - "Show the input's difference", which loads the last success's input and diffs it;
+  - "Compare the source" or "Compare the flow", which opens `runs/:id/compare/:other`. For a script, that diffs each file of the two versions' source; for a flow, the two definitions.
+  
+  A run that never succeeded says so in one line.
+- **Palette:** "Compare with the last success" is one of a run page's commands.
+- **Tests:**
+  - server (`compare.test.ts`): none before, the same version and input, and after a deploy with other input;
+  - console: the panel's wording, link and input diff;
+  - e2e (`compare.spec.ts`): a script works on v1 and fails on v2; its page says "v1 then, v2 now" with the same input, passes axe, and the source diff shows the old and new code.

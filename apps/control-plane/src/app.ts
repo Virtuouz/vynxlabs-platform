@@ -22,6 +22,7 @@ import { authRoutes } from "./routes/auth.js";
 import { authoringRoutes } from "./routes/authoring.js";
 import { batchRoutes } from "./routes/batch.js";
 import { brandingRoutes } from "./routes/branding.js";
+import { compareRoutes } from "./routes/compare.js";
 import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
 import { driftRoutes } from "./routes/drift.js";
@@ -192,6 +193,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(searchRoutes(kernel));
       await api.register(preferenceRoutes(kernel));
       await api.register(batchRoutes(kernel));
+      await api.register(compareRoutes(kernel));
       await api.register(alertRoutes(kernel));
       await api.register(workerHostRoutes(kernel));
       await api.register(summaryRoutes(kernel));

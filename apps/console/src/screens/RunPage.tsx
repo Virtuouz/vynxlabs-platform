@@ -4,6 +4,7 @@ import {
   CircleX,
   Copy,
   FileCode2,
+  GitCompareArrows,
   Lightbulb,
   RotateCcw,
   Workflow,
@@ -37,6 +38,7 @@ import {
 } from "./Execution.tsx";
 import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
 import { NotFound } from "./NotFound.tsx";
+import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
 
 const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
@@ -313,6 +315,12 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               run: () => navigate(`${link}/scripts/edit/${run.script}`),
             },
             {
+              key: "compare",
+              label: "Compare with the last success",
+              icon: GitCompareArrows,
+              run: () => compareWithLastSuccess(root, link, "run", run.id),
+            },
+            {
               key: "copy",
               label: "Copy the run ID",
               icon: Copy,
@@ -538,6 +546,20 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                 empty={active ? "Waiting for the first line…" : "The script logged nothing."}
               />
             </section>
+            {run.state === "failed" || run.state === "canceled" ? (
+              <RunCompare
+                root={root}
+                link={link}
+                kind="run"
+                id={run.id}
+                input={run.input}
+                durationMs={
+                  run.startedAt && run.finishedAt
+                    ? Date.parse(run.finishedAt) - Date.parse(run.startedAt)
+                    : null
+                }
+              />
+            ) : null}
             <Tabs
               value={ioTab}
               onChange={setIoTab}
@@ -734,6 +756,12 @@ function FlowRunHeader({
                   run: () => navigate(`${link}/flows/edit/${run.flow}`),
                 },
                 {
+                  key: "compare",
+                  label: "Compare with the last success",
+                  icon: GitCompareArrows,
+                  run: () => compareWithLastSuccess(root, link, "flow_run", run.id),
+                },
+                {
                   key: "copy",
                   label: "Copy the run ID",
                   icon: Copy,
@@ -817,6 +845,20 @@ function FlowRunHeader({
           </>
         }
       />
+      {finishedBadly ? (
+        <div className="mt-4">
+          <RunCompare
+            root={root}
+            link={link}
+            kind="flow_run"
+            id={run.id}
+            input={run.input}
+            durationMs={
+              run.finishedAt ? Date.parse(run.finishedAt) - Date.parse(run.createdAt) : null
+            }
+          />
+        </div>
+      ) : null}
       {editing ? (
         <InputDialog
           open
@@ -845,3 +887,21 @@ export function ToRunPage({ to }: { to: string }) {
 
 /** The workspace's ID, from its API root: `/tenants/:t/workspaces/:w`. */
 const workspaceIdOf = (root: string) => root.split("/workspaces/")[1]?.split("/")[0] ?? null;
+
+/** Opens the comparison with the last success, from the palette, or says there is none. */
+async function compareWithLastSuccess(
+  root: string,
+  link: string,
+  kind: "run" | "flow_run",
+  id: string,
+) {
+  try {
+    const previous = await api.get<PreviousSuccess>(
+      `${root}/${kind === "run" ? "runs" : "flow-runs"}/${id}/previous-success`,
+    );
+    if (previous.run) navigate(`${link}/runs/${id}/compare/${previous.run.id}`);
+    else notify.info("It has not succeeded before here, so there is nothing to compare it with.");
+  } catch (error) {
+    notify.error(error);
+  }
+}

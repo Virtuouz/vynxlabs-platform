@@ -180,3 +180,13 @@ Findings are recorded under each milestone as it lands.
   - After any other promotion: "Open <target>".
   - The deploy's inline success notice went: the toast says the same thing and offers the next step.
 - **The release step** is in the address (`?step=`).
+
+### Milestone 14: flow building friction
+
+- **Adding a step** puts it after the chosen step, to its right and clear of the others. It is joined to that step and takes over where the step went next, while an error path stays where it was (`insertAfter`). The view pans to it at the same zoom: nothing refits on add, or when the test panel opens.
+- **Every workspace script is in the palette**, searchable by path. A plain script's step has an input form drawn from its schema. A step already written as one `input` expression keeps it.
+- **Renaming a step** rewrites every expression that reads it, `steps.x` and `steps['x']` alike, by parsing each with the same CEL library the server uses (`flowRename.ts`, so `cel-js` is now a console dependency). A string that only says `steps.x` is left alone, and the editor says how many references changed. The rewrite lives in the console rather than a shared package, since only the console renames.
+- **Problems** carry the step and field they are in (`problemsAt`). Each one is a button that chooses the step and puts the cursor in the field.
+- **Testing**, on the server: `test-runs` takes `triggerNode`, so a flow is tested from any trigger, and runs the active version when there are no drafts. `testFrom {flowRunId, node}` keeps the trigger, the input and the steps before that node from an earlier run (`rerunFrom` on the engine's seed, `downstreamOf`), and refuses, naming them, when one of those steps is different in the draft.
+- **Testing**, in the console: the test panel offers a choice of trigger. A step's last test shows its log and "Test from <step>".
+- **Flaky test fixed.** `portability.test.ts` failed again in a full run, so its race is fixed: before deleting the tenant it cancels everything going in every workspace, instead of only the runs it saw queued.

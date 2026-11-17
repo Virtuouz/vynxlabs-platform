@@ -991,7 +991,7 @@ function StepDiagnosis({ root, link, runId }: { root: string; link: string; runI
 }
 
 /** The log of the script run a step started, where the step is shown. */
-function StepLogs({ root, runId }: { root: string; runId: string }) {
+export function StepLogs({ root, runId }: { root: string; runId: string }) {
   const { run, lines, earlier, error, reconnecting } = useLiveRun(root, runId);
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
   const active = run?.state === "queued" || run?.state === "running";

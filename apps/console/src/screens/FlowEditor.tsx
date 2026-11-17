@@ -60,6 +60,7 @@ import {
 } from "./FlowSteps.tsx";
 import { useFlowRunLive } from "./Flows.tsx";
 import { FlowTestPanel, LastTest, stepsOf, took } from "./FlowTestPanel.tsx";
+import { WhenFields } from "./ScheduleForm.tsx";
 
 /** A node as the flow's manifest holds it. */
 type FlowNode = GraphNode & Record<string, unknown>;
@@ -497,6 +498,8 @@ export function FlowEditor({
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testRunId, setTestRunId] = useState<string>();
+  /** The steps the flow had when it was opened: a schedule among them keeps its own zone. */
+  const loadedIds = useRef(new Set<string>());
   const [testTrigger, setTestTrigger] = useState<string>();
   const [editedSinceTest, setEditedSinceTest] = useState(false);
   const live = useFlowRunLive(root, testRunId);
@@ -618,6 +621,7 @@ export function FlowEditor({
     (body: FlowBody) => {
       clearHistory();
       const positions = { ...autoLayout(body.nodes, body.edges), ...(body.layout ?? {}) };
+      loadedIds.current = new Set(Object.keys(body.nodes));
       setDescription(body.description ?? "");
       setNodes(
         Object.entries(body.nodes).map(([id, node]) => ({
@@ -1385,14 +1389,29 @@ export function FlowEditor({
                       />
                     ) : null}
                     {(node.trigger as { type: string }).type === "schedule" ? (
-                      <TextField
-                        name="cron"
-                        label="When, as a cron line"
-                        value={(node.trigger as { cron?: string }).cron ?? ""}
-                        hint="Minute, hour, day of month, month, day of week. 0 8 * * * is every day at 8."
-                        onChange={(cron) =>
-                          update(chosen.id, { trigger: { ...(node.trigger as object), cron } })
+                      <WhenFields
+                        root={root}
+                        value={
+                          node.trigger as {
+                            cron?: string;
+                            timezone?: string;
+                            overlap?: "allow" | "skip";
+                          }
                         }
+                        readOnly={false}
+                        // One added here is new; one that came with the flow keeps its zone.
+                        fresh={!loadedIds.current.has(chosen.id)}
+                        overlapDefault="skip"
+                        change={(next) => {
+                          const merged: Record<string, unknown> = {
+                            ...(node.trigger as object),
+                            ...next,
+                          };
+                          for (const key of Object.keys(merged)) {
+                            if (merged[key] === undefined) delete merged[key];
+                          }
+                          update(chosen.id, { trigger: merged as FlowNode["trigger"] });
+                        }}
                       />
                     ) : null}
                     {(node.trigger as { type: string }).type === "schedule" &&

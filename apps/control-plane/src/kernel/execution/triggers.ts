@@ -839,23 +839,34 @@ async function stillGoing(trx: Trx, state: TriggerRow, label: string): Promise<b
  * Starts one run of a schedule now, as its next time would, without moving
  * that time. The run says it was started by hand.
  */
-export async function fireScheduleNow(kernel: Kernel, trx: Trx, workspaceId: string, path: string) {
+export async function fireScheduleNow(
+  kernel: Kernel,
+  trx: Trx,
+  workspaceId: string,
+  path: string,
+  /** A flow's own schedule trigger, by its node. Empty for a schedule resource. */
+  node = "",
+) {
   const state = await trx
     .selectFrom("trigger_state")
     .innerJoin("resource", "resource.id", "trigger_state.resource_id")
     .selectAll("trigger_state")
     .where("trigger_state.workspace_id", "=", workspaceId)
     .where("trigger_state.type", "=", "schedule")
-    .where("trigger_state.node_id", "=", "")
+    .where("trigger_state.node_id", "=", node)
     .where("resource.path", "=", path)
     .executeTakeFirst();
-  if (!state) throw notFound(`The schedule ${path}`);
+  if (!state) throw notFound(node ? `The schedule ${node} of ${path}` : `The schedule ${path}`);
   const config = state.config as unknown as ScheduleConfig;
   return startTarget(kernel, trx, state, {
     input: config.input ?? {},
     trigger: {
       type: "schedule",
-      detail: { schedule: path, scheduledFor: new Date().toISOString(), manual: true },
+      detail: {
+        schedule: node ? `${path}#${node}` : path,
+        scheduledFor: new Date().toISOString(),
+        manual: true,
+      },
     },
   });
 }

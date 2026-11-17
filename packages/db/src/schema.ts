@@ -68,6 +68,8 @@ export interface WorkspaceTable {
   linked_workspace_id: string | null;
   active_bundle_id: string | null;
   triggers_paused: Generated<boolean>;
+  /** The zone schedules are written in unless they say otherwise. */
+  time_zone: Generated<string>;
   concurrency_limit: Generated<number>;
   failure_alert: ColumnType<FailureAlert, string | undefined, string>;
   created_at: Generated<Date>;

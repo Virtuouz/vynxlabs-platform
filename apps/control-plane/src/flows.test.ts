@@ -1314,6 +1314,18 @@ describe("events and triggers", () => {
       output: { hook_path: { via: "hook", name: "Ada" } },
     });
 
+    // A flow's own schedule can be fired now, from its page, by its node.
+    const fired = await alice.post(`${ws()}/schedule-firings`, {
+      path: "many-triggers",
+      node: "nightly",
+    });
+    expect(fired.status, JSON.stringify(fired.body)).toBe(201);
+    expect(fired.body.kind).toBe("flow");
+    expect(await finished(fired.body.id)).toMatchObject({
+      triggerNode: "nightly",
+      output: { night_path: { via: "schedule" } },
+    });
+
     const night = new Date(detail.triggers.find((x: Any) => x.type === "schedule").nextFireAt);
     expect(night.getUTCHours()).toBe(2);
     expect(await fireDueSchedules(t.kernel, new Date(night.getTime() + 1000))).toBe(1);

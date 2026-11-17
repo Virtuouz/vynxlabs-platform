@@ -21,6 +21,16 @@ import {
   WorkspaceParams,
 } from "./shared.js";
 
+/** Whether the runtime knows a zone by this name. */
+function isTimeZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const WorkspaceType = Type.Union([Type.Literal("production"), Type.Literal("dev")]);
 const Workspace = Type.Object({
   id: Id,
@@ -34,6 +44,10 @@ const Workspace = Type.Object({
       "While true, no schedule, webhook or event starts anything here. Runs started by hand still work.",
   }),
   concurrencyLimit: Type.Integer({ description: "How many runs may be in progress at once." }),
+  timeZone: Type.String({
+    description:
+      "The IANA zone schedules here are written in unless they say otherwise, such as Europe/Berlin.",
+  }),
   failureAlert: Type.Object({
     script: Type.Optional(Type.String()),
     notify: Type.Optional(Type.String()),
@@ -49,6 +63,7 @@ interface WorkspaceRow {
   linked_workspace_id: string | null;
   triggers_paused: boolean;
   concurrency_limit: number;
+  time_zone?: string;
   failure_alert: { script?: string; notify?: string };
   created_at: Date;
 }
@@ -61,6 +76,7 @@ const toWorkspace = (row: WorkspaceRow) => ({
   linkedWorkspaceId: row.linked_workspace_id,
   triggersPaused: row.triggers_paused,
   concurrencyLimit: row.concurrency_limit,
+  timeZone: row.time_zone ?? "UTC",
   failureAlert: row.failure_alert,
   createdAt: iso(row.created_at),
 });
@@ -289,6 +305,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             linkedWorkspaceId: Type.Optional(NullableId),
             triggersPaused: Type.Optional(Type.Boolean()),
             concurrencyLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+            timeZone: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
             failureAlert: Type.Optional(
               Type.Object(
                 {
@@ -313,6 +330,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ? current.linked_workspace_id
             : body.linkedWorkspaceId;
         if (linked === params.w) throw badRequest("A workspace cannot link to itself.");
+        if (body.timeZone !== undefined && !isTimeZone(body.timeZone)) {
+          throw badRequest(
+            `${body.timeZone} is not a time zone. Use a name such as Europe/Berlin or UTC.`,
+            [{ path: "/timeZone", message: "Not a time zone." }],
+          );
+        }
         await checkLink(params.t, current.type, linked, params.w);
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
@@ -322,6 +345,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               linked_workspace_id: linked,
               triggers_paused: body.triggersPaused ?? current.triggers_paused,
               concurrency_limit: body.concurrencyLimit ?? current.concurrency_limit,
+              time_zone: body.timeZone ?? current.time_zone,
               ...(body.failureAlert ? { failure_alert: JSON.stringify(body.failureAlert) } : {}),
             })
             .where("id", "=", params.w)
@@ -348,6 +372,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               name: updated.name,
               linkedWorkspaceId: linked,
               concurrencyLimit: updated.concurrency_limit,
+              timeZone: updated.time_zone,
               failureAlert: updated.failure_alert,
             },
           });

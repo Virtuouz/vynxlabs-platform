@@ -190,3 +190,14 @@ Findings are recorded under each milestone as it lands.
 - **Testing**, on the server: `test-runs` takes `triggerNode`, so a flow is tested from any trigger, and runs the active version when there are no drafts. `testFrom {flowRunId, node}` keeps the trigger, the input and the steps before that node from an earlier run (`rerunFrom` on the engine's seed, `downstreamOf`), and refuses, naming them, when one of those steps is different in the draft.
 - **Testing**, in the console: the test panel offers a choice of trigger. A step's last test shows its log and "Test from <step>".
 - **Flaky test fixed.** `portability.test.ts` failed again in a full run, so its race is fixed: before deleting the tenant it cancels everything going in every workspace, instead of only the runs it saw queued.
+
+### Milestone 15: scheduling in context
+
+- **Server.**
+  - Workspaces have a `time_zone` (migration `0063`, default `UTC`), checked against the zones the runtime knows, and returned and set as `timeZone`. Existing schedules are not touched.
+  - `schedule-firings` takes `node`, so a flow's own schedule trigger can run now.
+  - (`triggers?target=` came in Milestone 11.)
+- **One "when".** `WhenFields` (presets, cron line, zone always shown, the next five times, overlap) is used by the Triggers sheet, the resource editor, and a flow's schedule trigger, which was a bare cron field. A new schedule starts in the workspace's zone and writes it into the schedule, so what is saved is what was shown. One that exists keeps its own, or UTC when it never named one.
+- **Overlap defaults.** Each kind keeps its own: a schedule resource allows overlap and a flow trigger skips. The box shows the real default and only writes a value that differs from it.
+- **Scheduling from the thing.** A script's or flow's page has "Add a schedule", with the target and a path filled in: two presses to a draft. Its triggers list offers "Run it now", Pause and Resume.
+- **Settings.** The workspace's zone is set in workspace settings.

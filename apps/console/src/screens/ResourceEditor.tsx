@@ -532,6 +532,7 @@ export function ResourceEditor({
             readOnly={readOnly}
             sources={ofKind("trigger_source", "poll")}
             onProblems={setScheduleProblems}
+            fresh={state === "new"}
           />
         ) : null}
         {kind === "trigger" ? (

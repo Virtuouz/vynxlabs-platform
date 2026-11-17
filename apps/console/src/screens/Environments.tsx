@@ -1,4 +1,4 @@
-import { Badge, Button, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import { Badge, Button, ComboboxField, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -187,7 +187,66 @@ export function WorkspaceSettings({
         reload={reload}
         promotion={<Promotion base={base} workspace={workspace} reload={reload} />}
       />
+      <TimeZoneSetting base={base} workspaceId={workspace.id} />
     </Page>
+  );
+}
+
+/** The time zone the workspace's new schedules start in. */
+function TimeZoneSetting({ base, workspaceId }: { base: string; workspaceId: string }) {
+  const workspace = useLoad<{ timeZone?: string }>(`${base}/workspaces/${workspaceId}`);
+  const [zone, setZone] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const current = workspace.data?.timeZone ?? "UTC";
+  const shown = zone ?? current;
+  const zones = [
+    "UTC",
+    ...(typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : []
+    ).filter((one) => one !== "UTC"),
+  ].map((one) => ({ value: one, label: one.replace(/_/g, " ") }));
+  return (
+    <section aria-labelledby="time-zone" className="flex flex-col gap-3">
+      <h2 id="time-zone" className="m-0 text-title">
+        Time zone
+      </h2>
+      <Panel className="flex flex-col gap-3 p-4">
+        <p className="m-0 text-ink-muted">
+          New schedules here start in this zone, and every schedule form shows it. Schedules that
+          exist keep the zone they were made with.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-full max-w-sm">
+            <ComboboxField
+              label="Zone"
+              options={zones}
+              value={shown}
+              onChange={(value) => setZone(value ?? "UTC")}
+            />
+          </div>
+          <Button
+            variant="primary"
+            disabled={busy || shown === current}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api.patch(`${base}/workspaces/${workspaceId}`, { timeZone: shown });
+                notify.success(`New schedules here start in ${shown}.`);
+                setZone(undefined);
+                workspace.reload();
+              } catch (error) {
+                notify.error(error);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </Panel>
+    </section>
   );
 }
 

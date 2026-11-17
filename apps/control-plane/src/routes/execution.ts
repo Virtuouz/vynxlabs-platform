@@ -1710,7 +1710,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "time where it is. The run's trigger says `manual: true`.",
           tags: ["runs"],
           params: WorkspaceParams,
-          body: Type.Object({ path: Type.String({ maxLength: 255 }) }),
+          body: Type.Object({
+            path: Type.String({ maxLength: 255 }),
+            node: Type.Optional(
+              Type.String({
+                maxLength: 100,
+                description: "For a flow's own schedule trigger: its node. The path is the flow's.",
+              }),
+            ),
+          }),
           response: {
             201: Type.Object({
               kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
@@ -1722,11 +1730,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }, reply) => {
         const path = wildPath({ "*": body.path });
         const started = await ctx.mutate(async (trx, audit) => {
-          const made = await fireScheduleNow(kernel, trx, params.w, path);
+          const made = await fireScheduleNow(kernel, trx, params.w, path, body.node ?? "");
           await audit({
             action: "schedule.fired",
             targetType: "schedule",
-            targetId: path,
+            targetId: body.node ? `${path}#${body.node}` : path,
             tenantId: params.t,
             workspaceId: params.w,
             details: { kind: made.kind, id: made.id },

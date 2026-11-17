@@ -88,6 +88,7 @@ export function TriggersWorkbench({
     try {
       const started = await api.post<{ id: string }>(`${root}/schedule-firings`, {
         path: row.path,
+        ...(row.node ? { node: row.node } : {}),
       });
       // The run's page is where it goes on.
       navigate(`${link}/runs/${started.id}`);

@@ -1,5 +1,7 @@
 import { Badge, Button, JsonView, Notice } from "@vynxlabs/ui";
-import { useLoad } from "../api.ts";
+import { useState } from "react";
+import { api, useLoad } from "../api.ts";
+import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { KeyValues } from "../kit/layout.tsx";
@@ -12,6 +14,7 @@ import { Link, navigate, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { fromNow } from "./Overview.tsx";
+import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 /**
  * A page of its own for each thing a workspace holds that had only a row in a
@@ -319,41 +322,82 @@ export function TriggersOf({
   const rows = triggers.data?.items.filter(
     (one) => one.script === path && (one.targetKind ?? "script") === kind,
   );
+  const [adding, setAdding] = useState(false);
+  const pauseUrl = (one: TriggerRow) =>
+    `${root}/trigger-pauses/${one.path}${one.node ? `?node=${encodeURIComponent(one.node)}` : ""}`;
+  const act = (work: Promise<unknown>) => work.then(triggers.reload, notify.error);
   return (
-    <DataTable<TriggerRow>
-      variant="inset"
-      label={`Triggers of ${path}`}
-      rows={rows}
-      rowKey={(one) => `${one.path}:${one.node}`}
-      error={triggers.error?.message}
-      onRetry={triggers.reload}
-      onOpen={(one) => navigate(`${link}/triggers?trigger=${encodeURIComponent(one.path)}`)}
-      empty={{ title: "Nothing starts it on its own", text: "It runs when started by hand." }}
-      columns={[
-        {
-          header: "Trigger",
-          cell: (one) => <ObjectLink link={link} kind="trigger" path={one.path} />,
-        },
-        { header: "Kind", cell: (one) => kindName(one.type) },
-        {
-          header: "When",
-          cell: (one) =>
-            one.paused ? (
-              <span className="text-attention">Paused</span>
-            ) : one.cron ? (
-              <span>
-                <Mono>{one.cron}</Mono>
-                {one.timezone ? <span className="text-ink-muted"> {one.timezone}</span> : null}
-                {one.nextFireAt ? (
-                  <span className="text-ink-muted"> · next {fromNow(one.nextFireAt)}</span>
-                ) : null}
-              </span>
-            ) : (
-              <span className="text-ink-muted">When it is called</span>
-            ),
-        },
-      ]}
-    />
+    <div className="flex flex-col gap-3">
+      <div>
+        <Button size="small" onClick={() => setAdding(true)}>
+          Add a schedule
+        </Button>
+      </div>
+      <NewScheduleSheet
+        key={String(adding)}
+        root={root}
+        link={link}
+        open={adding}
+        target={{ kind, path }}
+        onClose={() => {
+          setAdding(false);
+          triggers.reload();
+        }}
+      />
+      <DataTable<TriggerRow>
+        actions={(one) => [
+          ...(one.type === "schedule"
+            ? [
+                {
+                  label: "Run it now",
+                  onSelect: () =>
+                    void api
+                      .post<{ id: string }>(`${root}/schedule-firings`, {
+                        path: one.path,
+                        ...(one.node ? { node: one.node } : {}),
+                      })
+                      .then((started) => navigate(`${link}/runs/${started.id}`), notify.error),
+                },
+              ]
+            : []),
+          one.paused
+            ? { label: "Resume", onSelect: () => void act(api.delete(pauseUrl(one))) }
+            : { label: "Pause", onSelect: () => void act(api.put(pauseUrl(one), {})) },
+        ]}
+        variant="inset"
+        label={`Triggers of ${path}`}
+        rows={rows}
+        rowKey={(one) => `${one.path}:${one.node}`}
+        error={triggers.error?.message}
+        onRetry={triggers.reload}
+        onOpen={(one) => navigate(`${link}/triggers?trigger=${encodeURIComponent(one.path)}`)}
+        empty={{ title: "Nothing starts it on its own", text: "It runs when started by hand." }}
+        columns={[
+          {
+            header: "Trigger",
+            cell: (one) => <ObjectLink link={link} kind="trigger" path={one.path} />,
+          },
+          { header: "Kind", cell: (one) => kindName(one.type) },
+          {
+            header: "When",
+            cell: (one) =>
+              one.paused ? (
+                <span className="text-attention">Paused</span>
+              ) : one.cron ? (
+                <span>
+                  <Mono>{one.cron}</Mono>
+                  {one.timezone ? <span className="text-ink-muted"> {one.timezone}</span> : null}
+                  {one.nextFireAt ? (
+                    <span className="text-ink-muted"> · next {fromNow(one.nextFireAt)}</span>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="text-ink-muted">When it is called</span>
+              ),
+          },
+        ]}
+      />
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import {
   Button,
+  CheckboxField,
   type Column,
   ComboboxField,
   Dialog,
@@ -20,7 +21,10 @@ import { PageHeader } from "./kit/layout.tsx";
 export interface FormField {
   name: string;
   label: string;
-  type?: "text" | "email" | "password" | "number";
+  /** `checkbox` gives "true" or "false". */
+  type?: "text" | "email" | "password" | "number" | "checkbox";
+  /** What a field holds before anything is entered, such as "true" for a box checked already. */
+  initial?: string;
   hint?: string;
   required?: boolean;
   options?: { value: string; label: string }[];
@@ -183,11 +187,14 @@ export function CreateDialog({
         setBusy(true);
         setError(undefined);
         try {
-          const defaults = Object.fromEntries(
-            config.fields
+          const defaults = Object.fromEntries([
+            ...config.fields
               .filter((f) => f.options?.[0] && !f.pick)
               .map((f) => [f.name, f.options?.[0]?.value as string]),
-          );
+            ...config.fields
+              .filter((f) => f.initial !== undefined)
+              .map((f) => [f.name, f.initial as string]),
+          ]);
           const sent = { ...defaults, ...values };
           const result = await config.submit(sent);
           const said = config.done?.(result, sent) ?? (config.afterCreate ? undefined : "Created.");
@@ -203,7 +210,18 @@ export function CreateDialog({
       }}
     >
       {config.fields.map((field) =>
-        field.when && !field.when(values) ? null : field.choose ? (
+        field.when && !field.when(values) ? null : field.type === "checkbox" ? (
+          <CheckboxField
+            key={field.name}
+            name={field.name}
+            label={field.label}
+            checked={(values[field.name] ?? field.initial) === "true"}
+            {...(field.hint ? { hint: field.hint } : {})}
+            onChange={(checked) =>
+              setValues((v) => ({ ...v, [field.name]: checked ? "true" : "false" }))
+            }
+          />
+        ) : field.choose ? (
           <ChoiceField
             key={field.name}
             field={field}

@@ -167,7 +167,6 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               name="search"
               label="Search by email or name"
               value={search}
-              required={false}
               onChange={setSearch}
             />
           </div>,

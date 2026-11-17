@@ -206,7 +206,6 @@ export function EndUsers({ base }: { base: string }) {
                   label="Search by email or name"
                   name="search"
                   value={search}
-                  required={false}
                   onChange={(value) => {
                     setSearch(value);
                     setTrail([null]);

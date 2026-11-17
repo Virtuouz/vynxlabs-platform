@@ -92,6 +92,10 @@ interface ScriptRow {
   } | null;
   failedInARow: number;
   ownership: string;
+  /** A change waits to be deployed. */
+  draft?: boolean;
+  /** A version of it runs here; false for a script that is only a draft yet. */
+  deployed?: boolean;
   retries: number;
   uses: { connections: string[]; secrets: string[]; variables: string[]; tables: string[] };
 }
@@ -109,14 +113,15 @@ export function Scripts({
 }) {
   const runsLink = `${link}/runs`;
   const list = useLoad<{ items: ScriptRow[] }>(`${root}/scripts`);
-  const [filter, setFilter] = useUrlParam<"all" | "failing" | "never">("filter", "all");
+  const [filter, setFilter] = useUrlParam<"all" | "failing" | "never" | "drafted">("filter", "all");
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = list.data?.items ?? [];
   const rows = items.filter(
     (row) =>
       filter === "all" ||
       (filter === "failing" && row.lastRun?.status === "failed") ||
-      (filter === "never" && !row.lastRun),
+      (filter === "never" && !row.lastRun) ||
+      (filter === "drafted" && row.draft === true),
   );
   const open = items.find((row) => row.path === chosen);
   const reaches = (row: ScriptRow) =>
@@ -150,6 +155,11 @@ export function Scripts({
               label: "Never run",
               count: items.filter((row) => !row.lastRun).length,
             },
+            {
+              value: "drafted",
+              label: "Drafted",
+              count: items.filter((row) => row.draft === true).length,
+            },
           ]}
         />
       }
@@ -158,12 +168,19 @@ export function Scripts({
           header: "Script",
           cell: (row) => (
             <span className="flex min-w-0 flex-col">
-              <Link
-                to={`${link}/scripts/edit/${row.path}`}
-                className="truncate font-mono text-code text-ink no-underline"
-              >
-                {row.path}
-              </Link>
+              <span className="flex min-w-0 items-center gap-2">
+                <Link
+                  to={`${link}/scripts/edit/${row.path}`}
+                  className="truncate font-mono text-code text-ink no-underline"
+                >
+                  {row.path}
+                </Link>
+                {row.draft ? (
+                  <StatePill state="draft">
+                    {row.deployed === false ? "Draft, never deployed" : "Draft"}
+                  </StatePill>
+                ) : null}
+              </span>
               <span className="truncate text-meta text-ink-subtle">
                 {row.description || "No description"}
               </span>

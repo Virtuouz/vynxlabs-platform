@@ -68,6 +68,11 @@ interface WorkspaceSummary {
 
 /** What `GET …/summary` answers for a workspace. A count the person may not read is null. */
 export interface WorkspaceCounts {
+  /** What a first run's checklist needs. Optional: an older server sends none. */
+  scripts?: number | null;
+  flows?: number | null;
+  everRan?: boolean | null;
+  workersOnline?: number | null;
   drafts: number | null;
   // Optional: an older server may not send it, and a missing count must not take the shell down.
   failedRuns?: { count: number | null; since: string };

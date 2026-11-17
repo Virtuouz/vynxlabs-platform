@@ -61,6 +61,7 @@ import {
 import { useFlowRunLive } from "./Flows.tsx";
 import { FlowTestPanel, LastTest, stepsOf, took } from "./FlowTestPanel.tsx";
 import { WhenFields } from "./ScheduleForm.tsx";
+import { FLOW_STARTERS } from "./starters.ts";
 
 /** A node as the flow's manifest holds it. */
 type FlowNode = GraphNode & Record<string, unknown>;
@@ -485,6 +486,7 @@ export function FlowEditor({
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [starterId, setStarterId] = useState("blank");
   const [testing, setTesting] = useState(false);
   const [testRunId, setTestRunId] = useState<string>();
   /** The steps the flow had when it was opened: a schedule among them keeps its own zone. */
@@ -1140,14 +1142,37 @@ export function FlowEditor({
           }
           after={
             opened ? undefined : (
-              <div className="w-56">
-                <TextField
-                  name="path"
-                  label="Path"
-                  value={path}
-                  placeholder="orders/handle"
-                  onChange={setPath}
-                />
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="w-56">
+                  <TextField
+                    name="path"
+                    label="Path"
+                    value={path}
+                    placeholder="orders/handle"
+                    onChange={setPath}
+                  />
+                </div>
+                <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+                  <legend className="mb-1 text-body-sm font-medium">Start from</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {FLOW_STARTERS.map((starter) => (
+                      <Button
+                        key={starter.id}
+                        size="small"
+                        title={starter.about}
+                        aria-pressed={starterId === starter.id}
+                        // Once the flow is changed, starting again would lose the change.
+                        disabled={dirty && starterId !== starter.id}
+                        onClick={() => {
+                          setStarterId(starter.id);
+                          open(starter.body as unknown as FlowBody);
+                        }}
+                      >
+                        {starter.label}
+                      </Button>
+                    ))}
+                  </div>
+                </fieldset>
               </div>
             )
           }

@@ -20,6 +20,9 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **People API.**
   - New `GET principals?q=` finds members, groups, service accounts, end users and groups of end users by name or email.
   - `POST members` takes optional `bindings` (role, and workspace), given in the same change as the membership. Each needs `binding:write` where it applies.
+- **Creating a tenant can make its creator a member.** `POST /tenants {addCreator: true}` makes the operator a member of the new tenant holding `tenant_admin`, in the same change and in its audit log. The console's dialog offers it, checked by default. Without it, as before, an operator works inside only through an access grant.
+- **Workspace summary.** `GET /workspaces/:w/summary` adds `scripts` and `flows` (deployed or in draft), `everRan` and `workersOnline`, for a new workspace's first steps.
+- **Scripts list.** `GET scripts` lists scripts that are only drafts too, with `draft` and `deployed` on each.
 - **New API.** `POST /workspaces/:w/secrets {name, value}` makes a secret and refuses a name already in use (409). `PUT secrets/:name` still sets or replaces one. Connection, data source, group member, Git repository and identity provider responses carry `credentialSetAt` and `credentialSetBy`.
 
 ### For tenant developers

@@ -67,7 +67,8 @@ export function CollectionView<Row>({
           rowKey={rowKey}
           selected={selected}
           {...(onSelect ? { onOpen: onSelect } : {})}
-          empty={empty}
+          // An empty list offers what the page offers: making the first one.
+          empty={empty.action || !actions ? empty : { ...empty, action: actions }}
           error={error}
           onRetry={onRetry}
           loading={loading}

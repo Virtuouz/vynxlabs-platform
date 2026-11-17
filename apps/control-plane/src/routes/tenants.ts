@@ -162,11 +162,20 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "It is chosen once: moving a tenant later is an export and an import.",
               }),
             ),
+            addCreator: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Makes the member creating the tenant a member of it, holding `tenant_admin`, " +
+                  "in the same change. Without it, an operator sees inside only through an access grant.",
+              }),
+            ),
           }),
           response: { 201: Tenant },
         },
       },
       async ({ ctx, body }, reply) => {
+        // Only a person can be made the tenant's first member.
+        const creator = body.addCreator ? ctx.memberId : undefined;
         const tenant = await ctx.mutate(async (trx, audit) => {
           if (body.dataLocation !== undefined) {
             const known = await trx
@@ -203,6 +212,32 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tenantId: row.id,
             details: { slug: row.slug, name: row.name, dataLocation: body.dataLocation ?? null },
           });
+          if (creator) {
+            await trx
+              .insertInto("tenant_member")
+              .values({ tenant_id: row.id, member_id: creator })
+              .execute();
+            await audit({
+              action: "tenant_member.added",
+              targetType: "member",
+              targetId: creator,
+              tenantId: row.id,
+              details: { asCreator: true },
+            });
+            const admin = await trx
+              .selectFrom("role")
+              .select("id")
+              .where("name", "=", "tenant_admin")
+              .where("builtin", "=", true)
+              .executeTakeFirstOrThrow();
+            await insertBinding(trx, audit, row.id, {
+              principalType: "member",
+              principalId: creator,
+              roleId: admin.id,
+              workspaceId: null,
+              resourceId: null,
+            });
+          }
           return row;
         });
         return reply.code(201).send(toTenant(tenant));

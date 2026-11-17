@@ -192,6 +192,97 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
 }
 
 /** The first answer to "is this workspace healthy, and what should I do next?". */
+/**
+ * The first steps in a new workspace, from what is there (08 §5.13): a worker
+ * to run code, a first script, its first run, a first deploy. Each is checked
+ * off when it is done, by anyone, and leads to where it is done.
+ */
+function FirstRun({
+  counts,
+  link,
+  tenantLink,
+  managedWorkers,
+  dev,
+}: {
+  counts: WorkspaceCounts;
+  link: string;
+  tenantLink: string;
+  managedWorkers: boolean;
+  dev: boolean;
+}) {
+  const steps = [
+    {
+      key: "worker",
+      done: (counts.workersOnline ?? 0) > 0 || managedWorkers,
+      title: "A worker to run code",
+      detail: managedWorkers
+        ? "The instance starts workers for this tenant when there is work."
+        : "Start a worker with a credential, so scripts have somewhere to run.",
+      to: `${tenantLink}/workers`,
+      action: "Workers",
+    },
+    {
+      key: "script",
+      done: (counts.scripts ?? 0) > 0,
+      title: "A first script",
+      detail: "Write one here, from a starter that runs as it is.",
+      to: dev ? `${link}/scripts/new` : `${link}/scripts`,
+      action: dev ? "New script" : "Scripts",
+    },
+    {
+      key: "run",
+      done: counts.everRan === true,
+      title: "A first run",
+      detail: "Run it from its editor with ⌘↵, or start it from the scripts list.",
+      to: `${link}/scripts`,
+      action: "Scripts",
+    },
+    {
+      key: "deploy",
+      done: counts.version !== null,
+      title: "A first deploy",
+      detail: "Deploying makes what you wrote what runs here, for schedules and webhooks too.",
+      to: `${link}/release`,
+      action: "Releases",
+    },
+  ];
+  const next = steps.find((step) => !step.done);
+  const done = steps.filter((step) => step.done).length;
+  return (
+    <section aria-labelledby="first-steps" className="flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="first-steps" className="m-0 text-title">
+          First steps
+        </h2>
+        <span className="text-meta text-ink-muted">
+          {done} of {steps.length} done
+        </span>
+      </div>
+      <ol className="m-0 flex list-none flex-col gap-2 p-0">
+        {steps.map((step) => (
+          <li key={step.key} className="flex flex-wrap items-start justify-between gap-3">
+            <span className="flex min-w-0 items-start gap-2">
+              <StatePill state={step.done ? "succeeded" : step === next ? "waiting" : "queued"}>
+                <span className={step.done ? "text-ink-muted line-through" : "text-ink"}>
+                  {step.title}
+                </span>
+              </StatePill>
+              {step === next ? (
+                <span className="hidden text-meta text-ink-muted md:inline">{step.detail}</span>
+              ) : null}
+            </span>
+            {step === next ? (
+              <Button size="small" variant="primary" onClick={() => navigate(step.to)}>
+                {step.action}
+              </Button>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export function Overview({
   root,
   link,
@@ -204,9 +295,17 @@ export function Overview({
   workspace: Workspace;
 }) {
   const summary = useLoad<WorkspaceCounts>(`${root}/summary`);
+  const tenantRoot = root.split("/workspaces/")[0] ?? "";
+  const tenant = useLoad<{ managedWorkers?: boolean }>(tenantRoot);
   const triggers = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const stats = useLoad<RunStats>(`${root}/run-stats?hours=24`);
   const counts = summary.data;
+  // A workspace with nothing run or deployed yet is shown its first steps first, and never
+  // "nothing needs you here": everything does.
+  const firstRun =
+    counts !== undefined &&
+    counts.scripts !== undefined &&
+    (counts.everRan === false || counts.version === null);
 
   const attention: { key: string; node: ReactNode }[] = [];
   if (counts) {
@@ -361,23 +460,36 @@ export function Overview({
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
-          <section className="flex flex-col gap-2">
-            <SectionLabel>Needs attention</SectionLabel>
-            <Panel className="divide-y divide-line">
-              {!counts ? (
-                <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
-              ) : attention.length === 0 ? (
-                <NextStep
-                  tone="success"
-                  icon={<CircleCheck aria-hidden="true" size={16} />}
-                  title="Nothing needs you here"
-                  detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
-                />
-              ) : (
-                attention.map((item) => <div key={item.key}>{item.node}</div>)
-              )}
+          {firstRun && counts ? (
+            <Panel>
+              <FirstRun
+                counts={counts}
+                link={link}
+                tenantLink={link.split("/workspaces/")[0] ?? ""}
+                managedWorkers={tenant.data?.managedWorkers === true}
+                dev={workspace.type === "dev"}
+              />
             </Panel>
-          </section>
+          ) : null}
+          {firstRun && attention.length === 0 ? null : (
+            <section className="flex flex-col gap-2">
+              <SectionLabel>Needs attention</SectionLabel>
+              <Panel className="divide-y divide-line">
+                {!counts ? (
+                  <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
+                ) : attention.length === 0 ? (
+                  <NextStep
+                    tone="success"
+                    icon={<CircleCheck aria-hidden="true" size={16} />}
+                    title="Nothing needs you here"
+                    detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
+                  />
+                ) : (
+                  attention.map((item) => <div key={item.key}>{item.node}</div>)
+                )}
+              </Panel>
+            </section>
+          )}
 
           {stats.data ? (
             <section className="flex flex-col gap-2">

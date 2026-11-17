@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–10 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–11 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -286,3 +286,30 @@ Findings are recorded under each milestone as it lands.
   - `TenantScreens.test.tsx` covers the service account page's tabs, and giving access with workspace roles only where they apply.
   - Typing into the server-searched combobox couldn't be driven under happy-dom, since Base UI doesn't report the input there. Milestone 12's "give access" journey does it in a browser.
   - The whole suite (1,335 tests) and the whole e2e suite (26) passed.
+
+### Milestone 11: first run and empty states
+
+- **The tenant's creator can be its first member.** `POST /tenants` takes `addCreator`, which adds the creating member to `tenant_member` and binds `tenant_admin` through `insertBinding`, in the tenant's own transaction and log. The console's create dialog offers "Make me a member, as tenant admin", checked by default, through a new `checkbox` field type in `CreateDialog`, and then opens the new tenant. In e2e there is no access-grant banner inside it.
+- **First steps.** A new workspace's overview shows a checklist from real state:
+  - a worker, or the instance starting them;
+  - a first script, deployed or in draft;
+  - a first run;
+  - a first deploy.
+  
+  Each step leads to where it is done, and they tick themselves off as the summary is asked again. The summary gains `scripts`, `flows`, `everRan` and `workersOnline`.
+  
+  The checklist is its own section, above "Needs attention". A new dev workspace always has one attention item (its triggers start paused), so the first try, which showed the checklist only when nothing needed attention, never showed it at all. On a new workspace "Nothing needs you here" no longer appears.
+- **Starters** (`screens/starters.ts`):
+  - Three scripts: greet someone, total some numbers, a job on a schedule.
+  - Two flows: started by hand, and a branch that decides and sets a result.
+  
+  "Start from" offers them on a new script and a new flow, while the code or the flow is still as given. A unit test runs the manifest's own `checkFlow` over each flow starter. That test caught a first version using a respond step (which answers a webhook) after a manual trigger, and wrong case names.
+  
+  The e2e walk caught that ⌘↵ runs with no input before the form has filled in its defaults, and zod's `.default` isn't applied at runtime, so the totals starter failed. A starter now falls back to its example itself.
+- **Drafts in the scripts list.** The scripts route merges `resource_draft`: each script has `draft` and `deployed`, and a script only drafted is listed from its draft. The list shows "Draft" or "Draft, never deployed", with a "Drafted" filter. The command palette's /run keeps to deployed scripts, since a draft can't be started.
+- **Empty states offer the page's action.** `CollectionView` puts its actions in an empty list when the empty state has none, as `ListScreen` already did. CLI blocks and documentation links wait for the documentation phase. Search boxes no longer say "optional".
+- **Tests:**
+  - `first-run.test.ts` covers the creator as member and admin, audited; an operator without it getting not-found; the summary's new fields; and a drafted script in the list.
+  - `starters.test.ts` covers flow starters passing `checkFlow` and script starters running with no input.
+  - The new `e2e/first-run.spec.ts` walks the console's create dialog, the checklist with axe, and a first successful run from a starter in 5 presses (the limit is 12), then the checklist advancing and the draft listed.
+  - The whole suite (1,339 tests) and the whole e2e suite (27) passed.

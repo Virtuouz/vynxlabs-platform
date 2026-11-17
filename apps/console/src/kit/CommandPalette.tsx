@@ -312,17 +312,20 @@ export function CommandPalette({
     if (!ws || !workspaceId) return;
     const load = async (): Promise<Item[]> => {
       if (picking === "script") {
-        const scripts = await api.get<{ items: { path: string; description?: string }[] }>(
-          `${ws}/scripts`,
-        );
-        return scripts.items.map((one) => ({
-          key: `pick-${one.path}`,
-          label: one.path,
-          where: one.description,
-          section: "Choose",
-          icon: FileCode2,
-          open: () => void start("script", one.path, workspaceId),
-        }));
+        const scripts = await api.get<{
+          items: { path: string; description?: string; deployed?: boolean }[];
+        }>(`${ws}/scripts`);
+        // Only what runs here can be started: a script that is only a draft cannot yet.
+        return scripts.items
+          .filter((one) => one.deployed !== false)
+          .map((one) => ({
+            key: `pick-${one.path}`,
+            label: one.path,
+            where: one.description,
+            section: "Choose",
+            icon: FileCode2,
+            open: () => void start("script", one.path, workspaceId),
+          }));
       }
       if (picking === "flow") {
         const flows = await api.get<{ items: { path: string; triggers: string[] }[] }>(

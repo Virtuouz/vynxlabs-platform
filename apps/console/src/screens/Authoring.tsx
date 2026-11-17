@@ -30,6 +30,7 @@ import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
+import { SCRIPT_STARTERS, untouchedStarter } from "./starters.ts";
 
 const STARTER = `import { type ScriptContext, z } from "@vynxlabs/sdk";
 
@@ -195,7 +196,7 @@ const NEW_BODY: ScriptBody = {
   timeoutSeconds: 60,
   retries: { limit: 0, delaySeconds: 0, backoff: false },
   uses: { connections: [], secrets: [], variables: [] },
-  source: { language: "typescript", code: STARTER },
+  source: { language: "typescript", code: SCRIPT_STARTERS[0]?.code ?? STARTER },
 };
 
 interface DraftDetail {
@@ -801,15 +802,53 @@ export function ScriptEditor({
         }
         after={
           opened ? undefined : (
-            <div className="w-72">
-              <TextField
-                name="path"
-                label="Path"
-                value={path}
-                placeholder={about.example}
-                hint="Its name in this workspace. It cannot be changed later."
-                onChange={setPath}
-              />
+            <div className="flex flex-col gap-3">
+              <div className="w-72">
+                <TextField
+                  name="path"
+                  label="Path"
+                  value={path}
+                  placeholder={about.example}
+                  hint="Its name in this workspace. It cannot be changed later."
+                  onChange={setPath}
+                />
+              </div>
+              {kind === "script" ? (
+                <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+                  <legend className="mb-1 text-body-sm font-medium">Start from</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {SCRIPT_STARTERS.map((starter) => {
+                      const chosen = body?.source?.code === starter.code;
+                      return (
+                        <button
+                          key={starter.id}
+                          type="button"
+                          aria-pressed={chosen}
+                          title={starter.about}
+                          disabled={!untouchedStarter(body?.source?.code) && !chosen}
+                          onClick={() =>
+                            change({
+                              input: starter.input,
+                              source: { language: "typescript", code: starter.code },
+                            })
+                          }
+                          className={`flex max-w-64 flex-col items-start gap-0.5 rounded-control border px-3 py-2 text-left disabled:opacity-50 ${
+                            chosen ? "border-action bg-selected" : "border-line hover:bg-sunken"
+                          }`}
+                        >
+                          <span className="font-medium">{starter.label}</span>
+                          <span className="text-meta text-ink-muted">{starter.about}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {untouchedStarter(body?.source?.code) ? null : (
+                    <span className="text-meta text-ink-muted">
+                      The code has been changed, so starting again from another is off.
+                    </span>
+                  )}
+                </fieldset>
+              ) : null}
             </div>
           )
         }

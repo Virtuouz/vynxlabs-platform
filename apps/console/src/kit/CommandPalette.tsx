@@ -1,4 +1,4 @@
-import { Dialog } from "@vynxlabs/ui";
+import { CheckboxField, Dialog, Kbd } from "@vynxlabs/ui";
 import {
   Activity,
   Boxes,
@@ -16,13 +16,24 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { navigate } from "../router.tsx";
 import { useThemeChoice } from "../theme.ts";
+import {
+  formatCombo,
+  isMac,
+  isSingle,
+  OPEN_PALETTE,
+  OPEN_SHORTCUTS,
+  openShortcuts,
+  useShortcut,
+  useSingleKeys,
+} from "./keys.ts";
 import { objectHref } from "./objects.tsx";
+import { SCOPES, SHORTCUTS, type ShortcutId } from "./shortcuts.ts";
 
 export interface Destination {
   key: string;
@@ -109,17 +120,12 @@ function score(label: string, where: string | undefined, words: string[]): numbe
   return total;
 }
 
-/** Opens on ⌘K or Ctrl+K anywhere, and from the header's search box. */
+/** Opens on ⌘K or Ctrl+K anywhere, from the header's search box, and when asked by `openPalette`. */
 export function useCommandKey(open: () => void) {
+  useShortcut("palette", open);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        open();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
+    addEventListener(OPEN_PALETTE, open);
+    return () => removeEventListener(OPEN_PALETTE, open);
   }, [open]);
 }
 
@@ -479,6 +485,16 @@ export function CommandPalette({
           window.open("/api/v1/openapi.json", "_blank", "noopener");
         },
       },
+      {
+        key: "a-keys",
+        label: "Keyboard shortcuts",
+        icon: Keyboard,
+        section: "Actions",
+        open: () => {
+          close();
+          openShortcuts();
+        },
+      },
     ];
     if (mode === "actions") return actions.filter((one) => matches(one.label));
 
@@ -729,49 +745,66 @@ export function CommandPalette({
   );
 }
 
-const SHORTCUTS: [string, string][] = [
-  ["⌘K or Ctrl+K", "Find anything, or do something"],
-  ["> then an ID", "Open a run"],
-  ["# then a name", "Find a script, a flow, a table…"],
-  ["/ then a word", "Run a script, start a flow, pause a trigger…"],
-  ["@ then a name", "Find a person"],
-  ["↑ ↓ and ↵", "Move through what was found, and open it"],
-  ["⌘↵ or Ctrl+↵", "Run, start or run again what is chosen; in the script editor, run the draft"],
-  ["Esc", "Close"],
-  ["?", "These shortcuts"],
-];
-
-/** `?` anywhere outside a text field opens the list of shortcuts. */
+/**
+ * Every shortcut, from the registry, grouped by where it works: `?` outside a
+ * text field, "Keyboard shortcuts" in the account menu, or the palette. It
+ * holds the switch for single-key shortcuts, which some people need off.
+ */
 export function ShortcutSheet() {
   const [open, setOpen] = useState(false);
+  const [singles, setSingles] = useSingleKeys();
+  const show = useCallback(() => setOpen(true), []);
+  useShortcut("sheet", show);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "?" || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
-      ) {
-        return;
-      }
-      event.preventDefault();
-      setOpen(true);
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, []);
+    addEventListener(OPEN_SHORTCUTS, show);
+    return () => removeEventListener(OPEN_SHORTCUTS, show);
+  }, [show]);
+  const mac = isMac();
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} title="Keyboard shortcuts">
-      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-        {SHORTCUTS.map(([keys, does]) => (
-          <div key={keys} className="contents">
-            <dt className="font-mono text-code whitespace-nowrap">
-              <Keyboard aria-hidden="true" size={14} className="mr-1.5 inline text-ink-subtle" />
-              {keys}
-            </dt>
-            <dd className="m-0 text-ink-muted">{does}</dd>
-          </div>
-        ))}
-      </dl>
+    <Dialog open={open} onClose={() => setOpen(false)} title="Keyboard shortcuts" size="wide">
+      <div className="flex flex-col gap-5">
+        <CheckboxField
+          name="single-keys"
+          label="Single-key shortcuts"
+          hint="?, /, j, k, x and the g shortcuts. Turn them off if they get in the way of a screen reader or speech input."
+          checked={singles}
+          onChange={(on) => setSingles(on ? undefined : false)}
+        />
+        <div className="grid gap-x-8 gap-y-5 md:grid-cols-2">
+          {SCOPES.map((scope) => {
+            const here = (Object.keys(SHORTCUTS) as ShortcutId[]).filter(
+              (id) => SHORTCUTS[id].scope === scope,
+            );
+            if (here.length === 0) return null;
+            return (
+              <section key={scope} aria-label={scope} className="flex flex-col gap-2">
+                <h3 className="m-0 text-label font-semibold tracking-wide text-ink-subtle uppercase">
+                  {scope}
+                </h3>
+                <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+                  {here.map((id) => {
+                    const shortcut = SHORTCUTS[id];
+                    const off = !singles && shortcut.keys.every(isSingle);
+                    return (
+                      <div key={id} className={`contents ${off ? "text-ink-subtle" : ""}`}>
+                        <dt className="flex flex-wrap gap-1">
+                          {shortcut.keys.map((combo) => (
+                            <Kbd key={combo}>{formatCombo(combo, mac)}</Kbd>
+                          ))}
+                        </dt>
+                        <dd className={`m-0 ${off ? "" : "text-ink-muted"}`}>
+                          {shortcut.label}
+                          {off ? " (off)" : ""}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </section>
+            );
+          })}
+        </div>
+      </div>
     </Dialog>
   );
 }

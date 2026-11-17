@@ -106,7 +106,10 @@ export function TriggersWorkbench({
     }
   };
   const newTrigger = production ? (
-    <Button disabled title="Triggers change in a dev workspace and reach production by promotion.">
+    <Button
+      disabled
+      tooltip="Triggers change in a dev workspace and reach production by promotion."
+    >
       <Plus aria-hidden="true" size={16} /> New trigger
     </Button>
   ) : (

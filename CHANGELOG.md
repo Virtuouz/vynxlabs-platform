@@ -13,6 +13,18 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - Each value may be at most 4 KB, and a member keeps at most 200.
 - **Saved views API.** New `GET /me/views?tenant=&workspace=&list=`, `POST /me/views`, `PATCH /me/views/:id` and `DELETE /me/views/:id`. Views are private to their maker, and names are unique per list, ignoring case. A member keeps at most 50 views per list.
 - **The console's theme, table density, pane sizes and editor tabs follow a member between browsers.** The first sign-in after upgrading moves what this browser had kept onto the server.
+- **Keyboard.**
+  - Every shortcut is listed under "Keyboard shortcuts" in the account menu and the palette, as well as on `?`.
+  - Single-key shortcuts (`?`, `/`, `j`, `k`, `x`, `g` then a letter) can be turned off there.
+  - New shortcuts: `g` then `o`, `r`, `f`, `s`, `t` or `a` goes to the overview, runs, flows, scripts, triggers or approvals; `/` searches the list on screen; ⌘S saves at once in the flow editor, the app builder and dashboards.
+  - ⌘K now opens the palette from inside the code editor.
+
+### For tenant developers
+
+- **New in `@vynxlabs/ui`:**
+  - `Tooltip`, `TooltipProvider` and `Kbd`;
+  - `Button` takes `tooltip` and `keys`. A disabled button with a tooltip is wrapped so that it can still be focused and say why it is disabled.
+
 
 ## Unreleased: phase 14, one design system
 

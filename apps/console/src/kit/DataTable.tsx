@@ -12,6 +12,7 @@ import {
 } from "react";
 import { usePreference } from "../prefs.ts";
 import { useRestoredScroll } from "../router.tsx";
+import { isTyping, singleKeysOn } from "./keys.ts";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
 
@@ -227,7 +228,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     if (!grid || shown.length === 0) return;
     const target = event.target as HTMLElement;
     // Typing in a field inside a cell is the field's business.
-    if (target.closest("input:not([type=checkbox]),textarea,select,[role=menu]")) return;
+    if (isTyping(target) || target.closest("[role=menu]")) return;
+    // j, k and x are single-key shortcuts, which a person may turn off (WCAG 2.1.4).
+    if (["j", "k", "x", "J", "K"].includes(event.key) && !singleKeysOn()) return;
     const { row, column } = focus;
     const page = Math.max(1, Math.floor((region.current?.clientHeight ?? 360) / HEIGHT[density]));
     const current = shown[row];

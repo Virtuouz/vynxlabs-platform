@@ -87,6 +87,7 @@ export {
   type ToastTone,
   useToast,
 } from "./Toast.tsx";
+export { Kbd, Tooltip, TooltipProvider } from "./Tooltip.tsx";
 export {
   type CardsWidgetConfig,
   type CardWidgetConfig,

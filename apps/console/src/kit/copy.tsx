@@ -1,3 +1,4 @@
+import { Tooltip } from "@vynxlabs/ui";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
@@ -8,28 +9,31 @@ import { useState } from "react";
 export function CopyIcon({ value, label }: { value: string; label: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={state === "failed" ? "Select it and copy" : state === "copied" ? "Copied" : label}
-      onClick={async (event) => {
-        event.stopPropagation();
-        try {
-          await navigator.clipboard.writeText(value);
-          setState("copied");
-        } catch {
-          setState("failed");
-        }
-        setTimeout(() => setState("idle"), 1500);
-      }}
-      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-control align-middle text-ink-subtle hover:bg-surface hover:text-ink"
+    <Tooltip
+      label={state === "failed" ? "Select it and copy" : state === "copied" ? "Copied" : label}
     >
-      {state === "copied" ? (
-        <Check aria-hidden="true" size={14} className="text-success" />
-      ) : (
-        <Copy aria-hidden="true" size={14} />
-      )}
-    </button>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={async (event) => {
+          event.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(value);
+            setState("copied");
+          } catch {
+            setState("failed");
+          }
+          setTimeout(() => setState("idle"), 1500);
+        }}
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-control align-middle text-ink-subtle hover:bg-surface hover:text-ink"
+      >
+        {state === "copied" ? (
+          <Check aria-hidden="true" size={14} className="text-success" />
+        ) : (
+          <Copy aria-hidden="true" size={14} />
+        )}
+      </button>
+    </Tooltip>
   );
 }
 

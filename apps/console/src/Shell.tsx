@@ -3,6 +3,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
   CircleX,
+  Keyboard,
   KeyRound,
   LogOut,
   type LucideIcon,
@@ -24,6 +25,7 @@ import {
   useCommandKey,
 } from "./kit/CommandPalette.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
+import { openShortcuts, useShortcut } from "./kit/keys.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
@@ -519,6 +521,48 @@ function ThemeMenu({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/** The search box on this screen, for `/`: the list's own, before any other. */
+const SEARCH_BOXES = [
+  "main [data-search]",
+  'main input[type="search"]',
+  'main input[name="search"]',
+  'main input[name="q"]',
+  'main input[name="filter"]',
+];
+
+/**
+ * `g` then a letter goes to a section of the workspace on screen, and `/`
+ * searches the list on screen, or opens the palette where there is no list.
+ */
+function useGoTo(
+  tenantId: string | undefined,
+  workspaceId: string | undefined,
+  palette: () => void,
+) {
+  const go = (section: string) => () => {
+    if (tenantId && workspaceId) navigate(`/t/${tenantId}/workspaces/${workspaceId}/${section}`);
+  };
+  useShortcut("go.overview", go("overview"), { enabled: Boolean(workspaceId) });
+  useShortcut("go.runs", go("runs"), { enabled: Boolean(workspaceId) });
+  useShortcut("go.flows", go("flows"), { enabled: Boolean(workspaceId) });
+  useShortcut("go.scripts", go("scripts"), { enabled: Boolean(workspaceId) });
+  useShortcut("go.triggers", go("triggers"), { enabled: Boolean(workspaceId) });
+  useShortcut("go.approvals", () => tenantId && navigate(`/t/${tenantId}/approvals`), {
+    enabled: Boolean(tenantId),
+  });
+  useShortcut("search", () => {
+    for (const selector of SEARCH_BOXES) {
+      const box = document.querySelector<HTMLInputElement>(selector);
+      if (box && box.offsetParent !== null) {
+        box.focus();
+        box.select();
+        return;
+      }
+    }
+    palette();
+  });
+}
+
 function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const name = me.principal.email ?? me.principal.name ?? "?";
   return (
@@ -526,12 +570,21 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ariaLabel="Your account"
       align="start"
       triggerClassName="flex size-7 items-center justify-center rounded-full bg-action-soft text-label font-semibold text-action uppercase"
-      label={<span title={name}>{name.slice(0, 1)}</span>}
+      label={<span aria-hidden="true">{name.slice(0, 1)}</span>}
       items={[
+        {
+          label: `Signed in as ${name}`,
+          onSelect: () => navigate("/account/api-keys"),
+        },
         {
           label: "API keys",
           icon: <KeyRound aria-hidden="true" size={16} />,
           onSelect: () => navigate("/account/api-keys"),
+        },
+        {
+          label: "Keyboard shortcuts",
+          icon: <Keyboard aria-hidden="true" size={16} />,
+          onSelect: openShortcuts,
         },
         {
           label: "Sign out",
@@ -597,6 +650,7 @@ export function Shell({
   const [palette, setPalette] = useState(false);
   const openPalette = useCallback(() => setPalette(true), []);
   useCommandKey(openPalette);
+  useGoTo(tenantId, workspaceId ?? undefined, openPalette);
   const [filter, setFilter] = useState("");
 
   const panel = panelFor(where, me, {

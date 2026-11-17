@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–1 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–2 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -78,3 +78,41 @@ Some of the roadmap's evidence is out of date:
 - **A side effect:** the shell and the command palette each kept their own theme state. Now one store serves both, so changing the theme in one shows in the other at once.
 - **A flaky builder test** looked for the Publish button before the publish dialog had loaded its summary. It failed about one run in three, before this phase too. It now waits for the button.
 - The redesign e2e spec resets the admin's theme when it ends, because a theme kept on the server would otherwise carry into the specs after it.
+
+### Milestone 2: one keyboard registry
+- **`kit/shortcuts.ts`** declares all 25 shortcuts, each with its keys, scope and label. Ten are handled inside a kit part (`DataTable`, the palette, the log viewer) and marked `handledBy`, so the sheet still lists them truthfully.
+- **`kit/keys.ts`** serves every other binding from one window listener, through `useShortcut(id, handler)`.
+  - The binding made last wins.
+  - A handler can return `false` to let the key go on. The inspector's Esc does this while a dialog or menu is open.
+  - Chords (`g r`) wait one second for their second key.
+  - Single keys are ignored while typing and when the member has turned them off.
+- **Moved onto the registry:**
+  - ⌘K;
+  - `?`;
+  - ⌘S in the script editor and the SaveBar;
+  - ⌘↵;
+  - undo and redo in the flow editor and the builder;
+  - the inspector's Esc.
+  
+  `typingIn`, `inField` and the sheet's own check are gone. One `isTyping` remains, and `DataTable` uses it too.
+- **Found while doing it:** Chromium's Monaco types through an EditContext `div`, not a textarea, so a "typing?" check that looks at the tag misses it. Typing `//note` in the script editor jumped to the list's search on the `/`. Typing `?` in the editor would have opened the sheet before this phase too. `isTyping` now also treats anything inside `.monaco-editor`, or with role `textbox` or `combobox`, as typing.
+- **⌘K inside the editor:** Monaco keeps ⌘K as the start of its own chords, so the page never saw it. The editor now binds ⌘K to open the palette. The e2e checks it.
+- **New shortcuts:**
+  - `g o/r/f/s/t/a` go to the overview, runs, flows, scripts, triggers and approvals.
+  - `/` focuses the screen's search box, or opens the palette where there is none.
+  - ⌘S saves at once in the flow editor, the app builder and dashboards. The builders' autosave is hurried rather than run a second time, so there is never a second PUT in flight.
+- **The sheet:**
+  - It is drawn from the registry and grouped by scope.
+  - It opens from the account menu ("Keyboard shortcuts"), from the palette and from `?`.
+  - It holds the switch for single-key shortcuts (WCAG 2.1.4), a member preference from Milestone 1.
+- **Tooltips:** `Tooltip` and `Kbd` were added to the kit, and `Button` gained `tooltip` and `keys`.
+  - Undo, redo, copy, the starters and the production-trigger notice moved off native `title`s.
+  - The avatar's `title` became the first line of the account menu, "Signed in as …".
+  - `title` stays on truncated text, where it shows the whole value.
+- **Tests:**
+  - `keys.test.tsx` presses every shortcut the console binds itself and checks it reaches its handler. It fails if a new binding is declared without a press.
+  - It also checks single keys while typing and when turned off, the chord window, and how keys are written on a Mac and elsewhere.
+  - It checks that the sheet lists every label.
+  - A rule fails on any `addEventListener("keydown"` outside the registry; the inspector's Esc was the last.
+  - The e2e covers ⌘K from the code editor, `g r`, `/`, and the sheet from the account menu with its switch, with axe.
+- **The theme race:** a setting moved from an old key waited 400 ms to be sent, so a page load inside that time took the server's older copy (the redesign spec's dark run). Moved settings are now sent at once, and anything still waiting is sent with `keepalive` on `pagehide`.

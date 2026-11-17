@@ -5,6 +5,7 @@ import {
   type ToastOptions,
   ToastProvider,
   type Toasts,
+  TooltipProvider,
   useDialogs,
   useToast,
 } from "@vynxlabs/ui";
@@ -46,10 +47,12 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <ToastProvider navigate={navigate}>
-        <DialogsProvider>
-          <Bridge />
-          {children}
-        </DialogsProvider>
+        <TooltipProvider>
+          <DialogsProvider>
+            <Bridge />
+            {children}
+          </DialogsProvider>
+        </TooltipProvider>
       </ToastProvider>
     </QueryClientProvider>
   );

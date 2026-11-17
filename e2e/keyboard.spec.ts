@@ -141,3 +141,65 @@ test("a failed run is opened from the runs list, and access is given, from the k
     () => {},
   );
 });
+
+test("⌘K opens the palette from inside the code editor; g r, / and the sheet work from the keyboard", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const page = await (
+    await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  ).newPage();
+  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  const tenant = await call(page, "POST", "/tenants", {
+    slug: `palette-${stamp}`,
+    name: "Palette",
+    addCreator: true,
+  });
+  const dev = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+    slug: "dev",
+    name: "Dev",
+    type: "dev",
+  });
+  const base = `/t/${tenant.id}/workspaces/${dev.id}`;
+
+  // Inside the editor, which keeps ⌘K for its own chords.
+  await page.goto(`${base}/scripts/new`);
+  const editor = page.locator(".monaco-editor").first();
+  await editor.locator(".view-lines").waitFor({ timeout: 30_000 });
+  await editor.locator(".view-lines").click();
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "Go to" });
+  await expect(palette).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
+
+  // g then r goes to the runs; / searches the list on screen.
+  await page.goto(`${base}/overview`);
+  await page.locator("main").first().waitFor();
+  await page.locator("body").click({ position: { x: 5, y: 500 } });
+  await page.keyboard.press("g");
+  await page.keyboard.press("r");
+  await expect(page).toHaveURL(new RegExp(`${base}/runs`));
+  await page.locator('main input[type="search"]').first().waitFor();
+  await page.keyboard.press("/");
+  await expect(page.locator('main input[type="search"]').first()).toBeFocused();
+
+  // The sheet, from the account menu, lists the shortcuts and can turn the single keys off.
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Your account" }).click();
+  await page.getByRole("menuitem", { name: "Keyboard shortcuts" }).click();
+  const sheet = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(sheet.getByText("Search this list")).toBeVisible();
+  await expectNoAxeViolations(page, "the keyboard shortcuts");
+  await sheet.getByLabel("Single-key shortcuts").uncheck();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("g");
+  await page.keyboard.press("o");
+  await expect(page).toHaveURL(new RegExp(`${base}/runs`));
+  // Turned on again, for whoever signs in as the admin next.
+  await call(page, "DELETE", "/me/preferences/shortcuts.single-key");
+
+  await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
+    () => {},
+  );
+});

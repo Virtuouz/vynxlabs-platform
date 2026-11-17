@@ -101,15 +101,25 @@ export function AppBuilder({
     [root, path],
   );
   // A change is saved a moment after the last one, so that typing does not save every letter.
+  // ⌘S saves at once.
+  const hurried = useRef(false);
+  const [hurry, setHurry] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `hurry` only starts the save now
   useEffect(() => {
     if (!body || !dirty.current) return;
     setSaving("waiting");
+    const wait = hurried.current ? 0 : 700;
+    hurried.current = false;
     const timer = setTimeout(() => {
       dirty.current = false;
       void save(body);
-    }, 700);
+    }, wait);
     return () => clearTimeout(timer);
-  }, [body, save]);
+  }, [body, save, hurry]);
+  const saveNow = () => {
+    hurried.current = true;
+    setHurry((count) => count + 1);
+  };
 
   const change = (apply: (draft: InterfaceBody) => void, label = "a change", key?: string) => {
     if (latest.current) history.record(label, key);
@@ -172,6 +182,7 @@ export function AppBuilder({
     saving,
     savedWords: hasChanges ? "Saved. Not published yet." : "Published.",
     history,
+    saveNow,
     more: url ? (
       <a href={url} target="_blank" rel="noreferrer" className="text-body-sm text-action">
         Open the app

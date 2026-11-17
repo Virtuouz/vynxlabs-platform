@@ -18,6 +18,7 @@ import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
+import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
@@ -331,29 +332,10 @@ export function ScriptEditor({
 
   // ⌘S or Ctrl+S saves the draft, from anywhere on the page.
   const saveShortcut = useRef<() => void>(() => {});
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        saveShortcut.current();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, []);
+  useShortcut("save", () => saveShortcut.current());
   // ⌘↵ or Ctrl+Enter runs the draft, from anywhere in the editor.
   const runShortcut = useRef<() => void>(() => {});
-  useEffect(() => {
-    if (kind !== "script") return;
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-        event.preventDefault();
-        runShortcut.current();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [kind]);
+  useShortcut("run", () => runShortcut.current(), { enabled: kind === "script" });
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab.
   useNavigationGuard(
@@ -825,7 +807,6 @@ export function ScriptEditor({
                           key={starter.id}
                           type="button"
                           aria-pressed={chosen}
-                          title={starter.about}
                           disabled={!untouchedStarter(body?.source?.code) && !chosen}
                           onClick={() =>
                             change({

@@ -63,27 +63,54 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
-function send(key: string, value: unknown) {
+/** What is waiting to be sent, so leaving the page sends it rather than dropping it. */
+const waitingValues = new Map<string, unknown>();
+
+function deliver(key: string, value: unknown) {
+  pending.delete(key);
+  waitingValues.delete(key);
+  const path = `/api/v1/me/preferences/${encodeURIComponent(key)}`;
+  // keepalive: a setting changed just before leaving the page still arrives.
+  const request =
+    value === undefined
+      ? fetch(path, { method: "DELETE", keepalive: true })
+      : fetch(path, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ value }),
+          keepalive: true,
+        });
+  request.catch(() => {
+    // Kept in this browser; the next change sends it.
+  });
+}
+
+function send(key: string, value: unknown, { now = false } = {}) {
   const waiting = pending.get(key);
   if (waiting) clearTimeout(waiting);
+  if (now) {
+    deliver(key, value);
+    return;
+  }
+  waitingValues.set(key, value);
   pending.set(
     key,
-    setTimeout(() => {
-      pending.delete(key);
-      const path = `/api/v1/me/preferences/${encodeURIComponent(key)}`;
-      const request =
-        value === undefined
-          ? fetch(path, { method: "DELETE" })
-          : fetch(path, {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ value }),
-            });
-      request.catch(() => {
-        // Kept in this browser; the next change or sign-in sends it.
-      });
-    }, SEND_AFTER_MS),
+    setTimeout(() => deliver(key, value), SEND_AFTER_MS),
   );
+  listenForLeaving();
+}
+
+let leaving = false;
+function listenForLeaving() {
+  if (leaving || typeof addEventListener === "undefined") return;
+  leaving = true;
+  addEventListener("pagehide", () => {
+    for (const [key, value] of [...waitingValues]) {
+      const timer = pending.get(key);
+      if (timer) clearTimeout(timer);
+      deliver(key, value);
+    }
+  });
 }
 
 /** Reads one setting outside React: the theme before the first paint, for one. */
@@ -168,7 +195,8 @@ export function loadPreferences(): Promise<void> {
       for (const item of items) {
         if (!pending.has(item.key) && !moved.has(item.key)) writeLocal(item.key, item.value);
       }
-      for (const key of moved) send(key, readLocal(key));
+      // Sent at once: the next page may load before a delayed send would go.
+      for (const key of moved) send(key, readLocal(key), { now: true });
       moved.clear();
       notify();
     } catch {
@@ -184,5 +212,6 @@ export function resetPreferences() {
   moved.clear();
   for (const timer of pending.values()) clearTimeout(timer);
   pending.clear();
+  waitingValues.clear();
   snapshots.clear();
 }

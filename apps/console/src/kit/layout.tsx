@@ -2,6 +2,7 @@ import { SideSheet } from "@vynxlabs/ui";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
+import { useShortcut } from "./keys.ts";
 import { InsetRule, Junction, type JunctionKind } from "./motifs.tsx";
 
 /** Whether the window is at least this wide, kept up to date as it is resized. */
@@ -125,6 +126,11 @@ function DockedInspector({
   const heading = useRef<HTMLHeadingElement>(null);
   const closing = useRef(onClose);
   closing.current = onClose;
+  // Esc closes it, unless a dialog or menu over the page is open: that closes first, on its own.
+  useShortcut("close", () => {
+    if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return false;
+    closing.current();
+  });
 
   useEffect(() => {
     // What last had focus outside the inspector is where focus goes back to.
@@ -132,17 +138,9 @@ function DockedInspector({
     const track = (event: FocusEvent) => {
       if (!region.current?.contains(event.target as Node)) outside = event.target as Element;
     };
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      // A dialog or menu over the page closes first, on its own.
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
-      closing.current();
-    };
     document.addEventListener("focusin", track);
-    document.addEventListener("keydown", onEscape);
     return () => {
       document.removeEventListener("focusin", track);
-      document.removeEventListener("keydown", onEscape);
       // Back to where it was, if that is still on the page and focus was in here.
       const inside =
         document.activeElement === document.body ||

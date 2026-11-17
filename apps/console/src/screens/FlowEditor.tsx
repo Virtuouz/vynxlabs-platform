@@ -41,7 +41,8 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
-import { typingIn, useHistory } from "../kit/history.ts";
+import { useHistory } from "../kit/history.ts";
+import { keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { retryAfter } from "../kit/retry.ts";
@@ -949,22 +950,13 @@ export function FlowEditor({
       : state === "new"
         ? "Save the flow first."
         : undefined;
-  // keyboard: ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo, except while typing in a field, which keeps its own.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || typingIn(event.target)) return;
-      const key = event.key.toLowerCase();
-      if (key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        undo();
-      } else if ((key === "z" && event.shiftKey) || key === "y") {
-        event.preventDefault();
-        redo();
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+  // ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo, except while typing in a field, which keeps its own.
+  useShortcut("undo", undo);
+  useShortcut("redo", redo);
+  // ⌘S saves now, rather than a moment after the last change.
+  useShortcut("save", () => {
+    if (!busy && state !== "repository") void save();
+  });
   const shown = testing ? live.run : undefined;
   const nodeRuns = useMemo(
     () =>
@@ -1102,7 +1094,8 @@ export function FlowEditor({
                 size="small"
                 variant="quiet"
                 aria-label="Undo"
-                title={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
+                tooltip={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
+                keys={keysOf("undo")}
                 disabled={!history.undoLabel}
                 onClick={undo}
               >
@@ -1112,7 +1105,8 @@ export function FlowEditor({
                 size="small"
                 variant="quiet"
                 aria-label="Redo"
-                title={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
+                tooltip={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
+                keys={keysOf("redo")}
                 disabled={!history.redoLabel}
                 onClick={redo}
               >
@@ -1159,7 +1153,7 @@ export function FlowEditor({
                       <Button
                         key={starter.id}
                         size="small"
-                        title={starter.about}
+                        tooltip={starter.about}
                         aria-pressed={starterId === starter.id}
                         // Once the flow is changed, starting again would lose the change.
                         disabled={dirty && starterId !== starter.id}

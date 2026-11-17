@@ -18,6 +18,13 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - Single-key shortcuts (`?`, `/`, `j`, `k`, `x`, `g` then a letter) can be turned off there.
   - New shortcuts: `g` then `o`, `r`, `f`, `s`, `t` or `a` goes to the overview, runs, flows, scripts, triggers or approvals; `/` searches the list on screen; ⌘S saves at once in the flow editor, the app builder and dashboards.
   - ⌘K now opens the palette from inside the code editor.
+- **Command palette.**
+  - With a run, script, flow, trigger or approval open, ⌘K first offers what can be done with it: run again, retry, cancel, start, pause, approve.
+  - Anything found can be pinned (⌘P, or "Pin to the palette"), and pins come before recent items.
+  - Results are grouped under headings.
+  - Every result opens its own page: a script opens its page rather than its editor, a person opens their member page, and an app opens in its list.
+  - A failed search says so, with the request ID and Try again, rather than "Nothing matches".
+  - ⌘↵ "Run again" now asks first.
 
 ### For tenant developers
 

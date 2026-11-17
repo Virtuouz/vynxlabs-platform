@@ -1,5 +1,4 @@
 import { Button } from "@vynxlabs/ui";
-import { useEffect } from "react";
 import { useNavigationGuard } from "../router.tsx";
 import { useShortcut } from "./keys.ts";
 

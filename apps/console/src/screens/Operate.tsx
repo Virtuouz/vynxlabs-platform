@@ -1,9 +1,18 @@
 import { Button, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
-import { CirclePause, CirclePlay, Plus, ShieldAlert, Zap } from "lucide-react";
+import {
+  CircleCheck,
+  CirclePause,
+  CirclePlay,
+  CircleX,
+  Plus,
+  ShieldAlert,
+  Zap,
+} from "lucide-react";
 import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
+import { Current } from "../kit/current.ts";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
 import { CopyButton } from "../ListScreen.tsx";
@@ -93,6 +102,41 @@ export function TriggersWorkbench({
   const open = items.find((one) => triggerKey(one) === chosen);
   const pausedCount = items.filter((one) => one.paused).length;
   const [creating, setCreating] = useState(false);
+  const pauseAt = (trigger: Trigger) =>
+    `${root}/trigger-pauses/${trigger.path}${trigger.node ? `?node=${encodeURIComponent(trigger.node)}` : ""}`;
+  /** Pauses a trigger, with a reason everyone here sees. It shows paused at once. */
+  const pause = async (trigger: Trigger) => {
+    const reason = await ask.prompt({
+      title: `Pause ${trigger.path}?`,
+      label: "Why (shown to everyone here)",
+      action: "Pause",
+      danger: production,
+      required: false,
+    });
+    if (reason === null) return;
+    const undo = showPaused(trigger, {
+      at: new Date().toISOString(),
+      by: null,
+      reason: reason ?? "",
+    });
+    try {
+      await api.put(pauseAt(trigger), reason ? { reason } : {});
+      notify.success(`${trigger.path} is paused. Nothing it would start is started.`);
+    } catch (caught) {
+      undo();
+      notify.error(caught);
+    }
+  };
+  const resume = async (trigger: Trigger) => {
+    const undo = showPaused(trigger, null);
+    try {
+      await api.delete(pauseAt(trigger));
+      notify.success(`${trigger.path} runs again.`);
+    } catch (caught) {
+      undo();
+      notify.error(caught);
+    }
+  };
   const fireNow = async (row: Trigger) => {
     try {
       const started = await api.post<{ id: string }>(`${root}/schedule-firings`, {
@@ -255,168 +299,167 @@ export function TriggersWorkbench({
         }}
         inspector={
           open ? (
-            <Inspector
-              open
-              label="The chosen trigger"
-              title={open.path}
-              eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
-              onClose={() => choose(null)}
-              footer={
-                open.paused ? (
-                  <Button
-                    variant="primary"
-                    onClick={async () => {
-                      const undo = showPaused(open, null);
-                      try {
-                        await api.delete(
-                          `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
-                        );
-                        notify.success(`${open.path} runs again.`);
-                      } catch (caught) {
-                        undo();
-                        notify.error(caught);
-                      }
-                    }}
-                  >
-                    <CirclePlay aria-hidden="true" size={16} /> Resume
-                  </Button>
-                ) : (
-                  <span className="flex flex-wrap gap-2">
-                    {open.type === "schedule" && !open.node ? (
-                      <Button variant="primary" onClick={() => void fireNow(open)}>
-                        <Zap aria-hidden="true" size={16} /> Fire now
-                      </Button>
-                    ) : null}
-                    <Button
-                      onClick={async () => {
-                        const reason = await ask.prompt({
-                          title: `Pause ${open.path}?`,
-                          label: "Why (shown to everyone here)",
-                          action: "Pause",
-                          danger: production,
-                          required: false,
-                        });
-                        if (reason === null) return;
-                        const undo = showPaused(open, {
-                          at: new Date().toISOString(),
-                          by: null,
-                          reason: reason ?? "",
-                        });
-                        try {
-                          await api.put(
-                            `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
-                            reason ? { reason } : {},
-                          );
-                          notify.success(
-                            `${open.path} is paused. Nothing it would start is started.`,
-                          );
-                        } catch (caught) {
-                          undo();
-                          notify.error(caught);
-                        }
-                      }}
-                    >
-                      <CirclePause aria-hidden="true" size={16} /> Pause this trigger
+            <>
+              <Current
+                object={{
+                  heading: "This trigger",
+                  commands: open.paused
+                    ? [
+                        {
+                          key: "resume",
+                          label: `Resume ${open.path}`,
+                          icon: CirclePlay,
+                          run: () => resume(open),
+                        },
+                      ]
+                    : [
+                        {
+                          key: "pause",
+                          label: `Pause ${open.path}…`,
+                          icon: CirclePause,
+                          run: () => pause(open),
+                        },
+                        ...(open.type === "schedule" && !open.node
+                          ? [
+                              {
+                                key: "fire",
+                                label: "Fire it now",
+                                icon: Zap,
+                                run: () => fireNow(open),
+                              },
+                            ]
+                          : []),
+                      ],
+                  pin: {
+                    kind: open.type === "schedule" ? "schedule" : "trigger",
+                    ref: open.path,
+                    id: open.path,
+                    workspaceId: root.split("/workspaces/")[1] ?? null,
+                    title: open.path,
+                  },
+                }}
+              />
+              <Inspector
+                open
+                label="The chosen trigger"
+                title={open.path}
+                eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
+                onClose={() => choose(null)}
+                footer={
+                  open.paused ? (
+                    <Button variant="primary" onClick={() => void resume(open)}>
+                      <CirclePlay aria-hidden="true" size={16} /> Resume
                     </Button>
-                  </span>
-                )
-              }
-            >
-              <div className="flex flex-col gap-4">
-                {open.paused ? (
-                  <Notice tone="attention">
-                    Paused {fromNow(open.paused.at)}
-                    {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start is
-                    started until it is resumed.
-                  </Notice>
-                ) : null}
-                {open.lastRefusal ? (
-                  <div className="rounded-panel border border-line">
-                    <NextStep
-                      tone="danger"
-                      icon={<ShieldAlert aria-hidden="true" size={16} />}
-                      title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
-                      detail={open.lastRefusal.problem || undefined}
-                    />
-                  </div>
-                ) : null}
-                <KeyValues
-                  rows={[
-                    {
-                      label: "Starts",
-                      value: (
-                        <Link to={targetLink(link, open)}>
-                          {open.script} ({open.targetKind})
-                        </Link>
-                      ),
-                      mono: true,
-                    },
-                    ...(open.cron
-                      ? [
-                          {
-                            label: "Schedule",
-                            value: `${open.cron} · ${open.timezone ?? "UTC"}`,
-                            mono: true,
-                          },
-                        ]
-                      : []),
-                    ...(open.event ? [{ label: "Event", value: open.event, mono: true }] : []),
-                    ...(open.overlap === "skip"
-                      ? [
-                          {
-                            label: "Overlap",
-                            value:
-                              open.lastSkippedAt && open.lastSkipReason !== "backlog"
-                                ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
-                                : "Skips a time while its last run goes.",
-                          },
-                        ]
-                      : []),
-                    ...(open.lastSkipReason === "backlog" && open.lastSkippedAt
-                      ? [
-                          {
-                            label: "Backlog",
-                            value: `Skipped ${fromNow(open.lastSkippedAt)}: the workspace already had too many runs waiting.`,
-                          },
-                        ]
-                      : []),
-                    {
-                      label: "Next",
-                      value: open.nextFireAt
-                        ? `${stamp(open.nextFireAt)} (${fromNow(open.nextFireAt)})`
-                        : "On request",
-                    },
-                    {
-                      label: "Last fired",
-                      value: open.lastFiredAt
-                        ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
-                        : "Not fired yet. Runs started by hand are not counted.",
-                    },
-                  ]}
-                />
-                {open.lastRun ? (
-                  <Link to={runLink(link, open.lastRun)} className="text-meta">
-                    Open the last run it started
-                  </Link>
-                ) : null}
-                {open.url ? (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-label text-ink-subtle uppercase">
-                      {open.type === "form" ? "Form address" : "Webhook address"}
+                  ) : (
+                    <span className="flex flex-wrap gap-2">
+                      {open.type === "schedule" && !open.node ? (
+                        <Button variant="primary" onClick={() => void fireNow(open)}>
+                          <Zap aria-hidden="true" size={16} /> Fire now
+                        </Button>
+                      ) : null}
+                      <Button onClick={() => void pause(open)}>
+                        <CirclePause aria-hidden="true" size={16} /> Pause this trigger
+                      </Button>
                     </span>
-                    <code className="rounded-control bg-code-bg p-2 font-mono text-code break-all select-all">
-                      {open.type === "form" ? "" : "POST "}
-                      {open.url}
-                    </code>
-                    <CopyButton value={open.url} label="Copy address" />
-                  </div>
-                ) : open.type === "webhook" || open.type === "form" ? (
-                  <p className="m-0 text-meta text-ink-subtle">
-                    The address is shown to those who manage triggers.
-                  </p>
-                ) : null}
-              </div>
-            </Inspector>
+                  )
+                }
+              >
+                <div className="flex flex-col gap-4">
+                  {open.paused ? (
+                    <Notice tone="attention">
+                      Paused {fromNow(open.paused.at)}
+                      {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start
+                      is started until it is resumed.
+                    </Notice>
+                  ) : null}
+                  {open.lastRefusal ? (
+                    <div className="rounded-panel border border-line">
+                      <NextStep
+                        tone="danger"
+                        icon={<ShieldAlert aria-hidden="true" size={16} />}
+                        title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
+                        detail={open.lastRefusal.problem || undefined}
+                      />
+                    </div>
+                  ) : null}
+                  <KeyValues
+                    rows={[
+                      {
+                        label: "Starts",
+                        value: (
+                          <Link to={targetLink(link, open)}>
+                            {open.script} ({open.targetKind})
+                          </Link>
+                        ),
+                        mono: true,
+                      },
+                      ...(open.cron
+                        ? [
+                            {
+                              label: "Schedule",
+                              value: `${open.cron} · ${open.timezone ?? "UTC"}`,
+                              mono: true,
+                            },
+                          ]
+                        : []),
+                      ...(open.event ? [{ label: "Event", value: open.event, mono: true }] : []),
+                      ...(open.overlap === "skip"
+                        ? [
+                            {
+                              label: "Overlap",
+                              value:
+                                open.lastSkippedAt && open.lastSkipReason !== "backlog"
+                                  ? `Skips a time while its last run goes. Last skipped ${fromNow(open.lastSkippedAt)}.`
+                                  : "Skips a time while its last run goes.",
+                            },
+                          ]
+                        : []),
+                      ...(open.lastSkipReason === "backlog" && open.lastSkippedAt
+                        ? [
+                            {
+                              label: "Backlog",
+                              value: `Skipped ${fromNow(open.lastSkippedAt)}: the workspace already had too many runs waiting.`,
+                            },
+                          ]
+                        : []),
+                      {
+                        label: "Next",
+                        value: open.nextFireAt
+                          ? `${stamp(open.nextFireAt)} (${fromNow(open.nextFireAt)})`
+                          : "On request",
+                      },
+                      {
+                        label: "Last fired",
+                        value: open.lastFiredAt
+                          ? `${stamp(open.lastFiredAt)} (${fromNow(open.lastFiredAt)})`
+                          : "Not fired yet. Runs started by hand are not counted.",
+                      },
+                    ]}
+                  />
+                  {open.lastRun ? (
+                    <Link to={runLink(link, open.lastRun)} className="text-meta">
+                      Open the last run it started
+                    </Link>
+                  ) : null}
+                  {open.url ? (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-label text-ink-subtle uppercase">
+                        {open.type === "form" ? "Form address" : "Webhook address"}
+                      </span>
+                      <code className="rounded-control bg-code-bg p-2 font-mono text-code break-all select-all">
+                        {open.type === "form" ? "" : "POST "}
+                        {open.url}
+                      </code>
+                      <CopyButton value={open.url} label="Copy address" />
+                    </div>
+                  ) : open.type === "webhook" || open.type === "form" ? (
+                    <p className="m-0 text-meta text-ink-subtle">
+                      The address is shown to those who manage triggers.
+                    </p>
+                  ) : null}
+                </div>
+              </Inspector>
+            </>
           ) : null
         }
       />
@@ -836,49 +879,74 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
       }}
       inspector={
         open ? (
-          <Inspector
-            open
-            label="The chosen approval"
-            title={open.title}
-            eyebrow={`${open.flow} · ${nameOf(open.workspaceId)}`}
-            onClose={() => setChosen(undefined)}
-            footer={
-              <>
-                <Button variant="primary" onClick={() => decide(open, "approve")}>
-                  Approve
-                </Button>
-                <Button onClick={() => decide(open, "reject")}>Reject</Button>
-              </>
-            }
-          >
-            <div className="flex flex-col gap-4">
-              <KeyValues
-                rows={[
+          <>
+            <Current
+              object={{
+                heading: "This approval",
+                commands: [
                   {
-                    label: "Waiting since",
-                    value: `${stamp(open.waitingSince)} (${fromNow(open.waitingSince)})`,
+                    key: "approve",
+                    label: "Approve…",
+                    icon: CircleCheck,
+                    run: () => decide(open, "approve"),
                   },
-                  ...(open.timesOutAt
-                    ? [
-                        {
-                          label: "Times out",
-                          value: `${stamp(open.timesOutAt)} (${fromNow(open.timesOutAt)})`,
-                        },
-                      ]
-                    : []),
-                  { label: "Who decides", value: open.approvers?.text ?? "Anyone who may approve" },
-                  { label: "Step", value: open.node, mono: true },
-                ]}
-              />
-              <div className="flex flex-col gap-1.5">
-                <span className="text-label text-ink-subtle uppercase">What it asks about</span>
-                <JsonView label="Detail" value={open.detail} maxHeight="24rem" />
+                  {
+                    key: "reject",
+                    label: "Reject…",
+                    icon: CircleX,
+                    danger: true,
+                    run: () => decide(open, "reject"),
+                  },
+                ],
+              }}
+            />
+            <Inspector
+              open
+              label="The chosen approval"
+              title={open.title}
+              eyebrow={`${open.flow} · ${nameOf(open.workspaceId)}`}
+              onClose={() => setChosen(undefined)}
+              footer={
+                <>
+                  <Button variant="primary" onClick={() => decide(open, "approve")}>
+                    Approve
+                  </Button>
+                  <Button onClick={() => decide(open, "reject")}>Reject</Button>
+                </>
+              }
+            >
+              <div className="flex flex-col gap-4">
+                <KeyValues
+                  rows={[
+                    {
+                      label: "Waiting since",
+                      value: `${stamp(open.waitingSince)} (${fromNow(open.waitingSince)})`,
+                    },
+                    ...(open.timesOutAt
+                      ? [
+                          {
+                            label: "Times out",
+                            value: `${stamp(open.timesOutAt)} (${fromNow(open.timesOutAt)})`,
+                          },
+                        ]
+                      : []),
+                    {
+                      label: "Who decides",
+                      value: open.approvers?.text ?? "Anyone who may approve",
+                    },
+                    { label: "Step", value: open.node, mono: true },
+                  ]}
+                />
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-label text-ink-subtle uppercase">What it asks about</span>
+                  <JsonView label="Detail" value={open.detail} maxHeight="24rem" />
+                </div>
+                <Button variant="quiet" onClick={() => navigate(runLinkOf(open))}>
+                  Open the run's graph
+                </Button>
               </div>
-              <Button variant="quiet" onClick={() => navigate(runLinkOf(open))}>
-                Open the run's graph
-              </Button>
-            </div>
-          </Inspector>
+            </Inspector>
+          </>
         ) : null
       }
     />

@@ -32,17 +32,23 @@ function Bound({ seen }: { seen: string[] }) {
 const press = (key: string, extra: Partial<KeyboardEventInit> = {}, on: Element = document.body) =>
   fireEvent.keyDown(on, { key, bubbles: true, ...extra });
 
+/** `g`, then a letter. */
+const chord = (letter: string) => {
+  press("g");
+  press(letter);
+};
+
 /** One press for each shortcut the console binds, and what it must reach. */
 const PRESSES: [ShortcutId, () => void][] = [
   ["palette", () => press("k", { ctrlKey: true })],
   ["sheet", () => press("?", { shiftKey: true })],
   ["search", () => press("/")],
-  ["go.overview", () => (press("g"), press("o"))],
-  ["go.runs", () => (press("g"), press("r"))],
-  ["go.flows", () => (press("g"), press("f"))],
-  ["go.scripts", () => (press("g"), press("s"))],
-  ["go.triggers", () => (press("g"), press("t"))],
-  ["go.approvals", () => (press("g"), press("a"))],
+  ["go.overview", () => chord("o")],
+  ["go.runs", () => chord("r")],
+  ["go.flows", () => chord("f")],
+  ["go.scripts", () => chord("s")],
+  ["go.triggers", () => chord("t")],
+  ["go.approvals", () => chord("a")],
   ["save", () => press("s", { ctrlKey: true })],
   ["run", () => press("Enter", { ctrlKey: true })],
   ["undo", () => press("z", { ctrlKey: true })],

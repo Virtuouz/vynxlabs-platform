@@ -7,6 +7,8 @@ import {
   FileCode2,
   Keyboard,
   type LucideIcon,
+  Pin,
+  PinOff,
   Play,
   Plug,
   Radio,
@@ -16,12 +18,14 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, api } from "../api.ts";
+import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { usePreference } from "../prefs.ts";
 import { navigate } from "../router.tsx";
 import { useThemeChoice } from "../theme.ts";
+import { type Pinnable, useCurrent } from "./current.ts";
 import {
   formatCombo,
   isMac,
@@ -32,6 +36,7 @@ import {
   useShortcut,
   useSingleKeys,
 } from "./keys.ts";
+import { useDelayed } from "./LoadState.tsx";
 import { objectHref } from "./objects.tsx";
 import { SCOPES, SHORTCUTS, type ShortcutId } from "./shortcuts.ts";
 
@@ -65,6 +70,9 @@ interface Item {
   open: () => void;
   /** What ⌘↵ does with it: Run, Start, Pause, Run again. */
   secondary?: { label: string; run: () => void } | undefined;
+  /** Something found, which ⌘P pins or unpins. */
+  pin?: Pinnable | undefined;
+  danger?: boolean | undefined;
 }
 
 const KIND_ICON: Record<string, LucideIcon> = {
@@ -98,6 +106,8 @@ const KIND_LABEL: Record<string, string> = {
   end_user: "End user",
 };
 const SECTIONS = [
+  // The open object's own commands come first, under its own heading.
+  "Pinned",
   "Recent",
   "This workspace",
   "Other workspaces",
@@ -120,6 +130,17 @@ function score(label: string, where: string | undefined, words: string[]): numbe
   return total;
 }
 
+/** Items in their sections, each with its place in the whole list, for the arrow keys. */
+function groupsOf(items: Item[]): [string, [Item, number][]][] {
+  const groups = new Map<string, [Item, number][]>();
+  items.forEach((item, index) => {
+    const group = groups.get(item.section) ?? [];
+    group.push([item, index]);
+    groups.set(item.section, group);
+  });
+  return [...groups];
+}
+
 /** Opens on ⌘K or Ctrl+K anywhere, from the header's search box, and when asked by `openPalette`. */
 export function useCommandKey(open: () => void) {
   useShortcut("palette", open);
@@ -131,13 +152,15 @@ export function useCommandKey(open: () => void) {
 
 /** Where a found thing's page is. */
 function pageOf(tenantId: string, found: Found): string {
-  if (found.kind === "member") return `/t/${tenantId}/members`;
-  if (found.kind === "end_user") return `/t/${tenantId}/end-users`;
+  if (found.kind === "member") return `/t/${tenantId}/members/${found.id}`;
+  if (found.kind === "end_user") return `/t/${tenantId}/end-users?user=${found.id}`;
   const ws = `/t/${tenantId}/workspaces/${found.workspaceId}`;
   switch (found.kind) {
-    // A script found by name is most often wanted to be changed.
+    // Its page, where its runs, schedule and source are; ⌘↵ runs it, and Edit is one press there.
     case "script":
-      return `${ws}/scripts/edit/${found.ref}`;
+      return `${ws}/scripts/${found.ref}`;
+    case "app":
+      return `${ws}/apps?app=${found.id}`;
     case "flow":
     case "interface":
     case "table":
@@ -147,7 +170,6 @@ function pageOf(tenantId: string, found: Found): string {
     case "variable":
     case "secret":
     case "event":
-    case "app":
       return objectHref(ws, found.kind, found.ref);
     default:
       return `${ws}/runs/${found.id}`;
@@ -206,6 +228,23 @@ export function CommandPalette({
   const [theme, setTheme] = useThemeChoice();
   const list = useRef<HTMLDivElement>(null);
   const asked = useRef(0);
+  const current = useCurrent();
+  const [pins, setPins] = usePreference<Pinnable[]>(`palette.pins:${tenantId ?? "none"}`, []);
+  const pinned = (one: Pinnable) =>
+    pins.some((pin) => pin.kind === one.kind && pin.ref === one.ref);
+  const togglePin = (one: Pinnable) => {
+    const next = pinned(one)
+      ? pins.filter((pin) => !(pin.kind === one.kind && pin.ref === one.ref))
+      : [one, ...pins].slice(0, 12);
+    setPins(next.length > 0 ? next : undefined);
+    notify.success(
+      pinned(one) ? `${one.title} is unpinned.` : `${one.title} is pinned to the palette.`,
+    );
+  };
+  const [searching, setSearching] = useState(false);
+  const [failure, setFailure] = useState<unknown>();
+  const [again, setAgain] = useState(0);
+  const slow = useDelayed(searching, 300);
   const ws = tenantId && workspaceId ? `/tenants/${tenantId}/workspaces/${workspaceId}` : undefined;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: starts empty each time it opens
@@ -235,12 +274,16 @@ export function CommandPalette({
   const { mode, text } = readQuery(query);
 
   // What the server finds, asked for once typing pauses. An older answer is dropped.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `again` is Try again: it asks once more
   useEffect(() => {
+    setFailure(undefined);
     if (!open || !tenantId || picking || mode === "actions" || text === "") {
       setFound([]);
+      setSearching(false);
       return;
     }
     const mine = ++asked.current;
+    setSearching(true);
     const timer = setTimeout(() => {
       const only = mode === "all" ? "" : `&only=${mode}`;
       const here = workspaceId ? `&workspace=${workspaceId}` : "";
@@ -249,12 +292,22 @@ export function CommandPalette({
           `/tenants/${tenantId}/search?q=${encodeURIComponent(text)}${here}${only}`,
         )
         .then(
-          (answer) => mine === asked.current && setFound(answer.items),
-          () => mine === asked.current && setFound([]),
+          (answer) => {
+            if (mine !== asked.current) return;
+            setFound(answer.items);
+            setSearching(false);
+          },
+          (error) => {
+            if (mine !== asked.current) return;
+            // A search that failed says so: it is not "nothing matches".
+            setFound([]);
+            setFailure(error);
+            setSearching(false);
+          },
         );
     }, 150);
     return () => clearTimeout(timer);
-  }, [open, tenantId, workspaceId, mode, text, picking]);
+  }, [open, tenantId, workspaceId, mode, text, picking, again]);
 
   const close = () => onClose();
 
@@ -510,6 +563,12 @@ export function CommandPalette({
                   label: "Run again",
                   run: async () => {
                     const root = `/tenants/${tenantId}/workspaces/${inWorkspace}`;
+                    const sure = await ask.confirm({
+                      title: `Run ${one.title} again?`,
+                      text: "With the same input, on the version it ran.",
+                      action: "Run again",
+                    });
+                    if (!sure) return;
                     try {
                       const made =
                         one.kind === "run"
@@ -538,6 +597,14 @@ export function CommandPalette({
           if (tenantId) navigate(pageOf(tenantId, one));
         },
         secondary,
+        pin: {
+          kind: one.kind,
+          ref: one.ref,
+          id: one.id,
+          workspaceId: one.workspaceId,
+          workspaceSlug: one.workspaceSlug,
+          title: one.title,
+        },
       };
     };
 
@@ -560,8 +627,47 @@ export function CommandPalette({
       }));
 
     if (text === "") {
+      // What the page on screen shows comes first: with a run open, Run again is one press away.
+      const here: Item[] =
+        mode === "all" && current
+          ? [
+              ...current.commands.map((command) => ({
+                key: `c-${command.key}`,
+                label: command.label,
+                icon: command.icon,
+                danger: command.danger,
+                section: current.heading,
+                open: () => {
+                  close();
+                  void command.run();
+                },
+              })),
+              ...(current.pin
+                ? [
+                    {
+                      key: "c-pin",
+                      label: pinned(current.pin) ? "Unpin from the palette" : "Pin to the palette",
+                      icon: pinned(current.pin) ? PinOff : Pin,
+                      section: current.heading,
+                      open: () => {
+                        togglePin(current.pin as Pinnable);
+                        close();
+                      },
+                    },
+                  ]
+                : []),
+            ]
+          : [];
+      const pinnedItems = pins.map((one) =>
+        entity({ ...one, workspaceSlug: one.workspaceSlug ?? null, hint: null }, "Pinned"),
+      );
       return [
-        ...recent.slice(0, 8).map((one) => entity(one, "Recent")),
+        ...here,
+        ...pinnedItems,
+        ...recent
+          .filter((one) => !pins.some((pin) => pin.kind === one.kind && pin.ref === one.ref))
+          .slice(0, 8)
+          .map((one) => entity(one, "Recent")),
         ...(mode === "all" ? screens.slice(0, 12) : []),
         ...(mode === "all" ? actions.slice(0, 4) : []),
       ];
@@ -590,6 +696,8 @@ export function CommandPalette({
     workspaceType,
     workspaces,
     theme,
+    current,
+    pins,
   ]);
 
   // Lines grouped by section, in the sections' order.
@@ -612,7 +720,7 @@ export function CommandPalette({
       }[picking]
     : "Find anything. > runs, # resources, / actions, @ people";
 
-  let lastSection = "";
+  const mac = isMac();
   return (
     <>
       <Dialog open={open} onClose={onClose} title="Go to" size="palette">
@@ -647,6 +755,14 @@ export function CommandPalette({
                   else chosen.open();
                 } else if (event.key === "Backspace" && query === "" && picking) {
                   setPicking(undefined);
+                } else if (
+                  event.key.toLowerCase() === "p" &&
+                  (isMac() ? event.metaKey : event.ctrlKey) &&
+                  ordered[active]?.pin
+                ) {
+                  // ⌘P pins what is chosen, so it is first the next time.
+                  event.preventDefault();
+                  togglePin(ordered[active].pin as Pinnable);
                 }
               }}
               className="min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
@@ -657,62 +773,104 @@ export function CommandPalette({
             ref={list}
             role="listbox"
             aria-label="Results"
-            className="max-h-[calc(100vh-10rem)] overflow-y-auto md:max-h-[55vh]"
+            aria-busy={searching || undefined}
+            className="max-h-[calc(100dvh-10rem)] overflow-y-auto md:max-h-[55vh]"
           >
-            {ordered.length === 0 ? (
+            {failure ? (
+              <div
+                role="alert"
+                className="m-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-danger-soft px-3 py-2 text-body-sm text-danger"
+              >
+                <span>The search failed. What is typed may still be there; try again.</span>
+                {failure instanceof ApiError && failure.requestId ? (
+                  <span className="font-mono text-code-sm">Request ID {failure.requestId}</span>
+                ) : null}
+                <button
+                  type="button"
+                  className="ml-auto font-medium underline"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setAgain((count) => count + 1)}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : null}
+            {slow && ordered.length === 0 ? (
+              <p className="m-0 px-3 py-6 text-center text-ink-muted">Searching…</p>
+            ) : ordered.length === 0 && !failure ? (
               <p className="m-0 px-3 py-6 text-center text-ink-muted">
                 {text ? `Nothing matches “${text}”.` : "Type to find something."}
               </p>
             ) : (
-              ordered.map((item, index) => {
-                const Icon = item.icon;
-                const heading: ReactNode =
-                  item.section !== lastSection ? (
+              groupsOf(ordered).map(([section, members]) => {
+                const headingId = `command-group-${section.replace(/\W+/g, "-")}`;
+                return (
+                  // biome-ignore lint/a11y/useSemanticElements: a listbox groups its options with role="group"; a fieldset is for form controls
+                  <div key={section} role="group" aria-labelledby={headingId}>
                     <div
+                      id={headingId}
                       role="presentation"
                       className="px-3 pt-2 pb-1 text-meta font-medium tracking-wide text-ink-subtle uppercase"
                     >
-                      {item.section}
+                      {section}
                     </div>
-                  ) : null;
-                lastSection = item.section;
-                return (
-                  <div key={item.key}>
-                    {heading}
-                    <div
-                      tabIndex={-1}
-                      id={`command-${item.key}`}
-                      data-index={index}
-                      role="option"
-                      aria-selected={index === active}
-                      onMouseEnter={() => setActive(index)}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        item.open();
-                      }}
-                      className={`flex cursor-default items-center gap-2 rounded-control px-3 py-2 ${
-                        index === active ? "bg-selected" : ""
-                      }`}
-                    >
-                      {Icon ? (
-                        <Icon aria-hidden="true" size={16} className="shrink-0 text-ink-muted" />
-                      ) : null}
-                      {/* The name keeps its room; what it is, and where, gives way. */}
-                      <span className="max-w-[75%] shrink-0 truncate">{item.label}</span>
-                      {item.where ? (
-                        <span className="min-w-0 flex-1 truncate text-meta text-ink-subtle">
-                          {item.where}
-                        </span>
-                      ) : null}
-                      {index === active ? (
-                        <span className="ml-auto flex shrink-0 items-center gap-2 text-meta text-ink-subtle">
-                          {item.secondary ? (
-                            <span className="hidden md:inline">⌘↵ {item.secondary.label}</span>
+                    {members.map(([item, index]) => {
+                      const Icon = item.icon;
+                      return (
+                        <div
+                          key={item.key}
+                          tabIndex={-1}
+                          id={`command-${item.key}`}
+                          data-index={index}
+                          role="option"
+                          aria-selected={index === active}
+                          onMouseEnter={() => setActive(index)}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            item.open();
+                          }}
+                          className={`flex cursor-default items-center gap-2 rounded-control px-3 py-2 ${
+                            index === active ? "bg-selected" : ""
+                          } ${item.danger ? "text-danger" : ""}`}
+                        >
+                          {Icon ? (
+                            <Icon
+                              aria-hidden="true"
+                              size={16}
+                              className={`shrink-0 ${item.danger ? "" : "text-ink-muted"}`}
+                            />
                           ) : null}
-                          <CornerDownLeft aria-hidden="true" size={14} />
-                        </span>
-                      ) : null}
-                    </div>
+                          {/* The name keeps its room; what it is, and where, gives way. */}
+                          <span className="max-w-[75%] shrink-0 truncate">{item.label}</span>
+                          {item.where ? (
+                            <span className="min-w-0 flex-1 truncate text-meta text-ink-subtle">
+                              {item.where}
+                            </span>
+                          ) : null}
+                          {index === active ? (
+                            <span className="ml-auto hidden shrink-0 items-center gap-2 text-meta text-ink-subtle md:flex">
+                              {item.pin ? (
+                                <span>
+                                  {formatCombo("Mod+P", mac)}{" "}
+                                  {pins.some(
+                                    (pin) =>
+                                      pin.kind === item.pin?.kind && pin.ref === item.pin?.ref,
+                                  )
+                                    ? "Unpin"
+                                    : "Pin"}
+                                </span>
+                              ) : null}
+                              {item.secondary ? (
+                                <span>
+                                  {formatCombo("Mod+Enter", mac)} {item.secondary.label}
+                                </span>
+                              ) : null}
+                              <CornerDownLeft aria-hidden="true" size={14} />
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })

@@ -1,6 +1,6 @@
 import { Button } from "@vynxlabs/ui";
 import { Redo2, Undo2 } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 import { keysOf, useShortcut } from "../../kit/keys.ts";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";

@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–2 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–3 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -116,3 +116,28 @@ Some of the roadmap's evidence is out of date:
   - A rule fails on any `addEventListener("keydown"` outside the registry; the inspector's Esc was the last.
   - The e2e covers ⌘K from the code editor, `g r`, `/`, and the sheet from the account menu with its switch, with axe.
 - **The theme race:** a setting moved from an old key waited 400 ms to be sent, so a page load inside that time took the server's older copy (the redesign spec's dark run). Moved settings are now sent at once, and anything still waiting is sent with `keepalive` on `pagehide`.
+
+### Milestone 3: command palette v2
+- **`kit/current.ts`:** a page tells the palette what it shows with `useCurrentObject`, or `<Current object={…}/>` from inside its JSX, where its actions are already defined.
+  - Run pages offer Run again (same input, or the version deployed now), Retry from the failed step (and on a fix's version, when one can take it), Cancel, Open in the editor and Copy the run ID.
+  - Script and flow pages offer Open the code or Edit, Start…, and See its runs.
+  - The triggers inspector offers Pause…, Resume and Fire now; the approvals inspector offers Approve… and Reject….
+  
+  Every command that changes something asks first, as its button does, because it calls the same function. The trigger's pause and resume were inline in two buttons; they are named functions now.
+- **Not done as planned:** pulling the actions out into `actions/*.ts`. The page passes its own functions to the palette, so nothing is shared that a module would hold. Release's Deploy and Promote don't register yet. Release becomes a list with selection in Milestone 4, and registers then.
+- **The empty query:**
+  1. the open object's commands, under its heading ("This run");
+  2. Pinned;
+  3. Recent;
+  4. Screens;
+  5. Actions.
+- **Pins** are a member preference per tenant (`palette.pins:<tenant>`), at most 12. ⌘P pins or unpins the chosen result, and "Pin to the palette" is offered for the open object. A pin is matched by kind and path, because search gives resource IDs and pages know paths.
+- **Results:**
+  - They are grouped (`role="group"`, named by the heading).
+  - A script opens its page, not its editor; ⌘↵ still runs it.
+  - A member opens `/members/:id`, an end user `end-users?user=`, and an app its list with `?app=`.
+  - Apps have no page of their own; making one is left for later, as its list already has an inspector.
+  - The chosen row shows its ⌘P and ⌘↵ in the computer's own way of writing keys.
+- **States:** "Searching…" shows after 300 ms. A failed search shows an alert with the request ID and Try again, instead of "Nothing matches". On phones the list height uses `dvh`.
+- **Recents** are now recorded on a script's page and on connection and event pages, not only in editors and runs.
+- **⌘↵ "Run again"** in the palette asks first, like the button on the run page.

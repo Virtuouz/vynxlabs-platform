@@ -1,11 +1,20 @@
 import { Button, JsonView, LogViewer, Menu, Notice, ResultView, Tabs } from "@vynxlabs/ui";
-import { ChevronDown, CircleX, Lightbulb, RotateCcw } from "lucide-react";
+import {
+  ChevronDown,
+  CircleX,
+  Copy,
+  FileCode2,
+  Lightbulb,
+  RotateCcw,
+  Workflow,
+} from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, copyText, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
+import { Current } from "../kit/current.ts";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
@@ -247,8 +256,75 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
     if (sure) await rerun({ bundle }).catch(notify.error);
   };
 
+  const cancel = async () => {
+    const sure = await ask.confirm({
+      title: "Cancel this run?",
+      action: "Cancel run",
+      cancel: "Keep running",
+      danger: true,
+    });
+    if (!sure) return;
+    await api
+      .post(`${root}/runs/${id}/cancel`)
+      .then(() => notify.info("Canceling. The worker stops it at its next check."))
+      .catch(notify.error);
+  };
+
   return (
     <div className="flex flex-col gap-5">
+      <Current
+        object={{
+          heading: "This run",
+          commands: [
+            ...(active
+              ? [
+                  {
+                    key: "cancel",
+                    label: "Cancel this run",
+                    icon: CircleX,
+                    danger: true,
+                    run: cancel,
+                  },
+                ]
+              : []),
+            ...(run.trigger.type === "flow"
+              ? []
+              : [
+                  {
+                    key: "rerun",
+                    label: "Run again with the same input",
+                    icon: RotateCcw,
+                    run: () => confirmed("original"),
+                  },
+                  {
+                    key: "rerun-active",
+                    label: "Run again on the version deployed now",
+                    icon: RotateCcw,
+                    run: () => confirmed("active"),
+                  },
+                ]),
+            {
+              key: "edit",
+              label: `Open ${run.script} in the editor`,
+              icon: FileCode2,
+              run: () => navigate(`${link}/scripts/edit/${run.script}`),
+            },
+            {
+              key: "copy",
+              label: "Copy the run ID",
+              icon: Copy,
+              run: () => copyText(run.id, "Run ID copied."),
+            },
+          ],
+          pin: {
+            kind: "run",
+            ref: run.id,
+            id: run.id,
+            workspaceId: workspaceIdOf(root),
+            title: run.script,
+          },
+        }}
+      />
       <RunHeader
         reconnecting={reconnecting}
         link={link}
@@ -279,23 +355,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         actions={
           <>
             {active ? (
-              <Button
-                size="small"
-                variant="danger"
-                onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: "Cancel this run?",
-                    action: "Cancel run",
-                    cancel: "Keep running",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await api
-                    .post(`${root}/runs/${id}/cancel`)
-                    .then(() => notify.info("Canceling. The worker stops it at its next check."))
-                    .catch(notify.error);
-                }}
-              >
+              <Button size="small" variant="danger" onClick={cancel}>
                 Cancel run
               </Button>
             ) : null}
@@ -594,8 +654,86 @@ function FlowRunHeader({
     if (sure) await retry({ from: "start", bundle }).catch(notify.error);
   };
 
+  const cancel = async () => {
+    const sure = await ask.confirm({
+      title: "Cancel this flow run?",
+      text: "Steps in progress are canceled too.",
+      action: "Cancel flow run",
+      cancel: "Keep running",
+      danger: true,
+    });
+    if (!sure) return;
+    await api
+      .post(`${root}/flow-runs/${run.id}/cancel`)
+      .then(() => notify.info("Canceling. Steps that are running are stopped."))
+      .catch(notify.error);
+    refresh();
+  };
+
   return (
     <>
+      <Current
+        object={{
+          heading: "This run",
+          commands: live
+            ? [
+                {
+                  key: "cancel",
+                  label: "Cancel this flow run",
+                  icon: CircleX,
+                  danger: true,
+                  run: cancel,
+                },
+              ]
+            : [
+                ...(finishedBadly
+                  ? [
+                      {
+                        key: "retry",
+                        label: "Retry from the failed step",
+                        icon: RotateCcw,
+                        run: () => fromFailed(),
+                      },
+                    ]
+                  : []),
+                ...(finishedBadly && fix !== undefined
+                  ? [
+                      {
+                        key: "retry-fix",
+                        label: `Retry from the failed step on v${fix}`,
+                        icon: RotateCcw,
+                        run: () => fromFailed("active"),
+                      },
+                    ]
+                  : []),
+                {
+                  key: "rerun",
+                  label: "Run again from the start",
+                  icon: RotateCcw,
+                  run: () => fromStart("original"),
+                },
+                {
+                  key: "edit",
+                  label: `Open ${run.flow} in the editor`,
+                  icon: Workflow,
+                  run: () => navigate(`${link}/flows/edit/${run.flow}`),
+                },
+                {
+                  key: "copy",
+                  label: "Copy the run ID",
+                  icon: Copy,
+                  run: () => copyText(run.id, "Run ID copied."),
+                },
+              ],
+          pin: {
+            kind: "flow_run",
+            ref: run.id,
+            id: run.id,
+            workspaceId: workspaceIdOf(root),
+            title: run.flow,
+          },
+        }}
+      />
       <RunHeader
         reconnecting={reconnecting}
         link={link}
@@ -622,25 +760,7 @@ function FlowRunHeader({
         actions={
           <>
             {live ? (
-              <Button
-                size="small"
-                variant="danger"
-                onClick={async () => {
-                  const sure = await ask.confirm({
-                    title: "Cancel this flow run?",
-                    text: "Steps in progress are canceled too.",
-                    action: "Cancel flow run",
-                    cancel: "Keep running",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await api
-                    .post(`${root}/flow-runs/${run.id}/cancel`)
-                    .then(() => notify.info("Canceling. Steps that are running are stopped."))
-                    .catch(notify.error);
-                  refresh();
-                }}
-              >
+              <Button size="small" variant="danger" onClick={cancel}>
                 Cancel flow run
               </Button>
             ) : (
@@ -707,3 +827,6 @@ export function ToRunPage({ to }: { to: string }) {
   }, [to]);
   return null;
 }
+
+/** The workspace's ID, from its API root: `/tenants/:t/workspaces/:w`. */
+const workspaceIdOf = (root: string) => root.split("/workspaces/")[1]?.split("/")[0] ?? null;

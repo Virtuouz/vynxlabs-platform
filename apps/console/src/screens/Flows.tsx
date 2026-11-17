@@ -10,6 +10,7 @@ import {
   Timeline,
   type TimelineRow,
 } from "@vynxlabs/ui";
+import { ListChecks, Play, Workflow } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -17,6 +18,7 @@ import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../Fl
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
@@ -401,6 +403,46 @@ export function FlowView({
         </span>
       }
     >
+      <Current
+        object={{
+          heading: "This flow",
+          commands: [
+            ...(manual
+              ? [
+                  {
+                    key: "start",
+                    label: `Start ${data.path}…`,
+                    icon: Play,
+                    run: () => setStarting(true),
+                  },
+                ]
+              : []),
+            ...(editable
+              ? [
+                  {
+                    key: "edit",
+                    label: "Edit the flow",
+                    icon: Workflow,
+                    run: () => navigate(`${link}/flows/edit/${data.path}`),
+                  },
+                ]
+              : []),
+            {
+              key: "runs",
+              label: "See its runs",
+              icon: ListChecks,
+              run: () => navigate(`${link}/runs?target=${encodeURIComponent(data.path)}`),
+            },
+          ],
+          pin: {
+            kind: "flow",
+            ref: data.path,
+            id: data.path,
+            workspaceId: root.split("/workspaces/")[1] ?? null,
+            title: data.path,
+          },
+        }}
+      />
       <InputDialog
         open={starting}
         onClose={() => setStarting(false)}

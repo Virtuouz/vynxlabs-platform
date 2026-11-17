@@ -1,11 +1,4 @@
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef } from "react";
 import { usePreference } from "../prefs.ts";
 
 const MIN = 20;

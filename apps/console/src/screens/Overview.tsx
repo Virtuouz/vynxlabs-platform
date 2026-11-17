@@ -154,7 +154,7 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
           })}
         </div>
         <div className="flex items-center justify-between text-meta text-ink-subtle">
-          <span>{hourOf(stats.from)}</span>
+          <span data-volatile>{hourOf(stats.from)}</span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span aria-hidden="true" className="size-2 rounded-[2px] bg-success" /> Succeeded

@@ -905,7 +905,12 @@ function PageBody({
                   onPointerDown={(event) => grab(event, widget, "stretch")}
                 />
               ) : null}
-              <div className="min-h-0 flex-1 overflow-auto p-3">
+              {/* A body that scrolls can be reached and scrolled by keyboard too. */}
+              <div
+                // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus
+                tabIndex={0}
+                className="min-h-0 flex-1 overflow-auto p-3 outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
+              >
                 <WidgetView
                   widget={widget}
                   source={source}

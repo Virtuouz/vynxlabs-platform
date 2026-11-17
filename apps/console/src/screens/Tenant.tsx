@@ -210,8 +210,9 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
             </Button>
           }
         >
-          <strong>Operator access</strong> as {mine.roleName}, until {when(mine.expiresAt)}. Reason:{" "}
-          {mine.reason}. Everything you do here is recorded for the tenant.
+          <strong>Operator access</strong> as {mine.roleName}, until{" "}
+          <time dateTime={mine.expiresAt}>{when(mine.expiresAt)}</time>. Reason: {mine.reason}.
+          Everything you do here is recorded for the tenant.
         </Notice>
       ) : null}
       {workspace?.w ? (

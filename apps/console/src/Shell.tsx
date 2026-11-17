@@ -868,7 +868,7 @@ export function Shell({
                         promotes to{" "}
                         <Link
                           to={`/t/${tenantId}/workspaces/${ws.linked.id}/overview`}
-                          className="text-ink-muted"
+                          className="text-ink-muted underline underline-offset-2"
                         >
                           {ws.linked.name}
                         </Link>

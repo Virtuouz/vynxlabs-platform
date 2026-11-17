@@ -51,3 +51,16 @@ The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](.
 | 13 | Changelog, docs, the whole e2e suite | |
 
 Findings are recorded under each milestone as it lands.
+
+## Findings
+
+### Milestone 1: baselines before anything moves
+
+- **Compared pictures.** `e2e/redesign.spec.ts` compares every console screen with a reviewed picture (`toHaveScreenshot`), at three widths and in both themes: 90 pictures. The new `e2e/tenant-apps.spec.ts` does the same for an app the platform serves to a tenant's people, built through the API and shared anonymously: 6 pictures. They live in `e2e/snapshots/`.
+- **What is masked.** Times, IDs, values set in mono and anything marked `data-volatile`. The spec's product and tenant names are now fixed, so they no longer carry the run's stamp. Before each picture the mouse is parked and the page settles: the first stability run caught a hover and a button mid-load. Two compare runs in a row then passed unchanged.
+- **Not compared.** Screens that list the whole instance (tenants, audit, workers, API keys) change with every other spec, so they are checked for fit and axe only.
+- **Fixed in passing.** The spec's "data" screen was a 404; it is now `tables`.
+- **axe**, run with `@axe-core/playwright` on desktop/light screens and in the kit's component tests (`axe-core`), fails on serious and critical problems. Colour contrast is left to the token contrast test. It found two:
+  - The "promotes to" link, added in phase 13, sat in muted text marked only by colour. It is now underlined.
+  - A widget's scrolling body in served apps couldn't be reached by keyboard. It now takes focus, with a ring.
+- **CI.** The pictures were made on this machine's Linux Chromium with its system fonts. If CI's runner draws text differently, its first run will show it, and its `actual` pictures (kept in the uploaded results) become the baseline.

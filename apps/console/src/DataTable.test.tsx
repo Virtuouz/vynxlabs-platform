@@ -119,6 +119,30 @@ test("rows are checked by box, by Space, and as a range with Shift, and the batc
   expect(screen.queryByText(/selected$/)).toBeNull();
 });
 
+test("Shift and a click checks every row from the last one checked", () => {
+  function Checked() {
+    const [checked, setChecked] = useState<Set<string>>(new Set());
+    return (
+      <DataTable
+        label="Runs"
+        columns={COLUMNS}
+        rows={ROWS}
+        rowKey={(row) => row.id}
+        onOpen={() => {}}
+        checked={checked}
+        onCheck={setChecked}
+        batch={(keys) => <span>{[...keys].sort().join(" ")}</span>}
+        empty={{ title: "None" }}
+      />
+    );
+  }
+  render(<Checked />);
+  fireEvent.click(screen.getByLabelText("Select a"));
+  fireEvent.click(screen.getByLabelText("Select c"), { shiftKey: true });
+  expect(screen.getByText("3 selected")).toBeTruthy();
+  expect(screen.getByText("a b c")).toBeTruthy();
+});
+
 test("loading, empty, filtered-empty and error each have their own state", async () => {
   const retry = vi.fn();
   const clear = vi.fn();

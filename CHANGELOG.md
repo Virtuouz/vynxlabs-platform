@@ -25,6 +25,15 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - Every result opens its own page: a script opens its page rather than its editor, a person opens their member page, and an app opens in its list.
   - A failed search says so, with the request ID and Try again, rather than "Nothing matches".
   - ⌘↵ "Run again" now asks first.
+- **Batch API.**
+  - New `POST runs/batch {action: cancel|rerun, ids}`, `POST flow-runs/batch {action: cancel|retry|restart, ids}`, `POST trigger-pauses/batch {paused, reason?, triggers}`, `POST drafts/batch-discard {paths}` and `POST /tenants/:t/approvals/batch {decision, comment?, approvals}`.
+  - Each takes up to 100 items. Each item is done by its single action's own route, as the caller, so it is checked and audited exactly as it would be alone.
+  - The answer is `{results: [{id, ok, status, detail?, requestId?, runId?}], done, failed}`.
+- **Batch actions in the console.**
+  - Rows can be checked on the runs list (Cancel, Run again), approvals (Approve or Reject, with one comment) and triggers (Pause, Resume). Shift and a click checks a range.
+  - When some items are not done, a dialog lists each one with why and its request ID, and offers to retry just those.
+  - Release deploys, or sets aside, only the drafts chosen.
+  - The triggers list's kind filter is now kept in the address.
 
 ### For tenant developers
 

@@ -184,6 +184,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   // Roving focus: one cell of the grid is in the tab order; arrows move it.
   const [focus, setFocus] = useState<{ row: number; column: number }>({ row: 0, column: 0 });
   const [anchor, setAnchor] = useState<number | undefined>();
+  const ranged = useRef(false);
   const width = columns.length + (checking ? 1 : 0) + (actions ? 1 : 0);
   const placeFocus = useCallback(
     (row: number, column: number) => {
@@ -514,7 +515,27 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                             aria-label={`Select ${key}`}
                             checked={ticked}
                             tabIndex={-1}
+                            onClick={(event) => {
+                              // Shift and a click checks every row from the last one checked.
+                              if (!event.shiftKey || anchor === undefined) return;
+                              event.preventDefault();
+                              const range = shown
+                                .slice(Math.min(anchor, index), Math.max(anchor, index) + 1)
+                                .map(rowKey);
+                              toggle(range, true);
+                              setAnchor(index);
+                              // A browser sends no change after this; some test DOMs still do.
+                              ranged.current = true;
+                              setTimeout(() => {
+                                ranged.current = false;
+                              });
+                            }}
                             onChange={(event) => {
+                              // The click that checked a range has done its work.
+                              if (ranged.current) {
+                                ranged.current = false;
+                                return;
+                              }
                               toggle([key], event.target.checked);
                               setAnchor(index);
                             }}

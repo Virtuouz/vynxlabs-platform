@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–3 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–4 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -141,3 +141,26 @@ Some of the roadmap's evidence is out of date:
 - **States:** "Searching…" shows after 300 ms. A failed search shows an alert with the request ID and Try again, instead of "Nothing matches". On phones the list height uses `dvh`.
 - **Recents** are now recorded on a script's page and on connection and event pages, not only in editors and runs.
 - **⌘↵ "Run again"** in the palette asks first, like the button on the run page.
+
+### Milestone 4: multi-select and batch actions
+- **Five batch routes** (`routes/batch.ts`), each up to 100 items. Each item is done by replaying its single action's own route in-process (`request.server.inject`), with the caller's own headers.
+  - So each item is resolved, permission-checked, done and audited by the very code that does it alone. A batch can do nothing its caller couldn't do one at a time, and leaves the same record: three cancels write three `run.cancelled` entries.
+  - Items run one after another, never as a burst on the database.
+  - The plan's single `batch_id` in each entry's details was dropped. The entries are the single actions' own, unchanged, and they share a request ID prefix only by time.
+- **The write-path guard:** the batch route marks itself as having changed things, because its items did, through the write path.
+  - `t.unexercised` leaves batch routes out of each area's coverage check, because `batch.test.ts` exercises them.
+  - The test also checks that a viewer's batch cancels nothing, that a missing run is reported 404 with its reason, and that 101 items are refused whole.
+- **`DataTable`:** Shift-click now checks a range from the last row checked. In happy-dom the change event still fires after the click's `preventDefault`, and overwrote the range; the change handler now ignores the one event a range click handled. The flag clears itself, since a browser sends no change.
+- **`useBatch` and `BatchResult`:** when every item is done, a toast says so. When any is not, a dialog lists each with its reason, its request ID with Copy, and "Retry the N not done", which sends only those.
+- **Screens:**
+  - **Runs:** Cancel, and Run again. A script runs again on its version; a failed flow retries from its failed step; another flow restarts. Each goes in one batch per kind.
+  - **Approvals:** Approve or Reject, with one comment for all.
+  - **Triggers:** Pause, with one reason, and Resume. The kind filter moved into the address.
+  - **Release:** drafts get a checkbox. The preview and the deploy take the chosen `paths`, and "Set aside the N chosen" discards them in one batch. None chosen deploys all, as before.
+  
+  The palette's "This release" command deploys what is chosen, which was left from Milestone 3.
+- **Not done:**
+  - "Select all N matching". The runs list's existing "Cancel N queued" already acts on the filter on the server, and no other batch here needs to reach past the rows shown.
+  - Release stays a list of panels rather than a `DataTable`. The checkbox is all the selection it needed.
+  - The table rows' batch delete keeps its own answer (`deleted`, `missing`).
+- **e2e (`batch.spec.ts`):** 25 runs are run again in three interactions: check all shown, Run again, confirm. The toast reports 25, and the workspace then holds 50 runs. Axe runs on the list with rows checked.

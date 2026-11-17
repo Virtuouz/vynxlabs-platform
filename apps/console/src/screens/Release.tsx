@@ -3,6 +3,8 @@ import { ArrowRight, History, Rocket, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
+import { Current } from "../kit/current.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
   EmptyCanvas,
@@ -206,10 +208,53 @@ function ReviewStep({
   reload: () => void;
   onDeployed: (said: string) => void;
 }) {
-  const count = drafts?.length ?? 0;
+  // Drafts checked to deploy, or set aside, without the rest. None checked means all of them.
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const picked = (drafts ?? []).filter((row) => chosen.has(row.path)).map((row) => row.path);
+  const count = picked.length > 0 ? picked.length : (drafts?.length ?? 0);
+  const only = picked.length > 0 ? `?paths=${picked.map(encodeURIComponent).join(",")}` : "";
   const preview = useLoad<{ possible: boolean; refusal: Refusal | null; summary: Summary | null }>(
-    count > 0 ? `${root}/changes/preview` : null,
+    count > 0 ? `${root}/changes/preview${only}` : null,
   );
+  const batch = useBatch();
+  /** Deploys the chosen drafts, or every draft when none is chosen. */
+  const deployNow = async () => {
+    if (!preview.data?.possible || busy) return;
+    setBusy(true);
+    try {
+      const result = await api.post<{ bundleVersion: number; applied: string[] }>(
+        `${root}/changes/deploy`,
+        { ...(message ? { message } : {}), ...(picked.length > 0 ? { paths: picked } : {}) },
+      );
+      setMessage("");
+      setChosen(new Set());
+      onDeployed(`Deployed as version ${result.bundleVersion}: ${result.applied.join(", ")}.`);
+    } catch (caught) {
+      notify.error(caught);
+      preview.reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setAsideChosen = async () => {
+    const sure = await ask.confirm({
+      title: `Set aside ${picked.length} draft${picked.length === 1 ? "" : "s"}?`,
+      text: `${picked.slice(0, 3).join(", ")}${picked.length > 3 ? ` and ${picked.length - 3} more` : ""}. Each goes back to how it was last deployed; its draft stays in its history.`,
+      action: "Set aside",
+      danger: true,
+    });
+    if (!sure) return;
+    const send = (paths: string[]) =>
+      api.post<BatchAnswer>(`${root}/drafts/batch-discard`, { paths });
+    await batch.run(() => send(picked), {
+      title: "Setting drafts aside",
+      done: (n) => `${n} draft${n === 1 ? "" : "s"} set aside.`,
+      retry: send,
+    });
+    setChosen(new Set());
+    reload();
+    preview.reload();
+  };
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<string>();
@@ -240,6 +285,24 @@ function ReviewStep({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <Current
+        object={{
+          heading: "This release",
+          commands: preview.data?.possible
+            ? [
+                {
+                  key: "deploy",
+                  label:
+                    picked.length > 0
+                      ? `Deploy the ${count} chosen drafts`
+                      : `Deploy ${count} ${count === 1 ? "change" : "changes"}`,
+                  icon: Rocket,
+                  run: deployNow,
+                },
+              ]
+            : [],
+        }}
+      />
       <div className="flex flex-col gap-5">
         {groups.map((group) => (
           <section key={group} className="flex flex-col gap-2">
@@ -253,6 +316,18 @@ function ReviewStep({
                     <div key={row.path} className="flex flex-col gap-2 px-4 py-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-2">
+                          <input
+                            type="checkbox"
+                            aria-label={`Choose ${row.path}`}
+                            checked={chosen.has(row.path)}
+                            onChange={(event) => {
+                              const next = new Set(chosen);
+                              if (event.target.checked) next.add(row.path);
+                              else next.delete(row.path);
+                              setChosen(next);
+                            }}
+                            className="size-4 accent-[var(--color-action)]"
+                          />
                           {to ? (
                             <Link to={to} className="truncate font-mono text-code">
                               {row.path}
@@ -364,31 +439,31 @@ function ReviewStep({
           variant="primary"
           loading={busy}
           disabled={!preview.data?.possible}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              const result = await api.post<{ bundleVersion: number; applied: string[] }>(
-                `${root}/changes/deploy`,
-                message ? { message } : {},
-              );
-              setMessage("");
-              onDeployed(
-                `Deployed as version ${result.bundleVersion}: ${result.applied.join(", ")}.`,
-              );
-            } catch (caught) {
-              notify.error(caught);
-              preview.reload();
-            } finally {
-              setBusy(false);
-            }
-          }}
+          onClick={() => void deployNow()}
         >
-          Deploy {count} {count === 1 ? "change" : "changes"}
+          {picked.length > 0
+            ? `Deploy the ${count} chosen`
+            : `Deploy ${count} ${count === 1 ? "change" : "changes"}`}
         </Button>
+        {picked.length > 0 ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <Button size="small" variant="danger" onClick={() => void setAsideChosen()}>
+              Set aside the {picked.length} chosen
+            </Button>
+            <Button size="small" variant="quiet" onClick={() => setChosen(new Set())}>
+              Choose none
+            </Button>
+          </span>
+        ) : (
+          <p className="m-0 text-meta text-ink-subtle">
+            Choose drafts on the left to deploy, or set aside, only those.
+          </p>
+        )}
         <p className="m-0 text-meta text-ink-subtle">
           This deploys to this dev workspace only. Production is untouched.
         </p>
       </Panel>
+      {batch.dialog}
       <DraftHistory
         root={root}
         path={history}

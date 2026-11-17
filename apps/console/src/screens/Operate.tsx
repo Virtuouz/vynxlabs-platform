@@ -11,6 +11,7 @@ import {
 import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
@@ -92,7 +93,8 @@ export function TriggersWorkbench({
         triggerKey(one) === triggerKey(trigger) ? { ...one, paused } : one,
       ),
     }));
-  const [type, setType] = useState("all");
+  // The kind shown is in the address, so a reload or a link keeps it.
+  const [type, setType] = useUrlParam("kind", "all");
   // The chosen trigger lives in the address, so a run can link straight to the trigger
   // that started it.
   const [chosen, choose] = useQueryValue("trigger");
@@ -136,6 +138,48 @@ export function TriggersWorkbench({
       undo();
       notify.error(caught);
     }
+  };
+  // Triggers checked, to pause or resume together.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const batch = useBatch();
+  const pauseMany = async (keys: string[], paused: boolean) => {
+    const chosen = items.filter((one) => keys.includes(triggerKey(one)));
+    let reason: string | null | undefined;
+    if (paused) {
+      reason = await ask.prompt({
+        title: `Pause ${chosen.length} trigger${chosen.length === 1 ? "" : "s"}?`,
+        text:
+          chosen.length > 3
+            ? `${chosen
+                .slice(0, 3)
+                .map((one) => one.path)
+                .join(", ")} and ${chosen.length - 3} more.`
+            : `${chosen.map((one) => one.path).join(", ")}.`,
+        label: "Why (shown to everyone here)",
+        action: "Pause",
+        danger: production,
+        required: false,
+      });
+      if (reason === null) return;
+    }
+    const send = (subset: Trigger[]) =>
+      api.post<BatchAnswer>(`${root}/trigger-pauses/batch`, {
+        paused,
+        ...(reason ? { reason } : {}),
+        triggers: subset.map((one) => ({
+          path: one.path,
+          ...(one.node ? { node: one.node } : {}),
+        })),
+      });
+    const idOf = (one: Trigger) => (one.node ? `${one.path}#${one.node}` : one.path);
+    await batch.run(() => send(chosen), {
+      title: paused ? "Pausing triggers" : "Resuming triggers",
+      done: (count) =>
+        `${count} trigger${count === 1 ? "" : "s"} ${paused ? "paused" : "resumed"}.`,
+      retry: (ids) => send(chosen.filter((one) => ids.includes(idOf(one)))),
+    });
+    setChecked(new Set());
+    list.reload();
   };
   const fireNow = async (row: Trigger) => {
     try {
@@ -291,6 +335,28 @@ export function TriggersWorkbench({
         rowKey={triggerKey}
         selected={chosen ?? undefined}
         onSelect={(row) => choose(triggerKey(row))}
+        table={{
+          checked,
+          onCheck: setChecked,
+          batch: (keys) => (
+            <>
+              <Button
+                size="small"
+                disabled={batch.busy}
+                onClick={() => void pauseMany([...keys], true)}
+              >
+                <CirclePause aria-hidden="true" size={14} /> Pause
+              </Button>
+              <Button
+                size="small"
+                disabled={batch.busy}
+                onClick={() => void pauseMany([...keys], false)}
+              >
+                <CirclePlay aria-hidden="true" size={14} /> Resume
+              </Button>
+            </>
+          ),
+        }}
         error={list.error}
         onRetry={list.reload}
         empty={{
@@ -463,6 +529,7 @@ export function TriggersWorkbench({
           ) : null
         }
       />
+      {batch.dialog}
     </>
   );
 }
@@ -697,6 +764,46 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const nameOf = (id: string) => workspaces.data?.items.find((one) => one.id === id)?.name ?? "";
   const key = (row: { flowRunId: string; node: string }) => `${row.flowRunId}-${row.node}`;
+  // Approvals checked for one decision, with one comment.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const batch = useBatch();
+  const decideMany = async (keys: string[], decision: "approve" | "reject") => {
+    const rows = (waiting.data?.items ?? []).filter((row) => keys.includes(key(row)));
+    const names = rows
+      .slice(0, 3)
+      .map((row) => row.title)
+      .join(", ");
+    const comment = await ask.prompt({
+      title: `${decision === "approve" ? "Approve" : "Reject"} ${rows.length} decision${rows.length === 1 ? "" : "s"}?`,
+      text: rows.length > 3 ? `${names} and ${rows.length - 3} more.` : `${names}.`,
+      label: "Comment, kept with each decision",
+      action: decision === "approve" ? "Approve" : "Reject",
+      danger: decision === "reject",
+      required: false,
+    });
+    if (comment === null) return;
+    const send = (subset: typeof rows) =>
+      api.post<BatchAnswer>(`/tenants/${tenantId}/approvals/batch`, {
+        decision,
+        ...(comment ? { comment } : {}),
+        approvals: subset.map((row) => ({
+          workspaceId: row.workspaceId,
+          flowRunId: row.flowRunId,
+          node: row.node,
+        })),
+      });
+    const titleOf = (id: string) =>
+      rows.find((row) => `${row.flowRunId}/${row.node}` === id)?.title ?? id;
+    await batch.run(() => send(rows), {
+      title: decision === "approve" ? "Approving" : "Rejecting",
+      done: (count) =>
+        `${count} decision${count === 1 ? "" : "s"} ${decision === "approve" ? "approved" : "rejected"}.`,
+      name: titleOf,
+      retry: (ids) => send(rows.filter((row) => ids.includes(`${row.flowRunId}/${row.node}`))),
+    });
+    setChecked(new Set());
+    waiting.reload();
+  };
   const open = waiting.data?.items.find((one) => key(one) === chosen);
 
   const decide = async (row: Waiting, decision: "approve" | "reject") => {
@@ -816,139 +923,165 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
   }
 
   return (
-    <CollectionView<Waiting>
-      title="Approvals"
-      description="Flows that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
-      toolbar={chips}
-      columns={[
-        {
-          header: "Decision",
-          cell: (row) => {
-            const about = detailSummary(row.detail);
-            return (
-              <span className="flex flex-col">
-                <span className="font-medium">{row.title}</span>
-                {about ? <span className="text-ink-muted">{about}</span> : null}
-                <span className="text-meta text-ink-subtle">
-                  <Mono>{row.flow}</Mono> · {nameOf(row.workspaceId)}
+    <>
+      {batch.dialog}
+      <CollectionView<Waiting>
+        title="Approvals"
+        description="Flows that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
+        toolbar={chips}
+        columns={[
+          {
+            header: "Decision",
+            cell: (row) => {
+              const about = detailSummary(row.detail);
+              return (
+                <span className="flex flex-col">
+                  <span className="font-medium">{row.title}</span>
+                  {about ? <span className="text-ink-muted">{about}</span> : null}
+                  <span className="text-meta text-ink-subtle">
+                    <Mono>{row.flow}</Mono> · {nameOf(row.workspaceId)}
+                  </span>
                 </span>
-              </span>
-            );
+              );
+            },
           },
-        },
-        {
-          header: "Waiting",
-          cell: (row) => (
-            <StatePill state="waiting">{fromNow(row.waitingSince).replace(" ago", "")}</StatePill>
-          ),
-        },
-        {
-          header: "Who decides",
-          priority: 3,
-          cell: (row) => (
-            <span className="text-ink-muted">
-              {row.approvers?.text ?? "Anyone who may approve"}
-            </span>
-          ),
-        },
-        {
-          header: "",
-          priority: 2,
-          align: "end",
-          cell: (row) => (
-            <span className="inline-flex gap-2">
-              <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
+          {
+            header: "Waiting",
+            cell: (row) => (
+              <StatePill state="waiting">{fromNow(row.waitingSince).replace(" ago", "")}</StatePill>
+            ),
+          },
+          {
+            header: "Who decides",
+            priority: 3,
+            cell: (row) => (
+              <span className="text-ink-muted">
+                {row.approvers?.text ?? "Anyone who may approve"}
+              </span>
+            ),
+          },
+          {
+            header: "",
+            priority: 2,
+            align: "end",
+            cell: (row) => (
+              <span className="inline-flex gap-2">
+                <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
+                  Approve
+                </Button>
+                <Button size="small" onClick={() => decide(row, "reject")}>
+                  Reject
+                </Button>
+              </span>
+            ),
+          },
+        ]}
+        rows={waiting.data?.items}
+        rowKey={key}
+        selected={chosen}
+        onSelect={(row) => setChosen(key(row))}
+        table={{
+          checked,
+          onCheck: setChecked,
+          batch: (keys) => (
+            <>
+              <Button
+                size="small"
+                variant="primary"
+                disabled={batch.busy}
+                onClick={() => void decideMany([...keys], "approve")}
+              >
                 Approve
               </Button>
-              <Button size="small" onClick={() => decide(row, "reject")}>
+              <Button
+                size="small"
+                disabled={batch.busy}
+                onClick={() => void decideMany([...keys], "reject")}
+              >
                 Reject
               </Button>
-            </span>
+            </>
           ),
-        },
-      ]}
-      rows={waiting.data?.items}
-      rowKey={key}
-      selected={chosen}
-      onSelect={(row) => setChosen(key(row))}
-      error={waiting.error}
-      onRetry={waiting.reload}
-      empty={{
-        title: "Nothing is waiting for you",
-        text: "When a flow pauses for a decision you may make, it appears here.",
-      }}
-      inspector={
-        open ? (
-          <>
-            <Current
-              object={{
-                heading: "This approval",
-                commands: [
-                  {
-                    key: "approve",
-                    label: "Approve…",
-                    icon: CircleCheck,
-                    run: () => decide(open, "approve"),
-                  },
-                  {
-                    key: "reject",
-                    label: "Reject…",
-                    icon: CircleX,
-                    danger: true,
-                    run: () => decide(open, "reject"),
-                  },
-                ],
-              }}
-            />
-            <Inspector
-              open
-              label="The chosen approval"
-              title={open.title}
-              eyebrow={`${open.flow} · ${nameOf(open.workspaceId)}`}
-              onClose={() => setChosen(undefined)}
-              footer={
-                <>
-                  <Button variant="primary" onClick={() => decide(open, "approve")}>
-                    Approve
+        }}
+        error={waiting.error}
+        onRetry={waiting.reload}
+        empty={{
+          title: "Nothing is waiting for you",
+          text: "When a flow pauses for a decision you may make, it appears here.",
+        }}
+        inspector={
+          open ? (
+            <>
+              <Current
+                object={{
+                  heading: "This approval",
+                  commands: [
+                    {
+                      key: "approve",
+                      label: "Approve…",
+                      icon: CircleCheck,
+                      run: () => decide(open, "approve"),
+                    },
+                    {
+                      key: "reject",
+                      label: "Reject…",
+                      icon: CircleX,
+                      danger: true,
+                      run: () => decide(open, "reject"),
+                    },
+                  ],
+                }}
+              />
+              <Inspector
+                open
+                label="The chosen approval"
+                title={open.title}
+                eyebrow={`${open.flow} · ${nameOf(open.workspaceId)}`}
+                onClose={() => setChosen(undefined)}
+                footer={
+                  <>
+                    <Button variant="primary" onClick={() => decide(open, "approve")}>
+                      Approve
+                    </Button>
+                    <Button onClick={() => decide(open, "reject")}>Reject</Button>
+                  </>
+                }
+              >
+                <div className="flex flex-col gap-4">
+                  <KeyValues
+                    rows={[
+                      {
+                        label: "Waiting since",
+                        value: `${stamp(open.waitingSince)} (${fromNow(open.waitingSince)})`,
+                      },
+                      ...(open.timesOutAt
+                        ? [
+                            {
+                              label: "Times out",
+                              value: `${stamp(open.timesOutAt)} (${fromNow(open.timesOutAt)})`,
+                            },
+                          ]
+                        : []),
+                      {
+                        label: "Who decides",
+                        value: open.approvers?.text ?? "Anyone who may approve",
+                      },
+                      { label: "Step", value: open.node, mono: true },
+                    ]}
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-label text-ink-subtle uppercase">What it asks about</span>
+                    <JsonView label="Detail" value={open.detail} maxHeight="24rem" />
+                  </div>
+                  <Button variant="quiet" onClick={() => navigate(runLinkOf(open))}>
+                    Open the run's graph
                   </Button>
-                  <Button onClick={() => decide(open, "reject")}>Reject</Button>
-                </>
-              }
-            >
-              <div className="flex flex-col gap-4">
-                <KeyValues
-                  rows={[
-                    {
-                      label: "Waiting since",
-                      value: `${stamp(open.waitingSince)} (${fromNow(open.waitingSince)})`,
-                    },
-                    ...(open.timesOutAt
-                      ? [
-                          {
-                            label: "Times out",
-                            value: `${stamp(open.timesOutAt)} (${fromNow(open.timesOutAt)})`,
-                          },
-                        ]
-                      : []),
-                    {
-                      label: "Who decides",
-                      value: open.approvers?.text ?? "Anyone who may approve",
-                    },
-                    { label: "Step", value: open.node, mono: true },
-                  ]}
-                />
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-label text-ink-subtle uppercase">What it asks about</span>
-                  <JsonView label="Detail" value={open.detail} maxHeight="24rem" />
                 </div>
-                <Button variant="quiet" onClick={() => navigate(runLinkOf(open))}>
-                  Open the run's graph
-                </Button>
-              </div>
-            </Inspector>
-          </>
-        ) : null
-      }
-    />
+              </Inspector>
+            </>
+          ) : null
+        }
+      />
+    </>
   );
 }

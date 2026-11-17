@@ -1068,6 +1068,7 @@ describe("the write path", () => {
     // The execution, data, environment, app and branding routes have the same check in their own test files.
     // Pausing every trigger in the instance is exercised in trigger-limits.test.ts.
     // Trying an agent's tool is exercised in mcp.test.ts.
+    // Preferences and saved views are exercised in preferences.test.ts; batch routes in batch.test.ts.
     const execution =
       /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|row-deletions|rows-export|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim|branding|trigger-pauses|draft-history|data-source-checks|references|recent|worker-pools|recovery-codes|retention|connection-tests|worker-host|schedule-firings|recent-items|alert-tests|tool-calls|connection-oauth|oauth|promotion-requests|approval-links|triggers|preferences|views)(\/|$)/;
     // Deleting a workspace is exercised in environments.test.ts.

@@ -20,6 +20,7 @@ import { approvalLinkRoutes } from "./routes/approval-links.js";
 import { appRoutes } from "./routes/apps.js";
 import { authRoutes } from "./routes/auth.js";
 import { authoringRoutes } from "./routes/authoring.js";
+import { batchRoutes } from "./routes/batch.js";
 import { brandingRoutes } from "./routes/branding.js";
 import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
@@ -190,6 +191,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(workerRoutes(kernel));
       await api.register(searchRoutes(kernel));
       await api.register(preferenceRoutes(kernel));
+      await api.register(batchRoutes(kernel));
       await api.register(alertRoutes(kernel));
       await api.register(workerHostRoutes(kernel));
       await api.register(summaryRoutes(kernel));

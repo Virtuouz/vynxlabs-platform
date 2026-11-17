@@ -182,9 +182,13 @@ test("⌘K opens the palette from inside the code editor; g r, / and the sheet w
     await page.keyboard.press("g");
     await page.keyboard.press("r");
     await expect(page).toHaveURL(new RegExp(`${base}/runs`));
-    await page.locator('main input[type="search"]').first().waitFor();
-    await page.keyboard.press("/");
-    await expect(page.locator('main input[type="search"]').first()).toBeFocused();
+    const search = page.locator('main input[type="search"]').first();
+    await search.waitFor();
+    // The list's shortcut is bound once the screen has drawn: pressed until it is.
+    await expect(async () => {
+      await page.keyboard.press("/");
+      await expect(search).toBeFocused({ timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
 
     // The sheet, from the account menu, lists the shortcuts and can turn the single keys off.
     await page.keyboard.press("Escape");

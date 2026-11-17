@@ -15,6 +15,8 @@ export interface MenuItem {
   current?: boolean;
   /** The shortcut that does the same, written for people: `⌘D`. */
   keys?: string | undefined;
+  /** Drawn after the label, such as a tag that says what kind the item is. */
+  detail?: ReactNode;
 }
 
 export interface MenuProps {
@@ -55,6 +57,7 @@ export function Menu({ label, items, ariaLabel, triggerClassName, align = "start
                 >
                   {item.icon ? <span className="flex w-4 justify-center">{item.icon}</span> : null}
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  {item.detail}
                   {item.current ? <Check aria-hidden="true" size={14} /> : null}
                   {item.keys ? (
                     <kbd className="font-mono text-code-sm text-ink-subtle">{item.keys}</kbd>

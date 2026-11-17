@@ -939,7 +939,8 @@ export function Shell({
                       </>
                     }
                     items={(workspaces.data?.items ?? []).map((one) => ({
-                      label: `${one.name} (${one.type === "production" ? "production" : "dev"})`,
+                      label: one.name,
+                      detail: <EnvTag type={one.type} />,
                       current: one.id === workspaceId,
                       onSelect: () =>
                         void switchWorkspace(tenantId, workspaceId, one.id, where.section),
@@ -952,7 +953,7 @@ export function Shell({
                     </span>
                   ) : null}
                   {ws?.linked ? (
-                    <span className="hidden items-center gap-2 xl:flex">
+                    <span className="hidden items-center gap-2 lg:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
                         <Wire dashed width={14} />
                         <Junction
@@ -1030,7 +1031,7 @@ export function Shell({
                   ) : null}
                   <span className="hidden sm:inline-flex">
                     {where.area === "instance" ? (
-                      <Tag tone="attention">Instance · operator</Tag>
+                      <Tag tone="neutral">Instance · operator</Tag>
                     ) : where.area === "account" ? (
                       <Tag>Personal</Tag>
                     ) : null}
@@ -1075,6 +1076,10 @@ export function Shell({
             </button>
           </div>
         </header>
+        {/* The third mark of production, under every screen of it: a rule in production's amber. */}
+        {workspace?.type === "production" ? (
+          <div data-production-rule="" aria-hidden="true" className="h-0.5 shrink-0 bg-attention" />
+        ) : null}
         {tenantId ? <OperatorStrip /> : null}
 
         <main

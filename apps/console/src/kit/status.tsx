@@ -199,7 +199,8 @@ export type TagTone =
 
 const TAGS: Record<TagTone, string> = {
   dev: "border-action/45 text-action",
-  production: "border-attention/45 text-attention",
+  /** Filled, where everything else is outlined: production is the one thing never to miss. */
+  production: "border-attention bg-attention text-canvas",
   draft: "border-action/60 border-dashed text-action",
   repository: "border-line-strong text-ink-muted",
   live: "border-success/45 text-success",
@@ -209,7 +210,7 @@ const TAGS: Record<TagTone, string> = {
   danger: "border-danger/45 text-danger",
 };
 
-/** An outlined tag in capitals: an environment, where something comes from, or a lifecycle. */
+/** A tag in capitals, outlined (production filled): an environment, where something comes from, or a lifecycle. */
 export function Tag({ tone = "neutral", children }: { tone?: TagTone; children: ReactNode }) {
   return (
     <span

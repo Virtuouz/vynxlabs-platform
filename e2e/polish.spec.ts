@@ -45,6 +45,7 @@ let tenant: { id: string; slug: string };
 let ws: string;
 let failedRun: string;
 let W: string;
+let prodWs: string;
 
 const script = (code: string) => ({
   kind: "script",
@@ -81,6 +82,7 @@ test.beforeAll(async ({ browser }) => {
     linkedWorkspaceId: prod.id,
   });
   W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
+  prodWs = `/t/${tenant.id}/workspaces/${prod.id}`;
   ws = `/t/${tenant.id}/workspaces/${dev.id}`;
   await call(
     page,
@@ -344,4 +346,38 @@ test("a run that arrives while rows are checked waits behind a control, and redu
   await still.getByRole("dialog").waitFor();
   expect(await moving(), "with the palette open").toBe(0);
   await still.context().close();
+});
+
+/**
+ * P4-5: in production three marks agree, seen without scrolling at every width: the header's
+ * filled tag, the switcher's entry, and the amber rule under the header. In dev, none of them.
+ * (The roadmap's acceptance is a usability test; this checks what that test would rely on.)
+ */
+test("production carries three marks that agree, and dev carries none", async () => {
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [path, production] of [
+      [`${prodWs}/overview`, true],
+      [`${ws}/overview`, false],
+    ] as const) {
+      await open(path);
+      const header = page.locator("header").first();
+      const tag = header
+        .locator(".text-tag")
+        .filter({ hasText: production ? /^Production$/ : /^Dev$/ })
+        .first();
+      await expect(tag, `the header's tag at ${width}px`).toBeInViewport();
+      const filled = await tag.evaluate((element) => getComputedStyle(element).backgroundColor);
+      if (production) expect(filled, "production's tag is filled").not.toBe("rgba(0, 0, 0, 0)");
+      else expect(filled, "dev's tag is outlined").toBe("rgba(0, 0, 0, 0)");
+      const rule = page.locator("[data-production-rule]");
+      if (production) await expect(rule, `the rule at ${width}px`).toBeInViewport();
+      else await expect(rule).toHaveCount(0);
+      await page.getByRole("button", { name: "Switch workspace" }).click();
+      const entry = page.getByRole("menuitem", { name: /^Main/ });
+      await expect(entry).toContainText("Production");
+      await expect(page.getByRole("menuitem", { name: /^Dev/ })).toContainText("Dev");
+      await page.keyboard.press("Escape");
+    }
+  }
 });

@@ -75,11 +75,7 @@ export function InstanceMembers() {
         {
           header: "State",
           cell: (row) =>
-            row.disabled ? (
-              <Tag tone="danger">Disabled</Tag>
-            ) : (
-              <StatePill state="ok">Active</StatePill>
-            ),
+            row.disabled ? <Tag tone="danger">Disabled</Tag> : <StatePill state="active" />,
         },
         { header: "Created", priority: 3, cell: (row) => when(row.createdAt) },
       ]}

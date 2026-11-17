@@ -1,7 +1,8 @@
-import { Button, ComboboxField, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import { Button, ComboboxField, SelectField, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 
 type Condition =
   | { everyone: true }
@@ -146,7 +147,7 @@ export function RowRulesEditor({
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: a rule has no identity but its place while it is being written
               <fieldset key={index} className="m-0 rounded-control border border-line p-3">
-                <legend className="px-1 text-[12.5px] text-ink-muted">{ruleText(rule)}</legend>
+                <legend className="px-1 text-meta text-ink-muted">{ruleText(rule)}</legend>
                 <div className="grid items-end gap-2 md:grid-cols-[2fr_1fr_1fr_1fr_auto]">
                   <SelectField
                     name={`who-${index}`}
@@ -245,7 +246,8 @@ export function RowRulesEditor({
       <div className="flex items-center gap-3">
         <Button
           variant="primary"
-          disabled={busy || wanted === undefined}
+          loading={busy}
+          disabled={wanted === undefined}
           onClick={async () => {
             if (!wanted) return;
             setBusy(true);
@@ -304,7 +306,7 @@ export function SeeItAs({
           onChange={setAs}
         />
       </div>
-      {rows.error ? <Notice tone="danger">{rows.error.message}</Notice> : null}
+      {rows.error ? <ErrorState error={rows.error} onRetry={rows.reload} /> : null}
       {as && rows.data ? (
         shown.length === 0 ? (
           <p className="m-0 text-ink-muted">This person would see no rows.</p>

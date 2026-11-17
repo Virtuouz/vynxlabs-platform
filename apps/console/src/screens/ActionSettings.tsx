@@ -163,7 +163,7 @@ export function ActionSettings({
       ) : null}
       {action && Object.keys(properties).length > 0 ? (
         <fieldset className="m-0 flex flex-col gap-2 rounded-control border border-line p-2">
-          <legend className="px-1 text-[13px] font-medium">Its input</legend>
+          <legend className="px-1 text-body-sm font-medium">Its input</legend>
           {Object.entries(properties).map(([name, property]) => {
             const mapped = action.input?.[name];
             const kind =
@@ -246,7 +246,7 @@ export function ActionSettings({
               set({ result: on ? { ...action.result, show: "output" } : undefined })
             }
           />
-          <p className="m-0 text-[13px] text-ink-muted">
+          <p className="m-0 text-body-sm text-ink-muted">
             It runs as whoever presses it, and the page reads its rows again once it is done.
           </p>
         </>
@@ -284,7 +284,7 @@ export function RowActionsSettings({
           key={index}
           className="m-0 flex flex-col gap-2 rounded-control border border-line p-2"
         >
-          <legend className="px-1 text-[13px] font-medium">{action.label}</legend>
+          <legend className="px-1 text-body-sm font-medium">{action.label}</legend>
           <ActionSettings
             root={root}
             action={action}

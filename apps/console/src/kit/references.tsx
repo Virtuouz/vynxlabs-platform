@@ -1,6 +1,7 @@
 import { Button, Notice } from "@vynxlabs/ui";
 import { useLoad } from "../api.ts";
 import { Link } from "../router.tsx";
+import { Pending } from "./LoadState.tsx";
 import { kindName, objectHref } from "./objects.tsx";
 
 export interface Reference {
@@ -50,7 +51,7 @@ export function UsedBy({
   if (uses.length === 0) return <span className="text-ink-subtle">Nothing deployed uses it</span>;
   const users = [...new Map(uses.map((one) => [one.by.path, one.by])).values()];
   return (
-    <span className="font-mono text-telemetry text-ink-muted">
+    <span className="font-mono text-code text-ink-muted">
       {users.slice(0, 3).map((by, index) => (
         <span key={by.path}>
           {index > 0 ? ", " : ""}
@@ -103,7 +104,7 @@ export function ReferenceList({
       </Notice>
     );
   }
-  if (!found.data) return <p className="m-0 text-ink-muted">Loading…</p>;
+  if (!found.data) return <Pending of={found} />;
   if (found.data.items.length === 0) {
     return <p className="m-0 text-ink-muted">Nothing uses it, deployed or in a draft.</p>;
   }
@@ -115,10 +116,7 @@ export function ReferenceList({
           className="flex flex-wrap items-baseline gap-x-2"
         >
           <span className="w-20 shrink-0 text-meta text-ink-subtle">{kindName(one.by.kind)}</span>
-          <Link
-            to={objectHref(link, one.by.kind, one.by.path)}
-            className="font-mono text-telemetry"
-          >
+          <Link to={objectHref(link, one.by.kind, one.by.path)} className="font-mono text-code">
             {one.by.path}
           </Link>
           <span className="text-ink-muted">{one.how}</span>

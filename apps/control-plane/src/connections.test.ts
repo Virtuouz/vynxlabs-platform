@@ -261,8 +261,13 @@ describe("a connection's health is what its last Test found", () => {
     expect(Date.parse(health.checkedAt)).toBeGreaterThan(Date.now() - 60_000);
 
     // The same settings again keep it.
+    const set = await listed("api");
+    expect(set.credentialSetBy).toBe("alice@acme.example");
+    expect(Date.parse(set.credentialSetAt)).toBeGreaterThan(Date.now() - 60_000);
     await bind();
     expect((await listed("api")).health).toMatchObject({ ok: true });
+    // Saving the settings without a credential keeps when and by whom it was set.
+    expect((await listed("api")).credentialSetAt).toBe(set.credentialSetAt);
 
     // A test nobody answered says so.
     const task = await queueTask(t.db, {

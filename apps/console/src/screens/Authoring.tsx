@@ -1,6 +1,4 @@
 import {
-  Badge,
-  type BadgeTone,
   Button,
   EmptyState,
   MultiSelectField,
@@ -20,16 +18,19 @@ import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
-import { type RunState, StatePill } from "../kit/status.tsx";
+import { type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
+import { SCRIPT_STARTERS, untouchedStarter } from "./starters.ts";
 
 const STARTER = `import { type ScriptContext, z } from "@vynxlabs/sdk";
 
@@ -135,7 +136,6 @@ const CODE_KINDS: Record<
     /** Where its list is, and where its editor is, under the workspace. */
     list: string;
     edit: string;
-    all: string;
     example: string;
     /** The field of the body that holds the schema edited as JSON, and what it is called. */
     schema?: { field: "input" | "configSchema"; label: string; hint: string };
@@ -146,7 +146,6 @@ const CODE_KINDS: Record<
     noun: "script",
     list: "scripts",
     edit: "scripts/edit",
-    all: "All scripts",
     example: "orders/sync",
     schema: {
       field: "input",
@@ -159,7 +158,6 @@ const CODE_KINDS: Record<
     noun: "connector",
     list: "extensions",
     edit: "extensions/connector/edit",
-    all: "All extensions",
     example: "connectors/shop",
     schema: {
       field: "configSchema",
@@ -181,7 +179,6 @@ const CODE_KINDS: Record<
     noun: "trigger source",
     list: "extensions",
     edit: "extensions/trigger_source/edit",
-    all: "All extensions",
     example: "sources/payments",
     fresh: () => ({
       description: "",
@@ -199,7 +196,7 @@ const NEW_BODY: ScriptBody = {
   timeoutSeconds: 60,
   retries: { limit: 0, delaySeconds: 0, backoff: false },
   uses: { connections: [], secrets: [], variables: [] },
-  source: { language: "typescript", code: STARTER },
+  source: { language: "typescript", code: SCRIPT_STARTERS[0]?.code ?? STARTER },
 };
 
 interface DraftDetail {
@@ -426,7 +423,7 @@ export function ScriptEditor({
   revisionRef.current = revision;
   dirtyRef.current = dirty;
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
-  if (!body) return <p className="text-ink-muted">Loading…</p>;
+  if (!body) return <Loading />;
 
   const fromRepository = state === "repository" && !body.source;
   /** A step that comes with the platform. It is the platform's to change. */
@@ -532,13 +529,6 @@ export function ScriptEditor({
       return undefined;
     }
   })();
-
-  const STATE: Record<typeof state, [BadgeTone, string]> = {
-    new: ["neutral", "Not saved"],
-    draft: ["attention", "Draft"],
-    deployed: ["success", "Deployed"],
-    repository: ["action", "From the repository"],
-  };
 
   const settings = (
     <div className="flex flex-col gap-3">
@@ -674,7 +664,7 @@ export function ScriptEditor({
         />
       ) : null}
       {kind === "script" && schemaReading.waiting ? (
-        <p className="m-0 text-[13px] text-ink-muted" role="status">
+        <p className="m-0 text-body-sm text-ink-muted" role="status">
           {schemaReading.slow
             ? "Your schema will be read from the code once a worker is available."
             : "Reading the schema from your code…"}
@@ -686,13 +676,13 @@ export function ScriptEditor({
         </Notice>
       ) : null}
       {kind === "trigger_source" ? (
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           Nobody starts a trigger source by hand. To try it, deploy it and name it in a webhook or a
           schedule.
         </p>
       ) : null}
       {kind === "connector" ? (
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           A connection names this connector by its path. To try it, deploy it, set up a connection
           of this kind, and use the connection from a script.
         </p>
@@ -714,9 +704,9 @@ export function ScriptEditor({
           onSubmit={test}
         />
       )}
-      <p className="m-0 text-[13px] text-ink-muted">
+      <p className="m-0 text-body-sm text-ink-muted">
         Runs the script as its draft has it, on a worker, without deploying anything.{" "}
-        <kbd className="rounded-[4px] border border-line px-1 font-mono text-tag">⌘↵</kbd>
+        <kbd className="rounded-inner border border-line px-1 font-mono text-tag">⌘↵</kbd>
       </p>
     </div>
   );
@@ -748,78 +738,121 @@ export function ScriptEditor({
 
   return (
     <section className="flex flex-col gap-4">
-      <Link to={`${link}/${about.list}`} className="text-[13px] text-action">
-        {about.all}
-      </Link>
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          {opened ? (
-            <h1 className="m-0 truncate font-mono text-lg font-semibold">{path}</h1>
-          ) : (
-            <div className="w-72">
-              <TextField
-                name="path"
-                label="Path"
-                value={path}
-                placeholder={about.example}
-                hint="Its name in this workspace. It cannot be changed later."
-                onChange={setPath}
-              />
-            </div>
-          )}
-          <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
-          {dirty ? <Badge>Unsaved changes</Badge> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
-          {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
-            <OfferButton root={root} kind="script" path={opened} />
-          ) : null}
-          {readOnly ? null : (
-            <div className="flex items-center gap-2">
-              {state === "draft" && opened ? (
+      <PageHeader
+        compact
+        mono={Boolean(opened)}
+        title={opened ? path : `New ${about.noun}`}
+        state={
+          <>
+            <StatePill state={state} />
+            {dirty ? <StatePill state="unsaved" /> : null}
+          </>
+        }
+        actions={
+          <>
+            {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
+            {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
+              <OfferButton root={root} kind="script" path={opened} />
+            ) : null}
+            {readOnly ? null : (
+              <div className="flex items-center gap-2">
+                {state === "draft" && opened ? (
+                  <Button
+                    variant="danger"
+                    disabled={busy}
+                    onClick={async () => {
+                      const sure = await ask.confirm({
+                        title: "Discard this draft?",
+                        text: `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`,
+                        action: "Discard",
+                        danger: true,
+                      });
+                      if (!sure) return;
+                      await api
+                        .delete(`${root}/drafts/${opened}`)
+                        .then(() => navigate(`${link}/${about.list}`), notify.error);
+                    }}
+                  >
+                    Discard draft
+                  </Button>
+                ) : null}
                 <Button
-                  variant="danger"
-                  disabled={busy}
-                  onClick={async () => {
-                    const sure = await ask.confirm({
-                      title: "Discard this draft?",
-                      text: `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`,
-                      action: "Discard",
-                      danger: true,
-                    });
-                    if (!sure) return;
-                    await api
-                      .delete(`${root}/drafts/${opened}`)
-                      .then(() => navigate(`${link}/${about.list}`), notify.error);
-                  }}
+                  variant="primary"
+                  loading={busy}
+                  disabled={!dirty && state !== "new"}
+                  onClick={save}
                 >
-                  Discard draft
+                  Save draft
                 </Button>
-              ) : null}
-              <Button
-                variant="primary"
-                disabled={busy || (!dirty && state !== "new")}
-                onClick={save}
-              >
-                Save draft
-              </Button>
-              {state === "draft" && !dirty && opened ? (
-                <DeployMenu
-                  root={root}
-                  link={link}
-                  path={opened}
-                  disabled={busy}
-                  onDeployed={() => {
-                    setState("deployed");
-                    setRevision(undefined);
-                  }}
+                {state === "draft" && !dirty && opened ? (
+                  <DeployMenu
+                    root={root}
+                    link={link}
+                    path={opened}
+                    disabled={busy}
+                    onDeployed={() => {
+                      setState("deployed");
+                      setRevision(undefined);
+                    }}
+                  />
+                ) : null}
+              </div>
+            )}
+          </>
+        }
+        after={
+          opened ? undefined : (
+            <div className="flex flex-col gap-3">
+              <div className="w-72">
+                <TextField
+                  name="path"
+                  label="Path"
+                  value={path}
+                  placeholder={about.example}
+                  hint="Its name in this workspace. It cannot be changed later."
+                  onChange={setPath}
                 />
+              </div>
+              {kind === "script" ? (
+                <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+                  <legend className="mb-1 text-body-sm font-medium">Start from</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {SCRIPT_STARTERS.map((starter) => {
+                      const chosen = body?.source?.code === starter.code;
+                      return (
+                        <button
+                          key={starter.id}
+                          type="button"
+                          aria-pressed={chosen}
+                          title={starter.about}
+                          disabled={!untouchedStarter(body?.source?.code) && !chosen}
+                          onClick={() =>
+                            change({
+                              input: starter.input,
+                              source: { language: "typescript", code: starter.code },
+                            })
+                          }
+                          className={`flex max-w-64 flex-col items-start gap-0.5 rounded-control border px-3 py-2 text-left disabled:opacity-50 ${
+                            chosen ? "border-action bg-selected" : "border-line hover:bg-sunken"
+                          }`}
+                        >
+                          <span className="font-medium">{starter.label}</span>
+                          <span className="text-meta text-ink-muted">{starter.about}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {untouchedStarter(body?.source?.code) ? null : (
+                    <span className="text-meta text-ink-muted">
+                      The code has been changed, so starting again from another is off.
+                    </span>
+                  )}
+                </fieldset>
               ) : null}
             </div>
-          )}
-        </div>
-      </header>
+          )
+        }
+      />
       {core ? (
         <Notice tone="plain">
           This step comes with the platform, and is added to the workspace because a flow uses it.
@@ -1026,14 +1059,14 @@ function ProblemList({
             className="flex w-full items-start gap-2 rounded-control px-2 py-1 text-left hover:bg-sunken"
           >
             <span
-              className={`shrink-0 font-mono text-telemetry ${
+              className={`shrink-0 font-mono text-code ${
                 item.severity === "error" ? "text-danger" : "text-attention"
               }`}
             >
               {item.line}:{item.column}
             </span>
             <span className="min-w-0 flex-1">{item.message}</span>
-            {item.from === "build" ? <Badge tone="danger">Build</Badge> : null}
+            {item.from === "build" ? <Tag tone="danger">Build</Tag> : null}
           </button>
         </li>
       ))}
@@ -1061,7 +1094,7 @@ export function RecentRuns({ root, link, path }: { root: string; link: string; p
       label={`Runs of ${path}`}
       rows={runs.data?.items}
       rowKey={(run) => run.id}
-      error={runs.error?.message}
+      error={runs.error}
       onRetry={runs.reload}
       onOpen={(run) => navigate(`${link}/runs/${run.id}`)}
       href={(run) => `${link}/runs/${run.id}`}
@@ -1147,11 +1180,6 @@ export function Extensions({
       state: "draft",
     });
   }
-  const STATE: Record<ExtensionRow["state"], [BadgeTone, string]> = {
-    draft: ["attention", "Draft"],
-    deployed: ["success", "Deployed"],
-    repository: ["action", "From the repository"],
-  };
   const error = resources.error ?? drafts.error;
   return (
     <Page
@@ -1191,7 +1219,7 @@ export function Extensions({
               cell: (row) => (
                 <Link
                   to={`${link}/${CODE_KINDS[row.kind].edit}/${row.path}`}
-                  className="font-mono text-[13px] text-action"
+                  className="font-mono text-code text-action"
                 >
                   {row.path}
                 </Link>
@@ -1204,12 +1232,12 @@ export function Extensions({
             },
             {
               header: "State",
-              cell: (row) => <Badge tone={STATE[row.state][0]}>{STATE[row.state][1]}</Badge>,
+              cell: (row) => <StatePill state={row.state} />,
             },
           ]}
         />
       ) : error ? null : (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       )}
     </Page>
   );
@@ -1236,7 +1264,7 @@ function PublishedEvents({ root, runId }: { root: string; runId: string }) {
         <span className="text-meta text-ink-subtle">None.</span>
       ) : (
         events.data?.items.map((event) => (
-          <span key={event.id} className="font-mono text-telemetry">
+          <span key={event.id} className="font-mono text-code">
             {event.name}
           </span>
         ))
@@ -1257,7 +1285,7 @@ function RepositorySource({ root, path }: { root: string; path: string }) {
     files: { path: string; content: string }[];
   }>(`${root}/script-source/${path}`);
   const [chosen, setChosen] = useState<string>();
-  if (source.error) return <Notice tone="danger">{source.error.message}</Notice>;
+  if (source.error) return <ErrorState error={source.error} onRetry={source.reload} />;
   if (!source.data) return <p className="text-ink-muted">Loading the source…</p>;
   if (!source.data.available)
     return (

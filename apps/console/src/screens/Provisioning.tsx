@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
@@ -55,8 +56,8 @@ export function Provisioning({
     if (state.data) setSettings(state.data.settings);
   }, [state.data]);
 
-  if (state.error) return <Notice tone="danger">{state.error.message}</Notice>;
-  if (!state.data || !settings) return <p className="text-ink-muted">Loading…</p>;
+  if (state.error) return <ErrorState error={state.error} onRetry={state.reload} />;
+  if (!state.data || !settings) return <Loading />;
   const { data } = state;
   const dirty = JSON.stringify(settings) !== JSON.stringify(data.settings);
   const who = audience === "members" ? "member" : "end user";
@@ -101,15 +102,15 @@ export function Provisioning({
       </p>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="min-w-0">
-          <span className="block text-[13px] text-ink-muted">SCIM base address</span>
-          <code className="font-mono text-[13px] break-all">{data.address}</code>
+          <span className="block text-body-sm text-ink-muted">SCIM base address</span>
+          <code className="font-mono text-code break-all">{data.address}</code>
         </span>
         <CopyButton value={data.address} label="Copy the address" />
       </div>
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="m-0 text-[15px] font-semibold">Tokens</h3>
+          <h3 className="m-0 text-emphasis font-semibold">Tokens</h3>
           <Button variant="primary" onClick={make}>
             Make a token
           </Button>
@@ -135,7 +136,7 @@ export function Provisioning({
             { header: "Name", cell: (row) => row.name },
             {
               header: "Begins",
-              cell: (row) => <code className="font-mono text-[13px]">{row.prefix}…</code>,
+              cell: (row) => <code className="font-mono text-code">{row.prefix}…</code>,
             },
             { header: "Made", cell: (row) => when(row.createdAt) },
             {
@@ -157,7 +158,10 @@ export function Provisioning({
                       danger: true,
                     });
                     if (!sure) return;
-                    await api.delete(`${root}/tokens/${row.id}`).then(state.reload, notify.error);
+                    await api.delete(`${root}/tokens/${row.id}`).then(() => {
+                      notify.success("Revoked. The directory can no longer use that token.");
+                      state.reload();
+                    }, notify.error);
                   }}
                 >
                   Revoke
@@ -169,7 +173,7 @@ export function Provisioning({
       </section>
 
       <section className="flex max-w-xl flex-col gap-3">
-        <h3 className="m-0 text-[15px] font-semibold">How pushes are taken</h3>
+        <h3 className="m-0 text-emphasis font-semibold">How pushes are taken</h3>
         <SelectField
           name="subject-from"
           label="The name the provider signs a person in by is pushed as"
@@ -220,7 +224,7 @@ export function Provisioning({
       </section>
 
       <section className="flex flex-col gap-2">
-        <h3 className="m-0 text-[15px] font-semibold">What has been pushed</h3>
+        <h3 className="m-0 text-emphasis font-semibold">What has been pushed</h3>
         <Facts
           facts={[
             { label: "People", value: String(data.users.pushed) },
@@ -229,7 +233,7 @@ export function Provisioning({
             { label: "Last change", value: data.lastPushAt ? when(data.lastPushAt) : "Never" },
           ]}
         />
-        <p className="m-0 max-w-3xl text-[13px] text-ink-muted">
+        <p className="m-0 max-w-3xl text-body-sm text-ink-muted">
           {audience === "members"
             ? instance
               ? "A person the provider turns off has their account disabled everywhere: their sessions end and their API keys stop working."
@@ -262,7 +266,7 @@ interface Refusal {
 function Pushed({ root }: { root: string }) {
   const pushed = useLoad<{ people: PushedPerson[]; refusals: Refusal[] }>(`${root}/pushed`);
   const [filter, setFilter] = useUrlParam<"all" | "active" | "off">("people", "all");
-  if (pushed.error) return <Notice tone="danger">{pushed.error.message}</Notice>;
+  if (pushed.error) return <ErrorState error={pushed.error} onRetry={pushed.reload} />;
   const people = pushed.data?.people ?? [];
   const refusals = pushed.data?.refusals ?? [];
   const shown = people.filter((person) =>
@@ -303,11 +307,7 @@ function Pushed({ root }: { root: string }) {
             {
               header: "State",
               cell: (row) =>
-                row.active ? (
-                  <StatePill state="ok">Active</StatePill>
-                ) : (
-                  <StatePill state="cancelled">Turned off</StatePill>
-                ),
+                row.active ? <StatePill state="active" /> : <StatePill state="off" />,
             },
             { header: "Last change", cell: (row) => when(row.updatedAt) },
           ]}

@@ -27,7 +27,7 @@ export function Table<Row>({ columns, rows, rowKey, empty }: TableProps<Row>) {
                 // biome-ignore lint/suspicious/noArrayIndexKey: columns have no identity but their place, and two may share an empty header
                 key={index}
                 scope="col"
-                className={`border-b border-line px-3 py-2 text-[13px] font-medium text-ink-muted ${
+                className={`border-b border-line px-3 py-2 text-body-sm font-medium text-ink-muted ${
                   column.align === "end" ? "text-right" : ""
                 }`}
               >

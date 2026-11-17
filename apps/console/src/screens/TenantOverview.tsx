@@ -1,8 +1,8 @@
-import { Notice } from "@vynxlabs/ui";
 import { CircleCheck, CirclePause, Cpu, Globe, LifeBuoy } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { actionWords } from "../audit-words.ts";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
@@ -34,7 +34,7 @@ const linkClass = "text-action hover:underline";
 
 /** A link that reads as the step to take, beside a notice. */
 const Go = ({ to, children }: { to: string; children: ReactNode }) => (
-  <Link to={to} className={`${linkClass} text-[13px] font-medium`}>
+  <Link to={to} className={`${linkClass} text-body-sm font-medium`}>
     {children}
   </Link>
 );
@@ -64,7 +64,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="approvals"
         tone="attention"
-        icon={<CirclePause aria-hidden="true" size={15} />}
+        icon={<CirclePause aria-hidden="true" size={16} />}
         title={`${plural(c.approvalsWaiting, "approval")} waiting`}
         detail={
           instance.data?.mail === false
@@ -80,7 +80,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="domains"
         tone="attention"
-        icon={<Globe aria-hidden="true" size={15} />}
+        icon={<Globe aria-hidden="true" size={16} />}
         title={`${plural(c.domainsToFix, "hostname")} to check`}
         detail="Its last check failed, or it is waiting on its DNS record before it can serve."
         action={<Go to={t("domains")}>Check</Go>}
@@ -92,7 +92,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="operators"
         tone="attention"
-        icon={<LifeBuoy aria-hidden="true" size={15} />}
+        icon={<LifeBuoy aria-hidden="true" size={16} />}
         title={`${plural(c.operatorAccessActive, "operator")} inside this tenant now`}
         detail="Under an access grant you can end at any time."
         action={<Go to={t("operator-access")}>Review</Go>}
@@ -104,7 +104,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       <NextStep
         key="workers"
         tone="danger"
-        icon={<Cpu aria-hidden="true" size={15} />}
+        icon={<Cpu aria-hidden="true" size={16} />}
         title="No worker is online"
         detail="Runs wait in the queue until one connects."
         action={<Go to={t("workers")}>Workers</Go>}
@@ -119,12 +119,13 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
+        size="display-lg"
         eyebrow="Tenant"
         title={tenant.data?.name ?? "Overview"}
         description="What asks for someone, how each workspace stands, and what changed last."
         meta={tenant.data ? <Mono>{tenant.data.slug}</Mono> : null}
       />
-      {counts.error ? <Notice tone="danger">{counts.error.message}</Notice> : null}
+      {counts.error ? <ErrorState error={counts.error} onRetry={counts.reload} /> : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -135,13 +136,13 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
             {c?.promotionRequests && attention.length === 0 ? null : (
               <Panel className="divide-y divide-line">
                 {!c ? (
-                  <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                  <Loading />
                 ) : attention.length > 0 ? (
                   attention
                 ) : (
                   <NextStep
                     tone="success"
-                    icon={<CircleCheck aria-hidden="true" size={15} />}
+                    icon={<CircleCheck aria-hidden="true" size={16} />}
                     title="Nothing needs you"
                     detail="No approvals or promotions waiting, every hostname works, and workers are online."
                   />
@@ -158,11 +159,11 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
               <span id="workspaces">Workspaces</span>
             </SectionLabel>
             {workspaces.error ? (
-              <Notice tone="danger">{workspaces.error.message}</Notice>
+              <ErrorState error={workspaces.error} onRetry={workspaces.reload} />
             ) : (
               <Panel className="divide-y divide-line">
                 {!workspaces.data ? (
-                  <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                  <Loading />
                 ) : ordered.length === 0 ? (
                   <p className="m-0 px-4 py-3 text-ink-muted">
                     No workspaces yet. <Go to={t("workspaces")}>Create one</Go>
@@ -228,7 +229,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                   The audit log is not open to you here.
                 </p>
               ) : !recent.data ? (
-                <p className="m-0 px-4 py-3 text-ink-muted">Loading…</p>
+                <Loading />
               ) : !changes?.length ? (
                 <p className="m-0 px-4 py-3 text-ink-muted">Nothing has changed yet.</p>
               ) : (
@@ -236,7 +237,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                   {changes.map((entry) => (
                     <li
                       key={entry.id}
-                      className="flex flex-col gap-0.5 border-line border-b px-4 py-2.5 last:border-b-0"
+                      className="flex flex-col gap-0.5 border-line border-b px-4 py-2 last:border-b-0"
                     >
                       <span className="truncate font-medium" title={entry.action}>
                         {actionWords(entry.action)}
@@ -297,7 +298,7 @@ function WorkspaceLine({
             ) : (
               <StatePill state="ok">No failures today</StatePill>
             )}
-            {s.drafts ? <StatePill state="info">{plural(s.drafts, "draft")}</StatePill> : null}
+            {s.drafts ? <StatePill state="draft">{plural(s.drafts, "draft")}</StatePill> : null}
           </>
         ) : null}
       </div>

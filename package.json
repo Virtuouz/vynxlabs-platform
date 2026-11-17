@@ -25,6 +25,7 @@
     "e2e": "playwright test -c e2e"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@biomejs/biome": "^2.6.7",
     "@playwright/test": "^1.65.0",
     "@types/node": "^24.0.0",

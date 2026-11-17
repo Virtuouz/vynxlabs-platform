@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
+import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
 import {
   checkRepository,
   compareWithBranch,
@@ -39,6 +40,7 @@ const Repository = Type.Object({
     description:
       "Each promotion commits what production runs to `<releaseBranch>/<workspace>`. Null: off.",
   }),
+  ...CredentialSet,
 });
 const State = Type.Union(
   [
@@ -86,10 +88,19 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       credentialKind: row.credential_kind ?? "token",
       releaseBranch: row.release_branch ?? null,
     });
+    /** The repository as the API shows it, with when and by whom its token was set. */
+    const repositoryOf = async (tenantId: string, row: Parameters<typeof toRepository>[0]) => {
+      const stamp = await db
+        .selectFrom("git_repository")
+        .select(["credential_set_at", "credential_set_by_type", "credential_set_by_id"])
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirst();
+      return { ...toRepository(row), ...(await credentialSetters(db, [stamp]))(stamp) };
+    };
     const status = async (workspace: WorkspaceRef) => {
       const { repository, link } = await gitStatus(kernel, workspace);
       return {
-        repository: repository ? toRepository(repository) : null,
+        repository: repository ? await repositoryOf(workspace.tenantId, repository) : null,
         branch: link?.branch ?? null,
         state: link?.state ?? null,
         syncedCommit: link?.synced_commit ?? null,
@@ -124,7 +135,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ])
           .where("tenant_id", "=", params.t)
           .executeTakeFirst();
-        return { repository: row ? toRepository(row) : null };
+        return { repository: row ? await repositoryOf(params.t, row) : null };
       },
     );
 
@@ -157,7 +168,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) => {
         ctx.mutated = true;
-        return toRepository(await saveRepository(kernel, ctx.actor, params.t, body));
+        return repositoryOf(params.t, await saveRepository(kernel, ctx.actor, params.t, body));
       },
     );
 
@@ -439,7 +450,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }) => {
         ctx.mutated = true;
         const checked = await checkRepository(kernel, ctx.actor, params.t);
-        return { ...checked, repository: toRepository(checked.repository) };
+        return { ...checked, repository: await repositoryOf(params.t, checked.repository) };
       },
     );
 

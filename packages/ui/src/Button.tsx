@@ -1,3 +1,4 @@
+import { LoaderCircle } from "lucide-react";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 
 const styles = {
@@ -12,7 +13,17 @@ const styles = {
 
 interface Shared {
   variant?: keyof typeof styles;
-  size?: "regular" | "small";
+  /**
+   * `regular` is the page's own control height: 36 px in tenant apps, 32 px in
+   * the console. `small` is 28 px, for toolbars inside a pane; `large` is 36 px
+   * everywhere, for sign-in.
+   */
+  size?: "regular" | "small" | "large";
+  /**
+   * The work it started is under way: a spinner beside the label, which stays,
+   * and it cannot be pressed again. Screen readers hear it as busy.
+   */
+  loading?: boolean;
   children: ReactNode;
 }
 
@@ -27,29 +38,52 @@ export type ButtonProps = Shared &
     | (Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "size"> & { href: string })
   );
 
-const classesOf = (variant: keyof typeof styles, size: "regular" | "small", extra = "") =>
-  `inline-flex items-center justify-center gap-2 rounded-control font-medium whitespace-nowrap no-underline disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:pointer-events-none ${
-    size === "small" ? "h-7 px-2 text-[13px]" : "h-9 px-3.5"
-  } ${styles[variant]} ${extra}`;
+const SIZES = {
+  small: "h-7 gap-1.5 px-2 text-body-sm",
+  regular: "h-control gap-2 px-3",
+  large: "h-9 gap-2 px-4",
+};
+
+const classesOf = (variant: keyof typeof styles, size: "regular" | "small" | "large", extra = "") =>
+  `inline-flex items-center justify-center rounded-control font-medium whitespace-nowrap no-underline transition-[background-color,filter] motion-fast active:brightness-95 disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:pointer-events-none ${SIZES[size]} ${styles[variant]} ${extra}`;
 
 export function Button({
   variant = "secondary",
   size = "regular",
+  loading = false,
   children,
   ...rest
 }: ButtonProps) {
+  const label = loading ? (
+    <>
+      <LoaderCircle aria-hidden="true" size={14} className="shrink-0 animate-spin" />
+      {children}
+    </>
+  ) : (
+    children
+  );
   if (rest.href !== undefined) {
     const { className, ...link } = rest as AnchorHTMLAttributes<HTMLAnchorElement>;
     return (
-      <a {...link} className={classesOf(variant, size, className)}>
-        {children}
+      <a
+        {...link}
+        {...(loading ? { "aria-busy": true, "aria-disabled": true } : {})}
+        className={classesOf(variant, size, className)}
+      >
+        {label}
       </a>
     );
   }
   const { className, ...button } = rest as ButtonHTMLAttributes<HTMLButtonElement>;
   return (
-    <button type="button" {...button} className={classesOf(variant, size, className)}>
-      {children}
+    <button
+      type="button"
+      {...button}
+      disabled={button.disabled || loading}
+      aria-busy={loading || undefined}
+      className={classesOf(variant, size, className)}
+    >
+      {label}
     </button>
   );
 }

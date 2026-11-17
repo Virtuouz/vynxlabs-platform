@@ -100,7 +100,11 @@ test("in a tenant the sections are the tenant's, the open one is marked, and cou
   ).toBe("page");
   const where = screen.getByRole("navigation", { name: "Where you are" }).textContent ?? "";
   expect(where).toContain("Acme");
-  expect(where).toContain("/Members & access");
+  // The section is shown, and marked as the page the person is on.
+  const crumb = within(screen.getByRole("navigation", { name: "Where you are" })).getByText(
+    "Members & access",
+  );
+  expect(crumb.getAttribute("aria-current")).toBe("page");
   // The tenant's counts arrive with its summary; one the person may not read is left out.
   expect(await within(sections).findByText("1")).toBeTruthy();
   expect(within(sections).queryByText(/active/)).toBeNull();

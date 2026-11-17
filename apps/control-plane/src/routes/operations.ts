@@ -55,6 +55,10 @@ const Activity = Type.Object({
   scheduledFor: Type.Union([Time, Type.Null()], {
     description: "When a delayed or scheduled script run was due. Flow runs have none.",
   }),
+  wakeAt: Type.Union([Time, Type.Null()], {
+    description:
+      "When a flow run that is `waiting_time` goes on: its earliest waiting step's time.",
+  }),
   startedAt: NullableTime,
   finishedAt: NullableTime,
 });
@@ -81,6 +85,7 @@ interface ActivityRow {
   version: number;
   created_at: Date;
   scheduled_for: Date | null;
+  wake_at: Date | null;
   started_at: Date | null;
   finished_at: Date | null;
   sort_value: number | null;
@@ -157,7 +162,8 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           select 'script' as kind, r.id, r.script_path as target, r.status::text as status,
             ${runStateSql("r.status")} as state, r.trigger_type, r.attempt, r.max_attempts, r.error->>'message' as error,
             r.error_summary, r.output_summary, r.tags,
-            b.version, r.created_at, r.scheduled_for, r.started_at, r.finished_at
+            b.version, r.created_at, r.scheduled_for, null::timestamptz as wake_at, r.started_at,
+            r.finished_at
           from run r join bundle b on b.id = r.bundle_id
           where r.workspace_id = ${w} and r.flow_run_id is null and ${window("r.created_at")}
             ${filters.target ? sql`and r.script_path = ${filters.target}` : sql``}
@@ -171,8 +177,10 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ) then 'waiting' else f.status::text end as status,
             ${flowStateSql("f")} as state, f.trigger_type, 1 as attempt, 1 as max_attempts, f.error->>'message' as error,
             f.error_summary, f.output_summary, f.tags,
-            b.version, f.created_at, null::timestamptz as scheduled_for, f.created_at as started_at,
-            f.finished_at
+            b.version, f.created_at, null::timestamptz as scheduled_for,
+            (select min(s.wake_at) from step_run s
+              where s.flow_run_id = f.id and s.status = 'waiting') as wake_at,
+            f.created_at as started_at, f.finished_at
           from flow_run f join bundle b on b.id = f.bundle_id
           where f.workspace_id = ${w} and f.parent_flow_run_id is null and ${window("f.created_at")}
             ${filters.target ? sql`and f.flow_path = ${filters.target}` : sql``}
@@ -336,6 +344,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               bundleVersion: Number(row.version),
               createdAt: iso(row.created_at),
               scheduledFor: row.scheduled_for ? iso(row.scheduled_for) : null,
+              wakeAt: row.wake_at ? iso(row.wake_at) : null,
               startedAt: row.started_at ? iso(row.started_at) : null,
               finishedAt: row.finished_at ? iso(row.finished_at) : null,
             }),

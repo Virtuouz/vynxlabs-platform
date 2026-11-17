@@ -48,7 +48,7 @@ export function ObjectLink({
   kind,
   path,
   children,
-  className = "font-mono text-telemetry",
+  className = "font-mono text-code",
 }: {
   link: string;
   kind: string;

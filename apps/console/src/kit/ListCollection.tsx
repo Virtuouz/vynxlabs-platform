@@ -132,7 +132,8 @@ export function ListCollection<Row>({
             ? { title: "Nothing matches", text: "Try fewer or other words." }
             : { ...empty, action: createButton }
         }
-        error={list.error?.message}
+        error={list.error}
+        onRetry={list.reload}
         loading={list.loading && !list.data}
         table={{
           onRetry: list.reload,

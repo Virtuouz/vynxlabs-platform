@@ -27,6 +27,8 @@ export function LiveIndicator() {
     <span
       role="status"
       aria-live="polite"
+      // Says how the connection stands, which pictures of a screen leave out.
+      data-volatile
       className={`hidden items-center gap-1.5 text-meta whitespace-nowrap sm:flex ${
         status === "offline" ? "text-attention" : "text-ink-muted"
       }`}

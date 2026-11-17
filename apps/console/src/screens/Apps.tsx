@@ -43,9 +43,7 @@ function RowsFor({ root, table, group }: { root: string; table: string; group: s
   );
   if (counted.error) return <span className="text-ink-subtle">—</span>;
   if (!counted.data) return <span className="text-ink-subtle">…</span>;
-  return (
-    <span className="font-mono text-telemetry">{counted.data.items[0]?.values.count ?? 0}</span>
-  );
+  return <span className="font-mono text-code">{counted.data.items[0]?.values.count ?? 0}</span>;
 }
 
 const external = (url: string, text: string) => (
@@ -292,7 +290,12 @@ function ShareDialog({
         ) : null}
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={busy || !resources.data || !roles.data}>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={busy}
+            disabled={!resources.data || !roles.data}
+          >
             Share
           </Button>
         </div>
@@ -471,7 +474,8 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
         rowKey={(row) => row.id}
         selected={chosen}
         onSelect={(row) => setChosen(row.id)}
-        error={list.error?.message}
+        error={list.error}
+        onRetry={list.reload}
         empty={{
           title: "No apps yet",
           text: "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
@@ -495,7 +499,7 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 text-meta"
                   >
-                    Open the live app <ArrowUpRight aria-hidden="true" size={13} />
+                    Open the live app <ArrowUpRight aria-hidden="true" size={14} />
                   </a>
                 </>
               }

@@ -1,7 +1,10 @@
-import { Badge, type BadgeTone, Button, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import { Button, Notice, SelectField, TextField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
+import { SecretField } from "../kit/SecretField.tsx";
+import { type State as StateName, StatePill } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 
@@ -10,6 +13,8 @@ interface Repository {
   defaultBranch: string;
   folder: string;
   paused: boolean;
+  credentialSetAt?: string | null;
+  credentialSetBy?: string | null;
 }
 type State = "never" | "synced" | "ahead" | "behind" | "conflict" | "error";
 interface Status {
@@ -39,8 +44,8 @@ export function RepositorySettings({ base }: { base: string }) {
     setFolder(repository.folder);
   }, [repository]);
 
-  if (loaded.error) return <Notice tone="danger">{loaded.error.message}</Notice>;
-  if (!loaded.data) return <p className="text-ink-muted">Loading…</p>;
+  if (loaded.error) return <ErrorState error={loaded.error} onRetry={loaded.reload} />;
+  if (!loaded.data) return <Pending of={loaded} />;
 
   return (
     <Page
@@ -101,14 +106,15 @@ export function RepositorySettings({ base }: { base: string }) {
             onChange={setFolder}
           />
         </div>
-        <TextField
+        <SecretField
           name="token"
           label="Access token"
-          type="password"
+          stored={Boolean(repository)}
+          setAt={repository?.credentialSetAt}
+          setBy={repository?.credentialSetBy}
           value={token}
-          required={!repository}
+          required
           autoComplete="off"
-          placeholder={repository ? "Leave empty to keep the stored one" : ""}
           hint="It needs to read and write the repository's contents: a fine-grained personal access token on GitHub, a project access token on GitLab. It is stored encrypted and never shown again."
           onChange={setToken}
         />
@@ -117,7 +123,7 @@ export function RepositorySettings({ base }: { base: string }) {
           <Notice tone="success">Connected. The repository was reached with the token.</Notice>
         ) : null}
         <div className="flex items-center justify-between gap-2">
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             {busy ? "Reaching the repository…" : repository ? "Save" : "Connect"}
           </Button>
           {repository ? (
@@ -148,29 +154,14 @@ export function RepositorySettings({ base }: { base: string }) {
   );
 }
 
-const STATE: Record<State, [BadgeTone, string, string]> = {
-  never: [
-    "neutral",
-    "Not pushed yet",
-    "Push to create the branch with what this workspace has deployed.",
-  ],
-  synced: ["success", "In sync", "The branch has what this workspace runs."],
-  ahead: [
-    "attention",
-    "Ahead of the branch",
-    "This workspace has deployed something the branch does not have. Push it.",
-  ],
-  behind: [
-    "attention",
-    "Behind the branch",
-    "Someone changed the folder on the branch. Pull before pushing.",
-  ],
-  conflict: [
-    "danger",
-    "Conflict",
-    "A resource was changed here and on the branch. Choose which to keep.",
-  ],
-  error: ["danger", "Last sync failed", ""],
+/** How the workspace stands against its branch, as a state, and what to do about it. */
+const STATE: Record<State, [StateName, string]> = {
+  never: ["never_pushed", "Push to create the branch with what this workspace has deployed."],
+  synced: ["synced", "The branch has what this workspace runs."],
+  ahead: ["ahead", "This workspace has deployed something the branch does not have. Push it."],
+  behind: ["behind", "Someone changed the folder on the branch. Pull before pushing."],
+  conflict: ["conflict", "A resource was changed here and on the branch. Choose which to keep."],
+  error: ["sync_failed", ""],
 };
 
 interface PullResult {
@@ -200,15 +191,15 @@ export function GitPanel({
   const [choices, setChoices] = useState<Record<string, "mine" | "theirs">>({});
   const [said, setSaid] = useState<{ tone: "success" | "danger" | "attention"; text: string }>();
 
-  if (status.error) return <Notice tone="danger">{status.error.message}</Notice>;
-  if (!status.data) return null;
+  if (status.error) return <ErrorState error={status.error} onRetry={status.reload} />;
+  if (!status.data) return <Loading />;
   const { repository, state } = status.data;
   const frame = "flex flex-col gap-3 rounded-panel border border-line bg-surface p-4";
 
   if (!repository) {
     return (
       <section className={frame}>
-        <h2 className="m-0 text-base font-semibold">Repository</h2>
+        <h2 className="m-0 text-title font-semibold">Repository</h2>
         <p className="m-0 text-ink-muted">
           No repository is connected, so what is deployed here lives in this workspace only.{" "}
           <Link to={`${tenantLink}/repository`} className="text-action">
@@ -222,18 +213,21 @@ export function GitPanel({
   if (!status.data.branch || !state) {
     return (
       <section className={frame}>
-        <h2 className="m-0 text-base font-semibold">Repository</h2>
+        <h2 className="m-0 text-title font-semibold">Repository</h2>
         <p className="m-0 text-ink-muted">
           Choose the branch this workspace keeps its console-written resources on. It is created
-          from <code className="font-mono text-[13px]">{repository.defaultBranch}</code> by the
-          first push.
+          from <code className="font-mono text-code">{repository.defaultBranch}</code> by the first
+          push.
         </p>
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={async (event) => {
             event.preventDefault();
             setBusy("branch");
-            await api.put(`${root}/git`, { branch }).then(status.reload, notify.error);
+            await api.put(`${root}/git`, { branch }).then(() => {
+              notify.success(`This workspace now syncs with ${branch}.`);
+              status.reload();
+            }, notify.error);
             setBusy(undefined);
           }}
         >
@@ -299,13 +293,11 @@ export function GitPanel({
     <section className={frame}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 className="m-0 text-base font-semibold">Repository</h2>
-          <code className="truncate font-mono text-[13px] text-ink-muted">
-            {status.data.branch}
-          </code>
-          <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
+          <h2 className="m-0 text-title font-semibold">Repository</h2>
+          <code className="truncate font-mono text-code text-ink-muted">{status.data.branch}</code>
+          <StatePill state={STATE[state][0]} />
           {status.data.syncedCommit ? (
-            <code className="font-mono text-[12.5px] text-ink-muted">
+            <code className="font-mono text-code-sm text-ink-muted">
               {status.data.syncedCommit.slice(0, 7)}
             </code>
           ) : null}
@@ -339,7 +331,7 @@ export function GitPanel({
           ? "Sync is paused for this tenant. Save its repository settings to turn it on."
           : state === "error"
             ? (status.data.lastError ?? "The last push or pull failed.")
-            : STATE[state][2]}
+            : STATE[state][1]}
       </p>
       {said ? <Notice tone={said.tone}>{said.text}</Notice> : null}
       {conflicts.length > 0 ? (

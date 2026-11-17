@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Sources, SourceView, TableView, toFilter } from "./screens/Data.tsx";
 import { answer, show } from "./testing.tsx";
@@ -115,11 +115,11 @@ test("a table's rows are browsed with sorting, filters and paging", async () => 
       /2 rows\. Each person sees their own rows \(owner_id\)\. Managed in the repository\./,
     ),
   ).toBeTruthy();
-  expect(screen.getByText("Rows 1 to 2")).toBeTruthy();
+  expect(screen.getByText(/^2 rows on this page/)).toBeTruthy();
 
-  fireEvent.click(screen.getByRole("button", { name: /^total/ }));
+  fireEvent.click(screen.getByRole("columnheader", { name: /^total/ }));
   await waitFor(() => expect(lastRows().get("sort")).toBe("total"));
-  fireEvent.click(screen.getByRole("button", { name: /^total/ }));
+  fireEvent.click(screen.getByRole("columnheader", { name: /^total/ }));
   await waitFor(() => expect(lastRows().get("sort")).toBe("-total"));
 
   fireEvent.change(screen.getByLabelText("Filter by total"), { target: { value: "> 100" } });
@@ -135,7 +135,7 @@ test("a table's rows are browsed with sorting, filters and paging", async () => 
 
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   await waitFor(() => expect(lastRows().get("cursor")).toBe("NTA"));
-  await screen.findByText("Rows 51 to 52");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Previous" })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: "Previous" }));
   await waitFor(() => expect(lastRows().get("cursor")).toBeNull());
 
@@ -160,12 +160,16 @@ test("a value is changed in place, and a row is added and deleted", async () => 
             errors: [{ path: "/number", message: "is required" }],
           },
         ];
-  routes[`DELETE /api/v1${root}/row/r2/orders`] = () => [204, null];
+  routes[`POST /api/v1${root}/row-deletions/orders`] = () => [
+    200,
+    { deleted: ["r2"], missing: [] },
+  ];
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
 
   // Each element that appears after an action is waited for: under a loaded machine the
   // screen may not have caught up by the next line.
-  fireEvent.click(await screen.findByText("10"));
+  // A cell is changed where it is: double-clicked here, or Enter or F2 from the keyboard.
+  fireEvent.doubleClick(await screen.findByText("10"));
   const editing = await screen.findByLabelText("total");
   fireEvent.input(editing, { target: { value: "15" } });
   fireEvent.focusOut(editing);
@@ -195,13 +199,20 @@ test("a value is changed in place, and a row is added and deleted", async () => 
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-  await waitFor(() => expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2));
-  fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1] as HTMLElement);
-  await answer("Delete");
+  // Rows are checked, then deleted together.
+  fireEvent.click(await screen.findByLabelText("Check row r2"));
+  fireEvent.click(
+    within(screen.getByRole("toolbar", { name: "What to do with the checked rows" })).getByRole(
+      "button",
+      { name: "Delete" },
+    ),
+  );
+  await answer("Delete the row");
   await waitFor(() =>
     expect(
-      calls.some((call) => call.method === "DELETE" && call.url.endsWith("/row/r2/orders")),
-    ).toBe(true),
+      calls.find((call) => call.method === "POST" && call.url.endsWith("/row-deletions/orders"))
+        ?.body,
+    ).toEqual({ ids: ["r2"] }),
   );
 });
 
@@ -308,8 +319,8 @@ test("an external source's tables are browsed, and one without a key cannot be c
     { id: 1, ...(body as object) },
   ];
   show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
-  fireEvent.click(await screen.findByText("Ada"));
-  fireEvent.input(screen.getByLabelText("name"), { target: { value: "Ada L." } });
+  fireEvent.doubleClick(await screen.findByText("Ada"));
+  fireEvent.input(await screen.findByLabelText("name"), { target: { value: "Ada L." } });
   fireEvent.focusOut(screen.getByLabelText("name"));
   await screen.findByText("Ada L.");
 

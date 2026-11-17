@@ -1,24 +1,27 @@
 import {
-  Badge,
   Button,
   CheckboxField,
   ComboboxField,
-  Dialog,
   EmptyState,
   Facts,
   JsonView,
   Notice,
   SelectField,
+  SideSheet,
   Tabs,
   TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
+import { SecretField } from "../kit/SecretField.tsx";
+import { StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import { Provisioning } from "./Provisioning.tsx";
@@ -76,6 +79,8 @@ export interface IdentityProvider {
   name: string;
   config: Config;
   hasSecret: boolean;
+  credentialSetAt?: string | null;
+  credentialSetBy?: string | null;
   enabled: boolean;
   enforce: boolean;
   provision: boolean;
@@ -111,15 +116,9 @@ const PROTOCOL: Record<Protocol, string> = { oidc: "OIDC", saml: "SAML" };
 
 function State({ provider }: { provider: IdentityProvider }) {
   return (
-    <span className="flex flex-wrap gap-1">
-      {provider.paused ? (
-        <Badge tone="attention">Paused</Badge>
-      ) : provider.enabled ? (
-        <Badge tone="success">On</Badge>
-      ) : (
-        <Badge>Off</Badge>
-      )}
-      {provider.enforce ? <Badge tone="action">Required</Badge> : null}
+    <span className="flex flex-wrap items-center gap-3">
+      <StatePill state={provider.paused ? "paused" : provider.enabled ? "on" : "off"} />
+      {provider.enforce ? <Tag>Required</Tag> : null}
     </span>
   );
 }
@@ -129,8 +128,8 @@ function CopyLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="min-w-0">
-        <span className="block text-[13px] text-ink-muted">{label}</span>
-        <code className="font-mono text-[13px] break-all">{value}</code>
+        <span className="block text-body-sm text-ink-muted">{label}</span>
+        <code className="font-mono text-code break-all">{value}</code>
       </span>
       <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
     </div>
@@ -164,7 +163,7 @@ function ConnectDialog({
   const [busy, setBusy] = useState(false);
 
   return (
-    <Dialog
+    <SideSheet
       open={open}
       onClose={onClose}
       title="Connect an identity provider"
@@ -286,12 +285,12 @@ function ConnectDialog({
         {error ? <Notice tone="danger">{error}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             Connect
           </Button>
         </div>
       </form>
-    </Dialog>
+    </SideSheet>
   );
 }
 
@@ -310,9 +309,9 @@ function SetUp({
   const [tried, setTried] = useState(false);
   const test = provider.lastTest;
   return (
-    <div className="flex max-w-[80ch] flex-col gap-5">
+    <div className="flex max-w-measure flex-col gap-5">
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">1. Enter these at the provider</h2>
+        <h2 className="m-0 text-title font-semibold">1. Enter these at the provider</h2>
         <div className="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
           {provider.protocol === "oidc" ? (
             <CopyLine label="Redirect address" value={provider.addresses.callback} />
@@ -331,7 +330,7 @@ function SetUp({
         </p>
       </section>
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">2. Try it</h2>
+        <h2 className="m-0 text-title font-semibold">2. Try it</h2>
         <p className="m-0 text-ink-muted">
           Opens the provider in a new tab. Signing in there signs nobody in here and changes
           nothing: it shows what the provider sent and what would happen.
@@ -339,7 +338,7 @@ function SetUp({
         <div className="flex flex-wrap gap-2">
           <Button
             variant="primary"
-            disabled={busy}
+            loading={busy}
             onClick={async () => {
               setBusy(true);
               try {
@@ -417,7 +416,7 @@ function SetUp({
         ) : null}
       </section>
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">3. Turn it on</h2>
+        <h2 className="m-0 text-title font-semibold">3. Turn it on</h2>
         <p className="m-0 text-ink-muted">
           {provider.audience === "members"
             ? "A provider of members needs an email domain first: see Domains. Then use Turn on, above."
@@ -445,7 +444,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
   };
   return (
     <div className="flex flex-col gap-4">
-      <p className="m-0 max-w-[75ch] text-ink-muted">
+      <p className="m-0 max-w-measure text-ink-muted">
         {instance
           ? "The email domains this provider signs in. As the instance's operator you answer for them, so no proof is asked."
           : "The email domains this provider signs in. Each is proved with a DNS record before an email in it is believed. A member is signed in only by an email in a proved domain."}
@@ -456,6 +455,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
           event.preventDefault();
           void run(async () => {
             await api.post(`${root}/domains`, { domain: domain.trim() });
+            notify.success(`${domain.trim()} is added. Prove it is yours with the record shown.`);
             setDomain("");
           });
         }}
@@ -470,20 +470,20 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
             onChange={setDomain}
           />
         </div>
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" loading={busy}>
           Add domain
         </Button>
       </form>
-      {list.error ? <Notice tone="danger">{list.error.message}</Notice> : null}
+      {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
       {(list.data?.items ?? []).map((row) => (
         <div key={row.id} className="flex flex-col gap-3 rounded-control border border-line p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex flex-wrap items-center gap-2">
               <strong>{row.domain}</strong>
               {row.verified ? (
-                <Badge tone="success">Proved</Badge>
+                <StatePill state="verified">Proved</StatePill>
               ) : (
-                <Badge tone="attention">Not proved</Badge>
+                <StatePill state="unverified">Not proved</StatePill>
               )}
             </span>
             <span className="flex flex-wrap gap-2">
@@ -548,12 +548,12 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
     label: group.name,
   }));
   return (
-    <div className="flex max-w-[80ch] flex-col gap-4">
+    <div className="flex max-w-measure flex-col gap-4">
       <p className="m-0 text-ink-muted">
         On every sign-in a person is put in exactly the groups listed here that the provider names
         for them, and taken out of the listed groups it does not. A group that is not listed is
-        never touched. Use <code className="font-mono text-[13px]">*</code> for everyone the
-        provider signs in.
+        never touched. Use <code className="font-mono text-code">*</code> for everyone the provider
+        signs in.
       </p>
       {rows.map((row, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity until saved
@@ -589,7 +589,8 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
         </Button>
         <Button
           variant="primary"
-          disabled={busy || edited === undefined}
+          loading={busy}
+          disabled={edited === undefined}
           onClick={async () => {
             const items = rows.filter((row) => row.value.trim() && row.groupId);
             setBusy(true);
@@ -671,7 +672,7 @@ function Settings({
 
   return (
     <form
-      className="flex max-w-[80ch] flex-col gap-3"
+      className="flex max-w-measure flex-col gap-3"
       onSubmit={async (event) => {
         event.preventDefault();
         setBusy(true);
@@ -790,17 +791,14 @@ function Settings({
             required
             onChange={(clientId) => set({ clientId })}
           />
-          <TextField
-            label="New client secret"
+          <SecretField
+            label="Client secret"
             name="clientSecret"
-            type="password"
+            stored={provider.hasSecret}
+            setAt={provider.credentialSetAt}
+            setBy={provider.credentialSetBy}
             autoComplete="off"
             value={clientSecret}
-            hint={
-              provider.hasSecret
-                ? "A secret is stored. Leave this empty to keep it."
-                : "No secret is stored."
-            }
             onChange={setClientSecret}
           />
           <TextField
@@ -819,7 +817,7 @@ function Settings({
           />
         </>
       )}
-      <h2 className="mt-3 mb-0 text-base font-semibold">Which claims to read</h2>
+      <h2 className="mt-3 mb-0 text-title font-semibold">Which claims to read</h2>
       <p className="m-0 text-ink-muted">Leave a field empty to use the usual name.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         {claim("subject", "Subject", saml ? "The name ID" : "sub")}
@@ -847,7 +845,7 @@ function Settings({
           />
         </>
       ) : null}
-      <h2 className="mt-3 mb-0 text-base font-semibold">New people</h2>
+      <h2 className="mt-3 mb-0 text-title font-semibold">New people</h2>
       <CheckboxField
         label="Create people the first time they sign in"
         name="provision"
@@ -872,7 +870,7 @@ function Settings({
       ) : null}
       {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
       <div className="mt-1 flex justify-end">
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" loading={busy}>
           Save
         </Button>
       </div>
@@ -883,7 +881,7 @@ function Settings({
 function People({ root }: { root: string }) {
   const list = useLoad<{ items: Link[] }>(`${root}/links`);
   return list.error ? (
-    <Notice tone="danger">{list.error.message}</Notice>
+    <ErrorState error={list.error} onRetry={list.reload} />
   ) : (
     <DataTable<Link>
       variant="static"
@@ -901,7 +899,7 @@ function People({ root }: { root: string }) {
         { header: "Email at the provider", cell: (row) => row.email ?? "" },
         {
           header: "Subject",
-          cell: (row) => <code className="font-mono text-[13px] break-all">{row.subject}</code>,
+          cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
         },
         {
           header: "Last signed in",
@@ -921,6 +919,7 @@ function People({ root }: { root: string }) {
                 if (!sure) return;
                 try {
                   await api.delete(`${root}/links/${row.id}`);
+                  notify.success("Untied. Their next sign-in ties them again by email.");
                   list.reload();
                 } catch (error) {
                   notify.error(error);
@@ -940,14 +939,12 @@ function ProviderDetail({
   base,
   instance,
   provider,
-  onBack,
   onChanged,
   onRemoved,
 }: {
   base: string;
   instance: boolean;
   provider: IdentityProvider;
-  onBack: () => void;
   onChanged: (provider: IdentityProvider) => void;
   onRemoved: () => void;
 }) {
@@ -1009,92 +1006,88 @@ function ProviderDetail({
 
   return (
     <section className="flex flex-col gap-4">
-      <button
-        type="button"
-        className="flex w-fit cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-action"
-        onClick={onBack}
-      >
-        <ArrowLeft size={16} aria-hidden="true" /> All providers
-      </button>
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="m-0 text-xl font-semibold tracking-tight">{provider.name}</h1>
-          <span className="flex flex-wrap items-center gap-2 text-ink-muted">
-            {PROTOCOL[provider.protocol]}, for {who} <State provider={provider} />
+      <PageHeader
+        title={provider.name}
+        state={<State provider={provider} />}
+        meta={
+          <span className="text-ink-muted">
+            {PROTOCOL[provider.protocol]}, for {who}
           </span>
-        </div>
-        <span className="flex flex-wrap gap-2">
-          <Button
-            variant="danger"
-            disabled={busy}
-            onClick={async () => {
-              const sure = await ask.typeToConfirm({
-                title: `Remove ${provider.name}?`,
-                text: "Its domains, group mapping and ties to people go with it. The people it signed in stay, and need another way in.",
-                expected: provider.name,
-                action: "Remove",
-              });
-              if (!sure) return;
-              try {
-                await api.delete(root);
-                onRemoved();
-              } catch (error) {
-                notify.error(error);
-              }
-            }}
-          >
-            Remove
-          </Button>
-          {provider.enabled && !provider.paused ? (
+        }
+        actions={
+          <>
             <Button
+              variant="danger"
               disabled={busy}
               onClick={async () => {
-                const sure = await ask.confirm(
-                  provider.enforce
-                    ? {
-                        title: "Stop requiring single sign-on?",
-                        text: `The ${who} this provider covers can use a password again.`,
-                        action: "Stop requiring it",
-                      }
-                    : {
-                        title: "Require single sign-on?",
-                        text:
-                          provider.audience === "members"
-                            ? "Members with an email in this provider's proved domains can no longer sign in with a password. The operators of this instance keep theirs, so that a broken provider locks nobody out for good."
-                            : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none.",
-                        action: "Require it",
-                        danger: true,
-                      },
-                );
-                if (sure) {
-                  await patch(
-                    { enforce: !provider.enforce },
-                    provider.enforce
-                      ? "Passwords are allowed again."
-                      : "Single sign-on is now required.",
-                  );
+                const sure = await ask.typeToConfirm({
+                  title: `Remove ${provider.name}?`,
+                  text: "Its domains, group mapping and ties to people go with it. The people it signed in stay, and need another way in.",
+                  expected: provider.name,
+                  action: "Remove",
+                });
+                if (!sure) return;
+                try {
+                  await api.delete(root);
+                  onRemoved();
+                } catch (error) {
+                  notify.error(error);
                 }
               }}
             >
-              {provider.enforce ? "Stop requiring it" : "Require it"}
+              Remove
             </Button>
-          ) : null}
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={() =>
-              patch(
-                { enabled: !(provider.enabled && !provider.paused) },
-                provider.enabled && !provider.paused
-                  ? "The provider is off."
-                  : "The provider is on.",
-              )
-            }
-          >
-            {provider.enabled && !provider.paused ? "Turn off" : "Turn on"}
-          </Button>
-        </span>
-      </header>
+            {provider.enabled && !provider.paused ? (
+              <Button
+                disabled={busy}
+                onClick={async () => {
+                  const sure = await ask.confirm(
+                    provider.enforce
+                      ? {
+                          title: "Stop requiring single sign-on?",
+                          text: `The ${who} this provider covers can use a password again.`,
+                          action: "Stop requiring it",
+                        }
+                      : {
+                          title: "Require single sign-on?",
+                          text:
+                            provider.audience === "members"
+                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. The operators of this instance keep theirs, so that a broken provider locks nobody out for good."
+                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none.",
+                          action: "Require it",
+                          danger: true,
+                        },
+                  );
+                  if (sure) {
+                    await patch(
+                      { enforce: !provider.enforce },
+                      provider.enforce
+                        ? "Passwords are allowed again."
+                        : "Single sign-on is now required.",
+                    );
+                  }
+                }}
+              >
+                {provider.enforce ? "Stop requiring it" : "Require it"}
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              loading={busy}
+              onClick={() =>
+                patch(
+                  { enabled: !(provider.enabled && !provider.paused) },
+                  provider.enabled && !provider.paused
+                    ? "The provider is off."
+                    : "The provider is on.",
+                )
+              }
+            >
+              {provider.enabled && !provider.paused ? "Turn off" : "Turn on"}
+            </Button>
+          </>
+        }
+      />
       <nav aria-label="Setting up">
         <Stepper
           steps={steps}
@@ -1172,19 +1165,28 @@ export function SingleSignOn({ base }: { base: string }) {
   const instance = base === "/instance";
   const list = useLoad<{ items: IdentityProvider[] }>(`${base}/identity-providers`);
   const [connecting, setConnecting] = useState(false);
-  const [shown, setShown] = useState<IdentityProvider>();
+  // The provider open is in the address: a link opens it, and the breadcrumb leads back.
+  const [open, setOpen] = useUrlParam("provider", undefined, { push: true });
+  const [fresh, setFresh] = useState<IdentityProvider>();
+  const shown =
+    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const setShown = (provider: IdentityProvider | undefined) => {
+    setFresh(provider);
+    setOpen(provider?.id);
+  };
 
+  if (open && !shown && list.error) return <ErrorState error={list.error} onRetry={list.reload} />;
+  if (open && !shown && !list.data) return <Loading />;
   if (shown) {
     return (
       <ProviderDetail
         base={base}
         instance={instance}
         provider={shown}
-        onBack={() => {
-          setShown(undefined);
+        onChanged={(provider) => {
+          setFresh(provider);
           list.reload();
         }}
-        onChanged={setShown}
         onRemoved={() => {
           setShown(undefined);
           list.reload();

@@ -162,7 +162,6 @@ test("a script run's page names everything it came from, each as a link", async 
   expect(href(/reminders\/hourly/)).toContain(`${link}/triggers?trigger=reminders%2Fhourly`);
   // The version leads to the code as this run ran it.
   expect(href("version 4")).toContain(`${link}/scripts/reminders/send?tab=source&run=r1`);
-  expect(href("Runs")).toContain(`${link}/runs`);
   // What the run used comes with its insight, once it has ended.
   expect(await screen.findByText(/#1 failed/)).toBeTruthy();
   expect(href(/sms/)).toContain(`${link}/connections`);

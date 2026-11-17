@@ -10,7 +10,7 @@ import {
 } from "@vynxlabs/ui";
 import { type ReactNode, useState } from "react";
 import { type ApiError, makeQueryClient, setActiveClient } from "./api.ts";
-import { setLeaveQuestion } from "./router.tsx";
+import { navigate, setLeaveQuestion } from "./router.tsx";
 
 let dialogs: Dialogs | undefined;
 let toasts: Toasts | undefined;
@@ -45,7 +45,7 @@ export function Providers({ children }: { children: ReactNode }) {
   setActiveClient(client);
   return (
     <QueryClientProvider client={client}>
-      <ToastProvider>
+      <ToastProvider navigate={navigate}>
         <DialogsProvider>
           <Bridge />
           {children}
@@ -67,17 +67,34 @@ export const ask: Dialogs = {
   typeToConfirm: (options) => need(dialogs).typeToConfirm(options),
 };
 
-/** What an error says to a person: its message, then each field it names. */
+/**
+ * What an error says to a person: its message, each field it names, and the
+ * server's request ID, which whoever runs the instance can look up.
+ */
 export function failureText(error: unknown): string {
   const failure = error as Partial<ApiError> & Error;
   const fields = (failure.fields ?? []).map((field) =>
     field.path ? `${field.path}: ${field.message}` : field.message,
   );
-  return [failure.message, ...fields].join(" ");
+  const id = failure.requestId ? `Request ID ${failure.requestId}.` : "";
+  return [failure.message, ...fields, id].filter(Boolean).join(" ");
 }
 
 /** Says what just happened, in a corner of the page. */
 export const notify = {
+  /** What was done, naming the result. A link leads to it, such as the thing just made. */
   success: (message: string, options?: ToastOptions) => need(toasts).success(message, options),
-  error: (error: unknown) => need(toasts).danger(failureText(error)),
+  info: (message: string, options?: ToastOptions) => need(toasts).info(message, options),
+  error: (error: unknown, options?: ToastOptions) =>
+    need(toasts).danger(failureText(error), options),
 };
+
+/** Puts text on the clipboard and says so. */
+export async function copyText(text: string, done: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    notify.success(done);
+  } catch {
+    notify.error(new Error("The clipboard could not be reached. Copy it from the page instead."));
+  }
+}

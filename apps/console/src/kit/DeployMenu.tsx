@@ -94,12 +94,12 @@ export function DeployMenu({
       label={
         <span className="flex items-center gap-1.5">
           <Rocket aria-hidden="true" size={14} /> Deploy
-          <ChevronDown aria-hidden="true" size={13} />
+          <ChevronDown aria-hidden="true" size={14} />
         </span>
       }
       ariaLabel="Deploy"
       align="end"
-      triggerClassName={`flex h-8 items-center rounded-control border border-line-control px-2.5 text-meta hover:bg-surface ${
+      triggerClassName={`flex h-8 items-center rounded-control border border-line-control px-3 text-meta hover:bg-surface ${
         disabled || busy ? "pointer-events-none opacity-50" : ""
       }`}
       items={[

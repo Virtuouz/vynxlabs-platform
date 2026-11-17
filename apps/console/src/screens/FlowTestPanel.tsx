@@ -122,7 +122,7 @@ export function FlowTestPanel({
                       className="flex w-full min-w-0 flex-wrap items-center gap-x-2 rounded-control px-1.5 py-1 text-left hover:bg-selected"
                       onClick={() => onChoose(step.node)}
                     >
-                      <span className="font-mono text-[13px]">{step.node}</span>
+                      <span className="font-mono text-code">{step.node}</span>
                       <StatePill state={step.state} detail={took(step)} />
                     </button>
                   </li>
@@ -168,7 +168,7 @@ export function LastTest({
   return (
     <section aria-label="Last test" className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="m-0 text-[13px] font-semibold">Last test</h3>
+        <h3 className="m-0 text-body-sm font-semibold">Last test</h3>
         <StatePill state={step.state} />
       </div>
       <Facts

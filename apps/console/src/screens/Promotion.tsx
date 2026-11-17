@@ -3,6 +3,7 @@ import { GitPullRequestArrow } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { fromNow } from "./Overview.tsx";
@@ -96,7 +97,8 @@ export function RequestPromotion({
             <div>
               <Button
                 variant="primary"
-                disabled={busy || version === undefined}
+                loading={busy}
+                disabled={version === undefined}
                 onClick={() =>
                   run(async () => {
                     await api.post(`${root}/promotion-requests`, note.trim() ? { note } : {});
@@ -105,7 +107,7 @@ export function RequestPromotion({
                   })
                 }
               >
-                <GitPullRequestArrow aria-hidden="true" size={15} /> Request promotion of v
+                <GitPullRequestArrow aria-hidden="true" size={16} /> Request promotion of v
                 {version ?? "…"}
               </Button>
             </div>
@@ -125,7 +127,7 @@ export function RequestState({ request }: { request: PromotionRequest }) {
   if (request.status === "pending") {
     return (
       <p className="m-0 flex flex-wrap items-center gap-2">
-        <StatePill state="waiting">Waiting</StatePill>
+        <StatePill state="waiting" />
         <span className="text-meta text-ink-muted">
           Asked {fromNow(request.createdAt)} by {request.requestedBy.name} for v{request.version}.
           {moved}
@@ -148,7 +150,7 @@ export function RequestState({ request }: { request: PromotionRequest }) {
     return (
       <div className="flex flex-col gap-1">
         <p className="m-0 flex flex-wrap items-center gap-2">
-          <StatePill state="failed">Declined</StatePill>
+          <StatePill state="declined" />
           <span className="text-meta text-ink-muted">
             v{request.version}, by {request.decidedBy?.name}{" "}
             {request.decidedAt ? fromNow(request.decidedAt) : ""}.
@@ -295,7 +297,8 @@ function ReviewRequest({
           </Button>
           <Button
             variant="promote"
-            disabled={busy || !preview.data?.possible}
+            loading={busy}
+            disabled={!preview.data?.possible}
             onClick={() => decide("promote")}
           >
             Promote
@@ -314,7 +317,7 @@ function ReviewRequest({
           </Notice>
         ) : null}
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
+        {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
         {preview.data ? (
           preview.data.tried ? (
             <PreviewPanels data={preview.data} targetName={request.target.name} link={link} />

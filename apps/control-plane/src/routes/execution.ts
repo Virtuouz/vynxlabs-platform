@@ -19,6 +19,7 @@ import {
 } from "../kernel/execution/oauth.js";
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
+import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
 import { cancelRuns } from "../kernel/execution/bulk-cancel.js";
 import {
   loadBundle,
@@ -876,7 +877,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("script:read") },
         schema: {
-          summary: "Scripts deployed to a workspace, each with its latest run",
+          summary: "A workspace's scripts, deployed or in draft, each with its latest run",
+          description:
+            "Every script deployed here, and every script that is only a draft yet. `draft` says " +
+            "a draft waits to be deployed; `deployed` says a version runs here.",
           tags: ["runs"],
           params: WorkspaceParams,
           response: {
@@ -918,6 +922,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ownership: Type.String({
                     description: "`code` for the repository, `ui` for the console.",
                   }),
+                  draft: Type.Boolean({ description: "A change waits to be deployed." }),
+                  deployed: Type.Boolean({ description: "A version of it runs here." }),
                   retries: Type.Integer(),
                   uses: Type.Object({
                     connections: Type.Array(Type.String()),
@@ -939,6 +945,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("kind", "=", "script")
           .orderBy("path")
           .execute();
+        // Scripts written in the console and not deployed yet are listed too, from their draft.
+        const drafts = await db
+          .selectFrom("resource_draft")
+          .select(["path", "body", "deleted"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "script")
+          .execute();
+        const drafted = new Map(drafts.map((one) => [one.path, one]));
+        const deployedPaths = new Set(scripts.map((one) => one.path));
+        const listed = [
+          ...scripts.map((one) => ({ ...one, deployed: true })),
+          ...drafts
+            .filter((one) => !one.deleted && !deployedPaths.has(one.path))
+            .map((one) => ({ path: one.path, body: one.body, ownership: "ui", deployed: false })),
+        ].sort((a, b) => a.path.localeCompare(b.path));
         const latest = await sql<{
           script_path: string;
           id: string;
@@ -965,14 +986,16 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const streakOf = new Map(streaks.rows.map((row) => [row.script_path, Number(row.failed)]));
         const byScript = new Map(latest.rows.map((row) => [row.script_path, row]));
         return {
-          items: scripts.map((script) => {
-            const body = script.body as unknown as ScriptBody & { description?: string };
+          items: listed.map((script) => {
+            const body = (script.body ?? {}) as unknown as Partial<ScriptBody> & {
+              description?: string;
+            };
             const last = byScript.get(script.path);
             return {
               path: script.path,
               description: body.description ?? "",
-              timeoutSeconds: body.timeoutSeconds,
-              inputSchema: body.input as Record<string, unknown>,
+              timeoutSeconds: body.timeoutSeconds ?? 60,
+              inputSchema: (body.input ?? { type: "object" }) as Record<string, unknown>,
               node: (body as { node?: { label: string } }).node ?? null,
               lastRun: last
                 ? {
@@ -985,6 +1008,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 : null,
               failedInARow: streakOf.get(script.path) ?? 0,
               ownership: script.ownership,
+              draft: drafted.has(script.path) && !drafted.get(script.path)?.deleted,
+              deployed: script.deployed,
               retries: body.retries?.limit ?? 0,
               uses: {
                 connections: body.uses?.connections ?? [],
@@ -1899,6 +1924,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       ),
       hasCredential: Type.Boolean(),
+      ...CredentialSet,
       updatedAt: NullableTime,
       health: Type.Union([
         Type.Object({
@@ -1947,9 +1973,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .execute();
       const bindings = await db
         .selectFrom("connection_binding")
-        .select(["path", "config", "credential", "oauth", "updated_at"])
+        .select([
+          "path",
+          "config",
+          "credential",
+          "oauth",
+          "updated_at",
+          "credential_set_at",
+          "credential_set_by_type",
+          "credential_set_by_id",
+        ])
         .where("workspace_id", "=", params.w)
         .execute();
+      const setBy = await credentialSetters(db, bindings);
       const health = await db
         .selectFrom("health_check")
         .select(["path", "ok", "problem", "latency_ms", "checked_at"])
@@ -1977,6 +2013,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             configSchema: (connectorSchema(connector, connectors) ??
               BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
             hasCredential: Boolean(binding?.credential),
+            ...setBy(binding),
             updatedAt: isoOrNull(binding?.updated_at ?? null),
             health:
               binding && checked
@@ -2114,6 +2151,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       label: Type.String(),
                       config: AnyObject,
                       hasCredential: Type.Boolean(),
+                      ...CredentialSet,
                       updatedAt: Time,
                     }),
                   ),
@@ -2133,10 +2171,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         const members = await db
           .selectFrom("connection_group_member")
-          .select(["group_path", "key", "label", "config", "credential", "updated_at"])
+          .select([
+            "group_path",
+            "key",
+            "label",
+            "config",
+            "credential",
+            "updated_at",
+            "credential_set_at",
+            "credential_set_by_type",
+            "credential_set_by_id",
+          ])
           .where("workspace_id", "=", params.w)
           .orderBy("key")
           .execute();
+        const setBy = await credentialSetters(db, members);
         const connectors = await deployedConnectors(params.w);
         return {
           items: groups.map((group) => {
@@ -2154,6 +2203,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   label: member.label,
                   config: member.config,
                   hasCredential: member.credential !== null,
+                  ...setBy(member),
                   updatedAt: iso(member.updated_at),
                 })),
             };

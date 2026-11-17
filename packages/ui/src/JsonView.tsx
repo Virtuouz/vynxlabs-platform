@@ -60,7 +60,7 @@ export function JsonView({ value, label, tone = "plain", maxHeight = "18rem" }: 
       {text ? (
         <button
           type="button"
-          className="absolute top-1.5 right-1.5 rounded-[4px] border border-line bg-surface px-1.5 py-0.5 text-[12px] text-ink-muted opacity-0 hover:text-ink focus:opacity-100 group-hover:opacity-100"
+          className="absolute top-1.5 right-1.5 rounded-inner border border-line bg-surface px-1.5 py-0.5 text-meta text-ink-muted opacity-0 hover:text-ink focus:opacity-100 group-hover:opacity-100"
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(text);
@@ -81,7 +81,7 @@ export function JsonView({ value, label, tone = "plain", maxHeight = "18rem" }: 
         style={{ maxHeight }}
         className="overflow-auto"
       >
-        <pre className="m-0 p-3 font-mono text-[12.5px] leading-relaxed break-words whitespace-pre-wrap">
+        <pre className="m-0 p-3 font-mono text-code-sm leading-relaxed break-words whitespace-pre-wrap">
           {text ? paint(text) : <span className="text-ink-muted">—</span>}
         </pre>
       </section>

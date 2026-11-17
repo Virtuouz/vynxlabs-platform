@@ -182,7 +182,7 @@ export function Form({ schema, value, onSubmit, submitLabel, errors, disabled }:
 
   return (
     <form ref={form} noValidate onSubmit={submit} className="flex max-w-xl flex-col gap-4">
-      {schema.title ? <h2 className="m-0 text-base font-semibold">{schema.title}</h2> : null}
+      {schema.title ? <h2 className="m-0 text-title font-semibold">{schema.title}</h2> : null}
       {schema.description ? <p className="m-0 text-ink-muted">{schema.description}</p> : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {Object.entries(schema.properties).map(([name, property]) => {

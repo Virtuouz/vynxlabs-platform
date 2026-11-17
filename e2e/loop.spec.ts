@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * The debugging and authoring loop, in a browser (phase 13): the runs list
@@ -138,6 +139,7 @@ test("the runs list, a failed flow run, and a production failure fixed in ten pr
   await page.goto(`${devLink}/runs`);
   const grid = page.getByRole("grid", { name: "Runs" });
   await expect(grid.getByRole("row").nth(20)).toBeAttached({ timeout: 30_000 });
+  await expectNoAxeViolations(page, "the runs list");
   const inView = await grid
     .locator("tr[data-row]")
     .evaluateAll(
@@ -161,6 +163,7 @@ test("the runs list, a failed flow run, and a production failure fixed in ten pr
   await ended(page, D, "flow-runs", flowRun);
   await page.goto(`${devLink}/runs/${flowRun}`);
   await expect(page.getByText(/Failed at/)).toContainText("place_order", { timeout: 30_000 });
+  await expectNoAxeViolations(page, "a failed flow run");
   const step = page.getByRole("region", { name: "Step place_order" });
   await expect(step.getByText("No warehouse for A").first()).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/runs/${flowRun}`));

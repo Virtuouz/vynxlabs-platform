@@ -55,13 +55,13 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-3 text-[12.5px] text-ink-muted">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-meta text-ink-muted">
         <span className="flex flex-wrap gap-3">
           {(["wait", "run", "hold"] as const)
             .filter((kind) => used.has(kind))
             .map((kind) => (
               <span key={kind} className="inline-flex items-center gap-1.5">
-                <span aria-hidden="true" className={`size-2.5 rounded-[2px] ${FILL[kind]}`} />
+                <span aria-hidden="true" className={`size-2.5 rounded-inner ${FILL[kind]}`} />
                 {names[kind]}
               </span>
             ))}
@@ -93,7 +93,7 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
                 return (
                   <span
                     key={`${part.kind}-${part.until}`}
-                    className={`absolute inset-y-0 min-w-[3px] first-of-type:rounded-l-[3px] last-of-type:rounded-r-[3px] ${
+                    className={`absolute inset-y-0 min-w-[3px] first-of-type:rounded-l-inner last-of-type:rounded-r-inner ${
                       row.tone === "danger" && part.kind === "run" ? "bg-danger" : FILL[part.kind]
                     } ${row.tone === "muted" ? "opacity-50" : ""}`}
                     style={{ left: at(left), width: `calc(${at(part.until)} - ${at(left)})` }}
@@ -101,7 +101,7 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
                 );
               })}
               <span
-                className="absolute top-0 pl-1.5 font-mono text-[12px] leading-5 whitespace-nowrap text-ink-muted"
+                className="absolute top-0 pl-1.5 font-mono text-code-sm leading-5 whitespace-nowrap text-ink-muted"
                 style={{ left: at(end) }}
               >
                 {duration(end - row.start)}
@@ -111,7 +111,7 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
           );
           const inner = (
             <>
-              <span className="w-40 shrink-0 truncate text-left font-mono text-[12.5px]">
+              <span className="w-40 shrink-0 truncate text-left font-mono text-code-sm">
                 {row.label}
               </span>
               {bar}
@@ -140,7 +140,7 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
           );
         })}
       </ol>
-      <div aria-hidden="true" className="flex gap-3 px-2 text-[11.5px] text-ink-muted">
+      <div aria-hidden="true" className="flex gap-3 px-2 text-meta text-ink-muted">
         <span className="w-40 shrink-0" />
         <span className="relative block h-4 flex-1">
           {ticks.map((tick) => (

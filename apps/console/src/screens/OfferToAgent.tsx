@@ -2,6 +2,7 @@ import { Button, Dialog, Notice, SelectField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 
@@ -103,8 +104,8 @@ function OfferForm({
         </Notice>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="min-w-0">
-            <span className="block text-[13px] text-ink-muted">Address for the agent</span>
-            <code className="font-mono text-[13px] break-all">{done.address}</code>
+            <span className="block text-body-sm text-ink-muted">Address for the agent</span>
+            <code className="font-mono text-code break-all">{done.address}</code>
           </span>
           <CopyButton value={done.address} label="Copy the address" />
         </div>
@@ -125,7 +126,7 @@ function OfferForm({
 
   if (failed) return <Notice tone="danger">{failed.message}</Notice>;
   if (!accounts.data || !roles.data || !resource.data) {
-    return <p className="m-0 text-ink-muted">Loading…</p>;
+    return <Loading />;
   }
   if (accounts.data.items.length === 0) {
     return (
@@ -189,13 +190,13 @@ function OfferForm({
         onChange={setChosen}
       />
       {already(account) ? (
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           It is offered to this account already. Continue to see where the agent connects.
         </p>
       ) : null}
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={busy || !runner}>
+        <Button type="submit" variant="primary" loading={busy} disabled={!runner}>
           {already(account) ? "Continue" : "Offer"}
         </Button>
       </div>

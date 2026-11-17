@@ -253,7 +253,7 @@ The model is role-based access control with groups.
 - A **principal** is a user, a group, a service account or the anonymous principal.
 - A **scope** is the instance, a tenant, a workspace or a single resource.
 
-Tenant admin and workspace admin are roles bound at those scopes. An operator admin exists at instance scope and has no access to tenant data by default. To look inside a tenant, an operator opens a time-limited access grant with a stated reason. Each grant, and everything done under it, is audited and visible to the tenant's admins.
+Tenant admin and workspace admin are roles bound at those scopes. An operator admin exists at instance scope and has no access to tenant data by default. To look inside a tenant, an operator opens a time-limited access grant with a stated reason. Each grant, and everything done under it, is audited and visible to the tenant's admins. The one exception is the tenant an operator creates: they may choose, when creating it, to be its first member, holding tenant admin. That is recorded in the new tenant's own audit log, and the tenant's admins can remove it like any other membership.
 
 ### Rules
 

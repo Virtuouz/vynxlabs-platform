@@ -1,6 +1,7 @@
-import { Badge, Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Notice, SideSheet, TextField } from "@vynxlabs/ui";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
@@ -122,7 +123,7 @@ export function PermissionPicker({
 
   return (
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" disabled={disabled}>
-      <legend className="p-0 text-[13px] font-medium text-ink">Permissions</legend>
+      <legend className="p-0 text-body-sm font-medium text-ink">Permissions</legend>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <input
           type="search"
@@ -130,9 +131,9 @@ export function PermissionPicker({
           placeholder="Find a permission"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
-          className="h-8 min-w-40 flex-1 rounded-control border border-line bg-surface px-2.5"
+          className="h-8 min-w-40 flex-1 rounded-control border border-line bg-surface px-3"
         />
-        <label className="inline-flex items-center gap-1.5 text-[13px]">
+        <label className="inline-flex items-center gap-1.5 text-body-sm">
           <input
             type="checkbox"
             className={box}
@@ -141,7 +142,7 @@ export function PermissionPicker({
           />
           Read everything
         </label>
-        <label className="inline-flex items-center gap-1.5 text-[13px]">
+        <label className="inline-flex items-center gap-1.5 text-body-sm">
           <input
             type="checkbox"
             className={box}
@@ -154,7 +155,7 @@ export function PermissionPicker({
       <div className="max-h-[46vh] overflow-y-auto rounded-control border border-line">
         {/* table-allowed: a form, one checkbox per permission, grouped under row headers. */}
         <table className="w-full border-collapse text-left">
-          <thead className="sticky top-0 bg-sunken text-[12px] text-ink-muted">
+          <thead className="sticky top-0 bg-sunken text-meta text-ink-muted">
             <tr>
               <th scope="col" className="px-3 py-1.5 font-medium">
                 What
@@ -173,7 +174,7 @@ export function PermissionPicker({
                 <th
                   colSpan={3}
                   scope="colgroup"
-                  className="border-t border-line bg-canvas px-3 py-1 text-[12px] font-semibold tracking-wide text-ink-muted uppercase"
+                  className="border-t border-line bg-canvas px-3 py-1 text-meta font-semibold tracking-wide text-ink-muted uppercase"
                 >
                   {group}
                 </th>
@@ -185,8 +186,10 @@ export function PermissionPicker({
                     <th scope="row" className="px-3 py-1.5 font-normal">
                       <span className="flex flex-wrap items-center gap-2">
                         {entry.label}
-                        <code className="font-mono text-[12px] text-ink-muted">{entry.kind}</code>
-                        {entry.appFacing ? <Badge>End users can hold it</Badge> : null}
+                        <code className="font-mono text-code-sm text-ink-muted">{entry.kind}</code>
+                        {entry.appFacing ? (
+                          <span className="text-meta text-ink-muted">End users can hold it</span>
+                        ) : null}
                       </span>
                     </th>
                     {(["read", "write"] as const).map((verb) => {
@@ -236,7 +239,7 @@ export function PermissionPicker({
             {unknown.map((one) => (
               <span
                 key={one}
-                className="inline-flex items-center gap-1 rounded-[4px] bg-surface px-1.5 font-mono text-[13px]"
+                className="inline-flex items-center gap-1 rounded-inner bg-surface px-1.5 font-mono text-code"
               >
                 {one}
                 <button
@@ -297,7 +300,7 @@ function RoleDialog({
     error?.fields.find((one) => one.path.startsWith(`/body/${field}`))?.message;
 
   return (
-    <Dialog
+    <SideSheet
       open
       size="wide"
       onClose={onClose}
@@ -319,6 +322,11 @@ function RoleDialog({
           try {
             if (role) await api.patch(`${base}/roles/${role.id}`, { description, permissions });
             else await api.post(`${base}/roles`, { name, description, permissions });
+            notify.success(
+              role
+                ? `The role ${role.name} is saved. Everyone who holds it has the new permissions.`
+                : `The role ${name} is made. Give it to people under Access grants.`,
+            );
             onSaved();
           } catch (caught) {
             setError(caught as ApiError);
@@ -357,13 +365,18 @@ function RoleDialog({
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>{readOnly ? "Close" : "Cancel"}</Button>
           {readOnly ? null : (
-            <Button type="submit" variant="primary" disabled={busy || permissions.length === 0}>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={busy}
+              disabled={permissions.length === 0}
+            >
               {role ? "Save" : "Create role"}
             </Button>
           )}
         </div>
       </form>
-    </Dialog>
+    </SideSheet>
   );
 }
 

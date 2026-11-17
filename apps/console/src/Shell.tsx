@@ -1,5 +1,6 @@
 import { Menu, SideSheet } from "@vynxlabs/ui";
 import {
+  ChevronRight,
   ChevronsUpDown,
   CircleX,
   KeyRound,
@@ -25,7 +26,7 @@ import {
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
-import { EnvTag, Tag } from "./kit/status.tsx";
+import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
 import {
   AREA_ICON,
@@ -67,6 +68,11 @@ interface WorkspaceSummary {
 
 /** What `GET …/summary` answers for a workspace. A count the person may not read is null. */
 export interface WorkspaceCounts {
+  /** What a first run's checklist needs. Optional: an older server sends none. */
+  scripts?: number | null;
+  flows?: number | null;
+  everRan?: boolean | null;
+  workersOnline?: number | null;
   drafts: number | null;
   // Optional: an older server may not send it, and a missing count must not take the shell down.
   failedRuns?: { count: number | null; since: string };
@@ -399,9 +405,9 @@ function ReleasePath({ counts }: { counts: WorkspaceCounts }) {
       ),
     });
   return (
-    <div className="flex flex-col gap-2.5 border-line border-t px-3 pt-3 pb-4">
+    <div className="flex flex-col gap-2 border-line border-t px-3 pt-3 pb-4">
       <p className="m-0 text-label text-ink-subtle uppercase">Release path</p>
-      <ol className="relative m-0 flex list-none flex-col gap-2.5 p-0 pl-4">
+      <ol className="relative m-0 flex list-none flex-col gap-2 p-0 pl-4">
         <span
           aria-hidden="true"
           className="absolute top-1.5 bottom-1.5 left-[3px] w-px bg-line-strong"
@@ -416,6 +422,46 @@ function ReleasePath({ counts }: { counts: WorkspaceCounts }) {
         ))}
       </ol>
     </div>
+  );
+}
+
+/**
+ * The end of the breadcrumb: the section, and what is open in it. The last
+ * crumb is the page itself; the section before it leads back to its list.
+ */
+function Crumbs({
+  section,
+  href,
+  object,
+}: {
+  section: string;
+  href: string | undefined;
+  object: string | undefined;
+}) {
+  const sep = <ChevronRight aria-hidden="true" size={14} className="shrink-0 text-ink-subtle" />;
+  return (
+    <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
+      <li className={`min-w-0 items-center gap-1.5 ${object ? "hidden md:flex" : "flex"}`}>
+        {sep}
+        {object && href ? (
+          <Link to={href} className="truncate text-ink-muted no-underline hover:text-ink">
+            {section}
+          </Link>
+        ) : (
+          <span aria-current="page" className="truncate font-medium">
+            {section}
+          </span>
+        )}
+      </li>
+      {object ? (
+        <li className="flex min-w-0 items-center gap-1.5">
+          {sep}
+          <span aria-current="page" className="truncate font-medium" title={object}>
+            {object}
+          </span>
+        </li>
+      ) : null}
+    </ol>
   );
 }
 
@@ -455,8 +501,8 @@ function RailItem({
             />
           </>
         ) : null}
-        <Icon aria-hidden="true" size={18} strokeWidth={1.75} />
-        <span className="text-micro">{label}</span>
+        <Icon aria-hidden="true" size={20} />
+        <span className="text-label font-medium tracking-normal">{label}</span>
       </Link>
     </span>
   );
@@ -473,7 +519,7 @@ function ThemeMenu({ compact = false }: { compact?: boolean }) {
       label={<ThemeIcon aria-hidden="true" size={16} />}
       items={THEMES.map(([choice, label, Icon]) => ({
         label,
-        icon: <Icon aria-hidden="true" size={15} />,
+        icon: <Icon aria-hidden="true" size={16} />,
         current: theme === choice,
         onSelect: () => setTheme(choice),
       }))}
@@ -492,12 +538,12 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       items={[
         {
           label: "API keys",
-          icon: <KeyRound aria-hidden="true" size={15} />,
+          icon: <KeyRound aria-hidden="true" size={16} />,
           onSelect: () => navigate("/account/api-keys"),
         },
         {
           label: "Sign out",
-          icon: <LogOut aria-hidden="true" size={15} />,
+          icon: <LogOut aria-hidden="true" size={16} />,
           separated: true,
           onSelect: onSignOut,
         },
@@ -592,8 +638,15 @@ export function Shell({
   // The tab's title says where this is: what is open, the section, the workspace, the product.
   const named = useNamedObject();
   const fresh = /\/(script|flow)s\/new$/.exec(path);
+  // The breadcrumb: the section, and what is open in it when something is.
+  const sectionHref = workspaceId
+    ? `/t/${tenantId}/workspaces/${workspaceId}/${where.section}`
+    : tenantId
+      ? `/t/${tenantId}/${where.section}`
+      : undefined;
+  const object = named ?? opened?.ref ?? (fresh ? `New ${fresh[1]}` : undefined);
   const title = pageTitle([
-    named ?? opened?.ref ?? (fresh ? `New ${fresh[1]}` : undefined),
+    object,
     here ?? AREA_LABEL[where.area],
     workspace?.name ?? tenant?.name,
     brand.productName,
@@ -733,7 +786,7 @@ export function Shell({
     <div className="flex h-full min-h-0">
       <a
         href="#main"
-        className="sr-only z-[90] rounded-control border border-line bg-surface font-medium text-action shadow-lg focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2"
+        className="sr-only layer-skip rounded-control border border-line bg-surface font-medium text-action shadow-overlay focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2"
       >
         Skip to content
       </a>
@@ -741,7 +794,7 @@ export function Shell({
         aria-label="Main"
         className="hidden w-16 shrink-0 flex-col items-center gap-1 border-line border-r bg-structure py-3 md:flex"
       >
-        <Link to="/" className="mb-3.5 flex no-underline">
+        <Link to="/" className="mb-4 flex no-underline">
           <BrandMark />
         </Link>
         {rail()}
@@ -765,12 +818,12 @@ export function Shell({
               onClick={() => togglePanel(false)}
               className="flex size-7 items-center justify-center rounded-control text-ink-subtle hover:bg-surface hover:text-ink"
             >
-              <PanelLeftClose aria-hidden="true" size={15} />
+              <PanelLeftClose aria-hidden="true" size={16} />
             </button>
           </div>
           <div className="px-3 pt-3 pb-1.5">
-            <label className="flex h-[30px] items-center gap-2 rounded-control border border-line px-2.5 text-ink-subtle focus-within:border-line-strong">
-              <Search aria-hidden="true" size={13} />
+            <label className="flex h-[30px] items-center gap-2 rounded-control border border-line px-3 text-ink-subtle focus-within:border-line-strong">
+              <Search aria-hidden="true" size={14} />
               <input
                 aria-label="Filter the sections"
                 placeholder="Filter"
@@ -788,7 +841,7 @@ export function Shell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-line border-b bg-canvas pr-3 pl-2 md:pr-4 md:pl-3.5">
+        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-line border-b bg-canvas pr-3 pl-2 md:pr-4 md:pl-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
@@ -796,7 +849,7 @@ export function Shell({
               onClick={() => setDrawer(true)}
               className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-surface hover:text-ink md:hidden"
             >
-              <MenuIcon aria-hidden="true" size={17} />
+              <MenuIcon aria-hidden="true" size={16} />
             </button>
             {hasPanel ? (
               <button
@@ -810,22 +863,22 @@ export function Shell({
                   panelOpen ? "hidden md:flex lg:hidden" : "hidden md:flex"
                 }`}
               >
-                <PanelLeftOpen aria-hidden="true" size={15} />
+                <PanelLeftOpen aria-hidden="true" size={16} />
               </button>
             ) : null}
             <nav
               aria-label="Where you are"
-              className="flex min-w-0 items-center gap-2 overflow-hidden text-[13px] whitespace-nowrap"
+              className="flex min-w-0 items-center gap-2 overflow-hidden text-body-sm whitespace-nowrap"
             >
               {tenantId && workspaceId ? (
                 <>
                   <Link
                     to={`/t/${tenantId}`}
-                    className="hidden truncate text-ink-muted no-underline hover:text-ink sm:inline"
+                    className="hidden truncate text-ink-muted no-underline hover:text-ink lg:inline"
                   >
                     {tenant?.name ?? "Tenant"}
                   </Link>
-                  <span aria-hidden="true" className="hidden items-center sm:flex">
+                  <span aria-hidden="true" className="hidden items-center lg:flex">
                     <Wire />
                     <Junction
                       kind={workspace?.type === "production" ? "production" : "here"}
@@ -854,7 +907,11 @@ export function Shell({
                     }))}
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
-                  {workspace?.triggersPaused ? <Tag tone="production">Paused</Tag> : null}
+                  {workspace?.triggersPaused ? (
+                    <span className="hidden lg:inline-flex">
+                      <StatePill state="paused" />
+                    </span>
+                  ) : null}
                   {ws?.linked ? (
                     <span className="hidden items-center gap-2 xl:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
@@ -868,14 +925,14 @@ export function Shell({
                         promotes to{" "}
                         <Link
                           to={`/t/${tenantId}/workspaces/${ws.linked.id}/overview`}
-                          className="text-ink-muted"
+                          className="text-ink-muted underline underline-offset-2"
                         >
                           {ws.linked.name}
                         </Link>
                       </span>
                     </span>
                   ) : null}
-                  {here ? <span className="sr-only">/{here}</span> : null}
+                  {here ? <Crumbs section={here} href={sectionHref} object={object} /> : null}
                 </>
               ) : tenantId ? (
                 <>
@@ -905,21 +962,10 @@ export function Shell({
                       },
                     ]}
                   />
-                  {here ? (
-                    <>
-                      <span aria-hidden="true" className="flex items-center">
-                        <Wire />
-                        <Junction kind="here" size={5} />
-                      </span>
-                      <span className="truncate font-medium">
-                        <span className="sr-only">/</span>
-                        {here}
-                      </span>
-                    </>
-                  ) : null}
                   <span className="hidden sm:inline-flex">
                     <Tag>Tenant</Tag>
                   </span>
+                  {here ? <Crumbs section={here} href={sectionHref} object={object} /> : null}
                 </>
               ) : (
                 <>
@@ -945,7 +991,7 @@ export function Shell({
                   ) : null}
                   <span className="hidden sm:inline-flex">
                     {where.area === "instance" ? (
-                      <Tag tone="production">Instance · operator</Tag>
+                      <Tag tone="attention">Instance · operator</Tag>
                     ) : where.area === "account" ? (
                       <Tag>Personal</Tag>
                     ) : null}
@@ -959,7 +1005,7 @@ export function Shell({
             {tenantId && workspaceId && drafts > 0 ? (
               <Link
                 to={`/t/${tenantId}/workspaces/${workspaceId}/release`}
-                className="hidden h-7 items-center gap-1.5 rounded-control border border-line px-2.5 text-meta text-ink no-underline hover:bg-surface lg:flex"
+                className="hidden h-7 items-center gap-1.5 rounded-control border border-line px-3 text-meta text-ink no-underline hover:bg-surface lg:flex"
               >
                 <Junction kind="pending" size={5} />
                 <span className="font-mono">{drafts}</span> draft{drafts === 1 ? "" : "s"}
@@ -969,9 +1015,9 @@ export function Shell({
             {tenantId && workspaceId && failed > 0 ? (
               <Link
                 to={`/t/${tenantId}/workspaces/${workspaceId}/runs?status=failed`}
-                className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-2.5 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
+                className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-3 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
               >
-                <CircleX aria-hidden="true" size={13} className="text-danger" />
+                <CircleX aria-hidden="true" size={14} className="text-danger" />
                 <span className="font-mono">{failed}</span> failed run{failed === 1 ? "" : "s"}
               </Link>
             ) : null}
@@ -979,11 +1025,11 @@ export function Shell({
               type="button"
               onClick={openPalette}
               aria-label="Search or jump to"
-              className="flex h-8 items-center gap-2 rounded-control text-meta text-ink-subtle hover:text-ink md:h-7 md:w-56 md:border md:border-line md:bg-structure md:pr-1.5 md:pl-2.5"
+              className="flex h-8 items-center gap-2 rounded-control text-meta text-ink-subtle hover:text-ink md:h-7 md:w-56 md:border md:border-line md:bg-structure md:pr-1.5 md:pl-3"
             >
-              <Search aria-hidden="true" size={15} className="mx-1.5 md:mx-0" />
+              <Search aria-hidden="true" size={16} className="mx-1.5 md:mx-0" />
               <span className="hidden flex-1 text-left md:inline">Search or jump to…</span>
-              <kbd className="hidden rounded-[4px] border border-line px-1 font-mono text-tag md:inline">
+              <kbd className="hidden rounded-inner border border-line px-1 font-mono text-tag md:inline">
                 ⌘K
               </kbd>
             </button>
@@ -1018,7 +1064,7 @@ export function Shell({
         side="left"
         size="narrow"
         title={
-          <span className="flex items-center gap-2.5">
+          <span className="flex items-center gap-2">
             <BrandMark size={24} decorative />
             {brand.productName}
           </span>

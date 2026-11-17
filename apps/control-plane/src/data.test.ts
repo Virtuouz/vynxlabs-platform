@@ -446,6 +446,58 @@ describe("the data API", () => {
     expect(seen).toHaveLength(26);
     expect(new Set(seen).size).toBe(26);
 
+    // A page starts after the last row seen, so a row added before it moves nothing:
+    // the next page neither repeats a row nor skips one. Down the sort, and with no sort.
+    for (const order of ["-count", ""]) {
+      const first: Any = (
+        await alice.get(`${ws()}/rows/lab/samples?limit=5${order ? `&sort=${order}` : ""}`)
+      ).body;
+      expect(JSON.parse(Buffer.from(first.nextCursor, "base64url").toString())).toHaveProperty(
+        "after",
+      );
+      const added = await alice.post(`${ws()}/rows/lab/samples`, {
+        rows: [{ label: "added before", count: 1000 }],
+      });
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
+      const second: Any = (
+        await alice.get(
+          `${ws()}/rows/lab/samples?limit=5${order ? `&sort=${order}` : ""}&cursor=${first.nextCursor}`,
+        )
+      ).body;
+      const ids = [...first.items, ...second.items].map((row: Any) => row.id);
+      expect(new Set(ids).size).toBe(10);
+      await alice.delete(`${ws()}/row/${added.body.items[0].id}/lab/samples`);
+    }
+    // Several rows deleted at once; a key that names no row is said to be missing.
+    const made = await alice.post(`${ws()}/rows/lab/samples`, {
+      rows: [
+        { label: "=1+1 go", count: 2000 },
+        { label: 'says "hi", twice', count: 2001 },
+      ],
+    });
+    const madeIds = made.body.items.map((row: Any) => row.id);
+    // The CSV has a heading line, quotes what needs it, and defuses a formula.
+    const csv = await alice.get(
+      `${ws()}/rows-export/lab/samples?filter=${encodeURIComponent(JSON.stringify({ column: "count", op: "gte", value: 2000 }))}&sort=count`,
+    );
+    expect(csv.status).toBe(200);
+    expect(csv.headers["content-type"]).toContain("text/csv");
+    const lines = String(csv.body).trim().split("\r\n");
+    expect(lines[0]).toContain("label");
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toContain("'=1+1 go");
+    expect(lines[2]).toContain('"says ""hi"", twice"');
+    const gone = await alice.post(`${ws()}/row-deletions/lab/samples`, {
+      ids: [...madeIds, "01a1e798-0000-7000-8000-000000000000"],
+    });
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    expect(gone.body.deleted.sort()).toEqual([...madeIds].sort());
+    expect(gone.body.missing).toEqual(["01a1e798-0000-7000-8000-000000000000"]);
+
+    // A cursor that is neither form is refused.
+    const garbled = Buffer.from('{"after":"x"}').toString("base64url");
+    expect((await alice.get(`${ws()}/rows/lab/samples?cursor=${garbled}`)).status).toBe(400);
+
     const bad = async (query: string) =>
       (await alice.get(`${ws()}/rows/lab/samples?${query}`)).status;
     expect(await bad("filter=notjson")).toBe(400);
@@ -1238,7 +1290,8 @@ describe("tables made in the console, isolation and guards", () => {
 
   test("every change by a principal went through the write path", () => {
     expect(
-      t.unaudited.filter((route) => !/\/rows?\//.test(route)),
+      // Rows are the tenant's data, written without an audit entry each, one at a time or many.
+      t.unaudited.filter((route) => !/\/(rows?|row-deletions)\//.test(route)),
       JSON.stringify(t.unaudited),
     ).toEqual([]);
     expect(t.unexercised((route) => /\/table-purges$/.test(route))).toEqual([]);

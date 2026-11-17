@@ -7,9 +7,11 @@ import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { useDevWorkspace } from "../kit/objects.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
@@ -78,8 +80,8 @@ function RunOfEitherKind({ root, link, id }: { root: string; link: string; id: s
     return <NotFound home={`${link}/runs`} homeLabel="Go to the runs" />;
   }
   const failed = script.error?.status !== 404 ? script.error : flow.error;
-  if (failed) return <Notice tone="danger">{failed.message}</Notice>;
-  return <p className="text-ink-muted">Loading…</p>;
+  if (failed) return <ErrorState error={failed} what="this run" />;
+  return <Loading />;
 }
 
 /** What every run page starts with: where it is, how it stands, where it came from, and what to do. */
@@ -119,33 +121,30 @@ function RunHeader({
 }) {
   useTitleObject(`Run of ${path}`);
   return (
-    <header className="flex flex-col gap-3 border-line border-b pb-4">
-      <nav aria-label="Where this run is" className="flex flex-wrap items-center gap-1.5 text-meta">
-        <Link to={`${link}/runs`} className="text-ink-muted">
-          Runs
-        </Link>
-        <span aria-hidden="true" className="text-ink-subtle">
-          ›
-        </span>
-        <CopyableId value={id} label="Copy the run ID" />
-      </nav>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="m-0 font-mono text-lg break-all">
-            <Link to={pathLink} className="text-ink">
-              {path}
-            </Link>
-          </h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted">
+    <div className="border-line border-b pb-4">
+      <PageHeader
+        eyebrow={<CopyableId value={id} label="Copy the run ID" />}
+        mono
+        title={
+          <Link to={pathLink} className="text-ink">
+            {path}
+          </Link>
+        }
+        meta={
+          <>
             <StatePill state={state} detail={detail} />
             {timing}
             <StateAnnouncer state={state} label={`Run of ${path}`} />
             <Reconnecting show={reconnecting} />
-            {started ? <span>{started}</span> : null}
-            <Link to={versionTo ?? `${link}/deployments`}>version {version}</Link>
+            {started ? <span className="text-ink-muted">{started}</span> : null}
+            <Link to={versionTo ?? `${link}/deployments`} className="text-ink-muted">
+              version {version}
+            </Link>
             {related}
-          </div>
-          {tags.length > 0 ? (
+          </>
+        }
+        after={
+          tags.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {tags.map((tag) => (
                 <Link
@@ -157,11 +156,11 @@ function RunHeader({
                 </Link>
               ))}
             </div>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
-      </div>
-    </header>
+          ) : undefined
+        }
+        actions={actions}
+      />
+    </div>
   );
 }
 
@@ -226,7 +225,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
     editing ? `${root}/scripts` : null,
   );
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p className="text-ink-muted">Loading…</p>;
+  if (!run) return <Loading />;
   const active = run.state === "queued" || run.state === "running";
   const diagnosis = insight.data?.diagnosis;
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
@@ -290,7 +289,11 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                     cancel: "Keep running",
                     danger: true,
                   });
-                  if (sure) await api.post(`${root}/runs/${id}/cancel`).catch(notify.error);
+                  if (!sure) return;
+                  await api
+                    .post(`${root}/runs/${id}/cancel`)
+                    .then(() => notify.info("Canceling. The worker stops it at its next check."))
+                    .catch(notify.error);
                 }}
               >
                 Cancel run
@@ -301,11 +304,11 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               <Menu
                 label={
                   <span className="flex items-center gap-1.5">
-                    <RotateCcw aria-hidden="true" size={13} /> Re-run
-                    <ChevronDown aria-hidden="true" size={13} />
+                    <RotateCcw aria-hidden="true" size={14} /> Re-run
+                    <ChevronDown aria-hidden="true" size={14} />
                   </span>
                 }
-                triggerClassName="flex h-8 items-center rounded-control border border-line px-2.5 text-meta hover:bg-surface"
+                triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
                 align="end"
                 items={[
                   { label: "With the same input", onSelect: () => void confirmed("original") },
@@ -429,7 +432,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               <span className="flex items-center gap-2 font-medium text-danger">
                 <CircleX aria-hidden="true" size={14} /> Why it failed
               </span>
-              <p className="m-0 font-mono text-telemetry break-words whitespace-pre-wrap">
+              <p className="m-0 font-mono text-code break-words whitespace-pre-wrap">
                 {run.error.message}
               </p>
             </div>
@@ -438,7 +441,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             <div className="rounded-panel border border-line">
               <NextStep
                 tone="attention"
-                icon={<Lightbulb aria-hidden="true" size={15} />}
+                icon={<Lightbulb aria-hidden="true" size={16} />}
                 title={diagnosis.cause}
                 detail={diagnosis.next}
                 action={
@@ -601,11 +604,7 @@ function FlowRunHeader({
         pathLink={`${link}/flows/${run.flow}`}
         state={run.state}
         timing={
-          <Elapsed
-            from={run.createdAt}
-            to={run.finishedAt}
-            className="text-telemetry text-ink-muted"
-          />
+          <Elapsed from={run.createdAt} to={run.finishedAt} className="text-code text-ink-muted" />
         }
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
@@ -635,7 +634,10 @@ function FlowRunHeader({
                     danger: true,
                   });
                   if (!sure) return;
-                  await api.post(`${root}/flow-runs/${run.id}/cancel`).catch(notify.error);
+                  await api
+                    .post(`${root}/flow-runs/${run.id}/cancel`)
+                    .then(() => notify.info("Canceling. Steps that are running are stopped."))
+                    .catch(notify.error);
                   refresh();
                 }}
               >
@@ -645,11 +647,11 @@ function FlowRunHeader({
               <Menu
                 label={
                   <span className="flex items-center gap-1.5">
-                    <RotateCcw aria-hidden="true" size={13} /> Re-run
-                    <ChevronDown aria-hidden="true" size={13} />
+                    <RotateCcw aria-hidden="true" size={14} /> Re-run
+                    <ChevronDown aria-hidden="true" size={14} />
                   </span>
                 }
-                triggerClassName="flex h-8 items-center rounded-control border border-line px-2.5 text-meta hover:bg-surface"
+                triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
                 align="end"
                 items={[
                   ...(finishedBadly

@@ -3,7 +3,7 @@ import { newId, sql } from "@vynxlabs/db";
 import { PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { check } from "../kernel/authorize.js";
-import { badRequest, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { deleteResource, findResource, putResource } from "../kernel/resources.js";
@@ -423,6 +423,55 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             updatedBy: setBy.get(row.name) ?? null,
           })),
         };
+      },
+    );
+
+    app.post(
+      "/tenants/:t/workspaces/:w/secrets",
+      {
+        config: { access: access.workspace("secret:write") },
+        schema: {
+          summary: "Make a new secret",
+          description:
+            "Refuses a name that is already in use, so a mistyped name is never a second " +
+            "secret and an existing one is never replaced by accident. Replace a value with PUT.",
+          tags: ["secrets"],
+          params: WorkspaceParams,
+          body: Type.Object({
+            name: SecretName,
+            value: Type.String({ minLength: 1, maxLength: 65536 }),
+          }),
+          response: { 201: Type.Object({ name: Type.String() }) },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const taken = await db
+          .selectFrom("secret")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("name", "=", body.name)
+          .executeTakeFirst();
+        if (taken) {
+          throw conflict(
+            `A secret named ${body.name} is already here. Replace its value from its page.`,
+          );
+        }
+        await ctx.mutate(async (trx, audit) => {
+          await setSecret(
+            trx,
+            kernel.vault,
+            { tenantId: params.t, workspaceId: params.w, name: body.name },
+            body.value,
+          );
+          await audit({
+            action: "secret.created",
+            targetType: "secret",
+            targetId: body.name,
+            tenantId: params.t,
+            workspaceId: params.w,
+          });
+        });
+        return reply.code(201).send({ name: body.name });
       },
     );
 

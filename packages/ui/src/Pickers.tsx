@@ -36,9 +36,9 @@ export function SegmentedControl<Value extends string>({
         return (
           <label
             key={option.value}
-            className={`relative inline-flex cursor-pointer items-center gap-1.5 rounded-[calc(var(--vx-radius-control)-2px)] font-medium whitespace-nowrap has-[:disabled]:cursor-default has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
-              size === "small" ? "h-6 px-2 text-[13px]" : "h-8 px-3"
-            } ${on ? "bg-surface text-ink shadow-sm" : "text-ink-muted hover:text-ink"}`}
+            className={`relative inline-flex cursor-pointer items-center gap-1.5 rounded-inner font-medium whitespace-nowrap has-[:disabled]:cursor-default has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
+              size === "small" ? "h-6 px-2 text-body-sm" : "h-8 px-3"
+            } ${on ? "bg-surface text-ink ring-1 ring-line" : "text-ink-muted hover:text-ink"}`}
           >
             <input
               type="radio"
@@ -51,7 +51,7 @@ export function SegmentedControl<Value extends string>({
             />
             {option.label}
             {option.count !== undefined ? (
-              <span className="text-xs text-ink-muted tabular-nums">{option.count}</span>
+              <span className="text-meta text-ink-muted tabular-nums">{option.count}</span>
             ) : null}
           </label>
         );

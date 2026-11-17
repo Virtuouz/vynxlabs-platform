@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * Releasing as a team, in a browser (phase 10, milestone 6): a developer who may
@@ -127,6 +128,7 @@ test("a developer asks, a promoter decides from the overview, drift shows the ch
     .getByRole("button", { name: "Promote", exact: true })
     .click();
   await expect(admin.getByText(/Production now runs v\d+\./)).toBeVisible({ timeout: 15_000 });
+  await expectNoAxeViolations(admin, "a release, promoted");
   await expect(admin.getByRole("region", { name: "Promotion requests" })).toHaveCount(0);
   const shipped = await call(
     admin,

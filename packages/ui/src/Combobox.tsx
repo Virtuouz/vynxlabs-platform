@@ -1,5 +1,5 @@
 import { Combobox as Base } from "@base-ui/react/combobox";
-import type { ReactNode } from "react";
+import { FieldFrame } from "./Fields.tsx";
 
 export interface Option {
   value: string;
@@ -22,40 +22,18 @@ interface Common {
 }
 
 const box =
-  "flex min-h-9 w-full flex-wrap items-center gap-1 rounded-control border border-line-control bg-surface px-1.5 py-1 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-action data-[disabled]:opacity-60";
+  "flex min-h-control w-full flex-wrap items-center gap-1 rounded-control border border-line-control bg-surface px-1.5 py-1 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-action data-[disabled]:opacity-60 has-[[aria-invalid=true]]:border-danger";
 const input =
   "min-w-24 flex-1 bg-transparent px-1 text-ink outline-none placeholder:text-ink-muted/70";
 const popup =
-  "max-h-72 w-[var(--anchor-width)] min-w-56 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-lg";
+  "max-h-72 w-[var(--anchor-width)] min-w-56 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0";
 const row =
-  "flex cursor-default items-start gap-2 rounded-[4px] px-2 py-1.5 data-[highlighted]:bg-action-soft data-[disabled]:opacity-50";
-
-function Frame({
-  label,
-  hint,
-  error,
-  children,
-}: Pick<Common, "label" | "hint" | "error"> & { children: ReactNode }) {
-  return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: the combobox's input is inside
-    <label className="flex flex-col gap-1">
-      <span className="text-[13px] font-medium text-ink">{label}</span>
-      {children}
-      {error ? (
-        <span role="alert" className="text-[13px] text-danger">
-          {error}
-        </span>
-      ) : hint ? (
-        <span className="text-[13px] text-ink-muted">{hint}</span>
-      ) : null}
-    </label>
-  );
-}
+  "flex cursor-default items-start gap-2 rounded-inner px-2 py-1.5 data-[highlighted]:bg-action-soft data-[disabled]:opacity-50";
 
 function Items({ empty }: { empty: string }) {
   return (
     <Base.Portal>
-      <Base.Positioner sideOffset={4} className="z-[70]">
+      <Base.Positioner sideOffset={4} className="layer-popover">
         <Base.Popup className={popup}>
           <Base.Empty className="px-2 py-1.5 text-ink-muted empty:hidden">{empty}</Base.Empty>
           <Base.List>
@@ -70,7 +48,7 @@ function Items({ empty }: { empty: string }) {
                 <span className="col-start-2 flex min-w-0 flex-col data-[selected]:font-medium">
                   <span className="truncate">{option.label}</span>
                   {option.hint ? (
-                    <span className="truncate text-[12px] text-ink-muted">{option.hint}</span>
+                    <span className="truncate text-meta text-ink-muted">{option.hint}</span>
                   ) : null}
                 </span>
               </Base.Item>
@@ -89,6 +67,11 @@ export interface ComboboxFieldProps extends Common {
   /** The chosen option's value, or nothing. */
   value: string | undefined;
   onChange: (value: string | undefined) => void;
+  /**
+   * Called with what is typed, for a list the server searches: `options` are
+   * then shown as given, without being narrowed here.
+   */
+  onSearch?: (typed: string) => void;
 }
 
 /** One choice from a list that can be searched by typing. Use it when a list is too long for a select. */
@@ -99,19 +82,23 @@ export function ComboboxField({
   options,
   value,
   onChange,
+  onSearch,
   placeholder,
   disabled,
   empty = "Nothing matches.",
 }: ComboboxFieldProps) {
   const chosen = options.find((option) => option.value === value) ?? null;
   return (
-    <Frame label={label} hint={hint} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error}>
       <Base.Root
         items={options}
         value={chosen}
         onValueChange={(next: Option | null) => onChange(next?.value)}
         itemToStringLabel={text}
         isItemEqualToValue={same}
+        {...(onSearch
+          ? { filter: null, onInputValueChange: (typed: string) => onSearch(typed) }
+          : {})}
         {...(disabled ? { disabled: true } : {})}
       >
         <div className={box}>
@@ -122,7 +109,7 @@ export function ComboboxField({
         </div>
         <Items empty={empty} />
       </Base.Root>
-    </Frame>
+    </FieldFrame>
   );
 }
 
@@ -148,7 +135,7 @@ export function MultiSelectField({
     .map((one) => options.find((option) => option.value === one))
     .filter((option): option is Option => option !== undefined);
   return (
-    <Frame label={label} hint={hint} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error}>
       <Base.Root
         multiple
         items={options}
@@ -166,7 +153,7 @@ export function MultiSelectField({
                   <Base.Chip
                     key={option.value}
                     aria-label={option.label}
-                    className="inline-flex items-center gap-1 rounded-[4px] bg-action-soft px-1.5 py-0.5 text-[13px]"
+                    className="inline-flex items-center gap-1 rounded-inner bg-action-soft px-1.5 py-0.5 text-body-sm"
                   >
                     {option.label}
                     <Base.ChipRemove
@@ -187,6 +174,6 @@ export function MultiSelectField({
         </Base.Chips>
         <Items empty={empty} />
       </Base.Root>
-    </Frame>
+    </FieldFrame>
   );
 }

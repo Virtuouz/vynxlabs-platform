@@ -2,7 +2,15 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Apps } from "./screens/Apps.tsx";
 import { Branding, ContrastCheck, KIT, THEME_TOKENS } from "./screens/Branding.tsx";
@@ -302,30 +310,39 @@ test("branding saves only the tokens that are set, and shows the server's error 
   fireEvent.input(screen.getByLabelText("ink, dark"), { target: { value: " #fafafa " } });
   fireEvent.input(screen.getByLabelText("line, light"), { target: { value: "   " } });
   expect(preview("dark").getPropertyValue("--vx-ink")).toBe("#fafafa");
-  fireEvent.submit(action.closest("form") as HTMLFormElement);
+  // The page's changes are saved together, from the bar that appeared.
+  const bar = () => screen.getByRole("region", { name: "Unsaved changes" });
+  fireEvent.click(within(bar()).getByRole("button", { name: "Save" }));
   expect((await screen.findByText("surface must be a plain color, length or font list")).role).toBe(
     "alert",
   );
   expect(sent("PUT")[0]?.body).toEqual({
+    signUp: false,
     theme: { tokens: { action: "#7c3aed", surface: "url(x)" }, dark: { ink: "#fafafa" } },
   });
 
   fireEvent.input(screen.getByLabelText("surface, light"), { target: { value: "" } });
-  fireEvent.submit(action.closest("form") as HTMLFormElement);
-  await screen.findByText("Saved.");
+  fireEvent.click(within(bar()).getByRole("button", { name: "Save" }));
+  await screen.findByText(/Branding saved/);
   expect(sent("PUT")[1]?.body).toEqual({
+    signUp: false,
     theme: { tokens: { action: "#7c3aed" }, dark: { ink: "#fafafa" } },
   });
   expect(screen.queryByText("surface must be a plain color, length or font list")).toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "Reset to the kit's values" }));
-  await answer("Reset");
-  await screen.findByText("Reset to the kit's values.");
-  expect(sent("PUT")[2]?.body).toEqual({ theme: { tokens: {}, dark: {} } });
-  expect((screen.getByLabelText("action, light") as HTMLInputElement).value).toBe("");
+  // Clearing back to the kit's values is a change like any other, saved with the page.
+  fireEvent.click(screen.getByRole("button", { name: "Clear back to the kit's values" }));
+  await answer("Clear them");
+  await waitFor(() =>
+    expect((screen.getByLabelText("action, light") as HTMLInputElement).value).toBe(""),
+  );
+  fireEvent.click(within(bar()).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(sent("PUT")[2]?.body).toEqual({ signUp: false, theme: { tokens: {}, dark: {} } }),
+  );
 });
 
-test("self sign-up is saved when it is switched, and a logo is checked before it is sent", async () => {
+test("self sign-up is saved with the page, and a logo is checked before it is sent", async () => {
   let current = portal;
   routes[`GET /api/v1${base}/portal`] = () => [200, current];
   routes[`PUT /api/v1${base}/portal`] = () => [200, current];
@@ -335,7 +352,14 @@ test("self sign-up is saved when it is switched, and a logo is checked before it
   };
   show(<Branding base={base} />);
   fireEvent.click(await screen.findByLabelText("People may create their own account"));
-  await waitFor(() => expect(sent("PUT")[0]?.body).toEqual({ signUp: true }));
+  fireEvent.click(
+    within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", {
+      name: "Save",
+    }),
+  );
+  await waitFor(() =>
+    expect(sent("PUT")[0]?.body).toMatchObject({ signUp: true, theme: { dark: {} } }),
+  );
 
   const input = screen.getByLabelText(/Upload a logo/);
   expect(input.getAttribute("accept")).toBe("image/png,image/jpeg,image/webp");

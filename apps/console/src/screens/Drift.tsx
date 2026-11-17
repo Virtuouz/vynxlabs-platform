@@ -1,7 +1,8 @@
-import { Notice, SideSheet } from "@vynxlabs/ui";
+import { SideSheet } from "@vynxlabs/ui";
 import { useMemo, useState } from "react";
 import { useLoad } from "../api.ts";
 import { folded, lineDiff, sortedJson } from "../kit/diff.ts";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, type State, StatePill } from "../kit/status.tsx";
 import { useUrlParam } from "../router.tsx";
@@ -26,9 +27,9 @@ interface Drift {
 
 const WORDS = (here: string, there: string): Record<DriftState, [string, State]> => ({
   changed: [`Changed in ${here}`, "warning"],
-  only_here: [`Only in ${here}`, "info"],
-  only_there: [`Only in ${there}`, "paused"],
-  in_sync: ["In sync", "ok"],
+  only_here: [`Only in ${here}`, "ahead"],
+  only_there: [`Only in ${there}`, "behind"],
+  in_sync: ["In sync", "synced"],
 });
 
 /** The first letter lowered, and the names after it kept as they are. */
@@ -55,7 +56,7 @@ export function DriftView({ root, hereName }: { root: string; hereName: string }
       <SectionLabel>
         How {hereName} differs from {there}
       </SectionLabel>
-      {drift.error ? <Notice tone="danger">{drift.error.message}</Notice> : null}
+      {drift.error ? <ErrorState error={drift.error} onRetry={drift.reload} /> : null}
       {!data ? (
         <p className="m-0 text-ink-muted">Comparing…</p>
       ) : (
@@ -152,7 +153,7 @@ function DriftSheet({
       description={`A ${item.kind}, ${lowerFirst(WORDS(hereName, thereName)[item.state][0])}.`}
     >
       <div className="flex flex-col gap-4">
-        {one.error ? <Notice tone="danger">{one.error.message}</Notice> : null}
+        {one.error ? <ErrorState error={one.error} onRetry={one.reload} /> : null}
         {(one.data?.about ?? item.about).length > 0 ? (
           <ul className="m-0 flex flex-col gap-1 pl-5">
             {(one.data?.about ?? item.about).map((line) => (
@@ -168,7 +169,7 @@ function DriftSheet({
             </p>
             <pre
               data-testid="drift-diff"
-              className="m-0 max-h-[60vh] overflow-auto rounded-control border border-line bg-sunken p-3 font-mono text-[12px] leading-5"
+              className="m-0 max-h-[60vh] overflow-auto rounded-control border border-line bg-sunken p-3 font-mono text-code-sm leading-5"
             >
               {lines.map((line, index) =>
                 line.type === "fold" ? (
@@ -195,7 +196,7 @@ function DriftSheet({
             </pre>
           </div>
         ) : (
-          <p className="m-0 text-ink-muted">Loading…</p>
+          <Loading />
         )}
       </div>
     </SideSheet>

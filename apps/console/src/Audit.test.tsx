@@ -33,6 +33,26 @@ beforeEach(() => {
   }));
   vi.stubGlobal("fetch", async (address: string) => {
     asked.push(address);
+    if (address.includes("/audit-facets")) {
+      return new Response(
+        JSON.stringify({
+          actions: [
+            { value: "secret.set", count: 4 },
+            { value: "run.started", count: 2 },
+          ],
+          actors: [
+            {
+              type: "member",
+              id: "00000000-0000-7000-8000-00000000aaaa",
+              label: "jane@acme.test",
+              count: 6,
+            },
+          ],
+          targetTypes: [{ value: "secret", count: 6 }],
+        }),
+        { status: 200 },
+      );
+    }
     const items = address.includes("area=role")
       ? [entry("r", "role.created")]
       : [
@@ -74,27 +94,50 @@ test("the newest entry is open beside the list, and choosing another opens it", 
   expect(details.textContent).toContain("Done by an operator under an access grant.");
 });
 
-test("the list narrows by kind here and by area on the server", async () => {
+test("every filter is the server's, chosen from what the log holds", async () => {
   show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
   await screen.findAllByText("secret.set");
-  fireEvent.click(screen.getByRole("radio", { name: /Execute/ }));
-  expect(screen.queryByText("secret.set")).toBeNull();
-  // In the list, and in the details that open for it.
-  expect(screen.getAllByText("run.started")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("radio", { name: /Create/ }));
-  expect(screen.getByText("Nothing of that kind")).toBeTruthy();
-
+  const lastList = () => asked.filter((one) => /\/audit\?/.test(one)).at(-1) ?? "";
+  // Who, the action and the kind of thing are offered from the log, with how many each.
+  await screen.findByRole("option", { name: "jane@acme.test (6)" });
+  fireEvent.change(screen.getByLabelText("Who"), {
+    target: { value: "00000000-0000-7000-8000-00000000aaaa" },
+  });
+  await waitFor(() => expect(lastList()).toContain("actorId=00000000-0000-7000-8000-00000000aaaa"));
+  fireEvent.change(screen.getByLabelText("Done to"), { target: { value: "secret" } });
+  await waitFor(() => expect(lastList()).toContain("targetType=secret"));
   fireEvent.change(screen.getByLabelText("Area"), { target: { value: "role" } });
   await screen.findAllByText("role.created");
-  await waitFor(() => expect(asked.at(-1)).toBe("/api/v1/tenants/t1/audit?limit=50&area=role"));
+  await waitFor(() => expect(lastList()).toContain("area=role"));
+  // The facets follow the same filters.
+  expect(asked.filter((one) => one.includes("/audit-facets")).at(-1)).toContain("area=role");
 });
 
-test("a search narrows what was loaded, by who, action or ID", async () => {
+test("a search is the server's, so it looks through the whole log", async () => {
   show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
   await screen.findAllByText("secret.set");
   fireEvent.input(screen.getByLabelText("Search"), { target: { value: "target-c" } });
-  await waitFor(() => expect(screen.queryByText("secret.set")).toBeNull());
-  expect(screen.getAllByText("run.started").length).toBeGreaterThan(0);
+  await waitFor(() =>
+    expect(asked.filter((one) => /\/audit\?/.test(one)).at(-1)).toContain("q=target-c"),
+  );
+});
+
+test("an entry linked to is opened, even when it is not among those loaded", async () => {
+  history.replaceState(null, "", "/t/t1/audit?entry=far");
+  const fetched = vi.fn();
+  const listed = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address === "/api/v1/tenants/t1/audit/far") {
+      fetched();
+      return new Response(JSON.stringify(entry("far", "member.deleted")), { status: 200 });
+    }
+    return (listed as (address: string) => Promise<Response>)(address);
+  });
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  const details = await screen.findByRole("complementary", { name: "Entry details" });
+  await waitFor(() => expect(details.textContent).toContain("detail-far"));
+  expect(fetched).toHaveBeenCalled();
+  history.replaceState(null, "", "/");
 });
 
 test("the time it covers is asked of the server", async () => {

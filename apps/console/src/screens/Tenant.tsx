@@ -1,10 +1,10 @@
-import { Badge, Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
-import { Inspector, KeyValues } from "../kit/layout.tsx";
+import { KeyValues } from "../kit/layout.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import {
   type CreateConfig,
@@ -48,7 +48,7 @@ const DashboardView = lazy(() =>
   import("./Dashboards.tsx").then((m) => ({ default: m.DashboardView })),
 );
 const InterfaceBuilder = lazy(() =>
-  import("./Interfaces.tsx").then((m) => ({ default: m.InterfaceBuilder })),
+  import("./builder/AppBuilder.tsx").then((m) => ({ default: m.AppBuilder })),
 );
 const Interfaces = lazy(() => import("./Interfaces.tsx").then((m) => ({ default: m.Interfaces })));
 const SingleSignOn = lazy(() =>
@@ -60,10 +60,14 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
+import { EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
+import { GiveAccess } from "./GiveAccess.tsx";
 import { EndUserGroups } from "./Groups.tsx";
 import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
 import { ConnectionPage, EventPage, ScriptPage, SecretPage, VariablePage } from "./ObjectPages.tsx";
@@ -92,11 +96,10 @@ interface Grant {
   active: boolean;
 }
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 /** Production is always marked. It is the one thing nobody should have to look for. */
-export const TypeBadge = ({ type }: { type: "production" | "dev" }) =>
-  type === "production" ? <Badge tone="attention">Production</Badge> : <Badge>Dev</Badge>;
+export const TypeBadge = ({ type }: { type: "production" | "dev" }) => <EnvTag type={type} />;
 
 const grantForm = (tenantId: string, roles: Role[]): CreateConfig => ({
   action: "Open operator access",
@@ -210,8 +213,9 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
             </Button>
           }
         >
-          <strong>Operator access</strong> as {mine.roleName}, until {when(mine.expiresAt)}. Reason:{" "}
-          {mine.reason}. Everything you do here is recorded for the tenant.
+          <strong>Operator access</strong> as {mine.roleName}, until{" "}
+          <time dateTime={mine.expiresAt}>{when(mine.expiresAt)}</time>. Reason: {mine.reason}.
+          Everything you do here is recorded for the tenant.
         </Notice>
       ) : null}
       {workspace?.w ? (
@@ -342,6 +346,13 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
             ...values,
             ...(linkedWorkspaceId ? { linkedWorkspaceId } : {}),
           }),
+        done: (made, values) => ({
+          message: `Workspace ${values.name} is made.`,
+          link: {
+            label: `Open ${values.name}`,
+            href: `/t/${tenantId}/workspaces/${(made as { id: string }).id}/overview`,
+          },
+        }),
       }}
     />
   );
@@ -349,8 +360,8 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
 
 function ExportSection({ base }: { base: string }) {
   const tenant = useLoad<{ slug: string }>(base);
-  if (tenant.error) return <Notice tone="danger">{tenant.error.message}</Notice>;
-  if (!tenant.data) return null;
+  if (tenant.error) return <ErrorState error={tenant.error} onRetry={tenant.reload} />;
+  if (!tenant.data) return <Loading />;
   return <TenantExport base={base} slug={tenant.data.slug} />;
 }
 
@@ -415,8 +426,8 @@ function WorkspaceDetail({
     if (named || (!all.data && !all.error)) return null;
     return <NotFound home={`/t/${tenantId}/workspaces`} homeLabel="Go to the workspaces" />;
   }
-  if (workspace.error) return <Notice tone="danger">{workspace.error.message}</Notice>;
-  if (!workspace.data) return null;
+  if (workspace.error) return <ErrorState error={workspace.error} onRetry={workspace.reload} />;
+  if (!workspace.data) return <Loading />;
   if (!WORKSPACE_TABS.has(tab)) {
     return (
       <NotFound
@@ -652,7 +663,7 @@ function WorkspaceDetail({
                 isEditedKind(row.kind) ? (
                   <Link
                     to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                    className="font-mono text-[13px] text-action"
+                    className="font-mono text-code text-action"
                   >
                     {row.path}
                   </Link>
@@ -720,8 +731,9 @@ function WorkspaceDetail({
             text: "Store API keys and passwords here. Resources refer to a secret by its name.",
           }}
           create={{
-            action: "Set secret",
-            description: "Setting a name that already exists replaces its value.",
+            action: "New secret",
+            description:
+              "A name already in use is refused. To change a secret's value, open it and replace it.",
             fields: [
               {
                 name: "name",
@@ -732,9 +744,14 @@ function WorkspaceDetail({
               { name: "value", label: "Value", type: "password" },
             ],
             submit: (values) =>
-              api.put(`${root}/secrets/${encodeURIComponent(values.name ?? "")}`, {
-                value: values.value,
-              }),
+              api.post(`${root}/secrets`, { name: values.name, value: values.value }),
+            done: (_made, values) => ({
+              message: `The secret ${values.name} is made. Name it in a script's uses to read it.`,
+              link: {
+                label: `Open ${values.name}`,
+                href: `/t/${tenantId}/workspaces/${workspaceId}/secrets/${values.name}`,
+              },
+            }),
           }}
           rowActions={(row, reload) => (
             <RemoveButton
@@ -753,54 +770,7 @@ function WorkspaceDetail({
 
 function ServiceAccounts({ base, path }: { base: string; path: string }) {
   const selected = match("/t/:t/service-accounts/:id", path)?.id;
-  if (selected) {
-    const keys = `${base}/service-accounts/${selected}/api-keys`;
-    return (
-      <>
-        <ListScreen<KeyRow>
-          title="Service account keys"
-          description="A key acts as the service account, with the access the account has been given."
-          path={keys}
-          rowKey={(row) => row.id}
-          columns={keyColumns}
-          empty={{ title: "No keys yet" }}
-          create={{
-            action: "Create API key",
-            fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
-            submit: (values) => api.post(keys, values),
-            afterCreate: showNewKey,
-          }}
-          rowActions={(row, reload) =>
-            row.revokedAt ? null : (
-              <RemoveButton
-                label="Revoke"
-                confirm={`Revoke the key "${row.name}"?`}
-                run={() => api.delete(`${keys}/${row.id}`)}
-                onDone={reload}
-              />
-            )
-          }
-        />
-        <Page
-          title="Agent access"
-          description="What an AI agent gets when it connects with one of these keys."
-        >
-          <AgentAccess base={base} account={selected} />
-        </Page>
-        <Page
-          title="Access"
-          description="Everything this account may do in the tenant, where, and what gives it."
-        >
-          <EffectiveAccess
-            base={base}
-            tenantId={base.split("/")[2] as string}
-            principalType="service_account"
-            id={selected}
-          />
-        </Page>
-      </>
-    );
-  }
+  if (selected) return <ServiceAccountPage base={base} id={selected} />;
   return <ServiceAccountList base={base} />;
 }
 
@@ -811,12 +781,128 @@ interface ServiceAccount {
   createdAt: string;
 }
 
+/**
+ * One service account, all in one place (08 §6.3): what it is and what it is
+ * for, its keys, what it may do and where, and what an agent gets with it.
+ */
+function ServiceAccountPage({ base, id }: { base: string; id: string }) {
+  const tenantId = base.split("/")[2] as string;
+  const accounts = useLoad<{ items: ServiceAccount[] }>(`${base}/service-accounts`);
+  const account = accounts.data?.items.find((one) => one.id === id);
+  const [giving, setGiving] = useState(false);
+  const [accessVersion, setAccessVersion] = useState(0);
+  if (accounts.error) return <ErrorState error={accounts.error} onRetry={accounts.reload} />;
+  if (!accounts.data) return <Loading />;
+  if (!account) {
+    return (
+      <NotFound home={`/t/${tenantId}/service-accounts`} homeLabel="Go to the service accounts" />
+    );
+  }
+  const keys = `${base}/service-accounts/${id}/api-keys`;
+  return (
+    <>
+      <ObjectPage
+        eyebrow="Service account"
+        title={account.name}
+        meta={
+          <p className="m-0 mt-2 text-ink-muted">
+            {account.description || "What it is for is not said."} Made {when(account.createdAt)}.
+          </p>
+        }
+        actions={
+          <RemoveButton
+            label="Delete"
+            confirm={`Delete ${account.name}? Its keys stop working at once.`}
+            run={() => api.delete(`${base}/service-accounts/${id}`)}
+            onDone={() => navigate(`/t/${tenantId}/service-accounts`)}
+          />
+        }
+        tabs={[
+          {
+            id: "identity",
+            label: "Identity",
+            content: (
+              <div className="max-w-xl">
+                <DescriptionForm base={base} account={account} onSaved={accounts.reload} />
+              </div>
+            ),
+          },
+          {
+            id: "keys",
+            label: "Keys",
+            content: (
+              <ListScreen<KeyRow>
+                as="section"
+                title="Keys"
+                description="A key acts as the service account, with the access the account has been given."
+                path={keys}
+                rowKey={(row) => row.id}
+                columns={keyColumns}
+                empty={{ title: "No keys yet" }}
+                create={{
+                  action: "Create API key",
+                  fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
+                  submit: (values) => api.post(keys, values),
+                  afterCreate: showNewKey,
+                }}
+                rowActions={(row, reload) =>
+                  row.revokedAt ? null : (
+                    <RemoveButton
+                      label="Revoke"
+                      confirm={`Revoke the key "${row.name}"?`}
+                      run={() => api.delete(`${keys}/${row.id}`)}
+                      onDone={reload}
+                    />
+                  )
+                }
+              />
+            ),
+          },
+          {
+            id: "access",
+            label: "Access",
+            content: (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="m-0 text-ink-muted">
+                    Everything this account may do in the tenant, where, and what gives it.
+                  </p>
+                  <Button variant="primary" onClick={() => setGiving(true)}>
+                    Give access
+                  </Button>
+                </div>
+                <EffectiveAccess
+                  key={accessVersion}
+                  base={base}
+                  tenantId={tenantId}
+                  principalType="service_account"
+                  id={id}
+                />
+              </div>
+            ),
+          },
+          {
+            id: "agent",
+            label: "Agent tools",
+            content: <AgentAccess base={base} account={id} />,
+          },
+        ]}
+      />
+      <GiveAccess
+        base={base}
+        open={giving}
+        onClose={() => setGiving(false)}
+        onGiven={() => setAccessVersion((n) => n + 1)}
+        who={{ type: "service_account", id, label: account.name }}
+      />
+    </>
+  );
+}
+
 function ServiceAccountList({ base }: { base: string }) {
   const tenantId = base.split("/")[2];
   const accounts = useLoad<{ items: ServiceAccount[] }>(`${base}/service-accounts`);
-  const [selected, setSelected] = useState<string>();
   const [creating, setCreating] = useState(false);
-  const chosen = accounts.data?.items.find((row) => row.id === selected);
   return (
     <>
       <CollectionView<ServiceAccount>
@@ -829,16 +915,21 @@ function ServiceAccountList({ base }: { base: string }) {
         }
         label="Service accounts"
         rows={accounts.data?.items}
-        error={accounts.error?.message}
+        error={accounts.error}
+        onRetry={accounts.reload}
         rowKey={(row) => row.id}
-        selected={selected}
-        onSelect={(row) => setSelected(row.id)}
+        onSelect={(row) => navigate(`/t/${tenantId}/service-accounts/${row.id}`)}
         columns={[
           {
             header: "Name",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
-                <span className="font-medium">{row.name}</span>
+                <Link
+                  to={`/t/${tenantId}/service-accounts/${row.id}`}
+                  className="font-medium text-action"
+                >
+                  {row.name}
+                </Link>
                 {row.description ? (
                   <span className="text-meta text-ink-muted md:hidden">{row.description}</span>
                 ) : null}
@@ -861,53 +952,14 @@ function ServiceAccountList({ base }: { base: string }) {
           title: "No service accounts yet",
           text: "Create one for each system that calls this tenant, so each can be given only what it needs.",
         }}
-        inspector={
-          <Inspector
-            open={chosen !== undefined}
-            label="Service account"
-            eyebrow="Service account"
-            title={chosen?.name}
-            onClose={() => setSelected(undefined)}
-            footer={
-              chosen ? (
-                <>
-                  <Link
-                    to={`/t/${tenantId}/service-accounts/${chosen.id}`}
-                    className="font-medium text-[13px] text-action hover:underline"
-                  >
-                    Keys and agent access
-                  </Link>
-                  <span className="flex-1" />
-                  <RemoveButton
-                    label="Delete"
-                    confirm={`Delete ${chosen.name}? Its keys stop working.`}
-                    run={() => api.delete(`${base}/service-accounts/${chosen.id}`)}
-                    onDone={() => {
-                      setSelected(undefined);
-                      accounts.reload();
-                    }}
-                  />
-                </>
-              ) : null
-            }
-          >
-            {chosen ? (
-              <DescriptionForm
-                key={chosen.id}
-                base={base}
-                account={chosen}
-                onSaved={accounts.reload}
-              />
-            ) : null}
-          </Inspector>
-        }
       />
       <CreateDialog
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={() => {
+        onCreated={(made) => {
           setCreating(false);
           accounts.reload();
+          navigate(`/t/${tenantId}/service-accounts/${(made as { id: string }).id}?tab=keys`);
         }}
         config={{
           action: "Create service account",
@@ -925,6 +977,7 @@ function ServiceAccountList({ base }: { base: string }) {
               name,
               ...(description ? { description } : {}),
             }),
+          done: (_made, values) => `${values.name} is made. Give it a key, then access.`,
         }}
       />
     </>
@@ -952,6 +1005,7 @@ function DescriptionForm({
         setBusy(true);
         try {
           await api.patch(`${base}/service-accounts/${account.id}`, { description: text });
+          notify.success(`What ${account.name} is for is saved.`);
           onSaved();
         } catch (error) {
           notify.error(error);
@@ -970,7 +1024,7 @@ function DescriptionForm({
         onChange={setText}
       />
       <div>
-        <Button type="submit" size="small" variant="primary" disabled={busy || !changed}>
+        <Button type="submit" size="small" variant="primary" loading={busy} disabled={!changed}>
           Save
         </Button>
       </div>
@@ -994,9 +1048,9 @@ function OperatorAccess({ base }: { base: string }) {
           header: "Status",
           cell: (row) =>
             row.active ? (
-              <Badge tone="attention">Active until {when(row.expiresAt)}</Badge>
+              <StatePill state="active" detail={`until ${when(row.expiresAt)}`} />
             ) : (
-              <Badge>Ended</Badge>
+              <StatePill state="ended" />
             ),
         },
       ]}

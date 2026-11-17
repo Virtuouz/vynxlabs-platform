@@ -10,7 +10,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
+import { SecretField } from "../kit/SecretField.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -25,6 +27,8 @@ export interface ConnectionRow {
   config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
   configSchema: Record<string, unknown>;
   hasCredential: boolean;
+  credentialSetAt?: string | null;
+  credentialSetBy?: string | null;
   health: {
     ok: boolean;
     problem: string | null;
@@ -313,7 +317,7 @@ export function ConnectionWizard({
       footer={
         <div className="flex flex-wrap justify-end gap-2">
           <Button onClick={onClose}>Close</Button>
-          <Button variant="primary" disabled={busy || !schema || !path} onClick={save}>
+          <Button variant="primary" loading={busy} disabled={!schema || !path} onClick={save}>
             {busy ? "Saving…" : saved ? "Save again" : "Save"}
           </Button>
         </div>
@@ -324,7 +328,7 @@ export function ConnectionWizard({
           <SectionLabel>1 · What it is</SectionLabel>
           {row ? (
             <p className="m-0">
-              <code className="font-mono text-[13px]">{row.path}</code> ·{" "}
+              <code className="font-mono text-code">{row.path}</code> ·{" "}
               {CONNECTOR_NAMES[row.connector] ?? row.connector}
               {row.description ? (
                 <span className="text-ink-muted"> · {row.description}</span>
@@ -407,14 +411,12 @@ export function ConnectionWizard({
                 ) : null}
               </div>
               <div className="flex flex-col gap-1">
-                <span className="text-[13px] font-medium">Redirect address</span>
+                <span className="text-body-sm font-medium">Redirect address</span>
                 <span className="flex min-w-0 items-center gap-2">
-                  <code className="min-w-0 font-mono text-[13px] break-all">
-                    {callbackAddress()}
-                  </code>
+                  <code className="min-w-0 font-mono text-code break-all">{callbackAddress()}</code>
                   <CopyButton value={callbackAddress()} />
                 </span>
-                <span className="text-[13px] text-ink-muted">
+                <span className="text-body-sm text-ink-muted">
                   Add it to the app you register with the provider, which gives you the client ID
                   and secret.
                 </span>
@@ -433,23 +435,22 @@ export function ConnectionWizard({
               onChange={(value) => setConfig((value ?? {}) as Record<string, unknown>)}
             />
           ) : (
-            <p className="m-0 text-ink-muted">Loading…</p>
+            <Loading />
           )}
         </section>
 
         <section className="flex flex-col gap-3" ref={credentialRef} tabIndex={-1}>
           <SectionLabel>3 · {credentialSays.label}</SectionLabel>
-          <TextField
+          <SecretField
             label={credentialSays.label}
             name="credential"
-            type="password"
-            autoComplete="new-password"
+            stored={hasCredential}
+            setAt={chosen?.credentialSetAt}
+            setBy={chosen?.credentialSetBy}
             value={credential}
-            hint={
-              hasCredential
-                ? "Leave it empty to keep the one stored."
-                : `${credentialSays.hint} Stored encrypted and never shown again.`
-            }
+            {...(hasCredential
+              ? {}
+              : { hint: `${credentialSays.hint} Stored encrypted and never shown again.` })}
             onChange={setCredential}
           />
         </section>

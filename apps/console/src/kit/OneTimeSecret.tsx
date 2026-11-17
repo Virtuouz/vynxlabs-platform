@@ -38,7 +38,7 @@ export function OneTimeSecret({
     <div className="flex flex-col gap-2">
       <p className="m-0">Copy this {noun} now. It is shown only once, and cannot be read again.</p>
       <div className="flex flex-wrap items-center gap-2">
-        <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-[13px] break-all select-all">
+        <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-code break-all select-all">
           {value}
         </code>
         <CopyButton value={value} label={`Copy the ${noun}`} onCopied={() => setCopied(true)} />

@@ -25,9 +25,9 @@ export function CopyIcon({ value, label }: { value: string; label: string }) {
       className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-control align-middle text-ink-subtle hover:bg-surface hover:text-ink"
     >
       {state === "copied" ? (
-        <Check aria-hidden="true" size={13} className="text-success" />
+        <Check aria-hidden="true" size={14} className="text-success" />
       ) : (
-        <Copy aria-hidden="true" size={13} />
+        <Copy aria-hidden="true" size={14} />
       )}
     </button>
   );
@@ -37,7 +37,7 @@ export function CopyIcon({ value, label }: { value: string; label: string }) {
 export function CopyableId({ value, label }: { value: string; label: string }) {
   return (
     <span className="inline-flex max-w-full items-center gap-1">
-      <span className="min-w-0 truncate font-mono text-telemetry" title={value}>
+      <span className="min-w-0 truncate font-mono text-code" title={value}>
         {value}
       </span>
       <CopyIcon value={value} label={label} />

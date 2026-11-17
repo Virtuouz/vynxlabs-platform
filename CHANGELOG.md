@@ -2,6 +2,51 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 14, one design system
+
+### For operators
+
+- **Database change.** Migration 0064 records when, and by whom, each stored credential was last set: connection and data source credentials, connection group members, the Git token and identity providers' secrets. A trigger stamps it whenever the sealed value changes. Credentials stored before the migration take their row's last change as their date, with no name. Every change's transaction now sets `vx.actor_type` and `vx.actor_id` locally for this.
+- **Rows API.**
+  - Row cursors now point after the last row seen (keyset), wherever a table has a key and is sorted by one column or none. Pages no longer repeat or skip rows when rows are added meanwhile, and deep pages cost the same as the first. Cursors stay opaque, and old offset cursors still work.
+  - New `POST rows-deletions/*`, written `POST /workspaces/:w/row-deletions/<table> {ids}`. It deletes up to 1,000 rows the policy allows, in one statement, and returns `deleted` and `missing`.
+  - New `GET rows-export/<table>?filter=&sort=` streams the rows the caller may read as CSV, up to 100,000. Values a spreadsheet would run as a formula start with an apostrophe.
+- **Database change.** Migration 0065 adds two indexes to the audit log, by actor and by target, for searching a tenant's log. Made on the partitioned table, they reach every month's partition.
+- **Audit API.**
+  - `GET audit` takes `targetType`, `workspaceId` and `q` (text in the action, target or kind of target), and its entries carry `targetLabel`, what the target is called now.
+  - New `GET audit/:id` for a link to one entry.
+  - New `GET audit-facets` gives the actions, actors and kinds of target among the entries the same filters keep, with counts.
+  - New `GET audit-export` streams the same entries as CSV, up to 100,000.
+- **People API.**
+  - New `GET principals?q=` finds members, groups, service accounts, end users and groups of end users by name or email.
+  - `POST members` takes optional `bindings` (role, and workspace), given in the same change as the membership. Each needs `binding:write` where it applies.
+- **Creating a tenant can make its creator a member.** `POST /tenants {addCreator: true}` makes the operator a member of the new tenant holding `tenant_admin`, in the same change and in its audit log. The console's dialog offers it, checked by default. Without it, as before, an operator works inside only through an access grant.
+- **Workspace summary.** `GET /workspaces/:w/summary` adds `scripts` and `flows` (deployed or in draft), `everRan` and `workersOnline`, for a new workspace's first steps.
+- **Scripts list.** `GET scripts` lists scripts that are only drafts too, with `draft` and `deployed` on each.
+- **New API.** `POST /workspaces/:w/secrets {name, value}` makes a secret and refuses a name already in use (409). `PUT secrets/:name` still sets or replaces one. Connection, data source, group member, Git repository and identity provider responses carry `credentialSetAt` and `credentialSetBy`.
+
+### For tenant developers
+
+- **The kit's tokens are version 2, and apps built on `@vynxlabs/ui` look slightly different.** What moved:
+  - **Type.** New roles `text-display-lg` (26 px), `text-emphasis` (15), `text-body-sm` (13), `text-code` (13, mono) and `text-code-sm` (12, mono). `text-display` is now 20 px (was 26), `text-title` 16 (was 18), `text-meta` 12 (was 12.5) and `text-label` 11 (was 12). Line heights are whole pixels. `text-telemetry` and `text-micro` are gone: use `font-mono text-code` and `text-meta`.
+  - **Corners.** Panels are 8 px (was 10). New `rounded-inner` (2 px inside the control radius, for tags, chips and cells) and `rounded-overlay` (dialogs and sheets). A theme's `radius-panel` still overrides it.
+  - **Elevation and layers.** `shadow-overlay` (menus, popovers, toasts), `shadow-modal` (dialogs, sheets) and `shadow-drag`, deeper in dark. `layer-sticky`, `layer-sheet`, `layer-dialog`, `layer-popover`, `layer-toast` and `layer-skip` in place of z-index numbers.
+  - **Controls.** `h-control` is the page's control height: 36 px by default, set by `--vx-control-height`. `Button` takes `size="large"` (always 36 px) beside `regular` and `small`, and shows a pressed state. Inputs pad 12 px.
+  - **Motion.** Dialogs fade and settle, sheets slide in from their edge, menus and comboboxes fade in (`motion-fast`, `motion-base`, `motion-slow`). Nothing moves under `prefers-reduced-motion`.
+  - **Prose** is set to one measure, `max-w-measure` (72ch).
+- **What to do.** Nothing, unless an app used `text-telemetry` or `text-micro`, or depends on the old sizes. Look over your app's screens after upgrading.
+- **Fields** (`TextField`, `SelectField`, `TextAreaField`, `NumberField`, `DateField`, `ComboboxField`): the error is tied to its control by `aria-describedby`, beside the hint, which now stays. An invalid control has a danger edge. `required` shows a mark, and `required={false}` shows "optional". The marks are hidden from assistive technology, which hears the control's own `required`, so labels and accessible names are unchanged. `FieldFrame` is exported, to give a field of your own the same label, hint and error.
+- **Toasts** take a `title`, a `link` to the result and an `info` tone. Three show at a time, and Esc dismisses one. `ToastProvider` takes `navigate` to follow links through your router.
+- **`Button loading`** shows a spinner beside the label, sets `aria-busy` and refuses a second press.
+- **Served apps lay out by the room they are given** (container queries), not by the window's width. The page switches to its 12-column grid once it has 672 px, about a tablet's width. A page embedded in something narrower stacks as a phone's does, and the App Builder's phone and tablet previews now show what a phone and a tablet would.
+- **`Grid navigation="grid"`** follows the WAI-ARIA grid pattern:
+  - one tab stop, with arrow keys, Home/End and Page keys between cells;
+  - Enter or F2 to edit, Escape to put a value back, Space to check a row;
+  - a sticky header and a pinned first column;
+  - `density` (`compact` rows are 28 px), and checkboxes through `checked` and `onCheck`.
+  
+  Without it, the grid works as before.
+
 ## Unreleased: phase 13, the debugging and authoring loop
 
 ### For operators

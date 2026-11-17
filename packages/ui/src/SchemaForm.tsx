@@ -326,7 +326,7 @@ function Node(props: NodeProps): ReactNode {
     return (
       <div className="flex flex-col gap-1">
         {none ? (
-          <p className="m-0 text-[13px] font-medium text-ink">{label}</p>
+          <p className="m-0 text-body-sm font-medium text-ink">{label}</p>
         ) : (
           <Node {...props} schema={plain} />
         )}
@@ -358,7 +358,7 @@ function Node(props: NodeProps): ReactNode {
     if (choices.length <= FEW && required) {
       return (
         <div className="flex flex-col gap-1">
-          <span className="text-[13px] font-medium text-ink" aria-hidden>
+          <span className="text-body-sm font-medium text-ink" aria-hidden>
             {label}
           </span>
           <SegmentedControl
@@ -368,11 +368,11 @@ function Node(props: NodeProps): ReactNode {
             onChange={(at) => onChange(choices[Number(at)])}
           />
           {error ? (
-            <p role="alert" className="m-0 text-[13px] text-danger">
+            <p role="alert" className="m-0 text-body-sm text-danger">
               {error}
             </p>
           ) : hint ? (
-            <p className="m-0 text-[13px] text-ink-muted">{hint}</p>
+            <p className="m-0 text-body-sm text-ink-muted">{hint}</p>
           ) : null}
         </div>
       );
@@ -472,10 +472,10 @@ function Node(props: NodeProps): ReactNode {
     if (pointer === "") return <div className="flex flex-col gap-4">{fields}</div>;
     return (
       <fieldset className="m-0 flex min-w-0 flex-col gap-3 rounded-control border border-line p-3">
-        <legend className="px-1 text-[13px] font-medium text-ink">{label}</legend>
-        {hint ? <p className="m-0 text-[13px] text-ink-muted">{hint}</p> : null}
+        <legend className="px-1 text-body-sm font-medium text-ink">{label}</legend>
+        {hint ? <p className="m-0 text-body-sm text-ink-muted">{hint}</p> : null}
         {error ? (
-          <p role="alert" className="m-0 text-[13px] text-danger">
+          <p role="alert" className="m-0 text-body-sm text-danger">
             {error}
           </p>
         ) : null}
@@ -569,10 +569,10 @@ function ListNode({ schema, value, onChange, pointer, label, errors, disabled }:
   const itemLabel = typeof items.title === "string" ? items.title : "Item";
   return (
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 rounded-control border border-line p-3">
-      <legend className="px-1 text-[13px] font-medium text-ink">{label}</legend>
-      {hint ? <p className="m-0 text-[13px] text-ink-muted">{hint}</p> : null}
+      <legend className="px-1 text-body-sm font-medium text-ink">{label}</legend>
+      {hint ? <p className="m-0 text-body-sm text-ink-muted">{hint}</p> : null}
       {errors[pointer] ? (
-        <p role="alert" className="m-0 text-[13px] text-danger">
+        <p role="alert" className="m-0 text-body-sm text-danger">
           {errors[pointer]}
         </p>
       ) : null}

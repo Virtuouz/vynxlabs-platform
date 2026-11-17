@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations, snap } from "./visual.ts";
 
 /**
  * The console of phase 8, checked in a browser on a running instance: every
@@ -8,7 +9,8 @@ import { signInWithPassword } from "./sign-in.ts";
  * drawer on a phone. The instance's branding names and colors the console, and
  * a tenant's branding does not reach it.
  *
- * Screenshots are kept beside each test's results, in `e2e/results/`, to look over by eye.
+ * Each screen is compared with its reviewed picture in `e2e/snapshots/`, except those
+ * whose content depends on what else is on the instance, and checked with axe.
  */
 
 const ADMIN = {
@@ -17,7 +19,7 @@ const ADMIN = {
 };
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
-const PRODUCT = `Northwind Console ${stamp}`;
+const PRODUCT = "Northwind Console";
 /** The instance's accent, and a tenant's, chosen to be told apart. */
 const INSTANCE_ACCENT = "#0f766e";
 const TENANT_ACCENT = "#c026d3";
@@ -84,7 +86,7 @@ test.beforeAll(async ({ browser }) => {
     "brand the console",
   );
   tenant = ok(
-    await api("POST", "/tenants", { slug: `look-${stamp}`, name: `Look ${stamp}` }),
+    await api("POST", "/tenants", { slug: `look-${stamp}`, name: "Look" }),
     "make a tenant",
   ).body;
   // An operator sees inside a tenant through a grant, as the console asks them to.
@@ -128,6 +130,9 @@ test.afterAll(async () => {
   await api("POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
 });
 
+/** Screens that list what the whole instance holds, which other tests change: not compared. */
+const INSTANCE_WIDE = new Set(["tenants", "audit", "workers", "account"]);
+
 /** The screens a person reaches from the rail, by address. */
 const screens = () => {
   const ws = `/t/${tenant.id}/workspaces/${workspace}`;
@@ -141,7 +146,7 @@ const screens = () => {
     ["events", `${ws}/events`],
     ["triggers", `${ws}/triggers`],
     ["release", `${ws}/release`],
-    ["data", `${ws}/data`],
+    ["tables", `${ws}/tables`],
     ["connections", `${ws}/connections`],
     ["tenant", `/t/${tenant.id}`],
     ["members", `/t/${tenant.id}/members`],
@@ -174,14 +179,32 @@ for (const theme of THEMES) {
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(overflow, `${name} scrolls sideways at ${size.width}px`).toBeLessThanOrEqual(0);
-        await admin.screenshot({
-          path: test.info().outputPath(`${theme}-${size.name}-${name}.png`),
-          fullPage: false,
-        });
+        if (!INSTANCE_WIDE.has(name)) await snap(admin, `${theme}-${size.name}-${name}`);
+        if (theme === "light" && size.name === "desktop") {
+          await expectNoAxeViolations(admin, name);
+        }
       }
     });
   }
 }
+
+test("the component kit looks as reviewed, whole, in light and in dark", async () => {
+  await admin.setViewportSize({ width: 1440, height: 960 });
+  for (const theme of THEMES) {
+    await admin.evaluate((choice) => localStorage.setItem("vx-theme", choice), theme);
+    await admin.goto("/instance/kit");
+    await admin.getByRole("heading", { name: "Component kit" }).waitFor();
+    // The console scrolls inside its main region, so the window is made as tall as the sheet.
+    const tall = await admin.evaluate(() => {
+      const main = document.querySelector("main");
+      return Math.ceil((main?.scrollHeight ?? 0) + (main?.getBoundingClientRect().top ?? 0));
+    });
+    await admin.setViewportSize({ width: 1440, height: Math.max(960, tall) });
+    await snap(admin, `kit-${theme}`);
+    await admin.setViewportSize({ width: 1440, height: 960 });
+    if (theme === "light") await expectNoAxeViolations(admin, "the component kit");
+  }
+});
 
 test("on a phone the navigation is a drawer that opens and closes", async () => {
   await admin.setViewportSize({ width: 390, height: 844 });

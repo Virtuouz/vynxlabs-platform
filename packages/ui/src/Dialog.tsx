@@ -26,12 +26,12 @@ export function Dialog({
     <Base.Root open={open} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>
         {/* Above a side sheet: a question asked from one is answered over it. */}
-        <Base.Backdrop className="fixed inset-0 z-[60] bg-ink/40" />
+        <Base.Backdrop className="fixed inset-0 layer-dialog bg-ink/40 transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup
-          className={`fixed z-[61] overflow-y-auto border-line bg-surface p-5 shadow-xl ${
+          className={`fixed layer-dialog overflow-y-auto border-line bg-surface p-5 shadow-modal transition-[opacity,scale] motion-slow data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0 ${
             size === "palette"
-              ? "inset-0 md:inset-auto md:top-[10vh] md:left-1/2 md:max-h-[80vh] md:w-[min(40rem,calc(100vw-2rem))] md:-translate-x-1/2 md:rounded-panel md:border"
-              : `left-1/2 max-h-[88vh] -translate-x-1/2 rounded-panel border ${
+              ? "inset-0 md:inset-auto md:top-[10vh] md:left-1/2 md:max-h-[80vh] md:w-[min(40rem,calc(100vw-2rem))] md:-translate-x-1/2 md:rounded-overlay md:border"
+              : `left-1/2 max-h-[88vh] -translate-x-1/2 rounded-overlay border ${
                   size === "wide"
                     ? "top-[6vh] w-[min(46rem,calc(100vw-2rem))]"
                     : "top-[12vh] w-[min(30rem,calc(100vw-2rem))]"
@@ -39,7 +39,7 @@ export function Dialog({
           }`}
         >
           <div className="flex items-start justify-between gap-3">
-            <Base.Title className="m-0 text-base font-semibold">{title}</Base.Title>
+            <Base.Title className="m-0 text-title font-semibold">{title}</Base.Title>
             {/* A way out that can be seen and pressed, beside Esc and the backdrop. */}
             <Base.Close
               aria-label="Close"

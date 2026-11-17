@@ -1,16 +1,28 @@
 import {
+  Ban,
+  CircleAlert,
   CircleCheck,
   CircleDashed,
-  CircleDot,
   CircleHelp,
+  CircleMinus,
+  CircleOff,
   CirclePause,
+  CircleSlash,
   CircleX,
   Clock,
+  GitBranch,
   Hourglass,
   Info,
+  LoaderCircle,
   Lock,
   type LucideIcon,
+  Mail,
+  PencilLine,
+  ShieldAlert,
+  ShieldCheck,
+  ToggleRight,
   TriangleAlert,
+  Unlink,
   UserRoundCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -29,61 +41,129 @@ export type RunState =
   | "canceled"
   | "skipped";
 
-export type State =
-  | RunState
-  | "waiting"
-  | "paused"
-  | "cancelled"
-  | "retired"
-  | "warning"
-  | "info"
-  | "locked"
-  | "ok"
-  | "unknown";
-
-const STATES: Record<State, [label: string, icon: LucideIcon, tone: string]> = {
-  // A run's states: the one map every screen uses.
-  queued: ["Queued", Clock, "text-ink-muted"],
-  running: ["Running", CircleDot, "text-action"],
-  waiting_approval: ["Waiting for approval", UserRoundCheck, "text-attention"],
-  waiting_time: ["Waiting", Hourglass, "text-attention"],
-  succeeded: ["Succeeded", CircleCheck, "text-success"],
-  failed: ["Failed", CircleX, "text-danger"],
-  canceled: ["Canceled", CircleDashed, "text-ink-subtle"],
-  skipped: ["Skipped", CircleDashed, "text-ink-subtle"],
-  // Other things' states.
-  ok: ["OK", CircleCheck, "text-success"],
-  waiting: ["Waiting", CirclePause, "text-attention"],
-  paused: ["Paused", CirclePause, "text-attention"],
-  cancelled: ["Canceled", CircleDashed, "text-ink-subtle"],
-  retired: ["Retired", CircleDashed, "text-ink-subtle"],
-  warning: ["Needs attention", TriangleAlert, "text-attention"],
-  info: ["Note", Info, "text-action"],
-  locked: ["Read-only", Lock, "text-ink-muted"],
-  // A state this console does not know yet, such as one a newer server added.
-  unknown: ["Unknown", CircleHelp, "text-ink-muted"],
+type Tone = "neutral" | "subtle" | "action" | "attention" | "success" | "danger";
+const TONE: Record<Tone, string> = {
+  neutral: "text-ink-muted",
+  subtle: "text-ink-subtle",
+  action: "text-action",
+  attention: "text-attention",
+  success: "text-success",
+  danger: "text-danger",
 };
 
-const lookUp = (state: string) => STATES[state as State] ?? STATES.unknown;
+/**
+ * Every state the console shows, in one map: a word, an icon and a tone. If a
+ * value changes over an object's life it is a state, shown with `StatePill`.
+ * If it is fixed when the object is made (its kind, where it comes from) it is
+ * a `Tag`; if it is a number, a `Badge`.
+ */
+const STATES = {
+  // A run's states, and a step's.
+  queued: ["Queued", Clock, "neutral"],
+  running: ["Running", LoaderCircle, "action"],
+  waiting_approval: ["Waiting for approval", UserRoundCheck, "attention"],
+  waiting_time: ["Waiting", Hourglass, "attention"],
+  succeeded: ["Succeeded", CircleCheck, "success"],
+  failed: ["Failed", CircleX, "danger"],
+  canceled: ["Canceled", CircleSlash, "neutral"],
+  skipped: ["Skipped", CircleDashed, "subtle"],
+  // Something waiting on someone, or on a time.
+  waiting: ["Waiting", CirclePause, "attention"],
+  approved: ["Approved", CircleCheck, "success"],
+  declined: ["Declined", CircleX, "danger"],
+  // Lifecycle: what was written, and what runs.
+  new: ["Not saved", CircleDashed, "subtle"],
+  draft: ["Draft", PencilLine, "action"],
+  unsaved: ["Unsaved changes", PencilLine, "attention"],
+  deployed: ["Deployed", CircleCheck, "success"],
+  repository: ["From the repository", GitBranch, "neutral"],
+  retired: ["Retired", CircleMinus, "subtle"],
+  outdated: ["Older version", TriangleAlert, "attention"],
+  // A branch against what the workspace runs.
+  never_pushed: ["Not pushed yet", CircleDashed, "subtle"],
+  synced: ["In sync", CircleCheck, "success"],
+  ahead: ["Ahead of the branch", CircleAlert, "attention"],
+  behind: ["Behind the branch", CircleAlert, "attention"],
+  conflict: ["Conflict", TriangleAlert, "danger"],
+  sync_failed: ["Last sync failed", CircleX, "danger"],
+  // Availability: of a person, a key or a grant.
+  active: ["Active", CircleCheck, "success"],
+  invited: ["Invited", Mail, "attention"],
+  suspended: ["Suspended", CirclePause, "attention"],
+  disabled: ["Disabled", Ban, "subtle"],
+  revoked: ["Revoked", Ban, "danger"],
+  expired: ["Expired", Clock, "subtle"],
+  ended: ["Ended", CircleMinus, "subtle"],
+  // A switch.
+  on: ["On", ToggleRight, "success"],
+  off: ["Off", CircleOff, "subtle"],
+  paused: ["Paused", CirclePause, "attention"],
+  // Health: whether something answers, or was proved.
+  ok: ["OK", CircleCheck, "success"],
+  reachable: ["Reachable", CircleCheck, "success"],
+  unreachable: ["Not reachable", CircleX, "danger"],
+  unchecked: ["Not checked", CircleDashed, "subtle"],
+  verified: ["Verified", ShieldCheck, "success"],
+  unverified: ["Not verified", ShieldAlert, "attention"],
+  bound: ["Bound", CircleCheck, "success"],
+  unbound: ["Not bound", Unlink, "attention"],
+  disconnected: ["Not connected", Unlink, "attention"],
+  posted: ["Posted", CircleCheck, "success"],
+  not_posted: ["Not posted", CircleX, "danger"],
+  allowed: ["Allowed", CircleCheck, "success"],
+  denied: ["Denied", Ban, "danger"],
+  // Notes.
+  warning: ["Needs attention", TriangleAlert, "attention"],
+  info: ["Note", Info, "action"],
+  locked: ["Read-only", Lock, "neutral"],
+  unknown: ["Unknown", CircleHelp, "neutral"],
+} satisfies Record<string, [label: string, icon: LucideIcon, tone: Tone]>;
+
+export type State = keyof typeof STATES;
+export const STATE_NAMES = Object.keys(STATES) as State[];
+
+/** A state's word, icon and tone. A value this console does not know is shown as it is. */
+export const lookUp = (state: string): [string, LucideIcon, string] => {
+  const known = Object.hasOwn(STATES, state) ? STATES[state as State] : undefined;
+  if (!known) return [state || "Unknown", CircleHelp, TONE.neutral];
+  return [known[0], known[1], TONE[known[2] as Tone]];
+};
+
+const time = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
 /**
  * A state as an icon and a word in its color, never a filled chip, so color is
- * never the only sign. `children` replaces the word; `detail` follows it, muted.
+ * never the only sign. `children` says the same state in more words; `detail`
+ * follows it, muted. A run waiting for a time says until when, given `until`.
+ * Running is the one thing that moves, and not under reduced motion.
  */
 export function StatePill({
   state,
   children,
   detail,
+  until,
 }: {
-  state: State;
+  state: State | (string & {});
   children?: ReactNode;
   detail?: ReactNode;
+  until?: string | null | undefined;
 }) {
   const [label, Icon, tone] = lookUp(state);
+  const word = state === "waiting_time" && until ? `Waiting until ${time(until)}` : label;
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      <Icon aria-hidden="true" size={14} className={`shrink-0 ${tone}`} />
-      <span className={`truncate ${tone}`}>{children ?? label}</span>
+      <Icon
+        aria-hidden="true"
+        size={14}
+        className={`shrink-0 ${tone} ${state === "running" ? "animate-spin-slow" : ""}`}
+      />
+      <span className={`truncate ${tone}`}>{children ?? word}</span>
       {detail ? <span className="truncate text-meta text-ink-subtle">{detail}</span> : null}
     </span>
   );
@@ -104,10 +184,18 @@ export const STATE_STROKE: Record<RunState, string> = {
   succeeded: "var(--vx-success)",
   failed: "var(--vx-danger)",
   canceled: "var(--vx-ink-muted)",
-  skipped: "var(--vx-line)",
+  skipped: "var(--vx-ink-subtle)",
 };
 
-export type TagTone = "dev" | "production" | "draft" | "repository" | "live" | "neutral" | "danger";
+export type TagTone =
+  | "dev"
+  | "production"
+  | "draft"
+  | "repository"
+  | "live"
+  | "neutral"
+  | "attention"
+  | "danger";
 
 const TAGS: Record<TagTone, string> = {
   dev: "border-action/45 text-action",
@@ -116,6 +204,8 @@ const TAGS: Record<TagTone, string> = {
   repository: "border-line-strong text-ink-muted",
   live: "border-success/45 text-success",
   neutral: "border-line-strong text-ink-muted",
+  /** Something to notice that is not production, such as an operator's action. */
+  attention: "border-attention/45 text-attention",
   danger: "border-danger/45 text-danger",
 };
 

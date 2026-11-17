@@ -1,5 +1,4 @@
 import {
-  Badge,
   Button,
   EmptyState,
   Grid,
@@ -18,6 +17,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { StatePill } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import {
@@ -502,7 +502,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
               <Link to={`${link}/tables/${row.name}`} className="font-medium text-action">
                 {row.name}
               </Link>
-              {row.status === "retired" ? <Badge tone="attention">Retired</Badge> : null}
+              {row.status === "retired" ? <StatePill state="retired" /> : null}
             </span>
           ),
         },
@@ -1039,7 +1039,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
             row.bound ? (
               `${row.config?.database} on ${row.config?.host}, as ${row.config?.user}`
             ) : (
-              <Badge tone="attention">Not connected</Badge>
+              <StatePill state="disconnected" />
             ),
         },
         { header: "Password", cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : "") },

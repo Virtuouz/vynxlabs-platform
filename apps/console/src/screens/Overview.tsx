@@ -342,7 +342,9 @@ export function Overview({
         meta={
           <>
             <EnvTag type={workspace.type} />
-            {workspace.triggersPaused ? <Tag tone="production">Triggers paused</Tag> : null}
+            {workspace.triggersPaused ? (
+              <StatePill state="paused">Triggers paused</StatePill>
+            ) : null}
             {counts?.version !== null && counts?.version !== undefined ? (
               <span className="text-ink-muted">
                 Running <Mono>v{counts.version}</Mono>

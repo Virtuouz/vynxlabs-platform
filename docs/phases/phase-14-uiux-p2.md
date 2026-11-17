@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–2 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–3 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -83,3 +83,33 @@ Findings are recorded under each milestone as it lands.
   - `biome --write` on a file that didn't parse stripped JSX braces (`items={[` became `items=[`). They were restored by hand.
   - Tailwind's preflight already zeroes margins, so the base reset 07 asks for exists. The 294 `m-0` are redundant but harmless.
 - **Pictures.** 92 of the 96 changed, all as intended: 20 px titles, 32 px controls, 8 px corners, 12 px meta and lighter icons. The served app changed only in line heights and corners. Two compare runs then passed unchanged. `snap` now asserts softly, so one run reports every screen that differs.
+
+### Milestone 3: status system
+
+- **One map** (`kit/status.tsx`). `STATES` holds every state the console shows, from 08 §3.11–3.12:
+  - run states;
+  - waiting, approved and declined;
+  - lifecycle: not saved, draft, unsaved changes, deployed, from the repository, retired, older version;
+  - a branch against the workspace: not pushed, in sync, ahead, behind, conflict, last sync failed;
+  - availability: active, invited, suspended, disabled, revoked, expired, ended;
+  - a switch: on, off, paused;
+  - health: OK, reachable or not, not checked, verified or not, bound or not, not connected, posted or not, allowed or denied;
+  - notes.
+  
+  Each state has one word, icon and tone, and `State` is derived from the map, so a missing one fails to compile.
+- **Run states, corrected:**
+  - Canceled has `CircleSlash`, distinct from Skipped.
+  - Running is a `LoaderCircle` that turns slowly, the one looping mark, and not under reduced motion.
+  - A run or step waiting for a time reads "Waiting until {time}" when the console has the time.
+  - A value the console doesn't know shows as the server wrote it, not as "Unknown".
+  - The duplicate `cancelled` key is gone.
+- **Replaced:**
+  - The five local maps (`Authoring` ×2, `ResourceEditor`, `FlowEditor`, `Git`).
+  - About 45 state `Badge`s. `Badge` stays only for counts ("+3 more") and in the branding preview of tenant components.
+  - 16 `StatePill`s whose state contradicted its words: `failed` for "No", `running` for "Listening" and "Triggers are running", `paused` for "Suspended", `ok` for "Active", `queued` for "not checked yet".
+  - Five `Tag tone="production"` that didn't mean production: workspace paused is a state, and an operator's action is a new `attention` tag.
+  - A resource's kind, a flow node's type and an audit verb are `Tag`s, since they are fixed when made. "End users can hold it" and a dashboard's audience are plain text.
+- **Runs filters.** "Waiting for approval" and "Waiting for a time" are separate chips. The server already took both states. `?status=waiting` from older links still works.
+- **Server.** Activity rows have `wakeAt`: the earliest waiting step's time, so the list can say until when.
+- **Found.** Milestone 2 broke `apps.test.ts`, which reads the kit's stylesheet by position and keeps the server's own copy of the brand values. Only the console's tests ran for that commit. Here, the non-brand block moved after `@theme inline` and the server's panel radius became 8 px. The whole suite has run since, as the plan says.
+- **Test.** `kit/status.test.tsx` is table-driven, asserting word, icon and tone for each state. It also checks that canceled and skipped differ, that no two run states share a mark, that an unknown value shows verbatim, and "Waiting until".

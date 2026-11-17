@@ -82,7 +82,7 @@ export function InstanceTriggers() {
           ) : (
             <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
               <span className="flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                <StatePill state="running">Triggers are running</StatePill>
+                <StatePill state="on">Triggers are on</StatePill>
                 <span className="text-meta text-ink-muted">
                   Pausing stops them across the instance at once, whatever each workspace says. Use
                   it when scripts are piling up faster than they finish.

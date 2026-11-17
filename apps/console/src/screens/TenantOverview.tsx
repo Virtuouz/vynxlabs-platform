@@ -297,7 +297,7 @@ function WorkspaceLine({
             ) : (
               <StatePill state="ok">No failures today</StatePill>
             )}
-            {s.drafts ? <StatePill state="info">{plural(s.drafts, "draft")}</StatePill> : null}
+            {s.drafts ? <StatePill state="draft">{plural(s.drafts, "draft")}</StatePill> : null}
           </>
         ) : null}
       </div>

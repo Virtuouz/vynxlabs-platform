@@ -26,9 +26,9 @@ interface Drift {
 
 const WORDS = (here: string, there: string): Record<DriftState, [string, State]> => ({
   changed: [`Changed in ${here}`, "warning"],
-  only_here: [`Only in ${here}`, "info"],
-  only_there: [`Only in ${there}`, "paused"],
-  in_sync: ["In sync", "ok"],
+  only_here: [`Only in ${here}`, "ahead"],
+  only_there: [`Only in ${there}`, "behind"],
+  in_sync: ["In sync", "synced"],
 });
 
 /** The first letter lowered, and the names after it kept as they are. */

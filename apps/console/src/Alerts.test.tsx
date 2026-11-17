@@ -122,6 +122,6 @@ test("the queue says where runs wait and for how long, and what each worker hold
     "/t/t1/workspaces/w1/runs?status=queued",
   );
   expect(screen.getByText(/2 tasks for the platform waiting/)).toBeTruthy();
-  expect(await screen.findByText("Older version: takes no tasks")).toBeTruthy();
+  expect(await screen.findByText("Older version")).toBeTruthy();
   expect(screen.getByText("running orders/sync")).toBeTruthy();
 });

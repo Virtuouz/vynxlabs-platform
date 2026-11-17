@@ -1,6 +1,4 @@
 import {
-  Badge,
-  type BadgeTone,
   Button,
   CheckboxField,
   ComboboxField,
@@ -16,6 +14,7 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
+import { StatePill, Tag } from "../kit/status.tsx";
 import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
 import {
   FormDesigner,
@@ -302,12 +301,6 @@ export function ResourceEditor({
 
   autosave.current = save;
 
-  const STATE: Record<typeof state, [BadgeTone, string]> = {
-    new: ["neutral", "Not saved"],
-    draft: ["attention", "Draft"],
-    deployed: ["success", "Deployed"],
-    repository: ["action", "From the repository"],
-  };
   const jsonField = (name: string, label: string, hint: string, rows = 6) => (
     <TextAreaField
       name={name}
@@ -374,9 +367,9 @@ export function ResourceEditor({
               />
             </div>
           )}
-          <Badge>{about.noun}</Badge>
-          <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
-          {dirty ? <Badge>Unsaved changes</Badge> : null}
+          <Tag>{about.noun}</Tag>
+          <StatePill state={state} />
+          {dirty ? <StatePill state="unsaved" /> : null}
         </div>
         {readOnly ? null : (
           <div className="flex items-center gap-2">

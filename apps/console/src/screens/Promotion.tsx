@@ -125,7 +125,7 @@ export function RequestState({ request }: { request: PromotionRequest }) {
   if (request.status === "pending") {
     return (
       <p className="m-0 flex flex-wrap items-center gap-2">
-        <StatePill state="waiting">Waiting</StatePill>
+        <StatePill state="waiting" />
         <span className="text-meta text-ink-muted">
           Asked {fromNow(request.createdAt)} by {request.requestedBy.name} for v{request.version}.
           {moved}
@@ -148,7 +148,7 @@ export function RequestState({ request }: { request: PromotionRequest }) {
     return (
       <div className="flex flex-col gap-1">
         <p className="m-0 flex flex-wrap items-center gap-2">
-          <StatePill state="failed">Declined</StatePill>
+          <StatePill state="declined" />
           <span className="text-meta text-ink-muted">
             v{request.version}, by {request.decidedBy?.name}{" "}
             {request.decidedAt ? fromNow(request.decidedAt) : ""}.

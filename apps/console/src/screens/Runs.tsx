@@ -24,8 +24,16 @@ import { useStreamConnected } from "../stream.ts";
 import { LogWindowNote, stamp, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
-/** What the list can be narrowed to: a state, or either kind of waiting. */
-type Filter = "queued" | "running" | "waiting" | "succeeded" | "failed" | "canceled";
+/** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
+type Filter =
+  | "queued"
+  | "running"
+  | "waiting"
+  | "waiting_approval"
+  | "waiting_time"
+  | "succeeded"
+  | "failed"
+  | "canceled";
 
 interface Activity {
   kind: "script" | "flow";
@@ -42,6 +50,7 @@ interface Activity {
   bundleVersion: number;
   createdAt: string;
   scheduledFor?: string | null;
+  wakeAt?: string | null;
   startedAt: string | null;
   finishedAt: string | null;
 }
@@ -67,7 +76,8 @@ const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = 
   { value: "all", label: "All", states: [] },
   { value: "failed", label: "Failed", states: ["failed"] },
   { value: "running", label: "Running", states: ["running"] },
-  { value: "waiting", label: "Waiting", states: ["waiting_approval", "waiting_time"] },
+  { value: "waiting_approval", label: "Waiting for approval", states: ["waiting_approval"] },
+  { value: "waiting_time", label: "Waiting for a time", states: ["waiting_time"] },
   { value: "queued", label: "Queued", states: ["queued"] },
   { value: "succeeded", label: "Succeeded", states: ["succeeded"] },
   { value: "canceled", label: "Canceled", states: ["canceled"] },
@@ -152,7 +162,9 @@ export function RunsWorkbench({
   const [url, setUrl] = useUrlState(RUNS_URL);
   // An address from before the states, `?status=cancelled`, still works.
   const wanted = url.status === "cancelled" ? "canceled" : url.status;
-  const status: "all" | Filter = FILTERS.some((one) => one.value === wanted)
+  const status: "all" | Filter = [...FILTERS.map((one) => one.value), "waiting"].includes(
+    wanted ?? "",
+  )
     ? (wanted as Filter)
     : "all";
   const kind = url.kind === "script" || url.kind === "flow" ? url.kind : "all";
@@ -387,7 +399,7 @@ export function RunsWorkbench({
     {
       header: "State",
       width: "w-48",
-      cell: (one) => <StatePill state={one.state} />,
+      cell: (one) => <StatePill state={one.state} until={one.wakeAt} />,
     },
     {
       header: "Target",
@@ -935,11 +947,7 @@ export function ScriptRunPanel({
                         className="flex items-center justify-between gap-2"
                       >
                         <Mono>{one.connection}</Mono>
-                        {one.bound ? (
-                          <Tag tone="live">Bound</Tag>
-                        ) : (
-                          <Tag tone="production">Not bound</Tag>
-                        )}
+                        {one.bound ? <Tag tone="live">Bound</Tag> : <StatePill state="unbound" />}
                       </span>
                     ))}
                   </div>

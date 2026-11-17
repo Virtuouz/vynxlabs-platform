@@ -1,12 +1,4 @@
-import {
-  Badge,
-  type BadgeTone,
-  Button,
-  type LogLine,
-  logText,
-  Notice,
-  saveText,
-} from "@vynxlabs/ui";
+import { type BadgeTone, Button, type LogLine, logText, Notice, saveText } from "@vynxlabs/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -557,7 +549,7 @@ export function Deployments({ root }: { root: string }) {
           cell: (row) => (
             <span className="flex items-center gap-2">
               {row.version}
-              {row.active ? <Badge tone="success">Running</Badge> : null}
+              {row.active ? <StatePill state="active">In use</StatePill> : null}
             </span>
           ),
         },
@@ -743,7 +735,7 @@ export function Connections({ root }: { root: string }) {
                   {row.config?.baseUrl ?? row.config?.host ?? ""}
                 </span>
               ) : (
-                <Badge tone="attention">Not bound</Badge>
+                <StatePill state="unbound" />
               ),
           },
         ]}
@@ -903,7 +895,7 @@ function PoolCard({
           </StatePill>
         ) : (
           <StatePill
-            state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "cancelled"}
+            state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "off"}
             detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
           >
             No worker online
@@ -1043,9 +1035,7 @@ export function QueuePanel({ base }: { base: string }) {
               <span className="font-mono text-code text-ink-muted">
                 {worker.version ?? "version unknown"}
               </span>
-              {worker.outdated ? (
-                <Badge tone="attention">Older version: takes no tasks</Badge>
-              ) : null}
+              {worker.outdated ? <StatePill state="outdated" detail="takes no tasks" /> : null}
               <span className="text-ink-muted">
                 {worker.running.length === 0
                   ? "idle"
@@ -1191,11 +1181,7 @@ export function Workers({ base }: { base: string }) {
           {
             header: "Status",
             cell: (row) =>
-              row.revokedAt ? (
-                <Badge tone="danger">Revoked</Badge>
-              ) : (
-                <Badge tone="action">Active</Badge>
-              ),
+              row.revokedAt ? <StatePill state="revoked" /> : <StatePill state="active" />,
           },
         ]}
         empty={{

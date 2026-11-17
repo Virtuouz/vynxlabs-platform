@@ -154,15 +154,15 @@ export function TriggersWorkbench({
       header: "State",
       cell: (row) =>
         row.paused ? (
-          <StatePill state="paused">Paused</StatePill>
+          <StatePill state="paused" />
         ) : !row.enabled ? (
-          <StatePill state="cancelled">Off</StatePill>
+          <StatePill state="off" />
         ) : workspacePaused ? (
           <StatePill state="paused">Workspace paused</StatePill>
         ) : row.nextFireAt ? (
           <span className="text-ink-muted">Next {fromNow(row.nextFireAt)}</span>
         ) : (
-          <StatePill state="running">Listening</StatePill>
+          <StatePill state="on" />
         ),
     },
     {
@@ -686,9 +686,7 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
             cell: (row) => (
               <span className="flex flex-col">
                 <span className="font-medium">{row.title}</span>
-                <StatePill state={row.approved ? "succeeded" : "failed"}>
-                  {row.approved ? "Approved" : "Rejected"}
-                </StatePill>
+                <StatePill state={row.approved ? "approved" : "declined"} />
                 {row.comment || row.via === "email" ? (
                   <span className="max-w-[28rem] text-meta text-ink-muted break-words">
                     {row.comment ? `“${row.comment}”` : ""}

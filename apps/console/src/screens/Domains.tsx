@@ -1,5 +1,4 @@
 import {
-  Badge,
   Button,
   Dialog,
   EmptyState,
@@ -48,13 +47,9 @@ const failed = (error: unknown) => {
 
 function State({ domain }: { domain: Domain }) {
   return (
-    <span className="flex flex-wrap gap-1">
-      {domain.enabled ? <Badge tone="success">Enabled</Badge> : <Badge>Disabled</Badge>}
-      {domain.verifiedAt ? (
-        <Badge tone="action">Verified</Badge>
-      ) : (
-        <Badge tone="attention">Not verified</Badge>
-      )}
+    <span className="flex flex-wrap gap-3">
+      <StatePill state={domain.enabled ? "on" : "off"} />
+      <StatePill state={domain.verifiedAt ? "verified" : "unverified"} />
     </span>
   );
 }

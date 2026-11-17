@@ -43,7 +43,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
-import { Mono, Tag } from "../kit/status.tsx";
+import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { ActionSettings, RowActionsSettings, type TargetFacts } from "./ActionSettings.tsx";
@@ -2022,7 +2022,7 @@ export function Interfaces({
                   {row.removing ? (
                     <Tag tone="danger">Being removed</Tag>
                   ) : row.draft && row.deployed ? (
-                    <Tag tone="production">Edits not published</Tag>
+                    <StatePill state="draft">Edits not published</StatePill>
                   ) : null}
                   {row.editedAt ? (
                     <span className="text-meta text-ink-subtle">

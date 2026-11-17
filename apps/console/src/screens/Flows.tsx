@@ -849,7 +849,7 @@ export function FlowRunView({
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h2 className="m-0 flex items-center gap-2 text-title font-semibold">
-              {code(chosen.node)} <StatePill state={chosen.state} />
+              {code(chosen.node)} <StatePill state={chosen.state} until={chosen.wakeAt} />
               {chosen.outputName ? (
                 <span className="font-normal text-ink-muted">
                   took the case {chosen.outputName}

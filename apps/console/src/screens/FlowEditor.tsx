@@ -1,6 +1,4 @@
 import {
-  Badge,
-  type BadgeTone,
   Button,
   CheckboxField,
   ComboboxField,
@@ -45,7 +43,7 @@ import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { typingIn, useHistory } from "../kit/history.ts";
 import { retryAfter } from "../kit/retry.ts";
-import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
+import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
 import { Link, navigate, useNavigationGuard } from "../router.tsx";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
 import {
@@ -191,17 +189,6 @@ const PALETTE: {
   },
 ];
 
-const TYPE_TONE: Record<string, BadgeTone> = {
-  trigger: "success",
-  script: "action",
-  subflow: "action",
-  respond: "action",
-  branch: "attention",
-  foreach: "attention",
-  approval: "attention",
-  fail: "danger",
-};
-
 /** The handles a node offers for edges leaving it: one per case of a branch, and the error path. */
 function outputs(node: FlowNode): { id: string; label: string }[] {
   if (node.type === "branch") {
@@ -248,7 +235,7 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
       {node.type === "trigger" ? null : <Handle type="target" position={Position.Left} />}
       <div className="flex items-center justify-between gap-2">
         <span className="truncate font-mono text-code font-semibold">{id}</span>
-        <Badge tone={TYPE_TONE[node.type] ?? "neutral"}>{node.type}</Badge>
+        <Tag>{node.type}</Tag>
       </div>
       <div className="truncate text-meta text-ink-muted">{named ?? describe(node)}</div>
       {ran ? (
@@ -1026,12 +1013,6 @@ export function FlowEditor({
       <p className="text-ink-muted">Loading…</p>
     );
 
-  const STATE: Record<typeof state, [BadgeTone, string]> = {
-    new: ["neutral", "Not saved"],
-    draft: ["attention", "Draft"],
-    deployed: ["success", "Deployed"],
-    repository: ["action", "From the repository"],
-  };
   const node = chosen?.data.node;
   const expression = (label: string, key: string, hint?: string) =>
     chosen && node ? (
@@ -1064,7 +1045,7 @@ export function FlowEditor({
           : "Saving…"
     : savedAt
       ? `Draft saved ${Math.max(1, Math.round((Date.now() - savedAt) / 1000)) < 60 ? `${Math.max(1, Math.round((Date.now() - savedAt) / 1000))}s` : `${Math.round((Date.now() - savedAt) / 60000)}m`} ago`
-      : STATE[state][1];
+      : stateLabel(state);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">

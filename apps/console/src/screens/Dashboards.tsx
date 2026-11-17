@@ -1,7 +1,6 @@
 import type { InterfacePage } from "@vynxlabs/manifest";
 import { heading } from "@vynxlabs/screens";
 import {
-  Badge,
   Button,
   CheckboxField,
   EmptyState,
@@ -92,13 +91,11 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
               header: "Seen by",
               cell: (row) =>
                 row.shared ? (
-                  <Badge tone="action">Everyone here</Badge>
+                  "Everyone here"
                 ) : row.sharedWith && row.sharedWith.length > 0 ? (
-                  <Badge tone="action">
-                    {row.sharedWith.map((group) => group.name).join(", ")}
-                  </Badge>
+                  row.sharedWith.map((group) => group.name).join(", ")
                 ) : (
-                  <Badge>Only you</Badge>
+                  <span className="text-ink-muted">Only you</span>
                 ),
             },
             { header: "Changed", cell: (row) => when(row.updatedAt) },

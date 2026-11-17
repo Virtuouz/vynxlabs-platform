@@ -177,7 +177,7 @@ export function EffectiveAccess({
         {checking ? (
           holds ? (
             <p className="m-0 flex items-center gap-2" role="status">
-              <StatePill state="ok">Yes</StatePill>
+              <StatePill state="allowed" />
               <span className="text-meta text-ink-muted">
                 {principal.name} holds <Mono>{wanted}</Mono>{" "}
                 {heldWhere.includes("the whole tenant")
@@ -189,7 +189,7 @@ export function EffectiveAccess({
             </p>
           ) : (
             <p className="m-0 flex flex-wrap items-center gap-2" role="status">
-              <StatePill state="failed">No</StatePill>
+              <StatePill state="denied" />
               <span className="text-meta text-ink-muted">
                 {principal.name} does not hold <Mono>{wanted}</Mono> anywhere. A role with it, bound
                 to them or a group of theirs where it is needed, would give it.

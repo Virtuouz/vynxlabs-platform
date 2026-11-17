@@ -1,9 +1,9 @@
-import { Badge, Button, ComboboxField, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import { Button, ComboboxField, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel, Stepper } from "../kit/layout.tsx";
-import { Mono, StatePill } from "../kit/status.tsx";
+import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { navigate } from "../router.tsx";
 
@@ -83,7 +83,7 @@ export function WorkspaceControls({
         ) : (
           <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
             <span className="flex min-w-0 flex-col gap-0.5">
-              <StatePill state="running">Triggers are running</StatePill>
+              <StatePill state="on">Triggers are on</StatePill>
               <span className="text-meta text-ink-muted">
                 Pausing stops every schedule, webhook and event here at once. One trigger can be
                 paused alone under Triggers.
@@ -580,17 +580,17 @@ function PreviewBody({ summary, target }: { summary: Summary; target: string }) 
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {changes.map((entry) => (
             <li key={`${entry.kind}:${entry.path}`} className="flex items-center gap-2">
-              <Badge
+              <Tag
                 tone={
                   entry.change === "deleted"
                     ? "danger"
                     : entry.change === "created"
-                      ? "success"
-                      : "action"
+                      ? "live"
+                      : "neutral"
                 }
               >
                 {CHANGE[entry.change] ?? entry.change}
-              </Badge>
+              </Tag>
               <span className="text-ink-muted">{entry.kind}</span>
               {code(entry.path)}
             </li>
@@ -737,11 +737,9 @@ export function DatabaseLocations() {
           header: "Status",
           cell: (row) =>
             row.reachable ? (
-              <Badge tone="success">Reachable</Badge>
+              <StatePill state="reachable" />
             ) : (
-              <span title={row.problem ?? ""}>
-                <Badge tone="danger">Not reachable</Badge>
-              </span>
+              <StatePill state="unreachable" detail={row.problem ?? undefined} />
             ),
         },
       ]}
@@ -867,7 +865,7 @@ async function withPassphrase<T>(
 function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
   return (
     <li>
-      <StatePill state={ok === null ? "queued" : ok ? "ok" : "failed"}>{children}</StatePill>
+      <StatePill state={ok === null ? "unchecked" : ok ? "ok" : "failed"}>{children}</StatePill>
     </li>
   );
 }

@@ -1,9 +1,10 @@
-import { Badge, type BadgeTone, Button, JsonView, Notice } from "@vynxlabs/ui";
+import { Button, JsonView, Notice } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api } from "../api.ts";
 import { actionWords } from "../audit-words.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
+import { Tag, type TagTone } from "../kit/status.tsx";
 import { useUrlParam } from "../router.tsx";
 
 interface Entry {
@@ -56,11 +57,11 @@ const AREAS: [string, string][] = [
 ];
 
 type Verb = "Create" | "Update" | "Delete" | "Execute" | "Read" | "Other";
-const VERB_TONE: Record<Verb, BadgeTone> = {
-  Create: "success",
-  Update: "attention",
+const VERB_TONE: Record<Verb, TagTone> = {
+  Create: "neutral",
+  Update: "neutral",
   Delete: "danger",
-  Execute: "action",
+  Execute: "neutral",
   Read: "neutral",
   Other: "neutral",
 };
@@ -195,12 +196,12 @@ export function AuditTable({
         const kind = verbOf(entry.action);
         return (
           <span className="flex flex-wrap items-center gap-1.5">
-            {kind === "Other" ? null : <Badge tone={VERB_TONE[kind]}>{kind}</Badge>}
+            {kind === "Other" ? null : <Tag tone={VERB_TONE[kind]}>{kind}</Tag>}
             <span className="font-medium">{actionWords(entry.action)}</span>
             <code className="rounded-inner bg-sunken px-1.5 py-0.5 font-mono text-code-sm text-ink-subtle">
               {entry.action}
             </code>
-            {entry.accessGrantId ? <Badge tone="attention">Operator</Badge> : null}
+            {entry.accessGrantId ? <Tag tone="attention">Operator</Tag> : null}
           </span>
         );
       },

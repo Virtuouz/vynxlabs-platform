@@ -25,7 +25,7 @@ import {
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
-import { EnvTag, Tag } from "./kit/status.tsx";
+import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
 import {
   AREA_ICON,
@@ -854,7 +854,7 @@ export function Shell({
                     }))}
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
-                  {workspace?.triggersPaused ? <Tag tone="production">Paused</Tag> : null}
+                  {workspace?.triggersPaused ? <StatePill state="paused" /> : null}
                   {ws?.linked ? (
                     <span className="hidden items-center gap-2 xl:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
@@ -945,7 +945,7 @@ export function Shell({
                   ) : null}
                   <span className="hidden sm:inline-flex">
                     {where.area === "instance" ? (
-                      <Tag tone="production">Instance · operator</Tag>
+                      <Tag tone="attention">Instance · operator</Tag>
                     ) : where.area === "account" ? (
                       <Tag>Personal</Tag>
                     ) : null}

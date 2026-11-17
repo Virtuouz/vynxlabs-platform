@@ -36,7 +36,7 @@ export const DEFAULT_THEME: { tokens: Tokens; dark: Tokens } = {
     "code-bg": "#f5f7f9",
     focus: "#0e5f7a",
     "radius-control": "6px",
-    "radius-panel": "10px",
+    "radius-panel": "8px",
     font: 'ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     "font-code": 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace',
   },

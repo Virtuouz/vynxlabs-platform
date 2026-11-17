@@ -1,4 +1,4 @@
-import { Badge, Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -186,7 +186,9 @@ export function PermissionPicker({
                       <span className="flex flex-wrap items-center gap-2">
                         {entry.label}
                         <code className="font-mono text-code-sm text-ink-muted">{entry.kind}</code>
-                        {entry.appFacing ? <Badge>End users can hold it</Badge> : null}
+                        {entry.appFacing ? (
+                          <span className="text-meta text-ink-muted">End users can hold it</span>
+                        ) : null}
                       </span>
                     </th>
                     {(["read", "write"] as const).map((verb) => {

@@ -1,5 +1,4 @@
 import {
-  Badge,
   Button,
   CheckboxField,
   ComboboxField,
@@ -19,6 +18,7 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { Stepper } from "../kit/layout.tsx";
+import { StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import { Provisioning } from "./Provisioning.tsx";
@@ -111,15 +111,9 @@ const PROTOCOL: Record<Protocol, string> = { oidc: "OIDC", saml: "SAML" };
 
 function State({ provider }: { provider: IdentityProvider }) {
   return (
-    <span className="flex flex-wrap gap-1">
-      {provider.paused ? (
-        <Badge tone="attention">Paused</Badge>
-      ) : provider.enabled ? (
-        <Badge tone="success">On</Badge>
-      ) : (
-        <Badge>Off</Badge>
-      )}
-      {provider.enforce ? <Badge tone="action">Required</Badge> : null}
+    <span className="flex flex-wrap items-center gap-3">
+      <StatePill state={provider.paused ? "paused" : provider.enabled ? "on" : "off"} />
+      {provider.enforce ? <Tag>Required</Tag> : null}
     </span>
   );
 }
@@ -481,9 +475,9 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
             <span className="flex flex-wrap items-center gap-2">
               <strong>{row.domain}</strong>
               {row.verified ? (
-                <Badge tone="success">Proved</Badge>
+                <StatePill state="verified">Proved</StatePill>
               ) : (
-                <Badge tone="attention">Not proved</Badge>
+                <StatePill state="unverified">Not proved</StatePill>
               )}
             </span>
             <span className="flex flex-wrap gap-2">

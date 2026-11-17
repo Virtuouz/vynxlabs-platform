@@ -303,11 +303,7 @@ function Pushed({ root }: { root: string }) {
             {
               header: "State",
               cell: (row) =>
-                row.active ? (
-                  <StatePill state="ok">Active</StatePill>
-                ) : (
-                  <StatePill state="cancelled">Turned off</StatePill>
-                ),
+                row.active ? <StatePill state="active" /> : <StatePill state="off" />,
             },
             { header: "Last change", cell: (row) => when(row.updatedAt) },
           ]}

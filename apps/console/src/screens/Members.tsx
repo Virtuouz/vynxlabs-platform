@@ -190,11 +190,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
           {
             header: "Status",
             cell: (row) =>
-              row.suspended ? (
-                <StatePill state="paused">Suspended</StatePill>
-              ) : (
-                <StatePill state="ok">Active</StatePill>
-              ),
+              row.suspended ? <StatePill state="suspended" /> : <StatePill state="active" />,
           },
           {
             header: "Roles",

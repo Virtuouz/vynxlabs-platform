@@ -2,6 +2,7 @@ import { Badge, Button, Notice, SelectField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -184,7 +185,7 @@ export function Alerts({
                     .filter(Boolean)
                     .join(", ")}
                 </span>
-                {one.ownership === "code" ? <Badge>From the repository</Badge> : null}
+                {one.ownership === "code" ? <Tag tone="repository">From the repository</Tag> : null}
               </li>
             ))}
           </ul>
@@ -209,11 +210,11 @@ export function Alerts({
                   </Link>
                   <span className="text-meta text-ink-muted">{fromNow(one.at)}</span>
                   {one.notified === true ? (
-                    <Badge tone="success">Posted</Badge>
+                    <StatePill state="posted" />
                   ) : one.notified === false ? (
-                    <Badge tone="danger">Not posted</Badge>
+                    <StatePill state="not_posted" />
                   ) : null}
-                  {one.repeats > 0 ? <Badge tone="attention">+{one.repeats} more</Badge> : null}
+                  {one.repeats > 0 ? <Badge>+{one.repeats} more</Badge> : null}
                 </span>
                 {one.error ? (
                   <span className="text-body-sm text-ink-muted">{one.error}</span>

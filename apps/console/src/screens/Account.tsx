@@ -1,9 +1,10 @@
-import { Badge, Button, Notice } from "@vynxlabs/ui";
+import { Button, Notice } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
+import { StatePill } from "../kit/status.tsx";
 import { CopyButton, ListScreen, RemoveButton, when } from "../ListScreen.tsx";
 
 export interface KeyRow {
@@ -40,11 +41,11 @@ export const keyColumns = [
     header: "Status",
     cell: (row: KeyRow) =>
       row.revokedAt ? (
-        <Badge tone="danger">Revoked</Badge>
+        <StatePill state="revoked" />
       ) : row.expiresAt && new Date(row.expiresAt) < new Date() ? (
-        <Badge tone="danger">Expired</Badge>
+        <StatePill state="expired" />
       ) : (
-        <Badge tone="action">Active</Badge>
+        <StatePill state="active" />
       ),
   },
 ];

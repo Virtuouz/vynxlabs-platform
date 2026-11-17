@@ -39,9 +39,9 @@ const failed = (error: unknown) => {
 };
 
 function Status({ user }: { user: EndUser }) {
-  if (user.disabled) return <StatePill state="failed">Disabled</StatePill>;
-  if (!user.hasPassword) return <StatePill state="waiting">Invited</StatePill>;
-  return <StatePill state="ok">Active</StatePill>;
+  if (user.disabled) return <StatePill state="disabled" />;
+  if (!user.hasPassword) return <StatePill state="invited" />;
+  return <StatePill state="active" />;
 }
 
 /** The one time a sign-in link is shown: whoever holds it chooses the account's password. */

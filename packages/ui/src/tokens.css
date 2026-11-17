@@ -98,27 +98,6 @@
   color-scheme: dark;
 }
 
-/*
- * Values a brand does not set. How dark a shadow is: deeper in dark, where a
- * surface barely differs from what is under it. A control's height: tenant
- * apps keep 36 px, and the console sets 32 px for itself.
- */
-html {
-  --vx-shadow-overlay: rgb(0 0 0 / 0.1);
-  --vx-shadow-modal: rgb(0 0 0 / 0.16);
-  --vx-control-height: 36px;
-}
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme="light"]) {
-    --vx-shadow-overlay: rgb(0 0 0 / 0.4);
-    --vx-shadow-modal: rgb(0 0 0 / 0.5);
-  }
-}
-html[data-theme="dark"] {
-  --vx-shadow-overlay: rgb(0 0 0 / 0.4);
-  --vx-shadow-modal: rgb(0 0 0 / 0.5);
-}
-
 @theme inline {
   --color-canvas: var(--vx-canvas);
   --color-surface: var(--vx-surface);
@@ -156,6 +135,27 @@ html[data-theme="dark"] {
   --height-control: var(--vx-control-height);
   --font-sans: var(--vx-font);
   --font-mono: var(--vx-font-code);
+}
+
+/*
+ * Values a brand does not set. How dark a shadow is: deeper in dark, where a
+ * surface barely differs from what is under it. A control's height: tenant
+ * apps keep 36 px, and the console sets 32 px for itself.
+ */
+html {
+  --vx-shadow-overlay: rgb(0 0 0 / 0.1);
+  --vx-shadow-modal: rgb(0 0 0 / 0.16);
+  --vx-control-height: 36px;
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    --vx-shadow-overlay: rgb(0 0 0 / 0.4);
+    --vx-shadow-modal: rgb(0 0 0 / 0.5);
+  }
+}
+html[data-theme="dark"] {
+  --vx-shadow-overlay: rgb(0 0 0 / 0.4);
+  --vx-shadow-modal: rgb(0 0 0 / 0.5);
 }
 
 /*

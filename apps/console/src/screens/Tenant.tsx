@@ -1,4 +1,4 @@
-import { Badge, Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
@@ -61,6 +61,7 @@ const FlowEditor = lazy(() =>
 );
 
 import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
+import { EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
@@ -95,8 +96,7 @@ interface Grant {
 const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 /** Production is always marked. It is the one thing nobody should have to look for. */
-export const TypeBadge = ({ type }: { type: "production" | "dev" }) =>
-  type === "production" ? <Badge tone="attention">Production</Badge> : <Badge>Dev</Badge>;
+export const TypeBadge = ({ type }: { type: "production" | "dev" }) => <EnvTag type={type} />;
 
 const grantForm = (tenantId: string, roles: Role[]): CreateConfig => ({
   action: "Open operator access",
@@ -995,9 +995,9 @@ function OperatorAccess({ base }: { base: string }) {
           header: "Status",
           cell: (row) =>
             row.active ? (
-              <Badge tone="attention">Active until {when(row.expiresAt)}</Badge>
+              <StatePill state="active" detail={`until ${when(row.expiresAt)}`} />
             ) : (
-              <Badge>Ended</Badge>
+              <StatePill state="ended" />
             ),
         },
       ]}

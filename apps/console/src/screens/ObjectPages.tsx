@@ -1,4 +1,4 @@
-import { Badge, Button, JsonView, Notice } from "@vynxlabs/ui";
+import { Button, JsonView, Notice } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
@@ -73,11 +73,11 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
           title={one.path}
           state={
             <>
-              <Badge tone={one.bound ? "success" : "attention"}>
+              <StatePill state={one.bound ? "bound" : "unbound"}>
                 {one.bound ? "Set up here" : "Not set up here"}
-              </Badge>
+              </StatePill>
               {one.health ? (
-                <StatePill state={one.health.ok ? "succeeded" : "failed"}>
+                <StatePill state={one.health.ok ? "reachable" : "unreachable"}>
                   {one.health.ok ? "Answered" : "Did not answer"}
                 </StatePill>
               ) : null}

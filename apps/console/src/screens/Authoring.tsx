@@ -1,6 +1,4 @@
 import {
-  Badge,
-  type BadgeTone,
   Button,
   EmptyState,
   MultiSelectField,
@@ -23,7 +21,7 @@ import { Elapsed } from "../kit/Elapsed.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
-import { type RunState, StatePill } from "../kit/status.tsx";
+import { type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
@@ -533,13 +531,6 @@ export function ScriptEditor({
     }
   })();
 
-  const STATE: Record<typeof state, [BadgeTone, string]> = {
-    new: ["neutral", "Not saved"],
-    draft: ["attention", "Draft"],
-    deployed: ["success", "Deployed"],
-    repository: ["action", "From the repository"],
-  };
-
   const settings = (
     <div className="flex flex-col gap-3">
       <TextField
@@ -767,8 +758,8 @@ export function ScriptEditor({
               />
             </div>
           )}
-          <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
-          {dirty ? <Badge>Unsaved changes</Badge> : null}
+          <StatePill state={state} />
+          {dirty ? <StatePill state="unsaved" /> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
@@ -1033,7 +1024,7 @@ function ProblemList({
               {item.line}:{item.column}
             </span>
             <span className="min-w-0 flex-1">{item.message}</span>
-            {item.from === "build" ? <Badge tone="danger">Build</Badge> : null}
+            {item.from === "build" ? <Tag tone="danger">Build</Tag> : null}
           </button>
         </li>
       ))}
@@ -1147,11 +1138,6 @@ export function Extensions({
       state: "draft",
     });
   }
-  const STATE: Record<ExtensionRow["state"], [BadgeTone, string]> = {
-    draft: ["attention", "Draft"],
-    deployed: ["success", "Deployed"],
-    repository: ["action", "From the repository"],
-  };
   const error = resources.error ?? drafts.error;
   return (
     <Page
@@ -1204,7 +1190,7 @@ export function Extensions({
             },
             {
               header: "State",
-              cell: (row) => <Badge tone={STATE[row.state][0]}>{STATE[row.state][1]}</Badge>,
+              cell: (row) => <StatePill state={row.state} />,
             },
           ]}
         />

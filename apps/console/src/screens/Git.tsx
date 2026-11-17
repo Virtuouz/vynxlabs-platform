@@ -1,7 +1,8 @@
-import { Badge, type BadgeTone, Button, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import { Button, Notice, SelectField, TextField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { type State as StateName, StatePill } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 
@@ -148,29 +149,14 @@ export function RepositorySettings({ base }: { base: string }) {
   );
 }
 
-const STATE: Record<State, [BadgeTone, string, string]> = {
-  never: [
-    "neutral",
-    "Not pushed yet",
-    "Push to create the branch with what this workspace has deployed.",
-  ],
-  synced: ["success", "In sync", "The branch has what this workspace runs."],
-  ahead: [
-    "attention",
-    "Ahead of the branch",
-    "This workspace has deployed something the branch does not have. Push it.",
-  ],
-  behind: [
-    "attention",
-    "Behind the branch",
-    "Someone changed the folder on the branch. Pull before pushing.",
-  ],
-  conflict: [
-    "danger",
-    "Conflict",
-    "A resource was changed here and on the branch. Choose which to keep.",
-  ],
-  error: ["danger", "Last sync failed", ""],
+/** How the workspace stands against its branch, as a state, and what to do about it. */
+const STATE: Record<State, [StateName, string]> = {
+  never: ["never_pushed", "Push to create the branch with what this workspace has deployed."],
+  synced: ["synced", "The branch has what this workspace runs."],
+  ahead: ["ahead", "This workspace has deployed something the branch does not have. Push it."],
+  behind: ["behind", "Someone changed the folder on the branch. Pull before pushing."],
+  conflict: ["conflict", "A resource was changed here and on the branch. Choose which to keep."],
+  error: ["sync_failed", ""],
 };
 
 interface PullResult {
@@ -301,7 +287,7 @@ export function GitPanel({
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h2 className="m-0 text-title font-semibold">Repository</h2>
           <code className="truncate font-mono text-code text-ink-muted">{status.data.branch}</code>
-          <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
+          <StatePill state={STATE[state][0]} />
           {status.data.syncedCommit ? (
             <code className="font-mono text-code-sm text-ink-muted">
               {status.data.syncedCommit.slice(0, 7)}
@@ -337,7 +323,7 @@ export function GitPanel({
           ? "Sync is paused for this tenant. Save its repository settings to turn it on."
           : state === "error"
             ? (status.data.lastError ?? "The last push or pull failed.")
-            : STATE[state][2]}
+            : STATE[state][1]}
       </p>
       {said ? <Notice tone={said.tone}>{said.text}</Notice> : null}
       {conflicts.length > 0 ? (

@@ -39,6 +39,13 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - A view is private to whoever saved it. Its link carries the view, so anyone who may see the list opens it the same.
   - The runs list and the audit log can hide columns and reorder them, with Move up and Move down. The choice is kept in the address and in views.
   - The events list's name filter is now kept in the address.
+- **Panes.**
+  - The flow editor's canvas and step settings, the canvas and its test run, a run page's attempts and details, and Release's drafts and deploy panel can be resized by dragging or with the arrow keys; a double-click resets them.
+  - The flow editor's step settings and a run page's attempts can be folded away (Enter on the divider) and opened again from the rail they leave.
+  - The panel beside every list can be made wider or narrower.
+  - Every size is kept with the member's settings.
+  - The step chosen in the flow editor, the canvas position (for the session), a run's Input or Output tab, and a flow run's Timeline or Graph are kept, in the address where they can be.
+  - The runs list's Columns, Density and Views tools are now icon buttons, so they fit beside the filters.
 
 ### For tenant developers
 

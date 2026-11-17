@@ -1,4 +1,4 @@
-import { Button, Dialog, Menu, type MenuItem } from "@vynxlabs/ui";
+import { Button, Dialog, Menu, type MenuItem, Tooltip } from "@vynxlabs/ui";
 import { ArrowDown, ArrowUp, Bookmark, Columns3 } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -166,11 +166,16 @@ export function ViewsMenu({
     <Menu
       ariaLabel="Saved views"
       align="end"
-      triggerClassName="flex h-7 items-center gap-1.5 rounded-control border border-line-control bg-surface px-2 text-meta hover:bg-sunken"
+      triggerClassName={`flex h-7 items-center gap-1.5 rounded-control text-meta hover:bg-sunken ${
+        showing
+          ? "border border-line-control bg-surface px-2"
+          : "w-7 justify-center text-ink-muted hover:text-ink"
+      }`}
       label={
         <>
-          <Bookmark aria-hidden="true" size={14} />
-          <span className="max-w-40 truncate">{showing ? showing.name : "Views"}</span>
+          <Bookmark aria-hidden="true" size={showing ? 14 : 16} />
+          {/* The view showing is named; otherwise the button is its icon, named for screen readers. */}
+          {showing ? <span className="max-w-32 truncate">{showing.name}</span> : null}
         </>
       }
       items={menu}
@@ -215,14 +220,16 @@ export function ColumnsMenu({
   };
   return (
     <>
-      <Button
-        size="small"
-        variant="quiet"
-        onClick={() => setOpen(true)}
-        tooltip="Choose and order the columns"
-      >
-        <Columns3 aria-hidden="true" size={14} /> Columns
-      </Button>
+      <Tooltip label="Choose and order the columns">
+        <button
+          type="button"
+          aria-label="Columns"
+          onClick={() => setOpen(true)}
+          className="inline-flex size-7 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+        >
+          <Columns3 aria-hidden="true" size={16} />
+        </button>
+      </Tooltip>
       <Dialog open={open} onClose={() => setOpen(false)} title="Columns">
         <div className="flex flex-col gap-3">
           <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Shown, in order">

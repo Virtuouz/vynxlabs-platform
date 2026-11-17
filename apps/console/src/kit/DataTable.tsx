@@ -1,6 +1,6 @@
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
 import { Button, Menu, type MenuItem, Skeleton } from "@vynxlabs/ui";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Rows3 } from "lucide-react";
 import {
   isValidElement,
   type KeyboardEvent,
@@ -652,10 +652,10 @@ export function DensityMenu({
   const choices: Density[] = ["compact", "standard", "comfortable"];
   return (
     <Menu
-      label={<span className="text-meta">Density</span>}
+      label={<Rows3 aria-hidden="true" size={16} />}
       ariaLabel="Row density"
       align="end"
-      triggerClassName="inline-flex h-8 items-center rounded-control border border-line-control px-3 text-ink-muted hover:bg-sunken"
+      triggerClassName="inline-flex size-7 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
       items={choices.map((choice) => ({
         label: choice[0]?.toUpperCase() + choice.slice(1),
         current: choice === density,

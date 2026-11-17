@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–5 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–6 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -183,3 +183,30 @@ Some of the roadmap's evidence is out of date:
   3. Opening the plain list and choosing the view restores the filter, sort and columns.
   4. A second member opens the link and sees the same list, while their own menu lists no views.
 - **A false alarm:** a fresh browser drew a blank page during the run. The console had been rebuilt while the instance served it, and the instance keeps `index.html` from when it started, which named assets that no longer existed. After a restart, the spec passed. Restarting after every rebuild is in the verification steps for this reason.
+
+### Milestone 6: resizable, remembered panes
+- **`SplitPane`** gained:
+  - a vertical orientation;
+  - folding a pane away: Enter on the divider (the WAI-ARIA window splitter) folds it, and its rail's "Show …" button opens it again;
+  - least sizes in pixels as well as percent, so neither pane is dragged out of sight.
+  
+  Size and fold are one member setting, `split:<id>`. A bare number, as Milestone 1 kept it, still opens.
+- **Adopted:**
+  - The flow editor: canvas beside the step settings, which can fold. When testing, the canvas and test run split top and bottom, instead of a test panel fixed at 45% of the window.
+  - The run page: attempts beside details; the attempts can fold.
+  - Release: drafts beside the deploy panel.
+  - Every list's docked inspector: its left edge drags, or moves with the arrow keys, from 288 to 720 px, and a double-click restores its own width. It is one width for every list, `split:inspector`, because the inspector is the same panel everywhere.
+- **Not adopted:** the App Builder's outline column stays fixed. Its canvas and settings were already a split, and the outline holds only names.
+- **Remembered:**
+  - The flow editor's chosen step is in the address (`?step=`). Until the flow is drawn with it chosen, the canvas's own "nothing chosen" is ignored, so it doesn't wipe the address on load.
+  - The canvas position is kept for the session (`sessionStorage`, per flow) and restored instead of fitting the view.
+  - A run's Input or Output tab (`?io=`) and a flow run's Timeline or Graph (`?view=`) are in the address.
+- **Found while building it:**
+  - **React error #310:** a hook added for the canvas position landed below the editor's early return. The e2e found it at once; it is now above.
+  - **The runs list lost a row** (19 at 1440 × 900, where the bar is 20) because Columns, Density and Views wrapped beside eight filter chips. All three are icon buttons with tooltips now, and Views names the view only when one is showing.
+  - **Settings forgotten elsewhere weren't forgotten here.** A setting turned off in one run of the keyboard spec and deleted on the server stayed off, because loading only wrote what the server had. Loading now also forgets what the server no longer keeps, except changes still waiting to be sent. The keyboard spec resets the setting at its start and in a `finally`.
+  - **A small picture change wasn't retaken.** A difference within the comparison threshold is not rewritten by `--update-snapshots`, so the phone pictures kept a first version of an icon's color. They were deleted and taken again.
+- **Tests:**
+  - `SplitPane.test.tsx`: the keyboard, double-click reset, the setting kept, folding and opening, and an old bare size.
+  - `panes.spec.ts`: the flow editor's divider moves, survives a reload, folds and survives a reload folded; the run page's divider and its Output tab survive a reload.
+  - The whole e2e suite passed: 33 tests.

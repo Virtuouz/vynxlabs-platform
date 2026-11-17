@@ -67,6 +67,13 @@ test("this browser's copy is read at once; the server's replaces it, and what on
   ).toEqual([["/api/v1/me/preferences/density%3Aruns", { value: "compact" }]]);
 });
 
+test("a setting the server no longer keeps is forgotten here too", async () => {
+  localStorage.setItem("vx-pref:shortcuts.single-key", "false");
+  server = [];
+  await loadPreferences();
+  expect(readPreference("shortcuts.single-key", true)).toBe(true);
+});
+
 test("a change still waiting to be sent is not undone by the server's older copy", async () => {
   setPreference("theme", "light");
   server = [{ key: "theme", value: "dark" }];

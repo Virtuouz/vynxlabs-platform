@@ -24,6 +24,7 @@ import {
   type ReactFlowInstance,
   useEdgesState,
   useNodesState,
+  type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
@@ -46,8 +47,9 @@ import { keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { retryAfter } from "../kit/retry.ts";
+import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
-import { navigate, useNavigationGuard } from "../router.tsx";
+import { navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
 import {
   FormDesigner,
@@ -268,6 +270,19 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
 }
 const nodeTypes = { flow: FlowNodeCard };
 const FIT = { maxZoom: 1, padding: 0.25 };
+
+/** Where a flow's canvas was left, for this browser tab's session. */
+function viewportOf(path: string | undefined): Viewport | undefined {
+  if (!path) return undefined;
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(`vx-viewport:${path}`) ?? "null");
+    return kept && Number.isFinite(kept.x) && Number.isFinite(kept.y) && Number.isFinite(kept.zoom)
+      ? kept
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 const CANVAS_COLORS = {
   "--xy-background-color": "var(--vx-sunken)",
   "--xy-background-pattern-color": "var(--vx-line)",
@@ -481,7 +496,12 @@ export function FlowEditor({
   const [description, setDescription] = useState("");
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [selected, setSelected] = useState<string>();
+  // The chosen step is in the address: a reload, or a link, opens the flow on it.
+  const [selected, setSelected] = useUrlParam("step");
+  // Until the flow is drawn with that step chosen, the canvas's own "nothing chosen" is not news.
+  const restoring = useRef(true);
+  // Where the canvas was left this session, read once per flow.
+  const kept = useMemo(() => viewportOf(path), [path]);
   const [canvas, setCanvas] = useState<ReactFlowInstance<CanvasNode, Edge>>();
   const [revision, setRevision] = useState<number>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
@@ -615,14 +635,19 @@ export function FlowEditor({
       const positions = { ...autoLayout(body.nodes, body.edges), ...(body.layout ?? {}) };
       loadedIds.current = new Set(Object.keys(body.nodes));
       setDescription(body.description ?? "");
+      const chosenInAddress = new URLSearchParams(location.search).get("step");
       setNodes(
         Object.entries(body.nodes).map(([id, node]) => ({
           id,
           type: "flow",
           position: positions[id] ?? { x: 0, y: 0 },
           data: { id, node },
+          ...(id === chosenInAddress ? { selected: true } : {}),
         })),
       );
+      setTimeout(() => {
+        restoring.current = false;
+      });
       setEdges(body.edges.map(toCanvasEdge));
       setLoaded(true);
     },
@@ -1038,172 +1063,26 @@ export function FlowEditor({
       ? `Draft saved ${Math.max(1, Math.round((Date.now() - savedAt) / 1000)) < 60 ? `${Math.max(1, Math.round((Date.now() - savedAt) / 1000))}s` : `${Math.round((Date.now() - savedAt) / 60000)}m`} ago`
       : stateLabel(state);
 
-  return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <div className="border-line border-b px-4 py-2 md:px-5">
-        <PageHeader
-          compact
-          mono={Boolean(opened)}
-          title={opened ? path : "New flow"}
-          state={
-            <>
-              <StatePill
-                state={state === "repository" || (state === "deployed" && !dirty) ? state : "draft"}
-              />
-              {found.length > 0 ? (
-                <span className="flex items-center gap-1 text-meta text-attention">
-                  <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
-                </span>
-              ) : null}
-              <span
-                role="status"
-                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
-              >
-                {saveState}
-              </span>
-              {gaveUp ? (
-                <Button
-                  size="small"
-                  variant="quiet"
-                  onClick={() => {
-                    failures.current = 0;
-                    setGaveUp(false);
-                  }}
-                >
-                  Retry
-                </Button>
-              ) : null}
-            </>
-          }
-          actions={
-            <>
-              <Button
-                size="small"
-                onClick={() => {
-                  history.record("Tidy up");
-                  const positions = autoLayout(flowNodes, flowEdges);
-                  setNodes((before) =>
-                    before.map((one) => ({ ...one, position: positions[one.id] ?? one.position })),
-                  );
-                  touch();
-                }}
-              >
-                Tidy up
-              </Button>
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label="Undo"
-                tooltip={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
-                keys={keysOf("undo")}
-                disabled={!history.undoLabel}
-                onClick={undo}
-              >
-                <Undo2 aria-hidden="true" size={14} />
-              </Button>
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label="Redo"
-                tooltip={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
-                keys={keysOf("redo")}
-                disabled={!history.redoLabel}
-                onClick={redo}
-              >
-                <Redo2 aria-hidden="true" size={14} />
-              </Button>
-              <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
-                <Play aria-hidden="true" size={14} /> Test
-              </Button>
-              <Button
-                size="small"
-                variant={state === "draft" && !dirty ? "secondary" : "primary"}
-                disabled={busy || (!dirty && state !== "new")}
-                onClick={() => void save()}
-              >
-                Save draft
-              </Button>
-              {state === "draft" && !dirty && path ? (
-                <DeployMenu
-                  root={root}
-                  link={link}
-                  path={path}
-                  disabled={busy}
-                  onDeployed={() => setState("deployed")}
-                />
-              ) : null}
-            </>
-          }
-          after={
-            opened ? undefined : (
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="w-56">
-                  <TextField
-                    name="path"
-                    label="Path"
-                    value={path}
-                    placeholder="orders/handle"
-                    onChange={setPath}
-                  />
-                </div>
-                <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
-                  <legend className="mb-1 text-body-sm font-medium">Start from</legend>
-                  <div className="flex flex-wrap gap-2">
-                    {FLOW_STARTERS.map((starter) => (
-                      <Button
-                        key={starter.id}
-                        size="small"
-                        tooltip={starter.about}
-                        aria-pressed={starterId === starter.id}
-                        // Once the flow is changed, starting again would lose the change.
-                        disabled={dirty && starterId !== starter.id}
-                        onClick={() => {
-                          setStarterId(starter.id);
-                          open(starter.body as unknown as FlowBody);
-                        }}
-                      >
-                        {starter.label}
-                      </Button>
-                    ))}
-                  </div>
-                </fieldset>
-              </div>
-            )
-          }
-        />
-      </div>
-      {state === "repository" || problem || found.length > 0 ? (
-        <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
-          {state === "repository" ? (
-            <Notice tone="attention">
-              This flow is managed in the tenant's repository. Saving a draft of it takes it over.
-            </Notice>
-          ) : null}
-          {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          {found.length > 0 ? (
-            <Notice tone="attention">
-              <ul aria-label="To fix" className="m-0 flex list-none flex-col gap-0.5 p-0">
-                {found.map((one) => (
-                  <li key={one.message}>
-                    {one.node ? (
-                      <button
-                        type="button"
-                        onClick={() => goToProblem(one)}
-                        className="text-left underline-offset-2 hover:underline"
-                      >
-                        {one.message}
-                      </button>
-                    ) : (
-                      one.message
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Notice>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+  const keepViewport = (viewport: Viewport) => {
+    if (!path) return;
+    try {
+      sessionStorage.setItem(`vx-viewport:${path}`, JSON.stringify(viewport));
+    } catch {
+      // Without storage the canvas fits the flow next time.
+    }
+  };
+  // The canvas beside the chosen step's settings; the test run, when open, below both.
+  const editor = (
+    <SplitPane
+      id="flow-editor"
+      label="Resize the canvas and the step's settings"
+      className="min-h-0 flex-1"
+      initial={70}
+      collapsible="second"
+      minFirst={320}
+      minSecond={280}
+      paneLabels={{ first: "the canvas", second: "the step's settings" }}
+      first={
         <div className="relative flex min-h-[28rem] flex-1 flex-col lg:min-h-[16rem]">
           <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
             <Button
@@ -1316,10 +1195,14 @@ export function FlowEditor({
                   onConnect={connect}
                   // A drag is one step to undo, however far it went.
                   onNodeDragStart={() => history.record("Move a step")}
-                  onSelectionChange={({ nodes: picked }) => setSelected(picked[0]?.id)}
+                  onSelectionChange={({ nodes: picked }) => {
+                    if (restoring.current && picked.length === 0) return;
+                    setSelected(picked[0]?.id);
+                  }}
                   onInit={setCanvas}
-                  fitView
-                  fitViewOptions={FIT}
+                  // Where the canvas was left, this session, or the whole flow in view.
+                  {...(kept ? { defaultViewport: kept } : { fitView: true, fitViewOptions: FIT })}
+                  onMoveEnd={(_, viewport) => keepViewport(viewport)}
                   maxZoom={1.5}
                   minZoom={0.2}
                   proOptions={{ hideAttribution: false }}
@@ -1335,10 +1218,12 @@ export function FlowEditor({
             </NodeNames.Provider>
           </div>
         </div>
+      }
+      second={
         <aside
           ref={inspector}
           aria-label="The chosen step"
-          className="flex max-h-[60vh] w-full shrink-0 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:max-h-none lg:w-[22rem] lg:border-t-0 lg:border-l"
+          className="flex max-h-[60vh] min-h-0 flex-1 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:max-h-none lg:border-t-0 lg:border-l"
         >
           <ExpressionPreview.Provider value={previewSource}>
             <StepOutline nodes={nodes} edges={edges} chosen={chosen?.id} onChoose={choose} />
@@ -1651,32 +1536,215 @@ export function FlowEditor({
             )}
           </ExpressionPreview.Provider>
         </aside>
-      </div>
-      {testing ? (
-        <FlowTestPanel
-          link={link}
-          path={path}
-          schema={
-            chosenTrigger?.trigger?.type === "manual" ? chosenTrigger.trigger.input : undefined
+      }
+    />
+  );
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col">
+      <div className="border-line border-b px-4 py-2 md:px-5">
+        <PageHeader
+          compact
+          mono={Boolean(opened)}
+          title={opened ? path : "New flow"}
+          state={
+            <>
+              <StatePill
+                state={state === "repository" || (state === "deployed" && !dirty) ? state : "draft"}
+              />
+              {found.length > 0 ? (
+                <span className="flex items-center gap-1 text-meta text-attention">
+                  <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
+                </span>
+              ) : null}
+              <span
+                role="status"
+                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
+              >
+                {saveState}
+              </span>
+              {gaveUp ? (
+                <Button
+                  size="small"
+                  variant="quiet"
+                  onClick={() => {
+                    failures.current = 0;
+                    setGaveUp(false);
+                  }}
+                >
+                  Retry
+                </Button>
+              ) : null}
+            </>
           }
-          triggers={triggerNodes.map((one) => ({
-            node: one.id,
-            label: `${one.id} (${(one.data.node as { trigger?: { type?: string } }).trigger?.type ?? "trigger"})`,
-          }))}
-          trigger={testFromTrigger}
-          onTrigger={setTestTrigger}
-          blocked={testBlocked}
-          run={live.run}
-          error={live.error}
-          changed={editedSinceTest && live.run !== undefined}
-          onRun={runTest}
-          onChoose={(id) => {
-            setSelected(id);
-            setNodes((before) => before.map((one) => ({ ...one, selected: one.id === id })));
-          }}
-          onClose={() => setTesting(false)}
+          actions={
+            <>
+              <Button
+                size="small"
+                onClick={() => {
+                  history.record("Tidy up");
+                  const positions = autoLayout(flowNodes, flowEdges);
+                  setNodes((before) =>
+                    before.map((one) => ({ ...one, position: positions[one.id] ?? one.position })),
+                  );
+                  touch();
+                }}
+              >
+                Tidy up
+              </Button>
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label="Undo"
+                tooltip={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
+                keys={keysOf("undo")}
+                disabled={!history.undoLabel}
+                onClick={undo}
+              >
+                <Undo2 aria-hidden="true" size={14} />
+              </Button>
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label="Redo"
+                tooltip={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
+                keys={keysOf("redo")}
+                disabled={!history.redoLabel}
+                onClick={redo}
+              >
+                <Redo2 aria-hidden="true" size={14} />
+              </Button>
+              <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
+                <Play aria-hidden="true" size={14} /> Test
+              </Button>
+              <Button
+                size="small"
+                variant={state === "draft" && !dirty ? "secondary" : "primary"}
+                disabled={busy || (!dirty && state !== "new")}
+                onClick={() => void save()}
+              >
+                Save draft
+              </Button>
+              {state === "draft" && !dirty && path ? (
+                <DeployMenu
+                  root={root}
+                  link={link}
+                  path={path}
+                  disabled={busy}
+                  onDeployed={() => setState("deployed")}
+                />
+              ) : null}
+            </>
+          }
+          after={
+            opened ? undefined : (
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="w-56">
+                  <TextField
+                    name="path"
+                    label="Path"
+                    value={path}
+                    placeholder="orders/handle"
+                    onChange={setPath}
+                  />
+                </div>
+                <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+                  <legend className="mb-1 text-body-sm font-medium">Start from</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {FLOW_STARTERS.map((starter) => (
+                      <Button
+                        key={starter.id}
+                        size="small"
+                        tooltip={starter.about}
+                        aria-pressed={starterId === starter.id}
+                        // Once the flow is changed, starting again would lose the change.
+                        disabled={dirty && starterId !== starter.id}
+                        onClick={() => {
+                          setStarterId(starter.id);
+                          open(starter.body as unknown as FlowBody);
+                        }}
+                      >
+                        {starter.label}
+                      </Button>
+                    ))}
+                  </div>
+                </fieldset>
+              </div>
+            )
+          }
         />
+      </div>
+      {state === "repository" || problem || found.length > 0 ? (
+        <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
+          {state === "repository" ? (
+            <Notice tone="attention">
+              This flow is managed in the tenant's repository. Saving a draft of it takes it over.
+            </Notice>
+          ) : null}
+          {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          {found.length > 0 ? (
+            <Notice tone="attention">
+              <ul aria-label="To fix" className="m-0 flex list-none flex-col gap-0.5 p-0">
+                {found.map((one) => (
+                  <li key={one.message}>
+                    {one.node ? (
+                      <button
+                        type="button"
+                        onClick={() => goToProblem(one)}
+                        className="text-left underline-offset-2 hover:underline"
+                      >
+                        {one.message}
+                      </button>
+                    ) : (
+                      one.message
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
+        </div>
       ) : null}
+      {testing ? (
+        <SplitPane
+          id="flow-test"
+          orientation="vertical"
+          label="Resize the canvas and the test run"
+          className="min-h-0 flex-1"
+          initial={62}
+          minFirst={240}
+          minSecond={140}
+          paneLabels={{ first: "the canvas", second: "the test run" }}
+          first={editor}
+          second={
+            <FlowTestPanel
+              link={link}
+              path={path}
+              schema={
+                chosenTrigger?.trigger?.type === "manual" ? chosenTrigger.trigger.input : undefined
+              }
+              triggers={triggerNodes.map((one) => ({
+                node: one.id,
+                label: `${one.id} (${(one.data.node as { trigger?: { type?: string } }).trigger?.type ?? "trigger"})`,
+              }))}
+              trigger={testFromTrigger}
+              onTrigger={setTestTrigger}
+              blocked={testBlocked}
+              run={live.run}
+              error={live.error}
+              changed={editedSinceTest && live.run !== undefined}
+              onRun={runTest}
+              onChoose={(id) => {
+                setSelected(id);
+                setNodes((before) => before.map((one) => ({ ...one, selected: one.id === id })));
+              }}
+              onClose={() => setTesting(false)}
+            />
+          }
+        />
+      ) : (
+        editor
+      )}
     </section>
   );
 }

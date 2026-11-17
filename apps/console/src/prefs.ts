@@ -39,6 +39,17 @@ function writeLocal(key: string, value: unknown) {
   }
 }
 
+/** The settings this browser holds, by key. */
+function localKeys(): string[] {
+  try {
+    return Object.keys(localStorage)
+      .filter((name) => name.startsWith(LOCAL))
+      .map((name) => name.slice(LOCAL.length));
+  } catch {
+    return [];
+  }
+}
+
 /** Every value is read again from storage; a snapshot per key keeps renders stable. */
 const snapshots = new Map<string, { raw: string | null; value: unknown }>();
 function snapshot(key: string): unknown {
@@ -192,8 +203,13 @@ export function loadPreferences(): Promise<void> {
       const response = await fetch("/api/v1/me/preferences");
       if (!response.ok) return;
       const { items } = (await response.json()) as { items: { key: string; value: unknown }[] };
+      const onServer = new Set(items.map((item) => item.key));
       for (const item of items) {
         if (!pending.has(item.key) && !moved.has(item.key)) writeLocal(item.key, item.value);
+      }
+      // What the server no longer keeps was forgotten elsewhere: forgotten here too.
+      for (const key of localKeys()) {
+        if (!onServer.has(key) && !pending.has(key) && !moved.has(key)) writeLocal(key, undefined);
       }
       // Sent at once: the next page may load before a delayed send would go.
       for (const key of moved) send(key, readLocal(key), { now: true });

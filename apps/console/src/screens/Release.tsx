@@ -15,6 +15,7 @@ import {
   Stepper,
 } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
@@ -284,7 +285,7 @@ function ReviewStep({
             : undefined;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+    <div className="flex flex-col gap-6">
       <Current
         object={{
           heading: "This release",
@@ -303,166 +304,183 @@ function ReviewStep({
             : [],
         }}
       />
-      <div className="flex flex-col gap-5">
-        {groups.map((group) => (
-          <section key={group} className="flex flex-col gap-2">
-            <SectionLabel>{group}</SectionLabel>
-            <Panel as="div" className="divide-y divide-line">
-              {drafts
-                .filter((row) => (KIND_LABEL[row.kind] ?? row.kind) === group)
-                .map((row) => {
-                  const to = editLink(row);
-                  return (
-                    <div key={row.path} className="flex flex-col gap-2 px-4 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <input
-                            type="checkbox"
-                            aria-label={`Choose ${row.path}`}
-                            checked={chosen.has(row.path)}
-                            onChange={(event) => {
-                              const next = new Set(chosen);
-                              if (event.target.checked) next.add(row.path);
-                              else next.delete(row.path);
-                              setChosen(next);
-                            }}
-                            className="size-4 accent-[var(--color-action)]"
-                          />
-                          {to ? (
-                            <Link to={to} className="truncate font-mono text-code">
-                              {row.path}
-                            </Link>
-                          ) : (
-                            <Mono className="truncate">{row.path}</Mono>
-                          )}
-                          <Tag tone={CHANGE_TAG[row.change][1]}>{CHANGE_TAG[row.change][0]}</Tag>
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="text-meta text-ink-subtle">
-                            saved {fromNow(row.updatedAt)}
-                          </span>
-                          <Button size="small" variant="quiet" onClick={() => setHistory(row.path)}>
-                            <History aria-hidden="true" size={14} /> Earlier
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="danger"
-                            onClick={async () => {
-                              const sure = await ask.confirm({
-                                title: `Set aside the draft of ${row.path}?`,
-                                text: "It goes back to how it was last deployed. The draft stays in its history, and can be brought back.",
-                                action: "Set aside",
-                                danger: true,
-                              });
-                              if (!sure) return;
-                              await api
-                                .delete(`${root}/drafts/${row.path}`)
-                                .then(reload, notify.error);
-                              preview.reload();
-                            }}
-                          >
-                            Set aside
-                          </Button>
-                        </span>
-                      </div>
-                      {row.about && row.about.length > 0 ? (
-                        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-meta text-ink-muted">
-                          {row.about.map((line) => (
-                            <li key={line} className="flex items-start gap-2">
-                              <span className="mt-[5px]">
-                                <Junction kind="plain" size={5} />
+      <SplitPane
+        id="release"
+        label="Resize the drafts and the deploy panel"
+        initial={60}
+        minFirst={360}
+        minSecond={300}
+        first={
+          <div className="flex flex-col gap-5 lg:pr-6">
+            {groups.map((group) => (
+              <section key={group} className="flex flex-col gap-2">
+                <SectionLabel>{group}</SectionLabel>
+                <Panel as="div" className="divide-y divide-line">
+                  {drafts
+                    .filter((row) => (KIND_LABEL[row.kind] ?? row.kind) === group)
+                    .map((row) => {
+                      const to = editLink(row);
+                      return (
+                        <div key={row.path} className="flex flex-col gap-2 px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <input
+                                type="checkbox"
+                                aria-label={`Choose ${row.path}`}
+                                checked={chosen.has(row.path)}
+                                onChange={(event) => {
+                                  const next = new Set(chosen);
+                                  if (event.target.checked) next.add(row.path);
+                                  else next.delete(row.path);
+                                  setChosen(next);
+                                }}
+                                className="size-4 accent-[var(--color-action)]"
+                              />
+                              {to ? (
+                                <Link to={to} className="truncate font-mono text-code">
+                                  {row.path}
+                                </Link>
+                              ) : (
+                                <Mono className="truncate">{row.path}</Mono>
+                              )}
+                              <Tag tone={CHANGE_TAG[row.change][1]}>
+                                {CHANGE_TAG[row.change][0]}
+                              </Tag>
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="text-meta text-ink-subtle">
+                                saved {fromNow(row.updatedAt)}
                               </span>
-                              {line}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  );
-                })}
-            </Panel>
-          </section>
-        ))}
-      </div>
-      <Panel className="flex h-fit flex-col gap-3 p-4">
-        <SectionLabel>Deploy to this dev workspace</SectionLabel>
-        {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
-        {preview.data?.refusal ? (
-          <Notice tone="danger">
-            <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
-            <ul className="mt-2 mb-0 pl-5">
-              {preview.data.refusal.errors.map((one) => (
-                <li key={`${one.path} ${one.message}`}>
-                  <Mono>{one.path}</Mono> {one.message}
-                </li>
-              ))}
-            </ul>
-          </Notice>
-        ) : preview.data?.summary ? (
-          <>
-            <p className="m-0 text-ink-muted">
-              Deploying creates {preview.data.summary.created}, changes{" "}
-              {preview.data.summary.updated} and removes {preview.data.summary.deleted}.
-              {preview.data.summary.data.length > 0
-                ? ` ${preview.data.summary.data.join(" ")}`
-                : ""}
-            </p>
-            {(preview.data.summary.warnings ?? []).length > 0 ? (
-              <Notice tone="attention">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <TriangleAlert aria-hidden="true" size={14} /> Not bound here, and the deploy
-                  still works
-                </span>
-                <ul className="mt-1 mb-0 pl-5">
-                  {(preview.data.summary.warnings ?? []).map((one) => (
-                    <li key={one.path}>
-                      {one.message}. A run that reaches it fails until it is bound.
+                              <Button
+                                size="small"
+                                variant="quiet"
+                                onClick={() => setHistory(row.path)}
+                              >
+                                <History aria-hidden="true" size={14} /> Earlier
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="danger"
+                                onClick={async () => {
+                                  const sure = await ask.confirm({
+                                    title: `Set aside the draft of ${row.path}?`,
+                                    text: "It goes back to how it was last deployed. The draft stays in its history, and can be brought back.",
+                                    action: "Set aside",
+                                    danger: true,
+                                  });
+                                  if (!sure) return;
+                                  await api
+                                    .delete(`${root}/drafts/${row.path}`)
+                                    .then(reload, notify.error);
+                                  preview.reload();
+                                }}
+                              >
+                                Set aside
+                              </Button>
+                            </span>
+                          </div>
+                          {row.about && row.about.length > 0 ? (
+                            <ul className="m-0 flex list-none flex-col gap-1 p-0 text-meta text-ink-muted">
+                              {row.about.map((line) => (
+                                <li key={line} className="flex items-start gap-2">
+                                  <span className="mt-[5px]">
+                                    <Junction kind="plain" size={5} />
+                                  </span>
+                                  {line}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                </Panel>
+              </section>
+            ))}
+          </div>
+        }
+        second={
+          <Panel className="flex h-fit flex-col gap-3 p-4 lg:ml-6">
+            <SectionLabel>Deploy to this dev workspace</SectionLabel>
+            {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
+            {preview.data?.refusal ? (
+              <Notice tone="danger">
+                <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
+                <ul className="mt-2 mb-0 pl-5">
+                  {preview.data.refusal.errors.map((one) => (
+                    <li key={`${one.path} ${one.message}`}>
+                      <Mono>{one.path}</Mono> {one.message}
                     </li>
                   ))}
                 </ul>
               </Notice>
-            ) : null}
-          </>
-        ) : (
-          <p className="m-0 text-ink-muted">Checking what a deploy would do…</p>
-        )}
-        <TextField
-          name="message"
-          label="What changed"
-          value={message}
-          required={false}
-          placeholder="Send large orders for approval"
-          hint="Kept with the version, and used as the commit message when the workspace follows a branch."
-          onChange={setMessage}
-        />
-        <Button
-          variant="primary"
-          loading={busy}
-          disabled={!preview.data?.possible}
-          onClick={() => void deployNow()}
-        >
-          {picked.length > 0
-            ? `Deploy the ${count} chosen`
-            : `Deploy ${count} ${count === 1 ? "change" : "changes"}`}
-        </Button>
-        {picked.length > 0 ? (
-          <span className="flex flex-wrap items-center gap-2">
-            <Button size="small" variant="danger" onClick={() => void setAsideChosen()}>
-              Set aside the {picked.length} chosen
+            ) : preview.data?.summary ? (
+              <>
+                <p className="m-0 text-ink-muted">
+                  Deploying creates {preview.data.summary.created}, changes{" "}
+                  {preview.data.summary.updated} and removes {preview.data.summary.deleted}.
+                  {preview.data.summary.data.length > 0
+                    ? ` ${preview.data.summary.data.join(" ")}`
+                    : ""}
+                </p>
+                {(preview.data.summary.warnings ?? []).length > 0 ? (
+                  <Notice tone="attention">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <TriangleAlert aria-hidden="true" size={14} /> Not bound here, and the deploy
+                      still works
+                    </span>
+                    <ul className="mt-1 mb-0 pl-5">
+                      {(preview.data.summary.warnings ?? []).map((one) => (
+                        <li key={one.path}>
+                          {one.message}. A run that reaches it fails until it is bound.
+                        </li>
+                      ))}
+                    </ul>
+                  </Notice>
+                ) : null}
+              </>
+            ) : (
+              <p className="m-0 text-ink-muted">Checking what a deploy would do…</p>
+            )}
+            <TextField
+              name="message"
+              label="What changed"
+              value={message}
+              required={false}
+              placeholder="Send large orders for approval"
+              hint="Kept with the version, and used as the commit message when the workspace follows a branch."
+              onChange={setMessage}
+            />
+            <Button
+              variant="primary"
+              loading={busy}
+              disabled={!preview.data?.possible}
+              onClick={() => void deployNow()}
+            >
+              {picked.length > 0
+                ? `Deploy the ${count} chosen`
+                : `Deploy ${count} ${count === 1 ? "change" : "changes"}`}
             </Button>
-            <Button size="small" variant="quiet" onClick={() => setChosen(new Set())}>
-              Choose none
-            </Button>
-          </span>
-        ) : (
-          <p className="m-0 text-meta text-ink-subtle">
-            Choose drafts on the left to deploy, or set aside, only those.
-          </p>
-        )}
-        <p className="m-0 text-meta text-ink-subtle">
-          This deploys to this dev workspace only. Production is untouched.
-        </p>
-      </Panel>
+            {picked.length > 0 ? (
+              <span className="flex flex-wrap items-center gap-2">
+                <Button size="small" variant="danger" onClick={() => void setAsideChosen()}>
+                  Set aside the {picked.length} chosen
+                </Button>
+                <Button size="small" variant="quiet" onClick={() => setChosen(new Set())}>
+                  Choose none
+                </Button>
+              </span>
+            ) : (
+              <p className="m-0 text-meta text-ink-subtle">
+                Choose drafts on the left to deploy, or set aside, only those.
+              </p>
+            )}
+            <p className="m-0 text-meta text-ink-subtle">
+              This deploys to this dev workspace only. Production is untouched.
+            </p>
+          </Panel>
+        }
+      />
       {batch.dialog}
       <DraftHistory
         root={root}

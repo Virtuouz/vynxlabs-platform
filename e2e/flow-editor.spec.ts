@@ -237,7 +237,7 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
   await expect(page.getByRole("group", { name: "approve to fail, on error" })).toHaveCount(1);
 
   await press(page.getByRole("button", { name: "Save draft" }));
-  await expect(page).toHaveURL(/\/flows\/edit\/orders\/route$/);
+  await expect(page).toHaveURL(/\/flows\/edit\/orders\/route(\?|$)/);
   const saved = await call(page, "GET", `${W}/drafts/orders/route`);
   expect(saved.body.edges).toEqual(
     expect.arrayContaining([

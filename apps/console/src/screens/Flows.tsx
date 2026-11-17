@@ -709,6 +709,8 @@ export function FlowRunView({
   const { run, error, reconnecting, refresh } = useFlowRunLive(root, id);
   // The step shown is in the address, so a link to a failed step can go in a ticket.
   const [asked, setSelected] = useUrlParam("step", undefined, { push: true });
+  // Timeline or graph: in the address, so a reload or a link keeps it.
+  const [view, setView] = useUrlParam("view", "timeline");
   const flow = useLoad<FlowDetail>(run ? `${root}/flows/${run.flow}` : null);
   // The graph as it ran: the flow at this run's version, which may differ from today's.
   const drawn = useLoad<RunDefinition>(run ? `${root}/flow-runs/${id}/definition` : null);
@@ -831,6 +833,8 @@ export function FlowRunView({
         </Notice>
       ))}
       <Tabs
+        value={view}
+        onChange={setView}
         label="Views of this run"
         tabs={[
           {

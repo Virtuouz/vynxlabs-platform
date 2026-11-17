@@ -36,6 +36,14 @@ const WorkspaceSummary = Type.Object({
     }),
     Type.Null(),
   ]),
+  scripts: Type.Optional(Count),
+  flows: Type.Optional(Count),
+  everRan: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()], {
+      description: "Whether anything has run here, ever: for a first run's checklist.",
+    }),
+  ),
+  workersOnline: Type.Optional(Count),
 });
 
 const TenantSummary = Type.Object({
@@ -88,15 +96,23 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const may = async (permission: string) => ctx.allowed(permission, at);
         const since = new Date(Date.now() - DAY_MS);
 
-        const [readResources, readRuns, readFlowRuns, readConnections, readApprovals, readGit] =
-          await Promise.all([
-            may("resource:read"),
-            may("run:read"),
-            may("flow_run:read"),
-            may("connection:read"),
-            may("approval:read"),
-            may("git:read"),
-          ]);
+        const [
+          readResources,
+          readRuns,
+          readFlowRuns,
+          readConnections,
+          readApprovals,
+          readGit,
+          readWorkers,
+        ] = await Promise.all([
+          may("resource:read"),
+          may("run:read"),
+          may("flow_run:read"),
+          may("connection:read"),
+          may("approval:read"),
+          may("git:read"),
+          ctx.allowed("worker:read", { tenantId: params.t }),
+        ]);
 
         const drafts = readResources
           ? await count(
@@ -197,7 +213,48 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           : undefined;
         const there = linkedRow ? await bundleOf(linkedRow.active_bundle_id) : undefined;
 
+        // What a first run's checklist needs: is there code, has it run, can it run.
+        const written = async (kind: "script" | "flow") =>
+          count(
+            sql<{ n: string }>`
+              select count(*) as n from (
+                select path from resource where workspace_id = ${params.w} and kind = ${kind}
+                union
+                select path from resource_draft
+                where workspace_id = ${params.w} and kind = ${kind} and not deleted
+              ) as written
+            `
+              .execute(db)
+              .then((result) => result.rows[0]),
+          );
+        const [scripts, flows, everRan, workersOnline] = await Promise.all([
+          readResources ? written("script") : null,
+          readResources ? written("flow") : null,
+          readRuns || readFlowRuns
+            ? sql<{ ran: boolean }>`
+                select exists (select 1 from run where workspace_id = ${params.w})
+                  or exists (select 1 from flow_run where workspace_id = ${params.w}) as ran
+              `
+                .execute(db)
+                .then((result) => Boolean(result.rows[0]?.ran))
+            : null,
+          readWorkers
+            ? count(
+                db
+                  .selectFrom("worker")
+                  .select((eb) => eb.fn.countAll().as("n"))
+                  .where("tenant_id", "=", params.t)
+                  .where("last_seen_at", ">", new Date(Date.now() - WORKER_STALE_SECONDS * 1000))
+                  .executeTakeFirst(),
+              )
+            : null,
+        ]);
+
         return {
+          scripts,
+          flows,
+          everRan,
+          workersOnline,
           drafts,
           failedRuns: { count: failed, since: since.toISOString() },
           unboundConnections: unbound,

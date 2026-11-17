@@ -1,5 +1,6 @@
 import {
   Button,
+  CheckboxField,
   type Column,
   ComboboxField,
   Dialog,
@@ -7,18 +8,23 @@ import {
   Notice,
   type Option,
   SelectField,
+  SideSheet,
   TextField,
 } from "@vynxlabs/ui";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
 import { DataTable } from "./kit/DataTable.tsx";
+import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 export interface FormField {
   name: string;
   label: string;
-  type?: "text" | "email" | "password" | "number";
+  /** `checkbox` gives "true" or "false". */
+  type?: "text" | "email" | "password" | "number" | "checkbox";
+  /** What a field holds before anything is entered, such as "true" for a box checked already. */
+  initial?: string;
   hint?: string;
   required?: boolean;
   options?: { value: string; label: string }[];
@@ -74,9 +80,16 @@ export interface CreateConfig {
   description?: string;
   fields: FormField[];
   submit: (values: Record<string, string>) => Promise<unknown>;
-  /** Something to show once after creating, such as a key that is only shown now. */
   /** What to show once made, such as a key shown once. `dismiss` takes it away. */
   afterCreate?: (result: unknown, dismiss: () => void) => ReactNode;
+  /**
+   * What the confirmation says, naming what was made, and where it is. Without
+   * it, "Created." is said; with `afterCreate`, what that shows says it.
+   */
+  done?: (
+    result: unknown,
+    values: Record<string, string>,
+  ) => string | { message: string; link?: { label: string; href: string } };
 }
 
 export interface ListScreenProps<Row> {
@@ -101,18 +114,21 @@ export function Page({
   description,
   action,
   width = "full",
+  mono = false,
   children,
 }: {
   title: string;
   description?: string | undefined;
   action?: ReactNode;
+  /** The title is a path or an ID. */
+  mono?: boolean;
   /** `form` keeps a page of fields to a readable measure; `full` lets a list use the room. */
   width?: "full" | "form";
   children: ReactNode;
 }) {
   return (
     <section className={`flex flex-col gap-5 ${width === "form" ? "max-w-[52rem]" : ""}`}>
-      <PageHeader title={title} description={description} actions={action} />
+      <PageHeader title={title} mono={mono} description={description} actions={action} />
       {children}
     </section>
   );
@@ -133,6 +149,7 @@ export function CreateDialog({
   const [error, setError] = useState<ApiError>();
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const formId = useId();
   const fieldError = (name: string) =>
     unpicked.includes(name)
       ? "Choose one."
@@ -145,85 +162,113 @@ export function CreateDialog({
     onClose();
   };
 
-  return (
-    <Dialog
-      open={open}
-      onClose={close}
-      title={config.action}
-      {...(config.description ? { description: config.description } : {})}
+  // A form of more than three fields is configuration, not a quick question: it opens as a
+  // sheet beside the page, with its buttons kept in view, rather than over it.
+  const roomy = config.fields.length > 3;
+  const buttons = (
+    <>
+      <Button onClick={close}>Cancel</Button>
+      <Button type="submit" form={formId} variant="primary" loading={busy}>
+        {config.action}
+      </Button>
+    </>
+  );
+  const form = (
+    <form
+      id={formId}
+      className="flex flex-col gap-4"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const missing = config.fields
+          .filter((f) => f.pick && !(f.when && !f.when(values)) && !values[f.name])
+          .map((f) => f.name);
+        setUnpicked(missing);
+        if (missing.length > 0) return;
+        setBusy(true);
+        setError(undefined);
+        try {
+          const defaults = Object.fromEntries([
+            ...config.fields
+              .filter((f) => f.options?.[0] && !f.pick)
+              .map((f) => [f.name, f.options?.[0]?.value as string]),
+            ...config.fields
+              .filter((f) => f.initial !== undefined)
+              .map((f) => [f.name, f.initial as string]),
+          ]);
+          const sent = { ...defaults, ...values };
+          const result = await config.submit(sent);
+          const said = config.done?.(result, sent) ?? (config.afterCreate ? undefined : "Created.");
+          if (typeof said === "string") notify.success(said);
+          else if (said) notify.success(said.message, said.link ? { link: said.link } : {});
+          setValues({});
+          onCreated(result);
+        } catch (caught) {
+          setError(caught as ApiError);
+        } finally {
+          setBusy(false);
+        }
+      }}
     >
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          const missing = config.fields
-            .filter((f) => f.pick && !(f.when && !f.when(values)) && !values[f.name])
-            .map((f) => f.name);
-          setUnpicked(missing);
-          if (missing.length > 0) return;
-          setBusy(true);
-          setError(undefined);
-          try {
-            const defaults = Object.fromEntries(
-              config.fields
-                .filter((f) => f.options?.[0] && !f.pick)
-                .map((f) => [f.name, f.options?.[0]?.value as string]),
-            );
-            const result = await config.submit({ ...defaults, ...values });
-            setValues({});
-            onCreated(result);
-          } catch (caught) {
-            setError(caught as ApiError);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {config.fields.map((field) =>
-          field.when && !field.when(values) ? null : field.choose ? (
-            <ChoiceField
-              key={field.name}
-              field={field}
-              value={values[field.name]}
-              error={fieldError(field.name)}
-              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value ?? "" }))}
-            />
-          ) : field.options ? (
-            <SelectField
-              key={field.name}
-              name={field.name}
-              label={field.label}
-              options={
-                field.pick ? [{ value: "", label: "Choose…" }, ...field.options] : field.options
-              }
-              value={values[field.name] ?? (field.pick ? "" : (field.options[0]?.value ?? ""))}
-              {...(field.hint ? { hint: field.hint } : {})}
-              error={fieldError(field.name)}
-              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
-            />
-          ) : (
-            <TextField
-              key={field.name}
-              name={field.name}
-              label={field.label}
-              type={field.type ?? "text"}
-              value={values[field.name] ?? ""}
-              required={field.required ?? true}
-              {...(field.placeholder ? { placeholder: field.placeholder } : {})}
-              {...(field.hint ? { hint: field.hint } : {})}
-              error={fieldError(field.name)}
-              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
-            />
-          ),
-        )}
-        {error ? <Notice tone="danger">{error.message}</Notice> : null}
-        <div className="mt-1 flex justify-end gap-2">
-          <Button onClick={close}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
-            {config.action}
-          </Button>
-        </div>
-      </form>
+      {config.fields.map((field) =>
+        field.when && !field.when(values) ? null : field.type === "checkbox" ? (
+          <CheckboxField
+            key={field.name}
+            name={field.name}
+            label={field.label}
+            checked={(values[field.name] ?? field.initial) === "true"}
+            {...(field.hint ? { hint: field.hint } : {})}
+            onChange={(checked) =>
+              setValues((v) => ({ ...v, [field.name]: checked ? "true" : "false" }))
+            }
+          />
+        ) : field.choose ? (
+          <ChoiceField
+            key={field.name}
+            field={field}
+            value={values[field.name]}
+            error={fieldError(field.name)}
+            onChange={(value) => setValues((v) => ({ ...v, [field.name]: value ?? "" }))}
+          />
+        ) : field.options ? (
+          <SelectField
+            key={field.name}
+            name={field.name}
+            label={field.label}
+            options={
+              field.pick ? [{ value: "", label: "Choose…" }, ...field.options] : field.options
+            }
+            value={values[field.name] ?? (field.pick ? "" : (field.options[0]?.value ?? ""))}
+            {...(field.hint ? { hint: field.hint } : {})}
+            error={fieldError(field.name)}
+            onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
+          />
+        ) : (
+          <TextField
+            key={field.name}
+            name={field.name}
+            label={field.label}
+            type={field.type ?? "text"}
+            value={values[field.name] ?? ""}
+            required={field.required ?? true}
+            {...(field.placeholder ? { placeholder: field.placeholder } : {})}
+            {...(field.hint ? { hint: field.hint } : {})}
+            error={fieldError(field.name)}
+            onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
+          />
+        ),
+      )}
+      {error ? <Notice tone="danger">{error.message}</Notice> : null}
+      {roomy ? null : <div className="mt-1 flex justify-end gap-2">{buttons}</div>}
+    </form>
+  );
+  const about = config.description ? { description: config.description } : {};
+  return roomy ? (
+    <SideSheet open={open} onClose={close} title={config.action} {...about} footer={buttons}>
+      {form}
+    </SideSheet>
+  ) : (
+    <Dialog open={open} onClose={close} title={config.action} {...about}>
+      {form}
     </Dialog>
   );
 }
@@ -276,7 +321,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
           }
         />
       ) : (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       )}
       {create ? (
         <CreateDialog
@@ -320,7 +365,7 @@ function ListFrame({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="m-0 text-title">{title}</h2>
-          {description ? <p className="m-0 max-w-[70ch] text-ink-muted">{description}</p> : null}
+          {description ? <p className="m-0 max-w-measure text-ink-muted">{description}</p> : null}
         </div>
         {action}
       </div>

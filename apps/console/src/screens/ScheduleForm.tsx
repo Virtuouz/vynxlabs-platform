@@ -165,7 +165,7 @@ export function ScheduleFields({
       ) : null}
       {chosen ? (
         <div className="flex flex-col gap-1">
-          <span className="text-[13px] font-medium text-ink">Input</span>
+          <span className="text-body-sm font-medium text-ink">Input</span>
           <SchemaForm
             // A new target, or its schema arriving, starts a new form.
             key={`${chosen}:${JSON.stringify(schema ?? null)}`}
@@ -290,15 +290,15 @@ export function WhenFields({
         onChange={(next) => change({ timezone: next ?? "UTC" })}
       />
       <div className="flex flex-col gap-1" aria-live="polite">
-        <span className="text-[13px] font-medium text-ink">Next times, in {zone}</span>
+        <span className="text-body-sm font-medium text-ink">Next times, in {zone}</span>
         {!cron ? (
-          <p className="m-0 text-[13px] text-ink-muted">Shown once there is a cron line.</p>
+          <p className="m-0 text-body-sm text-ink-muted">Shown once there is a cron line.</p>
         ) : cronProblem ? (
-          <p role="alert" className="m-0 text-[13px] text-danger">
+          <p role="alert" className="m-0 text-body-sm text-danger">
             {cronProblem}
           </p>
         ) : (
-          <ol className="m-0 flex list-none flex-col gap-0.5 p-0 font-mono text-telemetry">
+          <ol className="m-0 flex list-none flex-col gap-0.5 p-0 font-mono text-code">
             {(preview.data?.times ?? []).map((time) => (
               <li key={time}>{when(time, zone)}</li>
             ))}
@@ -388,7 +388,7 @@ export function NewScheduleSheet({
       description="Starts a script or a flow at the times you set. It is saved as a draft and runs once it is deployed."
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[13px] text-ink-muted">
+          <span className="text-body-sm text-ink-muted">
             {problems[0] ?? (path ? "" : "Give it a path.")}
           </span>
           <span className="flex gap-2">
@@ -419,7 +419,7 @@ export function NewScheduleSheet({
           onProblems={setProblems}
           fresh
         />
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           Drafts are deployed from <Link to={`${link}/changes`}>Changes</Link>.
         </p>
       </div>

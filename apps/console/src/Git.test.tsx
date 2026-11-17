@@ -49,7 +49,10 @@ test("a repository is connected with a token, which is sent once and not kept on
     folder: "platform",
     token: "tok-123",
   });
-  expect((screen.getByLabelText("Access token") as HTMLInputElement).value).toBe("");
+  // Once stored, the token is said to be there, and is never shown: it can only be replaced.
+  expect(screen.queryByLabelText("Access token")).toBeNull();
+  expect(screen.getByText("Stored encrypted. It is never shown.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Replace the access token" })).toBeTruthy();
 
   // Saving again without typing a token keeps the stored one.
   fireEvent.click(await screen.findByRole("button", { name: "Save" }));

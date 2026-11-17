@@ -464,27 +464,91 @@ export interface FindQuery {
   sort?: string[];
   limit?: number;
   offset?: number;
+  /**
+   * Where the last page ended: its last row's value in the sort column, if
+   * any, then its key. A page that starts there neither repeats nor skips a
+   * row when rows are added before it, and costs the same however deep it is.
+   */
+  after?: unknown[];
 }
+
+/**
+ * Whether a page can start after a row rather than after a count of rows:
+ * the table has a key, and is sorted by one column at most.
+ */
+const keyset = (target: RowTarget, sort: string[]) => target.key !== null && sort.length <= 1;
 
 export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = {}) {
   const limit = Math.min(Math.max(query.limit ?? 50, 1), 1000);
   const offset = Math.max(query.offset ?? 0, 0);
+  const sort = query.sort ?? [];
   const where = query.filter === undefined ? sql`true` : compileFilter(target, query.filter);
-  const order = (query.sort ?? []).map((entry, index) => {
+  const sorted = sort.map((entry, index) => {
     const descending = entry.startsWith("-");
-    const meta = column(target, descending ? entry.slice(1) : entry, `/sort/${index}`);
-    return sql`${sql.ref(meta.physicalName)} ${sql.raw(descending ? "desc" : "asc")} nulls last`;
+    return {
+      meta: column(target, descending ? entry.slice(1) : entry, `/sort/${index}`),
+      descending,
+    };
   });
+  const order = sorted.map(
+    ({ meta, descending }) =>
+      sql`${sql.ref(meta.physicalName)} ${sql.raw(descending ? "desc" : "asc")} nulls last`,
+  );
   // The key breaks ties, so paging never repeats or skips a row.
   if (target.key) order.push(sql`${sql.ref(target.key)} asc`);
+  const keyMeta = target.columns.find((one) => one.physicalName === target.key);
+  const byKeyset = keyset(target, sort) && keyMeta !== undefined;
+  // After the last row: past it in the sort, or level with it and past its key. Rows with no
+  // value in the sort column come last, in key order.
+  let after = sql`true`;
+  if (query.after && byKeyset && keyMeta) {
+    const invalid = () => badRequest("The cursor is not valid.");
+    const key = sql.ref(keyMeta.physicalName);
+    const keyValue = (() => {
+      try {
+        return toDatabase(keyMeta, query.after?.at(-1));
+      } catch {
+        throw invalid();
+      }
+    })();
+    const by = sorted[0];
+    if (!by) {
+      after = sql`${key} > ${keyValue}`;
+    } else {
+      const ref = sql.ref(by.meta.physicalName);
+      const raw = query.after[0];
+      const value = (() => {
+        try {
+          return toDatabase(by.meta, raw);
+        } catch {
+          throw invalid();
+        }
+      })();
+      after =
+        value === null
+          ? sql`(${ref} is null and ${key} > ${keyValue})`
+          : sql`(${ref} ${sql.raw(by.descending ? "<" : ">")} ${value}
+              or (${ref} = ${value} and ${key} > ${keyValue}) or ${ref} is null)`;
+    }
+  }
   const result = await sql<Row>`
     select ${selectList(target)} from ${sql.id(target.schema, target.table)}
-    where ${where}
+    where ${where} and ${after}
     ${order.length > 0 ? sql`order by ${sql.join(order)}` : sql``}
-    limit ${limit + 1} offset ${offset}
+    limit ${limit + 1} ${query.after && byKeyset ? sql`` : sql`offset ${offset}`}
   `.execute(db);
   const rows = result.rows.slice(0, limit).map((row) => shape(target, row));
-  return { items: rows, nextOffset: result.rows.length > limit ? offset + limit : null };
+  const more = result.rows.length > limit;
+  const lastRow = rows.at(-1);
+  return {
+    items: rows,
+    nextOffset: more && !(query.after && byKeyset) ? offset + limit : null,
+    // The next page starts after this one's last row, when the table and its sort allow it.
+    nextAfter:
+      more && byKeyset && keyMeta && lastRow
+        ? [...(sorted[0] ? [lastRow[sorted[0].meta.name] ?? null] : []), lastRow[keyMeta.name]]
+        : null,
+  };
 }
 
 // ----- Totals -----
@@ -861,6 +925,29 @@ export async function deleteRow(db: AnyDb, target: RowTarget, id: string): Promi
     where ${sql.ref(keyColumn(target).physicalName)} = ${keyValue(target, id)}
   `.execute(db);
   if ((result.numAffectedRows ?? 0n) === 0n) throw notFound("The row");
+}
+
+/**
+ * Deletes several rows by key, in one statement. A key that names no row the
+ * caller may see is reported missing, not an error, so a list that changed
+ * underneath does not stop the rest.
+ */
+export async function deleteRows(
+  db: AnyDb,
+  target: RowTarget,
+  ids: string[],
+): Promise<{ deleted: string[]; missing: string[] }> {
+  const key = keyColumn(target);
+  const result = await sql<{ id: unknown }>`
+    delete from ${sql.id(target.schema, target.table)}
+    where ${sql.ref(key.physicalName)} in (${sql.join(ids.map((id) => sql`${keyValue(target, id)}`))})
+    returning ${sql.ref(key.physicalName)} as id
+  `.execute(db);
+  const deleted = new Set(result.rows.map((row) => String(row.id)));
+  return {
+    deleted: ids.filter((id) => deleted.has(id)),
+    missing: ids.filter((id) => !deleted.has(id)),
+  };
 }
 
 export async function countRows(db: AnyDb, target: RowTarget): Promise<number> {

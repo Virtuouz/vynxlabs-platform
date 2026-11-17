@@ -8,7 +8,12 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   timeout: 240_000,
-  expect: { timeout: 20_000 },
+  expect: {
+    timeout: 20_000,
+    // Reviewed pictures: a few pixels of anti-aliasing may differ, not a moved layout.
+    toHaveScreenshot: { maxDiffPixelRatio: 0.002, threshold: 0.2 },
+  },
+  snapshotPathTemplate: "{testDir}/snapshots/{testFileName}/{arg}{ext}",
   workers: 1,
   retries: 0,
   reporter: [["list"]],

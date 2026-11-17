@@ -1,6 +1,4 @@
 import {
-  Badge,
-  type BadgeTone,
   Button,
   CheckboxField,
   ComboboxField,
@@ -14,9 +12,12 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
-import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
+import { StatePill, Tag } from "../kit/status.tsx";
+import { navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -232,7 +233,7 @@ export function ResourceEditor({
   }, [dirty, busy, editable, state, body, json]);
 
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
-  if (!body) return <p className="text-ink-muted">Loading…</p>;
+  if (!body) return <Loading />;
 
   const readOnly = !editable;
   const change = (next: Body) => {
@@ -302,12 +303,6 @@ export function ResourceEditor({
 
   autosave.current = save;
 
-  const STATE: Record<typeof state, [BadgeTone, string]> = {
-    new: ["neutral", "Not saved"],
-    draft: ["attention", "Draft"],
-    deployed: ["success", "Deployed"],
-    repository: ["action", "From the repository"],
-  };
   const jsonField = (name: string, label: string, hint: string, rows = 6) => (
     <TextAreaField
       name={name}
@@ -355,14 +350,74 @@ export function ResourceEditor({
 
   return (
     <section className="flex flex-col gap-4">
-      <Link to={`${link}/resources`} className="text-[13px] text-action">
-        All resources
-      </Link>
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          {opened ? (
-            <h1 className="m-0 truncate font-mono text-lg font-semibold">{path}</h1>
-          ) : (
+      <PageHeader
+        compact
+        mono={Boolean(opened)}
+        title={opened ? path : `New ${about.noun}`}
+        state={
+          <>
+            <Tag>{about.noun}</Tag>
+            <StatePill state={state} />
+            {dirty ? <StatePill state="unsaved" /> : null}
+          </>
+        }
+        actions={
+          readOnly ? null : (
+            <div className="flex items-center gap-2">
+              {opened && state !== "new" ? (
+                <Button
+                  variant="danger"
+                  disabled={busy}
+                  onClick={async () => {
+                    const draft = state === "draft";
+                    const sure = await ask.confirm({
+                      title: draft ? "Discard this draft?" : `Remove this ${about.noun}?`,
+                      text: draft
+                        ? `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`
+                        : "This saves a draft that removes it. Nothing changes until that draft is deployed.",
+                      action: draft ? "Discard" : "Remove",
+                      danger: true,
+                    });
+                    if (!sure) return;
+                    await (draft
+                      ? api.delete(`${root}/drafts/${opened}`)
+                      : api.put(`${root}/drafts/${opened}`, {
+                          kind,
+                          schemaVersion: 1,
+                          body: {},
+                          deleted: true,
+                        })
+                    ).then(
+                      () => navigate(`${link}/${draft ? "resources" : "changes"}`),
+                      notify.error,
+                    );
+                  }}
+                >
+                  {state === "draft" ? "Discard draft" : "Remove"}
+                </Button>
+              ) : null}
+              <Button
+                variant="primary"
+                loading={busy}
+                disabled={!dirty && state !== "new"}
+                onClick={save}
+              >
+                Save draft
+              </Button>
+              {state === "draft" && !dirty && path ? (
+                <DeployMenu
+                  root={root}
+                  link={link}
+                  path={path}
+                  disabled={busy}
+                  onDeployed={() => setState("deployed")}
+                />
+              ) : null}
+            </div>
+          )
+        }
+        after={
+          opened ? undefined : (
             <div className="w-72">
               <TextField
                 name="path"
@@ -373,60 +428,9 @@ export function ResourceEditor({
                 onChange={setPath}
               />
             </div>
-          )}
-          <Badge>{about.noun}</Badge>
-          <Badge tone={STATE[state][0]}>{STATE[state][1]}</Badge>
-          {dirty ? <Badge>Unsaved changes</Badge> : null}
-        </div>
-        {readOnly ? null : (
-          <div className="flex items-center gap-2">
-            {opened && state !== "new" ? (
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={async () => {
-                  const draft = state === "draft";
-                  const sure = await ask.confirm({
-                    title: draft ? "Discard this draft?" : `Remove this ${about.noun}?`,
-                    text: draft
-                      ? `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`
-                      : "This saves a draft that removes it. Nothing changes until that draft is deployed.",
-                    action: draft ? "Discard" : "Remove",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  await (draft
-                    ? api.delete(`${root}/drafts/${opened}`)
-                    : api.put(`${root}/drafts/${opened}`, {
-                        kind,
-                        schemaVersion: 1,
-                        body: {},
-                        deleted: true,
-                      })
-                  ).then(
-                    () => navigate(`${link}/${draft ? "resources" : "changes"}`),
-                    notify.error,
-                  );
-                }}
-              >
-                {state === "draft" ? "Discard draft" : "Remove"}
-              </Button>
-            ) : null}
-            <Button variant="primary" disabled={busy || (!dirty && state !== "new")} onClick={save}>
-              Save draft
-            </Button>
-            {state === "draft" && !dirty && path ? (
-              <DeployMenu
-                root={root}
-                link={link}
-                path={path}
-                disabled={busy}
-                onDeployed={() => setState("deployed")}
-              />
-            ) : null}
-          </div>
-        )}
-      </header>
+          )
+        }
+      />
       <p className="m-0 max-w-3xl text-ink-muted">{about.says}</p>
       {!editable ? (
         <ProductionNotice

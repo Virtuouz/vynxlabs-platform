@@ -44,7 +44,7 @@ function blocks(text: string): ReactNode[] {
       out.push(
         <pre
           key={key++}
-          className="m-0 overflow-x-auto rounded-control border border-line bg-sunken p-3 font-mono text-[12.5px]"
+          className="m-0 overflow-x-auto rounded-control border border-line bg-sunken p-3 font-mono text-code-sm"
         >
           {body.join("\n")}
         </pre>,
@@ -54,7 +54,7 @@ function blocks(text: string): ReactNode[] {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       const level = (heading[1] as string).length;
-      const size = level === 1 ? "text-lg" : level === 2 ? "text-base" : "text-sm";
+      const size = level === 1 ? "text-title" : level === 2 ? "text-emphasis" : "text-body";
       const Tag = `h${Math.min(level + 2, 6)}` as "h3";
       out.push(
         <Tag key={key++} className={`m-0 font-semibold ${size}`}>
@@ -132,7 +132,7 @@ function inline(text: string): ReactNode[] {
     const [whole, code, bold1, bold2, em1, em2, label, href] = match;
     if (code !== undefined) {
       out.push(
-        <code key={key++} className="rounded-[4px] bg-sunken px-1 font-mono text-[12.5px]">
+        <code key={key++} className="rounded-inner bg-sunken px-1 font-mono text-code-sm">
           {code}
         </code>,
       );

@@ -1,18 +1,11 @@
-import {
-  Badge,
-  type BadgeTone,
-  Button,
-  type LogLine,
-  logText,
-  Notice,
-  saveText,
-} from "@vynxlabs/ui";
+import { type BadgeTone, Button, type LogLine, logText, Notice, saveText } from "@vynxlabs/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { consoleLink, ObjectLink } from "../kit/objects.tsx";
@@ -33,7 +26,7 @@ import {
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 /** The badge tone of a run's state, for the run page's mark. */
@@ -99,6 +92,10 @@ interface ScriptRow {
   } | null;
   failedInARow: number;
   ownership: string;
+  /** A change waits to be deployed. */
+  draft?: boolean;
+  /** A version of it runs here; false for a script that is only a draft yet. */
+  deployed?: boolean;
   retries: number;
   uses: { connections: string[]; secrets: string[]; variables: string[]; tables: string[] };
 }
@@ -116,14 +113,15 @@ export function Scripts({
 }) {
   const runsLink = `${link}/runs`;
   const list = useLoad<{ items: ScriptRow[] }>(`${root}/scripts`);
-  const [filter, setFilter] = useUrlParam<"all" | "failing" | "never">("filter", "all");
+  const [filter, setFilter] = useUrlParam<"all" | "failing" | "never" | "drafted">("filter", "all");
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = list.data?.items ?? [];
   const rows = items.filter(
     (row) =>
       filter === "all" ||
       (filter === "failing" && row.lastRun?.status === "failed") ||
-      (filter === "never" && !row.lastRun),
+      (filter === "never" && !row.lastRun) ||
+      (filter === "drafted" && row.draft === true),
   );
   const open = items.find((row) => row.path === chosen);
   const reaches = (row: ScriptRow) =>
@@ -157,6 +155,11 @@ export function Scripts({
               label: "Never run",
               count: items.filter((row) => !row.lastRun).length,
             },
+            {
+              value: "drafted",
+              label: "Drafted",
+              count: items.filter((row) => row.draft === true).length,
+            },
           ]}
         />
       }
@@ -165,12 +168,19 @@ export function Scripts({
           header: "Script",
           cell: (row) => (
             <span className="flex min-w-0 flex-col">
-              <Link
-                to={`${link}/scripts/edit/${row.path}`}
-                className="truncate font-mono text-telemetry text-ink no-underline"
-              >
-                {row.path}
-              </Link>
+              <span className="flex min-w-0 items-center gap-2">
+                <Link
+                  to={`${link}/scripts/edit/${row.path}`}
+                  className="truncate font-mono text-code text-ink no-underline"
+                >
+                  {row.path}
+                </Link>
+                {row.draft ? (
+                  <StatePill state="draft">
+                    {row.deployed === false ? "Draft, never deployed" : "Draft"}
+                  </StatePill>
+                ) : null}
+              </span>
               <span className="truncate text-meta text-ink-subtle">
                 {row.description || "No description"}
               </span>
@@ -215,7 +225,8 @@ export function Scripts({
       rowKey={(row) => row.path}
       selected={chosen}
       onSelect={(row) => setChosen(row.path)}
-      error={list.error?.message}
+      error={list.error}
+      onRetry={list.reload}
       empty={{
         title: items.length > 0 ? "No script matches" : "No scripts yet",
         text:
@@ -557,7 +568,7 @@ export function Deployments({ root }: { root: string }) {
           cell: (row) => (
             <span className="flex items-center gap-2">
               {row.version}
-              {row.active ? <Badge tone="success">Running</Badge> : null}
+              {row.active ? <StatePill state="active">In use</StatePill> : null}
             </span>
           ),
         },
@@ -582,6 +593,7 @@ export function Deployments({ root }: { root: string }) {
               if (!sure) return;
               try {
                 await api.post(`${root}/deployments`, { bundleId: row.id });
+                notify.success(`Version ${row.version} is what runs here now.`);
                 reload();
               } catch (error) {
                 notify.error(error);
@@ -743,7 +755,7 @@ export function Connections({ root }: { root: string }) {
                   {row.config?.baseUrl ?? row.config?.host ?? ""}
                 </span>
               ) : (
-                <Badge tone="attention">Not bound</Badge>
+                <StatePill state="unbound" />
               ),
           },
         ]}
@@ -873,66 +885,19 @@ interface WorkerPool {
   managed: boolean;
 }
 
-/** One place code runs: whether a worker is there now, and what runs on it. */
-function PoolCard({
-  pool,
-  remove,
-  onRemoved,
-}: {
-  pool: WorkerPool;
-  remove: (() => Promise<unknown>) | undefined;
-  onRemoved: () => void;
-}) {
-  const label = pool.name ?? "Default pool";
-  return (
-    <li className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="m-0 flex flex-wrap items-center gap-2 text-title">
-            {pool.name ? <Mono>{pool.name}</Mono> : label}
-            {pool.managed ? <Tag>Instance-run</Tag> : null}
-            {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
-          </h3>
-          {pool.description ? (
-            <p className="m-0 text-meta text-ink-muted">{pool.description}</p>
-          ) : null}
-        </div>
-        {pool.online > 0 ? (
-          <StatePill state="ok" detail={pool.lastSeenAt ? fromNow(pool.lastSeenAt) : undefined}>
-            {pool.online} online
-          </StatePill>
-        ) : (
-          <StatePill
-            state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "cancelled"}
-            detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
-          >
-            No worker online
-          </StatePill>
-        )}
-      </div>
-      <KeyValues
-        rows={[
-          {
-            label: "Runs code of",
-            value:
-              pool.workspaces.length > 0
-                ? pool.workspaces.map((workspace) => workspace.name).join(", ")
-                : "No workspace yet",
-          },
-          { label: "Credentials", value: <Mono>{pool.credentials}</Mono> },
-        ]}
-      />
-      {remove ? (
-        <div>
-          <RemoveButton
-            label="Remove pool"
-            confirm={`Remove the pool "${label}"? Scripts that name it wait until it is made again.`}
-            run={remove}
-            onDone={onRemoved}
-          />
-        </div>
-      ) : null}
-    </li>
+/** Whether a worker is in a pool now, as its state. */
+function PoolState({ pool }: { pool: WorkerPool }) {
+  return pool.online > 0 ? (
+    <StatePill state="ok" detail={pool.lastSeenAt ? fromNow(pool.lastSeenAt) : undefined}>
+      {pool.online} online
+    </StatePill>
+  ) : (
+    <StatePill
+      state={pool.workspaces.length > 0 && !pool.managed ? "warning" : "off"}
+      detail={pool.lastSeenAt ? `last seen ${fromNow(pool.lastSeenAt)}` : "never seen"}
+    >
+      No worker online
+    </StatePill>
   );
 }
 
@@ -979,11 +944,11 @@ export function QueuePanel({ base }: { base: string }) {
   const tasks = queue.data?.tasks?.reduce((sum, one) => sum + one.waiting, 0) ?? 0;
   return (
     <section aria-label="Queue" className="flex flex-col gap-3">
-      <h2 className="m-0 text-base font-semibold">Queue</h2>
+      <h2 className="m-0 text-title font-semibold">Queue</h2>
       {queue.error ? (
-        <Notice tone="danger">{queue.error.message}</Notice>
+        <ErrorState error={queue.error} onRetry={queue.reload} />
       ) : !queue.data ? (
-        <p className="m-0 text-ink-muted">Loading…</p>
+        <Loading />
       ) : rows.length === 0 ? (
         <p className="m-0 text-ink-muted">Nothing is waiting, and nothing is running.</p>
       ) : (
@@ -1016,9 +981,7 @@ export function QueuePanel({ base }: { base: string }) {
               },
               {
                 header: "Pool",
-                cell: (row) => (
-                  <span className="font-mono text-telemetry">{row.pool ?? "default"}</span>
-                ),
+                cell: (row) => <span className="font-mono text-code">{row.pool ?? "default"}</span>,
               },
               { header: "Waiting", align: "end", cell: (row) => row.due },
               {
@@ -1040,14 +1003,12 @@ export function QueuePanel({ base }: { base: string }) {
       {(workers.data?.items.length ?? 0) > 0 ? (
         <ul aria-label="Workers online" className="m-0 flex list-none flex-col gap-1.5 p-0">
           {workers.data?.items.map((worker) => (
-            <li key={worker.id} className="flex flex-wrap items-center gap-2 text-[14px]">
+            <li key={worker.id} className="flex flex-wrap items-center gap-2 text-body">
               <span className="font-medium">{worker.credentialName}</span>
-              <span className="font-mono text-telemetry text-ink-muted">
+              <span className="font-mono text-code text-ink-muted">
                 {worker.version ?? "version unknown"}
               </span>
-              {worker.outdated ? (
-                <Badge tone="attention">Older version: takes no tasks</Badge>
-              ) : null}
+              {worker.outdated ? <StatePill state="outdated" detail="takes no tasks" /> : null}
               <span className="text-ink-muted">
                 {worker.running.length === 0
                   ? "idle"
@@ -1089,23 +1050,81 @@ export function Workers({ base }: { base: string }) {
       >
         <QueuePanel base={base} />
         {pools.error ? (
-          <Notice tone="danger">{pools.error.message}</Notice>
+          <ErrorState error={pools.error} onRetry={pools.reload} />
         ) : !pools.data ? (
-          <p className="m-0 text-ink-muted">Loading…</p>
+          <Loading />
         ) : (
-          <ul
-            aria-label="Worker pools"
-            className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2 2xl:grid-cols-3"
-          >
-            {pools.data.items.map((pool) => (
-              <PoolCard
-                key={pool.id ?? pool.name ?? "default"}
-                pool={pool}
-                remove={pool.id ? () => api.delete(`${base}/worker-pools/${pool.id}`) : undefined}
-                onRemoved={pools.reload}
-              />
-            ))}
-          </ul>
+          <DataTable<WorkerPool>
+            label="Worker pools"
+            rows={pools.data.items}
+            rowKey={(pool) => pool.id ?? pool.name ?? "default"}
+            columns={[
+              {
+                header: "State",
+                width: "w-56",
+                cell: (pool) => <PoolState pool={pool} />,
+              },
+              {
+                header: "Pool",
+                cell: (pool) => (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="flex flex-wrap items-center gap-2">
+                      {pool.name ? <Mono>{pool.name}</Mono> : "Default pool"}
+                      {pool.managed ? <Tag>Instance-run</Tag> : null}
+                      {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
+                    </span>
+                    {pool.description ? (
+                      <span className="truncate text-meta text-ink-muted">{pool.description}</span>
+                    ) : null}
+                  </span>
+                ),
+              },
+              {
+                header: "Runs code of",
+                priority: 2,
+                cell: (pool) =>
+                  pool.workspaces.length > 0 ? (
+                    pool.workspaces.map((workspace) => workspace.name).join(", ")
+                  ) : (
+                    <span className="text-ink-subtle">No workspace yet</span>
+                  ),
+              },
+              {
+                header: "Credentials",
+                priority: 3,
+                align: "end",
+                cell: (pool) => <Mono>{pool.credentials}</Mono>,
+              },
+            ]}
+            actions={(pool) =>
+              pool.id
+                ? [
+                    {
+                      label: "Remove the pool",
+                      danger: true,
+                      onSelect: async () => {
+                        const label = pool.name ?? "Default pool";
+                        const sure = await ask.confirm({
+                          title: `Remove the pool "${label}"?`,
+                          text: "Scripts that name it wait until it is made again.",
+                          action: "Remove",
+                          danger: true,
+                        });
+                        if (!sure) return;
+                        try {
+                          await api.delete(`${base}/worker-pools/${pool.id}`);
+                          notify.success(`The pool "${label}" is removed.`);
+                          pools.reload();
+                        } catch (error) {
+                          notify.error(error);
+                        }
+                      },
+                    },
+                  ]
+                : []
+            }
+            empty={{ title: "No pool yet", text: "Scripts that name no pool use the default." }}
+          />
         )}
         {managed.data?.state === "refused" ? (
           <Notice tone="attention">
@@ -1130,7 +1149,18 @@ export function Workers({ base }: { base: string }) {
             <Button
               size="small"
               onClick={async () => {
-                await api.patch(base, { managedWorkers: !tenant.data?.managedWorkers });
+                const on = !tenant.data?.managedWorkers;
+                await api
+                  .patch(base, { managedWorkers: on })
+                  .then(
+                    () =>
+                      notify.success(
+                        on
+                          ? "The instance starts workers for this tenant when there is work."
+                          : "The instance no longer starts workers for this tenant.",
+                      ),
+                    notify.error,
+                  );
                 tenant.reload();
               }}
             >
@@ -1193,11 +1223,7 @@ export function Workers({ base }: { base: string }) {
           {
             header: "Status",
             cell: (row) =>
-              row.revokedAt ? (
-                <Badge tone="danger">Revoked</Badge>
-              ) : (
-                <Badge tone="action">Active</Badge>
-              ),
+              row.revokedAt ? <StatePill state="revoked" /> : <StatePill state="active" />,
           },
         ]}
         empty={{
@@ -1230,7 +1256,7 @@ export function Workers({ base }: { base: string }) {
               <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
                 <p className="m-0">Start a worker with it:</p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-[13px] break-all select-all">
+                  <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-code break-all select-all">
                     {command}
                   </code>
                   <CopyButton value={command} label="Copy the command" />
@@ -1277,14 +1303,14 @@ interface ConnectionGroup {
 export function ConnectionGroups({ root }: { root: string }) {
   const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
   const [adding, setAdding] = useState<string>();
-  if (groups.error) return <Notice tone="danger">{groups.error.message}</Notice>;
-  if (!groups.data) return null;
+  if (groups.error) return <ErrorState error={groups.error} onRetry={groups.reload} />;
+  if (!groups.data) return <Loading />;
 
   return (
     <section className="flex flex-col gap-4">
       <header>
-        <h2 className="m-0 text-lg font-semibold">Connection groups</h2>
-        <p className="mt-1 mb-0 max-w-[70ch] text-ink-muted">
+        <h2 className="m-0 text-title font-semibold">Connection groups</h2>
+        <p className="mt-1 mb-0 max-w-measure text-ink-muted">
           A group holds many connections of one kind, and a script picks one by its key when it
           runs. Add a member for each customer or account. It is used from the next run, with no
           deploy.
@@ -1300,7 +1326,7 @@ export function ConnectionGroups({ root }: { root: string }) {
         <div key={group.path} className="rounded-panel border border-line bg-surface">
           <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">
             <div className="min-w-0">
-              <code className="font-mono text-[13px] font-semibold">{group.path}</code>
+              <code className="font-mono text-code font-semibold">{group.path}</code>
               {group.description ? (
                 <span className="ml-3 text-ink-muted">{group.description}</span>
               ) : null}

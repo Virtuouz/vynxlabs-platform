@@ -3,6 +3,7 @@ import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal } from
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { EmptyCanvas, KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
@@ -86,7 +87,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
         title="Git sync"
         description="This workspace beside the branch it follows. A push commits what is deployed here; a pull deploys what developers changed there."
       />
-      {status.error ? <Notice tone="danger">{status.error.message}</Notice> : null}
+      {status.error ? <ErrorState error={status.error} onRetry={status.reload} /> : null}
       {status.data && !following ? (
         <EmptyCanvas
           title={
@@ -97,7 +98,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
           text="Connect the tenant's repository, then choose a branch below for this dev workspace."
         />
       ) : null}
-      {compare.error ? <Notice tone="danger">{compare.error.message}</Notice> : null}
+      {compare.error ? <ErrorState error={compare.error} onRetry={compare.reload} /> : null}
       {compare.data ? (
         <>
           <div className="grid items-stretch gap-3 md:grid-cols-[1fr_auto_1fr]">
@@ -125,14 +126,14 @@ export function GitSync({ root, link }: { root: string; link: string }) {
             </span>
             <Panel className="flex flex-col gap-2 p-4">
               <span className="flex items-center gap-2 text-label text-ink-subtle uppercase">
-                <GitBranch aria-hidden="true" size={13} /> {compare.data.branch}
+                <GitBranch aria-hidden="true" size={14} /> {compare.data.branch}
               </span>
               <span className="text-title">
                 <Mono className="text-title">{compare.data.behind}</Mono> changed there
               </span>
               {compare.data.head ? (
                 <span className="flex items-center gap-1.5 text-meta text-ink-muted">
-                  <GitCommitHorizontal aria-hidden="true" size={13} />
+                  <GitCommitHorizontal aria-hidden="true" size={14} />
                   <Mono>{compare.data.head.commit.slice(0, 7)}</Mono> {compare.data.head.message} ·{" "}
                   {compare.data.head.author}, {fromNow(compare.data.head.at)}
                 </span>
@@ -147,7 +148,8 @@ export function GitSync({ root, link }: { root: string; link: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
-              disabled={busy || compare.data.ahead === 0 || compare.data.conflicts > 0}
+              loading={busy}
+              disabled={compare.data.ahead === 0 || compare.data.conflicts > 0}
               onClick={() =>
                 act(
                   () => api.post(`${root}/git/push`, {}),
@@ -241,7 +243,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                               {choices[stem] === side ? <Tag tone="live">Kept</Tag> : null}
                             </span>
                             <pre
-                              className={`m-0 max-h-72 overflow-auto rounded-control border bg-code-bg p-3 font-mono text-telemetry ${
+                              className={`m-0 max-h-72 overflow-auto rounded-control border bg-code-bg p-3 font-mono text-code ${
                                 choices[stem] === side ? "border-action" : "border-line"
                               }`}
                             >

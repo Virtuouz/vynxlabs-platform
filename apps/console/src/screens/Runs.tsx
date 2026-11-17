@@ -2,7 +2,7 @@ import { Button, JsonView, LogViewer, type MenuItem, Notice, ResultView, Tabs } 
 import { ArrowUpRight, CircleX, FileCode2, Lightbulb, Workflow, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import {
@@ -14,8 +14,10 @@ import {
 } from "../kit/DataTable.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { clockTime } from "../kit/LiveIndicator.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
@@ -24,8 +26,16 @@ import { useStreamConnected } from "../stream.ts";
 import { LogWindowNote, stamp, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { fromNow } from "./Overview.tsx";
 
-/** What the list can be narrowed to: a state, or either kind of waiting. */
-type Filter = "queued" | "running" | "waiting" | "succeeded" | "failed" | "canceled";
+/** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
+type Filter =
+  | "queued"
+  | "running"
+  | "waiting"
+  | "waiting_approval"
+  | "waiting_time"
+  | "succeeded"
+  | "failed"
+  | "canceled";
 
 interface Activity {
   kind: "script" | "flow";
@@ -42,6 +52,7 @@ interface Activity {
   bundleVersion: number;
   createdAt: string;
   scheduledFor?: string | null;
+  wakeAt?: string | null;
   startedAt: string | null;
   finishedAt: string | null;
 }
@@ -67,7 +78,8 @@ const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = 
   { value: "all", label: "All", states: [] },
   { value: "failed", label: "Failed", states: ["failed"] },
   { value: "running", label: "Running", states: ["running"] },
-  { value: "waiting", label: "Waiting", states: ["waiting_approval", "waiting_time"] },
+  { value: "waiting_approval", label: "Waiting for approval", states: ["waiting_approval"] },
+  { value: "waiting_time", label: "Waiting for a time", states: ["waiting_time"] },
   { value: "queued", label: "Queued", states: ["queued"] },
   { value: "succeeded", label: "Succeeded", states: ["succeeded"] },
   { value: "canceled", label: "Canceled", states: ["canceled"] },
@@ -152,7 +164,9 @@ export function RunsWorkbench({
   const [url, setUrl] = useUrlState(RUNS_URL);
   // An address from before the states, `?status=cancelled`, still works.
   const wanted = url.status === "cancelled" ? "canceled" : url.status;
-  const status: "all" | Filter = FILTERS.some((one) => one.value === wanted)
+  const status: "all" | Filter = [...FILTERS.map((one) => one.value), "waiting"].includes(
+    wanted ?? "",
+  )
     ? (wanted as Filter)
     : "all";
   const kind = url.kind === "script" || url.kind === "flow" ? url.kind : "all";
@@ -387,7 +401,7 @@ export function RunsWorkbench({
     {
       header: "State",
       width: "w-48",
-      cell: (one) => <StatePill state={one.state} />,
+      cell: (one) => <StatePill state={one.state} until={one.wakeAt} />,
     },
     {
       header: "Target",
@@ -396,7 +410,7 @@ export function RunsWorkbench({
           <KindIcon kind={one.kind} />
           <Link
             to={`${link}/runs/${one.id}`}
-            className="min-w-0 truncate font-mono text-telemetry text-ink no-underline hover:underline"
+            className="min-w-0 truncate font-mono text-code text-ink no-underline hover:underline"
           >
             {one.target}
           </Link>
@@ -425,7 +439,7 @@ export function RunsWorkbench({
             {one.errorSummary}
           </span>
         ) : one.outputSummary ? (
-          <span className="font-mono text-telemetry text-ink-muted" title={one.outputSummary}>
+          <span className="font-mono text-code text-ink-muted" title={one.outputSummary}>
             {one.outputSummary}
           </span>
         ) : (
@@ -488,57 +502,62 @@ export function RunsWorkbench({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-2 border-line border-b px-4 py-3 md:px-6">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="m-0 text-display">Runs</h1>
-          <p className="m-0 min-w-0 flex-1 truncate text-meta text-ink-muted">
-            Scripts and flows that ran here; a flow's steps are part of its run.
-            {list.data?.keptDays
-              ? ` Kept ${list.data.keptDays} day${list.data.keptDays === 1 ? "" : "s"}.`
-              : ""}
-            {!streaming && list.updatedAt ? (
-              <>
-                {" "}
-                Updated {clockTime(list.updatedAt)}
-                {live ? ", asked again every 5 s." : "."}
-              </>
-            ) : null}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="search"
-              aria-label="Search"
-              placeholder="A path, a run ID, a tag or an error"
-              value={typed}
-              onChange={(event) => setTyped(event.currentTarget.value)}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-[13px] w-full sm:w-64"
-            />
-            <select
-              aria-label="Kind"
-              value={kind}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setUrl({ kind: value === "all" ? undefined : value });
-              }}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-[13px]"
-            >
-              <option value="all">Scripts and flows</option>
-              <option value="script">Scripts</option>
-              <option value="flow">Flows</option>
-            </select>
-            <select
-              aria-label="When"
-              value={hours}
-              onChange={(event) => setUrl({ when: event.currentTarget.value })}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-[13px]"
-            >
-              {WINDOWS.map((one) => (
-                <option key={one.value} value={one.value}>
-                  {one.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <PageHeader
+          compact
+          title="Runs"
+          state={
+            <p className="m-0 min-w-0 max-w-xl flex-1 truncate text-meta text-ink-muted">
+              Scripts and flows that ran here; a flow's steps are part of its run.
+              {list.data?.keptDays
+                ? ` Kept ${list.data.keptDays} day${list.data.keptDays === 1 ? "" : "s"}.`
+                : ""}
+              {!streaming && list.updatedAt ? (
+                <>
+                  {" "}
+                  Updated {clockTime(list.updatedAt)}
+                  {live ? ", asked again every 5 s." : "."}
+                </>
+              ) : null}
+            </p>
+          }
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="search"
+                aria-label="Search"
+                placeholder="A path, a run ID, a tag or an error"
+                value={typed}
+                onChange={(event) => setTyped(event.currentTarget.value)}
+                className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm w-full sm:w-64"
+              />
+              <select
+                aria-label="Kind"
+                value={kind}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setUrl({ kind: value === "all" ? undefined : value });
+                }}
+                className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+              >
+                <option value="all">Scripts and flows</option>
+                <option value="script">Scripts</option>
+                <option value="flow">Flows</option>
+              </select>
+              <select
+                aria-label="When"
+                value={hours}
+                onChange={(event) => setUrl({ when: event.currentTarget.value })}
+                className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+              >
+                {WINDOWS.map((one) => (
+                  <option key={one.value} value={one.value}>
+                    {one.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          }
+        />
         <div className="flex flex-wrap items-center gap-3">
           <FilterChips
             label="Status"
@@ -606,9 +625,9 @@ export function RunsWorkbench({
                   </button>
                 </p>
               ) : looked.error && !picked ? (
-                <Notice tone="danger">{looked.error.message}</Notice>
+                <ErrorState error={looked.error} onRetry={looked.reload} />
               ) : !picked ? (
-                <p className="m-0 text-ink-muted">Loading…</p>
+                <Loading />
               ) : picked.kind === "flow" ? (
                 <FlowRunSummary run={picked} link={link} />
               ) : (
@@ -661,16 +680,6 @@ export function RunsWorkbench({
   );
 }
 
-/** Puts text on the clipboard and says so. */
-async function copyText(text: string, done: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    notify.success(done);
-  } catch {
-    notify.error(new Error("The clipboard could not be reached. Copy it from the page instead."));
-  }
-}
-
 function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
   return (
     <div className="flex flex-col gap-4">
@@ -695,7 +704,7 @@ function FlowRunSummary({ run, link }: { run: Activity; link: string }) {
         ]}
       />
       <Button variant="primary" onClick={() => navigate(`${link}/runs/${run.id}`)}>
-        Open full view <ArrowUpRight aria-hidden="true" size={15} />
+        Open full view <ArrowUpRight aria-hidden="true" size={16} />
       </Button>
     </div>
   );
@@ -723,7 +732,7 @@ export function ScriptRunPanel({
     run && !["queued", "running"].includes(run.status) ? `${root}/runs/${runId}/insight` : null,
   );
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
-  if (!run) return <p className="m-0 text-ink-muted">Loading…</p>;
+  if (!run) return <Loading />;
   const active = run.status === "queued" || run.status === "running";
   const failed = run.status === "failed";
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
@@ -758,7 +767,7 @@ export function ScriptRunPanel({
             </Button>
           ) : null}
           <Button size="small" onClick={() => navigate(`${link}/runs/${runId}`)}>
-            Open full view <ArrowUpRight aria-hidden="true" size={13} />
+            Open full view <ArrowUpRight aria-hidden="true" size={14} />
           </Button>
           <CopyIcon
             value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
@@ -772,7 +781,7 @@ export function ScriptRunPanel({
           <span className="flex items-center gap-2 font-medium text-danger">
             <CircleX aria-hidden="true" size={14} /> Why it failed
           </span>
-          <p className="m-0 font-mono text-telemetry break-words">{run.error.message}</p>
+          <p className="m-0 font-mono text-code break-words">{run.error.message}</p>
           {insight.data?.location ? (
             onLocation ? (
               <Button
@@ -795,7 +804,7 @@ export function ScriptRunPanel({
         <div className="rounded-panel border border-line">
           <NextStep
             tone="attention"
-            icon={<Lightbulb aria-hidden="true" size={15} />}
+            icon={<Lightbulb aria-hidden="true" size={16} />}
             title={diagnosis.cause}
             detail={diagnosis.next}
             action={
@@ -935,11 +944,7 @@ export function ScriptRunPanel({
                         className="flex items-center justify-between gap-2"
                       >
                         <Mono>{one.connection}</Mono>
-                        {one.bound ? (
-                          <Tag tone="live">Bound</Tag>
-                        ) : (
-                          <Tag tone="production">Not bound</Tag>
-                        )}
+                        {one.bound ? <Tag tone="live">Bound</Tag> : <StatePill state="unbound" />}
                       </span>
                     ))}
                   </div>

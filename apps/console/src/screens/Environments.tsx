@@ -1,13 +1,22 @@
-import { Badge, Button, ComboboxField, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import {
+  Button,
+  ComboboxField,
+  Dialog,
+  Notice,
+  SelectField,
+  SideSheet,
+  TextField,
+} from "@vynxlabs/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel, Stepper } from "../kit/layout.tsx";
-import { Mono, StatePill } from "../kit/status.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
+import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { navigate } from "../router.tsx";
 
-const code = (text: string) => <code className="font-mono text-[13px]">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code">{text}</code>;
 
 export interface WorkspaceSummary {
   id: string;
@@ -54,6 +63,11 @@ export function WorkspaceControls({
     setProblem(undefined);
     try {
       await api.patch(root, { triggersPaused: paused });
+      notify.success(
+        paused
+          ? `Triggers in ${workspace.name} are paused. Runs started by hand still work.`
+          : `Triggers in ${workspace.name} run again.`,
+      );
       reload();
     } catch (error) {
       setProblem(failed(error));
@@ -83,7 +97,7 @@ export function WorkspaceControls({
         ) : (
           <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
             <span className="flex min-w-0 flex-col gap-0.5">
-              <StatePill state="running">Triggers are running</StatePill>
+              <StatePill state="on">Triggers are on</StatePill>
               <span className="text-meta text-ink-muted">
                 Pausing stops every schedule, webhook and event here at once. One trigger can be
                 paused alone under Triggers.
@@ -162,7 +176,11 @@ export function WorkspaceControls({
   );
 }
 
-/** A workspace's settings screen: what runs, copying it, where it promotes to, and deleting it. */
+/**
+ * A workspace's settings screen. Its settings (where it promotes to, its time
+ * zone) are changed together and saved from the bar at the foot; pausing,
+ * copying and deleting are actions, and act at once.
+ */
 export function WorkspaceSettings({
   base,
   tenantId,
@@ -174,10 +192,45 @@ export function WorkspaceSettings({
   workspace: WorkspaceSummary;
   reload: () => void;
 }) {
+  const root = `${base}/workspaces/${workspace.id}`;
+  const detail = useLoad<{ timeZone?: string }>(root);
+  const storedZone = detail.data?.timeZone ?? "UTC";
+  const [zone, setZone] = useState<string>();
+  const [linked, setLinked] = useState<string | null>();
+  const [saving, setSaving] = useState(false);
+  const draft = {
+    timeZone: zone ?? storedZone,
+    linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
+  };
+  const dirty =
+    draft.timeZone !== storedZone || draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
+  const discard = () => {
+    setZone(undefined);
+    setLinked(undefined);
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.patch(root, {
+        ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
+        ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
+          ? { linkedWorkspaceId: draft.linkedWorkspaceId }
+          : {}),
+      });
+      notify.success(`The settings of ${workspace.name} are saved.`);
+      discard();
+      detail.reload();
+      reload();
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <Page
       title="Workspace settings"
-      description="Pause what starts by itself, make a copy, choose where it promotes to, or delete a dev workspace."
+      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Where it promotes to and its time zone are saved together, from the bar that appears below."
     >
       <WorkspaceControls
         key={workspace.id}
@@ -185,20 +238,30 @@ export function WorkspaceSettings({
         tenantId={tenantId}
         workspace={workspace}
         reload={reload}
-        promotion={<Promotion base={base} workspace={workspace} reload={reload} />}
+        promotion={
+          <Promotion
+            base={base}
+            workspace={workspace}
+            reload={reload}
+            linked={draft.linkedWorkspaceId}
+            onLink={setLinked}
+          />
+        }
       />
-      <TimeZoneSetting base={base} workspaceId={workspace.id} />
+      <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+      <SaveBar
+        dirty={dirty}
+        saving={saving}
+        onSave={() => void save()}
+        onDiscard={discard}
+        what={`the settings of ${workspace.name}`}
+      />
     </Page>
   );
 }
 
-/** The time zone the workspace's new schedules start in. */
-function TimeZoneSetting({ base, workspaceId }: { base: string; workspaceId: string }) {
-  const workspace = useLoad<{ timeZone?: string }>(`${base}/workspaces/${workspaceId}`);
-  const [zone, setZone] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const current = workspace.data?.timeZone ?? "UTC";
-  const shown = zone ?? current;
+/** The time zone the workspace's new schedules start in. Saved with the page's other settings. */
+function TimeZoneSetting({ zone, onZone }: { zone: string; onZone: (zone: string) => void }) {
   const zones = [
     "UTC",
     ...(typeof Intl.supportedValuesOf === "function"
@@ -216,34 +279,13 @@ function TimeZoneSetting({ base, workspaceId }: { base: string; workspaceId: str
           New schedules here start in this zone, and every schedule form shows it. Schedules that
           exist keep the zone they were made with.
         </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full max-w-sm">
-            <ComboboxField
-              label="Zone"
-              options={zones}
-              value={shown}
-              onChange={(value) => setZone(value ?? "UTC")}
-            />
-          </div>
-          <Button
-            variant="primary"
-            disabled={busy || shown === current}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await api.patch(`${base}/workspaces/${workspaceId}`, { timeZone: shown });
-                notify.success(`New schedules here start in ${shown}.`);
-                setZone(undefined);
-                workspace.reload();
-              } catch (error) {
-                notify.error(error);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Save
-          </Button>
+        <div className="w-full max-w-sm">
+          <ComboboxField
+            label="Zone"
+            options={zones}
+            value={zone}
+            onChange={(value) => onZone(value ?? "UTC")}
+          />
         </div>
       </Panel>
     </section>
@@ -291,7 +333,7 @@ function CloneDialog({
     `${(n ?? 0).toLocaleString()} ${n === 1 ? one : many}`;
 
   return (
-    <Dialog
+    <SideSheet
       open={open}
       onClose={onClose}
       title={`Clone ${workspace.name}`}
@@ -412,7 +454,7 @@ function CloneDialog({
           </div>
         </form>
       )}
-    </Dialog>
+    </SideSheet>
   );
 }
 
@@ -444,10 +486,16 @@ export function Promotion({
   base,
   workspace,
   reload,
+  linked,
+  onLink,
 }: {
   base: string;
   workspace: WorkspaceSummary;
   reload: () => void;
+  /** Where it promotes to as the settings page has it, not yet saved. */
+  linked?: string | null;
+  /** Given by a page that saves its settings together: choosing changes the draft only. */
+  onLink?: (id: string | null) => void;
 }) {
   const root = `${base}/workspaces/${workspace.id}`;
   const others = useLoad<{ items: WorkspaceSummary[] }>(`${base}/workspaces`);
@@ -472,7 +520,7 @@ export function Promotion({
   return (
     <section className="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4">
       <h2 className="m-0 text-title">Promotion</h2>
-      <p className="m-0 max-w-[70ch] text-ink-muted">
+      <p className="m-0 max-w-measure text-ink-muted">
         Promoting activates the bundle that is running here in the workspace this one is linked to.
         It is the same bundle: nothing is rebuilt.
       </p>
@@ -481,7 +529,7 @@ export function Promotion({
           <SelectField
             label="Promotes to"
             name="link"
-            value={workspace.linkedWorkspaceId ?? ""}
+            value={(linked !== undefined ? linked : workspace.linkedWorkspaceId) ?? ""}
             options={[
               { value: "", label: "Nothing: not linked" },
               ...(others.data?.items ?? [])
@@ -489,9 +537,19 @@ export function Promotion({
                 .map((item) => ({ value: item.id, label: `${item.name} (${item.type})` })),
             ]}
             onChange={async (value) => {
+              if (onLink) {
+                onLink(value === "" ? null : value);
+                return;
+              }
               setProblem(undefined);
               try {
                 await api.patch(root, { linkedWorkspaceId: value === "" ? null : value });
+                const target = others.data?.items.find((item) => item.id === value);
+                notify.success(
+                  target
+                    ? `${workspace.name} now promotes to ${target.name}.`
+                    : `${workspace.name} promotes nowhere now.`,
+                );
                 reload();
               } catch (error) {
                 setProblem(failed(error));
@@ -580,17 +638,17 @@ function PreviewBody({ summary, target }: { summary: Summary; target: string }) 
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {changes.map((entry) => (
             <li key={`${entry.kind}:${entry.path}`} className="flex items-center gap-2">
-              <Badge
+              <Tag
                 tone={
                   entry.change === "deleted"
                     ? "danger"
                     : entry.change === "created"
-                      ? "success"
-                      : "action"
+                      ? "live"
+                      : "neutral"
                 }
               >
                 {CHANGE[entry.change] ?? entry.change}
-              </Badge>
+              </Tag>
               <span className="text-ink-muted">{entry.kind}</span>
               {code(entry.path)}
             </li>
@@ -699,7 +757,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
             {state === "working" ? "Exporting…" : "Export tenant"}
           </Button>
         </div>
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           The passphrase protects the secrets in the file. The rest of it, rows and files included,
           can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
           the command line instead: {code("platform tenant export")}.
@@ -737,11 +795,9 @@ export function DatabaseLocations() {
           header: "Status",
           cell: (row) =>
             row.reachable ? (
-              <Badge tone="success">Reachable</Badge>
+              <StatePill state="reachable" />
             ) : (
-              <span title={row.problem ?? ""}>
-                <Badge tone="danger">Not reachable</Badge>
-              </span>
+              <StatePill state="unreachable" detail={row.problem ?? undefined} />
             ),
         },
       ]}
@@ -867,7 +923,7 @@ async function withPassphrase<T>(
 function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
   return (
     <li>
-      <StatePill state={ok === null ? "queued" : ok ? "ok" : "failed"}>{children}</StatePill>
+      <StatePill state={ok === null ? "unchecked" : ok ? "ok" : "failed"}>{children}</StatePill>
     </li>
   );
 }
@@ -933,7 +989,7 @@ export function TenantImport() {
         ]}
       />
       {report ? (
-        <div className="flex max-w-[70ch] flex-col gap-3">
+        <div className="flex max-w-measure flex-col gap-3">
           <Notice tone="attention">
             <strong>{report.tenant.name}</strong> was imported:{" "}
             {Object.values(report.counts)
@@ -1122,7 +1178,7 @@ export function TenantImport() {
               >
                 Check again
               </Button>
-              <Button type="submit" variant="primary" disabled={working || !ready}>
+              <Button type="submit" variant="primary" loading={working} disabled={!ready}>
                 {working ? "Importing…" : "Import tenant"}
               </Button>
               <Button
@@ -1157,7 +1213,7 @@ export function TenantImport() {
             });
           }}
         >
-          <label className="flex flex-col gap-1 text-[13px] font-medium">
+          <label className="flex flex-col gap-1 text-body-sm font-medium">
             Export file
             <input
               type="file"
@@ -1179,11 +1235,11 @@ export function TenantImport() {
           />
           {problem ? <Notice tone="danger">{problem}</Notice> : null}
           <div>
-            <Button type="submit" variant="primary" disabled={working || !file}>
+            <Button type="submit" variant="primary" loading={working} disabled={!file}>
               {working ? "Uploading…" : "Upload and check"}
             </Button>
           </div>
-          <p className="m-0 text-[13px] text-ink-muted">
+          <p className="m-0 text-body-sm text-ink-muted">
             The export must come from an instance at the same version as this one. For a large file,
             use the command line: {code("platform tenant import <file>")}.
           </p>

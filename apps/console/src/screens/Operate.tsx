@@ -1,7 +1,7 @@
 import { Button, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
 import { CirclePause, CirclePlay, Plus, ShieldAlert, Zap } from "lucide-react";
 import { useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { api, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
@@ -74,6 +74,15 @@ export function TriggersWorkbench({
   production: boolean;
 }) {
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
+  const editCache = useCacheEdit();
+  /** Shows a trigger paused or running at once; the server's answer follows. */
+  const showPaused = (trigger: Trigger, paused: Trigger["paused"]) =>
+    editCache<{ items: Trigger[] }>(`${root}/triggers`, (data) => ({
+      ...data,
+      items: data.items.map((one) =>
+        triggerKey(one) === triggerKey(trigger) ? { ...one, paused } : one,
+      ),
+    }));
   const [type, setType] = useState("all");
   // The chosen trigger lives in the address, so a run can link straight to the trigger
   // that started it.
@@ -98,13 +107,13 @@ export function TriggersWorkbench({
   };
   const newTrigger = production ? (
     <Button disabled title="Triggers change in a dev workspace and reach production by promotion.">
-      <Plus aria-hidden="true" size={15} /> New trigger
+      <Plus aria-hidden="true" size={16} /> New trigger
     </Button>
   ) : (
     <Menu
       label={
         <span className="inline-flex items-center gap-1.5">
-          <Plus aria-hidden="true" size={15} /> New trigger
+          <Plus aria-hidden="true" size={16} /> New trigger
         </span>
       }
       align="end"
@@ -141,7 +150,7 @@ export function TriggersWorkbench({
       priority: 3,
       cell: (row) => (
         <span className="flex flex-col">
-          <Link to={targetLink(link, row)} className="font-mono text-telemetry">
+          <Link to={targetLink(link, row)} className="font-mono text-code">
             {row.script}
           </Link>
           <span className="text-meta text-ink-subtle">
@@ -154,15 +163,15 @@ export function TriggersWorkbench({
       header: "State",
       cell: (row) =>
         row.paused ? (
-          <StatePill state="paused">Paused</StatePill>
+          <StatePill state="paused" />
         ) : !row.enabled ? (
-          <StatePill state="cancelled">Off</StatePill>
+          <StatePill state="off" />
         ) : workspacePaused ? (
           <StatePill state="paused">Workspace paused</StatePill>
         ) : row.nextFireAt ? (
           <span className="text-ink-muted">Next {fromNow(row.nextFireAt)}</span>
         ) : (
-          <StatePill state="running">Listening</StatePill>
+          <StatePill state="on" />
         ),
     },
     {
@@ -235,7 +244,8 @@ export function TriggersWorkbench({
         rowKey={triggerKey}
         selected={chosen ?? undefined}
         onSelect={(row) => choose(triggerKey(row))}
-        error={list.error?.message}
+        error={list.error}
+        onRetry={list.reload}
         empty={{
           title: "Nothing starts by itself yet",
           text: "A schedule, a webhook, a form or an event in a flow or a script starts work here once it is deployed.",
@@ -253,23 +263,25 @@ export function TriggersWorkbench({
                   <Button
                     variant="primary"
                     onClick={async () => {
+                      const undo = showPaused(open, null);
                       try {
                         await api.delete(
                           `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
                         );
-                        list.reload();
+                        notify.success(`${open.path} runs again.`);
                       } catch (caught) {
+                        undo();
                         notify.error(caught);
                       }
                     }}
                   >
-                    <CirclePlay aria-hidden="true" size={15} /> Resume
+                    <CirclePlay aria-hidden="true" size={16} /> Resume
                   </Button>
                 ) : (
                   <span className="flex flex-wrap gap-2">
                     {open.type === "schedule" && !open.node ? (
                       <Button variant="primary" onClick={() => void fireNow(open)}>
-                        <Zap aria-hidden="true" size={15} /> Fire now
+                        <Zap aria-hidden="true" size={16} /> Fire now
                       </Button>
                     ) : null}
                     <Button
@@ -282,18 +294,26 @@ export function TriggersWorkbench({
                           required: false,
                         });
                         if (reason === null) return;
+                        const undo = showPaused(open, {
+                          at: new Date().toISOString(),
+                          by: null,
+                          reason: reason ?? "",
+                        });
                         try {
                           await api.put(
                             `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
                             reason ? { reason } : {},
                           );
-                          list.reload();
+                          notify.success(
+                            `${open.path} is paused. Nothing it would start is started.`,
+                          );
                         } catch (caught) {
+                          undo();
                           notify.error(caught);
                         }
                       }}
                     >
-                      <CirclePause aria-hidden="true" size={15} /> Pause this trigger
+                      <CirclePause aria-hidden="true" size={16} /> Pause this trigger
                     </Button>
                   </span>
                 )
@@ -311,7 +331,7 @@ export function TriggersWorkbench({
                   <div className="rounded-panel border border-line">
                     <NextStep
                       tone="danger"
-                      icon={<ShieldAlert aria-hidden="true" size={15} />}
+                      icon={<ShieldAlert aria-hidden="true" size={16} />}
                       title={`Last refused ${fromNow(open.lastRefusal.at)}: ${REFUSED[open.lastRefusal.reason] ?? open.lastRefusal.reason}`}
                       detail={open.lastRefusal.problem || undefined}
                     />
@@ -381,7 +401,7 @@ export function TriggersWorkbench({
                     <span className="text-label text-ink-subtle uppercase">
                       {open.type === "form" ? "Form address" : "Webhook address"}
                     </span>
-                    <code className="rounded-control bg-code-bg p-2 font-mono text-telemetry break-all select-all">
+                    <code className="rounded-control bg-code-bg p-2 font-mono text-code break-all select-all">
                       {open.type === "form" ? "" : "POST "}
                       {open.url}
                     </code>
@@ -503,7 +523,8 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
       rowKey={(row) => row.id}
       selected={chosen}
       onSelect={(row) => setChosen(row.id)}
-      error={list.error?.message}
+      error={list.error}
+      onRetry={list.reload}
       empty={{
         title: applied ? `No ${applied} events yet` : "No events yet",
         text: "Declare an event with defineEvent, and publish it from a script with ctx.events.publish.",
@@ -650,6 +671,17 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
           ...(comment ? { comment } : {}),
         },
       );
+      notify.success(
+        decision === "approve"
+          ? `Approved “${row.title}”. The flow goes on.`
+          : `Rejected “${row.title}”. The flow takes its rejected path.`,
+        {
+          link: {
+            label: "Open the run",
+            href: `/t/${tenantId}/workspaces/${row.workspaceId}/runs/${row.flowRunId}`,
+          },
+        },
+      );
       setChosen(undefined);
       waiting.reload();
     } catch (error) {
@@ -686,9 +718,7 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
             cell: (row) => (
               <span className="flex flex-col">
                 <span className="font-medium">{row.title}</span>
-                <StatePill state={row.approved ? "succeeded" : "failed"}>
-                  {row.approved ? "Approved" : "Rejected"}
-                </StatePill>
+                <StatePill state={row.approved ? "approved" : "declined"} />
                 {row.comment || row.via === "email" ? (
                   <span className="max-w-[28rem] text-meta text-ink-muted break-words">
                     {row.comment ? `“${row.comment}”` : ""}
@@ -732,7 +762,8 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
         ]}
         rows={decided.data?.items}
         rowKey={key}
-        error={decided.error?.message}
+        error={decided.error}
+        onRetry={decided.reload}
         empty={{ title: "Nothing decided yet" }}
       />
     );
@@ -794,7 +825,8 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
       rowKey={key}
       selected={chosen}
       onSelect={(row) => setChosen(key(row))}
-      error={waiting.error?.message}
+      error={waiting.error}
+      onRetry={waiting.reload}
       empty={{
         title: "Nothing is waiting for you",
         text: "When a flow pauses for a decision you may make, it appears here.",

@@ -106,7 +106,7 @@ export function NodeInputs({
   return (
     <>
       {spec.description ? (
-        <p className="m-0 text-[13px] text-ink-muted">{spec.description}</p>
+        <p className="m-0 text-body-sm text-ink-muted">{spec.description}</p>
       ) : null}
       <SelectField
         name="input-mode"
@@ -463,7 +463,7 @@ export function FormDesigner({
         onChange={(description) => put({ description })}
       />
       <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
-        <legend className="p-0 text-[13px] font-medium">What it asks</legend>
+        <legend className="p-0 text-body-sm font-medium">What it asks</legend>
         {trigger.fields.map((one, index) => (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: a field has no identity but its place while it is being named
@@ -604,7 +604,7 @@ export function FormDesigner({
         ]}
         onChange={(access) => put({ access: access === "signed_in" ? "signed_in" : undefined })}
       />
-      <p className="m-0 text-[13px] text-ink-muted">
+      <p className="m-0 text-body-sm text-ink-muted">
         The form gets an address of its own once the flow is deployed. It is shown with the
         workspace's triggers.
       </p>
@@ -649,7 +649,7 @@ export function RespondSettings({
       {headers((node.headers as Record<string, string> | undefined) ?? {}, (values) =>
         onChange({ headers: Object.keys(values).length > 0 ? values : undefined }),
       )}
-      <p className="m-0 text-[13px] text-ink-muted">
+      <p className="m-0 text-body-sm text-ink-muted">
         This answers a webhook whose request is answered by the flow. The first Answer step to run
         is the answer, and the flow carries on after it.
       </p>

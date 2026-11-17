@@ -1,14 +1,23 @@
+import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId, type PrincipalType as PrincipalKind } from "@vynxlabs/db";
 import { Type } from "typebox";
-import type { Trx } from "../kernel/audit.js";
+import type { Audit, Trx } from "../kernel/audit.js";
 import { PERMISSION_PATTERN } from "../kernel/authorize.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { pageOf } from "../pagination.js";
-import { AuditEntry, AuditQuery, auditPage } from "./identity.js";
+import { csvCell } from "./data.js";
+import {
+  AuditEntry,
+  AuditQuery,
+  auditEntries,
+  auditEntry,
+  auditFacets,
+  auditPage,
+} from "./identity.js";
 import {
   Id,
   iso,
@@ -394,98 +403,9 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         }
 
-        const id = newId();
-        await ctx.mutate(async (trx, audit) => {
-          const role = await trx
-            .selectFrom("role")
-            .select(["id", "name", "tenant_id", "workspace_id"])
-            .where("id", "=", body.roleId)
-            .executeTakeFirst();
-          const usable =
-            role &&
-            role.name !== INSTANCE_ONLY_ROLE &&
-            (role.tenant_id === null || role.tenant_id === tenantId) &&
-            (role.workspace_id === null || role.workspace_id === workspaceId);
-          if (!role || !usable) throw badRequest("That role cannot be bound at this scope.");
-
-          if (workspaceId) {
-            const workspace = await trx
-              .selectFrom("workspace")
-              .select("id")
-              .where("id", "=", workspaceId)
-              .where("tenant_id", "=", tenantId)
-              .executeTakeFirst();
-            if (!workspace) throw badRequest("The workspace is not in this tenant.");
-          }
-          if (resourceId) {
-            const resource = await trx
-              .selectFrom("resource")
-              .select("id")
-              .where("id", "=", resourceId)
-              .where("workspace_id", "=", workspaceId)
-              .executeTakeFirst();
-            if (!resource) throw badRequest("The resource is not in that workspace.");
-          }
-          if (body.principalId) {
-            const principalId = body.principalId;
-            const found =
-              body.principalType === "member"
-                ? await trx
-                    .selectFrom("tenant_member")
-                    .select("member_id")
-                    .where("tenant_id", "=", tenantId)
-                    .where("member_id", "=", principalId)
-                    .executeTakeFirst()
-                : body.principalType === "end_user"
-                  ? await trx
-                      .selectFrom("end_user")
-                      .select("id")
-                      .where("tenant_id", "=", tenantId)
-                      .where("id", "=", principalId)
-                      .executeTakeFirst()
-                  : await trx
-                      .selectFrom(
-                        body.principalType === "group"
-                          ? "principal_group"
-                          : body.principalType === "end_user_group"
-                            ? "end_user_group"
-                            : "service_account",
-                      )
-                      .select("id")
-                      .where("tenant_id", "=", tenantId)
-                      .where("id", "=", principalId)
-                      .executeTakeFirst();
-            if (!found) throw badRequest("The principal does not belong to this tenant.");
-          }
-
-          await trx
-            .insertInto("binding")
-            .values({
-              id,
-              scope_type: resourceId ? "resource" : workspaceId ? "workspace" : "tenant",
-              tenant_id: tenantId,
-              workspace_id: workspaceId,
-              resource_id: resourceId,
-              principal_type: body.principalType,
-              principal_id: body.principalId ?? null,
-              role_id: role.id,
-              source_resource_id: null,
-            })
-            .execute();
-          await audit({
-            action: "binding.created",
-            targetType: "binding",
-            targetId: id,
-            tenantId,
-            workspaceId,
-            details: {
-              role: role.name,
-              principalType: body.principalType,
-              principalId: body.principalId ?? null,
-              resourceId,
-            },
-          });
-        });
+        const id = await ctx.mutate((trx, audit) =>
+          insertBinding(trx, audit, tenantId, { ...body, workspaceId, resourceId }),
+        );
         return reply.code(201).send({ id });
       },
     );
@@ -731,5 +651,336 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params, query }) => auditPage(kernel, params.t, query),
     );
+
+    app.get(
+      "/tenants/:t/principals",
+      {
+        config: { access: access.tenant("binding:read") },
+        schema: {
+          summary: "Who can be given access, found by name or email",
+          description:
+            "Members, groups, service accounts, end users and groups of end users of the tenant " +
+            "whose name or email holds `q`, at most `limit` of each kind. Without `q`, the first of each.",
+          tags: ["permissions"],
+          params: TenantParams,
+          querystring: Type.Object({
+            q: Type.Optional(Type.String({ maxLength: 200 })),
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 10 })),
+          }),
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  type: Type.Union([
+                    Type.Literal("member"),
+                    Type.Literal("group"),
+                    Type.Literal("service_account"),
+                    Type.Literal("end_user"),
+                    Type.Literal("end_user_group"),
+                  ]),
+                  id: Id,
+                  label: Type.String(),
+                  detail: Type.Union([Type.String(), Type.Null()]),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params, query }) => {
+        const limit = query.limit ?? 10;
+        const like = `%${(query.q ?? "").trim().replace(/[\\%_]/g, "\\$&")}%`;
+        const [members, groups, accounts, endUsers, endUserGroups] = await Promise.all([
+          db
+            .selectFrom("tenant_member")
+            .innerJoin("member", "member.id", "tenant_member.member_id")
+            .select(["member.id", "member.email", "member.name"])
+            .where("tenant_member.tenant_id", "=", params.t)
+            .where((eb) =>
+              eb.or([eb("member.email", "ilike", like), eb("member.name", "ilike", like)]),
+            )
+            .orderBy("member.email")
+            .limit(limit)
+            .execute(),
+          db
+            .selectFrom("principal_group")
+            .select(["id", "name"])
+            .where("tenant_id", "=", params.t)
+            .where("name", "ilike", like)
+            .orderBy("name")
+            .limit(limit)
+            .execute(),
+          db
+            .selectFrom("service_account")
+            .select(["id", "name"])
+            .where("tenant_id", "=", params.t)
+            .where("name", "ilike", like)
+            .orderBy("name")
+            .limit(limit)
+            .execute(),
+          db
+            .selectFrom("end_user")
+            .select(["id", "email", "name"])
+            .where("tenant_id", "=", params.t)
+            .where((eb) => eb.or([eb("email", "ilike", like), eb("name", "ilike", like)]))
+            .orderBy("email")
+            .limit(limit)
+            .execute(),
+          db
+            .selectFrom("end_user_group")
+            .select(["id", "name"])
+            .where("tenant_id", "=", params.t)
+            .where("name", "ilike", like)
+            .orderBy("name")
+            .limit(limit)
+            .execute(),
+        ]);
+        return {
+          items: [
+            ...members.map((one) => ({
+              type: "member" as const,
+              id: one.id,
+              label: one.email,
+              detail: one.name || null,
+            })),
+            ...groups.map((one) => ({
+              type: "group" as const,
+              id: one.id,
+              label: one.name,
+              detail: "Group of members",
+            })),
+            ...accounts.map((one) => ({
+              type: "service_account" as const,
+              id: one.id,
+              label: one.name,
+              detail: "Service account",
+            })),
+            ...endUsers.map((one) => ({
+              type: "end_user" as const,
+              id: one.id,
+              label: one.email,
+              detail: one.name ? `${one.name}, end user` : "End user",
+            })),
+            ...endUserGroups.map((one) => ({
+              type: "end_user_group" as const,
+              id: one.id,
+              label: one.name,
+              detail: "Group of end users",
+            })),
+          ],
+        };
+      },
+    );
+
+    app.get(
+      "/tenants/:t/audit/:id",
+      {
+        config: { access: access.tenant("audit:read") },
+        schema: {
+          summary: "One audit entry",
+          description: "For a link to an entry. 404 once the tenant's log no longer keeps it.",
+          tags: ["audit"],
+          params: Type.Object({ t: Id, id: Id }),
+          response: { 200: AuditEntry },
+        },
+      },
+      async ({ params }) => {
+        const entry = await auditEntry(kernel, params.t, params.id);
+        if (!entry) throw notFound("The audit entry");
+        return entry;
+      },
+    );
+
+    const { limit: _limit, cursor: _cursor, ...filterProperties } = AuditQuery.properties;
+    const AuditFilters = Type.Object(filterProperties);
+    const Count = Type.Integer({ minimum: 0 });
+
+    app.get(
+      "/tenants/:t/audit-facets",
+      {
+        config: { access: access.tenant("audit:read") },
+        schema: {
+          summary: "What a tenant's log holds, to narrow it by",
+          description:
+            "The actions, actors and kinds of target among the entries the filters keep, each " +
+            "with how many entries it has, most first. At most 100 of each.",
+          tags: ["audit"],
+          params: TenantParams,
+          querystring: AuditFilters,
+          response: {
+            200: Type.Object({
+              actions: Type.Array(Type.Object({ value: Type.String(), count: Count })),
+              actors: Type.Array(
+                Type.Object({
+                  type: Type.String(),
+                  id: Type.Union([Type.String(), Type.Null()]),
+                  label: Type.Union([Type.String(), Type.Null()]),
+                  count: Count,
+                }),
+              ),
+              targetTypes: Type.Array(Type.Object({ value: Type.String(), count: Count })),
+            }),
+          },
+        },
+      },
+      async ({ params, query }) => auditFacets(kernel, params.t, query),
+    );
+
+    app.get(
+      "/tenants/:t/audit-export",
+      {
+        config: { access: access.tenant("audit:read") },
+        schema: {
+          summary: "A tenant's audit entries, as CSV",
+          description: `The entries the filters keep, newest first, at most ${AUDIT_CSV_CAP.toLocaleString("en-US")}.`,
+          tags: ["audit"],
+          params: TenantParams,
+          querystring: AuditFilters,
+          produces: ["text/csv"],
+          response: { 200: Type.Unknown({ description: "The entries, as CSV." }) },
+        },
+      },
+      async ({ params, query }, reply) => {
+        const columns = [
+          "occurredAt",
+          "action",
+          "actorType",
+          "actorLabel",
+          "actorId",
+          "targetType",
+          "targetLabel",
+          "targetId",
+          "workspaceId",
+          "accessGrantId",
+          "requestId",
+          "ipAddress",
+          "details",
+        ] as const;
+        async function* lines() {
+          yield `${columns.join(",")}\r\n`;
+          for await (const entry of auditEntries(kernel, params.t, query, AUDIT_CSV_CAP)) {
+            yield `${columns.map((column) => csvCell(entry[column])).join(",")}\r\n`;
+          }
+        }
+        reply
+          .header("content-type", "text/csv; charset=utf-8")
+          .header("content-disposition", `attachment; filename="audit-log.csv"`);
+        return reply.send(Readable.from(lines()));
+      },
+    );
   };
+}
+
+/** How many entries one audit export holds at most. */
+const AUDIT_CSV_CAP = 100_000;
+
+/**
+ * Gives a principal a role at a scope, inside a change: checks that the role
+ * may be held there and that the principal and scope belong to the tenant,
+ * then records it. Shared by giving access and by adding a member with it.
+ */
+export async function insertBinding(
+  trx: Trx,
+  audit: Audit,
+  tenantId: string,
+  body: {
+    principalType: PrincipalKind;
+    principalId?: string | undefined;
+    roleId: string;
+    workspaceId: string | null;
+    resourceId: string | null;
+  },
+): Promise<string> {
+  const { workspaceId, resourceId } = body;
+  const id = newId();
+  const role = await trx
+    .selectFrom("role")
+    .select(["id", "name", "tenant_id", "workspace_id"])
+    .where("id", "=", body.roleId)
+    .executeTakeFirst();
+  const usable =
+    role &&
+    role.name !== INSTANCE_ONLY_ROLE &&
+    (role.tenant_id === null || role.tenant_id === tenantId) &&
+    (role.workspace_id === null || role.workspace_id === workspaceId);
+  if (!role || !usable) throw badRequest("That role cannot be bound at this scope.");
+
+  if (workspaceId) {
+    const workspace = await trx
+      .selectFrom("workspace")
+      .select("id")
+      .where("id", "=", workspaceId)
+      .where("tenant_id", "=", tenantId)
+      .executeTakeFirst();
+    if (!workspace) throw badRequest("The workspace is not in this tenant.");
+  }
+  if (resourceId) {
+    const resource = await trx
+      .selectFrom("resource")
+      .select("id")
+      .where("id", "=", resourceId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    if (!resource) throw badRequest("The resource is not in that workspace.");
+  }
+  if (body.principalId) {
+    const principalId = body.principalId;
+    const found =
+      body.principalType === "member"
+        ? await trx
+            .selectFrom("tenant_member")
+            .select("member_id")
+            .where("tenant_id", "=", tenantId)
+            .where("member_id", "=", principalId)
+            .executeTakeFirst()
+        : body.principalType === "end_user"
+          ? await trx
+              .selectFrom("end_user")
+              .select("id")
+              .where("tenant_id", "=", tenantId)
+              .where("id", "=", principalId)
+              .executeTakeFirst()
+          : await trx
+              .selectFrom(
+                body.principalType === "group"
+                  ? "principal_group"
+                  : body.principalType === "end_user_group"
+                    ? "end_user_group"
+                    : "service_account",
+              )
+              .select("id")
+              .where("tenant_id", "=", tenantId)
+              .where("id", "=", principalId)
+              .executeTakeFirst();
+    if (!found) throw badRequest("The principal does not belong to this tenant.");
+  }
+
+  await trx
+    .insertInto("binding")
+    .values({
+      id,
+      scope_type: resourceId ? "resource" : workspaceId ? "workspace" : "tenant",
+      tenant_id: tenantId,
+      workspace_id: workspaceId,
+      resource_id: resourceId,
+      principal_type: body.principalType,
+      principal_id: body.principalId ?? null,
+      role_id: role.id,
+      source_resource_id: null,
+    })
+    .execute();
+  await audit({
+    action: "binding.created",
+    targetType: "binding",
+    targetId: id,
+    tenantId,
+    workspaceId,
+    details: {
+      role: role.name,
+      principalType: body.principalType,
+      principalId: body.principalId ?? null,
+      resourceId,
+    },
+  });
+  return id;
 }

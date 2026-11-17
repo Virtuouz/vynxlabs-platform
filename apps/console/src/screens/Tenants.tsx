@@ -139,9 +139,29 @@ export function Tenants({ me }: { me: Me }) {
                     option: (item: { name: string }) => ({ value: item.name, label: item.name }),
                   },
                 },
+                {
+                  name: "addCreator",
+                  label: "Make me a member, as tenant admin",
+                  type: "checkbox",
+                  initial: "true",
+                  hint: "Then you work inside it as its own people do. Without it, you see inside only through an access grant, which ends and is recorded.",
+                },
               ],
-              submit: ({ name, slug, dataLocation }) =>
-                api.post("/tenants", { name, slug, ...(dataLocation ? { dataLocation } : {}) }),
+              // Made, then opened: its first steps are inside it.
+              submit: async ({ name, slug, dataLocation, addCreator }) => {
+                const made = await api.post<{ id: string }>("/tenants", {
+                  name,
+                  slug,
+                  ...(dataLocation ? { dataLocation } : {}),
+                  addCreator: addCreator === "true",
+                });
+                navigate(`/t/${made.id}`);
+                return made;
+              },
+              done: (made, values) => ({
+                message: `Tenant ${values.name} is made.`,
+                link: { label: `Open ${values.name}`, href: `/t/${(made as { id: string }).id}` },
+              }),
             },
           }
         : {})}

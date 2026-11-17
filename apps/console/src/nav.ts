@@ -218,6 +218,7 @@ const EDITORS = [
   /^scripts\/(new|edit\/)/,
   /^extensions\/[a-z_]+\/(new|edit\/)/,
   /^screens\/.+/,
+  /^dashboards\/.+/,
   /^resources\/(new|edit\/)/,
 ];
 

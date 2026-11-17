@@ -2,6 +2,11 @@
 @source "./";
 @source "../../../packages/screens/src";
 
+/* The console is dense: its controls are 32 px, where a tenant app's are 36. */
+html {
+  --vx-control-height: 32px;
+}
+
 /* The port: one corner cut, for the instance's mark. */
 @utility vx-port {
   clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);

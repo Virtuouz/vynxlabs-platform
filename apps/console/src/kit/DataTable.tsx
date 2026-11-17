@@ -1,5 +1,5 @@
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
-import { Button, Menu, type MenuItem, Notice, Skeleton } from "@vynxlabs/ui";
+import { Button, Menu, type MenuItem, Skeleton } from "@vynxlabs/ui";
 import { MoreHorizontal } from "lucide-react";
 import {
   isValidElement,
@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { useRestoredScroll } from "../router.tsx";
+import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
 
 /**
@@ -133,7 +134,8 @@ export interface DataTableProps<Row> {
   loading?: boolean | undefined;
   /** Rows stay while newer ones load. */
   refreshing?: boolean | undefined;
-  error?: string | undefined;
+  /** What failed: the error itself, so its request ID shows, or a sentence. */
+  error?: unknown;
   onRetry?: (() => void) | undefined;
   /** What an empty list says: a title with text and an action, or anything to show instead. */
   empty: EmptyContent | ReactNode;
@@ -312,6 +314,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     }
   };
 
+  const slow = useDelayed(loading === true || rows === undefined);
   const edge = (index: number, count: number) =>
     `${index === 0 ? "pl-4 md:pl-6" : ""} ${index === count - 1 ? "pr-4 md:pr-6" : ""}`;
   const cells = [
@@ -324,22 +327,14 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   if (error && !rows?.length) {
     body = (
       <div className="p-4 md:px-6">
-        <Notice
-          tone="danger"
-          action={
-            onRetry ? (
-              <Button size="small" onClick={onRetry}>
-                Try again
-              </Button>
-            ) : undefined
-          }
-        >
-          {error}
-        </Notice>
+        <ErrorState error={error} what={label.toLowerCase()} onRetry={onRetry} />
       </div>
     );
   } else if (loading || rows === undefined) {
-    body = (
+    // Nothing for the first moments: most lists answer before a skeleton would help.
+    body = !slow ? (
+      <div aria-busy="true" className="min-h-24" />
+    ) : (
       <div className="px-4 py-4 md:px-6">
         <Skeleton lines={6} className="h-6 w-full" label={`Loading ${label.toLowerCase()}`} />
       </div>
@@ -382,7 +377,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           <div
             role="toolbar"
             aria-label="Batch actions"
-            className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-line border-b bg-action-soft px-4 py-1.5 md:px-6"
+            className="sticky top-0 layer-sticky flex flex-wrap items-center gap-2 border-line border-b bg-action-soft px-4 py-1.5 md:px-6"
           >
             <span className="text-meta font-medium">{checked?.size} selected</span>
             {batch(new Set(checked))}
@@ -399,7 +394,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           className="w-full table-fixed border-collapse text-left"
           aria-busy={refreshing || undefined}
         >
-          <thead className={`sticky ${anyChecked && batch ? "top-9" : "top-0"} z-10 bg-canvas`}>
+          <thead
+            className={`sticky ${anyChecked && batch ? "top-9" : "top-0"} layer-sticky bg-canvas`}
+          >
             <tr className="border-line border-b text-meta text-ink-subtle">
               {cells.map((cell, index) => {
                 const edges = edge(index, cells.length);
@@ -587,18 +584,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
         </table>
         {error ? (
           <div className="px-4 py-3 md:px-6">
-            <Notice
-              tone="danger"
-              action={
-                onRetry ? (
-                  <Button size="small" onClick={onRetry}>
-                    Try again
-                  </Button>
-                ) : undefined
-              }
-            >
-              {error}
-            </Notice>
+            <ErrorState error={error} what={label.toLowerCase()} onRetry={onRetry} />
           </div>
         ) : null}
         {variant === "inset" && rows.length > 10 && !all ? (
@@ -639,7 +625,7 @@ export function DensityMenu({
       label={<span className="text-meta">Density</span>}
       ariaLabel="Row density"
       align="end"
-      triggerClassName="inline-flex h-8 items-center rounded-control border border-line-control px-2.5 text-ink-muted hover:bg-sunken"
+      triggerClassName="inline-flex h-8 items-center rounded-control border border-line-control px-3 text-ink-muted hover:bg-sunken"
       items={choices.map((choice) => ({
         label: choice[0]?.toUpperCase() + choice.slice(1),
         current: choice === density,

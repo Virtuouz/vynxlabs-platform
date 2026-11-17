@@ -32,7 +32,7 @@
   --vx-code-bg: #f5f7f9;
   --vx-focus: #0e5f7a;
   --vx-radius-control: 6px;
-  --vx-radius-panel: 10px;
+  --vx-radius-panel: 8px;
   --vx-font: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --vx-font-code: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   color-scheme: light;
@@ -122,41 +122,137 @@
   --color-ink-subtle: var(--vx-ink-subtle);
   --color-code-bg: var(--vx-code-bg);
   --color-focus: var(--vx-focus);
+  /* Tags, chips, menu items, grid cells, inline code: a step inside a control. */
+  --radius-inner: calc(var(--vx-radius-control) - 2px);
   --radius-control: var(--vx-radius-control);
   --radius-panel: var(--vx-radius-panel);
+  /* Dialogs, sheets and the command palette. */
+  --radius-overlay: calc(var(--vx-radius-panel) + 4px);
+  /* Something that floats and can be dismissed has a shadow; nothing in the page's flow does. */
+  --shadow-overlay: 0 4px 12px var(--vx-shadow-overlay);
+  --shadow-modal: 0 12px 32px var(--vx-shadow-modal);
+  --shadow-drag: 0 8px 20px var(--vx-shadow-overlay);
+  --height-control: var(--vx-control-height);
   --font-sans: var(--vx-font);
   --font-mono: var(--vx-font-code);
 }
 
 /*
- * Type roles. Sizes, not brand: a theme does not set them. `text-label` is
- * written in capitals by the element that uses it.
+ * Values a brand does not set. How dark a shadow is: deeper in dark, where a
+ * surface barely differs from what is under it. A control's height: tenant
+ * apps keep 36 px, and the console sets 32 px for itself.
+ */
+html {
+  --vx-shadow-overlay: rgb(0 0 0 / 0.1);
+  --vx-shadow-modal: rgb(0 0 0 / 0.16);
+  --vx-control-height: 36px;
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    --vx-shadow-overlay: rgb(0 0 0 / 0.4);
+    --vx-shadow-modal: rgb(0 0 0 / 0.5);
+  }
+}
+html[data-theme="dark"] {
+  --vx-shadow-overlay: rgb(0 0 0 / 0.4);
+  --vx-shadow-modal: rgb(0 0 0 / 0.5);
+}
+
+/*
+ * Type roles. Sizes, not brand: a theme does not set them. `text-label` and
+ * `text-tag` are written in capitals by the element that uses them, and the
+ * code roles are used with `font-mono`.
+ *
+ * | role        | px / line | use                                                    |
+ * | display-lg  | 26 / 32   | overview titles, sign-in                               |
+ * | display     | 20 / 28   | the title of every working screen                      |
+ * | title       | 16 / 24   | section, panel, inspector and dialog headings          |
+ * | emphasis    | 15 / 22   | a row's primary text in comfortable lists, lead lines  |
+ * | body        | 14 / 20   | interface text, values, cells                          |
+ * | body-sm     | 13 / 18   | labels, hints, errors, secondary text, menu items      |
+ * | meta        | 12 / 16   | times, counts, captions, table headers                 |
+ * | label       | 11 / 16   | group headings above sections                          |
+ * | code        | 13 / 20   | paths, IDs, inline code, JSON                          |
+ * | code-sm     | 12 / 18   | log lines, dense JSON                                  |
+ * | tag         | 10.5 / 12 | environment and classification tags                    |
  */
 @theme {
-  --text-display: 26px;
-  --text-display--line-height: 1.2;
-  --text-display--letter-spacing: -0.015em;
+  --text-display-lg: 26px;
+  --text-display-lg--line-height: 32px;
+  --text-display-lg--letter-spacing: -0.015em;
+  --text-display-lg--font-weight: 600;
+  --text-display: 20px;
+  --text-display--line-height: 28px;
+  --text-display--letter-spacing: -0.01em;
   --text-display--font-weight: 600;
-  --text-title: 18px;
-  --text-title--line-height: 1.3;
+  --text-title: 16px;
+  --text-title--line-height: 24px;
   --text-title--font-weight: 600;
+  --text-emphasis: 15px;
+  --text-emphasis--line-height: 22px;
+  --text-emphasis--font-weight: 500;
   --text-body: 14px;
-  --text-body--line-height: 1.45;
-  --text-label: 12px;
-  --text-label--line-height: 1.2;
+  --text-body--line-height: 20px;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-meta: 12px;
+  --text-meta--line-height: 16px;
+  --text-label: 11px;
+  --text-label--line-height: 16px;
   --text-label--letter-spacing: 0.06em;
   --text-label--font-weight: 600;
-  --text-meta: 12.5px;
-  --text-meta--line-height: 1.4;
-  --text-telemetry: 13px;
-  --text-telemetry--line-height: 1.4;
-  --text-micro: 10px;
-  --text-micro--line-height: 1.2;
-  --text-micro--font-weight: 500;
+  --text-code: 13px;
+  --text-code--line-height: 20px;
+  --text-code-sm: 12px;
+  --text-code-sm--line-height: 18px;
   --text-tag: 10.5px;
-  --text-tag--line-height: 1;
+  --text-tag--line-height: 12px;
   --text-tag--letter-spacing: 0.06em;
   --text-tag--font-weight: 600;
+
+  /* The width of a line of prose. */
+  --container-measure: 72ch;
+
+  /* Motion: only to show where something came from, or that it finished. */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --animate-spin-slow: spin 2.4s linear infinite;
+}
+
+/*
+ * Layers, lowest first. A sheet sits under a dialog opened from it; menus and
+ * comboboxes over both; toasts over everything but the skip link.
+ */
+@utility layer-sticky {
+  z-index: 10;
+}
+@utility layer-sheet {
+  z-index: 40;
+}
+@utility layer-dialog {
+  z-index: 60;
+}
+@utility layer-popover {
+  z-index: 70;
+}
+@utility layer-toast {
+  z-index: 80;
+}
+@utility layer-skip {
+  z-index: 90;
+}
+
+/* Motion durations: 120 ms for hover and press, 180 ms for menus, 240 ms for sheets and dialogs. */
+@utility motion-fast {
+  transition-duration: 120ms;
+  transition-timing-function: var(--ease-out);
+}
+@utility motion-base {
+  transition-duration: 180ms;
+  transition-timing-function: var(--ease-out);
+}
+@utility motion-slow {
+  transition-duration: 240ms;
+  transition-timing-function: var(--ease-out);
 }
 
 body {
@@ -165,7 +261,7 @@ body {
   color: var(--vx-ink);
   font-family: var(--vx-font);
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 20px;
   font-variant-numeric: tabular-nums;
 }
 

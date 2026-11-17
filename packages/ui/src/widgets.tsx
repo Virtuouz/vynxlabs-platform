@@ -409,7 +409,7 @@ registerWidget<CardWidgetConfig>({
       <dl className="m-0 grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-2">
         {config.fields.map((field) => (
           <div key={field.name} className="contents">
-            <dt className="text-[13px] text-ink-muted">{field.label ?? field.name}</dt>
+            <dt className="text-body-sm text-ink-muted">{field.label ?? field.name}</dt>
             <dd className="m-0 min-w-0 break-words">{shown(field, row[field.name], context)}</dd>
           </div>
         ))}
@@ -454,7 +454,7 @@ registerWidget<CardsWidgetConfig>({
                   {shown(heading, row[heading.name], context)}
                 </strong>
                 {rest.map((field) => (
-                  <span key={field.name} className="block truncate text-[13px] text-ink-muted">
+                  <span key={field.name} className="block truncate text-body-sm text-ink-muted">
                     {field.label ?? field.name}: {shown(field, row[field.name], context)}
                   </span>
                 ))}

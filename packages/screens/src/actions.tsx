@@ -211,7 +211,7 @@ export function useActions(host: ActionHost) {
                 ) : null}
               </span>
               {outcome.output !== undefined ? (
-                <pre className="m-0 max-h-60 overflow-auto font-mono text-[12px] whitespace-pre-wrap">
+                <pre className="m-0 max-h-60 overflow-auto font-mono text-code-sm whitespace-pre-wrap">
                   {JSON.stringify(outcome.output, null, 2)}
                 </pre>
               ) : null}
@@ -269,7 +269,7 @@ export function ActionButton({
       >
         {actions.busy === action.label ? `${action.label}…` : action.label}
       </Button>
-      {!ready ? <span className="text-[13px] text-ink-muted">Choose a row first.</span> : null}
+      {!ready ? <span className="text-body-sm text-ink-muted">Choose a row first.</span> : null}
     </div>
   );
 }

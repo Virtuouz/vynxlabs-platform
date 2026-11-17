@@ -20,7 +20,7 @@ export function Pagination({ hasPrevious, hasNext, onPrevious, onNext, label }: 
         Previous
       </Button>
       {label ? (
-        <span aria-live="polite" className="text-[13px] text-ink-muted">
+        <span aria-live="polite" className="text-body-sm text-ink-muted">
           {label}
         </span>
       ) : null}

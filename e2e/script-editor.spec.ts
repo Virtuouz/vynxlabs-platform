@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * The script editor, in a browser (phase 12, milestone 2): a new script opens
@@ -81,6 +82,7 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   await page.keyboard.press("Control+Enter");
   const run = page.getByRole("region", { name: "Test pane" });
   await run.getByRole("tablist", { name: "About this run" }).waitFor();
+  await expectNoAxeViolations(page, "the script editor with a run");
   await expect(page).toHaveURL(/\/scripts\/edit\/hello\/greet$/);
   await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
   // The code has most of the width, and its result is in view beside it, not below the fold.
@@ -102,7 +104,11 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   await editor.locator(".view-lines").click();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("//later");
-  await page.getByRole("link", { name: "All scripts" }).click();
+  // The breadcrumb leads back to the list.
+  await page
+    .getByRole("navigation", { name: "Where you are" })
+    .getByRole("link", { name: "Scripts" })
+    .click();
   const leaving = page.getByRole("dialog");
   await expect(leaving).toContainText("Leave without saving?");
   await leaving.getByRole("button", { name: "Stay" }).click();

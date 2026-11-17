@@ -3,6 +3,7 @@ import { ArrowRight, History, Rocket, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
   EmptyCanvas,
   KeyValues,
@@ -214,7 +215,7 @@ function ReviewStep({
   const [history, setHistory] = useState<string>();
 
   if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!drafts) return <p className="text-ink-muted">Loading…</p>;
+  if (!drafts) return <Loading />;
   if (drafts.length === 0)
     return (
       <div className="flex flex-col gap-3">
@@ -253,7 +254,7 @@ function ReviewStep({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-2">
                           {to ? (
-                            <Link to={to} className="truncate font-mono text-telemetry">
+                            <Link to={to} className="truncate font-mono text-code">
                               {row.path}
                             </Link>
                           ) : (
@@ -266,7 +267,7 @@ function ReviewStep({
                             saved {fromNow(row.updatedAt)}
                           </span>
                           <Button size="small" variant="quiet" onClick={() => setHistory(row.path)}>
-                            <History aria-hidden="true" size={13} /> Earlier
+                            <History aria-hidden="true" size={14} /> Earlier
                           </Button>
                           <Button
                             size="small"
@@ -310,7 +311,7 @@ function ReviewStep({
       </div>
       <Panel className="flex h-fit flex-col gap-3 p-4">
         <SectionLabel>Deploy to this dev workspace</SectionLabel>
-        {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
+        {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
         {preview.data?.refusal ? (
           <Notice tone="danger">
             <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
@@ -361,7 +362,8 @@ function ReviewStep({
         />
         <Button
           variant="primary"
-          disabled={busy || !preview.data?.possible}
+          loading={busy}
+          disabled={!preview.data?.possible}
           onClick={async () => {
             setBusy(true);
             try {
@@ -426,9 +428,9 @@ function DraftHistory({
       description="Each save keeps what it replaced. Bringing one back makes it the draft again."
     >
       {history.error ? (
-        <Notice tone="danger">{history.error.message}</Notice>
+        <ErrorState error={history.error} onRetry={history.reload} />
       ) : !history.data ? (
-        <p className="m-0 text-ink-muted">Loading…</p>
+        <Loading />
       ) : history.data.items.length === 0 ? (
         <p className="m-0 text-ink-muted">No earlier versions yet.</p>
       ) : (
@@ -450,6 +452,7 @@ function DraftHistory({
                 onClick={async () => {
                   try {
                     await api.post(`${root}/draft-history/${one.id}/restore`, {});
+                    notify.success(`The draft saved ${fromNow(one.savedAt)} is back.`);
                     onRestored();
                     onClose();
                   } catch (caught) {
@@ -474,9 +477,9 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
       <section className="flex flex-col gap-2">
         <SectionLabel>Versions of {workspace.name}</SectionLabel>
         {ledger.error ? (
-          <Notice tone="danger">{ledger.error.message}</Notice>
+          <ErrorState error={ledger.error} onRetry={ledger.reload} />
         ) : !ledger.data ? (
-          <p className="text-ink-muted">Loading…</p>
+          <Loading />
         ) : ledger.data.items.length === 0 ? (
           <EmptyCanvas title="Nothing deployed here yet" />
         ) : (
@@ -549,7 +552,7 @@ function PromoteStep({
         <ArrowRight
           aria-hidden="true"
           className="mx-auto rotate-90 text-ink-subtle md:rotate-0"
-          size={18}
+          size={20}
         />
         <Panel className="flex flex-col gap-1.5 border-attention/40 p-4">
           <span className="text-label text-ink-subtle uppercase">To</span>
@@ -562,7 +565,7 @@ function PromoteStep({
         </Panel>
       </div>
 
-      {preview.error ? <Notice tone="danger">{preview.error.message}</Notice> : null}
+      {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
       {!data ? (
         <p className="text-ink-muted">Working out what promoting would do…</p>
       ) : (
@@ -599,7 +602,8 @@ function PromoteStep({
         {data?.canPromote === false ? null : (
           <Button
             variant="promote"
-            disabled={busy || !data?.possible}
+            loading={busy}
+            disabled={!data?.possible}
             onClick={async () => {
               const sure = await ask.confirm({
                 title: `Promote to ${target.name}?`,
@@ -652,7 +656,7 @@ function PromoteStep({
               }
             }}
           >
-            <Rocket aria-hidden="true" size={15} /> Promote to{" "}
+            <Rocket aria-hidden="true" size={16} /> Promote to{" "}
             {target.type === "production" ? "production" : target.name}
           </Button>
         )}

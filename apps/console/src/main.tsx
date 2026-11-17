@@ -1,3 +1,4 @@
+import { LucideProvider } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { Providers } from "./ask.tsx";
@@ -10,11 +11,14 @@ applyThemeChoice();
 loadInstanceTheme();
 
 createRoot(document.getElementById("app") as HTMLElement).render(
-  <Providers>
-    <ErrorBoundary what="The console">
-      <BrandProvider>
-        <App />
-      </BrandProvider>
-    </ErrorBoundary>
-  </Providers>,
+  // Every icon in the console is drawn with one stroke.
+  <LucideProvider strokeWidth={1.75}>
+    <Providers>
+      <ErrorBoundary what="The console">
+        <BrandProvider>
+          <App />
+        </BrandProvider>
+      </ErrorBoundary>
+    </Providers>
+  </LucideProvider>,
 );

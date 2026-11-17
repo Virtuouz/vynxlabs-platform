@@ -41,10 +41,12 @@ export function SideSheet({
   return (
     <Base.Root open={open} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>
-        <Base.Backdrop className="fixed inset-0 z-40 bg-ink/30" />
+        <Base.Backdrop className="fixed inset-0 layer-sheet bg-ink/30 transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup
-          className={`fixed inset-y-0 z-50 flex w-full flex-col border-line bg-surface shadow-2xl ${
-            side === "left" ? "left-0 sm:border-r" : "right-0 sm:border-l"
+          className={`fixed inset-y-0 layer-sheet flex w-full flex-col border-line bg-surface shadow-modal transition-transform motion-slow ${
+            side === "left"
+              ? "left-0 sm:border-r data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"
+              : "right-0 sm:border-l data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full"
           } ${width}`}
         >
           <div className="flex items-start justify-between gap-3 border-line border-b px-5 py-4">

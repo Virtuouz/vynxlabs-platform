@@ -41,7 +41,7 @@ export function EmptyState({
   return (
     <div className="rounded-panel border border-dashed border-line px-5 py-8">
       <p className="m-0 font-medium">{title}</p>
-      {children ? <p className="mt-1 mb-0 max-w-[60ch] text-ink-muted">{children}</p> : null}
+      {children ? <p className="mt-1 mb-0 max-w-measure text-ink-muted">{children}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );

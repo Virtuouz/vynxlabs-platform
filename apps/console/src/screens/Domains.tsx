@@ -1,20 +1,13 @@
-import {
-  Badge,
-  Button,
-  Dialog,
-  EmptyState,
-  Notice,
-  SelectField,
-  SideSheet,
-  TextField,
-} from "@vynxlabs/ui";
+import { Button, EmptyState, Notice, SelectField, SideSheet, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 import type { AppSummary } from "./Apps.tsx";
 
 interface Domain {
@@ -36,7 +29,7 @@ interface WorkspaceName {
   name: string;
 }
 
-const code = (text: string) => <code className="font-mono text-[13px] break-all">{text}</code>;
+const code = (text: string) => <code className="font-mono text-code break-all">{text}</code>;
 
 const failed = (error: unknown) => {
   const failure = error as ApiError;
@@ -48,13 +41,9 @@ const failed = (error: unknown) => {
 
 function State({ domain }: { domain: Domain }) {
   return (
-    <span className="flex flex-wrap gap-1">
-      {domain.enabled ? <Badge tone="success">Enabled</Badge> : <Badge>Disabled</Badge>}
-      {domain.verifiedAt ? (
-        <Badge tone="action">Verified</Badge>
-      ) : (
-        <Badge tone="attention">Not verified</Badge>
-      )}
+    <span className="flex flex-wrap gap-3">
+      <StatePill state={domain.enabled ? "on" : "off"} />
+      <StatePill state={domain.verifiedAt ? "verified" : "unverified"} />
     </span>
   );
 }
@@ -88,7 +77,7 @@ function AddDialog({
     : (choices[0]?.path ?? "");
 
   return (
-    <Dialog
+    <SideSheet
       open={open}
       onClose={onClose}
       title="Add a hostname"
@@ -174,13 +163,14 @@ function AddDialog({
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || (serves === "app" && (apps.loading || appPath === ""))}
+            loading={busy}
+            disabled={serves === "app" && (apps.loading || appPath === "")}
           >
             Add hostname
           </Button>
         </div>
       </form>
-    </Dialog>
+    </SideSheet>
   );
 }
 
@@ -189,7 +179,7 @@ function RecordLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="min-w-0">
-        <span className="block text-[13px] text-ink-muted">{label}</span>
+        <span className="block text-body-sm text-ink-muted">{label}</span>
         {code(value)}
       </span>
       <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
@@ -302,7 +292,7 @@ function DetailsDialog({
               </Button>
               <Button
                 variant="primary"
-                disabled={busy}
+                loading={busy}
                 onClick={() =>
                   run(async () =>
                     onChanged(await api.post<Domain>(`${base}/domains/${domain.id}/checks`)),
@@ -360,7 +350,15 @@ export function Domains({ base }: { base: string }) {
   const list = useLoad<{ items: Domain[] }>(`${base}/domains`);
   const workspaces = useLoad<{ items: WorkspaceName[] }>(`${base}/workspaces`);
   const [adding, setAdding] = useState(false);
-  const [shown, setShown] = useState<Domain>();
+  // The hostname open is in the address, so a link opens it and Back closes it.
+  const [open, setOpen] = useUrlParam("hostname", undefined, { push: true });
+  const [fresh, setFresh] = useState<Domain>();
+  const shown =
+    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const setShown = (domain: Domain | undefined) => {
+    setFresh(domain);
+    setOpen(domain?.id);
+  };
   const workspaceName = (id: string) =>
     workspaces.data?.items.find((workspace) => workspace.id === id)?.name ?? "";
 
@@ -372,7 +370,7 @@ export function Domains({ base }: { base: string }) {
 
   return (
     <Page title="Domains" action={addButton}>
-      <div className="flex max-w-[75ch] flex-col gap-2 text-ink-muted">
+      <div className="flex max-w-measure flex-col gap-2 text-ink-muted">
         <p className="m-0">
           A hostname of the client's own, public or internal to their network, serves one app at its
           root, or the portal with every app of a workspace by its path. Point the name at this
@@ -453,7 +451,7 @@ export function Domains({ base }: { base: string }) {
           }
         />
       ) : (
-        <p className="text-ink-muted">Loading…</p>
+        <Loading />
       )}
       <AddDialog
         base={base}

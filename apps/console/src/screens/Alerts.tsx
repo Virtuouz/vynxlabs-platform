@@ -1,7 +1,9 @@
-import { Badge, Button, Notice, SelectField } from "@vynxlabs/ui";
+import { Badge, Button, SelectField } from "@vynxlabs/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
+import { StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -106,7 +108,7 @@ export function Alerts({
       description="Who is told when a script or a flow fails for the last time. A script's own onFailure wins over this workspace's default. More failures of one script within ten minutes of an alert are counted on it, not sent again."
     >
       <section aria-label="Default" className="flex max-w-2xl flex-col gap-3">
-        <h2 className="m-0 text-base font-semibold">This workspace's default</h2>
+        <h2 className="m-0 text-title font-semibold">This workspace's default</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <SelectField
             name="handler"
@@ -131,7 +133,7 @@ export function Alerts({
             onChange={setNotifyPath}
           />
         </div>
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           The script is given the failed run. The connection is posted a summary as JSON, with a
           line of text a chat webhook shows as it is.
         </p>
@@ -169,11 +171,11 @@ export function Alerts({
 
       {(settings.data?.overrides.length ?? 0) > 0 ? (
         <section aria-label="Set by scripts" className="flex flex-col gap-2">
-          <h2 className="m-0 text-base font-semibold">Set by scripts themselves</h2>
+          <h2 className="m-0 text-title font-semibold">Set by scripts themselves</h2>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {settings.data?.overrides.map((one) => (
-              <li key={one.path} className="flex flex-wrap items-center gap-2 text-[14px]">
-                <Link to={`${link}/scripts/edit/${one.path}`} className="font-mono text-telemetry">
+              <li key={one.path} className="flex flex-wrap items-center gap-2 text-body">
+                <Link to={`${link}/scripts/edit/${one.path}`} className="font-mono text-code">
                   {one.path}
                 </Link>
                 <span className="text-ink-muted">
@@ -184,7 +186,7 @@ export function Alerts({
                     .filter(Boolean)
                     .join(", ")}
                 </span>
-                {one.ownership === "code" ? <Badge>From the repository</Badge> : null}
+                {one.ownership === "code" ? <Tag tone="repository">From the repository</Tag> : null}
               </li>
             ))}
           </ul>
@@ -192,9 +194,9 @@ export function Alerts({
       ) : null}
 
       <section aria-label="Recent alerts" className="flex flex-col gap-2">
-        <h2 className="m-0 text-base font-semibold">Recent alerts</h2>
+        <h2 className="m-0 text-title font-semibold">Recent alerts</h2>
         {alerts.error ? (
-          <Notice tone="danger">{alerts.error.message}</Notice>
+          <ErrorState error={alerts.error} onRetry={alerts.reload} />
         ) : shown.length === 0 ? (
           <p className="m-0 text-ink-muted">
             {alerts.data ? "No alert has been sent from this workspace." : "Loading…"}
@@ -204,27 +206,29 @@ export function Alerts({
             {shown.map((one) => (
               <li key={one.id} className="flex flex-col gap-0.5 py-2">
                 <span className="flex flex-wrap items-center gap-2">
-                  <Link to={`${link}/runs/${one.id}`} className="font-mono text-telemetry">
+                  <Link to={`${link}/runs/${one.id}`} className="font-mono text-code">
                     {one.name}
                   </Link>
                   <span className="text-meta text-ink-muted">{fromNow(one.at)}</span>
                   {one.notified === true ? (
-                    <Badge tone="success">Posted</Badge>
+                    <StatePill state="posted" />
                   ) : one.notified === false ? (
-                    <Badge tone="danger">Not posted</Badge>
+                    <StatePill state="not_posted" />
                   ) : null}
-                  {one.repeats > 0 ? <Badge tone="attention">+{one.repeats} more</Badge> : null}
+                  {one.repeats > 0 ? <Badge>+{one.repeats} more</Badge> : null}
                 </span>
-                {one.error ? <span className="text-[13px] text-ink-muted">{one.error}</span> : null}
+                {one.error ? (
+                  <span className="text-body-sm text-ink-muted">{one.error}</span>
+                ) : null}
                 {one.notifyError ? (
-                  <span className="text-[13px] text-danger">{one.notifyError}</span>
+                  <span className="text-body-sm text-danger">{one.notifyError}</span>
                 ) : null}
                 {one.handlerRunId ? (
                   <Link to={`${link}/runs/${one.handlerRunId}`} className="text-meta">
                     The script it started
                   </Link>
                 ) : one.handlerError ? (
-                  <span className="text-[13px] text-danger">{one.handlerError}</span>
+                  <span className="text-body-sm text-danger">{one.handlerError}</span>
                 ) : null}
               </li>
             ))}

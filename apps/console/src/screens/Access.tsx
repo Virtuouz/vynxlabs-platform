@@ -1,6 +1,7 @@
 import { Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
+import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Link } from "../router.tsx";
@@ -109,8 +110,8 @@ export function EffectiveAccess({
 }) {
   const report = useLoad<AccessReport>(`${base}/access/${principalType}/${id}`);
   const [query, setQuery] = useState("");
-  if (report.error) return <Notice tone="danger">{report.error.message}</Notice>;
-  if (!report.data) return <p className="m-0 text-ink-muted">Loading…</p>;
+  if (report.error) return <ErrorState error={report.error} onRetry={report.reload} />;
+  if (!report.data) return <Pending of={report} />;
   const { sources, permissions, principal } = report.data;
   const byId = new Map(sources.map((source) => [source.id, source]));
   const wanted = query.trim().toLowerCase();
@@ -177,7 +178,7 @@ export function EffectiveAccess({
         {checking ? (
           holds ? (
             <p className="m-0 flex items-center gap-2" role="status">
-              <StatePill state="ok">Yes</StatePill>
+              <StatePill state="allowed" />
               <span className="text-meta text-ink-muted">
                 {principal.name} holds <Mono>{wanted}</Mono>{" "}
                 {heldWhere.includes("the whole tenant")
@@ -189,7 +190,7 @@ export function EffectiveAccess({
             </p>
           ) : (
             <p className="m-0 flex flex-wrap items-center gap-2" role="status">
-              <StatePill state="failed">No</StatePill>
+              <StatePill state="denied" />
               <span className="text-meta text-ink-muted">
                 {principal.name} does not hold <Mono>{wanted}</Mono> anywhere. A role with it, bound
                 to them or a group of theirs where it is needed, would give it.
@@ -205,7 +206,7 @@ export function EffectiveAccess({
         {groups.map((group) => (
           <Panel key={group} className="flex flex-col gap-2 p-4">
             <h3 className="m-0 text-label text-ink-subtle uppercase">{group}</h3>
-            <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+            <ul className="m-0 flex list-none flex-col gap-2 p-0">
               {shown
                 .filter((one) => one.group === group)
                 .map((one) => (

@@ -83,7 +83,7 @@ test("dashboards are listed with whose they are, and a new one is named in the c
   expect(sent("POST")[0]?.body).toEqual({ title: "Returns" });
 });
 
-test("a member's own dashboard is changed and saved when they say, and shared with a checkbox", async () => {
+test("a member's own dashboard saves itself, undoes a change, and is shared as a step of its own", async () => {
   let stored: Any = mine;
   routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
   routes[`PUT ${api}/dashboards/d1`] = (body) => {
@@ -93,24 +93,35 @@ test("a member's own dashboard is changed and saved when they say, and shared wi
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
   // The page is drawn from the workspace's rows.
   await within(await screen.findByRole("region", { name: "Held" })).findByText("Bolts");
-  const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
-  expect(save.disabled).toBe(true);
+  const add = within(screen.getByRole("region", { name: "Add" }));
+  // A dashboard is for looking: it offers no form and no action.
+  expect(add.queryByRole("button", { name: "Form" })).toBeNull();
+  expect(add.queryByRole("button", { name: "Action" })).toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "Text" }));
-  expect(screen.getByText("Changes not saved.")).toBeTruthy();
-  // Nothing is sent until the member saves: each save is in the audit log.
-  expect(sent("PUT")).toHaveLength(0);
-  fireEvent.click(save);
-  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  fireEvent.click(add.getByRole("button", { name: "Text" }));
+  // Saved by itself, a moment after the change, with the revision it was read at.
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1), { timeout: 3000 });
   expect(sent("PUT")[0]?.body).toMatchObject({ title: "Stock", revision: 4 });
   const first = sent("PUT")[0] as { body: Any };
   expect(first.body.page.widgets.map((widget: Any) => widget.id)).toEqual(["held", "text"]);
-  await waitFor(() => expect(save.disabled).toBe(true));
+  await screen.findByText(/^Saved\. Only you see it\./);
 
-  fireEvent.click(screen.getByLabelText("Show it to everyone in this workspace"));
-  await waitFor(() => expect(sent("PUT")).toHaveLength(2));
-  // Sharing carries the revision the last save gave back.
-  expect(sent("PUT")[1]?.body).toEqual({ shared: true, revision: 5 });
+  // Undone, and saved again as it was.
+  fireEvent.click(screen.getByRole("button", { name: /^Undo adding text/ }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(2), { timeout: 3000 });
+  const second = sent("PUT")[1] as { body: Any };
+  expect(second.body.page.widgets.map((widget: Any) => widget.id)).toEqual(["held"]);
+  expect(second.body.revision).toBe(5);
+
+  // Sharing is its own step, said at once.
+  fireEvent.click(screen.getByRole("button", { name: "Share" }));
+  fireEvent.click(
+    within(await screen.findByRole("dialog")).getByLabelText(
+      "Show it to everyone in this workspace",
+    ),
+  );
+  await waitFor(() => expect(sent("PUT")).toHaveLength(3));
+  expect(sent("PUT")[2]?.body).toEqual({ shared: true, revision: 6 });
 });
 
 test("a dashboard someone else shared is looked at, and offers no way to change it", async () => {

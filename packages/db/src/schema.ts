@@ -323,6 +323,10 @@ export interface GitRepositoryTable {
   verified_at: Date | null;
   credential_kind: Generated<string>;
   release_branch: Generated<string | null>;
+  /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
+  credential_set_at: ColumnType<Date | null, never, never>;
+  credential_set_by_type: ColumnType<string | null, never, never>;
+  credential_set_by_id: ColumnType<string | null, never, never>;
 }
 
 export type GitState = "never" | "synced" | "ahead" | "behind" | "conflict" | "error";
@@ -378,6 +382,10 @@ export interface ConnectionGroupMemberTable {
   credential: Buffer | null;
   created_at: Generated<Date>;
   updated_at: Timestamp;
+  /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
+  credential_set_at: ColumnType<Date | null, never, never>;
+  credential_set_by_type: ColumnType<string | null, never, never>;
+  credential_set_by_id: ColumnType<string | null, never, never>;
 }
 
 export interface ConnectionBindingTable {
@@ -393,6 +401,10 @@ export interface ConnectionBindingTable {
   oauth: Json<ConnectionOAuth> | null;
   created_at: Generated<Date>;
   updated_at: Timestamp;
+  /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
+  credential_set_at: ColumnType<Date | null, never, never>;
+  credential_set_by_type: ColumnType<string | null, never, never>;
+  credential_set_by_id: ColumnType<string | null, never, never>;
 }
 
 export interface ConnectionOAuth {
@@ -692,6 +704,10 @@ export interface DataSourceBindingTable {
   credential: Buffer | null;
   created_at: Generated<Date>;
   updated_at: Timestamp;
+  /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
+  credential_set_at: ColumnType<Date | null, never, never>;
+  credential_set_by_type: ColumnType<string | null, never, never>;
+  credential_set_by_id: ColumnType<string | null, never, never>;
 }
 
 export interface FileTable {
@@ -1027,6 +1043,10 @@ export interface IdentityProviderTable {
   scim: ColumnType<Record<string, unknown>, string | undefined, string>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+  /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
+  credential_set_at: ColumnType<Date | null, never, never>;
+  credential_set_by_type: ColumnType<string | null, never, never>;
+  credential_set_by_id: ColumnType<string | null, never, never>;
 }
 
 export interface IdentityDomainTable {

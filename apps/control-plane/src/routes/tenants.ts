@@ -17,6 +17,7 @@ import {
   toApiKey,
   toMember,
 } from "./identity.js";
+import { insertBinding } from "./permissions.js";
 import { Id, iso, Name, NoContent, pageArgs, Slug, TenantParams, Time, toPage } from "./shared.js";
 
 const Tenant = Type.Object({
@@ -161,11 +162,20 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "It is chosen once: moving a tenant later is an export and an import.",
               }),
             ),
+            addCreator: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Makes the member creating the tenant a member of it, holding `tenant_admin`, " +
+                  "in the same change. Without it, an operator sees inside only through an access grant.",
+              }),
+            ),
           }),
           response: { 201: Tenant },
         },
       },
       async ({ ctx, body }, reply) => {
+        // Only a person can be made the tenant's first member.
+        const creator = body.addCreator ? ctx.memberId : undefined;
         const tenant = await ctx.mutate(async (trx, audit) => {
           if (body.dataLocation !== undefined) {
             const known = await trx
@@ -202,6 +212,32 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tenantId: row.id,
             details: { slug: row.slug, name: row.name, dataLocation: body.dataLocation ?? null },
           });
+          if (creator) {
+            await trx
+              .insertInto("tenant_member")
+              .values({ tenant_id: row.id, member_id: creator })
+              .execute();
+            await audit({
+              action: "tenant_member.added",
+              targetType: "member",
+              targetId: creator,
+              tenantId: row.id,
+              details: { asCreator: true },
+            });
+            const admin = await trx
+              .selectFrom("role")
+              .select("id")
+              .where("name", "=", "tenant_admin")
+              .where("builtin", "=", true)
+              .executeTakeFirstOrThrow();
+            await insertBinding(trx, audit, row.id, {
+              principalType: "member",
+              principalId: creator,
+              roleId: admin.id,
+              workspaceId: null,
+              resourceId: null,
+            });
+          }
           return row;
         });
         return reply.code(201).send(toTenant(tenant));
@@ -433,7 +469,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Add a member to a tenant",
           description:
             "Adds the existing member with that email. If there is none, `name` and `password` " +
-            "are required and a new member is created.",
+            "are required and a new member is created. `bindings` gives them roles in the same " +
+            "change, at the tenant or in a workspace; each needs `binding:write` there.",
           tags: ["identity"],
           params: TenantParams,
           body: Type.Object({
@@ -442,12 +479,24 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             password: Type.Optional(
               Type.String({ minLength: MIN_PASSWORD_LENGTH, maxLength: 128 }),
             ),
+            bindings: Type.Optional(
+              Type.Array(Type.Object({ roleId: Id, workspaceId: Type.Optional(Id) }), {
+                maxItems: 20,
+              }),
+            ),
           }),
           response: { 201: Member },
         },
       },
       async ({ ctx, params, body }, reply) => {
         const email = body.email.trim().toLowerCase();
+        // Giving access with the member needs the right to give it, at each scope.
+        for (const binding of body.bindings ?? []) {
+          await ctx.authorize("binding:write", {
+            tenantId: params.t,
+            workspaceId: binding.workspaceId,
+          });
+        }
         const member = await ctx.mutate(async (trx, audit) => {
           let found = await trx
             .selectFrom("member")
@@ -475,6 +524,15 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tenantId: params.t,
             details: { email },
           });
+          for (const binding of body.bindings ?? []) {
+            await insertBinding(trx, audit, params.t, {
+              principalType: "member",
+              principalId: found.id,
+              roleId: binding.roleId,
+              workspaceId: binding.workspaceId ?? null,
+              resourceId: null,
+            });
+          }
           return found;
         });
         return reply.code(201).send(toMember(member));

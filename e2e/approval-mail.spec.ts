@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * Approving from a mail, in a browser (phase 10, milestone 7): a flow waits for
@@ -126,6 +127,7 @@ test("an approver approves from the mail on a phone, and the console says who an
   await phone.goto(bobLink);
   await expect(phone.getByRole("heading", { name: "Refund the Brooks family" })).toBeVisible();
   await expect(phone.getByText(/Asked of Bob Reyes/)).toBeVisible();
+  await expectNoAxeViolations(phone, "the approval page on a phone");
   expect(await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
   await phone.getByLabel("Comment (needed to reject)").fill("Receipt checked");
   await phone.getByRole("button", { name: "Approve" }).click();

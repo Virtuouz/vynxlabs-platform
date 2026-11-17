@@ -114,11 +114,11 @@ test("each permission says where it is held and what gives it, and links to the 
   fireEvent.change(screen.getByLabelText("Find or check a permission"), {
     target: { value: "promotion:write" },
   });
-  expect(screen.getByRole("status").textContent).toMatch(/^No.*does not hold promotion:write/);
+  expect(screen.getByRole("status").textContent).toMatch(/^Denied.*does not hold promotion:write/);
   fireEvent.change(screen.getByLabelText("Find or check a permission"), {
     target: { value: "deployment:write" },
   });
-  expect(screen.getByRole("status").textContent).toMatch(/^Yes.*only in: Dev workspace\./);
+  expect(screen.getByRole("status").textContent).toMatch(/^Allowed.*only in: Dev workspace\./);
   expect(screen.queryByText("Secrets: read")).toBeNull();
 });
 

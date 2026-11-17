@@ -113,13 +113,14 @@ test("no page asks for a path that is null", async () => {
   expect(asked.filter((url) => url.includes("null"))).toEqual([]);
 });
 
-test("a state the console does not know shows as Unknown", () => {
+test("a state the console does not know shows as the server wrote it, and nothing breaks", () => {
   render(<StatePill state={"paused_by_operator" as State} />);
-  expect(screen.getByText("Unknown")).toBeTruthy();
+  expect(screen.getByText("paused_by_operator")).toBeTruthy();
   expect(stateOf("paused_by_operator")).toBe("unknown");
   expect(stateOf("failed")).toBe("failed");
   expect(stateOf("toString")).toBe("unknown");
-  expect(stateLabel("paused_by_operator" as State)).toBe("Unknown");
+  // A state this console does not know is shown as the server wrote it.
+  expect(stateLabel("paused_by_operator" as State)).toBe("paused_by_operator");
 });
 
 test("a new address keeps the page that is shown, and clears a failure", async () => {

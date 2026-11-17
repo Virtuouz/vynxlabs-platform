@@ -18,6 +18,7 @@ const SingleSignOn = lazy(() =>
   import("./screens/SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
 );
 
+import { Loading } from "./kit/LoadState.tsx";
 import { Tenants } from "./screens/Tenants.tsx";
 
 const RETURN_TO = ["/apps/", "/portal/", "/api/v1/app-handoffs/start"];
@@ -139,7 +140,7 @@ export function App() {
   return (
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>
       {/* Some screens are fetched when first opened. */}
-      <Suspense fallback={<p className="text-ink-muted">Loading…</p>}>{screen}</Suspense>
+      <Suspense fallback={<Loading />}>{screen}</Suspense>
     </Shell>
   );
 }

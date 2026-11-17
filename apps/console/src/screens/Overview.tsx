@@ -1,4 +1,4 @@
-import { Button, Notice } from "@vynxlabs/ui";
+import { Button } from "@vynxlabs/ui";
 import {
   CircleCheck,
   CirclePause,
@@ -14,9 +14,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
-import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { Link, navigate } from "../router.tsx";
 import type { WorkspaceCounts } from "../Shell.tsx";
 
@@ -134,19 +135,19 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
                   >
                     {hour.failed > 0 ? (
                       <span
-                        className="w-full rounded-t-[3px] bg-danger"
+                        className="w-full rounded-t-inner bg-danger"
                         style={{ flexGrow: hour.failed }}
                       />
                     ) : null}
                     {hour.succeeded > 0 ? (
                       <span
-                        className={`w-full bg-success ${hour.failed > 0 ? "" : "rounded-t-[3px]"}`}
+                        className={`w-full bg-success ${hour.failed > 0 ? "" : "rounded-t-inner"}`}
                         style={{ flexGrow: hour.succeeded }}
                       />
                     ) : null}
                   </div>
                 )}
-                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-control border border-line bg-raised px-2 py-1 text-meta shadow-lg group-hover:block">
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-control border border-line bg-raised px-2 py-1 text-meta shadow-overlay group-hover:block">
                   {hourOf(hour.start)} · {hour.succeeded} succeeded · {hour.failed} failed
                 </span>
               </div>
@@ -154,13 +155,13 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
           })}
         </div>
         <div className="flex items-center justify-between text-meta text-ink-subtle">
-          <span>{hourOf(stats.from)}</span>
+          <span data-volatile>{hourOf(stats.from)}</span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
-              <span aria-hidden="true" className="size-2 rounded-[2px] bg-success" /> Succeeded
+              <span aria-hidden="true" className="size-2 rounded-inner bg-success" /> Succeeded
             </span>
             <span className="flex items-center gap-1.5">
-              <span aria-hidden="true" className="size-2 rounded-[2px] bg-danger" /> Failed
+              <span aria-hidden="true" className="size-2 rounded-inner bg-danger" /> Failed
             </span>
           </span>
           <span>now</span>
@@ -191,6 +192,97 @@ function RunsCard({ stats, link }: { stats: RunStats; link: string }) {
 }
 
 /** The first answer to "is this workspace healthy, and what should I do next?". */
+/**
+ * The first steps in a new workspace, from what is there (08 §5.13): a worker
+ * to run code, a first script, its first run, a first deploy. Each is checked
+ * off when it is done, by anyone, and leads to where it is done.
+ */
+function FirstRun({
+  counts,
+  link,
+  tenantLink,
+  managedWorkers,
+  dev,
+}: {
+  counts: WorkspaceCounts;
+  link: string;
+  tenantLink: string;
+  managedWorkers: boolean;
+  dev: boolean;
+}) {
+  const steps = [
+    {
+      key: "worker",
+      done: (counts.workersOnline ?? 0) > 0 || managedWorkers,
+      title: "A worker to run code",
+      detail: managedWorkers
+        ? "The instance starts workers for this tenant when there is work."
+        : "Start a worker with a credential, so scripts have somewhere to run.",
+      to: `${tenantLink}/workers`,
+      action: "Workers",
+    },
+    {
+      key: "script",
+      done: (counts.scripts ?? 0) > 0,
+      title: "A first script",
+      detail: "Write one here, from a starter that runs as it is.",
+      to: dev ? `${link}/scripts/new` : `${link}/scripts`,
+      action: dev ? "New script" : "Scripts",
+    },
+    {
+      key: "run",
+      done: counts.everRan === true,
+      title: "A first run",
+      detail: "Run it from its editor with ⌘↵, or start it from the scripts list.",
+      to: `${link}/scripts`,
+      action: "Scripts",
+    },
+    {
+      key: "deploy",
+      done: counts.version !== null,
+      title: "A first deploy",
+      detail: "Deploying makes what you wrote what runs here, for schedules and webhooks too.",
+      to: `${link}/release`,
+      action: "Releases",
+    },
+  ];
+  const next = steps.find((step) => !step.done);
+  const done = steps.filter((step) => step.done).length;
+  return (
+    <section aria-labelledby="first-steps" className="flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="first-steps" className="m-0 text-title">
+          First steps
+        </h2>
+        <span className="text-meta text-ink-muted">
+          {done} of {steps.length} done
+        </span>
+      </div>
+      <ol className="m-0 flex list-none flex-col gap-2 p-0">
+        {steps.map((step) => (
+          <li key={step.key} className="flex flex-wrap items-start justify-between gap-3">
+            <span className="flex min-w-0 items-start gap-2">
+              <StatePill state={step.done ? "succeeded" : step === next ? "waiting" : "queued"}>
+                <span className={step.done ? "text-ink-muted line-through" : "text-ink"}>
+                  {step.title}
+                </span>
+              </StatePill>
+              {step === next ? (
+                <span className="hidden text-meta text-ink-muted md:inline">{step.detail}</span>
+              ) : null}
+            </span>
+            {step === next ? (
+              <Button size="small" variant="primary" onClick={() => navigate(step.to)}>
+                {step.action}
+              </Button>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export function Overview({
   root,
   link,
@@ -203,9 +295,17 @@ export function Overview({
   workspace: Workspace;
 }) {
   const summary = useLoad<WorkspaceCounts>(`${root}/summary`);
+  const tenantRoot = root.split("/workspaces/")[0] ?? "";
+  const tenant = useLoad<{ managedWorkers?: boolean }>(tenantRoot);
   const triggers = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const stats = useLoad<RunStats>(`${root}/run-stats?hours=24`);
   const counts = summary.data;
+  // A workspace with nothing run or deployed yet is shown its first steps first, and never
+  // "nothing needs you here": everything does.
+  const firstRun =
+    counts !== undefined &&
+    counts.scripts !== undefined &&
+    (counts.everRan === false || counts.version === null);
 
   const attention: { key: string; node: ReactNode }[] = [];
   if (counts) {
@@ -216,7 +316,7 @@ export function Overview({
         node: (
           <NextStep
             tone="danger"
-            icon={<CircleX aria-hidden="true" size={15} />}
+            icon={<CircleX aria-hidden="true" size={16} />}
             title={`${failed} run${failed === 1 ? "" : "s"} failed in the last 24 hours`}
             detail="Open the failed runs to see which step and which log line."
             action={
@@ -233,7 +333,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<GitMerge aria-hidden="true" size={15} />}
+            icon={<GitMerge aria-hidden="true" size={16} />}
             title="The branch and this workspace both changed the same files"
             detail="Choose which version to keep for each file."
             action={
@@ -251,7 +351,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<CirclePause aria-hidden="true" size={15} />}
+            icon={<CirclePause aria-hidden="true" size={16} />}
             title={`${approvals} run${approvals === 1 ? " is" : "s are"} waiting for a person`}
             detail="An approval step pauses a flow until someone decides."
             action={
@@ -272,7 +372,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<Plug aria-hidden="true" size={15} />}
+            icon={<Plug aria-hidden="true" size={16} />}
             title={`${unbound} connection${unbound === 1 ? " has" : "s have"} nothing bound here`}
             detail="A run that reaches it fails until it points somewhere."
             action={
@@ -290,7 +390,7 @@ export function Overview({
         node: (
           <NextStep
             tone="action"
-            icon={<GitCompareArrows aria-hidden="true" size={15} />}
+            icon={<GitCompareArrows aria-hidden="true" size={16} />}
             title={`${drafts} draft${drafts === 1 ? "" : "s"} not deployed`}
             detail="Saved here, and not yet running."
             action={
@@ -307,7 +407,7 @@ export function Overview({
         node: (
           <NextStep
             tone="attention"
-            icon={<CirclePause aria-hidden="true" size={15} />}
+            icon={<CirclePause aria-hidden="true" size={16} />}
             title="Triggers are paused"
             detail={
               workspace.type === "dev"
@@ -335,14 +435,17 @@ export function Overview({
     );
 
   return (
-    <div className="flex flex-col gap-7">
+    <div className="flex flex-col gap-8">
       <PageHeader
+        size="display-lg"
         eyebrow="Overview"
         title={workspace.name}
         meta={
           <>
             <EnvTag type={workspace.type} />
-            {workspace.triggersPaused ? <Tag tone="production">Triggers paused</Tag> : null}
+            {workspace.triggersPaused ? (
+              <StatePill state="paused">Triggers paused</StatePill>
+            ) : null}
             {counts?.version !== null && counts?.version !== undefined ? (
               <span className="text-ink-muted">
                 Running <Mono>v{counts.version}</Mono>
@@ -353,30 +456,43 @@ export function Overview({
         actions={primary}
       />
 
-      {summary.error ? <Notice tone="danger">{summary.error.message}</Notice> : null}
+      {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} /> : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
-          <section className="flex flex-col gap-2.5">
-            <SectionLabel>Needs attention</SectionLabel>
-            <Panel className="divide-y divide-line">
-              {!counts ? (
-                <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
-              ) : attention.length === 0 ? (
-                <NextStep
-                  tone="success"
-                  icon={<CircleCheck aria-hidden="true" size={15} />}
-                  title="Nothing needs you here"
-                  detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
-                />
-              ) : (
-                attention.map((item) => <div key={item.key}>{item.node}</div>)
-              )}
+          {firstRun && counts ? (
+            <Panel>
+              <FirstRun
+                counts={counts}
+                link={link}
+                tenantLink={link.split("/workspaces/")[0] ?? ""}
+                managedWorkers={tenant.data?.managedWorkers === true}
+                dev={workspace.type === "dev"}
+              />
             </Panel>
-          </section>
+          ) : null}
+          {firstRun && attention.length === 0 ? null : (
+            <section className="flex flex-col gap-2">
+              <SectionLabel>Needs attention</SectionLabel>
+              <Panel className="divide-y divide-line">
+                {!counts ? (
+                  <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
+                ) : attention.length === 0 ? (
+                  <NextStep
+                    tone="success"
+                    icon={<CircleCheck aria-hidden="true" size={16} />}
+                    title="Nothing needs you here"
+                    detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
+                  />
+                ) : (
+                  attention.map((item) => <div key={item.key}>{item.node}</div>)
+                )}
+              </Panel>
+            </section>
+          )}
 
           {stats.data ? (
-            <section className="flex flex-col gap-2.5">
+            <section className="flex flex-col gap-2">
               <SectionLabel
                 action={
                   <Link to={`${link}/runs`} className="text-meta">
@@ -391,7 +507,7 @@ export function Overview({
           ) : null}
 
           {counts ? (
-            <section className="flex flex-col gap-2.5">
+            <section className="flex flex-col gap-2">
               <SectionLabel
                 action={
                   <Link to={`${link}/release`} className="text-meta">
@@ -402,7 +518,7 @@ export function Overview({
                 Release
               </SectionLabel>
               <Panel className="flex flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <div className="flex flex-wrap items-center gap-2 text-body-sm">
                   <span className="flex items-center gap-1.5">
                     <Junction kind="pending" />
                     Draft <Mono className="text-action">{counts.drafts ?? "—"}</Mono>
@@ -444,7 +560,7 @@ export function Overview({
           ) : null}
         </div>
 
-        <section className="flex flex-col gap-2.5">
+        <section className="flex flex-col gap-2">
           <SectionLabel
             action={
               <Link to={`${link}/triggers`} className="text-meta">
@@ -455,9 +571,9 @@ export function Overview({
             What starts work here
           </SectionLabel>
           {triggers.error ? (
-            <Notice tone="danger">{triggers.error.message}</Notice>
+            <ErrorState error={triggers.error} onRetry={triggers.reload} />
           ) : !triggers.data ? (
-            <Panel className="px-4 py-3 text-ink-muted">Loading…</Panel>
+            <Loading />
           ) : triggers.data.items.length === 0 ? (
             <EmptyCanvas
               title="Nothing starts by itself yet"
@@ -469,14 +585,9 @@ export function Overview({
                 const Icon = TRIGGER_ICON[trigger.type] ?? Radio;
                 return (
                   <div key={trigger.path} className="flex items-start gap-3 px-4 py-3">
-                    <Icon
-                      aria-hidden="true"
-                      size={15}
-                      strokeWidth={1.75}
-                      className="mt-0.5 shrink-0 text-ink-muted"
-                    />
+                    <Icon aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-ink-muted" />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate font-mono text-telemetry">{trigger.path}</span>
+                      <span className="truncate font-mono text-code">{trigger.path}</span>
                       <span className="truncate text-meta text-ink-subtle">
                         {trigger.type}
                         {(trigger.script ?? trigger.target)

@@ -88,7 +88,7 @@ describe("grid", () => {
         label="Rows"
         columns={columns}
         rows={rows}
-        rowKey={(r) => r.id}
+        rowKey={(r) => String(r.id)}
         empty="None"
         onEdit={onEdit}
       />,
@@ -122,7 +122,7 @@ describe("grid", () => {
         label="Rows"
         columns={columns}
         rows={rows}
-        rowKey={(r) => r.id}
+        rowKey={(r) => String(r.id)}
         empty="None"
         onEdit={onEdit}
       />,
@@ -154,5 +154,84 @@ describe("grid", () => {
     expect(showValue("boolean", false)).toBe("No");
     expect(showValue("json", { a: 1 })).toBe('{"a":1}');
     expect(showValue("number", null)).toBe("");
+  });
+});
+
+describe("grid navigation (the WAI-ARIA grid pattern)", () => {
+  const flush = () => new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  const mount = (more: Partial<Parameters<typeof Grid>[0]> = {}) => {
+    const onEdit = vi.fn(async () => {});
+    const onSort = vi.fn();
+    const onCheck = vi.fn();
+    render(
+      <Grid
+        navigation="grid"
+        label="Rows of orders"
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => String(r.id)}
+        empty="None"
+        onEdit={onEdit}
+        onSort={onSort}
+        checked={new Set<string>()}
+        onCheck={onCheck}
+        {...more}
+      />,
+    );
+    return { onEdit, onSort, onCheck, grid: screen.getByRole("grid", { name: "Rows of orders" }) };
+  };
+
+  test("the grid is one tab stop, and arrow keys move between its cells", async () => {
+    const { grid } = mount();
+    const stops = grid.querySelectorAll('[tabindex="0"]');
+    expect(stops).toHaveLength(1);
+    const first = stops[0] as HTMLElement;
+    expect(first.textContent).toBe("First");
+    first.focus();
+    fireEvent.keyDown(first, { key: "ArrowRight" });
+    await flush();
+    expect(document.activeElement?.textContent).toBe("10");
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
+    await flush();
+    expect(document.activeElement?.textContent).toBe("empty");
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Home" });
+    await flush();
+    expect(document.activeElement?.querySelector("input[type=checkbox]")).toBeTruthy();
+    // Still one tab stop, wherever focus has gone.
+    expect(grid.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+  });
+
+  test("Enter edits a cell, Escape puts back what was there and keeps focus on it", async () => {
+    const { grid, onEdit } = mount();
+    const cell = grid.querySelector('[tabindex="0"]') as HTMLElement;
+    cell.focus();
+    fireEvent.keyDown(cell, { key: "Enter" });
+    const input = (await screen.findByRole("textbox", { name: "title" })) as HTMLInputElement;
+    expect(input.value).toBe("First");
+    fireEvent.change(input, { target: { value: "Changed" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    await flush();
+    expect(screen.queryByRole("textbox", { name: "title" })).toBeNull();
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(document.activeElement?.textContent).toBe("First");
+    // F2 edits too, and Enter in the field saves.
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "F2" });
+    const again = (await screen.findByRole("textbox", { name: "title" })) as HTMLInputElement;
+    fireEvent.change(again, { target: { value: "Renamed" } });
+    fireEvent.keyDown(again, { key: "Enter" });
+    fireEvent.blur(again);
+    await waitFor(() => expect(onEdit).toHaveBeenCalledWith(rows[0], "title", "Renamed"));
+  });
+
+  test("Space checks a row, and Enter on a heading sorts by it", async () => {
+    const { grid, onCheck, onSort } = mount();
+    const cell = grid.querySelector('[tabindex="0"]') as HTMLElement;
+    cell.focus();
+    fireEvent.keyDown(cell, { key: " " });
+    expect(onCheck).toHaveBeenCalledWith(new Set(["a"]));
+    fireEvent.keyDown(cell, { key: "ArrowUp" });
+    await flush();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter" });
+    expect(onSort).toHaveBeenCalledWith("title");
   });
 });

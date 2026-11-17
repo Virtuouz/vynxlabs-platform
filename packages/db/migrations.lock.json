@@ -61,5 +61,7 @@
   "0060_instance_control.sql": "97dbf0d270d3257a6ec5e2129bc242c0713850837f53fcb466af81b0691eed4e",
   "0061_clone_queued.sql": "c96c47cf3414f64ec5cb1101c6040182cd098479f48fa2fa219b18a0e8208310",
   "0062_run_output_summary.sql": "75ced1b8f0446d945cf8bfff35853fad2410b3492ae17fce18ea24a7f46ffe9c",
-  "0063_workspace_time_zone.sql": "7259e2266cdff21b816620a0d62dddbd7be6450a2d6d28ed1b4d660c51713343"
+  "0063_workspace_time_zone.sql": "7259e2266cdff21b816620a0d62dddbd7be6450a2d6d28ed1b4d660c51713343",
+  "0064_credential_set.sql": "61bf87f37f966caaa593925b1e3465bc9306743afe1f1c9ad2f1ca6e38c64e8a",
+  "0065_audit_search.sql": "9689f79056ba8012caa7f12565dea81c559fb3e31deed8032050303a699b9942"
 }

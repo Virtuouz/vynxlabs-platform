@@ -694,6 +694,22 @@ describe("secrets", () => {
     ).toThrow();
   });
 
+  test("a new secret refuses a name in use, so a mistyped name is never a quiet replacement", async () => {
+    const made = await bob.client.post(base(), { name: "TWILIO_TOKEN", value: "first" });
+    expect(made.status).toBe(201);
+    const again = await bob.client.post(base(), { name: "TWILIO_TOKEN", value: "second" });
+    expect(again.status).toBe(409);
+    expect(again.body.detail).toMatch(/already here/);
+    const id = { tenantId: acme, workspaceId: dev, name: "TWILIO_TOKEN" };
+    expect(await revealSecret(t.db, t.kernel.vault, id)).toBe("first");
+    // Who set it is listed beside when.
+    const listed = (await bob.client.get(base())).body.items.find(
+      (one: { name: string }) => one.name === "TWILIO_TOKEN",
+    );
+    expect(listed.updatedBy).toBeTruthy();
+    await bob.client.delete(`${base()}/TWILIO_TOKEN`);
+  });
+
   test("a secret can be deleted", async () => {
     await bob.client.put(`${base()}/TEMPORARY`, { value: "x" });
     expect((await bob.client.delete(`${base()}/TEMPORARY`)).status).toBe(204);
@@ -1053,7 +1069,7 @@ describe("the write path", () => {
     // Pausing every trigger in the instance is exercised in trigger-limits.test.ts.
     // Trying an agent's tool is exercised in mcp.test.ts.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim|branding|trigger-pauses|draft-history|data-source-checks|references|recent|worker-pools|recovery-codes|retention|connection-tests|worker-host|schedule-firings|recent-items|alert-tests|tool-calls|connection-oauth|oauth|promotion-requests|approval-links|triggers)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|row-deletions|rows-export|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim|branding|trigger-pauses|draft-history|data-source-checks|references|recent|worker-pools|recovery-codes|retention|connection-tests|worker-host|schedule-firings|recent-items|alert-tests|tool-calls|connection-oauth|oauth|promotion-requests|approval-links|triggers)(\/|$)/;
     // Deleting a workspace is exercised in environments.test.ts.
     expect(
       t.unexercised(
@@ -1103,5 +1119,90 @@ describe("reading the audit log", () => {
       (await alice.client.get(`/tenants/${acme}/audit?limit=200&to=${encodeURIComponent(later)}`))
         .body.items.length,
     ).toBe(all.length);
+  });
+
+  test("it is searched on the server, by kind of target, workspace and text, and names targets", async () => {
+    const base = `/tenants/${acme}/audit`;
+    const ofMembers = (await alice.client.get(`${base}?limit=200&targetType=member`)).body
+      .items as { targetType: string; targetId: string; targetLabel: string | null }[];
+    expect(ofMembers.length).toBeGreaterThan(0);
+    expect(ofMembers.every((entry) => entry.targetType === "member")).toBe(true);
+    // A member that is the target is named by their email.
+    expect(ofMembers.some((entry) => entry.targetLabel?.includes("@"))).toBe(true);
+    const inDev = (await alice.client.get(`${base}?limit=200&workspaceId=${dev}`)).body.items as {
+      workspaceId: string;
+    }[];
+    expect(inDev.length).toBeGreaterThan(0);
+    expect(inDev.every((entry) => entry.workspaceId === dev)).toBe(true);
+    const found = (await alice.client.get(`${base}?limit=200&q=secret`)).body.items as {
+      action: string;
+      targetType: string;
+      targetId: string;
+    }[];
+    expect(found.length).toBeGreaterThan(0);
+    // A wildcard in the text is looked for, not used.
+    expect((await alice.client.get(`${base}?q=%25%25%25`)).body.items).toEqual([]);
+
+    // One entry by its ID, for a link to it.
+    const one = found[0] as { id?: string };
+    const linked = await alice.client.get(`${base}/${(found[0] as unknown as { id: string }).id}`);
+    expect(linked.status).toBe(200);
+    expect(linked.body.id).toBe(one.id);
+    expect((await alice.client.get(`${base}/01a1e798-0000-7000-8000-000000000000`)).status).toBe(
+      404,
+    );
+
+    // What the log holds, to narrow it by.
+    const facets = (await alice.client.get(`/tenants/${acme}/audit-facets`)).body;
+    expect(facets.actions.some((one: { value: string }) => one.value.startsWith("secret."))).toBe(
+      true,
+    );
+    expect(
+      facets.actors.some((one: { id: string; label: string }) => one.id === alice.id && one.label),
+    ).toBe(true);
+    expect(facets.targetTypes.length).toBeGreaterThan(0);
+
+    // The same, as a file.
+    const csv = await alice.client.get(`/tenants/${acme}/audit-export?targetType=member`);
+    expect(csv.status).toBe(200);
+    expect(csv.headers["content-type"]).toContain("text/csv");
+    const lines = String(csv.body).trim().split("\r\n");
+    expect(lines[0]).toMatch(/^occurredAt,action,/);
+    expect(lines.length).toBe(ofMembers.length + 1);
+  });
+
+  test("who can be given access is found by name, and a member is added with their access in one change", async () => {
+    const found = (await alice.client.get(`/tenants/${acme}/principals?q=bob`)).body.items as {
+      type: string;
+      label: string;
+    }[];
+    expect(found.some((one) => one.type === "member" && one.label.startsWith("bob"))).toBe(true);
+    const roles = (await alice.client.get(`/tenants/${acme}/roles?limit=200`)).body.items as {
+      id: string;
+      name: string;
+    }[];
+    const viewer = roles.find((role) => role.name === "workspace_viewer") ?? roles[0];
+    const added = await alice.client.post(`/tenants/${acme}/members`, {
+      email: "dora@acme.example",
+      name: "Dora",
+      password: "a-good-long-password",
+      bindings: [{ roleId: viewer?.id, workspaceId: dev }],
+    });
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+    const held = (await alice.client.get(`/tenants/${acme}/bindings?workspaceId=${dev}`)).body
+      .items as { principalId: string; roleName: string }[];
+    expect(held.some((one) => one.principalId === added.body.id)).toBe(true);
+    // A role that cannot be held there undoes the whole change: no member without the access.
+    const refused = await alice.client.post(`/tenants/${acme}/members`, {
+      email: "eve@acme.example",
+      name: "Eve",
+      password: "a-good-long-password",
+      bindings: [{ roleId: "01a1e798-0000-7000-8000-000000000000" }],
+    });
+    expect(refused.status).toBe(400);
+    const listed = (await alice.client.get(`/tenants/${acme}/members?limit=200`)).body.items as {
+      email: string;
+    }[];
+    expect(listed.some((one) => one.email === "eve@acme.example")).toBe(false);
   });
 });

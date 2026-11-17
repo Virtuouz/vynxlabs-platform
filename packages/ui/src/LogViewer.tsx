@@ -113,7 +113,7 @@ function marked(text: string, needle: string, current: boolean): ReactNode {
     parts.push(
       <mark
         key={at}
-        className={`rounded-[2px] text-ink ${current ? "bg-attention" : "bg-attention-soft"}`}
+        className={`rounded-inner text-ink ${current ? "bg-attention" : "bg-attention-soft"}`}
       >
         {text.slice(at, at + needle.length)}
       </mark>,
@@ -327,14 +327,14 @@ export function LogViewer({
     }
   };
 
-  const control = "h-7 rounded-control border border-line-control bg-surface px-2 text-[13px]";
+  const control = "h-7 rounded-control border border-line-control bg-surface px-2 text-body-sm";
   const toggle = (on: boolean) =>
     `${control} ${on ? "border-action bg-action-soft text-action" : "text-ink-muted hover:text-ink"}`;
 
   const drawRow = (row: Row, index: number) => {
     if (row.kind === "attempt") {
       return (
-        <div className="my-1 flex items-center gap-2 font-sans text-[12px] text-ink-muted">
+        <div className="my-1 flex items-center gap-2 font-sans text-meta text-ink-muted">
           <span className="h-px flex-1 bg-line" />
           Attempt {row.attempt}
           <span className="h-px flex-1 bg-line" />
@@ -348,7 +348,7 @@ export function LogViewer({
     const here = marked_ === number;
     return (
       <div
-        className={`group flex gap-3 rounded-[2px] ${wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"} ${
+        className={`group flex gap-3 rounded-inner ${wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"} ${
           LEVEL[line.level] ?? ""
         } ${here ? "bg-action-soft" : ""}`}
       >
@@ -382,7 +382,7 @@ export function LogViewer({
                 {expanded ? "▾" : "▸"}
               </button>
               {expanded ? (
-                <span className="mt-0.5 block rounded-[4px] bg-surface px-2 py-1 whitespace-pre text-ink-muted">
+                <span className="mt-0.5 block rounded-inner bg-surface px-2 py-1 whitespace-pre text-ink-muted">
                   {JSON.stringify(line.fields, null, 2)}
                 </span>
               ) : (
@@ -399,7 +399,7 @@ export function LogViewer({
               setSaid(ok ? `Line ${number} copied.` : "The clipboard could not be reached."),
             )
           }
-          className="shrink-0 font-sans text-[12px] text-ink-subtle opacity-0 group-hover:opacity-100 focus:opacity-100"
+          className="shrink-0 font-sans text-meta text-ink-subtle opacity-0 group-hover:opacity-100 focus:opacity-100"
         >
           Copy
         </button>
@@ -436,7 +436,7 @@ export function LogViewer({
         />
         {needle ? (
           <>
-            <span className="text-[12px] text-ink-muted tabular-nums">
+            <span className="text-meta text-ink-muted tabular-nums">
               {found.length === 0
                 ? "No match"
                 : `${current + 1} of ${found.length} ${found.length === 1 ? "match" : "matches"}`}
@@ -525,7 +525,7 @@ export function LogViewer({
         >
           Download
         </button>
-        <span className="text-[12px] text-ink-muted" aria-live="polite">
+        <span className="text-meta text-ink-muted" aria-live="polite">
           {shown.length === lines.length
             ? `${lines.length} ${lines.length === 1 ? "line" : "lines"}`
             : `${shown.length} of ${lines.length} lines`}
@@ -547,7 +547,7 @@ export function LogViewer({
             tabIndex={0}
             onScroll={onScroll}
             style={fill ? undefined : { maxHeight }}
-            className={`overflow-auto rounded-control border border-line bg-sunken p-3 font-mono text-[12.5px] leading-relaxed ${
+            className={`overflow-auto rounded-control border border-line bg-sunken p-3 font-mono text-code-sm leading-relaxed ${
               fill ? "min-h-64 flex-1" : ""
             }`}
           >
@@ -587,7 +587,7 @@ export function LogViewer({
             <button
               type="button"
               onClick={() => setFollow(true)}
-              className="absolute right-4 bottom-3 rounded-control border border-line bg-surface px-2.5 py-1 font-sans text-[13px] shadow-md hover:bg-sunken"
+              className="absolute right-4 bottom-3 rounded-control border border-line bg-surface px-3 py-1 font-sans text-body-sm shadow-overlay hover:bg-sunken"
             >
               Jump to latest ↓
             </button>

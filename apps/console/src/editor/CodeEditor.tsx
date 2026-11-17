@@ -216,7 +216,7 @@ export function CodeEditor({
           readOnly={readOnly || state === "loading"}
           spellCheck={false}
           onChange={(event) => onChange?.(event.currentTarget.value)}
-          className="size-full resize-none bg-transparent p-3 font-mono text-[13px] text-ink outline-none"
+          className="size-full resize-none bg-transparent p-3 font-mono text-code text-ink outline-none"
         />
       )}
       <div ref={host} className={state === "ready" ? "size-full" : "hidden"} />

@@ -259,7 +259,7 @@ function WidgetView({
   if (widget.type === "action") {
     if (!widget.action) return null;
     if (!actions.canStart(widget.action)) {
-      return <p className="m-0 text-[13px] text-ink-muted">You may not do this here.</p>;
+      return <p className="m-0 text-body-sm text-ink-muted">You may not do this here.</p>;
     }
     return <ActionButton action={widget.action} scope={scope} actions={actions} />;
   }
@@ -422,12 +422,12 @@ function WidgetView({
       <div className="flex h-full flex-col justify-center gap-1">
         {/* The widget's heading names it. Without one, the total's own name does. */}
         {widget.title ? null : (
-          <span className="text-[13px] text-ink-muted">{heading(first?.as ?? "total")}</span>
+          <span className="text-body-sm text-ink-muted">{heading(first?.as ?? "total")}</span>
         )}
         <span className="font-mono text-3xl font-semibold tabular-nums">
           {data.loading && data.rows.length === 0 ? "…" : shown}
         </span>
-        {data.error ? <span className="text-[13px] text-danger">{data.error}</span> : null}
+        {data.error ? <span className="text-body-sm text-danger">{data.error}</span> : null}
       </div>
     );
   }
@@ -626,7 +626,7 @@ function ValueFilter({
 
   if (choices === null) {
     return (
-      <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+      <label className="flex flex-col gap-1 text-body-sm text-ink-muted">
         {label}
         <input
           className={className}
@@ -638,7 +638,7 @@ function ValueFilter({
     );
   }
   return (
-    <label className="flex flex-col gap-1 text-[13px] text-ink-muted">
+    <label className="flex flex-col gap-1 text-body-sm text-ink-muted">
       {label}
       <select
         className={`${className} min-w-32`}
@@ -692,7 +692,7 @@ function PageFilters({
         const set = values[one.id] ?? {};
         return one.type === "date" ? (
           <fieldset key={one.id} className="m-0 flex items-end gap-1.5 border-0 p-0">
-            <legend className="mb-1 p-0 text-[13px] text-ink-muted">{one.label}</legend>
+            <legend className="mb-1 p-0 text-body-sm text-ink-muted">{one.label}</legend>
             <input
               type="date"
               aria-label={`${one.label} from`}
@@ -851,87 +851,141 @@ function PageBody({
         />
       ) : null}
       {actions.shown}
-      <div ref={grid} className="grid grid-cols-1 gap-3 md:auto-rows-[2.5rem] md:grid-cols-12">
-        {ordered.map((widget) => {
-          const source = widget.link ? byId.get(widget.link.from) : undefined;
-          const active = editing?.selected === widget.id;
-          const at = held?.id === widget.id ? held.at : widget.at;
-          return (
-            <section
-              key={widget.id}
-              aria-label={widget.title || widget.id}
-              style={
-                {
-                  "--col": `${at.x + 1} / span ${at.w}`,
-                  "--row": `${at.y + 1} / span ${at.h}`,
-                } as CSSProperties
-              }
-              className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface md:min-h-0 md:[grid-column:var(--col)] md:[grid-row:var(--row)] ${
-                active ? "border-action ring-2 ring-action/30" : "border-line"
-              } ${held?.id === widget.id ? "z-10 opacity-90 shadow-lg" : ""}`}
-            >
-              {widget.title || editing ? (
-                <header
-                  className={`flex items-center justify-between gap-2 border-line border-b px-3 py-2 ${
-                    movable ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
-                  }`}
-                  {...(movable
-                    ? {
-                        title: "Drag to move",
-                        onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
-                          grab(event, widget, "move"),
-                      }
-                    : {})}
+      {/*
+        The page lays itself out by the room it is given, not by the window's width: an app
+        served full-width and a preview drawn at a phone's width both get the layout of their size.
+      */}
+      <div className="@container">
+        <div
+          ref={grid}
+          className="grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12"
+        >
+          {ordered.map((widget) => {
+            const source = widget.link ? byId.get(widget.link.from) : undefined;
+            const active = editing?.selected === widget.id;
+            const at = held?.id === widget.id ? held.at : widget.at;
+            return (
+              <section
+                key={widget.id}
+                aria-label={widget.title || widget.id}
+                style={
+                  {
+                    "--col": `${at.x + 1} / span ${at.w}`,
+                    "--row": `${at.y + 1} / span ${at.h}`,
+                  } as CSSProperties
+                }
+                className={`relative flex min-h-40 min-w-0 flex-col rounded-panel border bg-surface @2xl:min-h-0 @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
+                  active ? "border-action ring-2 ring-action/30" : "border-line"
+                } ${held?.id === widget.id ? "z-10 opacity-90 shadow-overlay" : ""}`}
+              >
+                {widget.title || editing ? (
+                  <header
+                    className={`flex items-center justify-between gap-2 border-line border-b px-3 py-2 ${
+                      movable ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
+                    }`}
+                    {...(movable
+                      ? {
+                          title: "Drag to move",
+                          onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
+                            grab(event, widget, "move"),
+                        }
+                      : {})}
+                  >
+                    <h2 className="m-0 truncate text-body font-semibold">
+                      {widget.title || heading(widget.id)}
+                    </h2>
+                    {editing ? (
+                      <Button
+                        size="small"
+                        variant={active ? "primary" : "quiet"}
+                        onClick={() => editing.onSelect(widget.id)}
+                        // Moving and resizing without a pointer: arrow keys move the chosen
+                        // widget a cell at a time; with Shift they change its size.
+                        {...(active && editing.onMove
+                          ? {
+                              "aria-keyshortcuts": "ArrowLeft ArrowRight ArrowUp ArrowDown",
+                              title: "Arrow keys move it. Shift and arrow keys change its size.",
+                              onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+                                const step: Record<string, [number, number]> = {
+                                  ArrowLeft: [-1, 0],
+                                  ArrowRight: [1, 0],
+                                  ArrowUp: [0, -1],
+                                  ArrowDown: [0, 1],
+                                };
+                                const by = step[event.key];
+                                if (!by || !editing.onMove) return;
+                                event.preventDefault();
+                                const [dx, dy] = by;
+                                const at = widget.at;
+                                const next = event.shiftKey
+                                  ? {
+                                      ...at,
+                                      w: Math.min(12 - at.x, Math.max(1, at.w + dx)),
+                                      h: Math.min(40, Math.max(1, at.h + dy)),
+                                    }
+                                  : {
+                                      ...at,
+                                      x: Math.min(12 - at.w, Math.max(0, at.x + dx)),
+                                      y: Math.min(199, Math.max(0, at.y + dy)),
+                                    };
+                                if (
+                                  next.x !== at.x ||
+                                  next.y !== at.y ||
+                                  next.w !== at.w ||
+                                  next.h !== at.h
+                                ) {
+                                  editing.onMove(widget.id, next);
+                                }
+                              },
+                            }
+                          : {})}
+                      >
+                        {active ? "Editing" : "Edit"}
+                      </Button>
+                    ) : null}
+                  </header>
+                ) : null}
+                {movable ? (
+                  <span
+                    aria-hidden="true"
+                    title="Drag to change its size"
+                    className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 @2xl:block"
+                    onPointerDown={(event) => grab(event, widget, "stretch")}
+                  />
+                ) : null}
+                {/* A body that scrolls can be reached and scrolled by keyboard too. */}
+                <div
+                  // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus
+                  tabIndex={0}
+                  className="min-h-0 flex-1 overflow-auto p-3 outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
                 >
-                  <h2 className="m-0 truncate text-[14px] font-semibold">
-                    {widget.title || heading(widget.id)}
-                  </h2>
-                  {editing ? (
-                    <Button
-                      size="small"
-                      variant={active ? "primary" : "quiet"}
-                      onClick={() => editing.onSelect(widget.id)}
-                    >
-                      {active ? "Editing" : "Edit"}
-                    </Button>
-                  ) : null}
-                </header>
-              ) : null}
-              {movable ? (
-                <span
-                  aria-hidden="true"
-                  title="Drag to change its size"
-                  className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 md:block"
-                  onPointerDown={(event) => grab(event, widget, "stretch")}
-                />
-              ) : null}
-              <div className="min-h-0 flex-1 overflow-auto p-3">
-                <WidgetView
-                  widget={widget}
-                  source={source}
-                  chosen={source ? chosen[source.id] : undefined}
-                  info={widget.table ? tables[widget.table] : undefined}
-                  tables={tables}
-                  client={client}
-                  version={version}
-                  lookups={lookups}
-                  selected={chosen[widget.id]}
-                  followed={followed.has(widget.id)}
-                  onSelect={(row) => setChosen((before) => ({ ...before, [widget.id]: row }))}
-                  onChanged={changed}
-                  onLooked={looked}
-                  scope={scope}
-                  actions={actions}
-                  narrowed={pageNarrowing(
-                    page,
-                    narrow,
-                    widget.table ? tables[widget.table] : undefined,
-                  )}
-                />
-              </div>
-            </section>
-          );
-        })}
+                  <WidgetView
+                    widget={widget}
+                    source={source}
+                    chosen={source ? chosen[source.id] : undefined}
+                    info={widget.table ? tables[widget.table] : undefined}
+                    tables={tables}
+                    client={client}
+                    version={version}
+                    lookups={lookups}
+                    selected={chosen[widget.id]}
+                    followed={followed.has(widget.id)}
+                    onSelect={(row) => setChosen((before) => ({ ...before, [widget.id]: row }))}
+                    onChanged={changed}
+                    onLooked={looked}
+                    scope={scope}
+                    actions={actions}
+                    narrowed={pageNarrowing(
+                      page,
+                      narrow,
+                      widget.table ? tables[widget.table] : undefined,
+                    )}
+                  />
+                </div>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </>
   );

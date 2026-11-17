@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { ErrorState } from "../kit/LoadState.tsx";
 import { Mono } from "../kit/status.tsx";
 import { CreateDialog, RemoveButton, when } from "../ListScreen.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
@@ -66,6 +67,7 @@ function MembersDialog({
             setProblem(undefined);
             try {
               await api.put(`${path}/members/${adding}`);
+              notify.success("Added to the group.");
               setAdding(undefined);
               detail.reload();
             } catch (error) {
@@ -89,12 +91,12 @@ function MembersDialog({
               onChange={setAdding}
             />
           </div>
-          <Button type="submit" variant="primary" disabled={busy || !adding}>
+          <Button type="submit" variant="primary" loading={busy} disabled={!adding}>
             Add
           </Button>
         </form>
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {detail.error ? <Notice tone="danger">{detail.error.message}</Notice> : null}
+        {detail.error ? <ErrorState error={detail.error} onRetry={detail.reload} /> : null}
         {members.length === 0 ? (
           <EmptyState title={detail.loading ? "Loading…" : "Nobody is in this group yet"} />
         ) : (
@@ -107,9 +109,7 @@ function MembersDialog({
                 <span className="min-w-0">
                   <span className="block truncate">{person.email}</span>
                   {person.name ? (
-                    <span className="block truncate text-[12.5px] text-ink-muted">
-                      {person.name}
-                    </span>
+                    <span className="block truncate text-meta text-ink-muted">{person.name}</span>
                   ) : null}
                 </span>
                 <Button
@@ -117,7 +117,10 @@ function MembersDialog({
                   variant="danger"
                   aria-label={`Take ${person.email} out`}
                   onClick={() =>
-                    api.delete(`${path}/members/${person.id}`).then(detail.reload, notify.error)
+                    api.delete(`${path}/members/${person.id}`).then(() => {
+                      notify.success(`${person.email} is out of the group.`);
+                      detail.reload();
+                    }, notify.error)
                   }
                 >
                   Take out
@@ -154,7 +157,8 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
         toolbar={toolbarOf(framed)}
         label="Groups"
         rows={groups.data?.items}
-        error={groups.error?.message}
+        error={groups.error}
+        onRetry={groups.reload}
         rowKey={(row) => row.id}
         columns={[
           { header: "Name", cell: (row) => <span className="font-medium">{row.name}</span> },
@@ -233,7 +237,8 @@ export function EndUserGroups({ base }: { base: string }) {
         }
         label="End-user groups"
         rows={groups.data?.items}
-        error={groups.error?.message}
+        error={groups.error}
+        onRetry={groups.reload}
         rowKey={(row) => row.id}
         columns={[
           { header: "Name", cell: (row) => <Mono>{row.name}</Mono> },
@@ -245,7 +250,7 @@ export function EndUserGroups({ base }: { base: string }) {
           {
             header: "People",
             align: "end",
-            cell: (row) => <span className="font-mono text-telemetry">{row.memberCount}</span>,
+            cell: (row) => <span className="font-mono text-code">{row.memberCount}</span>,
           },
           {
             header: "",
@@ -392,13 +397,13 @@ export function AttributesDialog({
             Add an attribute
           </Button>
         </div>
-        <p className="m-0 text-[13px] text-ink-muted">
+        <p className="m-0 text-body-sm text-ink-muted">
           Names are lowercase letters, digits and underscores.
         </p>
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             Save
           </Button>
         </div>

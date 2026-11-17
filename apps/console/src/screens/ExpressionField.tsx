@@ -108,7 +108,7 @@ export function ExpressionField({
 
 function Preview({ answer, condition }: { answer: Answer | undefined; condition: boolean }) {
   if (!answer) return null;
-  const line = "m-0 min-w-0 break-words font-mono text-[12px]";
+  const line = "m-0 min-w-0 break-words font-mono text-code-sm";
   if (answer.error) {
     return (
       <p className={`${line} text-danger`} role="status">
@@ -118,7 +118,7 @@ function Preview({ answer, condition }: { answer: Answer | undefined; condition:
   }
   if (!("value" in answer)) {
     return answer.note ? (
-      <p className="m-0 text-[12px] text-ink-subtle" role="status">
+      <p className="m-0 text-meta text-ink-subtle" role="status">
         {answer.note}
       </p>
     ) : null;

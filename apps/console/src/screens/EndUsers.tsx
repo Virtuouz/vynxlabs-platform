@@ -1,7 +1,7 @@
 import { Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask } from "../ask.tsx";
+import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -39,9 +39,9 @@ const failed = (error: unknown) => {
 };
 
 function Status({ user }: { user: EndUser }) {
-  if (user.disabled) return <StatePill state="failed">Disabled</StatePill>;
-  if (!user.hasPassword) return <StatePill state="waiting">Invited</StatePill>;
-  return <StatePill state="ok">Active</StatePill>;
+  if (user.disabled) return <StatePill state="disabled" />;
+  if (!user.hasPassword) return <StatePill state="invited" />;
+  return <StatePill state="active" />;
 }
 
 /** The one time a sign-in link is shown: whoever holds it chooses the account's password. */
@@ -63,7 +63,7 @@ function LinkDialog({ link, onClose }: { link: ShownLink | undefined; onClose: (
       {link ? (
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2 rounded-control border border-line bg-sunken p-3">
-            <code className="font-mono text-[13px] break-all select-all">{link.url}</code>
+            <code className="font-mono text-code break-all select-all">{link.url}</code>
             <div>
               <CopyButton value={link.url} label="Copy link" />
             </div>
@@ -135,11 +135,19 @@ export function EndUsers({ base }: { base: string }) {
     user.disabled
       ? {
           label: "Enable",
-          onSelect: () => act(() => api.patch(`${base}/end-users/${user.id}`, { disabled: false })),
+          onSelect: () =>
+            act(async () => {
+              await api.patch(`${base}/end-users/${user.id}`, { disabled: false });
+              notify.success(`${user.email} can sign in again.`);
+            }),
         }
       : {
           label: "Disable",
-          onSelect: () => act(() => api.patch(`${base}/end-users/${user.id}`, { disabled: true })),
+          onSelect: () =>
+            act(async () => {
+              await api.patch(`${base}/end-users/${user.id}`, { disabled: true });
+              notify.success(`${user.email} can no longer sign in.`);
+            }),
         },
     {
       label: "Delete",
@@ -198,7 +206,6 @@ export function EndUsers({ base }: { base: string }) {
                   label="Search by email or name"
                   name="search"
                   value={search}
-                  required={false}
                   onChange={(value) => {
                     setSearch(value);
                     setTrail([null]);
@@ -212,7 +219,8 @@ export function EndUsers({ base }: { base: string }) {
         }
         label="End users"
         rows={page.data ? rows : undefined}
-        error={page.error?.message}
+        error={page.error}
+        onRetry={page.reload}
         rowKey={(row) => row.id}
         selected={selected}
         onSelect={(row) => setSelected(row.id)}

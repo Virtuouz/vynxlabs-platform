@@ -39,14 +39,14 @@ export function Menu({ label, items, ariaLabel, triggerClassName, align = "start
         {label}
       </Base.Trigger>
       <Base.Portal>
-        <Base.Positioner sideOffset={6} align={align} className="z-[70]">
-          <Base.Popup className="max-h-[70vh] min-w-44 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-lg">
+        <Base.Positioner sideOffset={6} align={align} className="layer-popover">
+          <Base.Popup className="max-h-[70vh] min-w-44 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0">
             {items.map((item) => (
               <div key={item.label}>
                 {item.separated ? <Base.Separator className="my-1 h-px bg-line" /> : null}
                 <Base.Item
                   onClick={item.onSelect}
-                  className={`flex cursor-default items-center gap-2 rounded-[4px] px-2.5 py-1.5 data-[highlighted]:bg-action-soft ${
+                  className={`flex cursor-default items-center gap-2 rounded-inner px-3 py-1.5 data-[highlighted]:bg-action-soft ${
                     item.danger ? "text-danger data-[highlighted]:bg-danger-soft" : ""
                   } ${item.current ? "font-medium" : ""}`}
                 >

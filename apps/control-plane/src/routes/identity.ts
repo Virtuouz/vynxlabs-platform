@@ -161,6 +161,9 @@ export const AuditEntry = Type.Object({
   ipAddress: NullableString,
   userAgent: NullableString,
   requestId: NullableString,
+  targetLabel: Type.Union([Type.String(), Type.Null()], {
+    description: "What the target is called now, when it has a name: an email, a workspace's name.",
+  }),
 });
 export const AuditQuery = Type.Object({
   ...PageQuery.properties,
@@ -177,29 +180,47 @@ export const AuditQuery = Type.Object({
   target: Type.Optional(
     Type.String({ maxLength: 255, description: "Only entries about the thing with this ID." }),
   ),
+  targetType: Type.Optional(
+    Type.String({
+      pattern: "^[a-z][a-z0-9_]*$",
+      maxLength: 63,
+      description: "Only entries about this kind of thing: `member`, `secret`, `workspace`.",
+    }),
+  ),
+  workspaceId: Type.Optional(
+    Type.String({ format: "uuid", description: "Only what happened in this workspace." }),
+  ),
+  q: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 200,
+      description: "Entries whose action, target or kind of target holds this text.",
+    }),
+  ),
   from: Type.Optional(
     Type.String({ format: "date-time", description: "Nothing older than this." }),
   ),
   to: Type.Optional(Type.String({ format: "date-time", description: "Nothing newer than this." })),
 });
 
-/** A page of audit entries, newest first. `tenantId` null selects instance-level entries. */
-export async function auditPage(
-  kernel: Kernel,
-  tenantId: string | null,
-  query: {
-    limit?: number;
-    cursor?: string;
-    action?: string;
-    area?: string;
-    actorId?: string;
-    target?: string;
-    from?: string;
-    to?: string;
-  },
-) {
-  const args = pageArgs(query);
-  let select = kernel.db.selectFrom("audit_entry").selectAll();
+export interface AuditFilters {
+  action?: string;
+  area?: string;
+  actorId?: string;
+  target?: string;
+  targetType?: string;
+  workspaceId?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+}
+
+/**
+ * The entries a tenant's log holds for `filters`, kept to what its retention
+ * keeps: one query, shared by the page, the facets and the export.
+ */
+async function auditSelect(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
+  let select = kernel.db.selectFrom("audit_entry");
   select =
     tenantId === null
       ? select.where("tenant_id", "is", null)
@@ -209,71 +230,212 @@ export async function auditPage(
   if (query.area) select = select.where("action", "like", `${query.area}.%`);
   if (query.actorId) select = select.where("actor_id", "=", query.actorId);
   if (query.target) select = select.where("target_id", "=", query.target);
+  if (query.targetType) select = select.where("target_type", "=", query.targetType);
+  if (query.workspaceId) select = select.where("workspace_id", "=", query.workspaceId);
+  if (query.q) {
+    const like = `%${query.q.replace(/[\\%_]/g, "\\$&")}%`;
+    select = select.where((eb) =>
+      eb.or([
+        eb("action", "ilike", like),
+        eb("target_id", "ilike", like),
+        eb("target_type", "ilike", like),
+      ]),
+    );
+  }
   if (query.from) select = select.where("occurred_at", ">=", new Date(query.from));
   if (query.to) select = select.where("occurred_at", "<=", new Date(query.to));
-  if (args.after) select = select.where("id", "<", args.after);
   // Nothing older than the tenant keeps its log, even while the month it is in is kept for others.
   const keepDays =
     tenantId === null
       ? kernel.config.retention.auditDays
       : (await effectivePolicy(kernel, tenantId)).auditDays;
-  select = select.where("occurred_at", ">=", sql<Date>`now() - make_interval(days => ${keepDays})`);
+  return select.where("occurred_at", ">=", sql<Date>`now() - make_interval(days => ${keepDays})`);
+}
+
+/** Where a kind of target is named, for those that have a name: its table and that column. */
+const TARGET_NAMES: Record<string, { table: string; column: string }> = {
+  member: { table: "member", column: "email" },
+  workspace: { table: "workspace", column: "name" },
+  tenant: { table: "tenant", column: "name" },
+  end_user: { table: "end_user", column: "email" },
+  service_account: { table: "service_account", column: "name" },
+  group: { table: "principal_group", column: "name" },
+  end_user_group: { table: "end_user_group", column: "name" },
+  role: { table: "role", column: "name" },
+  identity_provider: { table: "identity_provider", column: "name" },
+  app_domain: { table: "app_domain", column: "hostname" },
+};
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What each entry's actor and target are called now: a member's email, a
+ * service account's name, a workspace's name. One query a kind.
+ */
+async function auditNames(
+  kernel: Kernel,
+  rows: {
+    actor_type: string;
+    actor_id: string | null;
+    target_type: string;
+    target_id: string | null;
+  }[],
+) {
+  const names = new Map<string, string>();
+  const want = new Map<string, Set<string>>();
+  const add = (type: string, id: string | null) => {
+    if (!id || !UUID.test(id) || !TARGET_NAMES[type]) return;
+    if (!want.has(type)) want.set(type, new Set());
+    want.get(type)?.add(id);
+  };
+  for (const row of rows) {
+    add(row.actor_type, row.actor_id);
+    add(row.target_type, row.target_id);
+  }
+  for (const [type, ids] of want) {
+    const { table, column } = TARGET_NAMES[type] as { table: string; column: string };
+    const found = await sql<{ id: string; label: string }>`
+      select id::text as id, ${sql.ref(column)}::text as label from ${sql.table(table)}
+      where id in (${sql.join([...ids].map((id) => sql`${id}::uuid`))})
+    `.execute(kernel.db);
+    for (const one of found.rows) names.set(`${type}:${one.id}`, one.label);
+  }
+  return (type: string, id: string | null) => (id ? (names.get(`${type}:${id}`) ?? null) : null);
+}
+
+/** An entry as the API shows it. */
+const toAuditEntry = (
+  row: {
+    id: string;
+    occurred_at: Date;
+    tenant_id: string | null;
+    workspace_id: string | null;
+    actor_type: string;
+    actor_id: string | null;
+    api_key_id: string | null;
+    access_grant_id: string | null;
+    action: string;
+    target_type: string;
+    target_id: string | null;
+    details: unknown;
+    ip_address: string | null;
+    user_agent: string | null;
+    request_id: string | null;
+  },
+  nameOf: (type: string, id: string | null) => string | null,
+) => ({
+  id: row.id,
+  occurredAt: iso(row.occurred_at),
+  tenantId: row.tenant_id,
+  workspaceId: row.workspace_id,
+  actorType: row.actor_type,
+  actorId: row.actor_id,
+  actorLabel: nameOf(row.actor_type, row.actor_id),
+  apiKeyId: row.api_key_id,
+  accessGrantId: row.access_grant_id,
+  action: row.action,
+  targetType: row.target_type,
+  targetId: row.target_id,
+  targetLabel: nameOf(row.target_type, row.target_id),
+  details: row.details as Record<string, unknown>,
+  ipAddress: row.ip_address,
+  userAgent: row.user_agent,
+  requestId: row.request_id,
+});
+
+/** A page of audit entries, newest first. `tenantId` null selects instance-level entries. */
+export async function auditPage(
+  kernel: Kernel,
+  tenantId: string | null,
+  query: AuditFilters & { limit?: number; cursor?: string },
+) {
+  const args = pageArgs(query);
+  let select = (await auditSelect(kernel, tenantId, query)).selectAll();
+  if (args.after) select = select.where("id", "<", args.after);
   const rows = await select
     .orderBy("id", "desc")
     .limit(args.limit + 1)
     .execute();
-  // Who each actor is, for people to read: a member's email or a service account's name.
-  const ids = (type: string) => [
-    ...new Set(
-      rows
-        .filter((row) => row.actor_type === type && row.actor_id)
-        .map((row) => row.actor_id as string),
-    ),
-  ];
-  const members = ids("member");
-  const accounts = ids("service_account");
-  const names = new Map<string, string>();
-  if (members.length > 0) {
-    for (const member of await kernel.db
-      .selectFrom("member")
-      .select(["id", "email"])
-      .where("id", "in", members)
-      .execute()) {
-      names.set(member.id, member.email);
-    }
-  }
-  if (accounts.length > 0) {
-    for (const account of await kernel.db
-      .selectFrom("service_account")
-      .select(["id", "name"])
-      .where("id", "in", accounts)
-      .execute()) {
-      names.set(account.id, account.name);
-    }
-  }
+  const nameOf = await auditNames(kernel, rows);
   return toPage(
     rows,
     args,
     (row) => row.id,
-    (row) => ({
-      id: row.id,
-      occurredAt: iso(row.occurred_at),
-      tenantId: row.tenant_id,
-      workspaceId: row.workspace_id,
-      actorType: row.actor_type,
-      actorId: row.actor_id,
-      actorLabel: (row.actor_id && names.get(row.actor_id)) ?? null,
-      apiKeyId: row.api_key_id,
-      accessGrantId: row.access_grant_id,
-      action: row.action,
-      targetType: row.target_type,
-      targetId: row.target_id,
-      details: row.details,
-      ipAddress: row.ip_address,
-      userAgent: row.user_agent,
-      requestId: row.request_id,
-    }),
+    (row) => toAuditEntry(row, nameOf),
   );
+}
+
+/** One entry, for a link to it. Undefined when there is none, or it is older than the log keeps. */
+export async function auditEntry(kernel: Kernel, tenantId: string, id: string) {
+  const row = await (await auditSelect(kernel, tenantId, {}))
+    .selectAll()
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (!row) return undefined;
+  return toAuditEntry(row, await auditNames(kernel, [row]));
+}
+
+/** What a log holds in a range, to narrow it by: its actions, its actors and kinds of target. */
+export async function auditFacets(kernel: Kernel, tenantId: string, query: AuditFilters) {
+  const base = await auditSelect(kernel, tenantId, query);
+  const [actions, actors, targets] = await Promise.all([
+    base
+      .select(["action as value", (eb) => eb.fn.countAll<string>().as("n")])
+      .groupBy("action")
+      .orderBy("n", "desc")
+      .limit(100)
+      .execute(),
+    base
+      .select(["actor_type", "actor_id", (eb) => eb.fn.countAll<string>().as("n")])
+      .groupBy(["actor_type", "actor_id"])
+      .orderBy("n", "desc")
+      .limit(100)
+      .execute(),
+    base
+      .select(["target_type as value", (eb) => eb.fn.countAll<string>().as("n")])
+      .groupBy("target_type")
+      .orderBy("n", "desc")
+      .limit(100)
+      .execute(),
+  ]);
+  const nameOf = await auditNames(
+    kernel,
+    actors.map((one) => ({ ...one, target_type: "", target_id: null })),
+  );
+  return {
+    actions: actions.map((one) => ({ value: one.value, count: Number(one.n) })),
+    actors: actors.map((one) => ({
+      type: one.actor_type,
+      id: one.actor_id,
+      label: nameOf(one.actor_type, one.actor_id),
+      count: Number(one.n),
+    })),
+    targetTypes: targets.map((one) => ({ value: one.value, count: Number(one.n) })),
+  };
+}
+
+/** Every entry for `filters`, newest first, a thousand at a time, for an export. */
+export async function* auditEntries(
+  kernel: Kernel,
+  tenantId: string,
+  query: AuditFilters,
+  cap: number,
+) {
+  let after: string | undefined;
+  let sent = 0;
+  while (sent < cap) {
+    let select = (await auditSelect(kernel, tenantId, query)).selectAll();
+    if (after) select = select.where("id", "<", after);
+    const rows = await select
+      .orderBy("id", "desc")
+      .limit(Math.min(1000, cap - sent))
+      .execute();
+    if (rows.length === 0) return;
+    const nameOf = await auditNames(kernel, rows);
+    for (const row of rows) yield toAuditEntry(row, nameOf);
+    sent += rows.length;
+    after = rows.at(-1)?.id;
+    if (rows.length < 1000) return;
+  }
 }
 
 const InstanceBinding = Type.Object({

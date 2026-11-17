@@ -79,12 +79,12 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <main className="flex min-h-full flex-col items-center justify-center bg-structure px-4 py-10">
       <div className="flex w-full max-w-[25rem] flex-col gap-6">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <BrandMark size={30} decorative />
-          <span className="text-base font-semibold tracking-tight">{brand.productName}</span>
+          <span className="text-title font-semibold">{brand.productName}</span>
           <span className="text-ink-subtle">Console</span>
         </div>
-        <div className="flex flex-col gap-4 rounded-panel border border-line bg-canvas p-6 sm:p-7">
+        <div className="flex flex-col gap-4 rounded-panel border border-line bg-canvas p-6 sm:p-8">
           <ol
             aria-label="Steps"
             className="m-0 flex list-none items-center gap-2 p-0 text-meta text-ink-subtle"
@@ -99,7 +99,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               <span className={step === 1 ? "text-ink" : ""}>How you sign in</span>
             </li>
           </ol>
-          <h1 className="m-0 text-display">Sign in</h1>
+          <h1 className="m-0 text-display-lg">Sign in</h1>
           <form
             className="flex flex-col gap-3"
             onSubmit={async (event) => {
@@ -188,9 +188,9 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   className="absolute right-1 bottom-0.5 flex size-8 items-center justify-center rounded-control text-ink-subtle hover:text-ink"
                 >
                   {reveal ? (
-                    <EyeOff aria-hidden="true" size={15} />
+                    <EyeOff aria-hidden="true" size={16} />
                   ) : (
-                    <Eye aria-hidden="true" size={15} />
+                    <Eye aria-hidden="true" size={16} />
                   )}
                 </button>
               </div>
@@ -213,11 +213,11 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             ) : null}
             {error ? <Notice tone="danger">{error}</Notice> : null}
             {!ways ? (
-              <Button type="submit" variant="primary" disabled={busy} className="h-10">
+              <Button type="submit" variant="primary" loading={busy} className="h-10">
                 {busy ? "Checking…" : "Continue"}
               </Button>
             ) : recovering ? (
-              <Button type="submit" variant="primary" disabled={busy} className="h-10">
+              <Button type="submit" variant="primary" loading={busy} className="h-10">
                 Sign in with the recovery code
               </Button>
             ) : ways.password ? (

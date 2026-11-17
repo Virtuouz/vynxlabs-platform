@@ -24,37 +24,7 @@ export function useWide(minWidth: number): boolean {
 /** The widths the console lays itself out at. */
 export const WIDE = { inspector: 1280, panel: 1024, rail: 768 } as const;
 
-/**
- * A screen's heading: an optional line above it, the title, a sentence on what
- * the screen is for, and the screen's actions. One action is primary.
- */
-export function PageHeader({
-  title,
-  description,
-  eyebrow,
-  meta,
-  actions,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  eyebrow?: ReactNode;
-  meta?: ReactNode;
-  actions?: ReactNode;
-}) {
-  return (
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex min-w-0 flex-col gap-1.5">
-        {eyebrow ? <div className="text-meta text-ink-subtle">{eyebrow}</div> : null}
-        <h1 className="m-0 text-display">{title}</h1>
-        {description ? <p className="m-0 max-w-[70ch] text-ink-muted">{description}</p> : null}
-        {meta ? (
-          <div className="flex flex-wrap items-center gap-2 pt-0.5 text-meta">{meta}</div>
-        ) : null}
-      </div>
-      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
-    </header>
-  );
-}
+export { PageHeader } from "./PageHeader.tsx";
 
 /** A section's heading inside a screen, in the label role. */
 export function SectionLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
@@ -195,7 +165,7 @@ function DockedInspector({
       aria-label={label}
       className="flex w-[22rem] shrink-0 flex-col border-line border-l bg-surface 2xl:w-[26rem]"
     >
-      <div className="flex items-start justify-between gap-3 border-line border-b px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3 border-line border-b px-4 py-4">
         <div className="flex min-w-0 flex-col gap-1">
           <InsetRule />
           {eyebrow ? <span className="text-meta text-ink-subtle">{eyebrow}</span> : null}
@@ -209,7 +179,7 @@ function DockedInspector({
           onClick={onClose}
           className="flex size-7 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
         >
-          <X aria-hidden="true" size={15} />
+          <X aria-hidden="true" size={16} />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -265,10 +235,8 @@ export function Stepper({
         const here = step.key === current;
         const kind: JunctionKind = here ? "here" : step.done ? "plain" : "pending";
         const body = (
-          <span className="flex min-w-0 items-start gap-2.5 text-left">
-            <span
-              className={`font-mono text-telemetry ${here ? "text-action" : "text-ink-subtle"}`}
-            >
+          <span className="flex min-w-0 items-start gap-2 text-left">
+            <span className={`font-mono text-code ${here ? "text-action" : "text-ink-subtle"}`}>
               {String(index + 1).padStart(2, "0")}
             </span>
             <span className="flex min-w-0 flex-col">
@@ -366,7 +334,7 @@ export function EmptyCanvas({
         <Junction kind="plain" />
       </span>
       <p className="m-0 text-title">{title}</p>
-      {text ? <p className="m-0 max-w-[52ch] text-ink-muted">{text}</p> : null}
+      {text ? <p className="m-0 max-w-measure text-ink-muted">{text}</p> : null}
       {action}
     </div>
   );
@@ -396,7 +364,7 @@ export function FilterChips<T extends string>({
             role="radio"
             aria-checked={on}
             onClick={() => onChange(option.value)}
-            className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-meta ${
+            className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-meta ${
               on
                 ? "border-action/60 bg-action-soft text-action"
                 : "border-line text-ink-muted hover:border-line-strong hover:text-ink"
@@ -424,7 +392,7 @@ export function KeyValues({
       {rows.map((row) => (
         <div key={row.label} className="contents">
           <dt className="text-meta text-ink-subtle">{row.label}</dt>
-          <dd className={`m-0 min-w-0 break-words ${row.mono ? "font-mono text-telemetry" : ""}`}>
+          <dd className={`m-0 min-w-0 break-words ${row.mono ? "font-mono text-code" : ""}`}>
             {row.value}
           </dd>
         </div>

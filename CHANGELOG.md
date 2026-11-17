@@ -7,6 +7,10 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 ### For operators
 
 - **Database change.** Migration 0064 records when, and by whom, each stored credential was last set: connection and data source credentials, connection group members, the Git token and identity providers' secrets. A trigger stamps it whenever the sealed value changes. Credentials stored before the migration take their row's last change as their date, with no name. Every change's transaction now sets `vx.actor_type` and `vx.actor_id` locally for this.
+- **Rows API.**
+  - Row cursors now point after the last row seen (keyset), wherever a table has a key and is sorted by one column or none. Pages no longer repeat or skip rows when rows are added meanwhile, and deep pages cost the same as the first. Cursors stay opaque, and old offset cursors still work.
+  - New `POST rows-deletions/*`, written `POST /workspaces/:w/row-deletions/<table> {ids}`. It deletes up to 1,000 rows the policy allows, in one statement, and returns `deleted` and `missing`.
+  - New `GET rows-export/<table>?filter=&sort=` streams the rows the caller may read as CSV, up to 100,000. Values a spreadsheet would run as a formula start with an apostrophe.
 - **New API.** `POST /workspaces/:w/secrets {name, value}` makes a secret and refuses a name already in use (409). `PUT secrets/:name` still sets or replaces one. Connection, data source, group member, Git repository and identity provider responses carry `credentialSetAt` and `credentialSetBy`.
 
 ### For tenant developers
@@ -22,6 +26,13 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Fields** (`TextField`, `SelectField`, `TextAreaField`, `NumberField`, `DateField`, `ComboboxField`): the error is tied to its control by `aria-describedby`, beside the hint, which now stays. An invalid control has a danger edge. `required` shows a mark, and `required={false}` shows "optional". The marks are hidden from assistive technology, which hears the control's own `required`, so labels and accessible names are unchanged. `FieldFrame` is exported, to give a field of your own the same label, hint and error.
 - **Toasts** take a `title`, a `link` to the result and an `info` tone. Three show at a time, and Esc dismisses one. `ToastProvider` takes `navigate` to follow links through your router.
 - **`Button loading`** shows a spinner beside the label, sets `aria-busy` and refuses a second press.
+- **`Grid navigation="grid"`** follows the WAI-ARIA grid pattern:
+  - one tab stop, with arrow keys, Home/End and Page keys between cells;
+  - Enter or F2 to edit, Escape to put a value back, Space to check a row;
+  - a sticky header and a pinned first column;
+  - `density` (`compact` rows are 28 px), and checkboxes through `checked` and `onCheck`.
+  
+  Without it, the grid works as before.
 
 ## Unreleased: phase 13, the debugging and authoring loop
 

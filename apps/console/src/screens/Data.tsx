@@ -12,15 +12,16 @@ import {
   showValue,
   TextField,
 } from "@vynxlabs/ui";
-import { Columns3 } from "lucide-react";
-import { useState } from "react";
+import { Columns3, Download } from "lucide-react";
+import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
+import { Inspector } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate, useUrlParam } from "../router.tsx";
+import { Link, navigate, useUrlParam, useUrlState } from "../router.tsx";
 import {
   type Policy,
   policyText,
@@ -87,22 +88,51 @@ export function toFilter(type: string, text: string): object | null {
   return { op, value: parseValue(type, compared ? (compared[2] as string) : trimmed) };
 }
 
+/** What the rows of a table show: in the address, so a link opens the same view. */
+const ROWS_URL = {
+  sort: { type: "string" },
+  filter: { type: "string" },
+  page: { type: "string" },
+  hide: { type: "list" },
+  density: { type: "string", default: "standard" },
+  row: { type: "string", push: true },
+} as const;
+
 function RowsBrowser(props: RowsBrowserProps) {
   const { columns, keyColumn, rowPath } = props;
-  const [sort, setSort] = useState<GridSort>();
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [url, setUrl] = useUrlState(ROWS_URL);
+  const sort: GridSort | undefined = url.sort
+    ? { column: url.sort.replace(/^-/, ""), descending: url.sort.startsWith("-") }
+    : undefined;
+  const applied = (() => {
+    try {
+      return url.filter ? (JSON.parse(url.filter) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  })();
+  // What is typed reaches the address, and the server, once typing pauses.
+  const [typed, setTyped] = useState<Record<string, string>>(applied);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const kept = Object.fromEntries(Object.entries(typed).filter(([, text]) => text.trim()));
+      const next = Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined;
+      if (next !== url.filter) setUrl({ filter: next, page: undefined });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [typed, url.filter, setUrl]);
   const [filterError, setFilterError] = useState<string>();
   /** The cursors of the pages before this one, so "Previous" has somewhere to go. */
-  const [trail, setTrail] = useState<(string | null)[]>([null]);
+  const [back, setBack] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [compact, setCompact] = useState(false);
-  const [chosen, setChosen] = useUrlParam("row", undefined, { push: true });
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const hidden = new Set(url.hide);
+  const compact = url.density === "compact";
 
   let filter: object | undefined;
   try {
     const parts = columns.flatMap((column) => {
-      const built = toFilter(column.type, filters[column.name] ?? "");
+      const built = toFilter(column.type, applied[column.name] ?? "");
       return built ? [{ column: column.name, ...built }] : [];
     });
     if (parts.length > 0) filter = { and: parts };
@@ -111,9 +141,8 @@ function RowsBrowser(props: RowsBrowserProps) {
   }
   const query = new URLSearchParams({ limit: String(PAGE) });
   if (filter) query.set("filter", JSON.stringify(filter));
-  if (sort) query.set("sort", `${sort.descending ? "-" : ""}${sort.column}`);
-  const cursor = trail[trail.length - 1];
-  if (cursor) query.set("cursor", cursor);
+  if (url.sort) query.set("sort", url.sort);
+  if (url.page) query.set("cursor", url.page);
   const page = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
     `${props.rowsPath}?${query}`,
   );
@@ -123,14 +152,23 @@ function RowsBrowser(props: RowsBrowserProps) {
   const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
   const changed = saved && saved.of === page.data ? saved.rows : {};
   const rows = (page.data?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
-  const restart = () => setTrail([null]);
+  const toFirst = { page: undefined } as const;
   // How many rows the filters leave, from the totals of a custom table. A source has none.
-  const totalPath = props.rowsPath.includes("/rows/")
+  const custom = props.rowsPath.includes("/rows/");
+  const totalPath = custom
     ? `${props.rowsPath.replace("/rows/", "/aggregate/")}${filter ? `?filter=${encodeURIComponent(JSON.stringify(filter))}` : ""}`
     : null;
   const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
   const counted = total.data?.items[0]?.values.count;
-  const open = rows.find((row) => keyOf(row) === chosen);
+  const open = rows.find((row) => keyOf(row) === url.row);
+  // Several rows are deleted at once in the platform's own tables; a source's rows one by one.
+  const canBatch = canChange && custom;
+  const exportQuery = new URLSearchParams();
+  if (filter) exportQuery.set("filter", JSON.stringify(filter));
+  if (url.sort) exportQuery.set("sort", url.sort);
+  const exportHref = custom
+    ? `/api/v1${props.rowsPath.replace("/rows/", "/rows-export/")}?${exportQuery}`
+    : null;
   const grid: GridColumn[] = columns
     .filter((column) => !hidden.has(column.name))
     .map((column) => ({
@@ -140,13 +178,45 @@ function RowsBrowser(props: RowsBrowserProps) {
       sortable: column.type !== "json",
       filterable: !["json", "ARRAY"].includes(column.type),
     }));
+  const saveRow = async (row: DataRow, values: Record<string, unknown>) => {
+    if (!rowPath) return;
+    const now = await api.patch<DataRow>(rowPath(keyOf(row)), values);
+    setSaved({ of: page.data, rows: { ...changed, [keyOf(row)]: now } });
+  };
+  const deleteChecked = async () => {
+    const ids = [...checked];
+    const sure = await ask.confirm({
+      title: `Delete ${ids.length === 1 ? "this row" : `these ${ids.length} rows`}?`,
+      text: "They are removed for everyone. This cannot be undone.",
+      action: ids.length === 1 ? "Delete the row" : `Delete ${ids.length} rows`,
+      danger: true,
+    });
+    if (!sure) return;
+    try {
+      const done = await api.post<{ deleted: string[]; missing: string[] }>(
+        props.rowsPath.replace("/rows/", "/row-deletions/"),
+        { ids },
+      );
+      notify.success(
+        `${done.deleted.length} ${done.deleted.length === 1 ? "row" : "rows"} deleted.${
+          done.missing.length > 0
+            ? ` ${done.missing.length} were gone already, or were not yours to delete.`
+            : ""
+        }`,
+      );
+      setChecked(new Set());
+      page.reload();
+    } catch (error) {
+      notify.error(error);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 text-body-sm text-ink-muted">
           {props.readOnlyNote ??
-            "Select a value to change it. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
+            "Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
         </p>
         <span className="flex flex-wrap items-center gap-2">
           <Menu
@@ -163,154 +233,175 @@ function RowsBrowser(props: RowsBrowserProps) {
             items={columns.map((column) => ({
               label: column.name,
               current: !hidden.has(column.name),
-              onSelect: () =>
-                setHidden((before) => {
-                  const next = new Set(before);
-                  if (next.has(column.name)) next.delete(column.name);
-                  else if (next.size < columns.length - 1) next.add(column.name);
-                  return next;
-                }),
+              onSelect: () => {
+                const next = new Set(hidden);
+                if (next.has(column.name)) next.delete(column.name);
+                else if (next.size < columns.length - 1) next.add(column.name);
+                setUrl({ hide: [...next] });
+              },
             }))}
           />
-          <Button size="small" aria-pressed={compact} onClick={() => setCompact((now) => !now)}>
-            {compact ? "Comfortable" : "Compact"}
+          <Button
+            size="small"
+            aria-pressed={compact}
+            onClick={() => setUrl({ density: compact ? "standard" : "compact" })}
+          >
+            {compact ? "Standard rows" : "Compact rows"}
           </Button>
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            Add row
-          </Button>
+          {exportHref ? (
+            <Button size="small" href={exportHref} download>
+              <Download aria-hidden="true" size={14} /> CSV
+            </Button>
+          ) : null}
+          {canChange ? (
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add row
+            </Button>
+          ) : null}
         </span>
       </div>
       {filterError ? <Notice tone="danger">{filterError}</Notice> : null}
-      {page.error ? (
-        <Notice tone="danger" action={<Button onClick={page.reload}>Try again</Button>}>
-          {page.error.message}
-        </Notice>
+      {page.error ? <ErrorState error={page.error} what="the rows" onRetry={page.reload} /> : null}
+      {checked.size > 0 && canBatch ? (
+        <div
+          role="toolbar"
+          aria-label="What to do with the checked rows"
+          className="flex flex-wrap items-center gap-3 rounded-control bg-action-soft px-3 py-2"
+        >
+          <span className="text-body-sm font-medium">
+            {checked.size} {checked.size === 1 ? "row" : "rows"} checked
+          </span>
+          <Button size="small" variant="danger" onClick={() => void deleteChecked()}>
+            Delete
+          </Button>
+          <Button size="small" variant="quiet" onClick={() => setChecked(new Set())}>
+            Uncheck all
+          </Button>
+        </div>
       ) : null}
-      <div className={compact ? "[&_td]:py-1 [&_th]:py-1" : ""}>
-        <Grid<DataRow>
-          label={props.label}
-          columns={grid}
-          rows={rows}
-          rowKey={keyOf}
-          selectedKey={chosen}
-          onSelect={(row) => setChosen(keyOf(row))}
-          sort={sort}
-          onSort={(column) => {
-            setSort((current) =>
-              current?.column !== column
-                ? { column, descending: false }
-                : current.descending
-                  ? undefined
-                  : { column, descending: true },
-            );
-            restart();
-          }}
-          filters={filters}
-          onFilter={(column, text) => {
-            setFilterError(undefined);
-            setFilters((current) => ({ ...current, [column]: text }));
-            restart();
-          }}
-          {...(canChange
-            ? {
-                onEdit: async (row: DataRow, column: string, value: unknown) => {
-                  const now = await api.patch<DataRow>(rowPath(keyOf(row)), { [column]: value });
-                  setSaved({ of: page.data, rows: { ...changed, [keyOf(row)]: now } });
-                },
-                rowActions: (row: DataRow) => (
-                  <RemoveButton
-                    label="Delete"
-                    confirm="Delete this row? This cannot be undone."
-                    run={() => api.delete(rowPath(keyOf(row)))}
-                    onDone={page.reload}
-                  />
-                ),
+      <div className="flex min-h-0 gap-4">
+        <div className="min-w-0 flex-1">
+          <Grid<DataRow>
+            navigation="grid"
+            density={compact ? "compact" : "standard"}
+            label={props.label}
+            columns={grid}
+            rows={rows}
+            rowKey={keyOf}
+            selectedKey={url.row}
+            onSelect={(row) => setUrl({ row: keyOf(row) })}
+            {...(canBatch ? { checked, onCheck: setChecked } : {})}
+            sort={sort}
+            onSort={(column) => {
+              const next =
+                sort?.column !== column ? column : sort.descending ? undefined : `-${column}`;
+              setBack([]);
+              setUrl({ sort: next, ...toFirst });
+            }}
+            filters={typed}
+            onFilter={(column, text) => {
+              setFilterError(undefined);
+              setBack([]);
+              setTyped((current) => ({ ...current, [column]: text }));
+            }}
+            {...(canChange
+              ? {
+                  onEdit: (row: DataRow, column: string, value: unknown) =>
+                    saveRow(row, { [column]: value }),
+                }
+              : {})}
+            cell={(row, column) => {
+              const value = row[column.name];
+              if (column.type === "file" && typeof value === "string" && props.filesPath) {
+                return (
+                  <a className="text-action" href={`/api/v1${props.filesPath}/${value}/content`}>
+                    Download
+                  </a>
+                );
               }
-            : {})}
-          cell={(row, column) => {
-            const value = row[column.name];
-            if (column.type === "file" && typeof value === "string" && props.filesPath) {
-              return (
-                <a className="text-action" href={`/api/v1${props.filesPath}/${value}/content`}>
-                  Download
-                </a>
-              );
+              if (column.name === keyColumn && column.type === "uuid") {
+                return (
+                  <span className="font-mono text-code-sm text-ink-muted">{String(value)}</span>
+                );
+              }
+              return undefined;
+            }}
+            empty={
+              !page.data
+                ? ""
+                : filter
+                  ? "No rows match the filters."
+                  : "This table has no rows yet."
             }
-            if (column.name === keyColumn && column.type === "uuid") {
-              return <span className="font-mono text-code-sm text-ink-muted">{String(value)}</span>;
-            }
-            return undefined;
-          }}
-          empty={
-            !page.data
-              ? "Loading…"
-              : filter
-                ? "No rows match the filters."
-                : "This table has no rows yet."
+          />
+        </div>
+        <Inspector
+          open={open !== undefined}
+          label="The chosen row"
+          title="Row"
+          eyebrow={open ? keyOf(open) : undefined}
+          subject={url.row}
+          onClose={() => setUrl({ row: undefined })}
+          footer={
+            open && canChange && rowPath ? (
+              <RemoveButton
+                label="Delete row"
+                confirm="Delete this row? It is removed for everyone. This cannot be undone."
+                run={() => api.delete(rowPath(keyOf(open)))}
+                onDone={() => {
+                  setUrl({ row: undefined });
+                  page.reload();
+                }}
+              />
+            ) : undefined
           }
-        />
+        >
+          {open ? (
+            <RowEditor
+              key={keyOf(open)}
+              row={open}
+              columns={columns}
+              editable={canChange}
+              onSave={(values) => saveRow(open, values)}
+            />
+          ) : null}
+        </Inspector>
       </div>
       <div className="flex items-center justify-between gap-3 text-body-sm text-ink-muted">
         <span>
           {rows.length === 0
             ? ""
-            : `Rows ${(trail.length - 1) * PAGE + 1} to ${(trail.length - 1) * PAGE + rows.length}${
+            : `${rows.length} ${rows.length === 1 ? "row" : "rows"} on this page${
                 typeof counted === "number"
-                  ? ` of ${counted.toLocaleString()}${filter ? " that match" : ""}`
+                  ? `, of ${counted.toLocaleString()}${filter ? " that match" : ""}`
                   : ""
               }`}
         </span>
         <span className="flex gap-2">
           <Button
             size="small"
-            disabled={trail.length === 1}
-            onClick={() => setTrail((current) => current.slice(0, -1))}
+            disabled={!url.page}
+            onClick={() => {
+              const before = back.at(-1);
+              setBack((current) => current.slice(0, -1));
+              setUrl({ page: before || undefined });
+            }}
           >
             Previous
           </Button>
           <Button
             size="small"
             disabled={!page.data?.nextCursor}
-            onClick={() =>
-              setTrail((current) => [...current, page.data?.nextCursor as string | null])
-            }
+            onClick={() => {
+              // One step forward: the page shown now is where Previous comes back to.
+              setBack((current) => [...current, url.page ?? ""]);
+              setUrl({ page: page.data?.nextCursor ?? undefined });
+            }}
           >
             Next
           </Button>
         </span>
       </div>
-      <SideSheet
-        open={open !== undefined}
-        onClose={() => setChosen(undefined)}
-        title="Row"
-        description={open ? keyOf(open) : undefined}
-        footer={
-          open && canChange ? (
-            <RemoveButton
-              label="Delete row"
-              confirm="Delete this row? It is removed for everyone. This cannot be undone."
-              run={() => api.delete(rowPath(keyOf(open)))}
-              onDone={() => {
-                setChosen(undefined);
-                page.reload();
-              }}
-            />
-          ) : undefined
-        }
-      >
-        {open ? (
-          <dl className="m-0 grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2">
-            {columns.map((column) => (
-              <div key={column.name} className="contents">
-                <dt className="text-body-sm text-ink-muted">{column.name}</dt>
-                <dd className="m-0 font-mono text-code break-words">
-                  {showValue(column.type, open[column.name]) || "—"}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-      </SideSheet>
       <AddRow
         open={adding}
         onClose={() => setAdding(false)}
@@ -323,6 +414,101 @@ function RowsBrowser(props: RowsBrowserProps) {
         }}
       />
     </div>
+  );
+}
+
+/** A row's values, changed in the inspector beside the grid and saved together. */
+function RowEditor({
+  row,
+  columns,
+  editable,
+  onSave,
+}: {
+  row: DataRow;
+  columns: RowColumn[];
+  editable: boolean;
+  onSave: (values: Record<string, unknown>) => Promise<void>;
+}) {
+  const [text, setText] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const shown = (column: RowColumn) =>
+    column.type === "json" || typeof row[column.name] === "object"
+      ? row[column.name] === null || row[column.name] === undefined
+        ? ""
+        : JSON.stringify(row[column.name])
+      : row[column.name] === null || row[column.name] === undefined
+        ? ""
+        : String(row[column.name]);
+  const dirty = Object.keys(text).length > 0;
+  return (
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const values: Record<string, unknown> = {};
+        const wrong: Record<string, string> = {};
+        for (const [name, typed] of Object.entries(text)) {
+          const column = columns.find((one) => one.name === name);
+          if (!column) continue;
+          try {
+            values[name] = parseValue(column.type, typed);
+          } catch (error) {
+            wrong[name] = (error as Error).message;
+          }
+        }
+        setErrors(wrong);
+        if (Object.keys(wrong).length > 0) return;
+        setBusy(true);
+        try {
+          await onSave(values);
+          notify.success("Row saved.");
+          setText({});
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {columns.map((column) =>
+        editable && column.writable && column.type !== "file" ? (
+          <TextField
+            key={column.name}
+            name={column.name}
+            label={column.name}
+            value={text[column.name] ?? shown(column)}
+            required={false}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : (
+          <div key={column.name} className="flex flex-col gap-0.5">
+            <span className="text-body-sm text-ink-muted">{column.name}</span>
+            <span className="font-mono text-code break-words">
+              {showValue(column.type, row[column.name]) || "—"}
+            </span>
+          </div>
+        ),
+      )}
+      {editable ? (
+        <div className="flex gap-2">
+          <Button type="submit" variant="primary" loading={busy} disabled={!dirty}>
+            Save row
+          </Button>
+          {dirty ? (
+            <Button
+              onClick={() => {
+                setText({});
+                setErrors({});
+              }}
+            >
+              Discard
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </form>
   );
 }
 

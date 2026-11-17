@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@vynxlabs/db";
 import { PATH_PATTERN } from "@vynxlabs/manifest";
@@ -8,6 +9,7 @@ import {
   aggregateRows,
   type DataScope,
   deleteRow,
+  deleteRows,
   describeTable,
   findRows,
   getRow,
@@ -59,12 +61,26 @@ export function parseRowsQuery(query: {
       throw badRequest("The filter must be JSON.");
     }
   }
-  const offset =
-    query.cursor === undefined
-      ? 0
-      : Number(Buffer.from(query.cursor, "base64url").toString("utf8"));
-  if (!Number.isSafeInteger(offset) || offset < 0) throw badRequest("The cursor is not valid.");
+  // A cursor is where the last page ended: after a row (`{"after": [...]}`), or, for a
+  // table with no key or a sort by several columns, after a number of rows.
+  const text =
+    query.cursor === undefined ? "0" : Buffer.from(query.cursor, "base64url").toString("utf8");
+  let offset = 0;
+  let after: unknown[] | undefined;
+  if (text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text) as { after?: unknown };
+      if (!Array.isArray(parsed.after)) throw new Error();
+      after = parsed.after;
+    } catch {
+      throw badRequest("The cursor is not valid.");
+    }
+  } else {
+    offset = Number(text);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw badRequest("The cursor is not valid.");
+  }
   return {
+    ...(after ? { after } : {}),
     ...(filter !== undefined ? { filter } : {}),
     sort: query.sort
       ? query.sort
@@ -107,10 +123,31 @@ export function parseAggregateQuery(query: {
   });
 }
 
-export const toRowsPage = (found: { items: Row[]; nextOffset: number | null }) => ({
+/** How many rows one CSV export holds at most. */
+export const CSV_CAP = 100_000;
+
+/**
+ * One value as a CSV cell: quoted when it holds a comma, a quote or a line
+ * break. Text a spreadsheet would read as a formula starts with an apostrophe.
+ */
+export function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  let text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  if (/^[=+\-@\t\r]/.test(text) && typeof value === "string") text = `'${text}`;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export const toRowsPage = (found: {
+  items: Row[];
+  nextOffset: number | null;
+  nextAfter?: unknown[] | null;
+}) => ({
   items: found.items,
-  nextCursor:
-    found.nextOffset === null ? null : Buffer.from(String(found.nextOffset)).toString("base64url"),
+  nextCursor: found.nextAfter
+    ? Buffer.from(JSON.stringify({ after: found.nextAfter })).toString("base64url")
+    : found.nextOffset === null
+      ? null
+      : Buffer.from(String(found.nextOffset)).toString("base64url"),
 });
 
 const Column = Type.Object({
@@ -588,6 +625,99 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         ctx.mutated = true;
         await announceRows(kernel, params.t, params.w, target.name, "updated", [params.id]);
         return row;
+      },
+    );
+
+    app.get(
+      `${base}/rows-export/*`,
+      {
+        config: { access: access.custom, rateLimit: guestLimit },
+        schema: {
+          summary: "Rows of a table, as CSV",
+          description:
+            "The rows the caller may read, with the same `filter` and `sort` as the rows route, as " +
+            `a CSV file. At most ${CSV_CAP.toLocaleString("en-US")} rows; a last line says when there were more. ` +
+            "A value that a spreadsheet would run as a formula starts with an apostrophe.",
+          tags: ["data"],
+          params: WildParams,
+          querystring: Type.Object({
+            filter: RowsQuery.properties.filter,
+            sort: RowsQuery.properties.sort,
+          }),
+          produces: ["text/csv"],
+          response: { 200: Type.Unknown({ description: "The rows, as CSV." }) },
+        },
+      },
+      async ({ ctx, params, query }, reply) => {
+        const { target, scope } = await enter(ctx, params, wildPath(params), "read");
+        const asked = parseRowsQuery(query);
+        const names = target.columns.map((column) => column.name);
+        async function* lines() {
+          yield `${names.map(csvCell).join(",")}\r\n`;
+          let after: unknown[] | undefined;
+          let offset = 0;
+          let sent = 0;
+          while (sent < CSV_CAP) {
+            const page = await withData(kernel, params.t, scope, (data) =>
+              findRows(data, target, {
+                ...asked,
+                limit: Math.min(1000, CSV_CAP - sent),
+                ...(after ? { after } : { offset }),
+              }),
+            );
+            for (const row of page.items)
+              yield `${names.map((name) => csvCell(row[name])).join(",")}\r\n`;
+            sent += page.items.length;
+            if (page.nextAfter) after = page.nextAfter;
+            else if (page.nextOffset !== null) offset = page.nextOffset;
+            else return;
+          }
+          yield `"There were more than ${CSV_CAP} rows. Narrow the filter to export the rest."\r\n`;
+        }
+        const file = `${target.name.replace(/[^A-Za-z0-9_-]+/g, "-")}.csv`;
+        reply
+          .header("content-type", "text/csv; charset=utf-8")
+          .header("content-disposition", `attachment; filename="${file}"`);
+        return reply.send(Readable.from(lines()));
+      },
+    );
+
+    app.post(
+      `${base}/row-deletions/*`,
+      {
+        config: { access: access.custom, rateLimit: guestLimit },
+        schema: {
+          summary: "Delete several rows",
+          description:
+            "Deletes the rows with these keys that the table's policy lets the caller delete, in " +
+            "one statement. Keys that name no such row come back in `missing`.",
+          tags: ["data"],
+          params: WildParams,
+          body: Type.Object({
+            ids: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+              minItems: 1,
+              maxItems: 1000,
+              uniqueItems: true,
+            }),
+          }),
+          response: {
+            200: Type.Object({
+              deleted: Type.Array(Type.String()),
+              missing: Type.Array(Type.String()),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const { target, scope } = await enter(ctx, params, wildPath(params), "write");
+        const done = await withData(kernel, params.t, scope, (data) =>
+          deleteRows(data, target, body.ids),
+        );
+        ctx.mutated = true;
+        if (done.deleted.length > 0) {
+          await announceRows(kernel, params.t, params.w, target.name, "deleted", done.deleted);
+        }
+        return done;
       },
     );
 

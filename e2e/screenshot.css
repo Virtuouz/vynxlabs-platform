@@ -6,3 +6,15 @@
 [data-volatile] {
   visibility: hidden !important;
 }
+
+/*
+ * A time takes as much room as its text, which changes from run to run and
+ * moves what follows it in a sentence. In a picture it has one width.
+ */
+time {
+  display: inline-block !important;
+  width: 16ch !important;
+  overflow: hidden !important;
+  vertical-align: bottom !important;
+  visibility: hidden !important;
+}

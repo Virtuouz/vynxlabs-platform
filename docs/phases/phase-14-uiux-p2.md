@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–7 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–8 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -214,3 +214,30 @@ Findings are recorded under each milestone as it lands.
   - `kernel.test.ts` covers the new secret route's 409.
   - `feedback.spec.ts` makes a secret, is refused the same name, and replaces the value on the secret's page.
   - The whole suite (1,326 tests) and the whole e2e suite (25) passed.
+
+### Milestone 8: data grid
+
+- **`Grid navigation="grid"`** (`packages/ui/src/Grid.tsx`) follows the WAI-ARIA grid pattern:
+  - one tab stop, moved by roving `tabindex`;
+  - arrows, Home and End (with Ctrl, the grid's corners), and Page Up and Down by ten rows;
+  - Enter or F2 to edit; Escape puts the value back and keeps focus on the cell; Enter in the field saves;
+  - Space checks a row, and Enter on a heading sorts by it;
+  - a sticky header, a pinned first column, `density`, and a checkbox column.
+  
+  `EditableCell` can be driven by the grid. A ref stops the blur that follows Escape from saving what was typed. Without the prop, the grid is unchanged, so the tenant `table` widget is untouched: tenant apps move with the tokens, not with this interaction.
+- **Virtualisation** isn't built. The grid holds one page of 50 rows, so a window over it would add code and save nothing. Keyset paging is what keeps deep tables fast.
+- **The table browser** (`Data.tsx`):
+  - Sort, filters (debounced 300 ms), page, hidden columns, density and the chosen row live in the address.
+  - The row inspector is docked and non-modal, and edits a row's values together, in place of the read-only modal sheet.
+  - Checkboxes with a batch bar delete several rows at once, and CSV exports what the filters and sort show.
+  - The double push on Next is gone: one step forward is one address change.
+  - Batch delete and CSV apply only to the platform's own tables. A data source's rows path has no `/rows/` to swap, and a batch delete there would have reached the insert route.
+- **Server:**
+  - Keyset paging in `findRows` applies when the table has a key and the sort is one column or none. A page starts after the last row's sort value and key, with nulls last. The cursor is `{"after": [...]}`, base64url; offset cursors still work and remain for multi-column sorts. `data.test.ts` adds a row before the next page, down the sort and with no sort, and the two pages share no row.
+  - `POST row-deletions/*` deletes up to 1,000 keys in one statement, under the table's policy, and reports `deleted` and `missing`. Like single-row deletes, it is data-plane and writes no audit entry; the plan had said one entry, and keeping one rule for row writes won.
+  - `GET rows-export/*` streams CSV through the same filter, sort and policy, up to 100,000 rows. It quotes what needs quoting and defuses formulas with an apostrophe.
+- **Tests:**
+  - The grid's keyboard model, in `Grid.test.tsx`: one tab stop, arrows, Enter and F2, Escape restoring, Space, and Enter on a heading.
+  - Keyset paging, batch delete and CSV, in `data.test.ts`.
+  - The new `e2e/data-grid.spec.ts`: 10,000 rows, five pages with no row twice and the grid not moving, axe, and a cell reached, changed, put back and saved from the keyboard alone.
+- **Pictures.** Times are hidden in a box of one width (`screenshot.css`) rather than masked. A grant's expiry of a different length had reflowed the rest of the operator banner.

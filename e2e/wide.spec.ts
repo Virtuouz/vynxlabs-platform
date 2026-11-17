@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
-import { expectNoAxeViolations, snap } from "./visual.ts";
+import { expectNoAxeViolations, readEveryList, snap } from "./visual.ts";
 
 /**
  * Wide screens (phase 15, P3-8): from 1920 px the runs list gives each column
@@ -39,6 +39,7 @@ test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   page = await (await browser.newContext({ viewport: WIDE })).newPage();
   await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await readEveryList(page);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `wide-${stamp}`,
     name: "Wide",

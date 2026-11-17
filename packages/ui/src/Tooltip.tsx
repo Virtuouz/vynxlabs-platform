@@ -49,7 +49,7 @@ export function Tooltip({
       <Base.Trigger render={children} />
       <Base.Portal>
         <Base.Positioner side={side} sideOffset={6} className="layer-popover">
-          <Base.Popup className="flex max-w-xs items-center gap-2 rounded-inner bg-ink px-2 py-1 text-meta text-canvas shadow-overlay transition-opacity motion-fast data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
+          <Base.Popup className="flex max-w-xs items-center gap-2 rounded-inner bg-ink px-2 py-1 text-meta text-canvas shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-[starting-style]:translate-y-1">
             <span>{label}</span>
             {keys ? (
               <kbd className="font-mono text-code-sm whitespace-nowrap opacity-75">{keys}</kbd>

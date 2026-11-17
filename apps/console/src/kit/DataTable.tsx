@@ -137,6 +137,8 @@ export interface DataTableProps<Row> {
   filtered?: { onClear: () => void } | undefined;
   /** Load more, or Previous and Next. */
   footer?: ReactNode | undefined;
+  /** Rows that have just arrived live: they fade in, over `motion-base`, in place (07 §7.10). */
+  arriving?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -182,6 +184,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     framed = false,
     filtered,
     footer,
+    arriving,
   } = props;
   const columns = useMemo(
     () => chooseColumns(allColumns, columnsShown),
@@ -507,7 +510,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                   onAuxClick={(event) => {
                     if (event.button === 1 && href?.(row)) open(row, true);
                   }}
-                  className={`border-line border-b align-top ${onOpen ? "cursor-pointer" : ""} ${
+                  className={`border-line border-b align-top ${arriving?.has(key) ? "animate-arrive" : ""} ${onOpen ? "cursor-pointer" : ""} ${
                     on
                       ? "bg-selected shadow-[inset_2px_0_0_var(--color-action)]"
                       : ticked
@@ -638,6 +641,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   return (
     <div
       ref={region}
+      data-table={id}
       className={`${fill ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} ${
         // panel-allowed: a table drawn on its own carries the panel's edge itself.
         framed ? "rounded-panel border border-line bg-surface" : ""

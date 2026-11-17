@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import { firstRowTop, nested, overdraws } from "./measure.ts";
 import { signInWithPassword } from "./sign-in.ts";
+import { readEveryList } from "./visual.ts";
 
 /**
  * The console's polish (phase 16, P4), measured in a browser:
@@ -43,6 +44,7 @@ let page: Page;
 let tenant: { id: string; slug: string };
 let ws: string;
 let failedRun: string;
+let W: string;
 
 const script = (code: string) => ({
   kind: "script",
@@ -78,7 +80,7 @@ test.beforeAll(async ({ browser }) => {
     type: "dev",
     linkedWorkspaceId: prod.id,
   });
-  const W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
+  W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
   ws = `/t/${tenant.id}/workspaces/${dev.id}`;
   await call(
     page,
@@ -285,6 +287,7 @@ test("a list says what it is for once, and operator access hides to a mark and c
   await page.getByRole("button", { name: "About Flows" }).click();
   await expect(page.getByRole("dialog").getByText(/A flow is a graph of steps/)).toBeVisible();
   await page.keyboard.press("Escape");
+  await readEveryList(page);
 
   const strip = page.getByRole("region", { name: "Operator access" });
   await expect(strip).toContainText("Operator access as tenant_admin until");
@@ -296,4 +299,49 @@ test("a list says what it is for once, and operator access hides to a mark and c
   await page.getByRole("button", { name: /^Operator access as tenant_admin/ }).click();
   await page.getByRole("menuitem", { name: "Show the notice" }).click();
   await expect(strip).toBeVisible();
+});
+
+/** P4-4: a run that starts while rows are checked waits at the top, and nothing moves under reduced motion. */
+test("a run that arrives while rows are checked waits behind a control, and reduced motion moves nothing", async ({
+  browser,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(`${ws}/runs`);
+  const grid = page.getByRole("grid", { name: "Runs" });
+  await grid.getByRole("checkbox").nth(1).check();
+  await call(page, "POST", `${W}/runs`, { script: "stock/check", input: {} });
+  const pill = page.getByRole("button", { name: /^1 new run$/ });
+  await expect(pill).toBeVisible({ timeout: 20_000 });
+  const before = await grid.locator("tbody tr[data-row]").count();
+  await pill.click();
+  await expect(pill).toBeHidden();
+  await expect(grid.locator("tbody tr[data-row]")).toHaveCount(before + 1);
+
+  const still = await (
+    await browser.newContext({
+      reducedMotion: "reduce",
+      storageState: await page.context().storageState(),
+    })
+  ).newPage();
+  await still.goto(`${ws}/runs`);
+  await still.getByRole("grid", { name: "Runs" }).waitFor();
+  const moving = async () =>
+    still.evaluate(
+      () =>
+        [...document.querySelectorAll("*")]
+          .map((element) => getComputedStyle(element))
+          .filter(
+            (style) =>
+              style.transitionDuration.split(",").some((one) => one.trim() !== "0s") ||
+              (style.animationName !== "none" && style.animationDuration !== "0s"),
+          ).length,
+    );
+  await still.getByRole("button", { name: "Row density" }).click();
+  await still.getByRole("menu").waitFor();
+  expect(await moving(), "with a menu open").toBe(0);
+  await still.keyboard.press("Escape");
+  await still.getByRole("button", { name: "Search or jump to" }).click();
+  await still.getByRole("dialog").waitFor();
+  expect(await moving(), "with the palette open").toBe(0);
+  await still.context().close();
 });

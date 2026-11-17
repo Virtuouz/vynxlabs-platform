@@ -236,3 +236,49 @@ test("icons are 14, 16 or 20 px, and no character stands in for one", () => {
   }
   expect(found).toEqual([]);
 });
+
+/**
+ * Motion is named by a token (07 §7.10): a transition says how long with
+ * `motion-instant`, `motion-fast`, `motion-base` or `motion-slow`, never a
+ * duration of its own, and the only things that loop or play are the running
+ * icon, a spinner, a loading shape and a row arriving. Under reduced motion,
+ * nothing moves at all.
+ */
+test("every transition is timed by a motion token, and reduced motion stops all of them", () => {
+  const kit = join(here, "../../../packages/ui/src");
+  const found: string[] = [];
+  for (const path of [...files(here), ...files(kit)]) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const where = `${path.split("/src/")[1]}:${index + 1}`;
+      if (
+        /\btransition(-[\w[\],-]+)?\b/.test(line) &&
+        /className/.test(`${lines[index - 1]}${line}`)
+      ) {
+        const classes = line.match(/\btransition(-[\w[\],-]+)?/g) ?? [];
+        if (classes.length > 0 && !/\bmotion-(instant|fast|base|slow)\b/.test(line)) {
+          found.push(`${where} a transition without a motion token`);
+        }
+      }
+      if (/\bduration-\d+\b/.test(line)) found.push(`${where} a duration of its own`);
+      for (const kind of line.match(/\banimate-[\w-]+/g) ?? []) {
+        if (
+          ![
+            "animate-spin",
+            "animate-spin-slow",
+            "animate-pulse",
+            "animate-arrive",
+            "animate-none",
+          ].includes(kind)
+        ) {
+          found.push(`${where} ${kind}`);
+        }
+      }
+    });
+  }
+  expect(found).toEqual([]);
+  const tokens = readFileSync(join(kit, "tokens.css"), "utf8");
+  expect(tokens).toMatch(
+    /@media \(prefers-reduced-motion: reduce\) \{\s*\* \{\s*transition: none !important;\s*animation: none !important;/,
+  );
+});

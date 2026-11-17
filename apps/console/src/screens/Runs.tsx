@@ -1,9 +1,19 @@
 import { Button, JsonView, LogViewer, type MenuItem, Notice, ResultView, Tabs } from "@vynxlabs/ui";
-import { ArrowUpRight, CircleX, FileCode2, Lightbulb, RotateCcw, Workflow, X } from "lucide-react";
+import {
+  ArrowUp,
+  ArrowUpRight,
+  CircleX,
+  FileCode2,
+  Lightbulb,
+  RotateCcw,
+  Workflow,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { useArrivals } from "../kit/arrivals.ts";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import {
@@ -303,6 +313,17 @@ export function RunsWorkbench({
   };
   // Rows checked for a batch: cancel them, run them again, retry them.
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Runs that start while the reader is down the list, or has some checked, wait at the top.
+  const arrivals = useArrivals(
+    list.data ? items : undefined,
+    (one) => one.id,
+    base,
+    () => {
+      const table = document.querySelector<HTMLElement>('[data-table="runs"]');
+      const away = (table?.scrollTop ?? 0) > 0 || (table?.parentElement?.scrollTop ?? 0) > 0;
+      return away || checked.size > 0;
+    },
+  );
   const batch = useBatch();
   const kindOf = (id: string) => items.find((one) => one.id === id);
   const nameOf = (id: string) => kindOf(id)?.target ?? id;
@@ -741,14 +762,34 @@ export function RunsWorkbench({
           ) : null
         }
       >
+        {arrivals.waiting > 0 ? (
+          // A pill over the list, below its header and batch bar: it moves nothing the reader is looking at.
+          <div className="sticky top-0 layer-sticky flex h-0 translate-y-20 justify-center">
+            <Button
+              size="small"
+              variant="primary"
+              className="shadow-overlay"
+              onClick={() => {
+                arrivals.release();
+                const table = document.querySelector<HTMLElement>('[data-table="runs"]');
+                table?.scrollTo({ top: 0 });
+                table?.parentElement?.scrollTo({ top: 0 });
+              }}
+            >
+              <ArrowUp aria-hidden="true" size={14} /> {arrivals.waiting} new run
+              {arrivals.waiting === 1 ? "" : "s"}
+            </Button>
+          </div>
+        ) : null}
         <DataTable<Activity>
           id="runs"
+          arriving={arrivals.arriving}
           label="Runs"
           fill
           density={density}
           columns={columns}
           columnsShown={url.cols.length > 0 ? url.cols : undefined}
-          rows={list.data ? items : undefined}
+          rows={arrivals.shown}
           rowKey={(one) => one.id}
           selected={selected}
           onOpen={open}

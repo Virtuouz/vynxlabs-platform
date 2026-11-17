@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
-import { expectNoAxeViolations, snap } from "./visual.ts";
+import { expectNoAxeViolations, readEveryList, snap } from "./visual.ts";
 
 /**
  * The console of phase 8, checked in a browser on a running instance: every
@@ -77,6 +77,7 @@ async function signIn(browser: Browser): Promise<Page> {
 test.beforeAll(async ({ browser }) => {
   admin = await signIn(browser);
   api = apiOf(admin);
+  await readEveryList(admin);
   before = ok(await api("GET", "/instance/branding"), "read the branding").body;
   ok(
     await api("PUT", "/instance/branding", {

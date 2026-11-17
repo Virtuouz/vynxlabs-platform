@@ -60,7 +60,7 @@ const FlowEditor = lazy(() =>
   import("./FlowEditor.tsx").then((module) => ({ default: module.FlowEditor })),
 );
 
-import { ObjectLink } from "../kit/objects.tsx";
+import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
@@ -454,10 +454,11 @@ function WorkspaceDetail({
             />
           </Suspense>
         ) : (
-          <Notice tone="attention">
-            This is a production workspace. Flows are edited in a dev workspace and reach production
-            by promotion.
-          </Notice>
+          <ProductionNotice
+            root={root}
+            noun="Flows"
+            edit={rest.startsWith("edit/") ? `flows/${rest}` : undefined}
+          />
         )
       ) : tab === "flows" && rest ? (
         <FlowView

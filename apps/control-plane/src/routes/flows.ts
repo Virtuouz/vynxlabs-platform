@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@vynxlabs/db";
 import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
 import { Type } from "typebox";
-import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
 import { bundleManifest, payloadSchemas } from "../kernel/execution/bundles.js";
 import { redact } from "../kernel/execution/redact.js";
@@ -756,6 +756,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       );
       return {
         row,
+        body,
         plan: {
           kept: nodes.filter((node) => kept.has(node)),
           again: nodes.filter((node) => !kept.has(node)),
@@ -774,7 +775,60 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       };
     };
+    /**
+     * The version a retry runs on: the run's own, the workspace's active one, or a
+     * bundle named outright, so a promotion in between cannot change which.
+     */
+    const retryTarget = async (
+      workspaceId: string,
+      row: { bundle_id: string; flow_path: string },
+      spec: string | undefined,
+    ) => {
+      const bundleId =
+        spec === undefined || spec === "original"
+          ? row.bundle_id
+          : spec === "active"
+            ? (
+                await db
+                  .selectFrom("workspace")
+                  .select("active_bundle_id")
+                  .where("id", "=", workspaceId)
+                  .executeTakeFirst()
+              )?.active_bundle_id
+            : spec;
+      const bundle = bundleId
+        ? await db
+            .selectFrom("bundle")
+            .select(["id", "storage_key", "version"])
+            .where("id", "=", bundleId)
+            .where("workspace_id", "=", workspaceId)
+            .executeTakeFirst()
+        : undefined;
+      if (!bundle) throw notFound("The version to retry on");
+      const manifest = await bundleManifest(kernel, bundle, "flow", row.flow_path);
+      if (!manifest) throw conflict(`Version ${bundle.version} has no flow ${row.flow_path}.`);
+      return {
+        bundleId: bundle.id,
+        version: Number(bundle.version),
+        body: manifest.body as unknown as FlowBody,
+      };
+    };
+    /** The kept steps that a version draws differently: retrying from them would not be the same. */
+    const changedKept = (kept: string[], from: FlowBody, to: FlowBody) =>
+      kept.filter(
+        (node) =>
+          stableJson(from.nodes[node] ?? null) !== stableJson(to.nodes[node] ?? null) ||
+          stableJson(from.edges.filter((edge) => edge.to === node)) !==
+            stableJson(to.edges.filter((edge) => edge.to === node)),
+      );
+
     const RetryPlan = Type.Object({
+      bundleVersion: Type.Integer({ description: "The version the retry would run on." }),
+      changed: Type.Array(Type.String(), {
+        description:
+          "Kept steps that are different, or gone, in that version. A retry from the failed step " +
+          "is refused while any is.",
+      }),
       kept: Type.Array(Type.String(), { description: "Nodes whose steps are kept as they were." }),
       again: Type.Array(Type.String(), {
         description: "Nodes that run again, or for the first time.",
@@ -877,12 +931,26 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "pending or rejected ones are asked again.",
           tags: ["flows"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
+          querystring: Type.Object({
+            bundle: Type.Optional(
+              Type.String({
+                description:
+                  "`original` (the default), `active`, or a bundle's ID: the version to retry on.",
+              }),
+            ),
+          }),
           response: { 200: RetryPlan },
         },
       },
-      async ({ params }) => {
+      async ({ params, query }) => {
         await findWorkspace(kernel, params.t, params.w);
-        return (await retryPlanOf(params.w, params.id)).plan;
+        const { row, body, plan } = await retryPlanOf(params.w, params.id);
+        const target = await retryTarget(params.w, row, query.bundle);
+        return {
+          ...plan,
+          bundleVersion: target.version,
+          changed: changedKept(plan.kept, body, target.body),
+        };
       },
     );
 
@@ -903,13 +971,14 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             from: Type.Union([Type.Literal("failed"), Type.Literal("start")]),
             input: Type.Optional(Type.Unknown()),
             bundle: Type.Optional(Type.Union([Type.Literal("original"), Type.Literal("active")])),
+            bundleId: Type.Optional(Id),
           }),
           response: { 201: FlowRun },
         },
       },
       async ({ ctx, params, body }, reply) => {
         await findWorkspace(kernel, params.t, params.w);
-        const { row } = await retryPlanOf(params.w, params.id);
+        const { row, body: ranOn, plan } = await retryPlanOf(params.w, params.id);
         if (row.status === "running") {
           throw new HttpError(409, "conflict", "The flow run has not ended. Cancel it first.");
         }
@@ -924,13 +993,25 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (fromFailed && row.status === "succeeded") {
           throw new HttpError(409, "conflict", "The flow run succeeded: nothing failed to retry.");
         }
-        if (fromFailed && (body.bundle === "active" || body.input !== undefined)) {
+        if (fromFailed && body.input !== undefined) {
           throw new HttpError(
             409,
             "conflict",
-            "A retry from the failed step keeps what was done, so it runs on the same version " +
-              "with the same input. Retry from the start to change either.",
+            "A retry from the failed step keeps what was done, so it runs with the same input. " +
+              "Retry from the start to change it.",
           );
+        }
+        // On another version, such as the fix just promoted, what is kept must still be the same.
+        const target = await retryTarget(params.w, row, body.bundleId ?? body.bundle);
+        if (fromFailed && target.bundleId !== row.bundle_id) {
+          const changed = changedKept(plan.kept, ranOn, target.body);
+          if (changed.length > 0) {
+            throw new HttpError(
+              409,
+              "conflict",
+              `Version ${target.version} changes steps this retry would keep (${changed.join(", ")}). Retry from the start.`,
+            );
+          }
         }
         const input =
           body.input !== undefined
@@ -945,7 +1026,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             input,
             trigger: { type: "retry", detail: { of: row.id, from: body.from } },
             startedBy: { type: ctx.principal.type, id: ctx.principal.id },
-            bundleId: fromFailed || body.bundle !== "active" ? row.bundle_id : undefined,
+            bundleId: target.bundleId,
             tags: row.tags,
             retryOf: row.id,
             seed: fromFailed,
@@ -960,7 +1041,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               flow: row.flow_path,
               of: row.id,
               from: body.from,
-              bundle: fromFailed || body.bundle !== "active" ? "original" : "active",
+              bundle:
+                target.bundleId === row.bundle_id
+                  ? "original"
+                  : body.bundleId
+                    ? target.bundleId
+                    : "active",
             },
           });
           return result;

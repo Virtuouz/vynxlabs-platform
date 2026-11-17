@@ -152,3 +152,20 @@ Findings are recorded under each milestone as it lands.
 - **Links.** List names link to their pages, a script's inspector links its connections, tables, secrets and variables, and flows show the triggers that start them and what uses them. The palette opens the new pages, though a script still opens its editor.
 - **`GET triggers?target=`** came here from Milestone 15, since the pages needed it.
 - **Flaky test.** `portability.test.ts` failed once in a full run and passed alone and in the next full run. A queued run can be claimed between the test listing it and cancelling it. Not caused by this phase; noted for later.
+
+### Milestone 12: context continuity
+
+- **Server.**
+  - `script-source/*` takes `?run=` or `?bundle=`. A script written in the console is returned as its own one file from the bundle's manifest, and the response names `bundleVersion`.
+  - `flow-runs/:id/retry` now allows `from: failed` on another version (`bundle: active`, or `bundleId` as a promotion answers). It refuses, naming them, when steps it would keep are different or missing in that version. New input is still refused for a step retry.
+  - `retry-plan?bundle=` reports the target version and `changed`.
+  - `runs/:id/rerun` takes `bundleId`.
+- **The loop.**
+  - A script run's "version N" opens the script page's Source tab: the code as that run ran it, with the failing line selected (Milestone 9's location).
+  - "Edit in dev" opens the linked dev workspace's editor with `?fromRun=`. The editor loads that run's input, masked values left to enter again, and says which version the other workspace runs.
+  - A step run links to its flow run, opened on its step, and no longer offers a re-run the server refuses.
+  - A failed flow run offers "Retry from the failed step on vN (deployed now)" when a newer version keeps the same kept steps.
+- **Moving between workspaces.**
+  - The switcher keeps the object and its view when the other workspace has it (one `GET resources/*`), otherwise the section, and a list keeps its filters.
+  - "promotes to X" is a link.
+  - Production notices on the code, flow and resource editors link to the same thing in the dev workspace (`useDevWorkspace`).

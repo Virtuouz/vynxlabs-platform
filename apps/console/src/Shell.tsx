@@ -14,7 +14,7 @@ import {
   Sun,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isOperator, type Me, useLoad } from "./api.ts";
+import { api, isOperator, type Me, useLoad } from "./api.ts";
 import { BrandMark, useBrand } from "./kit/brand.tsx";
 import {
   CommandPalette,
@@ -303,6 +303,49 @@ function SectionList({
       ))}
     </div>
   );
+}
+
+/**
+ * The resource an address inside a workspace names, when it names one that
+ * another workspace may have too: a script, a flow, a table, a connection.
+ */
+export function objectAt(rest: string): { path: string } | undefined {
+  const found =
+    /^scripts\/(?:edit\/)?(?!new$)(.+)$/.exec(rest) ??
+    /^flows\/(?:edit\/)?(?!new$)(.+)$/.exec(rest) ??
+    /^(?:connections|variables|events|tables)\/(.+)$/.exec(rest);
+  return found?.[1] ? { path: found[1] } : undefined;
+}
+
+/**
+ * Goes to the same place in another workspace: the same object, with the same
+ * filters, when it is there too, or else the same section.
+ */
+export async function switchWorkspace(
+  tenantId: string,
+  from: string,
+  to: string,
+  section: string | undefined,
+) {
+  const rest = location.pathname.split(`/workspaces/${from}/`)[1] ?? "";
+  const target = `/t/${tenantId}/workspaces/${to}`;
+  const object = objectAt(rest);
+  if (object) {
+    const there = await api
+      .get(`/tenants/${tenantId}/workspaces/${to}/resources/${object.path}`)
+      .then(
+        () => true,
+        () => false,
+      );
+    if (there) {
+      navigate(`${target}/${rest}${location.search}`);
+      return;
+    }
+  }
+  // Filters belong to a list, and a list of the same section takes them; a run or an
+  // object of this workspace does not exist there.
+  const listOnly = rest === section;
+  navigate(`${target}/${section || "overview"}${listOnly ? location.search : ""}`);
 }
 
 /** Draft, this workspace, and where it promotes to, as a short vertical path. */
@@ -807,9 +850,7 @@ export function Shell({
                       label: `${one.name} (${one.type === "production" ? "production" : "dev"})`,
                       current: one.id === workspaceId,
                       onSelect: () =>
-                        navigate(
-                          `/t/${tenantId}/workspaces/${one.id}/${where.section || "overview"}`,
-                        ),
+                        void switchWorkspace(tenantId, workspaceId, one.id, where.section),
                     }))}
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
@@ -824,7 +865,13 @@ export function Shell({
                         />
                       </span>
                       <span className="text-ink-subtle">
-                        promotes to <span className="text-ink-muted">{ws.linked.name}</span>
+                        promotes to{" "}
+                        <Link
+                          to={`/t/${tenantId}/workspaces/${ws.linked.id}/overview`}
+                          className="text-ink-muted"
+                        >
+                          {ws.linked.name}
+                        </Link>
                       </span>
                     </span>
                   ) : null}

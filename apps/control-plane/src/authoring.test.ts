@@ -410,6 +410,12 @@ describe("trying a draft out", () => {
     expect(done.status).toBe("failed");
     const insight = (await alice.get(`${ws()}/runs/${started.body.runId}/insight`)).body;
     expect(insight.location).toMatchObject({ file: "orders/throws.script.ts", line: 4 });
+    // The code as that run ran it, to show beside the failure.
+    const source = (
+      await alice.get(`${ws()}/script-source/orders/throws?run=${started.body.runId}`)
+    ).body;
+    expect(source).toMatchObject({ available: true, file: "orders/throws.script.ts" });
+    expect(source.files[0].content).toContain("No warehouse for");
     await alice.delete(`${ws()}/drafts/orders/throws`);
   });
 });

@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
 import {
@@ -423,10 +424,11 @@ export function ResourceEditor({
       </header>
       <p className="m-0 max-w-3xl text-ink-muted">{about.says}</p>
       {!editable ? (
-        <Notice tone="attention">
-          This is a production workspace. Resources are changed in a dev workspace and reach
-          production by promotion.
-        </Notice>
+        <ProductionNotice
+          root={root}
+          noun="Resources"
+          edit={path ? `resources/edit/${kind}/${path}` : undefined}
+        />
       ) : state === "repository" ? (
         <Notice tone="attention">
           This {about.noun} is managed in the tenant's repository. Saving a draft of it takes it

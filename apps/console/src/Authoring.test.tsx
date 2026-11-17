@@ -261,3 +261,22 @@ test("the divider between code and tests moves by keyboard, and stays where it w
     ).getAttribute("aria-valuenow"),
   ).toBe("60");
 });
+
+test("opened from a failed run elsewhere, the editor carries its input and says what is edited", async () => {
+  routes["GET /tenants/t1/workspaces/w9/runs/r7"] = () =>
+    finishedRun("r7", { bundleVersion: 7, input: { sku: "A-1", apiKey: "[redacted]" } });
+  routes["GET /tenants/t1/workspaces/w9"] = () => ({
+    id: "w9",
+    name: "Production",
+    type: "production",
+  });
+  routes[`GET ${base}/drafts/hello/greet`] = () => draftOf("export default async () => ({});\n");
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/edit/hello/greet?fromRun=w9%3Ar7");
+  show(<AtAddress />);
+  const said = await screen.findByText(/is in the test pane/);
+  expect(said.textContent).toContain("enter again: apiKey");
+  expect(said.textContent).toContain("Production runs version 7");
+  expect(
+    within(said).getByRole("link", { name: "the run in Production" }).getAttribute("href"),
+  ).toBe("/t/t1/workspaces/w9/runs/r7");
+});

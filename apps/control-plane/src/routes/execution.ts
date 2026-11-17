@@ -1112,14 +1112,17 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Run a script run again, with the same input or another",
           description:
-            "Starts a new run of the same script, on the version the run used (the default) " +
-            "or the active one, with the input given or the same input. The new run names the " +
-            "one it repeats and carries its tags. Needs what starting the script needs.",
+            "Starts a new run of the same script, on the version the run used (the default), " +
+            "the active one, or a bundle named by `bundleId` (as a promotion answers, so " +
+            "another promotion in between cannot change which), with the input given or the " +
+            "same input. The new run names the one it repeats and carries its tags. Needs what " +
+            "starting the script needs.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           body: Type.Object({
             input: Type.Optional(Type.Unknown()),
             bundle: Type.Optional(Type.Union([Type.Literal("original"), Type.Literal("active")])),
+            bundleId: Type.Optional(Id),
           }),
           response: { 201: Run },
         },
@@ -1143,6 +1146,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body.input !== undefined
             ? body.input
             : await readPayload(kernel, original.input, original.input_ref);
+        if (body.bundleId) {
+          const named = await db
+            .selectFrom("bundle")
+            .select("id")
+            .where("id", "=", body.bundleId)
+            .where("workspace_id", "=", params.w)
+            .executeTakeFirst();
+          if (!named) throw notFound("The bundle");
+        }
         const result = await ctx.mutate(async (trx, audit) => {
           const started = await startRun(kernel, trx, {
             tenantId: params.t,
@@ -1151,7 +1163,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             input,
             trigger: { type: "rerun", detail: { of: original.id } },
             startedBy: { type: ctx.principal.type, id: ctx.principal.id },
-            bundleId: body.bundle === "active" ? undefined : original.bundle_id,
+            bundleId: body.bundleId ?? (body.bundle === "active" ? undefined : original.bundle_id),
             tags: original.tags,
           });
           await audit({
@@ -1163,7 +1175,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             details: {
               script: original.script_path,
               of: original.id,
-              bundle: body.bundle ?? "original",
+              bundle: body.bundleId ?? body.bundle ?? "original",
               inputChanged: body.input !== undefined,
             },
           });

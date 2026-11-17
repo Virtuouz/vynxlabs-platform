@@ -16,14 +16,15 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
-import { InputForm } from "../InputDialog.tsx";
+import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
+import { ProductionNotice } from "../kit/objects.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, StatePill } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
-import { Link, navigate, useNavigationGuard } from "../router.tsx";
+import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { fromNow } from "./Overview.tsx";
@@ -363,6 +364,45 @@ export function ScriptEditor({
   // A draft saves itself a few seconds after the last change. Something new waits for
   // its first Save, so that a path half typed never becomes a draft of its own; until
   // then a copy is kept in this browser.
+  // Opened from a failed run, as "Edit in dev": its input is carried into the test pane.
+  const [fromRun] = useUrlParam("fromRun");
+  const [carried, setCarried] = useState<{
+    workspace: string;
+    version: number;
+    run: string;
+    masked: string[];
+  }>();
+  const [formKey, setFormKey] = useState(0);
+  useEffect(() => {
+    if (!fromRun || kind !== "script") return;
+    const [workspaceId, runId] = fromRun.split(":");
+    if (!workspaceId || !runId) return;
+    const tenantRoot = root.split("/workspaces/")[0] as string;
+    let live = true;
+    Promise.all([
+      api.get<{ input: unknown; bundleVersion: number }>(
+        `${tenantRoot}/workspaces/${workspaceId}/runs/${runId}`,
+      ),
+      api.get<{ name: string }>(`${tenantRoot}/workspaces/${workspaceId}`),
+    ]).then(
+      ([run, workspace]) => {
+        if (!live) return;
+        const { value, masked } = withoutMasked(run.input);
+        setTestInput(value);
+        setFormKey((n) => n + 1);
+        setCarried({
+          workspace: workspace.name,
+          version: run.bundleVersion,
+          run: `${tenantRoot.replace(/^\/tenants\//, "/t/")}/workspaces/${workspaceId}/runs/${runId}`,
+          masked,
+        });
+      },
+      (error) => live && setProblem(failureText(error)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [fromRun, kind, root]);
   const recoveryKey = `${root}:${kind}`;
   const { kept, drop, taken } = useKeptCopy<{ path: string; body: ScriptBody; schemaText: string }>(
     recoveryKey,
@@ -666,7 +706,7 @@ export function ScriptEditor({
       ) : (
         <InputForm
           // Drawn again when the schema changes, starting from the last input.
-          key={JSON.stringify(inputSchema ?? null)}
+          key={`${JSON.stringify(inputSchema ?? null)}:${formKey}`}
           schema={inputSchema}
           initial={testInput}
           action={dirty || state === "new" ? "Save and run" : "Run the draft"}
@@ -779,10 +819,11 @@ export function ScriptEditor({
           give it a label, and it joins the flow editor's steps.
         </Notice>
       ) : !editable ? (
-        <Notice tone="attention">
-          This is a production workspace. Code is edited in a dev workspace and reaches production
-          by promotion.
-        </Notice>
+        <ProductionNotice
+          root={root}
+          noun="Code"
+          edit={opened ? `${about.edit}/${opened}` : undefined}
+        />
       ) : fromRepository ? (
         <Notice tone="attention">
           This {about.noun} is managed in the tenant's repository. Its source is shown here
@@ -821,6 +862,17 @@ export function ScriptEditor({
         </Notice>
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      {carried ? (
+        <Notice tone="attention">
+          The input of <Link to={carried.run}>the run in {carried.workspace}</Link> is in the test
+          pane
+          {carried.masked.length > 0
+            ? ` (masked when shown, enter again: ${carried.masked.join(", ")})`
+            : ""}
+          . You are editing the draft here; {carried.workspace} runs version {carried.version}.{" "}
+          <Link to={`${link}/release`}>See what would change</Link>
+        </Notice>
+      ) : null}
       <details
         className="rounded-panel border border-line bg-surface"
         open={!opened || kind !== "script"}

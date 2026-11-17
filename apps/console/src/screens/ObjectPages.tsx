@@ -1,5 +1,6 @@
 import { Badge, Button, JsonView, Notice } from "@vynxlabs/ui";
 import { useLoad } from "../api.ts";
+import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
@@ -7,7 +8,7 @@ import { kindName, ObjectLink } from "../kit/objects.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { fromNow } from "./Overview.tsx";
@@ -356,6 +357,67 @@ export function TriggersOf({
   );
 }
 
+interface SourceAtVersion {
+  available: boolean;
+  file: string | null;
+  line: number | null;
+  files: { path: string; content: string }[];
+  bundleVersion: number | null;
+}
+
+/**
+ * The code as a run ran it, read-only, with the line it failed on selected: or,
+ * with no run named, as deployed now.
+ */
+function SourceAt({ root, link, path }: { root: string; link: string; path: string }) {
+  const [run] = useUrlParam("run");
+  const source = useLoad<SourceAtVersion>(
+    `${root}/script-source/${path}${run ? `?run=${encodeURIComponent(run)}` : ""}`,
+  );
+  const insight = useLoad<{ location?: { file: string; line: number } | null }>(
+    run ? `${root}/runs/${run}/insight` : null,
+  );
+  if (source.error) return <Notice tone="danger">{source.error.message}</Notice>;
+  if (!source.data) return <p className="m-0 text-ink-muted">Loading…</p>;
+  if (!source.data.available) {
+    return (
+      <p className="m-0 text-ink-muted">
+        This version does not carry its source. A repository build that includes it shows it here.
+      </p>
+    );
+  }
+  const failedAt = insight.data?.location;
+  const file =
+    source.data.files.find((one) => one.path === (failedAt?.file ?? source.data?.file)) ??
+    source.data.files[0];
+  if (!file) return <p className="m-0 text-ink-muted">No source.</p>;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="m-0 text-meta text-ink-muted">
+        <Mono>{file.path}</Mono> at version {source.data.bundleVersion}
+        {run ? (
+          <>
+            , as <Link to={`${link}/runs/${run}`}>the run</Link> ran it
+            {failedAt ? `, failing on line ${failedAt.line}` : ""}
+          </>
+        ) : (
+          ", as deployed now"
+        )}
+        . <Link to={`${link}/scripts/edit/${path}`}>Open the code to change it</Link>
+      </p>
+      <CodeEditor
+        label={`Source of ${path} at version ${source.data.bundleVersion}`}
+        path={`source/${path}@${source.data.bundleVersion}/${file.path}`}
+        language="typescript"
+        value={file.content}
+        readOnly
+        height="32rem"
+        revealLine={failedAt?.line ?? source.data.line ?? undefined}
+      />
+    </div>
+  );
+}
+
 export function ScriptPage({ root, link, path }: { root: string; link: string; path: string }) {
   const scripts = useLoad<{ items: ScriptSummary[] }>(`${root}/scripts`);
   const one = scripts.data?.items.find((script) => script.path === path);
@@ -411,6 +473,11 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
               id: "used-by",
               label: "Used by",
               content: <ReferenceList root={root} link={link} kind="script" name={script.path} />,
+            },
+            {
+              id: "source",
+              label: "Source",
+              content: <SourceAt root={root} link={link} path={script.path} />,
             },
           ]}
         />

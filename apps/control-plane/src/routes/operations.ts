@@ -602,34 +602,81 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("bundle:read") },
         schema: {
-          summary: "The TypeScript a repository script was built from",
+          summary: "The TypeScript a script was built from, at a version",
           description:
-            "From the active bundle, when it carries its sources. `file` is the one that " +
-            "defines the script, when it can be told. A script written in the console keeps " +
-            "its source on the script itself instead.",
+            "From the active bundle, or the bundle a run ran on (`run`), or a bundle of the " +
+            "workspace (`bundle`). A repository script's files come from the bundle's sources, " +
+            "when it carries them; a script written in the console is its own one file. `file` " +
+            "is the one that defines the script, when it can be told.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, "*": Type.String({ minLength: 1 }) }),
+          querystring: Type.Object({
+            run: Type.Optional(Id),
+            bundle: Type.Optional(Id),
+          }),
           response: {
             200: Type.Object({
               available: Type.Boolean(),
               file: NullableString,
               line: Type.Union([Type.Integer(), Type.Null()]),
               files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() })),
+              bundleVersion: Type.Union([Type.Integer(), Type.Null()], {
+                description: "The version the source is from.",
+              }),
             }),
           },
         },
       },
-      async ({ params }) => {
+      async ({ params, query }) => {
         const path = params["*"];
+        await findWorkspace(kernel, params.t, params.w);
+        const chosen = query.run
+          ? (
+              await db
+                .selectFrom("run")
+                .select("bundle_id")
+                .where("id", "=", query.run)
+                .where("workspace_id", "=", params.w)
+                .executeTakeFirst()
+            )?.bundle_id
+          : query.bundle;
+        if ((query.run || query.bundle) && !chosen)
+          throw notFound(query.run ? "The run" : "The bundle");
         const active = await db
-          .selectFrom("workspace")
-          .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
-          .select(["bundle.id", "bundle.storage_key"])
-          .where("workspace.id", "=", params.w)
-          .where("workspace.tenant_id", "=", params.t)
+          .selectFrom("bundle")
+          .select(["bundle.id", "bundle.storage_key", "bundle.version"])
+          .where("bundle.workspace_id", "=", params.w)
+          .where(
+            "bundle.id",
+            "=",
+            chosen ??
+              db
+                .selectFrom("workspace")
+                .select("active_bundle_id")
+                .where("id", "=", params.w)
+                .$castTo<string>(),
+          )
           .executeTakeFirst();
-        const sources = active ? (await loadBundle(kernel, active)).sources : undefined;
-        if (!sources) return { available: false, file: null, line: null, files: [] };
+        if (query.bundle && !active) throw notFound("The bundle");
+        const loaded = active ? await loadBundle(kernel, active) : undefined;
+        const bundleVersion = active ? Number(active.version) : null;
+        // A script written in the console carries its code in its own manifest.
+        const manifest = loaded?.manifests.find(
+          (one) => one.kind === "script" && one.path === path,
+        );
+        const code = (manifest?.body.source as { code?: unknown } | undefined)?.code;
+        if (typeof code === "string") {
+          const file = `${path}.script.ts`;
+          return {
+            available: true,
+            file,
+            line: 1,
+            files: [{ path: file, content: code }],
+            bundleVersion,
+          };
+        }
+        const sources = loaded?.sources;
+        if (!sources) return { available: false, file: null, line: null, files: [], bundleVersion };
         // The file whose text names the script's path is the one that defines it.
         const named = new RegExp(`["'\`]${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'\`]`);
         let file: string | null = null;
@@ -643,7 +690,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             break;
           }
         }
-        return { available: true, file, line, files: sources.files };
+        return { available: true, file, line, files: sources.files, bundleVersion };
       },
     );
   };

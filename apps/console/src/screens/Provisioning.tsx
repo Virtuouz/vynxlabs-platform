@@ -158,7 +158,10 @@ export function Provisioning({
                       danger: true,
                     });
                     if (!sure) return;
-                    await api.delete(`${root}/tokens/${row.id}`).then(state.reload, notify.error);
+                    await api.delete(`${root}/tokens/${row.id}`).then(() => {
+                      notify.success("Revoked. The directory can no longer use that token.");
+                      state.reload();
+                    }, notify.error);
                   }}
                 >
                   Revoke

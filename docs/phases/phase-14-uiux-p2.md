@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–5 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–6 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -158,3 +158,30 @@ Findings are recorded under each milestone as it lands.
 - **Found.** The editable dashboard and the App Builder had no `h1` at all, only a name field, so focus on opening had nowhere to land. They now have one.
 - **Rule.** `enforce.test.ts` fails on an `h1` outside `PageHeader`, except on sign-in and the approval link.
 - **Checks.** The whole e2e suite ran. `loop.spec.ts` caught the runs header wrapping to two rows at 1440 px (19 rows in view, not 20); the compact form's fix brought it back. `script-editor.spec.ts` now leaves the editor by the breadcrumb.
+
+### Milestone 6: feedback
+
+- **Toast v2** (`packages/ui/src/Toast.tsx`):
+  - an optional `title`;
+  - a `link` to the result, which the console follows through its router (`ToastProvider navigate`);
+  - an `info` tone;
+  - an icon for each tone;
+  - at most three on screen, with the rest waiting their turn, their time starting when shown;
+  - Esc dismisses the one with focus;
+  - a 24 px dismiss target with an icon in place of "×".
+  
+  `notify` gains `info`, and `success` and `error` take the options.
+- **`Button loading`** shows a spinner beside the label, which stays, with `aria-busy`, and can't be pressed twice. 38 primary buttons that used `disabled={busy}` moved to it. Secondary buttons that share a `busy` stay disabled, so one press doesn't set several spinners going.
+- **Writes say what they did.** A scan found 58 writes with no confirmation nearby. Those whose result is already on screen (a list that shows the new item, an editor's save state, a closed dialog) were left. These now say what they did, naming it:
+  - `CreateDialog` says "Created." by default, and takes `done` to name the result and link to it. A new workspace and a new tenant link to themselves.
+  - A secret set or replaced, a role saved, a service account's description.
+  - Group membership in and out.
+  - Promotes to, a workspace's triggers paused and resumed, an end user enabled and disabled.
+  - Sign-up on and off, a row added, a version activated, managed workers, the Git branch.
+  - An SSO domain added, a provider link untied, a provisioning token revoked, a draft restored.
+  - An approval decided, with a link to its run, and a run being canceled.
+- **Optimistic pause.** `useCacheEdit` (`api.ts`) changes a read in the cache at once and gives back an undo. Pausing or resuming a trigger, in Operate's inspector or on a script's or flow's page, shows at once, says so, and goes back if the server refuses.
+- **Found in the full suite.**
+  - The pictures depended on the live indicator ("Live" or "Connecting…" while other specs load the server). It is now `data-volatile`, and volatile marks are hidden by `e2e/screenshot.css` rather than masked, since a mask's box changes with the text.
+  - At tablet width every crumb was truncated. The tenant name and the Paused mark now wait for `lg`.
+- **Tests.** `Toast.test.tsx` covers a title and a link that routes, three on screen with the fourth waiting, Esc, and a loading button. The new `e2e/feedback.spec.ts` sets a secret twice, resumes and pauses triggers, and makes a workspace. Each is answered within 1 s, and the new workspace's link opens it. The whole e2e suite passed: 25 tests.

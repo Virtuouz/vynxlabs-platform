@@ -213,11 +213,11 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             ) : null}
             {error ? <Notice tone="danger">{error}</Notice> : null}
             {!ways ? (
-              <Button type="submit" variant="primary" disabled={busy} className="h-10">
+              <Button type="submit" variant="primary" loading={busy} className="h-10">
                 {busy ? "Checking…" : "Continue"}
               </Button>
             ) : recovering ? (
-              <Button type="submit" variant="primary" disabled={busy} className="h-10">
+              <Button type="submit" variant="primary" loading={busy} className="h-10">
                 Sign in with the recovery code
               </Button>
             ) : ways.password ? (

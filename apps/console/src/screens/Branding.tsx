@@ -9,7 +9,7 @@ import {
 } from "@vynxlabs/ui";
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask } from "../ask.tsx";
+import { ask, notify } from "../ask.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { Page, RemoveButton } from "../ListScreen.tsx";
 import { size } from "./Apps.tsx";
@@ -360,7 +360,7 @@ function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
           </div>
           {error ? <Notice tone="danger">{error.message}</Notice> : null}
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" disabled={busy}>
+            <Button type="submit" variant="primary" loading={busy}>
               Save theme
             </Button>
             <Button
@@ -518,6 +518,11 @@ export function Branding({ base }: { base: string }) {
             setProblem(undefined);
             try {
               await api.put(`${base}/portal`, { signUp: checked });
+              notify.success(
+                checked
+                  ? "People can now sign themselves up."
+                  : "Sign-up is off: people are invited.",
+              );
             } catch (error) {
               setSignUp(!checked);
               setProblem((error as ApiError).message);

@@ -119,7 +119,7 @@ export function RepositorySettings({ base }: { base: string }) {
           <Notice tone="success">Connected. The repository was reached with the token.</Notice>
         ) : null}
         <div className="flex items-center justify-between gap-2">
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             {busy ? "Reaching the repository…" : repository ? "Save" : "Connect"}
           </Button>
           {repository ? (
@@ -220,7 +220,10 @@ export function GitPanel({
           onSubmit={async (event) => {
             event.preventDefault();
             setBusy("branch");
-            await api.put(`${root}/git`, { branch }).then(status.reload, notify.error);
+            await api.put(`${root}/git`, { branch }).then(() => {
+              notify.success(`This workspace now syncs with ${branch}.`);
+              status.reload();
+            }, notify.error);
             setBusy(undefined);
           }}
         >

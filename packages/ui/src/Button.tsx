@@ -1,3 +1,4 @@
+import { LoaderCircle } from "lucide-react";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 
 const styles = {
@@ -18,6 +19,11 @@ interface Shared {
    * everywhere, for sign-in.
    */
   size?: "regular" | "small" | "large";
+  /**
+   * The work it started is under way: a spinner beside the label, which stays,
+   * and it cannot be pressed again. Screen readers hear it as busy.
+   */
+  loading?: boolean;
   children: ReactNode;
 }
 
@@ -44,21 +50,40 @@ const classesOf = (variant: keyof typeof styles, size: "regular" | "small" | "la
 export function Button({
   variant = "secondary",
   size = "regular",
+  loading = false,
   children,
   ...rest
 }: ButtonProps) {
+  const label = loading ? (
+    <>
+      <LoaderCircle aria-hidden="true" size={14} className="shrink-0 animate-spin" />
+      {children}
+    </>
+  ) : (
+    children
+  );
   if (rest.href !== undefined) {
     const { className, ...link } = rest as AnchorHTMLAttributes<HTMLAnchorElement>;
     return (
-      <a {...link} className={classesOf(variant, size, className)}>
-        {children}
+      <a
+        {...link}
+        {...(loading ? { "aria-busy": true, "aria-disabled": true } : {})}
+        className={classesOf(variant, size, className)}
+      >
+        {label}
       </a>
     );
   }
   const { className, ...button } = rest as ButtonHTMLAttributes<HTMLButtonElement>;
   return (
-    <button type="button" {...button} className={classesOf(variant, size, className)}>
-      {children}
+    <button
+      type="button"
+      {...button}
+      disabled={button.disabled || loading}
+      aria-busy={loading || undefined}
+      className={classesOf(variant, size, className)}
+    >
+      {label}
     </button>
   );
 }

@@ -246,7 +246,8 @@ export function RowRulesEditor({
       <div className="flex items-center gap-3">
         <Button
           variant="primary"
-          disabled={busy || wanted === undefined}
+          loading={busy}
+          disabled={wanted === undefined}
           onClick={async () => {
             if (!wanted) return;
             setBusy(true);

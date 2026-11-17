@@ -576,6 +576,7 @@ export function Deployments({ root }: { root: string }) {
               if (!sure) return;
               try {
                 await api.post(`${root}/deployments`, { bundleId: row.id });
+                notify.success(`Version ${row.version} is what runs here now.`);
                 reload();
               } catch (error) {
                 notify.error(error);
@@ -1120,7 +1121,18 @@ export function Workers({ base }: { base: string }) {
             <Button
               size="small"
               onClick={async () => {
-                await api.patch(base, { managedWorkers: !tenant.data?.managedWorkers });
+                const on = !tenant.data?.managedWorkers;
+                await api
+                  .patch(base, { managedWorkers: on })
+                  .then(
+                    () =>
+                      notify.success(
+                        on
+                          ? "The instance starts workers for this tenant when there is work."
+                          : "The instance no longer starts workers for this tenant.",
+                      ),
+                    notify.error,
+                  );
                 tenant.reload();
               }}
             >

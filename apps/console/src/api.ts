@@ -201,6 +201,23 @@ export function useLoad<T>(path: string | null): Loaded<T> {
   };
 }
 
+/**
+ * Changes what a read holds on screen at once, before the server answers, and
+ * gives back a way to undo that when it refuses. The write's own refresh then
+ * brings what the server says.
+ */
+export function useCacheEdit() {
+  const client = useContext(QueryClientContext) ?? fallbackClient();
+  return useCallback(
+    <T>(path: string, edit: (data: T) => T): (() => void) => {
+      const before = client.getQueryData<T>([path]);
+      if (before !== undefined) client.setQueryData<T>([path], edit(before));
+      return () => client.setQueryData<T>([path], before);
+    },
+    [client],
+  );
+}
+
 export interface Me {
   principal: { type: string; id: string; name: string | null; email: string | null };
   instancePermissions: string[];

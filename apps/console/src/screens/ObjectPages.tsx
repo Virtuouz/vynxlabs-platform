@@ -1,6 +1,6 @@
 import { Button, JsonView } from "@vynxlabs/ui";
 import { useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { api, useCacheEdit, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -329,7 +329,26 @@ export function TriggersOf({
   const [adding, setAdding] = useState(false);
   const pauseUrl = (one: TriggerRow) =>
     `${root}/trigger-pauses/${one.path}${one.node ? `?node=${encodeURIComponent(one.node)}` : ""}`;
-  const act = (work: Promise<unknown>) => work.then(triggers.reload, notify.error);
+  const editCache = useCacheEdit();
+  const listPath = `${root}/triggers?${new URLSearchParams({ target: path })}`;
+  /** Pauses or resumes at once on screen, and puts it back if the server refuses. */
+  const setPaused = async (one: TriggerRow, paused: boolean) => {
+    const undo = editCache<{ items: TriggerRow[] }>(listPath, (data) => ({
+      ...data,
+      items: data.items.map((row) =>
+        row.path === one.path && row.node === one.node
+          ? { ...row, paused: paused ? { at: new Date().toISOString() } : null }
+          : row,
+      ),
+    }));
+    try {
+      await (paused ? api.put(pauseUrl(one), {}) : api.delete(pauseUrl(one)));
+      notify.success(paused ? `${one.path} is paused.` : `${one.path} runs again.`);
+    } catch (error) {
+      undo();
+      notify.error(error);
+    }
+  };
   return (
     <div className="flex flex-col gap-3">
       <div>
@@ -365,8 +384,8 @@ export function TriggersOf({
               ]
             : []),
           one.paused
-            ? { label: "Resume", onSelect: () => void act(api.delete(pauseUrl(one))) }
-            : { label: "Pause", onSelect: () => void act(api.put(pauseUrl(one), {})) },
+            ? { label: "Resume", onSelect: () => void setPaused(one, false) }
+            : { label: "Pause", onSelect: () => void setPaused(one, true) },
         ]}
         variant="inset"
         label={`Triggers of ${path}`}

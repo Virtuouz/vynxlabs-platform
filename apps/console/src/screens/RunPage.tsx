@@ -289,7 +289,11 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                     cancel: "Keep running",
                     danger: true,
                   });
-                  if (sure) await api.post(`${root}/runs/${id}/cancel`).catch(notify.error);
+                  if (!sure) return;
+                  await api
+                    .post(`${root}/runs/${id}/cancel`)
+                    .then(() => notify.info("Canceling. The worker stops it at its next check."))
+                    .catch(notify.error);
                 }}
               >
                 Cancel run
@@ -630,7 +634,10 @@ function FlowRunHeader({
                     danger: true,
                   });
                   if (!sure) return;
-                  await api.post(`${root}/flow-runs/${run.id}/cancel`).catch(notify.error);
+                  await api
+                    .post(`${root}/flow-runs/${run.id}/cancel`)
+                    .then(() => notify.info("Canceling. Steps that are running are stopped."))
+                    .catch(notify.error);
                   refresh();
                 }}
               >

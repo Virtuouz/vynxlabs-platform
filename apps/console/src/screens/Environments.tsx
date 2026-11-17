@@ -54,6 +54,11 @@ export function WorkspaceControls({
     setProblem(undefined);
     try {
       await api.patch(root, { triggersPaused: paused });
+      notify.success(
+        paused
+          ? `Triggers in ${workspace.name} are paused. Runs started by hand still work.`
+          : `Triggers in ${workspace.name} run again.`,
+      );
       reload();
     } catch (error) {
       setProblem(failed(error));
@@ -227,7 +232,8 @@ function TimeZoneSetting({ base, workspaceId }: { base: string; workspaceId: str
           </div>
           <Button
             variant="primary"
-            disabled={busy || shown === current}
+            loading={busy}
+            disabled={shown === current}
             onClick={async () => {
               setBusy(true);
               try {
@@ -492,6 +498,12 @@ export function Promotion({
               setProblem(undefined);
               try {
                 await api.patch(root, { linkedWorkspaceId: value === "" ? null : value });
+                const target = others.data?.items.find((item) => item.id === value);
+                notify.success(
+                  target
+                    ? `${workspace.name} now promotes to ${target.name}.`
+                    : `${workspace.name} promotes nowhere now.`,
+                );
                 reload();
               } catch (error) {
                 setProblem(failed(error));
@@ -1120,7 +1132,7 @@ export function TenantImport() {
               >
                 Check again
               </Button>
-              <Button type="submit" variant="primary" disabled={working || !ready}>
+              <Button type="submit" variant="primary" loading={working} disabled={!ready}>
                 {working ? "Importing…" : "Import tenant"}
               </Button>
               <Button
@@ -1177,7 +1189,7 @@ export function TenantImport() {
           />
           {problem ? <Notice tone="danger">{problem}</Notice> : null}
           <div>
-            <Button type="submit" variant="primary" disabled={working || !file}>
+            <Button type="submit" variant="primary" loading={working} disabled={!file}>
               {working ? "Uploading…" : "Upload and check"}
             </Button>
           </div>

@@ -170,7 +170,8 @@ function AddDialog({
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || (serves === "app" && (apps.loading || appPath === ""))}
+            loading={busy}
+            disabled={serves === "app" && (apps.loading || appPath === "")}
           >
             Add hostname
           </Button>
@@ -298,7 +299,7 @@ function DetailsDialog({
               </Button>
               <Button
                 variant="primary"
-                disabled={busy}
+                loading={busy}
                 onClick={() =>
                   run(async () =>
                     onChanged(await api.post<Domain>(`${base}/domains/${domain.id}/checks`)),

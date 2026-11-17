@@ -75,9 +75,16 @@ export interface CreateConfig {
   description?: string;
   fields: FormField[];
   submit: (values: Record<string, string>) => Promise<unknown>;
-  /** Something to show once after creating, such as a key that is only shown now. */
   /** What to show once made, such as a key shown once. `dismiss` takes it away. */
   afterCreate?: (result: unknown, dismiss: () => void) => ReactNode;
+  /**
+   * What the confirmation says, naming what was made, and where it is. Without
+   * it, "Created." is said; with `afterCreate`, what that shows says it.
+   */
+  done?: (
+    result: unknown,
+    values: Record<string, string>,
+  ) => string | { message: string; link?: { label: string; href: string } };
 }
 
 export interface ListScreenProps<Row> {
@@ -173,7 +180,12 @@ export function CreateDialog({
                 .filter((f) => f.options?.[0] && !f.pick)
                 .map((f) => [f.name, f.options?.[0]?.value as string]),
             );
-            const result = await config.submit({ ...defaults, ...values });
+            const sent = { ...defaults, ...values };
+            const result = await config.submit(sent);
+            const said =
+              config.done?.(result, sent) ?? (config.afterCreate ? undefined : "Created.");
+            if (typeof said === "string") notify.success(said);
+            else if (said) notify.success(said.message, said.link ? { link: said.link } : {});
             setValues({});
             onCreated(result);
           } catch (caught) {
@@ -223,7 +235,7 @@ export function CreateDialog({
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={close}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             {config.action}
           </Button>
         </div>

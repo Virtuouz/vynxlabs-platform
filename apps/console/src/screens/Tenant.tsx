@@ -344,6 +344,13 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
             ...values,
             ...(linkedWorkspaceId ? { linkedWorkspaceId } : {}),
           }),
+        done: (made, values) => ({
+          message: `Workspace ${values.name} is made.`,
+          link: {
+            label: `Open ${values.name}`,
+            href: `/t/${tenantId}/workspaces/${(made as { id: string }).id}/overview`,
+          },
+        }),
       }}
     />
   );
@@ -737,6 +744,8 @@ function WorkspaceDetail({
               api.put(`${root}/secrets/${encodeURIComponent(values.name ?? "")}`, {
                 value: values.value,
               }),
+            done: (_made, values) =>
+              `The secret ${values.name} is set. What uses it reads the new value from its next run.`,
           }}
           rowActions={(row, reload) => (
             <RemoveButton
@@ -955,6 +964,7 @@ function DescriptionForm({
         setBusy(true);
         try {
           await api.patch(`${base}/service-accounts/${account.id}`, { description: text });
+          notify.success(`What ${account.name} is for is saved.`);
           onSaved();
         } catch (error) {
           notify.error(error);
@@ -973,7 +983,7 @@ function DescriptionForm({
         onChange={setText}
       />
       <div>
-        <Button type="submit" size="small" variant="primary" disabled={busy || !changed}>
+        <Button type="submit" size="small" variant="primary" loading={busy} disabled={!changed}>
           Save
         </Button>
       </div>

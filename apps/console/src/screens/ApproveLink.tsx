@@ -144,7 +144,7 @@ export function ApproveLink({ token }: { token: string }) {
               />
               {problem ? <Notice tone="danger">{problem}</Notice> : null}
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" disabled={busy} onClick={() => decide("approve")}>
+                <Button variant="primary" loading={busy} onClick={() => decide("approve")}>
                   Approve
                 </Button>
                 <Button variant="danger" disabled={busy} onClick={() => decide("reject")}>

@@ -314,7 +314,7 @@ export function ConnectionWizard({
       footer={
         <div className="flex flex-wrap justify-end gap-2">
           <Button onClick={onClose}>Close</Button>
-          <Button variant="primary" disabled={busy || !schema || !path} onClick={save}>
+          <Button variant="primary" loading={busy} disabled={!schema || !path} onClick={save}>
             {busy ? "Saving…" : saved ? "Save again" : "Save"}
           </Button>
         </div>

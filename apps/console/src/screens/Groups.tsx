@@ -67,6 +67,7 @@ function MembersDialog({
             setProblem(undefined);
             try {
               await api.put(`${path}/members/${adding}`);
+              notify.success("Added to the group.");
               setAdding(undefined);
               detail.reload();
             } catch (error) {
@@ -90,7 +91,7 @@ function MembersDialog({
               onChange={setAdding}
             />
           </div>
-          <Button type="submit" variant="primary" disabled={busy || !adding}>
+          <Button type="submit" variant="primary" loading={busy} disabled={!adding}>
             Add
           </Button>
         </form>
@@ -116,7 +117,10 @@ function MembersDialog({
                   variant="danger"
                   aria-label={`Take ${person.email} out`}
                   onClick={() =>
-                    api.delete(`${path}/members/${person.id}`).then(detail.reload, notify.error)
+                    api.delete(`${path}/members/${person.id}`).then(() => {
+                      notify.success(`${person.email} is out of the group.`);
+                      detail.reload();
+                    }, notify.error)
                   }
                 >
                   Take out
@@ -399,7 +403,7 @@ export function AttributesDialog({
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             Save
           </Button>
         </div>

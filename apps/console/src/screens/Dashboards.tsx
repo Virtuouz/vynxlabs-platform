@@ -205,7 +205,8 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
             </Button>
             <Button
               variant="primary"
-              disabled={busy || !dirty || title.trim() === ""}
+              loading={busy}
+              disabled={!dirty || title.trim() === ""}
               onClick={async () => {
                 if (await put({ title: title.trim(), page }, "The dashboard was saved.")) {
                   setDirty(false);

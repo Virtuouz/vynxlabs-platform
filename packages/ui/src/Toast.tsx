@@ -1,3 +1,4 @@
+import { CircleCheck, CircleX, Info, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -9,33 +10,48 @@ import {
   useState,
 } from "react";
 
-export type ToastTone = "plain" | "success" | "danger";
+export type ToastTone = "plain" | "info" | "success" | "danger";
 
 export interface ToastOptions {
+  /** A few words above the message, such as what was done: "Deployed". */
+  title?: string;
   /** Something to do about what just happened, such as Undo. Pressing it also closes the toast. */
   action?: { label: string; onClick: () => void };
+  /** Where the result is, such as the thing just made: "Open orders/sync". */
+  link?: { label: string; href: string };
 }
 
 export interface Toasts {
   /** Shows a message. Returns its ID, for `dismiss`. */
   show: (message: string, tone?: ToastTone, options?: ToastOptions) => number;
   success: (message: string, options?: ToastOptions) => number;
+  /** Something worth knowing that is neither a success nor a failure. */
+  info: (message: string, options?: ToastOptions) => number;
   /** A failure. It stays until it is dismissed, so it can be read at any pace. */
   danger: (message: string, options?: ToastOptions) => number;
   dismiss: (id: number) => void;
 }
 
 const tones: Record<ToastTone, string> = {
-  plain: "border-line bg-surface",
+  plain: "border-line bg-raised",
+  info: "border-line bg-raised",
   success: "border-success/40 bg-success-soft",
   danger: "border-danger/40 bg-danger-soft",
 };
+const icons = {
+  plain: null,
+  info: <Info aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-action" />,
+  success: <CircleCheck aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-success" />,
+  danger: <CircleX aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-danger" />,
+};
 
-interface Shown {
+/** How many messages are on screen at once. Newer ones wait their turn. */
+const VISIBLE = 3;
+
+interface Shown extends ToastOptions {
   id: number;
   message: string;
   tone: ToastTone;
-  action?: ToastOptions["action"];
 }
 
 const ToastContext = createContext<Toasts | undefined>(undefined);
@@ -50,10 +66,13 @@ const ToastContext = createContext<Toasts | undefined>(undefined);
  */
 export function ToastProvider({
   duration = 5000,
+  navigate,
   children,
 }: {
-  /** How long a message stays, in milliseconds. A message with an action stays twice as long. */
+  /** How long a message stays, in milliseconds. A message with an action or a link stays twice as long. */
   duration?: number;
+  /** Follows a toast's link inside the app, where the app has its own router. */
+  navigate?: (href: string) => void;
   children: ReactNode;
 }) {
   const [shown, setShown] = useState<Shown[]>([]);
@@ -103,18 +122,27 @@ export function ToastProvider({
         timers.current.delete(twin.id);
       }
       const id = next.current++;
-      const toast = { id, message, tone, ...(options.action ? { action: options.action } : {}) };
+      const toast: Shown = { id, message, tone, ...options };
       commit([...list.current.filter((one) => one !== twin), toast]);
-      if (tone !== "danger") start(id, options.action ? duration * 2 : duration);
       return id;
     };
     return {
       show,
       success: (message, options) => show(message, "success", options),
+      info: (message, options) => show(message, "info", options),
       danger: (message, options) => show(message, "danger", options),
       dismiss,
     };
-  }, [commit, dismiss, duration, start]);
+  }, [commit, dismiss]);
+
+  // A message's time starts when it is shown: those waiting for room keep theirs.
+  const visible = shown.slice(0, VISIBLE);
+  useEffect(() => {
+    for (const toast of visible) {
+      if (toast.tone === "danger" || timers.current.has(toast.id)) continue;
+      start(toast.id, toast.action || toast.link ? duration * 2 : duration);
+    }
+  }, [visible, duration, start]);
 
   /** Holds every timed message while the pointer or focus is on them. */
   const hold = useCallback(() => {
@@ -145,32 +173,61 @@ export function ToastProvider({
   }, []);
 
   const card = (toast: Shown) => (
+    // biome-ignore lint/a11y/noStaticElementInteractions: Esc on a focused message dismisses it, as a convenience beside its button
     <div
       key={toast.id}
       role={toast.tone === "danger" ? "alert" : undefined}
       data-tone={toast.tone}
-      className={`pointer-events-auto flex max-w-full items-center gap-3 rounded-control border px-3 py-2 text-ink shadow-overlay sm:max-w-96 ${tones[toast.tone]}`}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          dismiss(toast.id);
+        }
+      }}
+      className={`pointer-events-auto flex max-w-full items-start gap-3 rounded-panel border px-3 py-2 text-ink shadow-overlay sm:max-w-96 ${tones[toast.tone]}`}
     >
-      <span className="min-w-0 flex-1">{toast.message}</span>
-      {toast.action ? (
-        <button
-          type="button"
-          className="shrink-0 rounded-inner px-1.5 py-0.5 font-medium text-action hover:bg-action-soft"
-          onClick={() => {
-            toast.action?.onClick();
-            dismiss(toast.id);
-          }}
-        >
-          {toast.action.label}
-        </button>
-      ) : null}
+      {icons[toast.tone]}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        {toast.title ? <span className="font-medium">{toast.title}</span> : null}
+        <span className={toast.title ? "text-body-sm text-ink-muted" : ""}>{toast.message}</span>
+        {toast.link || toast.action ? (
+          <span className="flex flex-wrap items-center gap-3 pt-0.5">
+            {toast.link ? (
+              <a
+                href={toast.link.href}
+                className="font-medium text-action"
+                onClick={(event) => {
+                  if (!navigate || event.metaKey || event.ctrlKey || event.shiftKey) return;
+                  event.preventDefault();
+                  navigate(toast.link?.href ?? "");
+                  dismiss(toast.id);
+                }}
+              >
+                {toast.link.label}
+              </a>
+            ) : null}
+            {toast.action ? (
+              <button
+                type="button"
+                className="cursor-pointer rounded-inner font-medium text-action hover:underline"
+                onClick={() => {
+                  toast.action?.onClick();
+                  dismiss(toast.id);
+                }}
+              >
+                {toast.action.label}
+              </button>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
       <button
         type="button"
         aria-label="Dismiss"
-        className="shrink-0 rounded-inner px-1 text-ink-muted hover:text-ink"
+        className="flex size-6 shrink-0 items-center justify-center rounded-inner text-ink-muted hover:bg-sunken hover:text-ink"
         onClick={() => dismiss(toast.id)}
       >
-        <span aria-hidden="true">×</span>
+        <X aria-hidden="true" size={14} />
       </button>
     </div>
   );
@@ -193,10 +250,10 @@ export function ToastProvider({
          * appears: the others politely, a failure as an alert. The text is never in the page twice.
          */}
         <div aria-live="polite" className="flex flex-col items-end gap-2">
-          {shown.filter((toast) => toast.tone !== "danger").map(card)}
+          {visible.filter((toast) => toast.tone !== "danger").map(card)}
         </div>
         <div className="flex flex-col items-end gap-2">
-          {shown.filter((toast) => toast.tone === "danger").map(card)}
+          {visible.filter((toast) => toast.tone === "danger").map(card)}
         </div>
       </div>
     </ToastContext.Provider>

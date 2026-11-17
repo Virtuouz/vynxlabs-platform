@@ -2103,7 +2103,7 @@ export function Interfaces({
           {error ? <Notice tone="danger">{error}</Notice> : null}
           <div className="mt-1 flex justify-end gap-2">
             <Button onClick={() => setCreating(false)}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={busy || where === ""}>
+            <Button type="submit" variant="primary" loading={busy} disabled={where === ""}>
               Make the app
             </Button>
           </div>

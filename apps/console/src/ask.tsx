@@ -10,7 +10,7 @@ import {
 } from "@vynxlabs/ui";
 import { type ReactNode, useState } from "react";
 import { type ApiError, makeQueryClient, setActiveClient } from "./api.ts";
-import { setLeaveQuestion } from "./router.tsx";
+import { navigate, setLeaveQuestion } from "./router.tsx";
 
 let dialogs: Dialogs | undefined;
 let toasts: Toasts | undefined;
@@ -45,7 +45,7 @@ export function Providers({ children }: { children: ReactNode }) {
   setActiveClient(client);
   return (
     <QueryClientProvider client={client}>
-      <ToastProvider>
+      <ToastProvider navigate={navigate}>
         <DialogsProvider>
           <Bridge />
           {children}
@@ -82,6 +82,9 @@ export function failureText(error: unknown): string {
 
 /** Says what just happened, in a corner of the page. */
 export const notify = {
+  /** What was done, naming the result. A link leads to it, such as the thing just made. */
   success: (message: string, options?: ToastOptions) => need(toasts).success(message, options),
-  error: (error: unknown) => need(toasts).danger(failureText(error)),
+  info: (message: string, options?: ToastOptions) => need(toasts).info(message, options),
+  error: (error: unknown, options?: ToastOptions) =>
+    need(toasts).danger(failureText(error), options),
 };

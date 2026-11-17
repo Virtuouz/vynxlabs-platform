@@ -97,7 +97,8 @@ export function RequestPromotion({
             <div>
               <Button
                 variant="primary"
-                disabled={busy || version === undefined}
+                loading={busy}
+                disabled={version === undefined}
                 onClick={() =>
                   run(async () => {
                     await api.post(`${root}/promotion-requests`, note.trim() ? { note } : {});
@@ -296,7 +297,8 @@ function ReviewRequest({
           </Button>
           <Button
             variant="promote"
-            disabled={busy || !preview.data?.possible}
+            loading={busy}
+            disabled={!preview.data?.possible}
             onClick={() => decide("promote")}
           >
             Promote

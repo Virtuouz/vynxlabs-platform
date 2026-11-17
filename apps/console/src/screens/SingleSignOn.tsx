@@ -282,7 +282,7 @@ function ConnectDialog({
         {error ? <Notice tone="danger">{error}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             Connect
           </Button>
         </div>
@@ -335,7 +335,7 @@ function SetUp({
         <div className="flex flex-wrap gap-2">
           <Button
             variant="primary"
-            disabled={busy}
+            loading={busy}
             onClick={async () => {
               setBusy(true);
               try {
@@ -452,6 +452,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
           event.preventDefault();
           void run(async () => {
             await api.post(`${root}/domains`, { domain: domain.trim() });
+            notify.success(`${domain.trim()} is added. Prove it is yours with the record shown.`);
             setDomain("");
           });
         }}
@@ -466,7 +467,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
             onChange={setDomain}
           />
         </div>
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" loading={busy}>
           Add domain
         </Button>
       </form>
@@ -585,7 +586,8 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
         </Button>
         <Button
           variant="primary"
-          disabled={busy || edited === undefined}
+          loading={busy}
+          disabled={edited === undefined}
           onClick={async () => {
             const items = rows.filter((row) => row.value.trim() && row.groupId);
             setBusy(true);
@@ -868,7 +870,7 @@ function Settings({
       ) : null}
       {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
       <div className="mt-1 flex justify-end">
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" loading={busy}>
           Save
         </Button>
       </div>
@@ -917,6 +919,7 @@ function People({ root }: { root: string }) {
                 if (!sure) return;
                 try {
                   await api.delete(`${root}/links/${row.id}`);
+                  notify.success("Untied. Their next sign-in ties them again by email.");
                   list.reload();
                 } catch (error) {
                   notify.error(error);
@@ -1079,7 +1082,7 @@ function ProviderDetail({
             ) : null}
             <Button
               variant="primary"
-              disabled={busy}
+              loading={busy}
               onClick={() =>
                 patch(
                   { enabled: !(provider.enabled && !provider.paused) },

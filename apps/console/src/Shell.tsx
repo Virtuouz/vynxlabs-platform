@@ -869,11 +869,11 @@ export function Shell({
                 <>
                   <Link
                     to={`/t/${tenantId}`}
-                    className="hidden truncate text-ink-muted no-underline hover:text-ink sm:inline"
+                    className="hidden truncate text-ink-muted no-underline hover:text-ink lg:inline"
                   >
                     {tenant?.name ?? "Tenant"}
                   </Link>
-                  <span aria-hidden="true" className="hidden items-center sm:flex">
+                  <span aria-hidden="true" className="hidden items-center lg:flex">
                     <Wire />
                     <Junction
                       kind={workspace?.type === "production" ? "production" : "here"}
@@ -902,7 +902,11 @@ export function Shell({
                     }))}
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
-                  {workspace?.triggersPaused ? <StatePill state="paused" /> : null}
+                  {workspace?.triggersPaused ? (
+                    <span className="hidden lg:inline-flex">
+                      <StatePill state="paused" />
+                    </span>
+                  ) : null}
                   {ws?.linked ? (
                     <span className="hidden items-center gap-2 xl:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">

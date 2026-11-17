@@ -103,7 +103,8 @@ export function RetentionSettings({ base }: { base: string }) {
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || changed.length === 0 || invalid}
+            loading={busy}
+            disabled={changed.length === 0 || invalid}
           >
             Save
           </Button>

@@ -290,7 +290,12 @@ function ShareDialog({
         ) : null}
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={busy || !resources.data || !roles.data}>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={busy}
+            disabled={!resources.data || !roles.data}
+          >
             Share
           </Button>
         </div>

@@ -499,6 +499,7 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
               ...(workspaceId ? { workspaceId } : {}),
             });
           },
+          done: () => "Access given. It counts from the next request they make.",
         }}
       />
     </>

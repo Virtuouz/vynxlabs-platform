@@ -148,7 +148,8 @@ export function GitSync({ root, link }: { root: string; link: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
-              disabled={busy || compare.data.ahead === 0 || compare.data.conflicts > 0}
+              loading={busy}
+              disabled={compare.data.ahead === 0 || compare.data.conflicts > 0}
               onClick={() =>
                 act(
                   () => api.post(`${root}/git/push`, {}),

@@ -196,7 +196,7 @@ function OfferForm({
       ) : null}
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={busy || !runner}>
+        <Button type="submit" variant="primary" loading={busy} disabled={!runner}>
           {already(account) ? "Continue" : "Offer"}
         </Button>
       </div>

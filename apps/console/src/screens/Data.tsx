@@ -372,6 +372,7 @@ function AddRow({
         row[column] = stored.id;
       }
       await api.post(rowsPath, row);
+      notify.success("Row added.");
       setValues({});
       setFiles({});
       onAdded();
@@ -402,7 +403,7 @@ function AddRow({
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" form="add-row" variant="primary" disabled={busy}>
+          <Button type="submit" form="add-row" variant="primary" loading={busy}>
             Add row
           </Button>
         </>

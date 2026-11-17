@@ -142,6 +142,10 @@ export function Tenants({ me }: { me: Me }) {
               ],
               submit: ({ name, slug, dataLocation }) =>
                 api.post("/tenants", { name, slug, ...(dataLocation ? { dataLocation } : {}) }),
+              done: (made, values) => ({
+                message: `Tenant ${values.name} is made.`,
+                link: { label: `Open ${values.name}`, href: `/t/${(made as { id: string }).id}` },
+              }),
             },
           }
         : {})}

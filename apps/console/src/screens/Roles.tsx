@@ -1,6 +1,7 @@
 import { Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
+import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
@@ -321,6 +322,11 @@ function RoleDialog({
           try {
             if (role) await api.patch(`${base}/roles/${role.id}`, { description, permissions });
             else await api.post(`${base}/roles`, { name, description, permissions });
+            notify.success(
+              role
+                ? `The role ${role.name} is saved. Everyone who holds it has the new permissions.`
+                : `The role ${name} is made. Give it to people under Access grants.`,
+            );
             onSaved();
           } catch (caught) {
             setError(caught as ApiError);
@@ -359,7 +365,12 @@ function RoleDialog({
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>{readOnly ? "Close" : "Cancel"}</Button>
           {readOnly ? null : (
-            <Button type="submit" variant="primary" disabled={busy || permissions.length === 0}>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={busy}
+              disabled={permissions.length === 0}
+            >
               {role ? "Save" : "Create role"}
             </Button>
           )}

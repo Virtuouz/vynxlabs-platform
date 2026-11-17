@@ -777,7 +777,8 @@ export function ScriptEditor({
                 ) : null}
                 <Button
                   variant="primary"
-                  disabled={busy || (!dirty && state !== "new")}
+                  loading={busy}
+                  disabled={!dirty && state !== "new"}
                   onClick={save}
                 >
                   Save draft

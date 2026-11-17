@@ -1,7 +1,7 @@
 import { Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask } from "../ask.tsx";
+import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -135,11 +135,19 @@ export function EndUsers({ base }: { base: string }) {
     user.disabled
       ? {
           label: "Enable",
-          onSelect: () => act(() => api.patch(`${base}/end-users/${user.id}`, { disabled: false })),
+          onSelect: () =>
+            act(async () => {
+              await api.patch(`${base}/end-users/${user.id}`, { disabled: false });
+              notify.success(`${user.email} can sign in again.`);
+            }),
         }
       : {
           label: "Disable",
-          onSelect: () => act(() => api.patch(`${base}/end-users/${user.id}`, { disabled: true })),
+          onSelect: () =>
+            act(async () => {
+              await api.patch(`${base}/end-users/${user.id}`, { disabled: true });
+              notify.success(`${user.email} can no longer sign in.`);
+            }),
         },
     {
       label: "Delete",

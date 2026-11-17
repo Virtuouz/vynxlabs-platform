@@ -362,7 +362,8 @@ function ReviewStep({
         />
         <Button
           variant="primary"
-          disabled={busy || !preview.data?.possible}
+          loading={busy}
+          disabled={!preview.data?.possible}
           onClick={async () => {
             setBusy(true);
             try {
@@ -451,6 +452,7 @@ function DraftHistory({
                 onClick={async () => {
                   try {
                     await api.post(`${root}/draft-history/${one.id}/restore`, {});
+                    notify.success(`The draft saved ${fromNow(one.savedAt)} is back.`);
                     onRestored();
                     onClose();
                   } catch (caught) {
@@ -600,7 +602,8 @@ function PromoteStep({
         {data?.canPromote === false ? null : (
           <Button
             variant="promote"
-            disabled={busy || !data?.possible}
+            loading={busy}
+            disabled={!data?.possible}
             onClick={async () => {
               const sure = await ask.confirm({
                 title: `Promote to ${target.name}?`,

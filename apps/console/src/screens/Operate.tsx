@@ -1,7 +1,7 @@
 import { Button, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
 import { CirclePause, CirclePlay, Plus, ShieldAlert, Zap } from "lucide-react";
 import { useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { api, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
@@ -74,6 +74,15 @@ export function TriggersWorkbench({
   production: boolean;
 }) {
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
+  const editCache = useCacheEdit();
+  /** Shows a trigger paused or running at once; the server's answer follows. */
+  const showPaused = (trigger: Trigger, paused: Trigger["paused"]) =>
+    editCache<{ items: Trigger[] }>(`${root}/triggers`, (data) => ({
+      ...data,
+      items: data.items.map((one) =>
+        triggerKey(one) === triggerKey(trigger) ? { ...one, paused } : one,
+      ),
+    }));
   const [type, setType] = useState("all");
   // The chosen trigger lives in the address, so a run can link straight to the trigger
   // that started it.
@@ -254,12 +263,14 @@ export function TriggersWorkbench({
                   <Button
                     variant="primary"
                     onClick={async () => {
+                      const undo = showPaused(open, null);
                       try {
                         await api.delete(
                           `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
                         );
-                        list.reload();
+                        notify.success(`${open.path} runs again.`);
                       } catch (caught) {
+                        undo();
                         notify.error(caught);
                       }
                     }}
@@ -283,13 +294,21 @@ export function TriggersWorkbench({
                           required: false,
                         });
                         if (reason === null) return;
+                        const undo = showPaused(open, {
+                          at: new Date().toISOString(),
+                          by: null,
+                          reason: reason ?? "",
+                        });
                         try {
                           await api.put(
                             `${root}/trigger-pauses/${open.path}${open.node ? `?node=${encodeURIComponent(open.node)}` : ""}`,
                             reason ? { reason } : {},
                           );
-                          list.reload();
+                          notify.success(
+                            `${open.path} is paused. Nothing it would start is started.`,
+                          );
                         } catch (caught) {
+                          undo();
                           notify.error(caught);
                         }
                       }}
@@ -650,6 +669,17 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
         {
           decision,
           ...(comment ? { comment } : {}),
+        },
+      );
+      notify.success(
+        decision === "approve"
+          ? `Approved “${row.title}”. The flow goes on.`
+          : `Rejected “${row.title}”. The flow takes its rejected path.`,
+        {
+          link: {
+            label: "Open the run",
+            href: `/t/${tenantId}/workspaces/${row.workspaceId}/runs/${row.flowRunId}`,
+          },
         },
       );
       setChosen(undefined);

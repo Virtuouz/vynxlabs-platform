@@ -111,7 +111,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
               onChange={(value) => setName(value)}
             />
           </div>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy}>
             Save name
           </Button>
         </form>
@@ -189,7 +189,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
           </div>
           {error ? <Notice tone="danger">{error.message}</Notice> : null}
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" disabled={busy}>
+            <Button type="submit" variant="primary" loading={busy}>
               Save theme
             </Button>
             <Button

@@ -3,8 +3,9 @@ import { expect, type Page } from "@playwright/test";
 
 /**
  * A screen compared with its reviewed picture. Whatever differs from one run to
- * the next is masked: times, IDs and other values set in mono, and anything a
- * screen marks `data-volatile`. A change that is meant is a new picture, made
+ * the next is masked (times, IDs and other values set in mono) or, when its
+ * size changes too, not drawn: anything a screen marks `data-volatile`, such
+ * as the live indicator (`screenshot.css`). A change that is meant is a new picture, made
  * with `pnpm e2e --update-snapshots` and reviewed in the commit that causes it.
  */
 export async function snap(page: Page, name: string) {
@@ -15,12 +16,8 @@ export async function snap(page: Page, name: string) {
   await page.waitForTimeout(300);
   // Soft: one run reports every screen that differs, not just the first.
   await expect.soft(page).toHaveScreenshot(`${name}.png`, {
-    mask: [
-      page.locator("time"),
-      page.locator("[data-volatile]"),
-      page.locator(".font-mono"),
-      page.locator(".tabular-nums"),
-    ],
+    stylePath: new URL("./screenshot.css", import.meta.url).pathname,
+    mask: [page.locator("time"), page.locator(".font-mono"), page.locator(".tabular-nums")],
     animations: "disabled",
     caret: "hide",
     fullPage: false,

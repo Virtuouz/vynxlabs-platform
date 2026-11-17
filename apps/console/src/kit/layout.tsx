@@ -24,37 +24,7 @@ export function useWide(minWidth: number): boolean {
 /** The widths the console lays itself out at. */
 export const WIDE = { inspector: 1280, panel: 1024, rail: 768 } as const;
 
-/**
- * A screen's heading: an optional line above it, the title, a sentence on what
- * the screen is for, and the screen's actions. One action is primary.
- */
-export function PageHeader({
-  title,
-  description,
-  eyebrow,
-  meta,
-  actions,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  eyebrow?: ReactNode;
-  meta?: ReactNode;
-  actions?: ReactNode;
-}) {
-  return (
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex min-w-0 flex-col gap-1.5">
-        {eyebrow ? <div className="text-meta text-ink-subtle">{eyebrow}</div> : null}
-        <h1 className="m-0 text-display">{title}</h1>
-        {description ? <p className="m-0 max-w-measure text-ink-muted">{description}</p> : null}
-        {meta ? (
-          <div className="flex flex-wrap items-center gap-2 pt-0.5 text-meta">{meta}</div>
-        ) : null}
-      </div>
-      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
-    </header>
-  );
-}
+export { PageHeader } from "./PageHeader.tsx";
 
 /** A section's heading inside a screen, in the label role. */
 export function SectionLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {

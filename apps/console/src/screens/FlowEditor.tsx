@@ -43,9 +43,10 @@ import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { typingIn, useHistory } from "../kit/history.ts";
 import { Loading } from "../kit/LoadState.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { retryAfter } from "../kit/retry.ts";
 import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
-import { Link, navigate, useNavigationGuard } from "../router.tsx";
+import { navigate, useNavigationGuard } from "../router.tsx";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
 import {
   FormDesigner,
@@ -1045,117 +1046,113 @@ export function FlowEditor({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-2 md:px-5">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Link
-            to={`${link}/flows`}
-            className="text-meta text-ink-subtle no-underline hover:text-ink"
-          >
-            Flows
-          </Link>
-          <span aria-hidden="true" className="text-ink-subtle">
-            /
-          </span>
-          {opened ? (
-            <h1 className="m-0 truncate font-mono text-title font-semibold">{path}</h1>
-          ) : (
-            <div className="w-56">
-              <TextField
-                name="path"
-                label="Path"
-                value={path}
-                placeholder="orders/handle"
-                onChange={setPath}
+      <div className="border-line border-b px-4 py-2 md:px-5">
+        <PageHeader
+          compact
+          mono={Boolean(opened)}
+          title={opened ? path : "New flow"}
+          state={
+            <>
+              <StatePill
+                state={state === "repository" || (state === "deployed" && !dirty) ? state : "draft"}
               />
-            </div>
-          )}
-          {state === "repository" ? (
-            <Tag tone="repository">From repository</Tag>
-          ) : state === "deployed" && !dirty ? (
-            <Tag tone="live">Deployed</Tag>
-          ) : (
-            <Tag tone="draft">Draft</Tag>
-          )}
-          {found.length > 0 ? (
-            <span className="flex items-center gap-1 text-meta text-attention">
-              <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
-            </span>
-          ) : null}
-          <span
-            role="status"
-            className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
-          >
-            {saveState}
-          </span>
-          {gaveUp ? (
-            <Button
-              size="small"
-              variant="quiet"
-              onClick={() => {
-                failures.current = 0;
-                setGaveUp(false);
-              }}
-            >
-              Retry
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="small"
-            onClick={() => {
-              history.record("Tidy up");
-              const positions = autoLayout(flowNodes, flowEdges);
-              setNodes((before) =>
-                before.map((one) => ({ ...one, position: positions[one.id] ?? one.position })),
-              );
-              touch();
-            }}
-          >
-            Tidy up
-          </Button>
-          <Button
-            size="small"
-            variant="quiet"
-            aria-label="Undo"
-            title={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
-            disabled={!history.undoLabel}
-            onClick={undo}
-          >
-            <Undo2 aria-hidden="true" size={14} />
-          </Button>
-          <Button
-            size="small"
-            variant="quiet"
-            aria-label="Redo"
-            title={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
-            disabled={!history.redoLabel}
-            onClick={redo}
-          >
-            <Redo2 aria-hidden="true" size={14} />
-          </Button>
-          <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
-            <Play aria-hidden="true" size={14} /> Test
-          </Button>
-          <Button
-            size="small"
-            variant={state === "draft" && !dirty ? "secondary" : "primary"}
-            disabled={busy || (!dirty && state !== "new")}
-            onClick={() => void save()}
-          >
-            Save draft
-          </Button>
-          {state === "draft" && !dirty && path ? (
-            <DeployMenu
-              root={root}
-              link={link}
-              path={path}
-              disabled={busy}
-              onDeployed={() => setState("deployed")}
-            />
-          ) : null}
-        </div>
-      </header>
+              {found.length > 0 ? (
+                <span className="flex items-center gap-1 text-meta text-attention">
+                  <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
+                </span>
+              ) : null}
+              <span
+                role="status"
+                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
+              >
+                {saveState}
+              </span>
+              {gaveUp ? (
+                <Button
+                  size="small"
+                  variant="quiet"
+                  onClick={() => {
+                    failures.current = 0;
+                    setGaveUp(false);
+                  }}
+                >
+                  Retry
+                </Button>
+              ) : null}
+            </>
+          }
+          actions={
+            <>
+              <Button
+                size="small"
+                onClick={() => {
+                  history.record("Tidy up");
+                  const positions = autoLayout(flowNodes, flowEdges);
+                  setNodes((before) =>
+                    before.map((one) => ({ ...one, position: positions[one.id] ?? one.position })),
+                  );
+                  touch();
+                }}
+              >
+                Tidy up
+              </Button>
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label="Undo"
+                title={history.undoLabel ? `Undo: ${history.undoLabel}` : "Nothing to undo"}
+                disabled={!history.undoLabel}
+                onClick={undo}
+              >
+                <Undo2 aria-hidden="true" size={14} />
+              </Button>
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label="Redo"
+                title={history.redoLabel ? `Redo: ${history.redoLabel}` : "Nothing to redo"}
+                disabled={!history.redoLabel}
+                onClick={redo}
+              >
+                <Redo2 aria-hidden="true" size={14} />
+              </Button>
+              <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
+                <Play aria-hidden="true" size={14} /> Test
+              </Button>
+              <Button
+                size="small"
+                variant={state === "draft" && !dirty ? "secondary" : "primary"}
+                disabled={busy || (!dirty && state !== "new")}
+                onClick={() => void save()}
+              >
+                Save draft
+              </Button>
+              {state === "draft" && !dirty && path ? (
+                <DeployMenu
+                  root={root}
+                  link={link}
+                  path={path}
+                  disabled={busy}
+                  onDeployed={() => setState("deployed")}
+                />
+              ) : null}
+            </>
+          }
+          after={
+            opened ? undefined : (
+              <div className="w-56">
+                <TextField
+                  name="path"
+                  label="Path"
+                  value={path}
+                  placeholder="orders/handle"
+                  onChange={setPath}
+                />
+              </div>
+            )
+          }
+        />
+      </div>
       {state === "repository" || problem || found.length > 0 ? (
         <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
           {state === "repository" ? (

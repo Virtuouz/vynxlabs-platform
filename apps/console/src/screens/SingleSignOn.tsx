@@ -19,6 +19,7 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
@@ -1011,85 +1012,88 @@ function ProviderDetail({
       >
         <ArrowLeft size={16} aria-hidden="true" /> All providers
       </button>
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="m-0 text-display font-semibold">{provider.name}</h1>
-          <span className="flex flex-wrap items-center gap-2 text-ink-muted">
-            {PROTOCOL[provider.protocol]}, for {who} <State provider={provider} />
+      <PageHeader
+        title={provider.name}
+        state={<State provider={provider} />}
+        meta={
+          <span className="text-ink-muted">
+            {PROTOCOL[provider.protocol]}, for {who}
           </span>
-        </div>
-        <span className="flex flex-wrap gap-2">
-          <Button
-            variant="danger"
-            disabled={busy}
-            onClick={async () => {
-              const sure = await ask.typeToConfirm({
-                title: `Remove ${provider.name}?`,
-                text: "Its domains, group mapping and ties to people go with it. The people it signed in stay, and need another way in.",
-                expected: provider.name,
-                action: "Remove",
-              });
-              if (!sure) return;
-              try {
-                await api.delete(root);
-                onRemoved();
-              } catch (error) {
-                notify.error(error);
-              }
-            }}
-          >
-            Remove
-          </Button>
-          {provider.enabled && !provider.paused ? (
+        }
+        actions={
+          <>
             <Button
+              variant="danger"
               disabled={busy}
               onClick={async () => {
-                const sure = await ask.confirm(
-                  provider.enforce
-                    ? {
-                        title: "Stop requiring single sign-on?",
-                        text: `The ${who} this provider covers can use a password again.`,
-                        action: "Stop requiring it",
-                      }
-                    : {
-                        title: "Require single sign-on?",
-                        text:
-                          provider.audience === "members"
-                            ? "Members with an email in this provider's proved domains can no longer sign in with a password. The operators of this instance keep theirs, so that a broken provider locks nobody out for good."
-                            : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none.",
-                        action: "Require it",
-                        danger: true,
-                      },
-                );
-                if (sure) {
-                  await patch(
-                    { enforce: !provider.enforce },
-                    provider.enforce
-                      ? "Passwords are allowed again."
-                      : "Single sign-on is now required.",
-                  );
+                const sure = await ask.typeToConfirm({
+                  title: `Remove ${provider.name}?`,
+                  text: "Its domains, group mapping and ties to people go with it. The people it signed in stay, and need another way in.",
+                  expected: provider.name,
+                  action: "Remove",
+                });
+                if (!sure) return;
+                try {
+                  await api.delete(root);
+                  onRemoved();
+                } catch (error) {
+                  notify.error(error);
                 }
               }}
             >
-              {provider.enforce ? "Stop requiring it" : "Require it"}
+              Remove
             </Button>
-          ) : null}
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={() =>
-              patch(
-                { enabled: !(provider.enabled && !provider.paused) },
-                provider.enabled && !provider.paused
-                  ? "The provider is off."
-                  : "The provider is on.",
-              )
-            }
-          >
-            {provider.enabled && !provider.paused ? "Turn off" : "Turn on"}
-          </Button>
-        </span>
-      </header>
+            {provider.enabled && !provider.paused ? (
+              <Button
+                disabled={busy}
+                onClick={async () => {
+                  const sure = await ask.confirm(
+                    provider.enforce
+                      ? {
+                          title: "Stop requiring single sign-on?",
+                          text: `The ${who} this provider covers can use a password again.`,
+                          action: "Stop requiring it",
+                        }
+                      : {
+                          title: "Require single sign-on?",
+                          text:
+                            provider.audience === "members"
+                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. The operators of this instance keep theirs, so that a broken provider locks nobody out for good."
+                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none.",
+                          action: "Require it",
+                          danger: true,
+                        },
+                  );
+                  if (sure) {
+                    await patch(
+                      { enforce: !provider.enforce },
+                      provider.enforce
+                        ? "Passwords are allowed again."
+                        : "Single sign-on is now required.",
+                    );
+                  }
+                }}
+              >
+                {provider.enforce ? "Stop requiring it" : "Require it"}
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              disabled={busy}
+              onClick={() =>
+                patch(
+                  { enabled: !(provider.enabled && !provider.paused) },
+                  provider.enabled && !provider.paused
+                    ? "The provider is off."
+                    : "The provider is on.",
+                )
+              }
+            >
+              {provider.enabled && !provider.paused ? "Turn off" : "Turn on"}
+            </Button>
+          </>
+        }
+      />
       <nav aria-label="Setting up">
         <Stepper
           steps={steps}

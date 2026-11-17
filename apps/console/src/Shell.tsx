@@ -1,5 +1,6 @@
 import { Menu, SideSheet } from "@vynxlabs/ui";
 import {
+  ChevronRight,
   ChevronsUpDown,
   CircleX,
   KeyRound,
@@ -419,6 +420,46 @@ function ReleasePath({ counts }: { counts: WorkspaceCounts }) {
   );
 }
 
+/**
+ * The end of the breadcrumb: the section, and what is open in it. The last
+ * crumb is the page itself; the section before it leads back to its list.
+ */
+function Crumbs({
+  section,
+  href,
+  object,
+}: {
+  section: string;
+  href: string | undefined;
+  object: string | undefined;
+}) {
+  const sep = <ChevronRight aria-hidden="true" size={14} className="shrink-0 text-ink-subtle" />;
+  return (
+    <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
+      <li className={`min-w-0 items-center gap-1.5 ${object ? "hidden md:flex" : "flex"}`}>
+        {sep}
+        {object && href ? (
+          <Link to={href} className="truncate text-ink-muted no-underline hover:text-ink">
+            {section}
+          </Link>
+        ) : (
+          <span aria-current="page" className="truncate font-medium">
+            {section}
+          </span>
+        )}
+      </li>
+      {object ? (
+        <li className="flex min-w-0 items-center gap-1.5">
+          {sep}
+          <span aria-current="page" className="truncate font-medium" title={object}>
+            {object}
+          </span>
+        </li>
+      ) : null}
+    </ol>
+  );
+}
+
 function RailItem({
   to,
   label,
@@ -592,8 +633,15 @@ export function Shell({
   // The tab's title says where this is: what is open, the section, the workspace, the product.
   const named = useNamedObject();
   const fresh = /\/(script|flow)s\/new$/.exec(path);
+  // The breadcrumb: the section, and what is open in it when something is.
+  const sectionHref = workspaceId
+    ? `/t/${tenantId}/workspaces/${workspaceId}/${where.section}`
+    : tenantId
+      ? `/t/${tenantId}/${where.section}`
+      : undefined;
+  const object = named ?? opened?.ref ?? (fresh ? `New ${fresh[1]}` : undefined);
   const title = pageTitle([
-    named ?? opened?.ref ?? (fresh ? `New ${fresh[1]}` : undefined),
+    object,
     here ?? AREA_LABEL[where.area],
     workspace?.name ?? tenant?.name,
     brand.productName,
@@ -875,7 +923,7 @@ export function Shell({
                       </span>
                     </span>
                   ) : null}
-                  {here ? <span className="sr-only">/{here}</span> : null}
+                  {here ? <Crumbs section={here} href={sectionHref} object={object} /> : null}
                 </>
               ) : tenantId ? (
                 <>
@@ -905,21 +953,10 @@ export function Shell({
                       },
                     ]}
                   />
-                  {here ? (
-                    <>
-                      <span aria-hidden="true" className="flex items-center">
-                        <Wire />
-                        <Junction kind="here" size={5} />
-                      </span>
-                      <span className="truncate font-medium">
-                        <span className="sr-only">/</span>
-                        {here}
-                      </span>
-                    </>
-                  ) : null}
                   <span className="hidden sm:inline-flex">
                     <Tag>Tenant</Tag>
                   </span>
+                  {here ? <Crumbs section={here} href={sectionHref} object={object} /> : null}
                 </>
               ) : (
                 <>

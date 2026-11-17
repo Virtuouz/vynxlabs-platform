@@ -7,10 +7,11 @@ import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyableId, CopyIcon, curlFor } from "../kit/copy.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
-import { Loading } from "../kit/LoadState.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { useDevWorkspace } from "../kit/objects.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
@@ -79,7 +80,7 @@ function RunOfEitherKind({ root, link, id }: { root: string; link: string; id: s
     return <NotFound home={`${link}/runs`} homeLabel="Go to the runs" />;
   }
   const failed = script.error?.status !== 404 ? script.error : flow.error;
-  if (failed) return <Notice tone="danger">{failed.message}</Notice>;
+  if (failed) return <ErrorState error={failed} what="this run" />;
   return <Loading />;
 }
 
@@ -120,33 +121,30 @@ function RunHeader({
 }) {
   useTitleObject(`Run of ${path}`);
   return (
-    <header className="flex flex-col gap-3 border-line border-b pb-4">
-      <nav aria-label="Where this run is" className="flex flex-wrap items-center gap-1.5 text-meta">
-        <Link to={`${link}/runs`} className="text-ink-muted">
-          Runs
-        </Link>
-        <span aria-hidden="true" className="text-ink-subtle">
-          ›
-        </span>
-        <CopyableId value={id} label="Copy the run ID" />
-      </nav>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="m-0 font-mono text-title break-all">
-            <Link to={pathLink} className="text-ink">
-              {path}
-            </Link>
-          </h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted">
+    <div className="border-line border-b pb-4">
+      <PageHeader
+        eyebrow={<CopyableId value={id} label="Copy the run ID" />}
+        mono
+        title={
+          <Link to={pathLink} className="text-ink">
+            {path}
+          </Link>
+        }
+        meta={
+          <>
             <StatePill state={state} detail={detail} />
             {timing}
             <StateAnnouncer state={state} label={`Run of ${path}`} />
             <Reconnecting show={reconnecting} />
-            {started ? <span>{started}</span> : null}
-            <Link to={versionTo ?? `${link}/deployments`}>version {version}</Link>
+            {started ? <span className="text-ink-muted">{started}</span> : null}
+            <Link to={versionTo ?? `${link}/deployments`} className="text-ink-muted">
+              version {version}
+            </Link>
             {related}
-          </div>
-          {tags.length > 0 ? (
+          </>
+        }
+        after={
+          tags.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {tags.map((tag) => (
                 <Link
@@ -158,11 +156,11 @@ function RunHeader({
                 </Link>
               ))}
             </div>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
-      </div>
-    </header>
+          ) : undefined
+        }
+        actions={actions}
+      />
+    </div>
   );
 }
 

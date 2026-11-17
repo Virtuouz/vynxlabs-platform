@@ -102,18 +102,21 @@ export function Page({
   description,
   action,
   width = "full",
+  mono = false,
   children,
 }: {
   title: string;
   description?: string | undefined;
   action?: ReactNode;
+  /** The title is a path or an ID. */
+  mono?: boolean;
   /** `form` keeps a page of fields to a readable measure; `full` lets a list use the room. */
   width?: "full" | "form";
   children: ReactNode;
 }) {
   return (
     <section className={`flex flex-col gap-5 ${width === "form" ? "max-w-[52rem]" : ""}`}>
-      <PageHeader title={title} description={description} actions={action} />
+      <PageHeader title={title} mono={mono} description={description} actions={action} />
       {children}
     </section>
   );

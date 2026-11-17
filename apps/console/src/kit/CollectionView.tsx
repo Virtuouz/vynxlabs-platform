@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { type DataColumn, DataTable, type DataTableProps } from "./DataTable.tsx";
 import { MasterDetail } from "./layout.tsx";
+import { PageHeader } from "./PageHeader.tsx";
 
 /** A column of a collection: the same shape as `DataTable`'s. */
 export type CollectionColumn<Row> = DataColumn<Row>;
@@ -54,17 +55,8 @@ export function CollectionView<Row>({
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-col gap-3 border-line border-b px-4 py-4 md:px-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="m-0 text-display">{title}</h1>
-            {description ? <p className="m-0 max-w-measure text-ink-muted">{description}</p> : null}
-          </div>
-          {actions ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
-          ) : null}
-        </div>
-        {toolbar}
+      <div className="border-line border-b px-4 py-4 md:px-6">
+        <PageHeader title={title} description={description} actions={actions} toolbar={toolbar} />
       </div>
       <MasterDetail inspector={inspector} side={side}>
         <DataTable

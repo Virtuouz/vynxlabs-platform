@@ -29,21 +29,13 @@ import {
   TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  Monitor,
-  Plus,
-  Smartphone,
-  Tablet,
-  Trash2,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Monitor, Plus, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -1613,11 +1605,11 @@ type Saving = "saved" | "waiting" | "saving" | { failed: string };
 /** Builds one interface: a preview drawn from live rows, and the settings of what is chosen. */
 export function InterfaceBuilder({
   root,
-  link,
   path,
 }: {
   root: string;
-  link: string;
+  /** The workspace's console address. The breadcrumb leads back to the list now. */
+  link?: string;
   path: string;
 }) {
   const [body, setBody] = useState<InterfaceBody>();
@@ -1739,48 +1731,51 @@ export function InterfaceBuilder({
 
   return (
     <section className="flex flex-col gap-4">
-      <Link to={`${link}/screens`} className="flex w-fit items-center gap-1 text-action">
-        <ArrowLeft size={16} aria-hidden="true" /> All apps made here
-      </Link>
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="w-80 max-w-full">
-          <TextField
-            label="Name of the app"
-            name="app-title"
-            value={body.title}
-            maxLength={200}
-            required
-            onChange={(title) =>
-              change((draft) => {
-                if (title) draft.title = title;
-              })
-            }
-          />
-        </div>
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="text-body-sm text-ink-muted" role="status">
-            {saving === "saved"
-              ? hasChanges
-                ? "Saved. Not published yet."
-                : "Published."
-              : saving === "saving" || saving === "waiting"
-                ? "Saving…"
-                : `Not saved: ${saving.failed}`}
+      <PageHeader
+        compact
+        title={body.title || "Untitled app"}
+        actions={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-body-sm text-ink-muted" role="status">
+              {saving === "saved"
+                ? hasChanges
+                  ? "Saved. Not published yet."
+                  : "Published."
+                : saving === "saving" || saving === "waiting"
+                  ? "Saving…"
+                  : `Not saved: ${saving.failed}`}
+            </span>
+            {url ? (
+              <a href={url} target="_blank" rel="noreferrer" className="text-action">
+                Open the app
+              </a>
+            ) : null}
+            <Button
+              variant="primary"
+              disabled={publishing || problems.length > 0 || typeof saving === "object"}
+              onClick={publish}
+            >
+              Publish
+            </Button>
           </span>
-          {url ? (
-            <a href={url} target="_blank" rel="noreferrer" className="text-action">
-              Open the app
-            </a>
-          ) : null}
-          <Button
-            variant="primary"
-            disabled={publishing || problems.length > 0 || typeof saving === "object"}
-            onClick={publish}
-          >
-            Publish
-          </Button>
-        </span>
-      </header>
+        }
+        after={
+          <div className="w-80 max-w-full">
+            <TextField
+              label="Name of the app"
+              name="app-title"
+              value={body.title}
+              maxLength={200}
+              required
+              onChange={(title) =>
+                change((draft) => {
+                  if (title) draft.title = title;
+                })
+              }
+            />
+          </div>
+        }
+      />
       {appPath === null && list.data ? (
         <Notice
           tone="attention"

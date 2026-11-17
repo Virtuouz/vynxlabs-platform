@@ -383,16 +383,22 @@ export function FlowView({
   return (
     <Page
       title={data.path}
+      mono
       description={data.description}
       action={
-        manual ? (
-          <span className="flex flex-wrap gap-2">
-            <OfferButton root={root} kind="flow" path={data.path} />
-            <Button variant="primary" onClick={() => setStarting(true)}>
-              Start flow
-            </Button>
-          </span>
-        ) : undefined
+        <span className="flex flex-wrap gap-2">
+          {editable ? (
+            <Button onClick={() => navigate(`${link}/flows/edit/${data.path}`)}>Edit</Button>
+          ) : null}
+          {manual ? (
+            <>
+              <OfferButton root={root} kind="flow" path={data.path} />
+              <Button variant="primary" onClick={() => setStarting(true)}>
+                Start flow
+              </Button>
+            </>
+          ) : null}
+        </span>
       }
     >
       <InputDialog
@@ -409,16 +415,6 @@ export function FlowView({
           navigate(`${link}/runs/${started.id}`);
         }}
       />
-      <span className="flex flex-wrap items-center gap-4">
-        <Link to={`${link}/flows`} className="text-action">
-          All flows
-        </Link>
-        {editable ? (
-          <Link to={`${link}/flows/edit/${data.path}`} className="text-action">
-            Edit this flow
-          </Link>
-        ) : null}
-      </span>
       <FlowGraph
         nodes={data.nodes}
         edges={data.edges}

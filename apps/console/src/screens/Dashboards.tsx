@@ -8,12 +8,12 @@ import {
   Notice,
   TextField,
 } from "@vynxlabs/ui";
-import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { Page, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { PageEditor, PageView } from "./Interfaces.tsx";
@@ -136,22 +136,13 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   if (missing) return <Notice tone="danger">{missing}</Notice>;
   if (!loaded || !page) return <Loading />;
 
-  const back = (
-    <Link to={`${link}/dashboards`} className="flex w-fit items-center gap-1 text-action">
-      <ArrowLeft size={16} aria-hidden="true" /> All dashboards
-    </Link>
-  );
   if (!loaded.mine) {
     return (
       <section className="flex flex-col gap-4">
-        {back}
-        <header>
-          <h1 className="m-0 text-display font-semibold">{loaded.title}</h1>
-          <p className="mt-1 mb-0 text-ink-muted">
-            Shared by {loaded.owner}. You see the rows you may read, which may not be the rows they
-            see.
-          </p>
-        </header>
+        <PageHeader
+          title={loaded.title}
+          description={`Shared by ${loaded.owner}. You see the rows you may read, which may not be the rows they see.`}
+        />
         <PageView root={root} page={page} />
       </section>
     );
@@ -183,59 +174,64 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
 
   return (
     <section className="flex flex-col gap-4">
-      {back}
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="w-80 max-w-full">
-          <TextField
-            label="Name of the dashboard"
-            name="dashboard-title"
-            value={title}
-            maxLength={100}
-            required
-            onChange={(next) => {
-              setTitle(next);
-              setDirty(true);
-            }}
-          />
-        </div>
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="text-body-sm text-ink-muted" role="status">
-            {dirty ? "Changes not saved." : `Saved ${when(loaded.updatedAt)}.`}
+      <PageHeader
+        compact
+        title={loaded.title}
+        actions={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-body-sm text-ink-muted" role="status">
+              {dirty ? "Changes not saved." : `Saved ${when(loaded.updatedAt)}.`}
+            </span>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={async () => {
+                const sure = await ask.confirm({
+                  title: `Delete ${loaded.title}?`,
+                  text: "The dashboard is removed for you and for anyone it is shared with. No table and no row is touched.",
+                  action: "Delete",
+                  danger: true,
+                });
+                if (!sure) return;
+                try {
+                  await api.delete(`${root}/dashboards/${id}`);
+                  navigate(`${link}/dashboards`);
+                } catch (error) {
+                  notify.error(failureText(error));
+                }
+              }}
+            >
+              Delete
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || !dirty || title.trim() === ""}
+              onClick={async () => {
+                if (await put({ title: title.trim(), page }, "The dashboard was saved.")) {
+                  setDirty(false);
+                }
+              }}
+            >
+              Save
+            </Button>
           </span>
-          <Button
-            variant="danger"
-            disabled={busy}
-            onClick={async () => {
-              const sure = await ask.confirm({
-                title: `Delete ${loaded.title}?`,
-                text: "The dashboard is removed for you and for anyone it is shared with. No table and no row is touched.",
-                action: "Delete",
-                danger: true,
-              });
-              if (!sure) return;
-              try {
-                await api.delete(`${root}/dashboards/${id}`);
-                navigate(`${link}/dashboards`);
-              } catch (error) {
-                notify.error(failureText(error));
-              }
-            }}
-          >
-            Delete
-          </Button>
-          <Button
-            variant="primary"
-            disabled={busy || !dirty || title.trim() === ""}
-            onClick={async () => {
-              if (await put({ title: title.trim(), page }, "The dashboard was saved.")) {
-                setDirty(false);
-              }
-            }}
-          >
-            Save
-          </Button>
-        </span>
-      </header>
+        }
+        after={
+          <div className="w-80 max-w-full">
+            <TextField
+              label="Name of the dashboard"
+              name="dashboard-title"
+              value={title}
+              maxLength={100}
+              required
+              onChange={(next) => {
+                setTitle(next);
+                setDirty(true);
+              }}
+            />
+          </div>
+        }
+      />
       <CheckboxField
         label="Show it to everyone in this workspace"
         name="shared"

@@ -605,11 +605,6 @@ export function TableView({ root, name, link }: { root: string; name: string; li
     <Page
       title={data.name}
       description={`${data.rowCount.toLocaleString()} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
-      action={
-        <Link to={`${link}/tables`} className="text-action">
-          All tables
-        </Link>
-      }
     >
       {retired ? (
         <Notice

@@ -17,6 +17,7 @@ import { clockTime } from "../kit/LiveIndicator.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { useTitleObject } from "../kit/title.ts";
@@ -501,57 +502,62 @@ export function RunsWorkbench({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-2 border-line border-b px-4 py-3 md:px-6">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="m-0 text-display">Runs</h1>
-          <p className="m-0 min-w-0 flex-1 truncate text-meta text-ink-muted">
-            Scripts and flows that ran here; a flow's steps are part of its run.
-            {list.data?.keptDays
-              ? ` Kept ${list.data.keptDays} day${list.data.keptDays === 1 ? "" : "s"}.`
-              : ""}
-            {!streaming && list.updatedAt ? (
-              <>
-                {" "}
-                Updated {clockTime(list.updatedAt)}
-                {live ? ", asked again every 5 s." : "."}
-              </>
-            ) : null}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="search"
-              aria-label="Search"
-              placeholder="A path, a run ID, a tag or an error"
-              value={typed}
-              onChange={(event) => setTyped(event.currentTarget.value)}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm w-full sm:w-64"
-            />
-            <select
-              aria-label="Kind"
-              value={kind}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setUrl({ kind: value === "all" ? undefined : value });
-              }}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
-            >
-              <option value="all">Scripts and flows</option>
-              <option value="script">Scripts</option>
-              <option value="flow">Flows</option>
-            </select>
-            <select
-              aria-label="When"
-              value={hours}
-              onChange={(event) => setUrl({ when: event.currentTarget.value })}
-              className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
-            >
-              {WINDOWS.map((one) => (
-                <option key={one.value} value={one.value}>
-                  {one.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <PageHeader
+          compact
+          title="Runs"
+          state={
+            <p className="m-0 min-w-0 max-w-xl flex-1 truncate text-meta text-ink-muted">
+              Scripts and flows that ran here; a flow's steps are part of its run.
+              {list.data?.keptDays
+                ? ` Kept ${list.data.keptDays} day${list.data.keptDays === 1 ? "" : "s"}.`
+                : ""}
+              {!streaming && list.updatedAt ? (
+                <>
+                  {" "}
+                  Updated {clockTime(list.updatedAt)}
+                  {live ? ", asked again every 5 s." : "."}
+                </>
+              ) : null}
+            </p>
+          }
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="search"
+                aria-label="Search"
+                placeholder="A path, a run ID, a tag or an error"
+                value={typed}
+                onChange={(event) => setTyped(event.currentTarget.value)}
+                className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm w-full sm:w-64"
+              />
+              <select
+                aria-label="Kind"
+                value={kind}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setUrl({ kind: value === "all" ? undefined : value });
+                }}
+                className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+              >
+                <option value="all">Scripts and flows</option>
+                <option value="script">Scripts</option>
+                <option value="flow">Flows</option>
+              </select>
+              <select
+                aria-label="When"
+                value={hours}
+                onChange={(event) => setUrl({ when: event.currentTarget.value })}
+                className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+              >
+                {WINDOWS.map((one) => (
+                  <option key={one.value} value={one.value}>
+                    {one.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          }
+        />
         <div className="flex flex-wrap items-center gap-3">
           <FilterChips
             label="Status"

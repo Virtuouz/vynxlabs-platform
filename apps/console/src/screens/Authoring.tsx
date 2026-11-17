@@ -20,6 +20,7 @@ import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Elapsed } from "../kit/Elapsed.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
+import { PageHeader } from "../kit/PageHeader.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, StatePill, Tag } from "../kit/status.tsx";
@@ -134,7 +135,6 @@ const CODE_KINDS: Record<
     /** Where its list is, and where its editor is, under the workspace. */
     list: string;
     edit: string;
-    all: string;
     example: string;
     /** The field of the body that holds the schema edited as JSON, and what it is called. */
     schema?: { field: "input" | "configSchema"; label: string; hint: string };
@@ -145,7 +145,6 @@ const CODE_KINDS: Record<
     noun: "script",
     list: "scripts",
     edit: "scripts/edit",
-    all: "All scripts",
     example: "orders/sync",
     schema: {
       field: "input",
@@ -158,7 +157,6 @@ const CODE_KINDS: Record<
     noun: "connector",
     list: "extensions",
     edit: "extensions/connector/edit",
-    all: "All extensions",
     example: "connectors/shop",
     schema: {
       field: "configSchema",
@@ -180,7 +178,6 @@ const CODE_KINDS: Record<
     noun: "trigger source",
     list: "extensions",
     edit: "extensions/trigger_source/edit",
-    all: "All extensions",
     example: "sources/payments",
     fresh: () => ({
       description: "",
@@ -740,14 +737,69 @@ export function ScriptEditor({
 
   return (
     <section className="flex flex-col gap-4">
-      <Link to={`${link}/${about.list}`} className="text-body-sm text-action">
-        {about.all}
-      </Link>
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          {opened ? (
-            <h1 className="m-0 truncate font-mono text-title font-semibold">{path}</h1>
-          ) : (
+      <PageHeader
+        compact
+        mono={Boolean(opened)}
+        title={opened ? path : `New ${about.noun}`}
+        state={
+          <>
+            <StatePill state={state} />
+            {dirty ? <StatePill state="unsaved" /> : null}
+          </>
+        }
+        actions={
+          <>
+            {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
+            {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
+              <OfferButton root={root} kind="script" path={opened} />
+            ) : null}
+            {readOnly ? null : (
+              <div className="flex items-center gap-2">
+                {state === "draft" && opened ? (
+                  <Button
+                    variant="danger"
+                    disabled={busy}
+                    onClick={async () => {
+                      const sure = await ask.confirm({
+                        title: "Discard this draft?",
+                        text: `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`,
+                        action: "Discard",
+                        danger: true,
+                      });
+                      if (!sure) return;
+                      await api
+                        .delete(`${root}/drafts/${opened}`)
+                        .then(() => navigate(`${link}/${about.list}`), notify.error);
+                    }}
+                  >
+                    Discard draft
+                  </Button>
+                ) : null}
+                <Button
+                  variant="primary"
+                  disabled={busy || (!dirty && state !== "new")}
+                  onClick={save}
+                >
+                  Save draft
+                </Button>
+                {state === "draft" && !dirty && opened ? (
+                  <DeployMenu
+                    root={root}
+                    link={link}
+                    path={opened}
+                    disabled={busy}
+                    onDeployed={() => {
+                      setState("deployed");
+                      setRevision(undefined);
+                    }}
+                  />
+                ) : null}
+              </div>
+            )}
+          </>
+        }
+        after={
+          opened ? undefined : (
             <div className="w-72">
               <TextField
                 name="path"
@@ -758,60 +810,9 @@ export function ScriptEditor({
                 onChange={setPath}
               />
             </div>
-          )}
-          <StatePill state={state} />
-          {dirty ? <StatePill state="unsaved" /> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
-          {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
-            <OfferButton root={root} kind="script" path={opened} />
-          ) : null}
-          {readOnly ? null : (
-            <div className="flex items-center gap-2">
-              {state === "draft" && opened ? (
-                <Button
-                  variant="danger"
-                  disabled={busy}
-                  onClick={async () => {
-                    const sure = await ask.confirm({
-                      title: "Discard this draft?",
-                      text: `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`,
-                      action: "Discard",
-                      danger: true,
-                    });
-                    if (!sure) return;
-                    await api
-                      .delete(`${root}/drafts/${opened}`)
-                      .then(() => navigate(`${link}/${about.list}`), notify.error);
-                  }}
-                >
-                  Discard draft
-                </Button>
-              ) : null}
-              <Button
-                variant="primary"
-                disabled={busy || (!dirty && state !== "new")}
-                onClick={save}
-              >
-                Save draft
-              </Button>
-              {state === "draft" && !dirty && opened ? (
-                <DeployMenu
-                  root={root}
-                  link={link}
-                  path={opened}
-                  disabled={busy}
-                  onDeployed={() => {
-                    setState("deployed");
-                    setRevision(undefined);
-                  }}
-                />
-              ) : null}
-            </div>
-          )}
-        </div>
-      </header>
+          )
+        }
+      />
       {core ? (
         <Notice tone="plain">
           This step comes with the platform, and is added to the workspace because a flow uses it.

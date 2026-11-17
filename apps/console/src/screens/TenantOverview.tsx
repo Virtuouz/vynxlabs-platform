@@ -119,6 +119,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
+        size="display-lg"
         eyebrow="Tenant"
         title={tenant.data?.name ?? "Overview"}
         description="What asks for someone, how each workspace stands, and what changed last."

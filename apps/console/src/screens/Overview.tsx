@@ -338,6 +338,7 @@ export function Overview({
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
+        size="display-lg"
         eyebrow="Overview"
         title={workspace.name}
         meta={

@@ -62,3 +62,21 @@ test("nothing says Loading… in a paragraph of its own", () => {
   }
   expect([...new Set(found)]).toEqual([]);
 });
+
+/**
+ * Every screen's heading is `PageHeader` (08 §3.1), so a title, its state and
+ * its actions sit in the same place everywhere and focus lands on it when the
+ * screen opens. Sign-in and the approval link stand outside the console's shell.
+ */
+test("no screen writes its own h1", () => {
+  const outside = ["PageHeader.tsx", "SignIn.tsx", "ApproveLink.tsx"];
+  const found: string[] = [];
+  for (const path of [...files(join(here, "screens")), ...files(join(here, "kit"))]) {
+    if (outside.some((name) => path.endsWith(name))) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/<h1\b/.test(line)) found.push(`${path.slice(here.length)}:${index + 1}`);
+    });
+  }
+  expect(found).toEqual([]);
+});

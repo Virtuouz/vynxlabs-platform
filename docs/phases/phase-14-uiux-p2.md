@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–4 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–5 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -133,3 +133,28 @@ Findings are recorded under each milestone as it lands.
 - **Rule.** `enforce.test.ts` fails on "Loading…" in a paragraph, panel or div of its own.
 - **Tests.** An HTML 502 becomes an `ApiError` with its status and request ID. A problem document's request ID is kept. `LoadState` shows nothing at first and then a skeleton, an error with Try again and the ID, the empty state, and `aria-busy` while it refreshes.
 - **Pictures.** None changed: they are taken of settled screens.
+
+### Milestone 5: one page header and a breadcrumb
+
+- **`kit/PageHeader.tsx`** has three forms.
+  - **List or working screen:** title, count, description, actions and a toolbar.
+  - **Object:** kind above, the name (mono for a path or ID) with its state beside it, actions and a line of facts.
+  - **Compact:** one row for editors. The name and state give way before the actions, so the row stays one row.
+  
+  Overviews use the larger `display-lg`. `Page`, `CollectionView`, `ObjectPage`, the run header (script and flow runs), the runs list, the script, resource and flow editors, the App Builder, the dashboard view and editor, and the SSO provider detail all use it. The editors' "name a new one" field sits under the heading, which reads "New script", "New flow" and so on.
+- **Breadcrumb.** The shell's "Where you are" ends with the section and what is open in it, in a list, with `aria-current="page"` on the last crumb. The section was readable only by screen readers before. It links back to its list when something is open, and on a phone it gives way to the object. What is open comes from the title store, or from the address for editors.
+- **Back links removed:**
+  - "All scripts" and "All extensions" (script editor);
+  - "All resources";
+  - "Flows /" (flow editor);
+  - "All flows" and "Edit this flow" (Edit is now an action);
+  - "All dashboards";
+  - "All apps made here";
+  - "All tables";
+  - "Runs ›" (run page; the run ID stays above the title, copyable);
+  - `ObjectPage`'s back nav.
+  
+  SSO's "All providers" stays until Milestone 10 puts the provider in the address, so the breadcrumb can lead back.
+- **Found.** The editable dashboard and the App Builder had no `h1` at all, only a name field, so focus on opening had nowhere to land. They now have one.
+- **Rule.** `enforce.test.ts` fails on an `h1` outside `PageHeader`, except on sign-in and the approval link.
+- **Checks.** The whole e2e suite ran. `loop.spec.ts` caught the runs header wrapping to two rows at 1440 px (19 rows in view, not 20); the compact form's fix brought it back. `script-editor.spec.ts` now leaves the editor by the breadcrumb.

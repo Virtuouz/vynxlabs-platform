@@ -102,7 +102,11 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   await editor.locator(".view-lines").click();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("//later");
-  await page.getByRole("link", { name: "All scripts" }).click();
+  // The breadcrumb leads back to the list.
+  await page
+    .getByRole("navigation", { name: "Where you are" })
+    .getByRole("link", { name: "Scripts" })
+    .click();
   const leaving = page.getByRole("dialog");
   await expect(leaving).toContainText("Leave without saving?");
   await leaving.getByRole("button", { name: "Stay" }).click();

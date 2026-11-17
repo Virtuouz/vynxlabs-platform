@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { GitServer } from "./git-server.ts";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * The exit criterion of phase 7, walked in a browser on a fresh instance:
@@ -435,6 +436,7 @@ test("she publishes an app over a table, and two groups of end users see it diff
   // Publishing says what it would do, and is done from there.
   await ada.getByRole("dialog").getByRole("button", { name: "Publish" }).click();
   await ada.getByText("Published. People who open the app now see this.").waitFor();
+  await expectNoAxeViolations(ada, "the App Builder, published");
   const url = (await ada
     .getByRole("link", { name: "Open the app" })
     .first()

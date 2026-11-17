@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–11 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–12 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -313,3 +313,29 @@ Findings are recorded under each milestone as it lands.
   - `starters.test.ts` covers flow starters passing `checkFlow` and script starters running with no input.
   - The new `e2e/first-run.spec.ts` walks the console's create dialog, the checklist with axe, and a first successful run from a starter in 5 presses (the limit is 12), then the checklist advancing and the draft listed.
   - The whole suite (1,339 tests) and the whole e2e suite (27) passed.
+
+### Milestone 12: enforcement, axe everywhere, keyboard journeys, the kit sheet
+
+- **Rules** (`enforce.test.ts`, run by `pnpm test` in CI). They read the console, `packages/ui` and `packages/screens`, and fail on:
+  - a hand-written type size, corner, shadow or layer;
+  - a retired spacing step;
+  - a `Badge` that says a state;
+  - a raw `<table>`, an `h1` outside `PageHeader`, and a bare "Loading…" (from earlier milestones).
+  
+  A value that must be its own says why on the line before (`token-allowed:`, `badge-allowed:`). The only one so far is the branding preview's tenant `Badge`. Every rule started as an error, because Milestones 2–5 had already moved the code. They are test assertions rather than Biome GritQL plugins: they are plain regular expressions with a written exception, which a test holds as reliably and reports with the file and line.
+- **axe in every e2e spec.** The eight specs without it check a settled screen: the runs list, a failed flow run, the script editor with a run, a run's log, the flow editor, the approval page on a phone, a promoted release, the published App Builder and a new workspace. `expectNoAxeViolations` waits for a closing dialog's transition (Milestone 2's motion) to finish first: a dialog leaving the page had no name for 240 ms, and axe found it.
+- **Keyboard journeys.** The new `e2e/keyboard.spec.ts`:
+  - opens a failed run from the runs list by Tab, arrows and Enter;
+  - gives access by Tab to "Give access", typing a name, which the server searches (what happy-dom couldn't drive in Milestone 10), Enter to choose, typing the workspace, an arrow for the role, and Enter.
+  
+  Building a flow, fixing and deploying, and editing a row already have keyboard walks in `flow-editor`, `loop` and `data-grid`.
+- **The kit sheet** (`/instance/kit`) shows, in light and dark, in a full-height picture compared on every change, with axe:
+  - every state of the one map, an unknown one and "Waiting until";
+  - every tag tone and a count badge;
+  - buttons in every variant, size and state;
+  - fields required, optional, with a hint, with an error, a choice, a searchable choice, a checkbox and a stored secret;
+  - every notice, the error state with its request ID, and a skeleton;
+  - a list at both densities, the keyboard grid with a checked row, and the save bar (`guard={false}`, so an example doesn't hold the page).
+  
+  The console scrolls inside its main region, so the window is made as tall as the sheet for its picture.
+- **What CI fails on:** a hand-written size and the rest above, a raw table (`pnpm test`); a contrast regression (`packages/ui` contrast test); an axe violation or an unreviewed visual change (`pnpm e2e`). The whole e2e suite passed: 29 tests.

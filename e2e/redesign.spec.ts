@@ -188,6 +188,24 @@ for (const theme of THEMES) {
   }
 }
 
+test("the component kit looks as reviewed, whole, in light and in dark", async () => {
+  await admin.setViewportSize({ width: 1440, height: 960 });
+  for (const theme of THEMES) {
+    await admin.evaluate((choice) => localStorage.setItem("vx-theme", choice), theme);
+    await admin.goto("/instance/kit");
+    await admin.getByRole("heading", { name: "Component kit" }).waitFor();
+    // The console scrolls inside its main region, so the window is made as tall as the sheet.
+    const tall = await admin.evaluate(() => {
+      const main = document.querySelector("main");
+      return Math.ceil((main?.scrollHeight ?? 0) + (main?.getBoundingClientRect().top ?? 0));
+    });
+    await admin.setViewportSize({ width: 1440, height: Math.max(960, tall) });
+    await snap(admin, `kit-${theme}`);
+    await admin.setViewportSize({ width: 1440, height: 960 });
+    if (theme === "light") await expectNoAxeViolations(admin, "the component kit");
+  }
+});
+
 test("on a phone the navigation is a drawer that opens and closes", async () => {
   await admin.setViewportSize({ width: 390, height: 844 });
   await admin.goto(`/t/${tenant.id}/workspaces/${workspace}/overview`);

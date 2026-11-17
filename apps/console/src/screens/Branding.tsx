@@ -215,6 +215,7 @@ export function Preview({ scheme, values }: { scheme: "light" | "dark"; values: 
       style={variables(values, scheme) as CSSProperties}
     >
       <p className="m-0 flex flex-wrap items-center gap-2 font-medium">
+        {/* badge-allowed: a preview of the tenant kit's own Badge, as tenant apps draw it */}
         {scheme === "light" ? "Light" : "Dark"} <Badge tone="action">Active</Badge>
         <Badge tone="success">Paid</Badge>
       </p>

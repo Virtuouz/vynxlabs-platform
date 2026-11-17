@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * The script editor, in a browser (phase 12, milestone 2): a new script opens
@@ -81,6 +82,7 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   await page.keyboard.press("Control+Enter");
   const run = page.getByRole("region", { name: "Test pane" });
   await run.getByRole("tablist", { name: "About this run" }).waitFor();
+  await expectNoAxeViolations(page, "the script editor with a run");
   await expect(page).toHaveURL(/\/scripts\/edit\/hello\/greet$/);
   await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
   // The code has most of the width, and its result is in view beside it, not below the fold.

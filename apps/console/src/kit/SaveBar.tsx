@@ -16,6 +16,7 @@ export function SaveBar({
   onSave,
   onDiscard,
   what = "these settings",
+  guard = true,
 }: {
   dirty: boolean;
   saving?: boolean;
@@ -23,10 +24,12 @@ export function SaveBar({
   onDiscard: () => void;
   /** What is unsaved, for the question asked before leaving. */
   what?: string;
+  /** Asks before leaving, and saves with ⌘S. Off only where the bar is shown as an example. */
+  guard?: boolean;
 }) {
-  useNavigationGuard(dirty, `Your changes to ${what} are not saved.`);
+  useNavigationGuard(dirty && guard, `Your changes to ${what} are not saved.`);
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty || !guard) return;
     const save = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -35,7 +38,7 @@ export function SaveBar({
     };
     addEventListener("keydown", save);
     return () => removeEventListener("keydown", save);
-  }, [dirty, saving, onSave]);
+  }, [dirty, guard, saving, onSave]);
   if (!dirty) return null;
   return (
     <section

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * A run's log, in a browser (phase 12, milestone 4): a run that logs more than
@@ -78,6 +79,7 @@ test("a run that logs 1,200 lines shows them all, and opens from a link to the l
   await expect(page.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
   const log = page.getByRole("region", { name: "Log" });
   await expect(log.getByText("1200 lines")).toBeVisible({ timeout: 15_000 });
+  await expectNoAxeViolations(page, "a run's log");
   // Past 500 lines only those in view are drawn: the viewer's own search finds the last one.
   await log.getByLabel("Search the log").fill("line 1200");
   await expect(log.getByText("1 of 1 match")).toBeVisible();

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * Every write says what it did (phase 14, P2-8): pressing a button that changes
@@ -110,6 +111,7 @@ test("each write is answered within a second, naming what it did", async ({ brow
   );
   await page.getByRole("link", { name: "Open Second" }).click();
   await expect(page).toHaveURL(/\/workspaces\/[^/]+\/overview$/);
+  await expectNoAxeViolations(page, "a new workspace's overview");
 
   await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
     () => {},

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expectNoAxeViolations } from "./visual.ts";
 
 /**
  * The flow editor, in a browser (phase 10, milestone 4): a draft is tested
@@ -89,6 +90,7 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
   await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/flows/edit/orders/count`);
   const canvas = page.getByTestId("flow-canvas");
   await canvas.getByText("totals", { exact: true }).waitFor();
+  await expectNoAxeViolations(page, "the flow editor");
 
   // Tested from the editor: the steps' states fill in on its own graph.
   await page.getByRole("button", { name: "Test", exact: true }).click();

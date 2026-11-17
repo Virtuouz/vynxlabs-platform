@@ -9,6 +9,7 @@ import { challengeMet, challengeOf } from "../kernel/apps/challenge.js";
 import { actorOf } from "../kernel/apps/sessions.js";
 import { ANONYMOUS } from "../kernel/audit.js";
 import { consolePath } from "../kernel/auth.js";
+import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
 import { badRequest, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -51,6 +52,7 @@ const ProviderView = Type.Object({
   hasSecret: Type.Boolean({
     description: "Whether a client secret is stored. The secret itself is never returned.",
   }),
+  ...CredentialSet,
   enabled: Type.Boolean(),
   enforce: Type.Boolean({
     description: "Passwords are refused for the people this provider covers.",
@@ -128,7 +130,17 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
 
+    /** When and by whom a provider's secrets were set. */
+    const stampOf = async (id: string) => {
+      const stamp = await db
+        .selectFrom("identity_provider")
+        .select(["credential_set_at", "credential_set_by_type", "credential_set_by_id"])
+        .where("id", "=", id)
+        .executeTakeFirst();
+      return (await credentialSetters(db, [stamp]))(stamp);
+    };
     const view = async (provider: Provider) => ({
+      ...(await stampOf(provider.id)),
       id: provider.id,
       tenantId: provider.tenantId,
       audience: provider.audience,

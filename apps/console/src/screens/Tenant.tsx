@@ -729,8 +729,9 @@ function WorkspaceDetail({
             text: "Store API keys and passwords here. Resources refer to a secret by its name.",
           }}
           create={{
-            action: "Set secret",
-            description: "Setting a name that already exists replaces its value.",
+            action: "New secret",
+            description:
+              "A name already in use is refused. To change a secret's value, open it and replace it.",
             fields: [
               {
                 name: "name",
@@ -741,11 +742,14 @@ function WorkspaceDetail({
               { name: "value", label: "Value", type: "password" },
             ],
             submit: (values) =>
-              api.put(`${root}/secrets/${encodeURIComponent(values.name ?? "")}`, {
-                value: values.value,
-              }),
-            done: (_made, values) =>
-              `The secret ${values.name} is set. What uses it reads the new value from its next run.`,
+              api.post(`${root}/secrets`, { name: values.name, value: values.value }),
+            done: (_made, values) => ({
+              message: `The secret ${values.name} is made. Name it in a script's uses to read it.`,
+              link: {
+                label: `Open ${values.name}`,
+                href: `/t/${tenantId}/workspaces/${workspaceId}/secrets/${values.name}`,
+              },
+            }),
           }}
           rowActions={(row, reload) => (
             <RemoveButton

@@ -9,6 +9,7 @@ import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { kindName, ObjectLink } from "../kit/objects.tsx";
 import { ReferenceList } from "../kit/references.tsx";
+import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
@@ -185,6 +186,57 @@ interface Secret {
   updatedBy?: string | null;
 }
 
+/** A secret's value, replaced here and never shown. */
+function ReplaceSecret({
+  root,
+  secret,
+  onSaved,
+}: {
+  root: string;
+  secret: Secret;
+  onSaved: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="flex max-w-xl flex-col gap-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!value) return;
+        setBusy(true);
+        try {
+          await api.put(`${root}/secrets/${encodeURIComponent(secret.name)}`, { value });
+          notify.success(
+            `Replaced the value of ${secret.name}. What uses it reads the new value from its next run.`,
+          );
+          setValue("");
+          onSaved();
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <SecretField
+        label="Value"
+        name="value"
+        stored
+        setAt={secret.updatedAt}
+        setBy={secret.updatedBy}
+        value={value}
+        onChange={setValue}
+      />
+      {value ? (
+        <Button type="submit" variant="primary" loading={busy} className="w-fit">
+          Replace the value
+        </Button>
+      ) : null}
+    </form>
+  );
+}
+
 export function SecretPage({ root, link, name }: { root: string; link: string; name: string }) {
   const list = useLoad<{ items: Secret[] }>(`${root}/secrets`);
   const one = list.data?.items.find((secret) => secret.name === name);
@@ -212,6 +264,11 @@ export function SecretPage({ root, link, name }: { root: string; link: string; n
             />
           }
           tabs={[
+            {
+              id: "value",
+              label: "Value",
+              content: <ReplaceSecret root={root} secret={secret} onSaved={list.reload} />,
+            },
             {
               id: "used-by",
               label: "Used by",

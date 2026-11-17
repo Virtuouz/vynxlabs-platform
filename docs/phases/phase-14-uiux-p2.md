@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–6 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: Milestones 0–7 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -185,3 +185,32 @@ Findings are recorded under each milestone as it lands.
   - The pictures depended on the live indicator ("Live" or "Connecting…" while other specs load the server). It is now `data-volatile`, and volatile marks are hidden by `e2e/screenshot.css` rather than masked, since a mask's box changes with the text.
   - At tablet width every crumb was truncated. The tenant name and the Paused mark now wait for `lg`.
 - **Tests.** `Toast.test.tsx` covers a title and a link that routes, three on screen with the fourth waiting, Esc, and a loading button. The new `e2e/feedback.spec.ts` sets a secret twice, resumes and pauses triggers, and makes a workspace. Each is answered within 1 s, and the new workspace's link opens it. The whole e2e suite passed: 25 tests.
+
+### Milestone 7: forms
+
+- **One field frame** (`FieldFrame` in `packages/ui/src/Fields.tsx`):
+  - The label, the hint and the error are tied to the control by Base UI's `Field.Description` and `Field.Error`, through `aria-describedby`.
+  - The hint stays beside an error; before, the error replaced it.
+  - An invalid control has a danger edge.
+  - `required` shows `*` and `required={false}` shows "optional". Both are visual only, and sit beside the label rather than in it, so accessible names stay the label; the control's own `required` is what is announced.
+  - `ComboboxField` uses the frame too, in place of its own loose error.
+  - The first attempt put the marks in the label, which changed every accessible name ("Email*", "Note optional") and broke label lookups across the suite.
+- **When and by whom a credential was set.** Migration 0064 adds `credential_set_at`, `credential_set_by_type` and `credential_set_by_id` to the five tables that hold a sealed credential. A trigger stamps them when the sealed value changes, so every write path is covered without touching the five kernel functions. Who comes from `vx.actor_type`/`vx.actor_id`, which `mutate` sets locally at the start of each change's transaction. A row that brings its own stamp keeps it: the portability test caught an imported tenant's credentials being re-stamped with the importer. `credentialSetters` resolves names in one query per kind, and the five responses carry `credentialSetAt` and `credentialSetBy`. Secrets already reported both, from the audit log.
+- **`SecretField`** (`kit/SecretField.tsx`) shows "Stored · set 3 days ago by …" and Replace, and never shows the value. A new value is typed only after Replace, so "leave it empty to keep the stored one" is gone. The connection wizard, Git settings, the SSO client secret and a secret's own page use it.
+- **Secrets.** "Set secret" is now "New secret". It posts to a new `POST secrets`, which refuses a name in use, so a mistyped name no longer makes a second secret quietly. A secret's page has a Value tab to replace it.
+- **One save model per page.**
+  - `kit/SaveBar.tsx` appears at the foot once something differs, with Discard and Save. It guards leaving, through phase 12's navigation guard, and saves with ⌘S.
+  - Tenant branding (the sign-up switch, the theme) and instance branding (the name, the theme) each had two or three ways of saving. Each is now one draft saved together, and "Reset" clears the draft rather than saving at once.
+  - Workspace settings: where it promotes to and the time zone are saved together. Pausing, cloning and deleting stay actions that work at once, and the page's description says which is which.
+  - Logo uploads stay immediate, and say so beside the input.
+  - Roles, retention, Git and provisioning were already one form with one Save each.
+- **Configuration out of modals.**
+  - `CreateDialog` opens as a side sheet, with its buttons kept in view, when it has more than three fields: connecting a database (8), a connection group member (6) and creating a workspace (4).
+  - Connecting an identity provider, cloning a workspace, adding a hostname and the role editor are side sheets now.
+  - The connection wizard and "Add column" already were.
+- **Tests:**
+  - The kit's axe test checks that a field's error and hint are both in its `aria-describedby`, alongside `aria-invalid` and the marks.
+  - `connections.test.ts` checks that the stamp follows the credential and survives a save without one.
+  - `kernel.test.ts` covers the new secret route's 409.
+  - `feedback.spec.ts` makes a secret, is refused the same name, and replaces the value on the secret's page.
+  - The whole suite (1,326 tests) and the whole e2e suite (25) passed.

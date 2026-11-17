@@ -7,10 +7,11 @@ import {
   Notice,
   type Option,
   SelectField,
+  SideSheet,
   TextField,
 } from "@vynxlabs/ui";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
 import { DataTable } from "./kit/DataTable.tsx";
@@ -144,6 +145,7 @@ export function CreateDialog({
   const [error, setError] = useState<ApiError>();
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const formId = useId();
   const fieldError = (name: string) =>
     unpicked.includes(name)
       ? "Choose one."
@@ -156,90 +158,99 @@ export function CreateDialog({
     onClose();
   };
 
-  return (
-    <Dialog
-      open={open}
-      onClose={close}
-      title={config.action}
-      {...(config.description ? { description: config.description } : {})}
+  // A form of more than three fields is configuration, not a quick question: it opens as a
+  // sheet beside the page, with its buttons kept in view, rather than over it.
+  const roomy = config.fields.length > 3;
+  const buttons = (
+    <>
+      <Button onClick={close}>Cancel</Button>
+      <Button type="submit" form={formId} variant="primary" loading={busy}>
+        {config.action}
+      </Button>
+    </>
+  );
+  const form = (
+    <form
+      id={formId}
+      className="flex flex-col gap-4"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const missing = config.fields
+          .filter((f) => f.pick && !(f.when && !f.when(values)) && !values[f.name])
+          .map((f) => f.name);
+        setUnpicked(missing);
+        if (missing.length > 0) return;
+        setBusy(true);
+        setError(undefined);
+        try {
+          const defaults = Object.fromEntries(
+            config.fields
+              .filter((f) => f.options?.[0] && !f.pick)
+              .map((f) => [f.name, f.options?.[0]?.value as string]),
+          );
+          const sent = { ...defaults, ...values };
+          const result = await config.submit(sent);
+          const said = config.done?.(result, sent) ?? (config.afterCreate ? undefined : "Created.");
+          if (typeof said === "string") notify.success(said);
+          else if (said) notify.success(said.message, said.link ? { link: said.link } : {});
+          setValues({});
+          onCreated(result);
+        } catch (caught) {
+          setError(caught as ApiError);
+        } finally {
+          setBusy(false);
+        }
+      }}
     >
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          const missing = config.fields
-            .filter((f) => f.pick && !(f.when && !f.when(values)) && !values[f.name])
-            .map((f) => f.name);
-          setUnpicked(missing);
-          if (missing.length > 0) return;
-          setBusy(true);
-          setError(undefined);
-          try {
-            const defaults = Object.fromEntries(
-              config.fields
-                .filter((f) => f.options?.[0] && !f.pick)
-                .map((f) => [f.name, f.options?.[0]?.value as string]),
-            );
-            const sent = { ...defaults, ...values };
-            const result = await config.submit(sent);
-            const said =
-              config.done?.(result, sent) ?? (config.afterCreate ? undefined : "Created.");
-            if (typeof said === "string") notify.success(said);
-            else if (said) notify.success(said.message, said.link ? { link: said.link } : {});
-            setValues({});
-            onCreated(result);
-          } catch (caught) {
-            setError(caught as ApiError);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {config.fields.map((field) =>
-          field.when && !field.when(values) ? null : field.choose ? (
-            <ChoiceField
-              key={field.name}
-              field={field}
-              value={values[field.name]}
-              error={fieldError(field.name)}
-              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value ?? "" }))}
-            />
-          ) : field.options ? (
-            <SelectField
-              key={field.name}
-              name={field.name}
-              label={field.label}
-              options={
-                field.pick ? [{ value: "", label: "Choose…" }, ...field.options] : field.options
-              }
-              value={values[field.name] ?? (field.pick ? "" : (field.options[0]?.value ?? ""))}
-              {...(field.hint ? { hint: field.hint } : {})}
-              error={fieldError(field.name)}
-              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
-            />
-          ) : (
-            <TextField
-              key={field.name}
-              name={field.name}
-              label={field.label}
-              type={field.type ?? "text"}
-              value={values[field.name] ?? ""}
-              required={field.required ?? true}
-              {...(field.placeholder ? { placeholder: field.placeholder } : {})}
-              {...(field.hint ? { hint: field.hint } : {})}
-              error={fieldError(field.name)}
-              onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
-            />
-          ),
-        )}
-        {error ? <Notice tone="danger">{error.message}</Notice> : null}
-        <div className="mt-1 flex justify-end gap-2">
-          <Button onClick={close}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy}>
-            {config.action}
-          </Button>
-        </div>
-      </form>
+      {config.fields.map((field) =>
+        field.when && !field.when(values) ? null : field.choose ? (
+          <ChoiceField
+            key={field.name}
+            field={field}
+            value={values[field.name]}
+            error={fieldError(field.name)}
+            onChange={(value) => setValues((v) => ({ ...v, [field.name]: value ?? "" }))}
+          />
+        ) : field.options ? (
+          <SelectField
+            key={field.name}
+            name={field.name}
+            label={field.label}
+            options={
+              field.pick ? [{ value: "", label: "Choose…" }, ...field.options] : field.options
+            }
+            value={values[field.name] ?? (field.pick ? "" : (field.options[0]?.value ?? ""))}
+            {...(field.hint ? { hint: field.hint } : {})}
+            error={fieldError(field.name)}
+            onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
+          />
+        ) : (
+          <TextField
+            key={field.name}
+            name={field.name}
+            label={field.label}
+            type={field.type ?? "text"}
+            value={values[field.name] ?? ""}
+            required={field.required ?? true}
+            {...(field.placeholder ? { placeholder: field.placeholder } : {})}
+            {...(field.hint ? { hint: field.hint } : {})}
+            error={fieldError(field.name)}
+            onChange={(value) => setValues((v) => ({ ...v, [field.name]: value }))}
+          />
+        ),
+      )}
+      {error ? <Notice tone="danger">{error.message}</Notice> : null}
+      {roomy ? null : <div className="mt-1 flex justify-end gap-2">{buttons}</div>}
+    </form>
+  );
+  const about = config.description ? { description: config.description } : {};
+  return roomy ? (
+    <SideSheet open={open} onClose={close} title={config.action} {...about} footer={buttons}>
+      {form}
+    </SideSheet>
+  ) : (
+    <Dialog open={open} onClose={close} title={config.action} {...about}>
+      {form}
     </Dialog>
   );
 }

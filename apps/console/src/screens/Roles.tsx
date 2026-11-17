@@ -1,4 +1,4 @@
-import { Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Notice, SideSheet, TextField } from "@vynxlabs/ui";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
@@ -300,7 +300,7 @@ function RoleDialog({
     error?.fields.find((one) => one.path.startsWith(`/body/${field}`))?.message;
 
   return (
-    <Dialog
+    <SideSheet
       open
       size="wide"
       onClose={onClose}
@@ -376,7 +376,7 @@ function RoleDialog({
           )}
         </div>
       </form>
-    </Dialog>
+    </SideSheet>
   );
 }
 

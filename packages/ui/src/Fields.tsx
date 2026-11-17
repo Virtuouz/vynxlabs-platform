@@ -2,27 +2,55 @@ import { Field } from "@base-ui/react/field";
 import type { ChangeEvent, ReactNode } from "react";
 import { useId, useState } from "react";
 
-const control =
-  "h-control w-full rounded-control border border-line-control bg-surface px-3 text-ink placeholder:text-ink-muted/70 disabled:opacity-60";
+/** A control's own box. An invalid one has a danger edge, beside the words that say why. */
+export const control =
+  "h-control w-full rounded-control border border-line-control bg-surface px-3 text-ink placeholder:text-ink-muted/70 disabled:opacity-60 data-[invalid]:border-danger aria-[invalid=true]:border-danger";
 
 interface Common {
   label: string;
-  /** Shown under the control. Says what is expected, not what went wrong. */
+  /** Shown under the control. Says what is expected, not what went wrong. It stays beside an error. */
   hint?: string;
   error?: string | undefined;
 }
 
-function Frame({ label, hint, error, children }: Common & { children: ReactNode }) {
+/**
+ * A field's label, its control, what is expected and what went wrong (08 §3.30).
+ * The error and the hint are tied to the control by `aria-describedby`, so a
+ * screen reader reads them on reaching it. A required field is marked; one
+ * marked `required={false}` says it is optional. The marks are for the eye: the
+ * control's `required` is what assistive technology announces, so a field's
+ * name stays its label.
+ */
+export function FieldFrame({
+  label,
+  hint,
+  error,
+  required,
+  children,
+}: Common & { required?: boolean | undefined; children: ReactNode }) {
   return (
     <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
-      <Field.Label className="text-body-sm font-medium text-ink">{label}</Field.Label>
+      <div className="flex items-baseline gap-1 text-body-sm">
+        <Field.Label className="font-medium text-ink">{label}</Field.Label>
+        {/* Seen, not read: the control's own `required` is what a screen reader says. */}
+        {required === true ? (
+          <span aria-hidden="true" className="text-danger">
+            *
+          </span>
+        ) : required === false ? (
+          <span aria-hidden="true" className="text-ink-subtle">
+            optional
+          </span>
+        ) : null}
+      </div>
       {children}
-      {error ? (
-        <p role="alert" className="m-0 text-body-sm text-danger">
-          {error}
-        </p>
-      ) : hint ? (
+      {hint ? (
         <Field.Description className="m-0 text-body-sm text-ink-muted">{hint}</Field.Description>
+      ) : null}
+      {error ? (
+        <Field.Error match role="alert" className="m-0 text-body-sm text-danger">
+          {error}
+        </Field.Error>
       ) : null}
     </Field.Root>
   );
@@ -43,13 +71,13 @@ export interface TextFieldProps extends Common {
 
 export function TextField({ label, hint, error, onChange, ...input }: TextFieldProps) {
   return (
-    <Frame label={label} {...(hint ? { hint } : {})} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={input.required}>
       <Field.Control
         {...input}
         className={control}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
       />
-    </Frame>
+    </FieldFrame>
   );
 }
 
@@ -72,7 +100,7 @@ export function SelectField({
   ...select
 }: SelectFieldProps) {
   return (
-    <Frame label={label} {...(hint ? { hint } : {})} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={select.required}>
       <Field.Control
         render={
           <select
@@ -88,7 +116,7 @@ export function SelectField({
           </select>
         }
       />
-    </Frame>
+    </FieldFrame>
   );
 }
 
@@ -115,7 +143,7 @@ export function TextAreaField({
   ...area
 }: TextAreaFieldProps) {
   return (
-    <Frame label={label} {...(hint ? { hint } : {})} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={area.required}>
       <Field.Control
         render={
           <textarea
@@ -126,7 +154,7 @@ export function TextAreaField({
           />
         }
       />
-    </Frame>
+    </FieldFrame>
   );
 }
 
@@ -164,7 +192,7 @@ export function NumberField(props: NumberFieldProps) {
   const [text, setText] = useState(() => numberText(value));
   const held = "value" in props && typedNumber(text) !== value;
   return (
-    <Frame label={label} {...(hint ? { hint } : {})} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={input.required}>
       <Field.Control
         {...input}
         type="number"
@@ -175,7 +203,7 @@ export function NumberField(props: NumberFieldProps) {
           onChange?.(typedNumber(event.currentTarget.value));
         }}
       />
-    </Frame>
+    </FieldFrame>
   );
 }
 
@@ -239,7 +267,12 @@ export function DateField({
     : input;
   const note = utc ? (hint ? `${hint} Times are in UTC.` : "Times are in UTC.") : hint;
   return (
-    <Frame label={label} {...(note ? { hint: note } : {})} error={error}>
+    <FieldFrame
+      label={label}
+      {...(note ? { hint: note } : {})}
+      error={error}
+      required={input.required}
+    >
       <Field.Control
         {...Object.fromEntries(Object.entries(shown).filter(([, value]) => value !== undefined))}
         type={withTime ? "datetime-local" : "date"}
@@ -249,7 +282,7 @@ export function DateField({
           onChange?.(utc ? utcInstant(value) : value);
         }}
       />
-    </Frame>
+    </FieldFrame>
   );
 }
 

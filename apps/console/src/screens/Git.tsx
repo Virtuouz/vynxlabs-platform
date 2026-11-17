@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
+import { SecretField } from "../kit/SecretField.tsx";
 import { type State as StateName, StatePill } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
@@ -12,6 +13,8 @@ interface Repository {
   defaultBranch: string;
   folder: string;
   paused: boolean;
+  credentialSetAt?: string | null;
+  credentialSetBy?: string | null;
 }
 type State = "never" | "synced" | "ahead" | "behind" | "conflict" | "error";
 interface Status {
@@ -103,14 +106,15 @@ export function RepositorySettings({ base }: { base: string }) {
             onChange={setFolder}
           />
         </div>
-        <TextField
+        <SecretField
           name="token"
           label="Access token"
-          type="password"
+          stored={Boolean(repository)}
+          setAt={repository?.credentialSetAt}
+          setBy={repository?.credentialSetBy}
           value={token}
-          required={!repository}
+          required
           autoComplete="off"
-          placeholder={repository ? "Leave empty to keep the stored one" : ""}
           hint="It needs to read and write the repository's contents: a fine-grained personal access token on GitHub, a project access token on GitLab. It is stored encrypted and never shown again."
           onChange={setToken}
         />

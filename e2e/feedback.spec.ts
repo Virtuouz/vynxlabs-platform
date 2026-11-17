@@ -51,19 +51,34 @@ test("each write is answered within a second, naming what it did", async ({ brow
   });
   const link = `/t/${tenant.id}/workspaces/${ws.id}`;
 
-  // A secret set, then set again.
+  // A secret made; the same name again is refused, not a quiet replacement.
   await page.goto(`${link}/secrets`);
-  for (const value of ["first-value", "second-value"]) {
-    await page.getByRole("button", { name: "Set secret" }).first().click();
+  const newSecret = async (value: string) => {
+    await page.getByRole("button", { name: "New secret" }).first().click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Name").fill("STRIPE_KEY");
     await dialog.getByLabel("Value").fill(value);
-    await answered(
-      page,
-      () => dialog.getByRole("button", { name: "Set secret" }).click(),
-      /The secret STRIPE_KEY is set/,
-    );
-  }
+    await dialog.getByRole("button", { name: "New secret" }).click();
+    return dialog;
+  };
+  await answered(
+    page,
+    () => newSecret("first-value").then(() => {}),
+    /The secret STRIPE_KEY is made/,
+  );
+  const again = await newSecret("second-value");
+  await expect(again.getByText(/already here/)).toBeVisible({ timeout: 1000 });
+  await again.getByRole("button", { name: "Cancel" }).click();
+  // Its value is replaced from its own page, which says when and by whom it was set.
+  await page.goto(`${link}/secrets/STRIPE_KEY?tab=value`);
+  await expect(page.getByText(/Stored · set .* by /)).toBeVisible();
+  await page.getByRole("button", { name: "Replace the value" }).first().click();
+  await page.getByLabel("New value").fill("second-value");
+  await answered(
+    page,
+    () => page.getByRole("button", { name: "Replace the value" }).click(),
+    /Replaced the value of STRIPE_KEY/,
+  );
 
   // The workspace's triggers resumed and paused again: a dev workspace starts paused.
   await page.goto(`${link}/settings`);

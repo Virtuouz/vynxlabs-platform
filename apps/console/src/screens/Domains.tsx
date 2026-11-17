@@ -1,12 +1,4 @@
-import {
-  Button,
-  Dialog,
-  EmptyState,
-  Notice,
-  SelectField,
-  SideSheet,
-  TextField,
-} from "@vynxlabs/ui";
+import { Button, EmptyState, Notice, SelectField, SideSheet, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
@@ -84,7 +76,7 @@ function AddDialog({
     : (choices[0]?.path ?? "");
 
   return (
-    <Dialog
+    <SideSheet
       open={open}
       onClose={onClose}
       title="Add a hostname"
@@ -177,7 +169,7 @@ function AddDialog({
           </Button>
         </div>
       </form>
-    </Dialog>
+    </SideSheet>
   );
 }
 

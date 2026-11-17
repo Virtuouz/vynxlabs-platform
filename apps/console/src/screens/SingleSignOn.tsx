@@ -2,12 +2,12 @@ import {
   Button,
   CheckboxField,
   ComboboxField,
-  Dialog,
   EmptyState,
   Facts,
   JsonView,
   Notice,
   SelectField,
+  SideSheet,
   Tabs,
   TextAreaField,
   TextField,
@@ -20,6 +20,7 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { SecretField } from "../kit/SecretField.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
@@ -78,6 +79,8 @@ export interface IdentityProvider {
   name: string;
   config: Config;
   hasSecret: boolean;
+  credentialSetAt?: string | null;
+  credentialSetBy?: string | null;
   enabled: boolean;
   enforce: boolean;
   provision: boolean;
@@ -160,7 +163,7 @@ function ConnectDialog({
   const [busy, setBusy] = useState(false);
 
   return (
-    <Dialog
+    <SideSheet
       open={open}
       onClose={onClose}
       title="Connect an identity provider"
@@ -287,7 +290,7 @@ function ConnectDialog({
           </Button>
         </div>
       </form>
-    </Dialog>
+    </SideSheet>
   );
 }
 
@@ -788,17 +791,14 @@ function Settings({
             required
             onChange={(clientId) => set({ clientId })}
           />
-          <TextField
-            label="New client secret"
+          <SecretField
+            label="Client secret"
             name="clientSecret"
-            type="password"
+            stored={provider.hasSecret}
+            setAt={provider.credentialSetAt}
+            setBy={provider.credentialSetBy}
             autoComplete="off"
             value={clientSecret}
-            hint={
-              provider.hasSecret
-                ? "A secret is stored. Leave this empty to keep it."
-                : "No secret is stored."
-            }
             onChange={setClientSecret}
           />
           <TextField

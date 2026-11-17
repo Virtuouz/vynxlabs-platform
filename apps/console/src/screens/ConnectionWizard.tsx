@@ -12,6 +12,7 @@ import { api, useLoad } from "../api.ts";
 import { failureText } from "../ask.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
+import { SecretField } from "../kit/SecretField.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
@@ -26,6 +27,8 @@ export interface ConnectionRow {
   config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
   configSchema: Record<string, unknown>;
   hasCredential: boolean;
+  credentialSetAt?: string | null;
+  credentialSetBy?: string | null;
   health: {
     ok: boolean;
     problem: string | null;
@@ -438,17 +441,16 @@ export function ConnectionWizard({
 
         <section className="flex flex-col gap-3" ref={credentialRef} tabIndex={-1}>
           <SectionLabel>3 · {credentialSays.label}</SectionLabel>
-          <TextField
+          <SecretField
             label={credentialSays.label}
             name="credential"
-            type="password"
-            autoComplete="new-password"
+            stored={hasCredential}
+            setAt={chosen?.credentialSetAt}
+            setBy={chosen?.credentialSetBy}
             value={credential}
-            hint={
-              hasCredential
-                ? "Leave it empty to keep the one stored."
-                : `${credentialSays.hint} Stored encrypted and never shown again.`
-            }
+            {...(hasCredential
+              ? {}
+              : { hint: `${credentialSays.hint} Stored encrypted and never shown again.` })}
             onChange={setCredential}
           />
         </section>

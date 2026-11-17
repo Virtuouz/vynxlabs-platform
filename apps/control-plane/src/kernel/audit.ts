@@ -1,4 +1,4 @@
-import { type Kysely, newId, type PlatformSchema, type Transaction } from "@vynxlabs/db";
+import { type Kysely, newId, type PlatformSchema, sql, type Transaction } from "@vynxlabs/db";
 
 import { commitDataTransactions, rollbackDataTransactions } from "./data/stores.js";
 
@@ -81,6 +81,10 @@ export async function mutate<T>(
   change: (trx: Trx, audit: Audit) => Promise<T>,
 ): Promise<T> {
   return transact(db, async (trx) => {
+    // Who is changing things, for what the database stamps by itself, such as when
+    // and by whom a credential was set. It lasts for this transaction only.
+    await sql`select set_config('vx.actor_type', ${actor.principal.type}, true),
+      set_config('vx.actor_id', ${actor.principal.id ?? ""}, true)`.execute(trx);
     let entries = 0;
     const result = await change(trx, async (input) => {
       await writeAudit(trx, actor, input);

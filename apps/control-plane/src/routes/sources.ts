@@ -4,6 +4,7 @@ import type {
 } from "@fastify/type-provider-typebox";
 import { validateJson } from "@vynxlabs/manifest";
 import { Type } from "typebox";
+import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
 import { MAX_FILE_BYTES, readFile, storeFile, toStoredFile } from "../kernel/data/files.js";
 import { checkSource } from "../kernel/data/health.js";
 import {
@@ -134,6 +135,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   bound: Type.Boolean(),
                   config: Type.Union([AnyObject, Type.Null()]),
                   hasPassword: Type.Boolean(),
+                  ...CredentialSet,
                   updatedAt: NullableTime,
                   health: Type.Union([
                     Type.Object(
@@ -165,6 +167,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll()
           .where("workspace_id", "=", params.w)
           .execute();
+        const setBy = await credentialSetters(db, bindings);
         const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
         const checks = await db
           .selectFrom("health_check")
@@ -186,6 +189,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               bound: binding !== undefined,
               config: binding?.config ?? null,
               hasPassword: Boolean(binding?.credential),
+              ...setBy(binding),
               updatedAt: isoOrNull(binding?.updated_at ?? null),
               health: check
                 ? {

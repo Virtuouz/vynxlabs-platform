@@ -4,6 +4,11 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 ## Unreleased: phase 14, one design system
 
+### For operators
+
+- **Database change.** Migration 0064 records when, and by whom, each stored credential was last set: connection and data source credentials, connection group members, the Git token and identity providers' secrets. A trigger stamps it whenever the sealed value changes. Credentials stored before the migration take their row's last change as their date, with no name. Every change's transaction now sets `vx.actor_type` and `vx.actor_id` locally for this.
+- **New API.** `POST /workspaces/:w/secrets {name, value}` makes a secret and refuses a name already in use (409). `PUT secrets/:name` still sets or replaces one. Connection, data source, group member, Git repository and identity provider responses carry `credentialSetAt` and `credentialSetBy`.
+
 ### For tenant developers
 
 - **The kit's tokens are version 2, and apps built on `@vynxlabs/ui` look slightly different.** What moved:
@@ -14,6 +19,9 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - **Motion.** Dialogs fade and settle, sheets slide in from their edge, menus and comboboxes fade in (`motion-fast`, `motion-base`, `motion-slow`). Nothing moves under `prefers-reduced-motion`.
   - **Prose** is set to one measure, `max-w-measure` (72ch).
 - **What to do.** Nothing, unless an app used `text-telemetry` or `text-micro`, or depends on the old sizes. Look over your app's screens after upgrading.
+- **Fields** (`TextField`, `SelectField`, `TextAreaField`, `NumberField`, `DateField`, `ComboboxField`): the error is tied to its control by `aria-describedby`, beside the hint, which now stays. An invalid control has a danger edge. `required` shows a mark, and `required={false}` shows "optional". The marks are hidden from assistive technology, which hears the control's own `required`, so labels and accessible names are unchanged. `FieldFrame` is exported, to give a field of your own the same label, hint and error.
+- **Toasts** take a `title`, a `link` to the result and an `info` tone. Three show at a time, and Esc dismisses one. `ToastProvider` takes `navigate` to follow links through your router.
+- **`Button loading`** shows a spinner beside the label, sets `aria-busy` and refuses a second press.
 
 ## Unreleased: phase 13, the debugging and authoring loop
 

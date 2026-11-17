@@ -1,8 +1,17 @@
-import { Button, ComboboxField, Dialog, Notice, SelectField, TextField } from "@vynxlabs/ui";
+import {
+  Button,
+  ComboboxField,
+  Dialog,
+  Notice,
+  SelectField,
+  SideSheet,
+  TextField,
+} from "@vynxlabs/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel, Stepper } from "../kit/layout.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { navigate } from "../router.tsx";
@@ -167,7 +176,11 @@ export function WorkspaceControls({
   );
 }
 
-/** A workspace's settings screen: what runs, copying it, where it promotes to, and deleting it. */
+/**
+ * A workspace's settings screen. Its settings (where it promotes to, its time
+ * zone) are changed together and saved from the bar at the foot; pausing,
+ * copying and deleting are actions, and act at once.
+ */
 export function WorkspaceSettings({
   base,
   tenantId,
@@ -179,10 +192,45 @@ export function WorkspaceSettings({
   workspace: WorkspaceSummary;
   reload: () => void;
 }) {
+  const root = `${base}/workspaces/${workspace.id}`;
+  const detail = useLoad<{ timeZone?: string }>(root);
+  const storedZone = detail.data?.timeZone ?? "UTC";
+  const [zone, setZone] = useState<string>();
+  const [linked, setLinked] = useState<string | null>();
+  const [saving, setSaving] = useState(false);
+  const draft = {
+    timeZone: zone ?? storedZone,
+    linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
+  };
+  const dirty =
+    draft.timeZone !== storedZone || draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
+  const discard = () => {
+    setZone(undefined);
+    setLinked(undefined);
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.patch(root, {
+        ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
+        ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
+          ? { linkedWorkspaceId: draft.linkedWorkspaceId }
+          : {}),
+      });
+      notify.success(`The settings of ${workspace.name} are saved.`);
+      discard();
+      detail.reload();
+      reload();
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <Page
       title="Workspace settings"
-      description="Pause what starts by itself, make a copy, choose where it promotes to, or delete a dev workspace."
+      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Where it promotes to and its time zone are saved together, from the bar that appears below."
     >
       <WorkspaceControls
         key={workspace.id}
@@ -190,20 +238,30 @@ export function WorkspaceSettings({
         tenantId={tenantId}
         workspace={workspace}
         reload={reload}
-        promotion={<Promotion base={base} workspace={workspace} reload={reload} />}
+        promotion={
+          <Promotion
+            base={base}
+            workspace={workspace}
+            reload={reload}
+            linked={draft.linkedWorkspaceId}
+            onLink={setLinked}
+          />
+        }
       />
-      <TimeZoneSetting base={base} workspaceId={workspace.id} />
+      <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+      <SaveBar
+        dirty={dirty}
+        saving={saving}
+        onSave={() => void save()}
+        onDiscard={discard}
+        what={`the settings of ${workspace.name}`}
+      />
     </Page>
   );
 }
 
-/** The time zone the workspace's new schedules start in. */
-function TimeZoneSetting({ base, workspaceId }: { base: string; workspaceId: string }) {
-  const workspace = useLoad<{ timeZone?: string }>(`${base}/workspaces/${workspaceId}`);
-  const [zone, setZone] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const current = workspace.data?.timeZone ?? "UTC";
-  const shown = zone ?? current;
+/** The time zone the workspace's new schedules start in. Saved with the page's other settings. */
+function TimeZoneSetting({ zone, onZone }: { zone: string; onZone: (zone: string) => void }) {
   const zones = [
     "UTC",
     ...(typeof Intl.supportedValuesOf === "function"
@@ -221,35 +279,13 @@ function TimeZoneSetting({ base, workspaceId }: { base: string; workspaceId: str
           New schedules here start in this zone, and every schedule form shows it. Schedules that
           exist keep the zone they were made with.
         </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full max-w-sm">
-            <ComboboxField
-              label="Zone"
-              options={zones}
-              value={shown}
-              onChange={(value) => setZone(value ?? "UTC")}
-            />
-          </div>
-          <Button
-            variant="primary"
-            loading={busy}
-            disabled={shown === current}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await api.patch(`${base}/workspaces/${workspaceId}`, { timeZone: shown });
-                notify.success(`New schedules here start in ${shown}.`);
-                setZone(undefined);
-                workspace.reload();
-              } catch (error) {
-                notify.error(error);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Save
-          </Button>
+        <div className="w-full max-w-sm">
+          <ComboboxField
+            label="Zone"
+            options={zones}
+            value={zone}
+            onChange={(value) => onZone(value ?? "UTC")}
+          />
         </div>
       </Panel>
     </section>
@@ -297,7 +333,7 @@ function CloneDialog({
     `${(n ?? 0).toLocaleString()} ${n === 1 ? one : many}`;
 
   return (
-    <Dialog
+    <SideSheet
       open={open}
       onClose={onClose}
       title={`Clone ${workspace.name}`}
@@ -418,7 +454,7 @@ function CloneDialog({
           </div>
         </form>
       )}
-    </Dialog>
+    </SideSheet>
   );
 }
 
@@ -450,10 +486,16 @@ export function Promotion({
   base,
   workspace,
   reload,
+  linked,
+  onLink,
 }: {
   base: string;
   workspace: WorkspaceSummary;
   reload: () => void;
+  /** Where it promotes to as the settings page has it, not yet saved. */
+  linked?: string | null;
+  /** Given by a page that saves its settings together: choosing changes the draft only. */
+  onLink?: (id: string | null) => void;
 }) {
   const root = `${base}/workspaces/${workspace.id}`;
   const others = useLoad<{ items: WorkspaceSummary[] }>(`${base}/workspaces`);
@@ -487,7 +529,7 @@ export function Promotion({
           <SelectField
             label="Promotes to"
             name="link"
-            value={workspace.linkedWorkspaceId ?? ""}
+            value={(linked !== undefined ? linked : workspace.linkedWorkspaceId) ?? ""}
             options={[
               { value: "", label: "Nothing: not linked" },
               ...(others.data?.items ?? [])
@@ -495,6 +537,10 @@ export function Promotion({
                 .map((item) => ({ value: item.id, label: `${item.name} (${item.type})` })),
             ]}
             onChange={async (value) => {
+              if (onLink) {
+                onLink(value === "" ? null : value);
+                return;
+              }
               setProblem(undefined);
               try {
                 await api.patch(root, { linkedWorkspaceId: value === "" ? null : value });

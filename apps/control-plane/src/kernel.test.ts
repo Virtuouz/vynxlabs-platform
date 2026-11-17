@@ -694,6 +694,22 @@ describe("secrets", () => {
     ).toThrow();
   });
 
+  test("a new secret refuses a name in use, so a mistyped name is never a quiet replacement", async () => {
+    const made = await bob.client.post(base(), { name: "TWILIO_TOKEN", value: "first" });
+    expect(made.status).toBe(201);
+    const again = await bob.client.post(base(), { name: "TWILIO_TOKEN", value: "second" });
+    expect(again.status).toBe(409);
+    expect(again.body.detail).toMatch(/already here/);
+    const id = { tenantId: acme, workspaceId: dev, name: "TWILIO_TOKEN" };
+    expect(await revealSecret(t.db, t.kernel.vault, id)).toBe("first");
+    // Who set it is listed beside when.
+    const listed = (await bob.client.get(base())).body.items.find(
+      (one: { name: string }) => one.name === "TWILIO_TOKEN",
+    );
+    expect(listed.updatedBy).toBeTruthy();
+    await bob.client.delete(`${base()}/TWILIO_TOKEN`);
+  });
+
   test("a secret can be deleted", async () => {
     await bob.client.put(`${base()}/TEMPORARY`, { value: "x" });
     expect((await bob.client.delete(`${base()}/TEMPORARY`)).status).toBe(204);

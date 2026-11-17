@@ -22,7 +22,9 @@ export {
 export { type Fact, Facts } from "./Facts.tsx";
 export {
   CheckboxField,
+  control as fieldControl,
   DateField,
+  FieldFrame,
   NumberField,
   SelectField,
   TextAreaField,

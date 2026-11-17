@@ -19,6 +19,7 @@ import {
 } from "../kernel/execution/oauth.js";
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
+import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
 import { cancelRuns } from "../kernel/execution/bulk-cancel.js";
 import {
   loadBundle,
@@ -1899,6 +1900,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       ),
       hasCredential: Type.Boolean(),
+      ...CredentialSet,
       updatedAt: NullableTime,
       health: Type.Union([
         Type.Object({
@@ -1947,9 +1949,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .execute();
       const bindings = await db
         .selectFrom("connection_binding")
-        .select(["path", "config", "credential", "oauth", "updated_at"])
+        .select([
+          "path",
+          "config",
+          "credential",
+          "oauth",
+          "updated_at",
+          "credential_set_at",
+          "credential_set_by_type",
+          "credential_set_by_id",
+        ])
         .where("workspace_id", "=", params.w)
         .execute();
+      const setBy = await credentialSetters(db, bindings);
       const health = await db
         .selectFrom("health_check")
         .select(["path", "ok", "problem", "latency_ms", "checked_at"])
@@ -1977,6 +1989,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             configSchema: (connectorSchema(connector, connectors) ??
               BUILTIN_CONFIG_SCHEMAS.http) as Record<string, unknown>,
             hasCredential: Boolean(binding?.credential),
+            ...setBy(binding),
             updatedAt: isoOrNull(binding?.updated_at ?? null),
             health:
               binding && checked
@@ -2114,6 +2127,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       label: Type.String(),
                       config: AnyObject,
                       hasCredential: Type.Boolean(),
+                      ...CredentialSet,
                       updatedAt: Time,
                     }),
                   ),
@@ -2133,10 +2147,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         const members = await db
           .selectFrom("connection_group_member")
-          .select(["group_path", "key", "label", "config", "credential", "updated_at"])
+          .select([
+            "group_path",
+            "key",
+            "label",
+            "config",
+            "credential",
+            "updated_at",
+            "credential_set_at",
+            "credential_set_by_type",
+            "credential_set_by_id",
+          ])
           .where("workspace_id", "=", params.w)
           .orderBy("key")
           .execute();
+        const setBy = await credentialSetters(db, members);
         const connectors = await deployedConnectors(params.w);
         return {
           items: groups.map((group) => {
@@ -2154,6 +2179,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   label: member.label,
                   config: member.config,
                   hasCredential: member.credential !== null,
+                  ...setBy(member),
                   updatedAt: iso(member.updated_at),
                 })),
             };

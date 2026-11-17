@@ -10,7 +10,8 @@ import {
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
-import { Loading } from "../kit/LoadState.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { Page, RemoveButton } from "../ListScreen.tsx";
 import { size } from "./Apps.tsx";
 
@@ -292,28 +293,20 @@ export function ContrastCheck({ values }: { values: Tokens }) {
   );
 }
 
-function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
-  const [light, setLight] = useState<Tokens>(stored.tokens);
-  const [dark, setDark] = useState<Tokens>(stored.dark);
-  const [error, setError] = useState<ApiError>();
-  const [saved, setSaved] = useState<string>();
-  const [busy, setBusy] = useState(false);
-
-  const save = async (theme: Theme, done: string) => {
-    setBusy(true);
-    setError(undefined);
-    setSaved(undefined);
-    try {
-      const now = await api.put<Portal>(`${base}/portal`, { theme });
-      setLight(now.theme.tokens);
-      setDark(now.theme.dark);
-      setSaved(done);
-    } catch (caught) {
-      setError(caught as ApiError);
-    } finally {
-      setBusy(false);
-    }
-  };
+/** The theme's fields, and a preview of them. What they hold is saved with the page. */
+function ThemeEditor({
+  light,
+  dark,
+  setLight,
+  setDark,
+  error,
+}: {
+  light: Tokens;
+  dark: Tokens;
+  setLight: (change: (current: Tokens) => Tokens) => void;
+  setDark: (change: (current: Tokens) => Tokens) => void;
+  error: ApiError | undefined;
+}) {
   // In dark, a length or font follows light, and a color is the kit's dark one unless set for dark.
   const lightValues = { ...KIT.tokens, ...set(light) };
   const darkBase = { ...lightValues, ...KIT.dark };
@@ -329,62 +322,40 @@ function ThemeEditor({ base, stored }: { base: string; stored: Theme }) {
           to keep the component kit's value. A workspace can override these with a theme resource in
           its repository.
         </p>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            save({ tokens: set(light), dark: set(dark) }, "Saved.");
-          }}
-        >
+        <div className="flex flex-col gap-4">
           <div className="grid gap-6 lg:grid-cols-2">
             <TokenRows
               mode="tokens"
               values={light}
               effective={KIT.tokens}
               error={error}
-              onChange={(token, value) => {
-                setSaved(undefined);
-                setLight((current) => ({ ...current, [token]: value }));
-              }}
+              onChange={(token, value) => setLight((current) => ({ ...current, [token]: value }))}
             />
             <TokenRows
               mode="dark"
               values={dark}
               effective={darkBase}
               error={error}
-              onChange={(token, value) => {
-                setSaved(undefined);
-                setDark((current) => ({ ...current, [token]: value }));
-              }}
+              onChange={(token, value) => setDark((current) => ({ ...current, [token]: value }))}
             />
           </div>
           {error ? <Notice tone="danger">{error.message}</Notice> : null}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" loading={busy}>
-              Save theme
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                const sure = await ask.confirm({
-                  title: "Reset to the kit's values?",
-                  text: "Every value set here is removed, for light and for dark. The portal and apps go back to the kit's values.",
-                  action: "Reset",
-                  danger: true,
-                });
-                if (!sure) return;
-                save({ tokens: {}, dark: {} }, "Reset to the kit's values.");
-              }}
-            >
-              Reset to the kit's values
-            </Button>
-            {saved ? (
-              <span role="status" className="text-ink-muted">
-                {saved}
-              </span>
-            ) : null}
-          </div>
-        </form>
+          <Button
+            className="w-fit"
+            onClick={async () => {
+              const sure = await ask.confirm({
+                title: "Go back to the kit's values?",
+                text: "Every value set here is cleared, for light and for dark. Nothing changes until the page is saved.",
+                action: "Clear them",
+              });
+              if (!sure) return;
+              setLight(() => ({}));
+              setDark(() => ({}));
+            }}
+          >
+            Clear back to the kit's values
+          </Button>
+        </div>
       </section>
       <section className={panel}>
         <h2 className="m-0 text-title font-semibold">Preview</h2>
@@ -418,6 +389,7 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
     try {
       await api.upload(`${base}/portal/logo`, file, "PUT");
       setVersion((current) => current + 1);
+      notify.success("The logo is replaced.");
       reload();
     } catch (error) {
       setProblem((error as ApiError).message);
@@ -459,7 +431,9 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
             if (file) upload(file);
           }}
         />
-        <span className="font-normal text-ink-muted">PNG, JPEG or WebP, up to 512 KB.</span>
+        <span className="font-normal text-ink-muted">
+          PNG, JPEG or WebP, up to 512 KB. Choosing one replaces the logo at once.
+        </span>
       </label>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
     </section>
@@ -468,25 +442,56 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
 
 export function Branding({ base }: { base: string }) {
   const portal = useLoad<Portal>(`${base}/portal`);
-  const [signUp, setSignUp] = useState<boolean>();
-  const [problem, setProblem] = useState<string>();
-
   if (portal.error) {
     return (
       <Page title="Branding">
-        <Notice tone="danger" action={<Button onClick={portal.reload}>Try again</Button>}>
-          {portal.error.message}
-        </Notice>
+        <ErrorState error={portal.error} onRetry={portal.reload} />
       </Page>
     );
   }
   if (!portal.data) return <Loading />;
-  const data = portal.data;
+  return <BrandingForm base={base} data={portal.data} reload={portal.reload} />;
+}
+
+/** The page's settings, changed together and saved with the bar at its foot. */
+function BrandingForm({ base, data, reload }: { base: string; data: Portal; reload: () => void }) {
+  const [signUp, setSignUp] = useState(data.signUp);
+  const [light, setLight] = useState<Tokens>(data.theme.tokens);
+  const [dark, setDark] = useState<Tokens>(data.theme.dark);
+  const [error, setError] = useState<ApiError>();
+  const [saving, setSaving] = useState(false);
+  const same = (one: Tokens, two: Tokens) => JSON.stringify(set(one)) === JSON.stringify(set(two));
+  const dirty =
+    signUp !== data.signUp || !same(light, data.theme.tokens) || !same(dark, data.theme.dark);
+  const discard = () => {
+    setSignUp(data.signUp);
+    setLight(data.theme.tokens);
+    setDark(data.theme.dark);
+    setError(undefined);
+  };
+  const save = async () => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      const now = await api.put<Portal>(`${base}/portal`, {
+        signUp,
+        theme: { tokens: set(light), dark: set(dark) },
+      });
+      setLight(now.theme.tokens);
+      setDark(now.theme.dark);
+      notify.success("Branding saved. The portal and apps show it from their next page.");
+      reload();
+    } catch (caught) {
+      setError(caught as ApiError);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Page
       title="Branding"
-      description="How this tenant's portal and apps look to its end users, and whether people may create their own account there."
+      description="How this tenant's portal and apps look to its end users, and whether people may create their own account there. Changes are saved together, from the bar that appears below."
     >
       <section className={panel}>
         <h2 className="m-0 text-title font-semibold">Portal</h2>
@@ -510,28 +515,20 @@ export function Branding({ base }: { base: string }) {
         <CheckboxField
           label="People may create their own account"
           name="signUp"
-          checked={signUp ?? data.signUp}
+          checked={signUp}
           hint="When this is off, only people invited under End users have an account."
-          error={problem}
-          onChange={async (checked) => {
-            setSignUp(checked);
-            setProblem(undefined);
-            try {
-              await api.put(`${base}/portal`, { signUp: checked });
-              notify.success(
-                checked
-                  ? "People can now sign themselves up."
-                  : "Sign-up is off: people are invited.",
-              );
-            } catch (error) {
-              setSignUp(!checked);
-              setProblem((error as ApiError).message);
-            }
-          }}
+          onChange={setSignUp}
         />
       </section>
-      <ThemeEditor base={base} stored={data.theme} />
-      <Logo base={base} has={data.logo} reload={portal.reload} />
+      <ThemeEditor light={light} dark={dark} setLight={setLight} setDark={setDark} error={error} />
+      <Logo base={base} has={data.logo} reload={reload} />
+      <SaveBar
+        dirty={dirty}
+        saving={saving}
+        onSave={() => void save()}
+        onDiscard={discard}
+        what="this tenant's branding"
+      />
     </Page>
   );
 }

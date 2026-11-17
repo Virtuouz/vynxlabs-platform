@@ -40,3 +40,31 @@ test("the kit's fields, buttons, notices and log have no serious accessibility p
   );
   expect(await violations(container)).toEqual([]);
 });
+
+test("a field's error and hint are both tied to its control, and required and optional are shown", async () => {
+  const { container } = render(
+    <main>
+      <TextField
+        name="slug"
+        label="Slug"
+        hint="Lowercase letters."
+        error="That slug is taken."
+        required
+        value=""
+        onChange={() => {}}
+      />
+      <TextField name="note" label="Note" required={false} value="" onChange={() => {}} />
+    </main>,
+  );
+  const slug = container.querySelector('input[name="slug"]') as HTMLInputElement;
+  const described = (slug.getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => document.getElementById(id)?.textContent);
+  expect(described).toEqual(expect.arrayContaining(["Lowercase letters.", "That slug is taken."]));
+  expect(slug.getAttribute("aria-invalid")).toBe("true");
+  expect(slug.required).toBe(true);
+  // The marks are seen; the label stays the field's name.
+  expect(container.textContent).toContain("*");
+  expect(container.textContent).toContain("optional");
+  expect(await violations(container)).toEqual([]);
+});

@@ -1,10 +1,11 @@
 import { Button, Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask } from "../ask.tsx";
+import { ask, notify } from "../ask.tsx";
 import { type Branding, BrandMark, useBrand } from "../kit/brand.tsx";
-import { Loading } from "../kit/LoadState.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { RemoveButton } from "../ListScreen.tsx";
 import { refreshInstanceTheme } from "../theme.ts";
 import { size } from "./Apps.tsx";
@@ -20,11 +21,7 @@ const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 export function InstanceBranding() {
   const loaded = useLoad<Branding>("/instance/branding");
   if (loaded.error) {
-    return (
-      <Notice tone="danger" action={<Button onClick={loaded.reload}>Try again</Button>}>
-        {loaded.error.message}
-      </Notice>
-    );
+    return <ErrorState error={loaded.error} onRetry={loaded.reload} />;
   }
   if (!loaded.data) return <Loading />;
   return <Editor stored={loaded.data} reload={loaded.reload} />;
@@ -36,20 +33,34 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
   const [light, setLight] = useState<Tokens>(stored.theme.tokens);
   const [dark, setDark] = useState<Tokens>(stored.theme.dark);
   const [error, setError] = useState<ApiError>();
-  const [saved, setSaved] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [logoProblem, setLogoProblem] = useState<string>();
+  const storedName = stored.named ? stored.productName : "";
+  const same = (one: Tokens, two: Tokens) => JSON.stringify(set(one)) === JSON.stringify(set(two));
+  const dirty =
+    name.trim() !== storedName ||
+    !same(light, stored.theme.tokens) ||
+    !same(dark, stored.theme.dark);
+  const discard = () => {
+    setName(storedName);
+    setLight(stored.theme.tokens);
+    setDark(stored.theme.dark);
+    setError(undefined);
+  };
 
-  const save = async (body: Record<string, unknown>, done: string) => {
+  /** The name and the colors, saved together. */
+  const save = async () => {
     setBusy(true);
     setError(undefined);
-    setSaved(undefined);
     try {
-      const now = await api.put<Branding>("/instance/branding", body);
+      const now = await api.put<Branding>("/instance/branding", {
+        productName: name.trim() || null,
+        theme: { tokens: set(light), dark: set(dark) },
+      });
       setLight(now.theme.tokens);
       setDark(now.theme.dark);
       setName(now.named ? now.productName : "");
-      setSaved(done);
+      notify.success("The console's branding is saved. Everyone sees it on their next page.");
       refreshInstanceTheme();
       brand.reload();
       reload();
@@ -72,6 +83,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
     }
     try {
       await api.upload("/instance/branding/logo", file, "PUT");
+      notify.success("The logo is replaced.");
       brand.reload();
       reload();
     } catch (caught) {
@@ -88,18 +100,12 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
       <PageHeader
         eyebrow="Instance"
         title="Console branding"
-        description="How this console looks to everyone who signs in to it: its name, its mark and its colors. Tenants brand their own apps and portal; that never changes the console."
+        description="How this console looks to everyone who signs in to it: its name, its mark and its colors. Tenants brand their own apps and portal; that never changes the console. Changes are saved together, from the bar that appears below."
       />
 
       <Panel className="flex flex-col gap-4 p-4">
         <SectionLabel>Name and mark</SectionLabel>
-        <form
-          className="flex flex-col gap-4 md:flex-row md:items-end"
-          onSubmit={(event) => {
-            event.preventDefault();
-            save({ productName: name.trim() || null }, "Saved.");
-          }}
-        >
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
           <div className="min-w-0 flex-1 md:max-w-sm">
             <TextField
               label="Product name"
@@ -111,10 +117,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
               onChange={(value) => setName(value)}
             />
           </div>
-          <Button type="submit" variant="primary" loading={busy}>
-            Save name
-          </Button>
-        </form>
+        </div>
         <div className="flex flex-wrap items-center gap-4">
           <BrandMark />
           {stored.logo ? (
@@ -145,7 +148,8 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
               }}
             />
             <span className="font-normal text-ink-muted">
-              PNG, JPEG, WebP or SVG, up to 512 KB. Square works best.
+              PNG, JPEG, WebP or SVG, up to 512 KB. Square works best. Choosing one replaces the
+              logo at once.
             </span>
           </label>
         </div>
@@ -158,66 +162,52 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
           Set a token to a plain color, length or font list, or leave it empty to keep the console's
           own value. Production is always marked in the attention color, so keep it clearly amber.
         </p>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            save({ theme: { tokens: set(light), dark: set(dark) } }, "Saved.");
-          }}
-        >
+        <div className="flex flex-col gap-4">
           <div className="grid gap-6 lg:grid-cols-2">
             <TokenRows
               mode="tokens"
               values={light}
               effective={KIT.tokens}
               error={error}
-              onChange={(token, value) => {
-                setSaved(undefined);
-                setLight((current) => ({ ...current, [token]: value }));
-              }}
+              onChange={(token, value) => setLight((current) => ({ ...current, [token]: value }))}
             />
             <TokenRows
               mode="dark"
               values={dark}
               effective={darkBase}
               error={error}
-              onChange={(token, value) => {
-                setSaved(undefined);
-                setDark((current) => ({ ...current, [token]: value }));
-              }}
+              onChange={(token, value) => setDark((current) => ({ ...current, [token]: value }))}
             />
           </div>
           {error ? <Notice tone="danger">{error.message}</Notice> : null}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" loading={busy}>
-              Save theme
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                const sure = await ask.confirm({
-                  title: "Reset to the console's own values?",
-                  text: "Every value set here is removed, for light and for dark.",
-                  action: "Reset",
-                  danger: true,
-                });
-                if (sure) save({ theme: { tokens: {}, dark: {} } }, "Reset.");
-              }}
-            >
-              Reset colors
-            </Button>
-            {saved ? (
-              <span role="status" className="text-ink-muted">
-                {saved}
-              </span>
-            ) : null}
-          </div>
-        </form>
+          <Button
+            className="w-fit"
+            onClick={async () => {
+              const sure = await ask.confirm({
+                title: "Go back to the console's own values?",
+                text: "Every value set here is cleared, for light and for dark. Nothing changes until the page is saved.",
+                action: "Clear them",
+              });
+              if (!sure) return;
+              setLight({});
+              setDark({});
+            }}
+          >
+            Clear back to the console's values
+          </Button>
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           <Preview scheme="light" values={lightValues} />
           <Preview scheme="dark" values={darkValues} />
         </div>
       </Panel>
+      <SaveBar
+        dirty={dirty}
+        saving={busy}
+        onSave={() => void save()}
+        onDiscard={discard}
+        what="the console's branding"
+      />
     </div>
   );
 }

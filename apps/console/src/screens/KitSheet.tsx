@@ -525,6 +525,7 @@ export function KitSheet() {
               title="A list"
               description="What the list is for, kept behind help once it has been read."
               helpKey="kit-sheet"
+              helpSeen
               oneRow
               state={<HeadNote>2 runs are waiting for a person.</HeadNote>}
             />

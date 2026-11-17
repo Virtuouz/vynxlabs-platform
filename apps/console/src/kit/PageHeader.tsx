@@ -30,6 +30,7 @@ export function PageHeader({
   size = "display",
   after,
   helpKey,
+  helpSeen,
   oneRow = false,
 }: {
   title: ReactNode;
@@ -58,6 +59,8 @@ export function PageHeader({
    * title, so the list starts higher. Its empty state keeps the sentence.
    */
   helpKey?: string | undefined;
+  /** Whether the description is folded, whatever the member has read: for the kit sheet. */
+  helpSeen?: boolean;
   /**
    * A list's heading, its toolbar and its actions on one row from a laptop's
    * width up, so the list starts higher (P4-1). They wrap below it.
@@ -65,7 +68,7 @@ export function PageHeader({
   oneRow?: boolean;
 }) {
   const [seen] = useSeen(helpKey, Boolean(description));
-  const folded = Boolean(helpKey && description && seen);
+  const folded = Boolean(helpKey && description && (helpSeen ?? seen));
   const heading = (
     <h1
       className={`m-0 min-w-0 ${

@@ -400,7 +400,10 @@ export function EmptyCanvas({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-panel border border-line-strong border-dashed px-6 py-10 text-center">
+    <div
+      data-empty-state=""
+      className="flex flex-col items-center gap-3 rounded-panel border border-line-strong border-dashed px-6 py-10 text-center"
+    >
       <span aria-hidden="true" className="flex items-center gap-1.5">
         <Junction kind="here" />
         <span className="h-px w-6 bg-line-strong" />

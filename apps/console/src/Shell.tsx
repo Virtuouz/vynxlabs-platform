@@ -1086,7 +1086,12 @@ export function Shell({
             </ErrorBoundary>
           ) : (
             <div
-              className={`w-full px-4 md:px-8 ${where.editor ? "py-4" : "mx-auto max-w-[1440px] py-6"}`}
+              className={`w-full px-4 md:px-8 ${
+                where.editor
+                  ? "py-4"
+                  : // An overview takes a wide screen's room for a third column; other pages keep a reading width.
+                    `mx-auto py-6 ${where.area === "overview" ? "max-w-[1440px] 3xl:max-w-[1920px]" : "max-w-[1440px]"}`
+              }`}
             >
               <ErrorBoundary resetOn={path} what="This page">
                 {children}

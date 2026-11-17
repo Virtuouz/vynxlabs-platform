@@ -2,6 +2,11 @@
 @source "./";
 @source "../../../packages/screens/src";
 
+/* A screen of 1920 px and more: room for a third column, and logs beside what a run was given. */
+@theme {
+  --breakpoint-3xl: 120rem;
+}
+
 /* The console is dense: its controls are 32 px, where a tenant app's are 36. */
 html {
   --vx-control-height: 32px;

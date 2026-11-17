@@ -57,6 +57,13 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - A failed or canceled run's page says when the script or flow last succeeded, on which version, whether the input and version differ, and how long each took.
   - When the input differs, the difference can be shown. When the version differs, "Compare the source" (or "Compare the flow") opens the two versions side by side.
   - The palette offers "Compare with the last success" on a run's page.
+- **Wide screens (1920 px and up).**
+  - A run page shows its log beside its input and output, and a flow run its timeline beside the chosen step.
+  - The overview has three columns and may be up to 1920 px wide.
+  - The runs list's Target column keeps what it needs, and the panel beside lists is wider.
+- **Fixed:**
+  - A run page now scrolls. On a window shorter than the page, what was below the fold could not be reached.
+  - A failed run's last attempt now reads "failed" even when the script threw without logging an error. Before, it read "succeeded".
 
 ### For tenant developers
 

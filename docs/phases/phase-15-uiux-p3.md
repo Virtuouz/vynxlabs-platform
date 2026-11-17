@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–8 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–9 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -252,3 +252,20 @@ Some of the roadmap's evidence is out of date:
   - server (`compare.test.ts`): none before, the same version and input, and after a deploy with other input;
   - console: the panel's wording, link and input diff;
   - e2e (`compare.spec.ts`): a script works on v1 and fails on v2; its page says "v1 then, v2 now" with the same input, passes axe, and the source diff shows the old and new code.
+
+### Milestone 9: wide-screen layouts
+- **A `3xl` breakpoint at 1920 px**, in the console's own theme.
+- **From 1920 px:**
+  - **Script run page:** the log and the run's input, output and comparison stand side by side (3 : 2) beside the attempts column, three panes in all.
+  - **Flow run page:** the timeline or graph stands beside the chosen step's facts, logs, input and output.
+  - **Overview:** three columns (what needs you; runs and release; what starts work). The shell's width cap rises from 1440 to 1920 px for overviews only.
+  - **Runs list:** Target takes 26rem and Result the rest. The docked inspector's own width is 32rem, unless the member set one.
+- **The run page's scroll**, suspected in planning, was real. `runs/<id>` counts as a workbench, so `main` does not scroll, and the run page's wrapper didn't either. On a short window the input and output were out of reach. The run page and the compare page now scroll themselves. The e2e holds this at 1440 × 640.
+- **Found in a picture:** a failed run's attempts read "#1 succeeded" when the script threw without logging an error line. That has been so since phase 9, because the insight counted only error-level log lines. A failed run's last attempt is now failed whatever it logged. `operations.test.ts` holds it.
+- **e2e (`wide.spec.ts`)** at 2200 × 1100:
+  - On the runs list with a run open, no column that grows is more than twice its content plus padding. Fixed-width columns such as State are sized for their longest value and are left out.
+  - The run page's log is left of its input tabs, both in view.
+  - The overview is pictured, along with both other screens, in light and dark (6 new pictures). Axe runs on the wide runs list.
+  - A run page scrolls on a short window.
+  
+  The whole e2e suite passed: 38 tests.

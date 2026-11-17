@@ -501,6 +501,8 @@ export function RunsWorkbench({
     },
     {
       header: "Target",
+      // From 1920 px the path keeps what it needs, and the result takes the rest.
+      width: "3xl:w-[26rem]",
       cell: (one) => (
         <span className="flex min-w-0 items-center gap-1.5">
           <KindIcon kind={one.kind} />

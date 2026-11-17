@@ -458,106 +458,110 @@ export function Overview({
 
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} /> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-6">
-          {firstRun && counts ? (
-            <Panel>
-              <FirstRun
-                counts={counts}
-                link={link}
-                tenantLink={link.split("/workspaces/")[0] ?? ""}
-                managedWorkers={tenant.data?.managedWorkers === true}
-                dev={workspace.type === "dev"}
-              />
-            </Panel>
-          ) : null}
-          {firstRun && attention.length === 0 ? null : (
-            <section className="flex flex-col gap-2">
-              <SectionLabel>Needs attention</SectionLabel>
-              <Panel className="divide-y divide-line">
-                {!counts ? (
-                  <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
-                ) : attention.length === 0 ? (
-                  <NextStep
-                    tone="success"
-                    icon={<CircleCheck aria-hidden="true" size={16} />}
-                    title="Nothing needs you here"
-                    detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
-                  />
-                ) : (
-                  attention.map((item) => <div key={item.key}>{item.node}</div>)
-                )}
+      {/* From 1920 px, three columns: what needs you, how it runs and ships, what starts it. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] 3xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-6 3xl:grid 3xl:grid-cols-2 3xl:items-start">
+          <div className="flex min-w-0 flex-col gap-6">
+            {firstRun && counts ? (
+              <Panel>
+                <FirstRun
+                  counts={counts}
+                  link={link}
+                  tenantLink={link.split("/workspaces/")[0] ?? ""}
+                  managedWorkers={tenant.data?.managedWorkers === true}
+                  dev={workspace.type === "dev"}
+                />
               </Panel>
-            </section>
-          )}
+            ) : null}
+            {firstRun && attention.length === 0 ? null : (
+              <section className="flex flex-col gap-2">
+                <SectionLabel>Needs attention</SectionLabel>
+                <Panel className="divide-y divide-line">
+                  {!counts ? (
+                    <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
+                  ) : attention.length === 0 ? (
+                    <NextStep
+                      tone="success"
+                      icon={<CircleCheck aria-hidden="true" size={16} />}
+                      title="Nothing needs you here"
+                      detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
+                    />
+                  ) : (
+                    attention.map((item) => <div key={item.key}>{item.node}</div>)
+                  )}
+                </Panel>
+              </section>
+            )}
+          </div>
+          <div className="flex min-w-0 flex-col gap-6">
+            {stats.data ? (
+              <section className="flex flex-col gap-2">
+                <SectionLabel
+                  action={
+                    <Link to={`${link}/runs`} className="text-meta">
+                      All runs
+                    </Link>
+                  }
+                >
+                  Runs · last 24 hours
+                </SectionLabel>
+                <RunsCard stats={stats.data} link={link} />
+              </section>
+            ) : null}
 
-          {stats.data ? (
-            <section className="flex flex-col gap-2">
-              <SectionLabel
-                action={
-                  <Link to={`${link}/runs`} className="text-meta">
-                    All runs
-                  </Link>
-                }
-              >
-                Runs · last 24 hours
-              </SectionLabel>
-              <RunsCard stats={stats.data} link={link} />
-            </section>
-          ) : null}
-
-          {counts ? (
-            <section className="flex flex-col gap-2">
-              <SectionLabel
-                action={
-                  <Link to={`${link}/release`} className="text-meta">
-                    Deployments
-                  </Link>
-                }
-              >
-                Release
-              </SectionLabel>
-              <Panel className="flex flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center gap-2 text-body-sm">
-                  <span className="flex items-center gap-1.5">
-                    <Junction kind="pending" />
-                    Draft <Mono className="text-action">{counts.drafts ?? "—"}</Mono>
-                  </span>
-                  <Wire width={20} />
-                  <span className="flex items-center gap-1.5">
-                    <Junction kind={workspace.type === "production" ? "production" : "here"} />
-                    {workspace.name}{" "}
-                    <Mono className="text-ink-muted">
-                      {counts.version === null ? "nothing deployed" : `v${counts.version}`}
-                    </Mono>
-                  </span>
+            {counts ? (
+              <section className="flex flex-col gap-2">
+                <SectionLabel
+                  action={
+                    <Link to={`${link}/release`} className="text-meta">
+                      Deployments
+                    </Link>
+                  }
+                >
+                  Release
+                </SectionLabel>
+                <Panel className="flex flex-col gap-4 p-4">
+                  <div className="flex flex-wrap items-center gap-2 text-body-sm">
+                    <span className="flex items-center gap-1.5">
+                      <Junction kind="pending" />
+                      Draft <Mono className="text-action">{counts.drafts ?? "—"}</Mono>
+                    </span>
+                    <Wire width={20} />
+                    <span className="flex items-center gap-1.5">
+                      <Junction kind={workspace.type === "production" ? "production" : "here"} />
+                      {workspace.name}{" "}
+                      <Mono className="text-ink-muted">
+                        {counts.version === null ? "nothing deployed" : `v${counts.version}`}
+                      </Mono>
+                    </span>
+                    {counts.linked ? (
+                      <>
+                        <Wire dashed width={20} />
+                        <span className="flex items-center gap-1.5">
+                          <Junction
+                            kind={counts.linked.type === "production" ? "production" : "plain"}
+                          />
+                          {counts.linked.name}{" "}
+                          <Mono className="text-ink-muted">
+                            {counts.linked.version === null ? "—" : `v${counts.linked.version}`}
+                          </Mono>
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
                   {counts.linked ? (
-                    <>
-                      <Wire dashed width={20} />
-                      <span className="flex items-center gap-1.5">
-                        <Junction
-                          kind={counts.linked.type === "production" ? "production" : "plain"}
-                        />
-                        {counts.linked.name}{" "}
-                        <Mono className="text-ink-muted">
-                          {counts.linked.version === null ? "—" : `v${counts.linked.version}`}
-                        </Mono>
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-                {counts.linked ? (
-                  <p className="m-0 text-meta text-ink-muted">
-                    {counts.linked.same
-                      ? `${counts.linked.name} runs the same bundle as this workspace.`
-                      : `${counts.linked.name} runs a different bundle. Promote to bring it up to date.`}
-                  </p>
-                ) : (
-                  <p className="m-0 text-meta text-ink-muted">This workspace promotes nowhere.</p>
-                )}
-              </Panel>
-            </section>
-          ) : null}
+                    <p className="m-0 text-meta text-ink-muted">
+                      {counts.linked.same
+                        ? `${counts.linked.name} runs the same bundle as this workspace.`
+                        : `${counts.linked.name} runs a different bundle. Promote to bring it up to date.`}
+                    </p>
+                  ) : (
+                    <p className="m-0 text-meta text-ink-muted">This workspace promotes nowhere.</p>
+                  )}
+                </Panel>
+              </section>
+            ) : null}
+          </div>
         </div>
 
         <section className="flex flex-col gap-2">

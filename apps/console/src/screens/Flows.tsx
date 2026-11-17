@@ -832,172 +832,184 @@ export function FlowRunView({
           ) : null}
         </Notice>
       ))}
-      <Tabs
-        value={view}
-        onChange={setView}
-        label="Views of this run"
-        tabs={[
-          {
-            id: "timeline",
-            label: "Timeline",
-            content: (
-              <div className="rounded-panel border border-line bg-surface p-4">
-                {steps.length === 0 ? (
-                  <p className="m-0 text-ink-muted">No step has started yet.</p>
-                ) : (
-                  <Timeline
-                    rows={steps.map((step) => timelineRow(step, run.createdAt))}
-                    selected={selected}
-                    onSelect={setSelected}
-                    legend={{
-                      wait: "Waiting for a worker",
-                      run: "Running",
-                      hold: "Waiting on purpose",
-                    }}
-                  />
-                )}
-              </div>
-            ),
-          },
-          {
-            id: "graph",
-            label: "Graph",
-            content:
-              drawn.data || flow.data ? (
-                <div className="flex flex-col gap-2">
-                  {drawn.data?.changed ? (
-                    <p className="m-0 text-meta text-ink-muted">
-                      The flow has changed since this run. It is drawn as it ran, at version{" "}
-                      {drawn.data.bundleVersion}.
-                    </p>
+      {/* From 1920 px the timeline stands beside the chosen step's logs, input and output. */}
+      <div className="flex flex-col gap-4 3xl:grid 3xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 3xl:items-start">
+        <div className="min-w-0">
+          <Tabs
+            value={view}
+            onChange={setView}
+            label="Views of this run"
+            tabs={[
+              {
+                id: "timeline",
+                label: "Timeline",
+                content: (
+                  <div className="rounded-panel border border-line bg-surface p-4">
+                    {steps.length === 0 ? (
+                      <p className="m-0 text-ink-muted">No step has started yet.</p>
+                    ) : (
+                      <Timeline
+                        rows={steps.map((step) => timelineRow(step, run.createdAt))}
+                        selected={selected}
+                        onSelect={setSelected}
+                        legend={{
+                          wait: "Waiting for a worker",
+                          run: "Running",
+                          hold: "Waiting on purpose",
+                        }}
+                      />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                id: "graph",
+                label: "Graph",
+                content:
+                  drawn.data || flow.data ? (
+                    <div className="flex flex-col gap-2">
+                      {drawn.data?.changed ? (
+                        <p className="m-0 text-meta text-ink-muted">
+                          The flow has changed since this run. It is drawn as it ran, at version{" "}
+                          {drawn.data.bundleVersion}.
+                        </p>
+                      ) : null}
+                      <FlowGraph
+                        nodes={(drawn.data ?? flow.data)?.nodes ?? {}}
+                        edges={(drawn.data ?? flow.data)?.edges ?? []}
+                        layout={(drawn.data ?? flow.data)?.layout ?? {}}
+                        statuses={statuses}
+                        selected={selected}
+                        onSelect={setSelected}
+                      />
+                    </div>
+                  ) : (
+                    <Loading />
+                  ),
+              },
+            ]}
+          />
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          {chosen ? (
+            <section
+              aria-label={`Step ${chosen.node}`}
+              className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <h2 className="m-0 flex items-center gap-2 text-title font-semibold">
+                  {code(chosen.node)} <StatePill state={chosen.state} until={chosen.wakeAt} />
+                  {chosen.outputName ? (
+                    <span className="font-normal text-ink-muted">
+                      took the case {chosen.outputName}
+                    </span>
                   ) : null}
-                  <FlowGraph
-                    nodes={(drawn.data ?? flow.data)?.nodes ?? {}}
-                    edges={(drawn.data ?? flow.data)?.edges ?? []}
-                    layout={(drawn.data ?? flow.data)?.layout ?? {}}
-                    statuses={statuses}
-                    selected={selected}
-                    onSelect={setSelected}
-                  />
+                </h2>
+                {chosenScript ? (
+                  <Link to={`${link}/scripts/edit/${chosenScript}`} className="text-meta">
+                    Open script {chosenScript}
+                  </Link>
+                ) : null}
+              </div>
+              <div className="mb-3">
+                <Facts
+                  facts={[
+                    { label: "Started", value: when(chosen.startedAt) },
+                    {
+                      label: "Waited for a worker",
+                      value:
+                        chosen.pickedUpAt &&
+                        Date.parse(chosen.pickedUpAt) - Date.parse(chosen.startedAt) >= 100
+                          ? duration(Date.parse(chosen.pickedUpAt) - Date.parse(chosen.startedAt))
+                          : "",
+                    },
+                    {
+                      label: "Ran",
+                      value: chosen.finishedAt
+                        ? duration(
+                            Date.parse(chosen.finishedAt) -
+                              Date.parse(chosen.pickedUpAt ?? chosen.startedAt),
+                          )
+                        : "In progress",
+                    },
+                    { label: "Run ID", value: chosen.runId ?? "", code: true },
+                  ]}
+                />
+              </div>
+              {chosen.error ? (
+                <p className="m-0 text-danger">
+                  {chosen.error.message}
+                  {chosen.handled ? (
+                    <span className="text-ink-muted">
+                      {" "}
+                      The flow carried on down its error path.
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
+              {chosen.error && chosen.runId ? (
+                <StepDiagnosis root={root} link={link} runId={chosen.runId} />
+              ) : null}
+              {chosen.input !== undefined && chosen.input !== null ? (
+                <ResultView label={`Input of ${chosen.node}`} value={chosen.input} />
+              ) : null}
+              {chosen.wakeAt && chosen.status === "waiting" ? (
+                <p className="mt-0 text-ink-muted">Waits until {when(chosen.wakeAt)}.</p>
+              ) : null}
+              {chosen.copiedFrom ? (
+                <Notice tone="plain">
+                  Kept from{" "}
+                  <Link to={`${link}/runs/${chosen.copiedFrom.flowRunId}`}>
+                    the run this one retries
+                  </Link>
+                  : it was not run again.
+                  {chosen.copiedFrom.runId ? (
+                    <>
+                      {" "}
+                      <Link to={`${link}/runs/${chosen.copiedFrom.runId}`}>Its script run</Link>.
+                    </>
+                  ) : null}
+                </Notice>
+              ) : null}
+              {chosen.runId ? (
+                <div className="mb-3 flex flex-col gap-2">
+                  <StepLogs root={root} runId={chosen.runId} />
+                  <Link to={`${link}/runs/${chosen.runId}`} className="text-meta">
+                    Open this step's run
+                  </Link>
                 </div>
-              ) : (
-                <Loading />
-              ),
-          },
-        ]}
-      />
-      {chosen ? (
-        <section
-          aria-label={`Step ${chosen.node}`}
-          className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <h2 className="m-0 flex items-center gap-2 text-title font-semibold">
-              {code(chosen.node)} <StatePill state={chosen.state} until={chosen.wakeAt} />
-              {chosen.outputName ? (
-                <span className="font-normal text-ink-muted">
-                  took the case {chosen.outputName}
-                </span>
               ) : null}
-            </h2>
-            {chosenScript ? (
-              <Link to={`${link}/scripts/edit/${chosenScript}`} className="text-meta">
-                Open script {chosenScript}
-              </Link>
-            ) : null}
-          </div>
-          <div className="mb-3">
-            <Facts
-              facts={[
-                { label: "Started", value: when(chosen.startedAt) },
-                {
-                  label: "Waited for a worker",
-                  value:
-                    chosen.pickedUpAt &&
-                    Date.parse(chosen.pickedUpAt) - Date.parse(chosen.startedAt) >= 100
-                      ? duration(Date.parse(chosen.pickedUpAt) - Date.parse(chosen.startedAt))
-                      : "",
-                },
-                {
-                  label: "Ran",
-                  value: chosen.finishedAt
-                    ? duration(
-                        Date.parse(chosen.finishedAt) -
-                          Date.parse(chosen.pickedUpAt ?? chosen.startedAt),
-                      )
-                    : "In progress",
-                },
-                { label: "Run ID", value: chosen.runId ?? "", code: true },
-              ]}
-            />
-          </div>
-          {chosen.error ? (
-            <p className="m-0 text-danger">
-              {chosen.error.message}
-              {chosen.handled ? (
-                <span className="text-ink-muted"> The flow carried on down its error path.</span>
+              {chosen.childFlowRunId ? (
+                <p className="mt-0">
+                  <Link to={`${link}/runs/${chosen.childFlowRunId}`} className="text-action">
+                    See the flow run this step started
+                  </Link>
+                </p>
               ) : null}
-            </p>
-          ) : null}
-          {chosen.error && chosen.runId ? (
-            <StepDiagnosis root={root} link={link} runId={chosen.runId} />
-          ) : null}
-          {chosen.input !== undefined && chosen.input !== null ? (
-            <ResultView label={`Input of ${chosen.node}`} value={chosen.input} />
-          ) : null}
-          {chosen.wakeAt && chosen.status === "waiting" ? (
-            <p className="mt-0 text-ink-muted">Waits until {when(chosen.wakeAt)}.</p>
-          ) : null}
-          {chosen.copiedFrom ? (
-            <Notice tone="plain">
-              Kept from{" "}
-              <Link to={`${link}/runs/${chosen.copiedFrom.flowRunId}`}>
-                the run this one retries
-              </Link>
-              : it was not run again.
-              {chosen.copiedFrom.runId ? (
-                <>
-                  {" "}
-                  <Link to={`${link}/runs/${chosen.copiedFrom.runId}`}>Its script run</Link>.
-                </>
+              {items.length > 0 ? (
+                <p className="mt-0 text-ink-muted">
+                  {items.filter((item) => item.status === "succeeded").length} of {items.length}{" "}
+                  items done.
+                </p>
               ) : null}
-            </Notice>
-          ) : null}
-          {chosen.runId ? (
-            <div className="mb-3 flex flex-col gap-2">
-              <StepLogs root={root} runId={chosen.runId} />
-              <Link to={`${link}/runs/${chosen.runId}`} className="text-meta">
-                Open this step's run
-              </Link>
-            </div>
-          ) : null}
-          {chosen.childFlowRunId ? (
-            <p className="mt-0">
-              <Link to={`${link}/runs/${chosen.childFlowRunId}`} className="text-action">
-                See the flow run this step started
-              </Link>
+              {chosen.status === "succeeded" ? (
+                <ResultView label={`Output of ${chosen.node}`} value={chosen.output} />
+              ) : null}
+            </section>
+          ) : (
+            <p className="m-0 text-ink-muted">
+              Choose a step to see what it was given and produced.
             </p>
-          ) : null}
-          {items.length > 0 ? (
-            <p className="mt-0 text-ink-muted">
-              {items.filter((item) => item.status === "succeeded").length} of {items.length} items
-              done.
-            </p>
-          ) : null}
-          {chosen.status === "succeeded" ? (
-            <ResultView label={`Output of ${chosen.node}`} value={chosen.output} />
-          ) : null}
-        </section>
-      ) : (
-        <p className="m-0 text-ink-muted">Choose a step to see what it was given and produced.</p>
-      )}
-      <section
-        aria-label="The flow's input and output"
-        className="grid gap-3 rounded-panel border border-line bg-surface p-4 md:grid-cols-2"
-      >
-        <ResultView label="Flow input" value={run.input} />
-        <ResultView label="Flow output" value={run.output} />
-      </section>
+          )}
+          <section
+            aria-label="The flow's input and output"
+            className="grid gap-3 rounded-panel border border-line bg-surface p-4 md:grid-cols-2"
+          >
+            <ResultView label="Flow input" value={run.input} />
+            <ResultView label="Flow output" value={run.output} />
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

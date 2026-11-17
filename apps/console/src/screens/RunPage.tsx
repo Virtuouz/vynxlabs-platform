@@ -50,7 +50,8 @@ const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time
  */
 export function RunPage({ root, link, id }: { root: string; link: string; id: string }) {
   return (
-    <div className="px-4 py-4 md:px-6">
+    // A run page sits where lists sit, which do not scroll as a whole: it scrolls itself.
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
       <RunOfEitherKind root={root} link={link} id={id} />
     </div>
   );
@@ -535,65 +536,70 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               </div>
             ) : null}
             {run.waitingFor ? <Notice tone="attention">{run.waitingFor}</Notice> : null}
-            <section aria-label="Log" className="flex flex-col gap-2">
-              <LogWindowNote earlier={earlier} onDownload={wholeLog} />
-              <LogViewer
-                lines={lines}
-                firstLine={earlier + 1}
-                live={active}
-                fileName={logFile}
-                onDownload={wholeLog}
-                empty={active ? "Waiting for the first line…" : "The script logged nothing."}
-              />
-            </section>
-            {run.state === "failed" || run.state === "canceled" ? (
-              <RunCompare
-                root={root}
-                link={link}
-                kind="run"
-                id={run.id}
-                input={run.input}
-                durationMs={
-                  run.startedAt && run.finishedAt
-                    ? Date.parse(run.finishedAt) - Date.parse(run.startedAt)
-                    : null
-                }
-              />
-            ) : null}
-            <Tabs
-              value={ioTab}
-              onChange={setIoTab}
-              label="What it was given and what it gave"
-              tabs={[
-                {
-                  id: "input",
-                  label: "Input",
-                  content: (
-                    <div className="pt-3">
-                      <JsonView label="Input" value={run.input} maxHeight="24rem" />
-                    </div>
-                  ),
-                },
-                {
-                  id: "output",
-                  label: run.state === "failed" ? "Error" : "Output",
-                  content: (
-                    <div className="pt-3">
-                      {run.state === "succeeded" ? (
-                        <ResultView label="Output" value={run.output} maxHeight="24rem" />
-                      ) : (
-                        <JsonView
-                          label={run.state === "failed" ? "Error" : "Output"}
-                          tone={run.state === "failed" ? "danger" : "plain"}
-                          maxHeight="24rem"
-                          value={run.state === "failed" ? { error: run.error } : undefined}
-                        />
-                      )}
-                    </div>
-                  ),
-                },
-              ]}
-            />
+            {/* From 1920 px the log and what the run was given stand side by side. */}
+            <div className="flex flex-col gap-4 3xl:grid 3xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] 3xl:items-start">
+              <section aria-label="Log" className="flex min-w-0 flex-col gap-2">
+                <LogWindowNote earlier={earlier} onDownload={wholeLog} />
+                <LogViewer
+                  lines={lines}
+                  firstLine={earlier + 1}
+                  live={active}
+                  fileName={logFile}
+                  onDownload={wholeLog}
+                  empty={active ? "Waiting for the first line…" : "The script logged nothing."}
+                />
+              </section>
+              <div className="flex min-w-0 flex-col gap-4">
+                {run.state === "failed" || run.state === "canceled" ? (
+                  <RunCompare
+                    root={root}
+                    link={link}
+                    kind="run"
+                    id={run.id}
+                    input={run.input}
+                    durationMs={
+                      run.startedAt && run.finishedAt
+                        ? Date.parse(run.finishedAt) - Date.parse(run.startedAt)
+                        : null
+                    }
+                  />
+                ) : null}
+                <Tabs
+                  value={ioTab}
+                  onChange={setIoTab}
+                  label="What it was given and what it gave"
+                  tabs={[
+                    {
+                      id: "input",
+                      label: "Input",
+                      content: (
+                        <div className="pt-3">
+                          <JsonView label="Input" value={run.input} maxHeight="24rem" />
+                        </div>
+                      ),
+                    },
+                    {
+                      id: "output",
+                      label: run.state === "failed" ? "Error" : "Output",
+                      content: (
+                        <div className="pt-3">
+                          {run.state === "succeeded" ? (
+                            <ResultView label="Output" value={run.output} maxHeight="24rem" />
+                          ) : (
+                            <JsonView
+                              label={run.state === "failed" ? "Error" : "Output"}
+                              tone={run.state === "failed" ? "danger" : "plain"}
+                              maxHeight="24rem"
+                              value={run.state === "failed" ? { error: run.error } : undefined}
+                            />
+                          )}
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            </div>
           </div>
         }
       />

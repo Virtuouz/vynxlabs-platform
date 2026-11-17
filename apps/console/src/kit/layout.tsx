@@ -166,7 +166,7 @@ function DockedInspector({
       aria-label={label}
       style={width ? { width } : undefined}
       className={`relative flex shrink-0 flex-col border-line border-l bg-surface ${
-        width ? "" : "w-[22rem] 2xl:w-[26rem]"
+        width ? "" : "w-[22rem] 2xl:w-[26rem] 3xl:w-[32rem]"
       }`}
     >
       <InspectorEdge width={width} region={region} onWidth={setWidth} />

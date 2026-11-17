@@ -457,7 +457,9 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   attempt: Type.Integer(),
                   startedAt: Time,
                   endedAt: Time,
-                  failed: Type.Boolean({ description: "Whether it logged an error." }),
+                  failed: Type.Boolean({
+                    description: "Whether it logged an error, or the run failed on it.",
+                  }),
                 }),
               ),
               worker: Type.Union([
@@ -596,7 +598,9 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             attempt: row.attempt,
             startedAt: iso(new Date(row.started as unknown as string)),
             endedAt: iso(new Date(row.ended as unknown as string)),
-            failed: Boolean(row.failed),
+            // An error logged in it, or the run's own failure on its last attempt: a script that
+            // throws without logging failed all the same.
+            failed: Boolean(row.failed) || (run.status === "failed" && row.attempt === run.attempt),
           })),
           worker: worker ? { id: worker.id, name: worker.name, pool: worker.pool } : null,
           timeoutSeconds: body.timeoutSeconds ?? null,

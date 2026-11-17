@@ -12,6 +12,8 @@ export interface MenuItem {
   separated?: boolean;
   /** Marks the item that is the current one, in a menu that switches between things. */
   current?: boolean;
+  /** The shortcut that does the same, written for people: `⌘D`. */
+  keys?: string | undefined;
 }
 
 export interface MenuProps {
@@ -53,6 +55,9 @@ export function Menu({ label, items, ariaLabel, triggerClassName, align = "start
                   {item.icon ? <span className="flex w-4 justify-center">{item.icon}</span> : null}
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   {item.current ? <span aria-hidden="true">✓</span> : null}
+                  {item.keys ? (
+                    <kbd className="font-mono text-code-sm text-ink-subtle">{item.keys}</kbd>
+                  ) : null}
                 </Base.Item>
               </div>
             ))}

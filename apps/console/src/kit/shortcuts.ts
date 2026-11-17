@@ -6,7 +6,14 @@
  * listed here so the sheet tells the truth, and its component has the test.
  */
 
-export type Scope = "Everywhere" | "Go to" | "Lists" | "Editors" | "Palette" | "Logs";
+export type Scope =
+  | "Everywhere"
+  | "Go to"
+  | "Lists"
+  | "Editors"
+  | "Flow editor"
+  | "Palette"
+  | "Logs";
 
 export interface Shortcut {
   keys: string[];
@@ -74,6 +81,25 @@ const declared = {
   undo: { keys: ["Mod+Z"], label: "Undo", scope: "Editors", notInFields: true },
   redo: { keys: ["Shift+Mod+Z", "Ctrl+Y"], label: "Redo", scope: "Editors", notInFields: true },
 
+  "flow.duplicate": {
+    keys: ["Mod+D"],
+    label: "Duplicate the chosen steps",
+    scope: "Flow editor",
+    notInFields: true,
+  },
+  "flow.copy": {
+    keys: ["Mod+C", "Mod+X", "Mod+V"],
+    label: "Copy, cut or paste the chosen steps, here or in another flow",
+    scope: "Flow editor",
+    handledBy: "FlowEditor's copy and paste",
+  },
+  "flow.menu": {
+    keys: ["Shift+F10"],
+    label: "The menu for a step, or for the canvas",
+    scope: "Flow editor",
+    handledBy: "ContextMenu",
+  },
+
   "palette.runs": {
     keys: [">"],
     label: "Then an ID: open a run",
@@ -110,4 +136,12 @@ const declared = {
 
 export type ShortcutId = keyof typeof declared;
 export const SHORTCUTS: Record<ShortcutId, Shortcut> = declared;
-export const SCOPES: Scope[] = ["Everywhere", "Go to", "Lists", "Editors", "Palette", "Logs"];
+export const SCOPES: Scope[] = [
+  "Everywhere",
+  "Go to",
+  "Lists",
+  "Editors",
+  "Flow editor",
+  "Palette",
+  "Logs",
+];

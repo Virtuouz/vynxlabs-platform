@@ -46,12 +46,18 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - Every size is kept with the member's settings.
   - The step chosen in the flow editor, the canvas position (for the session), a run's Input or Output tab, and a flow run's Timeline or Graph are kept, in the address where they can be.
   - The runs list's Columns, Density and Views tools are now icon buttons, so they fit beside the filters.
+- **Flow canvas.**
+  - Steps can be copied, cut and pasted (⌘C, ⌘X, ⌘V), within a flow or into another, and duplicated (⌘D). Pasted steps whose names are taken get a suffix, and references between them follow the new names.
+  - A right-click, or Shift+F10, opens a menu on a step (Duplicate, Copy, Rename…, Remove) or on the canvas (Paste, Select every step, Fit the flow in view).
+  - With several steps chosen, the panel says so and offers Duplicate and Remove. Dragging a box of steps is one step to undo.
+  - **Fixed:** renaming a branch's case now keeps the connection that leaves it. Before, the connection still named the old case.
 
 ### For tenant developers
 
 - **New in `@vynxlabs/ui`:**
   - `Tooltip`, `TooltipProvider` and `Kbd`;
   - `Button` takes `tooltip` and `keys`. A disabled button with a tooltip is wrapped so that it can still be focused and say why it is disabled.
+  - `ContextMenu`, with the same items as `Menu`. Menu items take `keys`, the shortcut shown beside them.
 
 
 ## Unreleased: phase 14, one design system

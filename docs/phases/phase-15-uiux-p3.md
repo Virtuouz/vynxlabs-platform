@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: Milestones 0–6 built, on branch `phase-15-uiux-p3`, off `main`.
+Status: Milestones 0–7 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -210,3 +210,26 @@ Some of the roadmap's evidence is out of date:
   - `SplitPane.test.tsx`: the keyboard, double-click reset, the setting kept, folding and opening, and an old bare size.
   - `panes.spec.ts`: the flow editor's divider moves, survives a reload, folds and survives a reload folded; the run page's divider and its Output tab survive a reload.
   - The whole e2e suite passed: 33 tests.
+
+### Milestone 7: flow canvas power tools
+- **The clipboard is the browser's own.** The flow editor listens for `copy`, `cut` and `paste`, not for keys.
+  - A field being typed in, or text chosen on the page, keeps ⌘C and ⌘V as they always were.
+  - Chosen steps are written as plain JSON marked `vynxlabsFlowSteps: 1`, so pasting into another flow, in this tab or another, needs no clipboard permission.
+  - The context menu's Copy and Paste use `navigator.clipboard`, which may ask.
+- **`flowClipboard.ts`** (pure, tested):
+  - Copy keeps only the connections between the steps copied.
+  - Paste renames taken names with `_2`, `_3`, as adding a step does, and moves the steps by 40 px.
+  - Every reference between the pasted steps is rewritten in two passes, through names no step can have, so `a → a_2` and `b → b_2` never chain. References to steps outside the paste are left alone.
+- **⌘D** duplicates the chosen steps: copy and paste in one, one step to undo. It is in the registry under "Flow editor", with copy and paste and the menu keys listed.
+- **`ContextMenu`** was added to the kit (Base UI `context-menu`, with `Menu`'s item shape; items take `keys`).
+  - On a step: Duplicate, Copy, Rename… (references follow, as before), Remove.
+  - On the canvas: Paste, Select every step, Fit the flow in view.
+  - On several chosen steps, it acts on all of them.
+- **Several steps chosen:** the panel names them and offers Duplicate and Remove, rather than showing the first one's settings. Dragging the selection box records one undo step (`onSelectionDragStart`), as dragging a step did.
+- **The case-rename bug** found in planning is fixed. Renaming a branch's case moves the connection leaving it (`case:<old>` → `case:<new>`) in the same undo step. Before, a renamed case's connection dangled, and the flow saved a broken edge.
+- **Not done:** an Align command for several steps. The canvas snaps nothing, so lining up is by dragging, as before.
+- **e2e (`flow-editor.spec.ts`):**
+  - two steps chosen with ⌘-click and duplicated with ⌘D; the copy's expression reads `steps.totals_2`, and one ⌘Z undoes it;
+  - the two copied with ⌘C and pasted with ⌘V into another flow;
+  - a step duplicated from its right-click menu;
+  - a branch case renamed, after which the saved draft's edge names the new case.

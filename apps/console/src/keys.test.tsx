@@ -54,6 +54,7 @@ const PRESSES: [ShortcutId, () => void][] = [
   ["undo", () => press("z", { ctrlKey: true })],
   ["redo", () => press("z", { ctrlKey: true, shiftKey: true })],
   ["close", () => press("Escape")],
+  ["flow.duplicate", () => press("d", { ctrlKey: true })],
 ];
 
 test("every shortcut the console binds itself is pressed here, and reaches its handler", () => {

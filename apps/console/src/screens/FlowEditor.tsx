@@ -2,6 +2,8 @@ import {
   Button,
   CheckboxField,
   ComboboxField,
+  ContextMenu,
+  type MenuItem,
   MultiSelectField,
   Notice,
   NumberField,
@@ -40,10 +42,11 @@ import {
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
+import { type Clip, type ClipStep, copySteps, pasteSteps, readClip } from "../flowClipboard.ts";
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { useHistory } from "../kit/history.ts";
-import { keysOf, useShortcut } from "../kit/keys.ts";
+import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { retryAfter } from "../kit/retry.ts";
@@ -270,6 +273,8 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
 }
 const nodeTypes = { flow: FlowNodeCard };
 const FIT = { maxZoom: 1, padding: 0.25 };
+/** "1 step", "3 steps". */
+const plural = (count: number) => `${count} step${count === 1 ? "" : "s"}`;
 
 /** Where a flow's canvas was left, for this browser tab's session. */
 function viewportOf(path: string | undefined): Viewport | undefined {
@@ -776,6 +781,176 @@ export function FlowEditor({
     setSelected(undefined);
     touch();
   };
+  /** The steps chosen on the canvas: several with ⌘-click or a box, or the one chosen. */
+  const chosenIds = (): string[] => {
+    const picked = nodes.filter((node) => node.selected).map((node) => node.id);
+    return picked.length > 0 ? picked : selected ? [selected] : [];
+  };
+  const clipOf = (ids: string[]) =>
+    copySteps(
+      nodes.map((node) => ({
+        id: node.id,
+        position: node.position,
+        node: node.data.node as unknown as ClipStep["node"],
+      })),
+      edges.map(toFlowEdge),
+      new Set(ids),
+    );
+  /** Adds steps from a clip, renamed where their names are taken, chosen, one step to undo. */
+  const pasteClip = (clip: Clip, offset = { x: 40, y: 40 }) => {
+    history.record(`Paste ${plural(clip.steps.length)}`);
+    const pasted = pasteSteps(
+      clip,
+      nodes.map((node) => node.id),
+      offset,
+    );
+    setNodes((before) => [
+      ...before.map((node) => ({ ...node, selected: false })),
+      ...pasted.steps.map((step) => ({
+        id: step.id,
+        type: "flow" as const,
+        selected: true,
+        position: step.position,
+        data: { id: step.id, node: step.node as unknown as FlowNode },
+      })),
+    ]);
+    setEdges((before) => [
+      ...before,
+      ...pasted.edges.map((edge, index) => toCanvasEdge(edge, before.length + index)),
+    ]);
+    setSelected(pasted.steps[0]?.id);
+    touch();
+    const changed = Object.entries(pasted.renamed).filter(([from, to]) => from !== to);
+    notify.success(
+      changed.length > 0
+        ? `${plural(pasted.steps.length)} added. Named ${changed.map(([, to]) => to).join(", ")}, as the names were taken.`
+        : `${plural(pasted.steps.length)} added.`,
+    );
+  };
+  const duplicate = (ids: string[]) => {
+    if (ids.length === 0) return false;
+    pasteClip(clipOf(ids));
+  };
+  const removeMany = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const gone = new Set(ids);
+    history.record(`Remove ${plural(ids.length)}`);
+    setNodes((before) => before.filter((node) => !gone.has(node.id)));
+    setEdges((before) => before.filter((edge) => !gone.has(edge.source) && !gone.has(edge.target)));
+    setSelected(undefined);
+    touch();
+  };
+  // ⌘C, ⌘X and ⌘V copy, cut and paste steps, within a flow or between flows. They are the
+  // browser's own copy and paste, so a field being typed in, or text chosen on the page,
+  // keeps them; only chosen steps on the canvas are copied as steps.
+  const clipboard = useRef({ chosenIds, clipOf, pasteClip, removeMany });
+  clipboard.current = { chosenIds, clipOf, pasteClip, removeMany };
+  useEffect(() => {
+    const forSteps = () =>
+      !isTyping(document.activeElement) &&
+      !document.querySelector('[role="dialog"], [role="menu"]') &&
+      !(window.getSelection()?.toString() ?? "");
+    const copy = (event: ClipboardEvent, cut: boolean) => {
+      if (!forSteps()) return;
+      const ids = clipboard.current.chosenIds();
+      if (ids.length === 0 || !event.clipboardData) return;
+      event.clipboardData.setData("text/plain", JSON.stringify(clipboard.current.clipOf(ids)));
+      event.preventDefault();
+      if (cut) clipboard.current.removeMany(ids);
+      notify.success(
+        `${plural(ids.length)} ${cut ? "cut" : "copied"}. Paste them here or in another flow.`,
+      );
+    };
+    const onCopy = (event: ClipboardEvent) => copy(event, false);
+    const onCut = (event: ClipboardEvent) => copy(event, true);
+    const onPaste = (event: ClipboardEvent) => {
+      if (isTyping(document.activeElement) || document.querySelector('[role="dialog"]')) return;
+      const clip = readClip(event.clipboardData?.getData("text/plain") ?? "");
+      if (!clip) return;
+      event.preventDefault();
+      clipboard.current.pasteClip(clip);
+    };
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCut);
+    document.addEventListener("paste", onPaste);
+    return () => {
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", onCut);
+      document.removeEventListener("paste", onPaste);
+    };
+  }, []);
+  useShortcut("flow.duplicate", () => duplicate(chosenIds()));
+  /** What a right-click on the canvas was on: a step, or the canvas itself. */
+  const [menuOn, setMenuOn] = useState<string>();
+  const menuItems = (): MenuItem[] => {
+    const step = menuOn;
+    if (step) {
+      const ids = chosenIds().includes(step) ? chosenIds() : [step];
+      const many = ids.length > 1;
+      return [
+        {
+          label: many ? `Duplicate ${plural(ids.length)}` : "Duplicate",
+          keys: keysOf("flow.duplicate"),
+          onSelect: () => duplicate(ids),
+        },
+        {
+          label: many ? `Copy ${plural(ids.length)}` : "Copy",
+          keys: formatCombo("Mod+C"),
+          onSelect: () => {
+            void navigator.clipboard
+              ?.writeText(JSON.stringify(clipOf(ids)))
+              .then(() => notify.success(`${plural(ids.length)} copied.`), notify.error);
+          },
+        },
+        ...(many
+          ? []
+          : [
+              {
+                label: "Rename…",
+                onSelect: async () => {
+                  const to = await ask.prompt({
+                    title: `Rename ${step}`,
+                    label: "Name",
+                    hint: "Lowercase letters, digits and _, starting with a letter. References to it follow.",
+                    initial: step,
+                    action: "Rename",
+                  });
+                  if (to && to !== step && !rename(step, to)) {
+                    notify.error(
+                      new Error(`${to} is not a name a step can have here, or it is taken.`),
+                    );
+                  }
+                },
+              },
+            ]),
+        {
+          label: many ? `Remove ${plural(ids.length)}` : "Remove",
+          danger: true,
+          separated: true,
+          keys: "⌫",
+          onSelect: () => removeMany(ids),
+        },
+      ];
+    }
+    return [
+      {
+        label: "Paste",
+        keys: formatCombo("Mod+V"),
+        onSelect: () => {
+          void navigator.clipboard?.readText().then((text) => {
+            const clip = readClip(text);
+            if (clip) pasteClip(clip);
+            else notify.info("The clipboard holds no steps. Copy steps from a flow first.");
+          }, notify.error);
+        },
+      },
+      {
+        label: "Select every step",
+        onSelect: () => setNodes((before) => before.map((node) => ({ ...node, selected: true }))),
+      },
+      { label: "Fit the flow in view", onSelect: () => canvas?.fitView(FIT) },
+    ];
+  };
   const connect = (connection: Connection) => {
     if (connection.source === connection.target) return;
     history.record("Connect steps");
@@ -1168,55 +1343,64 @@ export function FlowEditor({
               </aside>
             ) : null}
           </div>
-          <div className="min-h-0 flex-1 bg-sunken" data-testid="flow-canvas">
-            <NodeNames.Provider value={names}>
-              <NodeRuns.Provider value={nodeRuns}>
-                <ReactFlow
-                  nodes={nodes}
-                  edges={drawnEdges}
-                  nodeTypes={nodeTypes}
-                  onNodesChange={(changes) => {
-                    if (changes.some((change) => change.type === "remove"))
-                      history.record("Remove a step");
-                    onNodesChange(changes);
-                    if (
-                      changes.some(
-                        (change) => change.type === "position" || change.type === "remove",
+          <ContextMenu
+            className="flex min-h-0 flex-1 flex-col"
+            items={menuItems()}
+            onOpen={(target) =>
+              setMenuOn(target?.closest<HTMLElement>(".react-flow__node")?.dataset.id ?? undefined)
+            }
+          >
+            <div className="min-h-0 flex-1 bg-sunken" data-testid="flow-canvas">
+              <NodeNames.Provider value={names}>
+                <NodeRuns.Provider value={nodeRuns}>
+                  <ReactFlow
+                    nodes={nodes}
+                    edges={drawnEdges}
+                    nodeTypes={nodeTypes}
+                    onNodesChange={(changes) => {
+                      if (changes.some((change) => change.type === "remove"))
+                        history.record("Remove a step");
+                      onNodesChange(changes);
+                      if (
+                        changes.some(
+                          (change) => change.type === "position" || change.type === "remove",
+                        )
                       )
-                    )
-                      touch();
-                  }}
-                  onEdgesChange={(changes) => {
-                    if (changes.some((change) => change.type === "remove"))
-                      history.record("Remove a connection");
-                    onEdgesChange(changes);
-                    if (changes.some((change) => change.type === "remove")) touch();
-                  }}
-                  onConnect={connect}
-                  // A drag is one step to undo, however far it went.
-                  onNodeDragStart={() => history.record("Move a step")}
-                  onSelectionChange={({ nodes: picked }) => {
-                    if (restoring.current && picked.length === 0) return;
-                    setSelected(picked[0]?.id);
-                  }}
-                  onInit={setCanvas}
-                  // Where the canvas was left, this session, or the whole flow in view.
-                  {...(kept ? { defaultViewport: kept } : { fitView: true, fitViewOptions: FIT })}
-                  onMoveEnd={(_, viewport) => keepViewport(viewport)}
-                  maxZoom={1.5}
-                  minZoom={0.2}
-                  proOptions={{ hideAttribution: false }}
-                  // The canvas takes its colors from the kit's tokens, so it follows the theme.
-                  style={CANVAS_COLORS}
-                >
-                  <Background />
-                  <Controls />
-                  {/* With the test panel open the canvas is short, and the map would cover the graph. */}
-                  {testing ? null : <MiniMap pannable zoomable />}
-                </ReactFlow>
-              </NodeRuns.Provider>
-            </NodeNames.Provider>
-          </div>
+                        touch();
+                    }}
+                    onEdgesChange={(changes) => {
+                      if (changes.some((change) => change.type === "remove"))
+                        history.record("Remove a connection");
+                      onEdgesChange(changes);
+                      if (changes.some((change) => change.type === "remove")) touch();
+                    }}
+                    onConnect={connect}
+                    // A drag is one step to undo, however far it went.
+                    onNodeDragStart={() => history.record("Move a step")}
+                    onSelectionDragStart={() => history.record("Move steps")}
+                    onSelectionChange={({ nodes: picked }) => {
+                      if (restoring.current && picked.length === 0) return;
+                      setSelected(picked[0]?.id);
+                    }}
+                    onInit={setCanvas}
+                    // Where the canvas was left, this session, or the whole flow in view.
+                    {...(kept ? { defaultViewport: kept } : { fitView: true, fitViewOptions: FIT })}
+                    onMoveEnd={(_, viewport) => keepViewport(viewport)}
+                    maxZoom={1.5}
+                    minZoom={0.2}
+                    proOptions={{ hideAttribution: false }}
+                    // The canvas takes its colors from the kit's tokens, so it follows the theme.
+                    style={CANVAS_COLORS}
+                  >
+                    <Background />
+                    <Controls />
+                    {/* With the test panel open the canvas is short, and the map would cover the graph. */}
+                    {testing ? null : <MiniMap pannable zoomable />}
+                  </ReactFlow>
+                </NodeRuns.Provider>
+              </NodeNames.Provider>
+            </div>
+          </ContextMenu>
         </div>
       }
       second={
@@ -1227,7 +1411,29 @@ export function FlowEditor({
         >
           <ExpressionPreview.Provider value={previewSource}>
             <StepOutline nodes={nodes} edges={edges} chosen={chosen?.id} onChoose={choose} />
-            {chosen && node ? (
+            {chosenIds().length > 1 ? (
+              <section aria-label="The chosen steps" className="flex flex-col gap-3">
+                <h2 className="m-0 text-title">{plural(chosenIds().length)} chosen</h2>
+                <p className="m-0 font-mono text-code text-ink-muted">{chosenIds().join(", ")}</p>
+                <p className="m-0 text-meta text-ink-muted">
+                  Drag one to move them all. Copy them with {formatCombo("Mod+C")} to paste here or
+                  in another flow; references between them follow their new names.
+                </p>
+                <span className="flex flex-wrap gap-2">
+                  <Button
+                    size="small"
+                    onClick={() => duplicate(chosenIds())}
+                    keys={keysOf("flow.duplicate")}
+                    tooltip="Duplicate"
+                  >
+                    Duplicate
+                  </Button>
+                  <Button size="small" variant="danger" onClick={() => removeMany(chosenIds())}>
+                    Remove {plural(chosenIds().length)}
+                  </Button>
+                </span>
+              </section>
+            ) : chosen && node ? (
               <>
                 <NameField key={chosen.id} id={chosen.id} rename={rename} />
                 {shown ? (
@@ -1470,7 +1676,20 @@ export function FlowEditor({
                 {node.type === "branch" ? (
                   <CasesEditor
                     cases={(node.cases as { name: string; when: string }[]) ?? []}
-                    onChange={(cases) => update(chosen.id, { cases })}
+                    onChange={(cases, renamed) => {
+                      update(chosen.id, { cases });
+                      // The case's connection leaves the same case under its new name.
+                      if (renamed && renamed.from !== renamed.to) {
+                        setEdges((before) =>
+                          before.map((edge) =>
+                            edge.source === chosen.id &&
+                            edge.sourceHandle === `case:${renamed.from}`
+                              ? { ...edge, sourceHandle: `case:${renamed.to}`, label: renamed.to }
+                              : edge,
+                          ),
+                        );
+                      }
+                    }}
                   />
                 ) : null}
                 {node.type === "set" ? (
@@ -1954,7 +2173,11 @@ function CasesEditor({
   onChange,
 }: {
   cases: { name: string; when: string }[];
-  onChange: (cases: { name: string; when: string }[]) => void;
+  /** With `renamed` when a case's name changed, so its connection follows it. */
+  onChange: (
+    cases: { name: string; when: string }[],
+    renamed?: { from: string; to: string },
+  ) => void;
 }) {
   return (
     <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
@@ -1967,7 +2190,10 @@ function CasesEditor({
             label="Name"
             value={one.name}
             onChange={(name) =>
-              onChange(cases.map((each, at) => (at === index ? { ...each, name } : each)))
+              onChange(
+                cases.map((each, at) => (at === index ? { ...each, name } : each)),
+                { from: one.name, to: name },
+              )
             }
           />
           <ExpressionField

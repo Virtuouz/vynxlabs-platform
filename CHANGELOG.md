@@ -2,6 +2,18 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 15, expert efficiency
+
+### For operators
+
+- **Database change.** Migration 0066 adds `member_preference` (a member's own settings) and `member_saved_view` (saved views of a list). Both are preferences: they are never audited, and are not exported with a tenant. Saved views go when their tenant does.
+- **Preferences API.**
+  - New `GET /me/preferences`, `PUT /me/preferences/:key {value}` and `DELETE /me/preferences/:key`.
+  - Only the keys the console keeps are accepted: `theme`, `panel`, `shortcuts.single-key`, `editor.*`, `density:*`, `split:*`, `palette.pins:<tenant>`.
+  - Each value may be at most 4 KB, and a member keeps at most 200.
+- **Saved views API.** New `GET /me/views?tenant=&workspace=&list=`, `POST /me/views`, `PATCH /me/views/:id` and `DELETE /me/views/:id`. Views are private to their maker, and names are unique per list, ignoring case. A member keeps at most 50 views per list.
+- **The console's theme, table density, pane sizes and editor tabs follow a member between browsers.** The first sign-in after upgrading moves what this browser had kept onto the server.
+
 ## Unreleased: phase 14, one design system
 
 ### For operators

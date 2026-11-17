@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePreference } from "../prefs.ts";
 import { useRestoredScroll } from "../router.tsx";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
@@ -62,31 +63,13 @@ const VIRTUAL_AFTER = 200;
 
 const columnKey = <Row,>(column: DataColumn<Row>) => column.key ?? column.header;
 
-function readDensity(id: string | undefined, fallback: Density): Density {
-  if (!id) return fallback;
-  try {
-    const kept = localStorage.getItem(`vx-density:${id}`);
-    return kept === "compact" || kept === "standard" || kept === "comfortable" ? kept : fallback;
-  } catch {
-    return fallback;
-  }
-}
+const DENSITIES: Density[] = ["compact", "standard", "comfortable"];
 
-/** A table's density, kept per table in this browser. */
-export function useDensity(id: string | undefined, fallback: Density = "standard") {
-  const [density, setDensity] = useState<Density>(() => readDensity(id, fallback));
-  const change = useCallback(
-    (next: Density) => {
-      setDensity(next);
-      if (!id) return;
-      try {
-        localStorage.setItem(`vx-density:${id}`, next);
-      } catch {
-        // Storage that cannot be reached keeps the choice for this visit only.
-      }
-    },
-    [id],
-  );
+/** A table's density, kept per table with the member's other settings. */
+export function useDensity(id: string, fallback: Density = "standard") {
+  const [kept, keep] = usePreference<string>(`density:${id}`, fallback);
+  const density = DENSITIES.includes(kept as Density) ? (kept as Density) : fallback;
+  const change = useCallback((next: Density) => keep(next), [keep]);
   return [density, change] as const;
 }
 

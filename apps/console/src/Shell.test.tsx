@@ -177,7 +177,8 @@ test("a chosen theme is put on the page and remembered, and the system's is the 
   fireEvent.click(screen.getAllByRole("button", { name: "Color theme" })[0] as HTMLElement);
   fireEvent.click(await screen.findByText("Dark"));
   expect(document.documentElement.dataset.theme).toBe("dark");
-  expect(localStorage.getItem("vx-theme")).toBe("dark");
+  // Kept with the member's settings: here at once, and on the server after a moment.
+  expect(localStorage.getItem("vx-pref:theme")).toBe('"dark"');
 
   delete document.documentElement.dataset.theme;
   applyThemeChoice();

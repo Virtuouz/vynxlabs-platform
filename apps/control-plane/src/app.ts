@@ -41,6 +41,7 @@ import { operationsRoutes } from "./routes/operations.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
+import { preferenceRoutes } from "./routes/preferences.js";
 import { promotionRequestRoutes } from "./routes/promotion-requests.js";
 import { scimRoutes } from "./routes/scim.js";
 import { searchRoutes } from "./routes/search.js";
@@ -188,6 +189,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
       await api.register(searchRoutes(kernel));
+      await api.register(preferenceRoutes(kernel));
       await api.register(alertRoutes(kernel));
       await api.register(workerHostRoutes(kernel));
       await api.register(summaryRoutes(kernel));

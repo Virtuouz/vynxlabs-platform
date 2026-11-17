@@ -43,6 +43,7 @@ import {
   WORKSPACE_SECTIONS,
   whereIs,
 } from "./nav.ts";
+import { usePreference } from "./prefs.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
 import { Link, navigate, navigationKind, useRestoredScroll } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
@@ -112,15 +113,6 @@ interface Entry {
   current: boolean;
   icon?: LucideIcon;
   count?: Count | undefined;
-}
-
-const PANEL_KEY = "vx-panel";
-function storedPanel(): boolean {
-  try {
-    return localStorage.getItem(PANEL_KEY) !== "closed";
-  } catch {
-    return true;
-  }
 }
 
 const some = (n: number | null | undefined, text: (n: number) => string, tone: CountTone) =>
@@ -600,15 +592,7 @@ export function Shell({
     if (tenantId && workspaceId) rememberWorkspace(tenantId, workspaceId);
   }, [tenantId, workspaceId]);
 
-  const [panelOpen, setPanelOpen] = useState(storedPanel);
-  const togglePanel = (open: boolean) => {
-    setPanelOpen(open);
-    try {
-      localStorage.setItem(PANEL_KEY, open ? "open" : "closed");
-    } catch {
-      // The choice then lasts for this page.
-    }
-  };
+  const [panelOpen, togglePanel] = usePreference<boolean>("panel", true);
   const [drawer, setDrawer] = useState(false);
   const [palette, setPalette] = useState(false);
   const openPalette = useCallback(() => setPalette(true), []);

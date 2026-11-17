@@ -219,8 +219,9 @@ test("a widget is made to follow another by choosing a sentence, and the change 
 
   fireEvent.click(screen.getByRole("button", { name: "Publish" }));
   // Publishing says what it would do first, and is done from there.
+  // The dialog loads its summary first; its Publish button comes with it.
   fireEvent.click(
-    within(await screen.findByRole("dialog")).getByRole("button", { name: "Publish" }),
+    await within(await screen.findByRole("dialog")).findByRole("button", { name: "Publish" }),
   );
   await waitFor(() => expect(sent("POST", "/changes/deploy")).toHaveLength(1), { timeout: 4000 });
   // Only this app is deployed: its interface, and the app that serves it.

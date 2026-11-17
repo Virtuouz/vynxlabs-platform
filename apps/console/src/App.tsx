@@ -1,6 +1,7 @@
 import { Notice } from "@vynxlabs/ui";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { api, type Me, useLoad } from "./api.ts";
+import { loadPreferences } from "./prefs.ts";
 import { match, navigate, usePath } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
@@ -93,6 +94,10 @@ export function App() {
   const signedIn = me.data !== undefined && !me.error;
   useRememberPlace(signedIn, path);
   useReopenLastPlace(signedIn);
+  // A member's settings follow them from browser to browser.
+  useEffect(() => {
+    if (signedIn && me.data?.principal.type === "member") void loadPreferences();
+  }, [signedIn, me.data?.principal.type]);
   const tenant = match("/t/:tenantId/*", path);
   const target = me.data ? returnTarget(location.search) : null;
   useEffect(() => {

@@ -883,6 +883,27 @@ export interface DashboardShareTable {
   tenant_id: string;
 }
 
+/** One of a member's own settings, kept on the server, never audited. */
+export interface MemberPreferenceTable {
+  member_id: string;
+  key: string;
+  value: Json<unknown>;
+  updated_at: Generated<Date>;
+}
+
+/** A list as a member saved it, by name. */
+export interface MemberSavedViewTable {
+  id: string;
+  member_id: string;
+  tenant_id: string;
+  workspace_id: string | null;
+  list: string;
+  name: string;
+  state: Json<Record<string, unknown>>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 /** An entity a member opened last in a tenant, for the command palette. */
 export interface MemberRecentItemTable {
   member_id: string;
@@ -1186,6 +1207,8 @@ export interface PlatformSchema {
   worker_pool: WorkerPoolTable;
   member_recent_scope: MemberRecentScopeTable;
   member_recent_item: MemberRecentItemTable;
+  member_preference: MemberPreferenceTable;
+  member_saved_view: MemberSavedViewTable;
   rate_limit: RateLimitTable;
   tenant_retention: TenantRetentionTable;
   task: TaskTable;

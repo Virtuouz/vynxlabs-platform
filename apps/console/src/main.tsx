@@ -4,9 +4,12 @@ import { App } from "./App.tsx";
 import { Providers } from "./ask.tsx";
 import { BrandProvider } from "./kit/brand.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
+import { adoptLegacy } from "./prefs.ts";
 import { applyThemeChoice, loadInstanceTheme } from "./theme.ts";
 import "./styles.css";
 
+// Settings kept the old way move to their new keys before the theme is read.
+adoptLegacy();
 applyThemeChoice();
 loadInstanceTheme();
 

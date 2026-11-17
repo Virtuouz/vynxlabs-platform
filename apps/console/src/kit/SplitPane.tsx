@@ -6,19 +6,11 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePreference } from "../prefs.ts";
 
 const MIN = 20;
 const MAX = 80;
 const clamp = (value: number) => Math.min(MAX, Math.max(MIN, value));
-
-function readSize(id: string, fallback: number): number {
-  try {
-    const kept = Number(localStorage.getItem(`vx-split:${id}`));
-    return Number.isFinite(kept) && kept >= MIN && kept <= MAX ? kept : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 /**
  * Two panes side by side with a divider between them that can be dragged, or
@@ -44,21 +36,17 @@ export function SplitPane({
   initial?: number;
   className?: string;
 }) {
-  const [size, setSize] = useState(() => readSize(id, initial));
+  const [kept, keepSize] = usePreference<number>(`split:${id}`, initial);
+  const size = Number.isFinite(kept) ? clamp(kept) : initial;
   const box = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
   const keep = useCallback(
     (next: number) => {
       const value = clamp(next);
-      setSize(value);
-      try {
-        localStorage.setItem(`vx-split:${id}`, String(Math.round(value * 10) / 10));
-      } catch {
-        // Storage that cannot be reached keeps the size for this visit only.
-      }
+      keepSize(Math.round(value * 10) / 10);
     },
-    [id],
+    [keepSize],
   );
 
   useEffect(() => {

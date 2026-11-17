@@ -1,6 +1,6 @@
 # Phase 15: advanced expert efficiency (UI/UX audit P3)
 
-Status: planned, on branch `phase-15-uiux-p3`, off `main`. Milestone 0 done.
+Status: Milestones 0–1 built, on branch `phase-15-uiux-p3`, off `main`.
 Last updated: 2026-11-17
 
 The UI/UX audit ranks eight items as P3 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). They make experienced users faster. The roadmap puts them last because each is cheap once there is one list and one registry, and phases 13 and 14 built those. Each item was re-checked against `main` after phase 14.
@@ -63,3 +63,18 @@ Some of the roadmap's evidence is out of date:
 
 ### Milestone 0
 - PR #10 merged into `phase-13-uiux-p1` instead of `main`. The owner merged phase 14 into `main` as #11, so this phase starts from `main`.
+
+### Milestone 1: member preferences and saved views
+- **Migration 0066** adds `member_preference`, keyed by member and setting, and `member_saved_view`, keyed by member, tenant, workspace and list.
+  - **`member_preference` is an instance table,** like `member_recovery_code`, because a member's settings cross tenants.
+  - **`member_saved_view` is tenant-owned** but never exported, like the recents.
+- **Six preference routes** (the reads and five writes) go through `ctx.keepPreference()`. The writes join the `PREFERENCE_ROUTES` allowlist, and that file's test lists them, so they can't write without an audit entry by accident.
+  - A preference's key must match one the console keeps, so the table can't become storage for anything else.
+  - Service accounts and API keys get 403 on writes, and an empty list on reads.
+- **`prefs.ts`** is the console's side. A setting is read from this browser and changed there first, then sent after 400 ms. When it loads, the server's copy replaces the browser's, except for a change still waiting to be sent.
+  - Theme, list density, split sizes, the shell's panel and the script editor's tabs moved onto it.
+  - What browsers had stored under the old keys (`vx-theme`, `vx-density:*`, `vx-split:*`, `vx-panel`, `vx-editor-*`) moves on the first page load. Being newer, it is sent to the server even when the server already has a value.
+  - The theme is still applied before the first paint, from this browser's copy.
+- **A side effect:** the shell and the command palette each kept their own theme state. Now one store serves both, so changing the theme in one shows in the other at once.
+- **A flaky builder test** looked for the Publish button before the publish dialog had loaded its summary. It failed about one run in three, before this phase too. It now waits for the button.
+- The redesign e2e spec resets the admin's theme when it ends, because a theme kept on the server would otherwise carry into the specs after it.

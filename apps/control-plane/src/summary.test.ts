@@ -256,6 +256,11 @@ describe("small things the console shows", () => {
     expect([...PREFERENCE_ROUTES]).toEqual([
       "PUT /api/v1/me/recent",
       "PUT /api/v1/me/recent-items",
+      "PUT /api/v1/me/preferences/:key",
+      "DELETE /api/v1/me/preferences/:key",
+      "POST /api/v1/me/views",
+      "PATCH /api/v1/me/views/:id",
+      "DELETE /api/v1/me/views/:id",
     ]);
     const app = Fastify();
     const build = async () => {

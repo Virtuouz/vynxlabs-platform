@@ -189,6 +189,11 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 export const PREFERENCE_ROUTES: ReadonlySet<string> = new Set([
   "PUT /api/v1/me/recent",
   "PUT /api/v1/me/recent-items",
+  "PUT /api/v1/me/preferences/:key",
+  "DELETE /api/v1/me/preferences/:key",
+  "POST /api/v1/me/views",
+  "PATCH /api/v1/me/views/:id",
+  "DELETE /api/v1/me/views/:id",
 ]);
 
 /** Installs the hooks that resolve the caller and enforce each route's declared access. */

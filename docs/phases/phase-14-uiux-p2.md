@@ -1,6 +1,6 @@
 # Phase 14: design-system consistency and information architecture (UI/UX audit P2)
 
-Status: Milestones 0–12 built, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`.
+Status: built, all thirteen milestones, on branch `phase-14-uiux-p2`, off `phase-13-uiux-p1`. Not pushed.
 Last updated: 2026-11-16
 
 The UI/UX audit ranks thirteen items as P2 in [09-prioritized-uiux-roadmap.md](../uiux/09-prioritized-uiux-roadmap.md). Phase 13 already built two of them: P2-2, one `DataTable` for every list, and P2-6, URL state on every screen. This phase does the other eleven. Each was re-checked against `phase-13-uiux-p1`.
@@ -339,3 +339,34 @@ Findings are recorded under each milestone as it lands.
   
   The console scrolls inside its main region, so the window is made as tall as the sheet for its picture.
 - **What CI fails on:** a hand-written size and the rest above, a raw table (`pnpm test`); a contrast regression (`packages/ui` contrast test); an axe violation or an unreviewed visual change (`pnpm e2e`). The whole e2e suite passed: 29 tests.
+
+### Milestone 13: wrap-up
+
+- **The changelog** lists, for operators: migrations 0064 (when and by whom credentials were set) and 0065 (audit search indexes), the new audit, people, rows and secrets API, and adding the creator to a new tenant. For tenant developers it lists the tokens and what moved, Toast v2, `Button loading`, fields, `Grid navigation="grid"` and container-query layout in served apps.
+- **`master-spec.md`** now says that an operator may make themselves the first member of a tenant they create. That was the owner's decision for this phase, and the one exception to "only through an access grant". It is audited in the tenant's own log.
+- **Checks on the last commit:**
+  - `pnpm test`: 1,339 tests.
+  - Lint, typecheck, `check:schemas`, `check:migrations` (65 files) and `check:licenses`.
+  - The whole e2e suite: 29 tests, with 98 compared pictures and axe in every spec.
+
+## Exit criterion
+
+| Item | Met by |
+| --- | --- |
+| P2-1 tokens | Milestone 2: type roles, corners, elevation, layers, motion, measure and density, with about 450 values moved. Milestone 12's rule keeps them |
+| P2-3 page headers | Milestone 5: one `PageHeader`, a visible breadcrumb, the back links removed; the h1 rule |
+| P2-4 load states | Milestone 4: `LoadState`, `ErrorState`, `Pending`, `Loading`, request IDs, readable 502s, Try again on every list; the "Loading…" rule |
+| P2-5 status | Milestone 3: one map of states, badges and misused pills replaced; the Badge rule |
+| P2-7 forms | Milestone 7: linked errors, required and optional marks, `SecretField` with when and by whom, one save model per page, configuration in side sheets |
+| P2-8 feedback | Milestone 6: Toast v2, `Button loading`, every write confirmed (e2e within 1 s), optimistic pause |
+| P2-9 data grid | Milestone 8: the WAI-ARIA grid, keyset paging, batch delete, CSV; 10,000 rows walked |
+| P2-10 builder and dashboards | Milestone 9: the split, one editor shell, undo and redo, dashboards autosave, publish summary, container queries, keyboard move |
+| P2-11 admin | Milestone 10: give access from the person, one service-account page, details in the address, worker pools in a table, server-side audit search with facets, permalinks and CSV |
+| P2-12 enforcement | Milestones 1 and 12: compared pictures, axe everywhere, rules, keyboard journeys, the kit sheet |
+| P2-13 first run | Milestone 11: the creator as member, first steps, starters, drafts listed, empty states with actions; a first run in 5 presses. Documentation, hints and just-in-time help are a later phase, as decided |
+
+**What is left, and why:**
+- **`WidgetSettings`** is one 800-line file. It wasn't split by widget type, since no behaviour needed it.
+- **The grid isn't virtualised.** Pages are 50 rows, and keyset paging keeps deep tables fast.
+- **Batch row deletes write no audit entry.** Single row deletes don't either, and row writes are the tenant's data.
+- **CI's first run** may draw text differently from this machine's Chromium. If so, its `actual` pictures, kept in the uploaded results, become the baseline (see Milestone 1).

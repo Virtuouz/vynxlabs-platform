@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { BundleManifest } from "./bundle.js";
+import { renderSchemas } from "./emit.js";
 import {
   entryFor,
   ignoredFolder,
@@ -9,6 +10,7 @@ import {
   renderResourceFiles,
 } from "./files.js";
 import { platformKinds } from "./kinds.js";
+import { validateJson } from "./registry.js";
 
 const script: BundleManifest = {
   kind: "script",
@@ -315,5 +317,32 @@ describe("what a file says beside its body", () => {
       "vynxlabs.yaml: has keys other than roots and ignore: folders.",
       "vynxlabs.yaml: roots is a list of folders.",
     ]);
+  });
+});
+
+describe("the published schema of a file", () => {
+  const schema = (name: string) =>
+    JSON.parse(renderSchemas()[`files/${name}.v1.schema.json`] ?? "{}");
+
+  test("accepts what the reader accepts, and names a key it does not know", () => {
+    const variable = schema("variable");
+    expect(
+      validateJson(variable, {
+        key: "limits/size",
+        path: "lending/limits/size",
+        title: "Batch size",
+        schemaVersion: 1,
+        body: { default: "5" },
+      }),
+    ).toEqual([]);
+    expect(validateJson(variable, { schemaVersion: 1, body: {}, owner: "me" })).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("owner") }),
+    ]);
+    // A script's code is in the file beside it, so its file says neither entry nor source.
+    expect(Object.keys(schema("script").properties.body.properties)).not.toContain("source");
+    expect(schema("script").properties.body.required).not.toContain("entry");
+    // One of a tenant's access has a key and no path, and may be nothing but a title.
+    expect(validateJson(schema("group"), { title: "Tech Desk", schemaVersion: 1 })).toEqual([]);
+    expect(Object.keys(schema("group").properties)).not.toContain("path");
   });
 });

@@ -21,6 +21,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Database migration 0073.** Steps waiting for approval get their approvers by ID.
 - **A group can be renamed while an approval waits for it**, and its members still decide it. A group that a waiting step names cannot be deleted. A deploy warns when a flow names its approvers by a group's title, or names a group the tenant does not have.
 - **Groups of end users can be renamed** (`PATCH …/end-user-groups/:g`). A group cannot be called by another group's key.
+- **A resource is renamed from the console.** `PUT …/drafts/<path>` takes `path`, the path the resource is to have, and `title`. A draft answers with `key`, `title`, and `renamedFrom` with `change: "rename"`. New refusals on saving a draft: `path_taken` and `defined_in_file`.
+- **Resources answer with `definedIn`**, the file in the repository that defines one, when its bundle said.
 - **A group pushed by a directory is marked as the provider's** (`managedBy: "provider"`), and no release removes it.
 - **A deploy that looks like a rename done wrong is refused.** Deleting a script or flow with runs, a table with rows, or anything with access given to it by hand, while creating another of the same kind, answers 409 `rename_suspected` and names each path and what it holds. `allowDelete` (a list of paths) lets it through, on `POST …/deployments`, `POST …/promotions`, a promotion request's decision and `POST …/git/pull`; the promotion preview takes `?allowDelete=a,b`. Deleting a resource in the console is not affected.
 
@@ -39,6 +41,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Name a flow's approvers by the group's key:** `approvers: { groups: ["tech-desk"] }`. By title still works, and the deploy tells you the key.
 - **Rows that belong to a group should hold its key.** A `text` column checked with `in: "groups"` matches a group's key as well as what it is called. A row that holds the name stops matching when the group is renamed.
 - **An app's session has `groupKeys`**, the keys of an end user's groups, beside `groups`, which is what they are called. Decide by the keys.
+- **Resource files can be kept anywhere in the repository.** `platform build` finds `<name>.<kind>.yaml` in any folder. A file under `platform/` or a root listed in `vynxlabs.yaml` (`roots: [src]`) gets its path from where it is; anywhere else it says `path:`. A file may also say `key:` and `title:`. The console changes only files in its own folder (`platform/`).
+- **`schemas/files/`** has a JSON Schema for each kind's file, for editor completion.
 - **Choose the name of an agent's tool.** `defineScript({ …, mcp: { name: "submit_device_request" } })`, and the same on `defineFlow`. The agent sees exactly that, and it no longer changes when the path does. Without it the name is made from the path as before (`run_requests__submit`), and after a rename the old name keeps working for 90 days. Choosing a name for a script that already has a tool changes that tool's name at once: the deploy says so.
 
 ## Unreleased: phase 16, visual refinement

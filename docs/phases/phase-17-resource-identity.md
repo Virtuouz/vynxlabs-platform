@@ -1,6 +1,6 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 and M6 not started. Not pushed.
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 built in part: see what it left out. M6 not started. Not pushed.
 Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
@@ -221,6 +221,38 @@ Each is one file, `<key>.<kind>.yaml`, with the title beside the body. A file's 
 - **A step whose approvers resolve to nobody still waits**, as it did. The plan had it fail. A group can be made, and people put in it, while it waits, which the "later" list above exists for. The deploy warning is what says so early.
 - **Not built: the tenant switch that stops rows matching by name, and the scan for rows that still hold a name.** Matching by name is kept on. Reading every table with a groups rule in a tenant's own database at each deploy was judged not worth its cost while nothing depends on the answer.
 - **`groups` in an app's session was never keys**, as the plan assumed: a group of end users has taken any one-line name since phase 8. So the keys are a new field and `groups` is unchanged.
+
+## M5: two-way files
+
+**What a file may say.** Beside `schemaVersion` and `body`: `key`, `path` and `title` (`packages/manifest/src/files.ts`). A file that says none is read and written byte for byte as before. A script's code is named in the bundle by its key, in the file reader, in compose and in a draft, so a rename leaves compiled code under the same name.
+
+**Files anywhere in a repository.** `parseRepositoryFiles` finds resource files by name: `<name>.<kind>.yaml` for a kind there is, and the `.ts` beside one that has code. `vite.config.ts` and `orders.test.ts` are nobody's.
+- A file under a root gets its path from where it is, under the longest root that holds it. The console's folder is always a root.
+- A file outside every root says `path:`, or the build names the roots and stops.
+- `vynxlabs.yaml` at the repository's root lists more `roots` and folders to `ignore`. `node_modules`, `dist`, `build` and dot-folders are never read. `.gitignore` is not consulted.
+- `platform build` and `deploy` read this way. A resource defined in the code and in a file, by path or by key, is refused naming the file.
+- A file that is not where the console would have written it travels in the bundle with `source.file`, and the resource answers with `definedIn`.
+
+**Renaming and titling from the console.** `PUT …/drafts/<path>` with `path` moves the draft and keeps its key; with `title` it sets one. The draft says `change: "rename"` and `renamedFrom`. Deployed, it is the same resource at the new path. Drafts are composed by key. What refers to a renamed resource by its old path, which is its key, is built as the new path, in the console's compose as in the CLI's build.
+
+**Git.** A resource renamed in the console is committed as its file moved, with `key:` written in, and a pull afterwards finds nothing to do. A file the repository keeps outside the console's folder is not written into that folder by a push or by `platform pull`, and a pull from the branch carries it as it is.
+
+**Console.** The resources list shows title, key (when moved) and where each is defined, with Rename for what the console manages. For what the repository defines the button is off and says how to rename it there. The release screen shows a rename as one.
+
+**Schemas.** `schemas/files/<kind>.v1.schema.json` describes each kind's file, for an editor to complete and check: 17 workspace kinds and the 5 of a tenant's access.
+
+### What M5 left out
+
+The plan's M5 had eleven steps. These were not built, and each is a limit on what the phase delivers:
+
+- **The console does not edit a file kept outside its folder.** The plan had git sync read and write resource files anywhere in the repository, patching each file where it was found. Sync still reads and writes one folder. A file elsewhere is the repository's: it is deployed, shown with where it is, and refused as a draft (`defined_in_file`). So "what code can do the console can do" holds for the console's folder and not yet for `src/`.
+- **`ownership` is still the switch.** There are no `source_file` and `source_generated` columns, and the deploy still decides what it speaks for by `code` and `ui`. Where a file is travels in `meta.source`.
+- **The console does not say which file a TypeScript definition is in.** The SDK does not record where `define*` was called, so `definedIn` is empty for code.
+- **"Move to file" is the takeover there was.** A draft at the path of a repository resource takes it over into the console's folder, and the build then refuses the second definition by name. There is no button for it and no change to what it covers.
+- **A draft's primary key is still its path.** It has a key, unique in the workspace, and is found by path.
+- **A rename is made from the resources list**, not from a panel in each editor, and a title is set through the API only.
+- **Not built:** `platform schemas`, shipping the file schemas in the SDK package, and serving them from the control plane. They are in `schemas/files/` in this repository.
+- **A developer who moves a file on the branch without `key:`** makes a delete and a create, which the delete guard stops when the old one holds something. Nothing recognises the move for them.
 
 ## What was run, and what was not
 

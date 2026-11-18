@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/trigger_source.v1.schema.json",
+  "title": "trigger_source file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's identity, when that is not its path. Say it when you move the file: the path the resource had. It never changes."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's path, when the file is kept somewhere that does not give it one."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "mode": {
+          "enum": [
+            "webhook",
+            "poll"
+          ],
+          "description": "`webhook`: it is handed each request to a webhook's address, and says whether to start anything and with what. `poll`: it is run on a schedule with where it had got to, and gives back what is new."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        },
+        "worker": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "maxLength": 40,
+          "description": "The worker pool it runs on. Without it, any worker of the default pool."
+        },
+        "uses": {
+          "type": "object",
+          "description": "What the source may read when it runs, as for a script.",
+          "properties": {
+            "connections": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                "maxLength": 255
+              },
+              "uniqueItems": true
+            },
+            "secrets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "uniqueItems": true
+            },
+            "variables": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                "maxLength": 255
+              },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "body"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/tenant_role.v1.schema.json",
+  "title": "tenant_role file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+      "description": "Its key, when that is not the file's name. It never changes."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$"
+          },
+          "maxItems": 200,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "permissions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion"
+  ],
+  "additionalProperties": false
+}

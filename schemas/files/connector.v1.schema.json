@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/connector.v1.schema.json",
+  "title": "connector file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's identity, when that is not its path. Say it when you move the file: the path the resource had. It never changes."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's path, when the file is kept somewhere that does not give it one."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "configSchema": {
+          "type": "object",
+          "description": "A JSON Schema for a connection's configuration. A connection that uses this connector is checked against it when it is bound, and the console draws its form from it."
+        }
+      },
+      "required": [
+        "configSchema"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "body"
+  ],
+  "additionalProperties": false
+}

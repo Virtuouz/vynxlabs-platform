@@ -12,6 +12,7 @@ import { CliError } from "./errors.js";
 import { type Followed, followRun, Stopped } from "./follow.js";
 import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
+import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
 
 export { CliError };
 
@@ -36,6 +37,9 @@ Sign in
 Work on a tenant repository
   init [directory]                      Write a starter repository
   build                                 Build the bundle and list what it contains
+  schemas                               Write each kind's file schema into .platform/schemas,
+                                        and tell VS Code which files each checks, so that
+                                        <name>.<kind>.yaml completes and is checked as typed
   run <script> [--input <json>]         Run one script on this machine
   run <script|flow> --remote --tenant <slug> --workspace <slug> [--input <json>|@file]
                                         Run it on the platform, from this build, in a dev
@@ -206,6 +210,26 @@ async function build(args: string[], io: Io) {
   await writeFile(file, JSON.stringify(bundle));
   for (const line of describeBundle(bundle)) io.out(line);
   io.out(`Written to ${file}`);
+}
+
+async function schemas(args: string[], io: Io) {
+  const { values } = parseArgs({ args, options: directoryOption });
+  const directory = resolve(values.dir ?? ".");
+  const written = await writeEditorSchemas(directory);
+  io.out(`Wrote the schemas of ${written.kinds} kinds of file to ${SCHEMA_FOLDER}.`);
+  if (written.settings === "manual") {
+    io.out(
+      ".vscode/settings.json could not be read as plain JSON, so it was left as it is. Add this to it:",
+    );
+    io.out(JSON.stringify({ "yaml.schemas": written.mapping }, null, 2));
+    return;
+  }
+  io.out(
+    written.settings === "written"
+      ? ".vscode/settings.json now says which files each checks. It needs the YAML extension (redhat.vscode-yaml)."
+      : ".vscode/settings.json already says which files each checks.",
+  );
+  io.out("Run this again after upgrading the CLI.");
 }
 
 /** Finds a tenant and workspace by their slugs. */
@@ -913,6 +937,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       case "build":
         await build(rest, io);
+        return 0;
+      case "schemas":
+        await schemas(rest, io);
         return 0;
       case "run":
         if (rest.includes("--remote")) return await runRemote(rest, io);

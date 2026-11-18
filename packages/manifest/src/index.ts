@@ -35,6 +35,7 @@ export {
   SLUG_PATTERN,
   StoredResource,
 } from "./envelope.js";
+export { fileSchemas } from "./file-schema.js";
 export {
   entryFor,
   fileOf,

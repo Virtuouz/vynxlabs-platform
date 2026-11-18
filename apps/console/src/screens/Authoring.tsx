@@ -32,6 +32,7 @@ import { usePreference } from "../prefs.ts";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 import { SCRIPT_STARTERS, untouchedStarter } from "./starters.ts";
 
@@ -740,6 +741,19 @@ export function ScriptEditor({
             ) : null}
             {readOnly ? null : (
               <div className="flex items-center gap-2">
+                {opened && state !== "new" ? (
+                  <ResourceIdentity
+                    root={root}
+                    link={link}
+                    label="Name and path"
+                    row={{ path: opened, kind, ownership: state === "repository" ? "code" : "ui" }}
+                    unsaved={dirty}
+                    onDone={(next) => {
+                      if (next !== opened) navigate(`${link}/${about.edit}/${next}`);
+                      else setState("draft");
+                    }}
+                  />
+                ) : null}
                 {state === "draft" && opened ? (
                   <Button
                     variant="danger"
@@ -793,7 +807,7 @@ export function ScriptEditor({
                   label="Path"
                   value={path}
                   placeholder={about.example}
-                  hint="Its name in this workspace. It cannot be changed later."
+                  hint="Its name in this workspace. It can be renamed later, and stays the same resource."
                   onChange={setPath}
                 />
               </div>

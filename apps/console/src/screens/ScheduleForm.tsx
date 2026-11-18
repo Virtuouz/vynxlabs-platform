@@ -400,7 +400,7 @@ export function NewScheduleSheet({
           label="Path"
           value={path}
           placeholder="reports/daily"
-          hint="Its name in this workspace. It cannot be changed later."
+          hint="Its name in this workspace. It can be renamed later, and stays the same resource."
           error={pathProblem}
           onChange={setPath}
         />

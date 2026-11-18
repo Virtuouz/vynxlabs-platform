@@ -489,7 +489,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ),
             title: Type.Optional(
               Type.Union([Type.String({ minLength: 1, maxLength: 200 }), Type.Null()], {
-                description: "What people read. Left as it is when not given.",
+                description:
+                  "What people read. Left as it is when not given; `null` takes the title away.",
               }),
             ),
           }),

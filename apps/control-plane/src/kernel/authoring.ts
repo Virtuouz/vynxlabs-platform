@@ -196,7 +196,8 @@ export async function saveDraft(
     kind: input.kind,
     schema_version: input.schemaVersion,
     path,
-    ...(input.title !== undefined ? { title: input.title } : {}),
+    // No title is kept as "", apart from a draft that does not speak of the title at all.
+    ...(input.title !== undefined ? { title: input.title ?? "" } : {}),
     body: JSON.stringify(body),
     deleted: input.deleted === true,
     updated_by_type: principal.type,

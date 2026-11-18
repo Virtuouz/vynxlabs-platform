@@ -339,13 +339,14 @@ export function EndUserGroups({ base }: { base: string }) {
         }}
         config={{
           action: "Create group",
-          description: "The name is what a table's rules refer to, so it cannot be changed later.",
+          description:
+            "It gets a key from its name. The key is what code and a table's rules refer to, and never changes. The name can be changed later.",
           fields: [
             {
               name: "name",
               label: "Name",
               placeholder: "Front desk",
-              hint: "Any name on one line, such as Front desk. A table's rules match it exactly.",
+              hint: "Any name on one line, such as Front desk.",
             },
             { name: "description", label: "What it is for", required: false },
           ],

@@ -35,8 +35,8 @@ import { OldPaths } from "./OldPaths.tsx";
 import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.tsx";
 import { Overview } from "./Overview.tsx";
 import { Release } from "./Release.tsx";
-import { definedWhere, type NamedResource, RenameResource } from "./RenameResource.tsx";
 import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
+import { definedWhere, type NamedResource, ResourceIdentity } from "./ResourceIdentity.tsx";
 import { RetentionSettings } from "./Retention.tsx";
 import { RunPage, ToRunPage } from "./RunPage.tsx";
 import { RunsWorkbench } from "./Runs.tsx";
@@ -700,7 +700,7 @@ function WorkspaceDetail({
                     row: NamedResource & { id: string; version: number; updatedAt: string },
                     reload: () => void,
                   ) => (
-                    <RenameResource
+                    <ResourceIdentity
                       root={root}
                       link={`/t/${tenantId}/workspaces/${workspaceId}`}
                       row={row}

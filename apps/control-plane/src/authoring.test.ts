@@ -581,6 +581,24 @@ describe("deploying drafts", () => {
     expect((await run("greetings/hello")).output).toEqual({ hello: "changed" });
     expect((await run("orders/hello")).output).toEqual({ hello: "changed" });
     expect((await alice.get(`${ws()}/drafts`)).body.items).toEqual([]);
+
+    // A draft that does not speak of the title keeps it. One that says null takes it away.
+    const titled = async (title?: string | null) => {
+      const saved = await alice.put(`${ws()}/drafts/greetings/hello`, {
+        kind: "script",
+        schemaVersion: 1,
+        body,
+        ...(title !== undefined ? { title } : {}),
+      });
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      const done = await alice.post(`${ws()}/changes/deploy`, { paths: ["greetings/hello"] });
+      return done.status === 201
+        ? (await alice.get(`${ws()}/resources/greetings/hello`)).body.title
+        : done.body.code;
+    };
+    expect(await titled()).toBe("Say hello");
+    expect(await titled(null)).toBeNull();
+    expect(await titled("Say hello")).toBe("Say hello");
   });
 });
 

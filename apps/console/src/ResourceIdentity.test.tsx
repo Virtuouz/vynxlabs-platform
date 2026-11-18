@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   cannotRename,
   definedWhere,
   type NamedResource,
-  RenameResource,
-} from "./screens/RenameResource.tsx";
-import { answer, show } from "./testing.tsx";
+  ResourceIdentity,
+} from "./screens/ResourceIdentity.tsx";
+import { show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 const script: NamedResource = {
@@ -33,7 +33,13 @@ beforeEach(() => {
     // There is no draft yet: the resource as it is deployed is what gets renamed.
     if (method === "GET" && address.includes("/drafts/")) return json({ detail: "none" }, 404);
     if (method === "GET") {
-      return json({ kind: "script", schemaVersion: 1, body: { source: { code: "x" } } });
+      return json({
+        kind: "script",
+        schemaVersion: 1,
+        key: "requests/submit",
+        title: "Ask for a device",
+        body: { source: { code: "x" } },
+      });
     }
     return json({ path: "lending/requests/file", change: "rename" });
   });
@@ -43,17 +49,33 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const type = (dialog: HTMLElement, label: string, value: string) =>
+  fireEvent.change(within(dialog).getByLabelText(label), { target: { value } });
+const put = () => calls.find((call) => call.method === "PUT");
+
 test("renaming saves a draft of the resource as it is, at the new path, and changes nothing that runs", async () => {
-  let done = 0;
+  const done: string[] = [];
   show(
-    <RenameResource root={root} link="/t/t1/workspaces/w1" row={script} onDone={() => done++} />,
+    <ResourceIdentity
+      root={root}
+      link="/t/t1/workspaces/w1"
+      row={script}
+      onDone={(path) => done.push(path)}
+    />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  const said = await answer("Save as a draft", "lending/requests/file");
-  expect(said).toContain("requests/submit keeps answering for 90 days");
-  expect(said).toContain("Nothing changes until the draft is deployed");
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("requests/submit keeps answering for 90 days");
+  expect(dialog.textContent).toContain("Nothing changes until the draft is deployed");
+  // Its key is shown and cannot be typed over. Nothing is saved until something changed.
+  await within(dialog).findByLabelText("Path");
+  expect(dialog.textContent).toContain("It never changes.");
+  const save = within(dialog).getByRole("button", { name: "Save as a draft" }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  type(dialog, "Path", "lending/requests/file");
+  fireEvent.click(save);
   await waitFor(() =>
-    expect(calls.find((call) => call.method === "PUT")).toEqual({
+    expect(put()).toEqual({
       method: "PUT",
       url: `/api/v1${root}/drafts/requests/submit`,
       body: {
@@ -64,7 +86,43 @@ test("renaming saves a draft of the resource as it is, at the new path, and chan
       },
     }),
   );
-  await waitFor(() => expect(done).toBe(1));
+  await waitFor(() => expect(done).toEqual(["lending/requests/file"]));
+});
+
+test("a title is changed or taken away where the path is, and an editor's unsaved changes come first", async () => {
+  const opened = { path: script.path, kind: "script", ownership: "ui" };
+  const { rerender } = show(
+    <ResourceIdentity root={root} link="/x" row={opened} label="Name and path" onDone={() => {}} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Name and path" }));
+  const dialog = await screen.findByRole("dialog");
+  const title = (await within(dialog).findByLabelText("Title")) as HTMLInputElement;
+  expect(title.value).toBe("Ask for a device");
+  type(dialog, "Title", "  ");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save as a draft" }));
+  // The path stays, so it is not said. No title is said as null: left out, it would be kept.
+  await waitFor(() =>
+    expect(put()?.body).toEqual({
+      kind: "script",
+      schemaVersion: 1,
+      body: { source: { code: "x" } },
+      title: null,
+    }),
+  );
+
+  rerender(
+    <ResourceIdentity
+      root={root}
+      link="/x"
+      row={opened}
+      label="Name and path"
+      unsaved
+      onDone={() => {}}
+    />,
+  );
+  const button = screen.getByRole("button", { name: "Name and path" }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(button.title).toBe("Save the draft first.");
 });
 
 test("what the repository's code defines is renamed there, and a file is renamed like anything else", () => {
@@ -72,7 +130,7 @@ test("what the repository's code defines is renamed there, and a file is renamed
   const filed = { ...script, key: "old/submit", definedIn: "src/lending/submit.script.yaml" };
   expect(cannotRename(script)).toBeUndefined();
   expect(cannotRename(generated)).toBe(
-    'It is defined in the repository\'s code. Change its path there, and give it key: "requests/submit".',
+    'It is defined in the repository\'s code. Change its path or title there, and give it key: "requests/submit".',
   );
   expect(cannotRename(filed)).toBeUndefined();
   expect([script, generated, filed].map(definedWhere)).toEqual([
@@ -80,6 +138,6 @@ test("what the repository's code defines is renamed there, and a file is renamed
     "Repository",
     "Repository, src/lending/submit.script.yaml",
   ]);
-  show(<RenameResource root={root} link="/x" row={generated} onDone={() => {}} />);
+  show(<ResourceIdentity root={root} link="/x" row={generated} onDone={() => {}} />);
   expect((screen.getByRole("button", { name: "Rename" }) as HTMLButtonElement).disabled).toBe(true);
 });

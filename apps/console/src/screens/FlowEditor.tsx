@@ -68,6 +68,7 @@ import {
 } from "./FlowSteps.tsx";
 import { useFlowRunLive } from "./Flows.tsx";
 import { FlowTestPanel, LastTest, stepsOf, took } from "./FlowTestPanel.tsx";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { WhenFields } from "./ScheduleForm.tsx";
 import { FLOW_STARTERS } from "./starters.ts";
 
@@ -1838,6 +1839,23 @@ export function FlowEditor({
               <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
                 <Play aria-hidden="true" size={14} /> Test
               </Button>
+              {opened && state !== "new" ? (
+                <ResourceIdentity
+                  root={root}
+                  link={link}
+                  label="Name and path"
+                  row={{
+                    path: opened,
+                    kind: "flow",
+                    ownership: state === "repository" ? "code" : "ui",
+                  }}
+                  unsaved={dirty}
+                  onDone={(next) => {
+                    if (next !== opened) navigate(`${link}/flows/edit/${next}`);
+                    else setState("draft");
+                  }}
+                />
+              ) : null}
               <Button
                 size="small"
                 variant={state === "draft" && !dirty ? "secondary" : "primary"}

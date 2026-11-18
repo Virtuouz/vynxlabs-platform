@@ -160,3 +160,17 @@ export {
   type TableColumn,
   type TablePolicy,
 } from "./table.js";
+export {
+  checkTenantResources,
+  isTenantFile,
+  isTenantKind,
+  parseTenantFiles,
+  ROLE_KEY_PATTERN,
+  renderTenantFiles,
+  TENANT_FOLDER,
+  TENANT_KEY_PATTERN,
+  TENANT_KINDS,
+  type TenantResource,
+  tenantName,
+  tenantOrder,
+} from "./tenant.js";

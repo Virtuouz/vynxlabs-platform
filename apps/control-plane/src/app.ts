@@ -15,6 +15,7 @@ import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { postgresRateLimitStore } from "./kernel/ratelimit.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
+import { accessReleaseRoutes } from "./routes/access-releases.js";
 import { alertRoutes } from "./routes/alerts.js";
 import { approvalLinkRoutes } from "./routes/approval-links.js";
 import { appRoutes } from "./routes/apps.js";
@@ -172,6 +173,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(identityRoutes(kernel));
       await api.register(tenantRoutes(kernel));
       await api.register(permissionRoutes(kernel));
+      await api.register(accessReleaseRoutes(kernel));
       await api.register(workspaceRoutes(kernel));
       await api.register(executionRoutes(kernel));
       await api.register(authoringRoutes(kernel));

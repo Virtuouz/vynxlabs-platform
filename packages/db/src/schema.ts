@@ -142,6 +142,8 @@ export interface PrincipalGroupTable {
   /** What people read. It can change. */
   name: string;
   description: Generated<string>;
+  /** Values of a provider's groups claim that put someone in the group, as a release said. */
+  sso_values: Generated<string[]>;
   managed_by: Generated<ManagedBy>;
   created_at: Generated<Date>;
 }
@@ -853,6 +855,8 @@ export interface EndUserGroupTable {
   tenant_id: string;
   key: Generated<string>;
   name: string;
+  /** Values of a provider's groups claim that put someone in the group, as a release said. */
+  sso_values: Generated<string[]>;
   managed_by: Generated<ManagedBy>;
   description: Generated<string>;
   created_at: Generated<Date>;

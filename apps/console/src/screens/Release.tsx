@@ -45,7 +45,9 @@ interface Summary {
   updated: number;
   deleted: number;
   data: string[];
-  changes: { change: string; kind: string; path: string }[];
+  /** Resources whose path changed and that are still the same resource. */
+  renamed?: number;
+  changes: { change: string; kind: string; path: string; from?: string }[];
   warnings?: { path: string; message: string }[];
 }
 
@@ -794,7 +796,8 @@ export function PreviewPanels({
           ) : data.summary ? (
             <>
               <p className="m-0 text-ink-muted">
-                Creates {data.summary.created}, changes {data.summary.updated} and removes{" "}
+                Creates {data.summary.created}, changes {data.summary.updated}
+                {data.summary.renamed ? `, renames ${data.summary.renamed}` : ""} and removes{" "}
                 {data.summary.deleted}.
               </p>
               {data.summary.changes.length > 0 ? (
@@ -802,7 +805,7 @@ export function PreviewPanels({
                   {data.summary.changes.map((one) => (
                     <li
                       key={`${one.kind}-${one.path}`}
-                      className="flex items-center gap-2 text-meta"
+                      className="flex flex-wrap items-center gap-2 text-meta"
                     >
                       <Tag
                         tone={
@@ -815,6 +818,12 @@ export function PreviewPanels({
                       >
                         {one.change}
                       </Tag>
+                      {one.from ? (
+                        <>
+                          <Mono>{one.from}</Mono>
+                          <span className="text-ink-subtle">to</span>
+                        </>
+                      ) : null}
                       <Mono>{one.path}</Mono>
                       <span className="text-ink-subtle">{one.kind}</span>
                     </li>

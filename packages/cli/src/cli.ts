@@ -295,10 +295,9 @@ async function deploy(args: string[], io: Io) {
     },
   });
   if (deployed.status >= 300) throw refusal(deployed, `deploy to ${values.workspace}`);
-  const { created, updated, unchanged, deleted } = deployed.body.summary;
   io.out(
     `Deployed version ${deployed.body.bundleVersion} to ${values.workspace} (${workspace.type}): ` +
-      `${created} created, ${updated} updated, ${deleted} deleted, ${unchanged} unchanged.`,
+      `${counts(deployed.body.summary)}.`,
   );
   for (const line of describeChanges(deployed.body.summary, MAX_DEPLOY_LINES)) io.out(line);
   const settled = (deployed.body.draftsSettled ?? []) as string[];
@@ -318,11 +317,18 @@ async function deploy(args: string[], io: Io) {
 interface DeploySummary {
   created: number;
   updated: number;
+  renamed?: number;
   unchanged: number;
   deleted: number;
   data?: string[];
-  changes?: { change: string; kind: string; path: string }[];
+  changes?: { change: string; kind: string; path: string; from?: string }[];
+  warnings?: { path: string; message: string }[];
+  aliasesRemoved?: string[];
 }
+
+/** A deploy's counts in a sentence. Renames are said only when there are any. */
+const counts = (s: DeploySummary) =>
+  `${s.created} created, ${s.updated} updated, ${s.renamed ? `${s.renamed} renamed, ` : ""}${s.deleted} deleted, ${s.unchanged} unchanged`;
 
 /** A deploy has just listed what the bundle holds, so it names what it created only when that is short. */
 const MAX_DEPLOY_LINES = 30;
@@ -333,13 +339,24 @@ const MAX_DEPLOY_LINES = 30;
  */
 function describeChanges(summary: DeploySummary, limit = Number.POSITIVE_INFINITY): string[] {
   const all = summary.changes ?? [];
-  const shown = all.length > limit ? all.filter((entry) => entry.change === "deleted") : all;
+  const shown =
+    all.length > limit
+      ? all.filter((entry) => entry.change === "deleted" || entry.change === "renamed")
+      : all;
   return [
-    ...shown.map((entry) => `  ${entry.change.padEnd(8)} ${entry.kind.padEnd(10)} ${entry.path}`),
+    ...shown.map(
+      (entry) =>
+        `  ${entry.change.padEnd(8)} ${entry.kind.padEnd(10)} ${entry.from ? `${entry.from} -> ` : ""}${entry.path}`,
+    ),
     ...(shown.length < all.length
       ? [`  and ${all.length - shown.length} created or updated, listed above`]
       : []),
     ...(summary.data ?? []).map((line) => `  ${line}`),
+    ...(summary.aliasesRemoved ?? []).map(
+      (path) =>
+        `  ${path} no longer answers for the resource renamed away from it: it is a resource's own path again`,
+    ),
+    ...(summary.warnings ?? []).map((warning) => `  Note: ${warning.message}`),
   ];
 }
 
@@ -399,8 +416,6 @@ async function promote(args: string[], io: Io) {
       ].join("\n"),
     );
   }
-  const counts = (s: DeploySummary) =>
-    `${s.created} created, ${s.updated} updated, ${s.deleted} deleted, ${s.unchanged} unchanged`;
   if (values.preview) {
     io.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
     for (const line of describeChanges(summary)) io.out(line);

@@ -31,6 +31,7 @@ import { TenantExport, WorkspaceSettings } from "./Environments.tsx";
 import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
 import { GitSync } from "./GitSync.tsx";
 import { NotFound } from "./NotFound.tsx";
+import { OldPaths } from "./OldPaths.tsx";
 import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.tsx";
 import { Overview } from "./Overview.tsx";
 import { Release } from "./Release.tsx";
@@ -639,59 +640,62 @@ function WorkspaceDetail({
           );
         })()
       ) : tab === "resources" ? (
-        <ListScreen<{
-          id: string;
-          path: string;
-          kind: string;
-          ownership: string;
-          version: number;
-          updatedAt: string;
-        }>
-          title="Resources"
-          description="Everything deployed to this workspace. Connections, variables, events, schedules and triggers can be made and changed here in a dev workspace. Scripts, flows and apps have screens of their own."
-          path={`${root}/resources`}
-          rowKey={(row) => row.id}
-          action={
-            workspace.data.type === "dev" ? (
-              <Menu
-                label="New"
-                align="end"
-                items={EDITED_KINDS.map((kind) => ({
-                  label: `${kind[0]?.toUpperCase()}${kind.slice(1).replace("_", " ")}`,
-                  onSelect: () =>
-                    navigate(`/t/${tenantId}/workspaces/${workspaceId}/resources/new/${kind}`),
-                }))}
-              />
-            ) : undefined
-          }
-          columns={[
-            {
-              header: "Path",
-              cell: (row) =>
-                isEditedKind(row.kind) ? (
-                  <Link
-                    to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                    className="font-mono text-code text-action"
-                  >
-                    {row.path}
-                  </Link>
-                ) : (
-                  <Code>{row.path}</Code>
-                ),
-            },
-            { header: "Kind", cell: (row) => row.kind },
-            {
-              header: "Managed in",
-              cell: (row) => (row.ownership === "code" ? "Repository" : "Console"),
-            },
-            { header: "Version", cell: (row) => row.version, align: "end" },
-            { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
-          ]}
-          empty={{
-            title: "No resources yet",
-            text: "Resources appear here when they are deployed from the tenant's repository.",
-          }}
-        />
+        <>
+          <ListScreen<{
+            id: string;
+            path: string;
+            kind: string;
+            ownership: string;
+            version: number;
+            updatedAt: string;
+          }>
+            title="Resources"
+            description="Everything deployed to this workspace. Connections, variables, events, schedules and triggers can be made and changed here in a dev workspace. Scripts, flows and apps have screens of their own."
+            path={`${root}/resources`}
+            rowKey={(row) => row.id}
+            action={
+              workspace.data.type === "dev" ? (
+                <Menu
+                  label="New"
+                  align="end"
+                  items={EDITED_KINDS.map((kind) => ({
+                    label: `${kind[0]?.toUpperCase()}${kind.slice(1).replace("_", " ")}`,
+                    onSelect: () =>
+                      navigate(`/t/${tenantId}/workspaces/${workspaceId}/resources/new/${kind}`),
+                  }))}
+                />
+              ) : undefined
+            }
+            columns={[
+              {
+                header: "Path",
+                cell: (row) =>
+                  isEditedKind(row.kind) ? (
+                    <Link
+                      to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
+                      className="font-mono text-code text-action"
+                    >
+                      {row.path}
+                    </Link>
+                  ) : (
+                    <Code>{row.path}</Code>
+                  ),
+              },
+              { header: "Kind", cell: (row) => row.kind },
+              {
+                header: "Managed in",
+                cell: (row) => (row.ownership === "code" ? "Repository" : "Console"),
+              },
+              { header: "Version", cell: (row) => row.version, align: "end" },
+              { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
+            ]}
+            empty={{
+              title: "No resources yet",
+              text: "Resources appear here when they are deployed from the tenant's repository.",
+            }}
+          />
+          <OldPaths root={root} canEnd />
+        </>
       ) : tab === "secrets" && rest ? (
         <SecretPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} name={rest} />
       ) : tab === "secrets" ? (

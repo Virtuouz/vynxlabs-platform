@@ -346,7 +346,8 @@ function ChangesOnly({ data }: { data: PromotionPreview }) {
   return (
     <div className="flex flex-col gap-2">
       <p className="m-0 text-ink-muted">
-        Creates {summary.created}, changes {summary.updated} and removes {summary.deleted}.
+        Creates {summary.created}, changes {summary.updated}
+        {summary.renamed ? `, renames ${summary.renamed}` : ""} and removes {summary.deleted}.
       </p>
       <ul className="m-0 flex list-none flex-col gap-1 p-0">
         {summary.changes.map((one) => (
@@ -355,6 +356,12 @@ function ChangesOnly({ data }: { data: PromotionPreview }) {
             className="flex flex-wrap items-center gap-2 text-meta"
           >
             <span className="text-ink-subtle">{one.change}</span>
+            {one.from ? (
+              <>
+                <Mono>{one.from}</Mono>
+                <span className="text-ink-subtle">to</span>
+              </>
+            ) : null}
             <Mono>{one.path}</Mono>
             <span className="text-ink-subtle">{one.kind}</span>
           </li>

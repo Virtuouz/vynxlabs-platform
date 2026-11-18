@@ -12,7 +12,7 @@ interface Preview {
     created: number;
     updated: number;
     deleted: number;
-    changes: { change: string; kind: string; path: string }[];
+    changes: { change: string; kind: string; path: string; from?: string }[];
     warnings?: { path: string; message: string }[];
   } | null;
 }

@@ -6,14 +6,22 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 ### For operators
 
-- **No database change yet** (M0).
+- **Database migrations 0068 to 0070.** Every resource, version and draft gets a `key`, which is its path. `run.resource_id` and `flow_run.resource_id` become nullable and stop holding a bundle's ID. Titles are filled in from bodies. A tenant export's format number does not change.
+- **A deploy matches resources by key, so a resource can be renamed.** The same key at another path is a rename in place: the resource keeps its ID, its history, its runs, its rows and what the workspace bound to it. The summary counts `renamed` and each change says `from`. New refusals: `kind_changed` (a key that belongs to another kind) and `path_taken` (a path the deploy does not free).
+- **The path a renamed resource had keeps answering for 90 days.** Answers reached through it carry `Deprecation`, `Sunset`, `Warning` and `Vynx-Resource-Moved`. An app's old address redirects with 308. `GET …/aliases` lists them and `DELETE …/aliases/<path>` ends one; the console shows them under a workspace's Resources.
+- **Resources answer with `key` and `title`.**
 - **A deploy that looks like a rename done wrong is refused.** Deleting a script or flow with runs, a table with rows, or anything with access given to it by hand, while creating another of the same kind, answers 409 `rename_suspected` and names each path and what it holds. `allowDelete` (a list of paths) lets it through, on `POST …/deployments`, `POST …/promotions`, a promotion request's decision and `POST …/git/pull`; the promotion preview takes `?allowDelete=a,b`. Deleting a resource in the console is not affected.
 
 ### For tenant developers
 
 - **A definition that is not exported fails the build**, by name. Before, it was left out without a word, and the next deploy deleted it. This includes two files that export the same name through `export *`, which cancel each other out: export each by name. Needs the SDK of this release in the repository; an older SDK builds as before.
 - `platform deploy` and `platform promote` take `--allow-delete <path>`, once per path, for a deletion the instance would refuse as a suspected rename.
-- `platform deploy` lists what it created, updated and deleted.
+- `platform deploy` lists what it created, updated, renamed and deleted, and prints the deploy's warnings.
+- **Moving a resource to another path.** Give it `key`, set to the path it had: `defineScript({ path: "lending/requests/file", key: "requests/submit", … })`. It stays the same resource. Without `key` it is a delete and a create, which the instance refuses when the old one holds runs, rows or access. Every `define*` also takes `title`.
+- **A key never changes**, and is unique in the workspace. Something new at the path a moved resource had must say a key of its own; the build tells you.
+- **A reference written as text may name a moved resource by its key.** `script: "requests/submit"` keeps building after the move and the build notes the new path. A reference made by passing the definition needs nothing.
+- **Bundle format 4** carries `key` and `title`. The CLI writes it only when a resource says one, so a repository that says none still deploys to an older instance. See `docs/contracts/bundle.md`.
+- A schedule that starts a flow that is not in the repository now fails the build.
 
 ## Unreleased: phase 16, visual refinement
 

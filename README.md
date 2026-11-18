@@ -45,7 +45,7 @@ The first deploy tells you which connections and secrets the workspace still nee
 
 The example also has a flow, `orders/handle`. Publish an `orders/received` event, or start it by hand under the workspace's Flows tab, and watch it move across its graph. A large order waits on the tenant's Approvals page.
 
-The example also defines a table, `orders`, and the flow writes each order it sends to it. Browse it under the workspace's Tables tab. Change the table in `src/index.ts` and deploy again, and the platform works out what to change: a column you add is added, one you rename with `renamedFrom` keeps its data, and one you remove is retired with its data kept. Only "Delete for good" in the console drops anything.
+The example also defines a table, `orders`, and the flow writes each order it sends to it. Browse it under the workspace's Tables tab. Change the table in `src/index.ts` and deploy again, and the platform works out what to change: a column you add is added, one you rename with `renamedFrom` keeps its data, and one you remove is retired with its data kept. To move a table, or any resource, to another path, give it `key` set to the path it had: it stays the same resource, with its rows and its history, and the old path keeps answering for 90 days. Only "Delete for good" in the console drops anything.
 
 An existing Postgres database can be connected under the workspace's Data sources tab, then browsed there and used by scripts through `ctx.source(...)`.
 

@@ -1,7 +1,7 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 built. Not pushed.
-Last updated: 2026-11-17
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 and M1 built. Not pushed.
+Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
 
@@ -84,3 +84,43 @@ A deploy of console drafts is not held: each removal there was a delete of one r
 - The guard cannot yet name a key to add, as the record says, because keys arrive in M1. Until then the advice is `renamedFrom` for a table and "keep the old path" for anything else. M1 rewrites the message.
 - The console has no control to allow a deletion when a promotion or a pull is refused: it shows the refusal. The API takes `allowDelete` on both. The promotion's confirm step comes with M2, and the pull's with M5.
 - The table test met the guard for a second reason. `customers` had access given by hand as well as rows, and the refusal names both.
+
+## M1: keys and renames in place
+
+**Three names.** Migration 0068 gives `resource` and `resource_version` a `key`, a `title` and `meta` (what a bundle says beside the body: `mcp`, `source`), and drafts and their history a `key`. Everything there was keeps its path as its key. A key is unique in its workspace and is never rewritten: `putResource` keeps the one a resource has.
+
+**The deploy matches by key** (`matchByKey` in `kernel/execution/deploy.ts`).
+- A manifest's key is the one it gives, or its path.
+- The same key at another path is a rename in place. The resource keeps its ID, versions, runs, rows and bindings, and the summary says `renamed`, with `from`.
+- A manifest that gives no key, and whose path is nobody's key, is the resource of its kind at that path. So a bundle in formats 1 to 3, and a resource renamed by hand, are still matched; and deploying a bundle from before a rename renames back.
+- A manifest that gives no key and meets a resource of another kind at its path is a new resource in its place, as before. One that gives a key belonging to another kind is refused: `kind_changed`.
+- A path this deploy does not free is refused: `path_taken`.
+- Two resources can swap paths. The one in the way moves to `~swap/<id>` first, which no path can be.
+- The checks for what is bound run after the renames, so a renamed production connection keeps its binding through a promotion.
+
+**What is kept under a path comes along** (`kernel/rename.ts`). Connection bindings, variable values, data source bindings, group members, app domains, trigger pauses, health checks, webhook refusals, OAuth state, recent items and drafts are rewritten in the rename's transaction. When the new path already has a credential of its own, that one is used, the old one stays where it was, and the deploy says so. A table follows its resource with its rows: `planTable` looks for the resource's own table before it looks for the name.
+
+**Aliases** (`kernel/resolve.ts`). A rename leaves the old path answering for 90 days.
+- Through an alias: `GET …/resources/*`, starting a run or a flow run, a table's row routes, an agent's tool under the name it had, a binding's `resource`, and an app's address (308 to the new one).
+- The answer carries `Deprecation`, `Sunset`, `Warning` and `Vynx-Resource-Moved`.
+- An alias is never a path in use. A resource made at one ends it, and the summary lists it under `aliasesRemoved`.
+- `GET …/aliases` lists them with when each was last asked for, to the hour. `DELETE …/aliases/*` ends one. Expired ones are swept.
+- A request names a resource through one `parseRef`. A key in a URL would be `~<key>`, which no path can be: one branch there, and a lookup the `(workspace_id, key)` index serves.
+
+**Runs.** `run.resource_id` and `flow_run.resource_id` are nullable (migration 0069), and no longer hold a bundle's ID. A flow run, and a step pinned to an earlier bundle, find their resource by the key that bundle gives. Runs are listed by the resource behind a path, and the same idempotency key finds its first run after a rename.
+
+**Bundle format 4** carries `key`, `title`, `mcp` and `source` on a manifest, and is written only when one of them is there (`docs/contracts/bundle.md`). The SDK's `define*` take `key` and `title`. A reference written as text may name a moved resource by its key: the build rewrites it to the path and says so.
+
+**Console.** Renames show as "old path to new path" in the release preview, the promotion preview and the environments dialog. The workspace's Resources tab lists old paths that still answer, with "End now".
+
+### Findings
+
+- **A tenant export needed no new format.** An import already refuses any export not written at its own database level (`kernel/tenancy/import.ts`), so new columns travel as they are. The plan's "export format 2 with a version 1 reader" was not needed.
+- **The idempotency constraints were left alone.** The plan replaced the unique on `(workspace_id, script_path, idempotency_key)` with two partial ones. Instead the lookup also tries the paths the resource had, read from its aliases. The same request finds its run across a rename, and no index on `run` is rebuilt. Two requests racing across the moment of a rename could both start: accepted.
+- **Copying a body's title into the manifest would have put every repository with an app in format 4**, and so stopped it deploying to an older instance. An app's, an interface's and a form's title stays in the body. The deploy reads the resource's title from there, and migration 0070 fills it in for what is deployed.
+- **A new resource at the path a moved one had must say a key of its own.** Its path is the moved one's key. The build refuses it by name: "its key is also the key of …".
+- **The delete guard still fires when a whole bundle is swapped for another** with scripts that have runs. One test did this and now says which paths it deletes.
+- **`binding.resource`, `app.reads` and an interface action's target are still not checked at build.** A console-made resource is in no uploaded bundle, so a strict check would refuse valid uploads. A schedule's `flow` is now checked, as its `script` was. A binding finds its resource through an alias, and the build rewrites a reference by key.
+- **`platform deploy` now prints a deploy's warnings**, which it never did: in a dev workspace, what is not bound yet.
+- **Not built:** the test that would stop new direct lookups of a resource by path. Most of the fifty or so that exist are authoring lookups that should stay strict, so a count to hold down says little.
+- **The console's promotion screen still cannot allow a deletion** the guard refuses. That comes with M2's confirm step.

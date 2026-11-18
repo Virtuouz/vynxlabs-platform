@@ -474,6 +474,14 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 Type.Union([Type.Literal("mine"), Type.Literal("theirs")]),
               ),
             ),
+            allowDelete: Type.Optional(
+              Type.Array(Type.String({ maxLength: 255 }), {
+                maxItems: 200,
+                description:
+                  "Paths this may delete although it also creates something of the same kind. " +
+                  "Without it, such a deletion is refused with `rename_suspected`.",
+              }),
+            ),
           }),
           response: {
             200: Type.Object({
@@ -495,7 +503,10 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: workspace.id,
         });
         ctx.mutated = true;
-        return pull(kernel, ctx.actor, workspace, { resolutions: body.resolutions });
+        return pull(kernel, ctx.actor, workspace, {
+          resolutions: body.resolutions,
+          allowDelete: body.allowDelete,
+        });
       },
     );
 

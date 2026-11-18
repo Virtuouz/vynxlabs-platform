@@ -74,10 +74,13 @@ export const send = { execute: async (input, ctx) => (await ctx.connection("post
   return { ...unsigned, digest: bundleDigest(unsigned) };
 }
 
-async function deploy(content: Bundle, workspace = prod) {
+async function deploy(content: Bundle, workspace = prod, allowDelete?: string[]) {
   const uploaded = await alice.post(`${ws(workspace)}/bundles`, content);
   if (uploaded.status >= 300) return uploaded;
-  return alice.post(`${ws(workspace)}/deployments`, { bundleId: uploaded.body.id });
+  return alice.post(`${ws(workspace)}/deployments`, {
+    bundleId: uploaded.body.id,
+    ...(allowDelete ? { allowDelete } : {}),
+  });
 }
 async function run(scriptPath: string, input: unknown, workspace = prod): Promise<Any> {
   const started = await alice.post(`${ws(workspace)}/runs`, { script: scriptPath, input });
@@ -505,7 +508,8 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
   test("a webhook's request goes to its source, which decides what starts", async () => {
     await alice.put(`${ws()}/secrets/PAYMENTS_SIGNING`, { value: "whsec_test_1" });
     // The connections of the earlier bundle are no longer declared, and what was bound to them stays.
-    const deployed = await deploy(sourced());
+    // The earlier bundle's scripts have runs and this one has others, so their removal is said by name.
+    const deployed = await deploy(sourced(), prod, ["greet", "send"]);
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
     const listed = (await alice.get(`${ws()}/triggers`)).body.items.find(
       (item: Any) => item.path === "hooks/payments",

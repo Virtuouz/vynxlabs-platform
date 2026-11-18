@@ -1118,6 +1118,22 @@ describe("refusals, retiring and purging", () => {
       },
       { policy: { type: "owner", column: "owner_id" } },
     );
+    // Without saying what it was renamed from, it is a delete of a table with rows and a new empty one.
+    const { renamedFrom: _from, ...unsaid } = renamed.body as Record<string, unknown>;
+    const refused = await deploy(
+      bundle([{ ...renamed, body: unsaid }, pointing], "renamed without saying"),
+    );
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("rename_suspected");
+    expect(refused.body.errors).toEqual([
+      {
+        path: "customers",
+        message: expect.stringContaining(
+          'the table "customers" has access given to it and rows, and this deploy creates crm/clients. If one of them is it renamed, give that one renamedFrom: "customers".',
+        ),
+      },
+    ]);
+
     const deployed = await deploy(bundle([renamed, pointing], "renamed"));
     expect(deployed.status).toBe(201);
     expect((await rows(alice, "crm/clients", "?sort=name")).map((row) => row.name)).toEqual([

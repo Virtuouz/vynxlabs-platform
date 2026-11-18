@@ -616,6 +616,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             message: Type.Optional(
               Type.String({ maxLength: 500, description: "What changed, in a few words." }),
             ),
+            allowDelete: Type.Optional(
+              Type.Array(Type.String({ maxLength: 255 }), {
+                maxItems: 200,
+                description:
+                  "Paths this may delete although it also creates something of the same kind. " +
+                  "Without it, deleting what holds runs, rows or access given by hand is refused " +
+                  "with `rename_suspected`: it is usually a rename.",
+              }),
+            ),
             settleDrafts: Type.Optional(
               Type.Array(
                 Type.Object({ path: Type.String({ maxLength: 255 }), revision: Type.Integer() }),
@@ -655,6 +664,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             {
               ...(body.message ? { message: body.message } : {}),
               ...(body.settleDrafts ? { settle: body.settleDrafts } : {}),
+              ...(body.allowDelete ? { allowDelete: body.allowDelete } : {}),
             },
           ),
         );
@@ -698,6 +708,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "the promotion would do: the resources and tables it would change, or why it would be refused.",
           tags: ["deploys"],
           params: WorkspaceParams,
+          querystring: Type.Object({
+            allowDelete: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  "Paths the promotion may delete although it looks like a rename, separated by commas.",
+              }),
+            ),
+          }),
           response: {
             200: Type.Object({
               target: PromotionTarget,
@@ -735,14 +754,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx }) => {
+      async ({ ctx, query }) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const { target } = await promotionOf(db, workspace);
         await ctx.authorize("deployment:read", {
           tenantId: target.tenantId,
           workspaceId: target.id,
         });
-        const preview = await previewPromotion(kernel, ctx.actor, workspace);
+        const preview = await previewPromotion(
+          kernel,
+          ctx.actor,
+          workspace,
+          undefined,
+          query.allowDelete?.split(",").filter(Boolean),
+        );
         const active = await db
           .selectFrom("workspace")
           .select("active_bundle_id")
@@ -807,6 +832,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "is rebuilt. Needs `promotion:write` in the workspace promoted to.",
           tags: ["deploys"],
           params: WorkspaceParams,
+          body: Type.Optional(
+            Type.Object({
+              allowDelete: Type.Optional(
+                Type.Array(Type.String({ maxLength: 255 }), {
+                  maxItems: 200,
+                  description:
+                    "Paths this may delete although it also creates something of the same kind. " +
+                    "Without it, deleting what holds runs, rows or access given by hand is refused " +
+                    "with `rename_suspected`: it is usually a rename.",
+                }),
+              ),
+            }),
+          ),
           response: {
             201: Type.Object({
               id: Id,
@@ -829,7 +867,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx }, reply) => {
+      async ({ ctx, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const { target } = await promotionOf(db, workspace);
         await ctx.authorize("promotion:write", {
@@ -837,7 +875,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: target.id,
         });
         const result = await ctx.mutate((trx, audit) =>
-          promote(kernel, trx, audit, workspace, ctx.principal),
+          promote(
+            kernel,
+            trx,
+            audit,
+            workspace,
+            ctx.principal,
+            body?.allowDelete ? { allowDelete: body.allowDelete } : {},
+          ),
         );
         await publishPlatformEvent(kernel, {
           tenantId: target.tenantId,

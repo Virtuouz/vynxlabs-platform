@@ -880,6 +880,39 @@ describe("deploys and runs in progress", () => {
     expect(history.map((d: { bundleVersion: number }) => d.bundleVersion)).toEqual([1, 3, 1]);
     expect(history[0].previousBundleId).toBe(history[1].bundleId);
   }, 60_000);
+
+  test("a deploy that would delete a script with runs and create another stops, until the path is allowed by name", async () => {
+    // "slow" has runs. A bundle with it at another path is a rename done as a delete and a create.
+    const renamed = bundle(1, (m) =>
+      m.map((manifest) => (manifest.path === "slow" ? { ...manifest, path: "slower" } : manifest)),
+    );
+    const refused = await deploy(renamed);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("rename_suspected");
+    expect(refused.body.errors).toEqual([
+      {
+        path: "slow",
+        message: expect.stringMatching(
+          /^the script "slow" has runs, and this deploy creates slower\. .*--allow-delete slow/,
+        ),
+      },
+    ]);
+    // Nothing changed: the script and its runs are where they were.
+    expect((await alice.get(`${ws()}/resources/slow`)).status).toBe(200);
+
+    const uploaded = await alice.post(`${ws()}/bundles`, renamed);
+    const allowed = await alice.post(`${ws()}/deployments`, {
+      bundleId: uploaded.body.id,
+      allowDelete: ["slow"],
+    });
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(201);
+    expect(allowed.body.summary).toMatchObject({ created: 1, deleted: 1 });
+
+    // "slower" has no runs yet, so going back is not held up.
+    const back = await deploy(bundle(1));
+    expect(back.status, JSON.stringify(back.body)).toBe(201);
+    expect(back.body.summary).toMatchObject({ created: 1, deleted: 1 });
+  });
 });
 
 describe("triggers", () => {

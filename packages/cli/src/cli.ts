@@ -46,9 +46,9 @@ Work on a tenant repository
   dev [app] --tenant <slug> --workspace <slug> [--port <n>]
                                         Serve an app from its source, with reload, against
                                         that workspace's data, as yourself
-  deploy --tenant <slug> --workspace <slug>
+  deploy --tenant <slug> --workspace <slug> [--allow-delete <path>]
                                         Build, upload and activate the bundle
-  promote --tenant <slug> --workspace <slug> [--preview]
+  promote --tenant <slug> --workspace <slug> [--preview] [--allow-delete <path>]
                                         Activate this workspace's bundle in the workspace
                                         it is linked to. Nothing is rebuilt
 
@@ -256,8 +256,16 @@ const targetOptions = {
   workspace: { type: "string" as const },
 };
 
+/** Paths a deploy or a promotion may delete although it looks like a rename done wrong. */
+const allowDeleteOption = {
+  "allow-delete": { type: "string" as const, multiple: true as const },
+};
+
 async function deploy(args: string[], io: Io) {
-  const { values } = parseArgs({ args, options: { ...directoryOption, ...targetOptions } });
+  const { values } = parseArgs({
+    args,
+    options: { ...directoryOption, ...targetOptions, ...allowDeleteOption },
+  });
   const settings = await loadSettings(io.env);
   const { base, workspace } = await locate(settings, values.tenant, values.workspace);
   const built = await buildRepository({ directory: resolve(values.dir ?? ".") });
@@ -279,7 +287,11 @@ async function deploy(args: string[], io: Io) {
       : [];
   const deployed = await request(settings.url, `${base}/deployments`, settings.token, {
     method: "POST",
-    body: { bundleId: uploaded.body.id, ...(carried.length > 0 ? { settleDrafts: carried } : {}) },
+    body: {
+      bundleId: uploaded.body.id,
+      ...(carried.length > 0 ? { settleDrafts: carried } : {}),
+      ...(values["allow-delete"]?.length ? { allowDelete: values["allow-delete"] } : {}),
+    },
   });
   if (deployed.status >= 300) throw refusal(deployed, `deploy to ${values.workspace}`);
   const { created, updated, unchanged, deleted } = deployed.body.summary;
@@ -287,7 +299,7 @@ async function deploy(args: string[], io: Io) {
     `Deployed version ${deployed.body.bundleVersion} to ${values.workspace} (${workspace.type}): ` +
       `${created} created, ${updated} updated, ${deleted} deleted, ${unchanged} unchanged.`,
   );
-  for (const line of (deployed.body.summary.data ?? []) as string[]) io.out(`  ${line}`);
+  for (const line of describeChanges(deployed.body.summary, MAX_DEPLOY_LINES)) io.out(line);
   const settled = (deployed.body.draftsSettled ?? []) as string[];
   if (settled.length > 0) {
     io.out(
@@ -311,12 +323,21 @@ interface DeploySummary {
   changes?: { change: string; kind: string; path: string }[];
 }
 
-/** The resources and tables a deploy changed, or would change, one per line. */
-function describeChanges(summary: DeploySummary): string[] {
+/** A deploy has just listed what the bundle holds, so it names what it created only when that is short. */
+const MAX_DEPLOY_LINES = 30;
+
+/**
+ * The resources and tables a deploy changed, or would change, one per line.
+ * With a limit, a long list keeps what was deleted and counts the rest.
+ */
+function describeChanges(summary: DeploySummary, limit = Number.POSITIVE_INFINITY): string[] {
+  const all = summary.changes ?? [];
+  const shown = all.length > limit ? all.filter((entry) => entry.change === "deleted") : all;
   return [
-    ...(summary.changes ?? []).map(
-      (entry) => `  ${entry.change.padEnd(8)} ${entry.kind.padEnd(10)} ${entry.path}`,
-    ),
+    ...shown.map((entry) => `  ${entry.change.padEnd(8)} ${entry.kind.padEnd(10)} ${entry.path}`),
+    ...(shown.length < all.length
+      ? [`  and ${all.length - shown.length} created or updated, listed above`]
+      : []),
     ...(summary.data ?? []).map((line) => `  ${line}`),
   ];
 }
@@ -353,11 +374,16 @@ async function dev(args: string[], io: Io) {
 async function promote(args: string[], io: Io) {
   const { values } = parseArgs({
     args,
-    options: { ...targetOptions, preview: { type: "boolean" as const } },
+    options: { ...targetOptions, ...allowDeleteOption, preview: { type: "boolean" as const } },
   });
   const settings = await loadSettings(io.env);
   const { base } = await locate(settings, values.tenant, values.workspace);
-  const preview = await request(settings.url, `${base}/promotion-preview`, settings.token);
+  const allowed: string[] = values["allow-delete"] ?? [];
+  const preview = await request(
+    settings.url,
+    `${base}/promotion-preview${allowed.length > 0 ? `?allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
+    settings.token,
+  );
   if (preview.status >= 300) throw refusal(preview, `promote ${values.workspace}`);
   const { target, bundle, possible, refusal: why, summary } = preview.body;
   const where = `${target.slug} (${target.type})`;
@@ -382,7 +408,7 @@ async function promote(args: string[], io: Io) {
   }
   const promoted = await request(settings.url, `${base}/promotions`, settings.token, {
     method: "POST",
-    body: {},
+    body: allowed.length > 0 ? { allowDelete: allowed } : {},
   });
   if (promoted.status >= 300) throw refusal(promoted, `promote to ${target.slug}`);
   io.out(

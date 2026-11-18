@@ -762,7 +762,11 @@ export async function pull(
   kernel: Kernel,
   actor: Actor,
   workspace: WorkspaceRef,
-  options: { resolutions?: Record<string, "mine" | "theirs"> | undefined } = {},
+  options: {
+    resolutions?: Record<string, "mine" | "theirs"> | undefined;
+    /** Paths the pull may delete although it looks like a rename done as a delete and a create. */
+    allowDelete?: readonly string[] | undefined;
+  } = {},
 ) {
   const db = kernel.db;
   const remote = await remoteOf(kernel, db, workspace.tenantId);
@@ -874,6 +878,7 @@ export async function pull(
               actor.principal,
               parsed.manifests,
               `Pulled ${tip.commit.slice(0, 7)} from ${link.branch}`,
+              options.allowDelete ?? [],
             ),
           );
         } catch (error) {

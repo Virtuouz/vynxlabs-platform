@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId, sql } from "@vynxlabs/db";
 import {
   type BundleManifest,
   bundleCompatibility,
@@ -8,7 +8,7 @@ import {
   renderResourceFiles,
 } from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
-import { loadCatalog, reconcileReferences } from "../data/apply.js";
+import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";
 import { HttpError, notFound } from "../errors.js";
 import type { WorkspaceRef } from "../http.js";
@@ -178,6 +178,12 @@ export async function deployBundle(
      * console since is kept.
      */
     settle?: { path: string; revision: number }[];
+    /**
+     * Paths this deploy may delete although it looks like a rename done wrong: said by
+     * whoever deploys, one path at a time. `all` is for a deploy whose removals were each
+     * asked for by name already, as deleting a resource in the console is.
+     */
+    allowDelete?: readonly string[] | "all";
   } = {},
 ) {
   const current = await trx
@@ -297,6 +303,26 @@ export async function deployBundle(
     .filter((row) => (row.ownership === "code" || carried.has(row.path)) && !wanted.has(row.path))
     // Bindings and triggers before the roles and scripts they refer to.
     .sort((a, b) => order(b.kind) - order(a.kind));
+  if (options.allowDelete !== "all") {
+    const suspected = await suspectedRenames(
+      trx,
+      data,
+      workspace,
+      removed.filter((row) => !options.allowDelete?.includes(row.path)),
+      content.manifests.filter((manifest) => !byPath.has(manifest.path)),
+      dataBefore,
+    );
+    if (suspected.length > 0) {
+      throw new HttpError(
+        409,
+        "rename_suspected",
+        "This deploy would delete something that holds history or data, and create something of the same kind. " +
+          "If it was renamed, deploying this cuts the new one off from what the old one holds. " +
+          "To delete it anyway, deploy again allowing each path by name.",
+        suspected,
+      );
+    }
+  }
   for (const row of removed) {
     await deleteResource(trx, audit, workspace, row.path, kernel.hooks);
     summary.deleted += 1;
@@ -376,6 +402,91 @@ export async function deployBundle(
     },
   });
   return { deployment, bundle, summary, draftsSettled };
+}
+
+/**
+ * The removals that look like a rename done as a delete and a create: the
+ * resource holds something a new one would not get, and the same deploy makes
+ * another of its kind. A table whose successor names it in `renamedFrom` is a
+ * rename said properly, and keeps its rows.
+ */
+async function suspectedRenames(
+  trx: Trx,
+  data: Trx,
+  workspace: WorkspaceRef,
+  removed: { id: string; path: string; kind: string }[],
+  created: BundleManifest[],
+  catalog: Awaited<ReturnType<typeof loadCatalog>>,
+): Promise<{ path: string; message: string }[]> {
+  const suspected: { path: string; message: string }[] = [];
+  for (const row of removed) {
+    const successors = created.filter((manifest) => manifest.kind === row.kind);
+    if (successors.length === 0) continue;
+    if (
+      row.kind === "table" &&
+      successors.some(
+        (manifest) => (manifest.body as { renamedFrom?: string }).renamedFrom === row.path,
+      )
+    ) {
+      continue;
+    }
+    const holds: string[] = [];
+    if (row.kind === "script") {
+      const run = await trx
+        .selectFrom("run")
+        .select("id")
+        .where("workspace_id", "=", workspace.id)
+        .where("resource_id", "=", row.id)
+        .limit(1)
+        .executeTakeFirst();
+      if (run) holds.push("runs");
+    }
+    if (row.kind === "flow") {
+      const run = await trx
+        .selectFrom("flow_run")
+        .select("id")
+        .where("workspace_id", "=", workspace.id)
+        .where("resource_id", "=", row.id)
+        .limit(1)
+        .executeTakeFirst();
+      if (run) holds.push("runs");
+    }
+    // Access given to it by hand. What a bundle gives is given again by the bundle.
+    const binding = await trx
+      .selectFrom("binding")
+      .select("id")
+      .where("resource_id", "=", row.id)
+      .where("source_resource_id", "is", null)
+      .limit(1)
+      .executeTakeFirst();
+    if (binding) holds.push("access given to it");
+    if (row.kind === "table") {
+      const table = catalog.find(
+        (candidate) => candidate.name === row.path && candidate.status === "active",
+      );
+      if (table) {
+        const any = await sql<{ one: number }>`select 1 as one from ${sql.id(
+          workspaceSchema(workspace.id),
+          table.physicalName,
+        )} limit 1`.execute(data);
+        if (any.rows.length > 0) holds.push("rows");
+      }
+    }
+    if (holds.length === 0) continue;
+    const others = successors.map((manifest) => manifest.path);
+    const named =
+      others.length > 3 ? `${others.slice(0, 3).join(", ")} and others` : others.join(", ");
+    suspected.push({
+      path: row.path,
+      message:
+        `the ${row.kind.replaceAll("_", " ")} "${row.path}" has ${holds.join(" and ")}, and this deploy creates ${named}. ` +
+        (row.kind === "table"
+          ? `If one of them is it renamed, give that one renamedFrom: "${row.path}". `
+          : "If one of them is it renamed, keep the old path: a new path starts with none of this. ") +
+        `To delete it, allow "${row.path}" by name (--allow-delete ${row.path}).`,
+    });
+  }
+  return suspected;
 }
 
 /**

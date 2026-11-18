@@ -337,6 +337,7 @@ export async function deployConsoleManaged(
   principal: Principal,
   manifests: readonly BundleManifest[],
   message: string,
+  allowDelete: readonly string[] = [],
 ) {
   await devWorkspace(trx, workspace);
   const active = await activeBundle(kernel, trx, workspace.id);
@@ -355,7 +356,10 @@ export async function deployConsoleManaged(
     );
   }
   const stored = await storeBundle(kernel, trx, audit, workspace, principal, bundle, "compose");
-  return deployBundle(kernel, trx, audit, workspace, principal, stored.bundle.id, { message });
+  return deployBundle(kernel, trx, audit, workspace, principal, stored.bundle.id, {
+    message,
+    allowDelete,
+  });
 }
 
 /** Composes the drafts into a bundle, activates it, and clears the drafts it carried. */
@@ -372,6 +376,8 @@ export async function deployDrafts(
   const stored = await storeBundle(kernel, trx, audit, workspace, principal, bundle, "compose");
   const result = await deployBundle(kernel, trx, audit, workspace, principal, stored.bundle.id, {
     ...(options.message ? { message: options.message } : {}),
+    // What a deploy of drafts removes was each deleted by name in the console.
+    allowDelete: "all",
   });
   await trx
     .deleteFrom("resource_draft")

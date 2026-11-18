@@ -2,6 +2,19 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 17, resource identity
+
+### For operators
+
+- **No database change yet** (M0).
+- **A deploy that looks like a rename done wrong is refused.** Deleting a script or flow with runs, a table with rows, or anything with access given to it by hand, while creating another of the same kind, answers 409 `rename_suspected` and names each path and what it holds. `allowDelete` (a list of paths) lets it through, on `POST …/deployments`, `POST …/promotions`, a promotion request's decision and `POST …/git/pull`; the promotion preview takes `?allowDelete=a,b`. Deleting a resource in the console is not affected.
+
+### For tenant developers
+
+- **A definition that is not exported fails the build**, by name. Before, it was left out without a word, and the next deploy deleted it. This includes two files that export the same name through `export *`, which cancel each other out: export each by name. Needs the SDK of this release in the repository; an older SDK builds as before.
+- `platform deploy` and `platform promote` take `--allow-delete <path>`, once per path, for a deletion the instance would refuse as a suspected rename.
+- `platform deploy` lists what it created, updated and deleted.
+
 ## Unreleased: phase 16, visual refinement
 
 ### For operators

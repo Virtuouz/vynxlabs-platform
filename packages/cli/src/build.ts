@@ -13,9 +13,16 @@ import {
   checkBundleAssets,
   checkBundleManifests,
   formatFor,
+  ignoredFolder,
+  isResourceFile,
+  keyOf,
   MAX_BUNDLE_SOURCE,
-  parseResourceFiles,
+  parseRepositoryConfig,
+  parseRepositoryFiles,
+  platformKinds,
+  REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
+  type RepositoryConfig,
   type ResourceFile,
   resolveKeyReferences,
 } from "@vynxlabs/manifest";
@@ -48,30 +55,36 @@ export interface BuildOptions {
   resources?: string;
 }
 
-/** Every YAML and TypeScript file under the folder of console-managed resources. None if there is no folder. */
-async function resourceFiles(folder: string): Promise<ResourceFile[]> {
+/**
+ * The repository's resource files, wherever it keeps them: every file named for
+ * a kind, in any folder that is the repository's own. Paths are from the
+ * repository's root.
+ */
+async function resourceFiles(directory: string, config: RepositoryConfig): Promise<ResourceFile[]> {
   const files: ResourceFile[] = [];
-  const walk = async (directory: string) => {
+  const walk = async (folder: string) => {
     let entries: import("node:fs").Dirent[];
     try {
-      entries = await readdir(directory, { withFileTypes: true });
+      entries = await readdir(folder, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile() && /\.(yaml|ts)$/.test(entry.name)) {
-        files.push({
-          path: relative(folder, path).split(sep).join("/"),
-          content: await readFile(path, "utf8"),
-        });
+      const path = join(folder, entry.name);
+      const name = relative(directory, path).split(sep).join("/");
+      if (entry.isDirectory()) {
+        if (!ignoredFolder(name, config)) await walk(path);
+      } else if (entry.isFile() && isResourceFile(name, WORKSPACE_KINDS)) {
+        files.push({ path: name, content: await readFile(path, "utf8") });
       }
     }
   };
-  await walk(folder);
+  await walk(directory);
   return files;
 }
+
+/** The kinds a workspace's resources have. A file named for another kind is not one of them. */
+const WORKSPACE_KINDS: ReadonlySet<string> = new Set(platformKinds.map((kind) => kind.kind));
 
 /** Deploy order: what others refer to comes first. */
 const KIND_ORDER = [
@@ -133,23 +146,38 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   const inOrder = (a: BundleManifest, b: BundleManifest) =>
     KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1);
   const authored = definitions.map(([name, definition]) => definition.toManifest(name));
-  // Resources managed in the console are files in a reserved folder, not code.
+  // Resources written as files, by the console or by hand, wherever the repository keeps
+  // them. `folder` is where the console writes, and is always read.
   const folder = options.resources ?? RESOURCE_FOLDER;
-  const parsed = parseResourceFiles(await resourceFiles(join(directory, folder)));
-  if (parsed.problems.length > 0) {
-    throw new BuildError(parsed.problems.map((problem) => `${folder}/${problem}`));
-  }
+  const said = parseRepositoryConfig(
+    await readFile(join(directory, REPOSITORY_CONFIG), "utf8").catch(() => undefined),
+  );
+  if (said.problems.length > 0) throw new BuildError(said.problems);
+  const parsed = parseRepositoryFiles(await resourceFiles(directory, said.config), {
+    folder,
+    roots: said.config.roots,
+    kinds: WORKSPACE_KINDS,
+  });
+  if (parsed.problems.length > 0) throw new BuildError(parsed.problems);
   // A reference written as text may name a resource by its key: it is built as the path.
   const resolved = resolveKeyReferences([...authored, ...parsed.manifests]);
   const fromCode = resolved.manifests.slice(0, authored.length);
   const fromFiles = { manifests: resolved.manifests.slice(authored.length) };
-  const defined = new Map(fromCode.map((manifest) => [manifest.path, manifest]));
-  const twice = fromFiles.manifests.filter((manifest) => defined.has(manifest.path));
+  // One resource, by its path or by its key, is defined once: in the code or in a file.
+  const defined = new Map(
+    fromCode.flatMap((manifest) => [
+      [manifest.path, manifest],
+      [keyOf(manifest), manifest],
+    ]),
+  );
+  const twice = fromFiles.manifests.filter(
+    (manifest) => defined.has(manifest.path) || defined.has(keyOf(manifest)),
+  );
   if (twice.length > 0) {
     throw new BuildError(
       twice.map(
         (manifest) =>
-          `${manifest.path} is defined in ${entry} and again in ${folder}/${manifest.path}.${manifest.kind}.yaml. Keep one. A resource taken over in the console is removed from the code.`,
+          `${manifest.path} is defined in ${entry} and again in ${parsed.files.get(keyOf(manifest)) ?? `${folder}/${manifest.path}.${manifest.kind}.yaml`}. Keep one. A resource taken over in the console is removed from the code.`,
       ),
     );
   }
@@ -210,7 +238,19 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
     };
   } catch (error) {
     if (error instanceof ComposeError) {
-      throw new BuildError(error.problems.map((problem) => `${folder}/${problem}`));
+      // A problem in a resource's code names it by path. Whoever builds needs the file.
+      throw new BuildError(
+        error.problems.map((problem) => {
+          const named = /^(.+)\.([a-z][a-z0-9_]*)\.ts(?=:)/.exec(problem);
+          const manifest = named
+            ? fromFiles.manifests.find((one) => one.path === named[1] && one.kind === named[2])
+            : undefined;
+          const file = manifest ? parsed.files.get(keyOf(manifest)) : undefined;
+          return named && file
+            ? `${file.replace(/\.yaml$/, ".ts")}${problem.slice(named[0].length)}`
+            : `${folder}/${problem}`;
+        }),
+      );
     }
     throw error;
   }

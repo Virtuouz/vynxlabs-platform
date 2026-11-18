@@ -417,6 +417,34 @@ describe("resources managed in the console, as files in the repository", () => {
     expect((await buildBundle({ directory: await repository(source) })).formatVersion).toBe(1);
   });
 
+  test("files are read wherever the repository keeps them, and say where each is when that is not the console's folder", async () => {
+    const dir = await withFiles({
+      "vynxlabs.yaml": "roots: [src]\n",
+      // Beside the feature it belongs to. Its path is where it is, under the root.
+      "src/lending/greeting.variable.yaml":
+        "title: Greeting\nschemaVersion: 1\nbody:\n  default: hi\n",
+      // Kept somewhere that gives no path: it says its own.
+      "ops/limits.variable.yaml": 'path: lending/limit\nschemaVersion: 1\nbody:\n  default: "5"\n',
+      "platform/orders/size.variable.yaml": 'schemaVersion: 1\nbody:\n  default: "9"\n',
+      // Not resources: a test, a kind there is not, and whatever a dependency ships.
+      "src/lending/greeting.test.ts": "export {};\n",
+      "src/lending/notes.memo.yaml": "anything: goes\n",
+      "node_modules/dep/broken.variable.yaml": "not: [valid",
+    });
+    const bundle = await buildBundle({ directory: dir });
+    expect(
+      bundle.manifests
+        .filter((one) => one.ownership === "ui")
+        .map((one) => [one.path, one.title ?? null, one.source?.file ?? null]),
+    ).toEqual([
+      ["lending/greeting", "Greeting", "src/lending/greeting.variable.yaml"],
+      ["lending/limit", null, "ops/limits.variable.yaml"],
+      ["orders/size", null, null],
+    ]);
+    // It carries what only format 4 can: where a file is, and a title.
+    expect(bundle.formatVersion).toBe(4);
+  });
+
   test("a path defined in the code and in a file is refused, as is anything wrong with a file", async () => {
     expect(
       await failing({
@@ -427,7 +455,7 @@ describe("resources managed in the console, as files in the repository", () => {
       "orders/check is defined in src/index.ts and again in platform/orders/check.script.yaml. Keep one. A resource taken over in the console is removed from the code.",
     ]);
     expect(await failing({ "platform/orders/hello.script.yaml": yaml })).toEqual([
-      "platform/orders/hello.script.yaml: needs its source beside it, as orders/hello.script.ts.",
+      "platform/orders/hello.script.yaml: needs its source beside it, as platform/orders/hello.script.ts.",
     ]);
     expect(
       await failing({

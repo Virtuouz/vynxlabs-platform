@@ -474,7 +474,7 @@ describe("seeing both sides, drafts and releases", () => {
     const clash = compared.files.find(
       (file: { path: string }) => file.path === "platform/orders/hello.script.ts",
     );
-    expect(clash).toMatchObject({ here: true, branch: true, conflict: true });
+    expect(clash).toMatchObject({ here: true, branch: true, conflict: true, change: "changed" });
     expect(clash.mine).toContain("here");
     expect(clash.theirs).toContain("branch");
     // Nothing changed by looking.
@@ -498,6 +498,13 @@ describe("seeing both sides, drafts and releases", () => {
     expect(withDrafts.files.map((file: { path: string }) => file.path)).toContain(
       "platform/orders/drafted.script.ts",
     );
+    // A file the branch never had is new here, which is how a resource made in the console
+    // or taken over from the repository's code first shows.
+    expect(
+      withDrafts.files.find(
+        (file: { path: string }) => file.path === "platform/orders/drafted.script.yaml",
+      ),
+    ).toMatchObject({ here: true, branch: false, conflict: false, change: "new_here" });
     const pushed = await alice.post(`${ws()}/git/push`, {
       message: "Work in progress",
       drafts: true,

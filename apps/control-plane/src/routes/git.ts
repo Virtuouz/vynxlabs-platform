@@ -332,6 +332,21 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   here: Type.Boolean(),
                   branch: Type.Boolean(),
                   conflict: Type.Boolean(),
+                  change: Type.Union(
+                    [
+                      Type.Literal("new_here"),
+                      Type.Literal("removed_here"),
+                      Type.Literal("new_there"),
+                      Type.Literal("removed_there"),
+                      Type.Literal("changed"),
+                    ],
+                    {
+                      description:
+                        "What the difference is. `new_here` is a file only the workspace has: a " +
+                        "resource made in the console, or one taken over from the repository's " +
+                        "code, which had no file until then.",
+                    },
+                  ),
                   mine: Type.Optional(NullableString),
                   theirs: Type.Optional(NullableString),
                 }),

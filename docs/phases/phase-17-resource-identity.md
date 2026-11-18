@@ -292,7 +292,7 @@ The plan's M5 had eleven steps. Git sync across the repository was built after t
 ### What M6 left out
 
 - **`src/scripts.ts` is not split** in either example (726 and 917 lines). The build check that made splitting safe is there, and the guide says how to export from several files.
-- **`examples/higher-ed-devices` keeps two resources as YAML files** beside its TypeScript: the `loans/days` variable and the schedule that marks loans overdue, under `platform/loans/`. The script that reads the variable names it by path. `fernhill` is all TypeScript still.
+- **`examples/higher-ed-devices` keeps everything without code as YAML files** under `platform/`: its two apps, their screens, the theme, the `loans/days` variable and the schedule that marks loans overdue. Tables, scripts, the flow, roles and bindings stay TypeScript, and name the files' resources by path. The build is the same as before but for who owns those seven. `fernhill` is all TypeScript still.
 - **The device-lending example was walked through on the test instance** after this was written: see "On the test instance".
 - **`docs/phases/phase-7-authoring.md` still has its stale notes** (that `platform pull` is not built, and "Changes screen").
 
@@ -347,4 +347,16 @@ Two things it showed:
 - **A pull before the workspace's branch exists takes nothing**, though the default branch may hold resource files. The first push makes the branch and answers `behind`, and the pull after it brings them in. This is as designed, and is one step more than it could be.
 
 A file on a release branch keeps the comments that branch had, which came from the default branch, not the ones the workspace's branch has.
+
+## Who owns a resource, as the owner found it
+
+The owner explored git sync on the test instance on 2026-11-18 and found it inconsistent: after pulling, pushing and promoting, the dev workspace said two screens were waiting to be synced that nobody had just changed. Nothing was wrong with the sync. Two drafts saved the day before were deployed with the rest; each was of a screen the example's TypeScript defined, so deploying it took the screen over; a screen the console owns is a file; and the branch did not have that file yet. The product said none of this where it happened. Trying to take over a script the same way did not work, and the editor's notice did not say why.
+
+What changed:
+
+- **The example no longer invites it.** What has no code is a file from the start, so editing it in the console is an edit. Its README says how ownership works and why to keep to that split.
+- **The release screen says what a takeover is.** The tag reads "Takes over from code", and the row says that the resource becomes a file the console owns, that git sync then carries it, and that a deploy from the repository that still defines it takes it back.
+- **Drafts saved more than a day ago are pointed out** when every draft is about to be deployed, by name, until the ones meant are chosen.
+- **The sync comparison says what each difference is.** `GET …/git/compare` gives each file `change`: `new_here`, `removed_here`, `new_there`, `removed_there` or `changed`. The console shows it, and under a file that is new here says that a resource made in the console or taken over from code had no file until then.
+- **The script editor says a script from code cannot be converted**, why (its code leans on the rest of the repository's), and that one made in the console at the same path replaces it.
 

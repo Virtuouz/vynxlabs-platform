@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { differenceLabel } from "./screens/GitSync.tsx";
 import { Release } from "./screens/Release.tsx";
 import { answer, show } from "./testing.tsx";
 
@@ -96,6 +97,24 @@ test("drafts are listed with what deploying each would do, and deployed with a m
     url: `/api/v1${root}/changes/deploy`,
     body: { message: "Bigger batches" },
   });
+});
+
+test("a takeover from code says what it does, and old drafts are pointed out until some are chosen", async () => {
+  drafts = [
+    { ...(drafts[0] as object), path: "screens/desk", kind: "interface", change: "take_over" },
+    { ...(drafts[1] as object), updatedAt: new Date().toISOString() },
+  ];
+  show(review());
+  expect(await screen.findByText("Takes over from code")).toBeTruthy();
+  expect(screen.getByText(/becomes a file the console owns, which git sync/)).toBeTruthy();
+  expect(screen.getByText(/takes it back/)).toBeTruthy();
+  // Deploying with none chosen deploys both: the one saved days ago is named.
+  const stale = screen.getByText(/One of these was saved more than a day ago/);
+  expect(stale.textContent).toContain("screens/desk");
+  expect(stale.textContent).not.toContain("orders/size");
+  // Once the ones meant are chosen, nothing rides along, and nothing needs saying.
+  fireEvent.click(screen.getByLabelText("Choose orders/size"));
+  expect(screen.queryByText(/saved more than a day ago/)).toBeNull();
 });
 
 test("changes that cannot be deployed say why, and offer no deploy", async () => {
@@ -200,4 +219,14 @@ test("a promotion that changes an agent's tool says so, asks, and sends that it 
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({ confirmBreaking: true }),
   );
+});
+
+test("a file that differs from the branch says how: new, removed or changed, and on which side", () => {
+  expect(
+    ["new_here", "removed_here", "new_there", "removed_there", "changed"].map((change) =>
+      differenceLabel({ here: change.endsWith("here"), change }),
+    ),
+  ).toEqual(["New here", "Removed here", "New there", "Removed there", "Changed there"]);
+  // An instance from before it said so.
+  expect(differenceLabel({ here: true })).toBe("Changed here");
 });

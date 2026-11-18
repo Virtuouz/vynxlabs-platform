@@ -35,6 +35,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Database migration 0075** adds `workspace_git.synced_said`. A workspace's changes since its last sync are now told by what its resources say, so a developer changing a hand-written file twice is no longer a conflict.
 - **A run that was going when a resource was renamed still reaches it** by the path its bundle knows: variables, connections, connection groups, tables and data sources. An event published by a name it had goes out under the name it has now.
 - **Connecting an empty repository says so.** `PUT …/git-repository` answered "The branch was not found" for a repository with no commits. It now says to make a first commit on the default branch, and names the branches there are when the default branch is called something else.
+- **`GET …/git/compare` says what each difference is**: `files[].change` is `new_here`, `removed_here`, `new_there`, `removed_there` or `changed`. The console shows it. A resource taken over from the repository's code shows as new here, since code has no file.
+- **The release screen explains a takeover from code** and points out drafts saved more than a day ago before every draft is deployed. The script editor says that a script the code defines can be replaced from the console, not converted.
 - **Fixed: undoing a rename was reported as breaking**, and promoting it to production asked for confirmation. A resource that takes back a path it had cuts nobody off.
 - **Fixed: `POST …/promotions` with no body answered 400** on this branch. It takes none again.
 - **`GET …/resource-files` adds `elsewhere`**: the files of resources kept outside the console's folder, by path from the repository's root. It takes `roots`. `platform pull` writes them where they are.
@@ -62,7 +64,7 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Choose the name of an agent's tool.** `defineScript({ …, mcp: { name: "submit_device_request" } })`, and the same on `defineFlow`. The agent sees exactly that, and it no longer changes when the path does. Without it the name is made from the path as before (`run_requests__submit`), and after a rename the old name keeps working for 90 days. Choosing a name for a script that already has a tool changes that tool's name at once: the deploy says so.
 - **Breaking: two scripts, or two flows, whose paths make the same tool name fail the build and the upload.** A tool's name is made from the path with `-` written as `_` and cut at 64 characters, so `desk/look-up` and `desk/look_up` collide, as two long paths can. An agent was offered one and could not reach the other. Give one an `mcp.name`, or another path.
 - **Fixed: the CLI found a tenant by its slug only among the first 200** the key could see. It reads every page.
-- **`examples/higher-ed-devices` keeps two resources as YAML files** under `platform/loans/`, beside its TypeScript.
+- **`examples/higher-ed-devices` keeps what has no code as YAML files** under `platform/`: apps, screens, theme, a variable and a schedule. Its README explains who owns a resource, and why that split keeps the console from taking anything over.
 
 ## Unreleased: phase 16, visual refinement
 

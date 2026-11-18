@@ -864,8 +864,11 @@ export function ScriptEditor({
         />
       ) : fromRepository ? (
         <Notice tone="attention">
-          This {about.noun} is managed in the tenant's repository. Its source is shown here
-          read-only: change it there, or write one of the same path here to take it over.
+          This {about.noun} is defined by the code in the tenant's repository, and is changed there.
+          It cannot be turned into one the console edits: its code leans on the rest of the
+          repository's, and one written here stands alone. Its source is shown read-only. To replace
+          it, make a new {about.noun} here at the same path: deployed, that takes its place, with
+          its history and what is bound to it.
         </Notice>
       ) : state === "repository" ? (
         <Notice tone="attention">

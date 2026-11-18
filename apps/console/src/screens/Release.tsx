@@ -55,6 +55,10 @@ interface Summary {
   breaking?: { path: string; message: string }[];
 }
 
+/** A draft saved more than a day ago: likely not part of what is being released now. */
+export const isOld = (row: { updatedAt: string }, now = Date.now()) =>
+  now - new Date(row.updatedAt).getTime() > 86_400_000;
+
 /** A message from the API starts in lower case, to follow a path. Alone, it is a sentence. */
 const sentence = (message: string) => `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
 
@@ -93,7 +97,7 @@ const CHANGE_TAG: Record<DraftRow["change"], [string, "draft" | "live" | "danger
     create: ["New", "live"],
     update: ["Changed", "draft"],
     delete: ["Removed", "danger"],
-    take_over: ["Taken over", "repository"],
+    take_over: ["Takes over from code", "repository"],
     rename: ["Renamed", "draft"],
   };
 
@@ -284,6 +288,8 @@ function ReviewStep({
     );
 
   const groups = [...new Set(drafts.map((row) => KIND_LABEL[row.kind] ?? row.kind))];
+  // With none chosen, every draft is deployed: one saved days ago goes with the rest.
+  const old = chosen.size === 0 && drafts.length > 1 ? drafts.filter((row) => isOld(row)) : [];
   const editLink = (row: DraftRow) =>
     row.deleted
       ? undefined
@@ -323,6 +329,16 @@ function ReviewStep({
         minSecond={300}
         first={
           <div className="flex flex-col gap-5 lg:pr-6">
+            {old.length > 0 ? (
+              <Notice tone="attention">
+                {`${old.length === 1 ? "One of these was" : `${old.length} of these were`} saved more than a day ago: ${old
+                  .slice(0, 3)
+                  .map((row) => row.path)
+                  .join(", ")}${
+                  old.length > 3 ? ` and ${old.length - 3} more` : ""
+                }. Deploying deploys every draft here. Check the ones you mean, or set aside what is no longer wanted.`}
+              </Notice>
+            ) : null}
             {groups.map((group) => (
               <section key={group} className="flex flex-col gap-2">
                 <SectionLabel>{group}</SectionLabel>
@@ -397,6 +413,14 @@ function ReviewStep({
                               </Button>
                             </span>
                           </div>
+                          {row.change === "take_over" ? (
+                            <p className="m-0 text-meta text-ink-muted">
+                              The repository's code defines this {row.kind.replaceAll("_", " ")}{" "}
+                              now. Deployed, it becomes a file the console owns, which git sync then
+                              carries. A deploy from the repository that still defines it takes it
+                              back.
+                            </p>
+                          ) : null}
                           {row.about && row.about.length > 0 ? (
                             <ul className="m-0 flex list-none flex-col gap-1 p-0 text-meta text-ink-muted">
                               {row.about.map((line) => (

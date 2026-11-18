@@ -1316,6 +1316,12 @@ export interface CompareFile {
   branch: boolean;
   /** Its resource was changed on both sides, differently: a pull would ask which to keep. */
   conflict: boolean;
+  /**
+   * What the difference is. A file only the workspace has is new here, unless the two last
+   * agreed on it: then the branch removed it. The same the other way round. `new_here` is
+   * what a resource made in the console, or taken over from the repository's code, looks like.
+   */
+  change: "new_here" | "removed_here" | "new_there" | "removed_there" | "changed";
   /** For a conflict, both versions, so they can be set side by side. */
   mine?: string | null;
   theirs?: string | null;
@@ -1373,6 +1379,16 @@ export async function compareWithBranch(
         here: here(path),
         branch: tip.exists && theirs[path] !== base[path],
         conflict,
+        change:
+          theirs[path] === undefined
+            ? base[path] === undefined
+              ? "new_here"
+              : "removed_there"
+            : mine[path] === undefined
+              ? base[path] === undefined
+                ? "new_there"
+                : "removed_here"
+              : "changed",
         ...(conflict
           ? {
               mine: mineFiles.find((file) => file.path === path)?.content ?? null,

@@ -49,6 +49,18 @@ The agent sees exactly that, and it does not change when the path does. Changing
 
 ## TypeScript or YAML
 
+A resource has one owner: the code that defines it, or a file. Which one decides who may change it.
+
+| | Defined in TypeScript | Kept as a file |
+| --- | --- | --- |
+| Changed by | Editing the code and deploying the repository | Editing the file, or editing it in the console |
+| In git sync | No. Sync never reads or writes TypeScript | Yes |
+| Right for | Tables, scripts and flows that share code | What has no code: apps, screens, themes, variables, schedules, triggers, connections |
+
+The console cannot edit TypeScript. Saving a draft of something the code defines, and deploying it, **takes it over**: it becomes a file the console owns, with the same key, history and bindings. The definition is still in your code, so the next `platform deploy` takes it back, and so on until you remove it from one side. A script the code defines cannot be taken over at all, because its code leans on the rest of yours: the console can only replace it with one written there, at the same path.
+
+Keep what the console should edit as files from the start and none of this comes up.
+
 Write resources in TypeScript when you have many, want types, or generate them with code. Write one as a file when someone will also edit it in the console.
 
 A file is `<name>.<kind>.yaml`:

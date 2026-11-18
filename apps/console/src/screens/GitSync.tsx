@@ -25,6 +25,8 @@ interface Compare {
     here: boolean;
     branch: boolean;
     conflict: boolean;
+    /** Older instances do not say. */
+    change?: "new_here" | "removed_here" | "new_there" | "removed_there" | "changed";
     mine?: string | null;
     theirs?: string | null;
   }[];
@@ -35,6 +37,22 @@ interface Status {
   branch: string | null;
   state: string | null;
   updatedAt: string | null;
+}
+
+/** What a file's difference is, in the two or three words a list has room for. */
+export function differenceLabel(file: { here: boolean; change?: string }): string {
+  switch (file.change) {
+    case "new_here":
+      return "New here";
+    case "removed_here":
+      return "Removed here";
+    case "new_there":
+      return "New there";
+    case "removed_there":
+      return "Removed there";
+    default:
+      return file.here ? "Changed here" : "Changed there";
+  }
 }
 
 /**
@@ -270,12 +288,18 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                     className="flex items-center justify-between gap-2 px-4 py-2"
                   >
                     <Mono className="truncate">{file.path}</Mono>
-                    <Tag tone={file.here ? "dev" : "neutral"}>
-                      {file.here ? "Changed here" : "Changed there"}
-                    </Tag>
+                    <Tag tone={file.here ? "dev" : "neutral"}>{differenceLabel(file)}</Tag>
                   </div>
                 ))}
               </Panel>
+              {compare.data.files.some((file) => file.change === "new_here") ? (
+                <p className="m-0 text-meta text-ink-muted">
+                  New here: a resource made in the console since the last sync, or one the
+                  repository's code defined that a draft took over. Code is not synced, so until
+                  then it had no file. A push adds the file to the branch; remove its definition
+                  from the code there, or a deploy from the repository takes it back.
+                </p>
+              ) : null}
             </section>
           ) : null}
           <KeyValues

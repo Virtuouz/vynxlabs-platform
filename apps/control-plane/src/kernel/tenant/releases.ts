@@ -15,6 +15,38 @@ import { badRequest, conflict, HttpError, notFound } from "../errors.js";
  * read back as the other writes it.
  */
 
+/**
+ * Releases that applied in a transaction that may not have committed yet, to be
+ * committed to the tenant's branch once it has. Kept by release, so that one
+ * request never takes another's before it is there to see. One that was taken
+ * back, such as a plan, is forgotten after a minute.
+ */
+const applied = new Map<
+  string,
+  { tenantId: string; number: number; message: string | null; at: number }
+>();
+
+/** The releases that have committed since they applied, each handed out once. */
+export async function takeReleased(db: Db) {
+  const ready: { tenantId: string; number: number; message: string | null }[] = [];
+  for (const [id, release] of applied) {
+    if (Date.now() - release.at > 60_000) {
+      applied.delete(id);
+      continue;
+    }
+    const there = await db
+      .selectFrom("tenant_release")
+      .select("id")
+      .where("id", "=", id)
+      .where("status", "=", "applied")
+      .executeTakeFirst();
+    if (!there) continue;
+    applied.delete(id);
+    ready.push(release);
+  }
+  return ready;
+}
+
 /** A role a tenant can never bind: it runs the instance. */
 const INSTANCE_ONLY_ROLE = "operator_admin";
 
@@ -785,6 +817,9 @@ export async function releaseAccess(
       deleted: summary.deleted,
     },
   });
+  if (steps.length > 0) {
+    applied.set(id, { tenantId, number, message: request.message ?? null, at: Date.now() });
+  }
   return { id, number, status: "applied" as const, summary };
 }
 
@@ -942,6 +977,12 @@ export async function decideRelease(
       updated: summary.updated,
       deleted: summary.deleted,
     },
+  });
+  applied.set(release.id, {
+    tenantId,
+    number: release.number,
+    message: release.message,
+    at: Date.now(),
   });
   return { id: release.id, number: release.number, status: "applied", summary };
 }

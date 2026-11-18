@@ -8,6 +8,8 @@ import {
   platformKinds,
   type ResourceFile,
   renderResourceFiles,
+  renderTenantFiles,
+  TENANT_FOLDER,
 } from "@vynxlabs/manifest";
 import type { HttpClient } from "isomorphic-git";
 import git from "isomorphic-git";
@@ -19,6 +21,7 @@ import { conflict, HttpError, notFound } from "./errors.js";
 import { decryptFor, encryptFor } from "./execution/bindings.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
+import { currentAccess } from "./tenant/releases.js";
 
 /**
  * isomorphic-git's HTTP client, through the egress guard: a repository is an
@@ -79,6 +82,8 @@ export interface RepositoryInput {
   token?: string | undefined;
   /** Where promotions are mirrored, one branch per production workspace beneath it. Null turns it off. */
   releaseBranch?: string | null | undefined;
+  /** The branch the tenant's access is committed to after each release. Null turns it off. */
+  tenantBranch?: string | null | undefined;
 }
 
 /**
@@ -401,6 +406,13 @@ export async function saveRepository(
       "The repository's address must start with https:// and carry no user name or token.",
     );
   }
+  if (input.tenantBranch && !BRANCH.test(input.tenantBranch)) {
+    throw new HttpError(
+      400,
+      "validation_failed",
+      "The branch for the tenant's access is not a branch name git accepts.",
+    );
+  }
   if (input.releaseBranch && !BRANCH.test(input.releaseBranch)) {
     throw new HttpError(
       400,
@@ -464,6 +476,7 @@ export async function saveRepository(
       credential_kind: credentialKind(token),
       verified_at: new Date(),
       ...(input.releaseBranch !== undefined ? { release_branch: input.releaseBranch } : {}),
+      ...(input.tenantBranch !== undefined ? { tenant_branch: input.tenantBranch } : {}),
       updated_at: new Date(),
     };
     const row = existing
@@ -1229,6 +1242,94 @@ export async function pushRelease(
       commit,
       detail: { release: branch, version: options.version, files: files.length },
     });
+    return { status: "done", branch };
+  } finally {
+    await rm(tip.gitdir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Commits the tenant's access, as it now is, to the tenant's branch: one file
+ * for each group, service account, role and binding, under `tenant/`. Like
+ * every commit the platform makes, it is never to the default branch: a
+ * developer merges it. A release has applied by the time this runs, and a
+ * failure here leaves it applied: the next release commits the difference.
+ */
+export async function pushTenantAccess(
+  kernel: Kernel,
+  actor: Actor,
+  tenantId: string,
+  release: { number: number; message?: string | null },
+): Promise<{
+  status: "done" | "nothing" | "failed" | "off";
+  branch: string | null;
+  problem?: string;
+}> {
+  const db = kernel.db;
+  const repository = await db
+    .selectFrom("git_repository")
+    .select(["tenant_branch", "paused"])
+    .where("tenant_id", "=", tenantId)
+    .executeTakeFirst();
+  if (!repository?.tenant_branch || repository.paused) return { status: "off", branch: null };
+  const branch = repository.tenant_branch;
+  const remote = await remoteOf(kernel, db, tenantId);
+  let tip: Tip;
+  try {
+    tip = await fetchTip(remote, branch);
+  } catch (error) {
+    return { status: "failed", branch, problem: remoteProblem(error) };
+  }
+  try {
+    const files = renderTenantFiles(await currentAccess(db, tenantId));
+    const { tree: rootTree } = await git
+      .readCommit({ fs, gitdir: tip.gitdir, oid: tip.commit })
+      .then((read) => read.commit);
+    const tree = await replaceAt(
+      tip.gitdir,
+      rootTree,
+      [TENANT_FOLDER],
+      await writeFiles(tip.gitdir, files),
+    );
+    if (tip.exists && tree === rootTree) return { status: "nothing", branch };
+    const author = await authorOf(db, actor);
+    const now = Math.floor(Date.now() / 1000);
+    const commit = await git.writeCommit({
+      fs,
+      gitdir: tip.gitdir,
+      commit: {
+        tree: tree ?? (await git.writeTree({ fs, gitdir: tip.gitdir, tree: [] })),
+        parent: [tip.commit],
+        message: `${release.message?.trim() || `Access release ${release.number}`}\n\nAccess release: ${release.number}\n`,
+        author: { ...author, timestamp: now, timezoneOffset: 0 },
+        committer: {
+          name: "Platform",
+          email: "platform@localhost",
+          timestamp: now,
+          timezoneOffset: 0,
+        },
+      },
+    });
+    await git.writeRef({
+      fs,
+      gitdir: tip.gitdir,
+      ref: `refs/heads/${branch}`,
+      value: commit,
+      force: true,
+    });
+    try {
+      await git.push({
+        fs,
+        http,
+        gitdir: tip.gitdir,
+        url: remote.url,
+        ref: branch,
+        remoteRef: `refs/heads/${branch}`,
+        onAuth: remote.onAuth,
+      });
+    } catch (error) {
+      return { status: "failed", branch, problem: remoteProblem(error) };
+    }
     return { status: "done", branch };
   } finally {
     await rm(tip.gitdir, { recursive: true, force: true });

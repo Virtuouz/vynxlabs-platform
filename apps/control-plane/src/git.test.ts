@@ -524,6 +524,57 @@ describe("safety", () => {
     expect((await alice.post(`${ws()}/git/push`, {})).status).toBe(200);
   });
 
+  test("a release of the tenant's access is committed to the tenant's branch, never the default one", async () => {
+    const main = sh(["rev-parse", "main"], bare());
+    const saved = await alice.put(`/tenants/${tenant}/git-repository`, {
+      url: repoUrl,
+      tenantBranch: "vx/access",
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.tenantBranch).toBe("vx/access");
+
+    const made = await alice.post(`/tenants/${tenant}/groups`, {
+      name: "Tech Desk",
+      description: "Lends devices.",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    // The commit is made once the change is in the database, a moment after the answer.
+    const branchFile = async () => {
+      for (let tries = 0; tries < 100; tries++) {
+        try {
+          return sh(["show", "vx/access:tenant/groups/tech-desk.group.yaml"], bare());
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+      throw new Error("The tenant's access was not committed.");
+    };
+    expect(await branchFile()).toBe(
+      ["title: Tech Desk", "schemaVersion: 1", "body:", "  description: Lends devices."].join("\n"),
+    );
+    expect(sh(["log", "-1", "--format=%s%n%an", "vx/access"], bare())).toBe(
+      "Made the group Tech Desk\nAlice Admin",
+    );
+    // The default branch is where it was: a developer merges the tenant's branch.
+    expect(sh(["rev-parse", "main"], bare())).toBe(main);
+    // What a developer keeps beside it on that branch is untouched by the next commit.
+    expect(
+      (await alice.patch(`/tenants/${tenant}/groups/${made.body.id}`, { name: "IT Service Desk" }))
+        .status,
+    ).toBe(200);
+    for (let tries = 0; tries < 100; tries++) {
+      if (
+        sh(["show", "vx/access:tenant/groups/tech-desk.group.yaml"], bare()).includes("IT Service")
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(sh(["show", "vx/access:tenant/groups/tech-desk.group.yaml"], bare())).toContain(
+      "title: IT Service Desk",
+    );
+    expect(sh(["rev-list", "--count", `${main}..vx/access`], bare())).toBe("2");
+  });
+
   test("every push and pull is recorded, and the token is in none of it", async () => {
     const operations = (await alice.get(`${ws()}/git/operations`)).body.items as {
       kind: string;

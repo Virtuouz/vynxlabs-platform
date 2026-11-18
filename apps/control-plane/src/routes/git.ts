@@ -40,6 +40,10 @@ const Repository = Type.Object({
     description:
       "Each promotion commits what production runs to `<releaseBranch>/<workspace>`. Null: off.",
   }),
+  tenantBranch: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "Each release of the tenant's access commits it to this branch, under `tenant/`. Never the default branch: a developer merges it. Null: off.",
+  }),
   ...CredentialSet,
 });
 const State = Type.Union(
@@ -79,6 +83,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verified_at?: Date | null;
       credential_kind?: string;
       release_branch?: string | null;
+      tenant_branch?: string | null;
     }) => ({
       url: row.url,
       defaultBranch: row.default_branch,
@@ -87,6 +92,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verifiedAt: row.verified_at ? iso(row.verified_at) : null,
       credentialKind: row.credential_kind ?? "token",
       releaseBranch: row.release_branch ?? null,
+      tenantBranch: row.tenant_branch ?? null,
     });
     /** The repository as the API shows it, with when and by whom its token was set. */
     const repositoryOf = async (tenantId: string, row: Parameters<typeof toRepository>[0]) => {
@@ -132,6 +138,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "verified_at",
             "credential_kind",
             "release_branch",
+            "tenant_branch",
           ])
           .where("tenant_id", "=", params.t)
           .executeTakeFirst();
@@ -160,6 +167,9 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             username: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
             token: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
             releaseBranch: Type.Optional(
+              Type.Union([Type.String({ minLength: 1, maxLength: 150 }), Type.Null()]),
+            ),
+            tenantBranch: Type.Optional(
               Type.Union([Type.String({ minLength: 1, maxLength: 150 }), Type.Null()]),
             ),
           }),

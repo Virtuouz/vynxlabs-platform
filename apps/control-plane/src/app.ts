@@ -9,10 +9,13 @@ import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
 import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
+import { SYSTEM } from "./kernel/audit.js";
 import { closeAllSources } from "./kernel/data/sources.js";
+import { pushTenantAccess } from "./kernel/git.js";
 import { access, installAccessControl } from "./kernel/http.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { postgresRateLimitStore } from "./kernel/ratelimit.js";
+import { takeReleased } from "./kernel/tenant/releases.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
 import { accessReleaseRoutes } from "./routes/access-releases.js";
@@ -102,6 +105,30 @@ export async function buildApp(options: AppOptions) {
     app.log,
   );
   app.decorate("kernel", kernel);
+  // A release of a tenant's access is committed to the tenant's branch once it is in the
+  // database. It has applied already: a push that fails is logged, and the next one carries it.
+  app.addHook("onResponse", async (request) => {
+    if (request.method === "GET") return;
+    for (const release of await takeReleased(kernel.db)) {
+      void pushTenantAccess(
+        kernel,
+        request.ctx?.actor ?? { principal: SYSTEM },
+        release.tenantId,
+        release,
+      )
+        .then((pushed) => {
+          if (pushed.status === "failed") {
+            kernel.log.warn(
+              { tenantId: release.tenantId, problem: pushed.problem },
+              "the tenant's access could not be committed to its branch",
+            );
+          }
+        })
+        .catch((error) =>
+          kernel.log.error({ err: error }, "the tenant's access could not be committed"),
+        );
+    }
+  });
   app.addHook("onClose", () => kernel.expressions.close());
   app.addHook("onClose", () => closeAllSources());
   app.addHook("onClose", () => kernel.data.close());

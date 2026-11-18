@@ -367,6 +367,9 @@ describe("a resource moved to another path", () => {
     const back = await alice.post(`${ws(dev)}/deployments`, { bundleId: first.id });
     expect(back.status, JSON.stringify(back.body)).toBe(201);
     expect(back.body.summary).toMatchObject({ renamed: 3, created: 0, deleted: 0 });
+    // Each path it takes back was its own alias: nothing that called it there is cut off.
+    expect(back.body.summary.aliasesRemoved).toEqual([]);
+    expect(back.body.summary.breaking).toEqual([]);
     expect((await resource(dev, "requests/submit")).id).toBe(submit.id);
     expect(
       (await alice.get(`${ws(dev)}/rows/items`)).body.items.map((row: Any) => row.name),
@@ -587,6 +590,17 @@ describe("the name of an agent's tool", () => {
     expect(refused.status).toBe(400);
     expect(JSON.stringify(refused.body.errors)).toContain(
       'its tool would be called \\"submit_request\\", which is the name of the tool for',
+    );
+    // Two paths that make one name: an agent would be offered one tool and never reach the other.
+    const alike = bundle([
+      ...named("submit_request").manifests,
+      script("desk/look-up", {}),
+      script("desk/look_up", {}),
+    ]);
+    const unclear = await deploy(dev, alike);
+    expect(unclear.status).toBe(400);
+    expect(JSON.stringify(unclear.body.errors)).toContain(
+      'its tool would be called \\"run_desk__look_up\\", as the tool for desk/look-up is',
     );
     const reserved = await deploy(dev, named("get_run"));
     expect(reserved.status).toBe(400);

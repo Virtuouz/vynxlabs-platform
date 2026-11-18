@@ -104,10 +104,13 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     const name = toolNameOf(manifest);
     if (name === undefined) continue;
     const other = tools.get(name);
-    // Two names made from paths that collide were always possible, and are left as they were.
-    if (other && (manifest.mcp !== undefined || other.mcp !== undefined)) {
+    // Two paths can make one name: "-" and "_" are written alike, and a long name is cut
+    // short. An agent would then be offered one tool, and never reach the other.
+    if (other) {
       problems.push(
-        `${manifest.path} (${manifest.kind}): its tool would be called "${name}", which is the name of the tool for ${other.path}. Give one of them another mcp.name.`,
+        manifest.mcp === undefined && other.mcp === undefined
+          ? `${manifest.path} (${manifest.kind}): its tool would be called "${name}", as the tool for ${other.path} is: a tool's name is made from the path, with "-" written as "_" and cut at 64 characters. Give one of them an mcp.name, or another path.`
+          : `${manifest.path} (${manifest.kind}): its tool would be called "${name}", which is the name of the tool for ${other.path}. Give one of them another mcp.name.`,
       );
     }
     if (!other) tools.set(name, manifest);

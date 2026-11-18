@@ -191,6 +191,28 @@ describe("connecting a repository", () => {
     expect(wrong.body.detail).toContain("refused the access token");
     expect((await alice.get(`/tenants/${tenant}/git-repository`)).body.repository).toBeNull();
 
+    // A repository that was just made holds nothing to start a branch from, and one whose
+    // default branch goes by another name is told its branches.
+    sh(["init", "-q", "--bare", "-b", "main", "empty.git"], scratch);
+    const empty = await alice.put(`/tenants/${tenant}/git-repository`, {
+      url: repoUrl.replace("repo.git", "empty.git"),
+      token: TOKEN,
+    });
+    expect(empty.status).toBe(409);
+    expect(empty.body.detail).toBe(
+      "The repository is empty. Make a first commit on main there (a README will do), then try again: each workspace's branch starts from it.",
+    );
+    const misnamed = await alice.put(`/tenants/${tenant}/git-repository`, {
+      url: repoUrl,
+      token: TOKEN,
+      defaultBranch: "trunk",
+    });
+    expect(misnamed.status).toBe(409);
+    expect(misnamed.body.detail).toBe(
+      "The repository has no branch called trunk. It has main: give one of them as the default branch.",
+    );
+    expect((await alice.get(`/tenants/${tenant}/git-repository`)).body.repository).toBeNull();
+
     const insecure = await alice.put(`/tenants/${tenant}/git-repository`, {
       url: "http://example.com/acme/repo.git",
       token: TOKEN,

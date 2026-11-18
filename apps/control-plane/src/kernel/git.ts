@@ -170,6 +170,14 @@ function remoteProblem(error: unknown): string {
   if (failure.code === "HttpError" && failure.data?.statusCode === 404) {
     return "The repository was not found at that address, or the access token cannot see it.";
   }
+  if (failure.code === "NoStartingBranch") {
+    const { branch, branches } = (error as { data: { branch: string; branches: string[] } }).data;
+    if (branches.length === 0) {
+      return `The repository is empty. Make a first commit on ${branch} there (a README will do), then try again: each workspace's branch starts from it.`;
+    }
+    const some = branches.slice(0, 5).join(", ");
+    return `The repository has no branch called ${branch}. It has ${some}${branches.length > 5 ? " and others" : ""}: give one of them as the default branch.`;
+  }
   if (failure.code === "NotFoundError") return "The branch was not found in the repository.";
   if (failure.code === "PushRejectedError") {
     return "The repository refused the push. The branch may be protected, or it moved.";
@@ -210,9 +218,26 @@ async function fetchTip(remote: Remote, branch: string): Promise<Tip> {
     } catch (error) {
       if ((error as { code?: string }).code !== "NotFoundError") throw error;
     }
-    const fallback = await fetch(remote.defaultBranch);
-    if (!fallback.fetchHead) throw Object.assign(new Error("empty"), { code: "NotFoundError" });
-    return { gitdir, commit: fallback.fetchHead, exists: false };
+    try {
+      const fallback = await fetch(remote.defaultBranch);
+      if (fallback.fetchHead) return { gitdir, commit: fallback.fetchHead, exists: false };
+    } catch (error) {
+      if ((error as { code?: string }).code !== "NotFoundError") throw error;
+    }
+    // Neither is there. Say which of the two usual reasons it is: a repository that was
+    // just made and holds nothing yet, or a default branch that goes by another name.
+    const branches = (
+      await git.listServerRefs({
+        http,
+        url: remote.url,
+        prefix: "refs/heads/",
+        onAuth: remote.onAuth,
+      })
+    ).map((ref) => ref.ref.replace(/^refs\/heads\//, ""));
+    throw Object.assign(new Error("no branch to start from"), {
+      code: "NoStartingBranch",
+      data: { branch: remote.defaultBranch, branches },
+    });
   } catch (error) {
     await rm(gitdir, { recursive: true, force: true });
     throw error;

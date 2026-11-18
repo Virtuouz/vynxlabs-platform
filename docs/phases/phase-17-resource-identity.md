@@ -332,5 +332,19 @@ On 2026-11-18 the branch's image was deployed to the test instance, the only ins
 
 **Also found:** the CLI read only the first 200 tenants when looking one up by slug, so an operator of an instance with more could be told they had no access to a tenant they had. It reads every page now. This is not covered by a test.
 
-**Not done:** git sync against a hosted repository. The tests, in the browser too, use a real git server over HTTP on the same machine.
+**Git sync against a hosted repository** was run on 2026-11-18, from the image on a developer's machine against a new public repository on GitHub, with a file written by hand under `src/` and `roots: [src]`:
+
+- the first push made the workspace's branch with the console's script under `platform/`, left the file under `src/` alone, and answered `behind`; the pull that followed brought that file in;
+- a value changed in the console was one line changed on GitHub, with the file's comments, blank line and trailing comment as written;
+- a developer's commit was pulled; a change on both sides refused the push as behind and the pull as a conflict, the comparison showed both versions, and keeping the workspace's then pushed it;
+- a rename in the console was a rename on GitHub (`limit.variable.yaml` to `cap.variable.yaml`, with `key:` and the heading comment kept); a delete removed both files of the script;
+- a promotion made `release/main` with what production runs;
+- each commit is authored by the person who asked and committed by "Platform".
+
+Two things it showed:
+
+- **A repository that was just made could not be connected, and was told "The branch was not found".** It is now told that it is empty and to make a first commit on the default branch, and a default branch that goes by another name is told the branches there are. Starting a branch in an empty repository is not built.
+- **A pull before the workspace's branch exists takes nothing**, though the default branch may hold resource files. The first push makes the branch and answers `behind`, and the pull after it brings them in. This is as designed, and is one step more than it could be.
+
+A file on a release branch keeps the comments that branch had, which came from the default branch, not the ones the workspace's branch has.
 

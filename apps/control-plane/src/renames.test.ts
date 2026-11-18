@@ -224,6 +224,55 @@ describe("a resource moved to another path", () => {
     expect(deployed.body.summary.warnings).toEqual([]);
   });
 
+  test("a run that was going when its resources were renamed still reaches them by the paths it knows", async () => {
+    // The run was started under the earlier bundle and is pinned to it: its code asks for
+    // the connection "api" and the table "items", which are lending/api and lending/items now.
+    const credential = await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "w" });
+    const headers = { authorization: `Bearer ${credential.body.token}` };
+    const claim = await t.app.inject({
+      method: "POST",
+      url: "/api/v1/worker/claim",
+      headers,
+      payload: { workerId: "018f0000-0000-7000-8000-000000000001", waitSeconds: 0 },
+    });
+    expect(claim.json().job.runId ?? claim.json().job.id, claim.body).toBe(run);
+    const connection = await t.app.inject({
+      method: "GET",
+      url: `/api/v1/worker/runs/${run}/connections/api?attempt=1`,
+      headers,
+    });
+    expect(connection.statusCode, connection.body).toBe(200);
+    expect(connection.json().config).toEqual({ baseUrl: "http://api.test" });
+    const rows = await t.app.inject({
+      method: "POST",
+      url: `/api/v1/worker/runs/${run}/data`,
+      headers,
+      payload: { attempt: 1, table: "items", op: "find" },
+    });
+    expect(rows.statusCode, rows.body).toBe(200);
+    expect(rows.json().result.items.map((row: Any) => row.name)).toEqual(["kept"]);
+    const value = await t.app.inject({
+      method: "GET",
+      url: `/api/v1/worker/runs/${run}/variables/limits/size?attempt=1`,
+      headers,
+    });
+    expect(value.json()).toEqual({ value: "40" });
+    // What it never declared is still not its to read, by either path.
+    const other = await t.app.inject({
+      method: "GET",
+      url: `/api/v1/worker/runs/${run}/connections/lending/api?attempt=1`,
+      headers,
+    });
+    expect(other.statusCode).toBe(403);
+    // Reaching them this way counts as a use of the old paths. The tests after this one
+    // look at who used them, so that is put back.
+    await t.db
+      .updateTable("resource_alias")
+      .set({ last_used_at: null })
+      .where("workspace_id", "=", dev)
+      .execute();
+  });
+
   test("the path it had still answers, says it is on its way out, and names the new one", async () => {
     const alias = await t.db
       .selectFrom("resource_alias")
@@ -387,6 +436,31 @@ describe("a resource moved to another path", () => {
       "lending/items",
       "lending/requests/file",
     ]);
+  });
+});
+
+describe("an event that was renamed", () => {
+  test("is still published by the name it had, and goes out under the one it has now", async () => {
+    const event = (path: string, key?: string) =>
+      manifest("event", path, { payload: { type: "object" } }, key);
+    const with_ = (one: BundleManifest) => bundle([...before.manifests, one]);
+    expect((await deploy(dev, with_(event("orders/placed")))).status).toBe(201);
+    const renamed = await deploy(dev, with_(event("sales/placed", "orders/placed")));
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(201);
+    expect(renamed.body.summary).toMatchObject({ renamed: 1 });
+
+    const published = await alice.post(`${ws(dev)}/events`, { name: "orders/placed", payload: {} });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    const stored = await t.db
+      .selectFrom("event")
+      .select("name")
+      .where("id", "=", published.body.id)
+      .executeTakeFirstOrThrow();
+    expect(stored.name).toBe("sales/placed");
+    expect((await alice.post(`${ws(dev)}/events`, { name: "orders/gone", payload: {} })).status).toBe(
+      404,
+    );
+    expect((await deploy(dev, before)).status).toBe(201);
   });
 });
 

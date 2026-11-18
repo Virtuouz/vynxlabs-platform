@@ -69,6 +69,22 @@ export async function resolveResource(
   };
 }
 
+/**
+ * The path a resource of a kind has now, for a path that code knows it by. A run is
+ * pinned to the bundle it started under, so a script that was already going when a
+ * variable, a connection, an event or a table was renamed still asks for the old path.
+ * What was set for the resource moved with it: this is where to look. A path nothing
+ * answers for comes back as it was, for the caller to say it is not there.
+ */
+export async function pathNow(
+  db: Db | Trx,
+  workspaceId: string,
+  path: string,
+  kind: string,
+): Promise<string> {
+  return (await resolveResource(db, workspaceId, path, { kind }))?.resource.path ?? path;
+}
+
 /** The alias at a path, if one is there and has not expired. */
 export async function findAlias(
   db: Db | Trx,

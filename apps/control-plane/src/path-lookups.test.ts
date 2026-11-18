@@ -23,7 +23,6 @@ const ALLOWED: Record<string, number> = {
   "kernel/authoring.ts": 2,
   "kernel/execution/runs.ts": 1,
   "kernel/execution/triggers.ts": 2,
-  "kernel/flows/events.ts": 1,
   "kernel/resolve.ts": 1,
   "kernel/resources.ts": 4,
   "routes/apps.ts": 2,

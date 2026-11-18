@@ -8,6 +8,7 @@ import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
+import { AccessReleases } from "./AccessReleases.tsx";
 import { GiveAccess } from "./GiveAccess.tsx";
 import { Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
@@ -18,6 +19,7 @@ export const ACCESS_TABS = [
   { slug: "groups", label: "Groups" },
   { slug: "roles", label: "Roles" },
   { slug: "access", label: "Access grants" },
+  { slug: "releases", label: "Releases" },
 ] as const;
 export type AccessTab = (typeof ACCESS_TABS)[number]["slug"];
 
@@ -71,6 +73,7 @@ export function MembersAndAccess({
   if (tab === "groups") return <Groups base={base} framed={framed} />;
   if (tab === "roles") return <Roles base={base} framed={framed} />;
   if (tab === "access") return <AccessList base={base} framed={framed} />;
+  if (tab === "releases") return <AccessReleases base={base} framed={framed} />;
   return <MemberList base={base} framed={framed} />;
 }
 

@@ -1,6 +1,6 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0, M1 and M2 built. Not pushed.
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M3 built. Not pushed.
 Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
@@ -149,6 +149,55 @@ A rename alone is not breaking: the alias keeps the old name answering.
 - **Removing a script counts as breaking**, which the record did not list. An agent that calls a tool that is gone fails the same way as one that calls a renamed one.
 - **Only a promotion to production asks.** A direct deploy to a production workspace, and any deploy to dev, list `breaking` and go ahead.
 - **The settings page's older promote dialog** lists what breaks and sends the confirmation with its Promote button. It has no separate question, and cannot allow a refused deletion: the release screen does both.
+
+## M3: tenant resources and tenant releases
+
+**Keys.** Migration 0071 gives a member group, a group of end users and a service account a `key`, made from its name: lower case, anything that is not a letter or a digit turned into a hyphen, a number after it where two would be the same. A row made without one, as a directory makes them, is given one by a trigger. The name stays what people read, and can now change.
+
+**A tenant's access as resources** (`packages/manifest/src/tenant.ts`).
+
+| Kind | Key | Body |
+| --- | --- | --- |
+| `tenant_role` | the role's name | `description`, `permissions` |
+| `group`, `end_user_group` | its key | `title`, `description`, `membership.sso.values` |
+| `service_account` | its key | `title`, `description` |
+| `tenant_binding` | a name for the file | `role`, `principal { type, key }`, `workspace` |
+
+Each is one file, `<key>.<kind>.yaml`, with the title beside the body. A file's key is its name unless it says `key:`. Where it is kept is the repository's business: the CLI finds the files by name.
+
+**A release** (`kernel/tenant/releases.ts`) sets what is asked for against what the tenant has and changes the difference in one transaction.
+- `POST …/access/plan` carries the release out and takes it back, so it says exactly what a release would do or why it would be refused.
+- `POST …/access/releases` releases a whole set. What the set lacks is removed only when allowed by name (`delete_not_allowed`).
+- A group or a service account that a workspace's bundle still gives access to is not removed (`principal_in_use`).
+- `POST …/releases/:id/rollback` releases what an earlier release left.
+- `GET …/access` gives the tenant's access as resources and as files.
+- Needs `access:read` and `access:write`. The second was given to every role that could already change groups, service accounts or roles.
+
+**Approval.** `PUT …/access/approval` turns it on, and needs two members who may release. A release then waits, 202, until someone other than its author approves it. If the tenant's access changed since it was asked for, approving is refused as stale.
+
+**The console's and the API's changes are releases of one change.** Making, renaming and deleting a group, a service account and a tenant role, making and deleting a group of end users, and giving a role to or taking one from a group or a service account each go through `releaseOne`. They are in the same history and wait the same way. What a person is given, and anything given at one resource, is still done at once.
+
+**A workspace's binding names a principal by key.** `{ type: "group", key: "tech-desk" }`. By name it still works, and each deploy says the key to use. A key nobody has fails the deploy with the file to add and the command to run. A binding whose row was lost is applied again by the next deploy, though its definition did not change.
+
+**Identity providers.** A group a directory pushed is marked as the provider's: it has a key, is left out of what the tenant releases, and no release removes it. What a release said about group membership is kept on the group and given to a provider made later. Mapping claim values by hand replaces only what was mapped by hand.
+
+**Git.** With `tenantBranch` set on the tenant's repository, every release that changed something is committed there, under `tenant/`, authored by whoever made it. Never the default branch.
+
+**CLI.** `platform tenant plan | release | pull | releases | approve | decline | withdraw | rollback`.
+
+**Console.** Members & access has a Releases tab: what each release did, who made and who answered it, Approve, Decline and Withdraw on one that waits, "Go back to this", and the switch for asking a second person. Groups show their key and can be renamed. A change that waits is told to whoever made it where a failure would be.
+
+### Findings
+
+- **No second registry was built.** The plan had `tenant_resource` and `tenant_resource_version` tables with a hook per kind projecting onto the tables access is checked by. Instead those tables are the registry: a release reads the tenant's access from them and writes the difference to them, and keeps what it asked for and what the set was afterwards. One place holds the truth, the console and a repository cannot disagree about it, and going back restores a release's snapshot. What is lost is a version number per group.
+- **A binding has no key of its own.** It is what it gives to whom, and where. Two files that say the same binding are one binding, and `pull` writes a binding into the file that already says it.
+- **`membership.sso` has no provider and no claim.** The values apply to every provider of the tenant that signs that kind of person in, read from the claim that provider is set up with. Group maps are per provider, and a repository should not need a provider's ID.
+- **Not built: `identity_mapping`** (claim to end-user attribute) and the optional `attribute` kind. A provider's attribute map is still set on the provider. The device-lending example keeps that one step in the console, beside making the provider itself, which needs its secret.
+- **The role a group is given through the console is a release only when the role is the tenant's or a built-in one.** A role one workspace defines is that workspace's to give, and such a binding is made at once.
+- **Renaming a group changes what a row rule and a flow's approvers match until M4**, since both still go by name.
+- **The console cannot set `tenantBranch`.** It has no control for `releaseBranch` either: both are set through `PUT …/git-repository`.
+- **Deleting a role that is still bound answers as before** (409, "still bound"), and deleting a group no longer removes access a bundle gave it.
+- **I overwrote `routes/access.ts` while adding the release routes**, which already held the routes that explain why someone has the access they have. It was restored from git before anything was committed, and the new routes are in `routes/access-releases.ts`.
 
 ## What was run, and what was not
 

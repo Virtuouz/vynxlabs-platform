@@ -1,10 +1,10 @@
 import { Button, ComboboxField, Dialog, EmptyState, Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText, notify } from "../ask.tsx";
+import { ask, failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
-import { Mono } from "../kit/status.tsx";
+import { Code, Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
@@ -138,16 +138,24 @@ function MembersDialog({
   );
 }
 
+interface MemberGroup {
+  id: string;
+  /** What code and a repository name it by. It never changes. */
+  key: string;
+  name: string;
+  description: string;
+  managedBy: string;
+  createdAt: string;
+}
+
 /** Groups of members: staff who are given access together. */
 export function Groups({ base, framed }: { base: string; framed?: Framed }) {
-  const groups = useLoad<{ items: { id: string; name: string; createdAt: string }[] }>(
-    `${base}/groups`,
-  );
+  const groups = useLoad<{ items: MemberGroup[] }>(`${base}/groups`);
   const [open, setOpen] = useState<{ id: string; name: string }>();
   const [creating, setCreating] = useState(false);
   return (
     <>
-      <CollectionView<{ id: string; name: string; createdAt: string }>
+      <CollectionView<MemberGroup>
         title={framed?.title ?? "Groups"}
         description="A group is a set of members that can be given access together. Give a group a role under Access grants."
         actions={
@@ -162,7 +170,27 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
         onRetry={groups.reload}
         rowKey={(row) => row.id}
         columns={[
-          { header: "Name", cell: (row) => <span className="font-medium">{row.name}</span> },
+          {
+            header: "Name",
+            cell: (row) => (
+              <span className="flex flex-col">
+                <span className="font-medium">{row.name}</span>
+                {row.description ? (
+                  <span className="text-meta text-ink-muted">{row.description}</span>
+                ) : null}
+              </span>
+            ),
+          },
+          {
+            header: "Key",
+            priority: 2,
+            cell: (row) => (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <Code>{row.key}</Code>
+                {row.managedBy === "provider" ? <Tag tone="neutral">Identity provider</Tag> : null}
+              </span>
+            ),
+          },
           {
             header: "Created",
             priority: 2,
@@ -175,6 +203,28 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
               <span className="inline-flex gap-1">
                 <Button size="small" onClick={() => setOpen(row)}>
                   Members
+                </Button>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    const name = await ask.prompt({
+                      title: `Rename ${row.name}`,
+                      text: `Its key, ${row.key}, stays: access given to it, and code that names it by key, is not touched.`,
+                      label: "Name",
+                      initial: row.name,
+                      action: "Rename",
+                    });
+                    if (!name || name === row.name) return;
+                    try {
+                      await api.patch(`${base}/groups/${row.id}`, { name });
+                      groups.reload();
+                    } catch (error) {
+                      notify.error(failureText(error));
+                    }
+                  }}
+                  disabled={row.managedBy === "provider"}
+                >
+                  Rename
                 </Button>
                 <RemoveButton
                   label="Delete"

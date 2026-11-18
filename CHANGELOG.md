@@ -12,6 +12,13 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Resources answer with `key` and `title`.**
 - **A change to the name of an agent's tool is named, and promoting it to production is confirmed.** A deploy's summary has `breaking`. Promoting one to a production workspace without `confirmBreaking: true` answers 409 `breaking_changes`; the preview lists them. The console asks; `platform promote` takes `--confirm-breaking`.
 - **The release screen can allow a deletion the rename guard refused**, after asking.
+- **Database migrations 0071 and 0072.** Member groups, groups of end users and service accounts get a `key`, made from their name. `tenant_release` records each change to a tenant's access. Roles that could change groups, service accounts or roles are given the new `access:write`.
+- **A tenant's access is released.** `GET …/access` reads a tenant's groups, service accounts, own roles and what they are given as resources and files. `POST …/access/plan` says what releasing a set would change, `POST …/access/releases` does it, and `…/releases/:id/rollback` goes back. See the phase document for the refusals.
+- **Optional approval by a second person.** `PUT …/access/approval`. With it on, a release, and every change to a group, a service account, a tenant role or what one is given made in the console or the API, answers 202 and waits. Routes that used to answer 201 or 204 can now answer 202: `{ waiting: true, release, detail }`.
+- **Groups and service accounts can be renamed** (`PATCH …/groups/:g`, `PATCH …/service-accounts/:id` with `name`). The key stays.
+- **Deleting a group or a service account is refused while a workspace's bundle still gives it access** (`principal_in_use`). It used to remove that access without a word.
+- **`tenantBranch`** on `PUT …/git-repository`: each release of the tenant's access is committed to that branch, under `tenant/`.
+- **A group pushed by a directory is marked as the provider's** (`managedBy: "provider"`), and no release removes it.
 - **A deploy that looks like a rename done wrong is refused.** Deleting a script or flow with runs, a table with rows, or anything with access given to it by hand, while creating another of the same kind, answers 409 `rename_suspected` and names each path and what it holds. `allowDelete` (a list of paths) lets it through, on `POST …/deployments`, `POST …/promotions`, a promotion request's decision and `POST …/git/pull`; the promotion preview takes `?allowDelete=a,b`. Deleting a resource in the console is not affected.
 
 ### For tenant developers
@@ -24,6 +31,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **A reference written as text may name a moved resource by its key.** `script: "requests/submit"` keeps building after the move and the build notes the new path. A reference made by passing the definition needs nothing.
 - **Bundle format 4** carries `key` and `title`. The CLI writes it only when a resource says one, so a repository that says none still deploys to an older instance. See `docs/contracts/bundle.md`.
 - A schedule that starts a flow that is not in the repository now fails the build.
+- **A repository can bring up its tenant's access.** Files named `<key>.<kind>.yaml`, kept anywhere in the repository, for `group`, `end_user_group`, `service_account`, `tenant_role` and `tenant_binding`. `platform tenant plan --tenant <slug>` says what a release would change, `platform tenant release` does it, and `platform tenant pull` writes what the tenant has now.
+- **Name a group or a service account by key in a binding:** `principal: { type: "group", key: "tech-desk" }`. A binding by `name` still works, and each deploy tells you the key. A key nobody has fails the deploy and names the file to add.
 - **Choose the name of an agent's tool.** `defineScript({ …, mcp: { name: "submit_device_request" } })`, and the same on `defineFlow`. The agent sees exactly that, and it no longer changes when the path does. Without it the name is made from the path as before (`run_requests__submit`), and after a rename the old name keeps working for 90 days. Choosing a name for a script that already has a tool changes that tool's name at once: the deploy says so.
 
 ## Unreleased: phase 16, visual refinement

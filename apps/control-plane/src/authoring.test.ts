@@ -527,6 +527,61 @@ describe("deploying drafts", () => {
     expect(after["orders/second"]).toBeUndefined();
     expect(after["orders/hello"]).toBe("ui");
   });
+
+  test("a resource is renamed in the console, and is the same resource at its new path", async () => {
+    const before = (await alice.get(`${ws()}/resources/orders/hello`)).body;
+    const body = scriptBody("export default async () => ({ hello: 'changed' });\n");
+    const renamed = await alice.put(`${ws()}/drafts/orders/hello`, {
+      kind: "script",
+      schemaVersion: 1,
+      body,
+      path: "greetings/hello",
+      title: "Say hello",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body).toMatchObject({
+      path: "greetings/hello",
+      key: "orders/hello",
+      title: "Say hello",
+      change: "rename",
+      renamedFrom: "orders/hello",
+    });
+    // The draft is at the path the resource is to have. What runs has not moved yet.
+    expect((await alice.get(`${ws()}/drafts/orders/hello`)).status).toBe(404);
+    expect((await alice.get(`${ws()}/drafts/greetings/hello`)).body.change).toBe("rename");
+    expect((await alice.get(`${ws()}/resources/orders/hello`)).body.path).toBe("orders/hello");
+
+    // A path that something else has is not taken.
+    await draft("orders/other", scriptBody("export default async () => ({});\n"));
+    const taken = await alice.put(`${ws()}/drafts/orders/other`, {
+      kind: "script",
+      schemaVersion: 1,
+      body,
+      path: "greetings/hello",
+    });
+    expect(taken.status).toBe(409);
+    expect(taken.body.code).toBe("path_taken");
+    expect((await alice.delete(`${ws()}/drafts/orders/other`)).status).toBeLessThan(300);
+
+    const preview = (await alice.get(`${ws()}/changes/preview`)).body;
+    expect(preview.summary).toMatchObject({ renamed: 1, created: 0, deleted: 0 });
+    const deployed = await alice.post(`${ws()}/changes/deploy`, { message: "Move the greeting" });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.summary.changes).toEqual([
+      { change: "renamed", kind: "script", path: "greetings/hello", from: "orders/hello" },
+    ]);
+    const after = (await alice.get(`${ws()}/resources/greetings/hello`)).body;
+    expect(after).toMatchObject({
+      id: before.id,
+      key: "orders/hello",
+      path: "greetings/hello",
+      title: "Say hello",
+    });
+    // Its code runs at the new path, and still answers at the old one for a while.
+    expect((await run("greetings/hello")).output).toEqual({ hello: "changed" });
+    expect((await run("orders/hello")).output).toEqual({ hello: "changed" });
+    expect((await alice.get(`${ws()}/drafts`)).body.items).toEqual([]);
+  });
 });
 
 describe("flows drawn in the console", () => {

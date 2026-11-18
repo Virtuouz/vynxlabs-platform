@@ -6,6 +6,7 @@ import {
   type BundleManifest,
   CORE_PREFIX,
   entryFor,
+  keyOf,
   validateJson,
 } from "@vynxlabs/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@vynxlabs/sdk";
@@ -42,6 +43,13 @@ export interface DraftInput {
   deleted?: boolean | undefined;
   /** The revision the draft was at when it was opened. A save from an older one is refused. */
   revision?: number | undefined;
+  /**
+   * The path the resource is to have once this is deployed, when that is not the path it
+   * has: a rename. The draft is then at that path, and the resource keeps its key.
+   */
+  moveTo?: string | undefined;
+  /** What people read. Null takes it away. Left as it is when not given. */
+  title?: string | null | undefined;
 }
 
 /** Drafts are for dev workspaces: production changes by deploy and promotion only. */
@@ -113,6 +121,38 @@ export async function saveDraft(
     .executeTakeFirst();
   // The draft is of the resource at its path, or of a new one that takes the path as its key.
   const key = existing?.key ?? resource?.key ?? input.path;
+  // A rename: the draft moves to the path the resource is to have. Nothing else may be there.
+  const path = input.moveTo ?? input.path;
+  if (path !== input.path) {
+    if (path.startsWith(CORE_PREFIX)) {
+      throw badRequest("The manifest is not valid.", [
+        {
+          path: "/path",
+          message: `paths under ${CORE_PREFIX} are kept for the platform's own nodes`,
+        },
+      ]);
+    }
+    const there =
+      (await trx
+        .selectFrom("resource")
+        .select(["kind", "key"])
+        .where("workspace_id", "=", workspace.id)
+        .where("path", "=", path)
+        .executeTakeFirst()) ??
+      (await trx
+        .selectFrom("resource_draft")
+        .select(["kind", "key"])
+        .where("workspace_id", "=", workspace.id)
+        .where("path", "=", path)
+        .executeTakeFirst());
+    if (there && there.key !== key) {
+      throw new HttpError(
+        409,
+        "path_taken",
+        `${path} is the path of ${/^[aeiou]/.test(there.kind) ? "an" : "a"} ${there.kind.replaceAll("_", " ")}. Choose another, or rename that one first.`,
+      );
+    }
+  }
   // Code is named in the bundle by the key, so that a rename leaves it as it is.
   const body = isCodeKind(input.kind)
     ? { ...input.body, entry: entryFor(input.kind, key) }
@@ -126,7 +166,7 @@ export async function saveDraft(
     const validation = kernel.kinds.validateManifest({
       kind: input.kind,
       schemaVersion: input.schemaVersion,
-      path: input.path,
+      path,
       workspace: workspace.slug,
       ownership: "ui",
       body,
@@ -154,6 +194,8 @@ export async function saveDraft(
   const values = {
     kind: input.kind,
     schema_version: input.schemaVersion,
+    path,
+    ...(input.title !== undefined ? { title: input.title } : {}),
     body: JSON.stringify(body),
     deleted: input.deleted === true,
     updated_by_type: principal.type,
@@ -176,7 +218,6 @@ export async function saveDraft(
           tenant_id: workspace.tenantId,
           workspace_id: workspace.id,
           key,
-          path: input.path,
           ...values,
         })
         .returningAll()
@@ -188,7 +229,12 @@ export async function saveDraft(
     tenantId: workspace.tenantId,
     workspaceId: workspace.id,
     // The source is not copied into the audit log: the draft and then the bundle hold it.
-    details: { kind: input.kind, revision: row.revision, deleted: row.deleted },
+    details: {
+      kind: input.kind,
+      revision: row.revision,
+      deleted: row.deleted,
+      ...(path !== input.path ? { renamedFrom: input.path } : {}),
+    },
   });
   return { draft: row, takesOver: resource?.ownership === "code" };
 }
@@ -274,10 +320,11 @@ export async function composeDrafts(
 ): Promise<{ bundle: Bundle; applied: string[] }> {
   const active = await activeBundle(kernel, db, workspace.id);
   const { digest: _digest, ...base } = active?.content ?? { ...emptyBase(), digest: "" };
+  // By key: a draft that renames a resource is still a draft of that resource.
   const managed = new Map<string, BundleManifest>(
     base.manifests
       .filter((manifest) => manifest.ownership === "ui")
-      .map((manifest) => [manifest.path, manifest]),
+      .map((manifest) => [keyOf(manifest), manifest]),
   );
   let drafts = await db
     .selectFrom("resource_draft")
@@ -294,12 +341,18 @@ export async function composeDrafts(
     throw new HttpError(409, "nothing_to_deploy", "There are no drafts to deploy.");
   }
   for (const draft of drafts) {
-    if (draft.deleted) managed.delete(draft.path);
+    if (draft.deleted) managed.delete(draft.key);
     else {
-      managed.set(draft.path, {
+      // What the draft does not speak of is kept as the resource has it: the name of its tool.
+      const was = managed.get(draft.key);
+      const title = draft.title ?? was?.title;
+      managed.set(draft.key, {
         kind: draft.kind,
         schemaVersion: draft.schema_version,
         path: draft.path,
+        ...(draft.key !== draft.path ? { key: draft.key } : {}),
+        ...(title ? { title } : {}),
+        ...(was?.mcp ? { mcp: was.mcp } : {}),
         ownership: "ui",
         body: draft.body,
       });

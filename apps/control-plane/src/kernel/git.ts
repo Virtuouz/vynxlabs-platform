@@ -10,6 +10,7 @@ import {
   isResourceFile,
   keyOf,
   movedFile,
+  ontoWritten,
   parseRepositoryConfig,
   parseRepositoryFiles,
   platformKinds,
@@ -683,6 +684,12 @@ interface Sides {
   theirs: Record<string, string>;
   mine: Record<string, string>;
   /**
+   * What the workspace's resources say, as checksums of the console's own rendering of
+   * each file. `mine` is the bytes a push would write, which keep what the author of a
+   * file wrote around a change; this is what tells whether the workspace changed anything.
+   */
+  said: Record<string, string>;
+  /**
    * The resource a file belongs to, named by its file on the branch without the
    * extension, or by its file here when the branch has none. A resource renamed
    * on one side is still one resource: both its files belong to it.
@@ -700,6 +707,21 @@ interface Sides {
  * workspace's too. So a file a developer wrote by hand, with comments and in
  * their own order, is left as they wrote it until what it says is changed here.
  */
+/**
+ * Whether the workspace changed a file since it last agreed with its branch: whether it
+ * says something else now. A workspace that has not synced since that was kept is
+ * compared by its bytes, as it always was.
+ */
+const changedHere =
+  (
+    sides: Sides,
+    link: { synced_files: Record<string, string>; synced_said: Record<string, string> | null },
+  ) =>
+  (path: string): boolean =>
+    link.synced_said
+      ? sides.said[path] !== link.synced_said[path]
+      : sides.mine[path] !== link.synced_files[path];
+
 async function sidesOf(
   manifests: readonly BundleManifest[],
   repository: Repository,
@@ -721,10 +743,12 @@ async function sidesOf(
   }
   const myKey = new Map<string, string>();
   const mineFiles: ResourceFile[] = [];
+  const saidFiles: ResourceFile[] = [];
   const problems: string[] = [];
   for (const manifest of manifests) {
     if (manifest.path.startsWith("core/")) continue;
     let files = renderRepositoryFiles([manifest], platformKinds, options);
+    saidFiles.push(...files);
     const theirs = there.get(keyOf(manifest));
     if (theirs) {
       const said = renderRepositoryFiles([theirs], platformKinds, options);
@@ -733,6 +757,15 @@ async function sidesOf(
           path: file.path,
           content: remote.get(file.path) as string,
         }));
+      } else {
+        // It says something else here. That is written into the file as its author wrote
+        // it, wherever the file is now: their comments and their order stay.
+        const written = remote.get(parsed.files.get(keyOf(manifest)) as string);
+        files = files.map((file) =>
+          file.path.endsWith(".yaml") && written !== undefined
+            ? { path: file.path, content: ontoWritten(written, file.content) }
+            : file,
+        );
       }
     }
     for (const file of files) {
@@ -754,6 +787,7 @@ async function sidesOf(
     mineFiles,
     theirs: await checksums(repository.files),
     mine: await checksums(mineFiles),
+    said: await checksums(saidFiles),
     resourceOf: (path) => {
       const key = theirKey.get(path) ?? myKey.get(path);
       return (key === undefined ? undefined : named.get(key)) ?? stemOf(path);
@@ -845,7 +879,7 @@ export async function push(
       );
       const state = left.length > 0 ? ("behind" as const) : ("synced" as const);
       if (changes.length === 0 && tip.exists) {
-        await settle(db, workspace, tip.commit, local);
+        await settle(db, workspace, tip.commit, local, sides.said);
         await record(db, workspace, actor, { kind: "push", status: "nothing", commit: tip.commit });
         return {
           status: "nothing" as const,
@@ -892,7 +926,7 @@ export async function push(
       } catch (error) {
         return failed(db, workspace, actor, "push", remoteProblem(error));
       }
-      await settle(db, workspace, commit, local, state);
+      await settle(db, workspace, commit, local, sides.said, state);
       await record(db, workspace, actor, {
         kind: "push",
         status: "done",
@@ -916,6 +950,7 @@ async function settle(
   workspace: WorkspaceRef,
   commit: string,
   files: Record<string, string>,
+  said: Record<string, string>,
   state: "synced" | "behind" = "synced",
 ) {
   await db
@@ -923,6 +958,7 @@ async function settle(
     .set({
       synced_commit: commit,
       synced_files: JSON.stringify(files),
+      synced_said: JSON.stringify(said),
       state,
       last_error: null,
       updated_at: new Date(),
@@ -1047,7 +1083,7 @@ export async function pull(
       for (const resource of [...groups.keys()].sort()) {
         if (!differs(theirs, mine, resource)) continue;
         const theyChanged = differs(theirs, base, resource);
-        const iChanged = differs(mine, base, resource);
+        const iChanged = (groups.get(resource) ?? []).some(changedHere(sides, link));
         if (theyChanged && !iChanged) take.push(resource);
         else if (theyChanged && iChanged) {
           const resolution = chosen(resource);
@@ -1130,6 +1166,16 @@ export async function pull(
         .set({
           synced_commit: tip.commit,
           synced_files: JSON.stringify(theirs),
+          // What the workspace says now, read as the next comparison will read it.
+          synced_said: JSON.stringify(
+            (
+              await sidesOf(
+                await activeConsoleManaged(kernel, db, workspace.id),
+                repository,
+                remote.folder,
+              )
+            ).said,
+          ),
           state: ahead ? "ahead" : "synced",
           last_error: null,
           updated_at: new Date(),
@@ -1284,20 +1330,22 @@ export async function compareWithBranch(
     ].sort();
     // As a pull sees it: a resource changed on both sides is in conflict, whichever of its
     // files each side changed.
-    const changed = (side: Record<string, string>) =>
-      new Set(
-        paths.filter((path) => side[path] !== base[path]).map((path) => sides.resourceOf(path)),
-      );
-    const [changedHere, changedThere] = [changed(mine), tip.exists ? changed(theirs) : new Set()];
+    const here = changedHere(sides, link);
+    const resources = (which: (path: string) => boolean) =>
+      new Set(paths.filter(which).map((path) => sides.resourceOf(path)));
+    const [touchedHere, changedThere] = [
+      resources(here),
+      tip.exists ? resources((path) => theirs[path] !== base[path]) : new Set(),
+    ];
     const files: CompareFile[] = [];
     for (const path of paths) {
       if (theirs[path] === mine[path]) continue;
       const resource = sides.resourceOf(path);
-      const conflict = changedHere.has(resource) && changedThere.has(resource);
+      const conflict = touchedHere.has(resource) && changedThere.has(resource);
       files.push({
         path,
         resource,
-        here: mine[path] !== base[path],
+        here: here(path),
         branch: tip.exists && theirs[path] !== base[path],
         conflict,
         ...(conflict

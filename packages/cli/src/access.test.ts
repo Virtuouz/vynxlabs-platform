@@ -139,9 +139,8 @@ describe("a tenant's access, from its repository", () => {
 
   test("what was made in the console is pulled into the repository, beside what is there", async () => {
     const tenantId = (await alice.get("/tenants?limit=200")).body.items[0].id;
-    expect((await alice.post(`/tenants/${tenantId}/groups`, { name: "Night shift" })).status).toBe(
-      201,
-    );
+    const made = await alice.post(`/tenants/${tenantId}/groups`, { name: "Night shift" });
+    expect(made.status).toBe(201);
     const pulled = await tenant("pull");
     expect(pulled.err).toBe("");
     expect(pulled.out).toContain("new     tenant/groups/night-shift.group.yaml");
@@ -154,6 +153,23 @@ describe("a tenant's access, from its repository", () => {
       "The repository already has lakeshore's access as it is: 3 files.",
     );
     expect((await tenant("plan")).out).toContain("0 created, 0 updated, 0 deleted, 3 unchanged");
+
+    // A developer writes in the file. A later change in the console is written into it as
+    // they wrote it, and a pull that changes nothing leaves it alone.
+    const file = "tenant/groups/night-shift.group.yaml";
+    await write(
+      file,
+      "# Covers the desk after 22:00.\ntitle: Night shift # for now\nschemaVersion: 1\nbody: {}\n",
+    );
+    expect((await tenant("pull")).out).toContain("already has lakeshore's access as it is");
+    expect(
+      (await alice.patch(`/tenants/${tenantId}/groups/${made.body.id}`, { name: "Late shift" }))
+        .status,
+    ).toBe(200);
+    expect((await tenant("pull")).err).toBe("");
+    expect(await readFile(join(repo, file), "utf8")).toBe(
+      "# Covers the desk after 22:00.\ntitle: Late shift # for now\nschemaVersion: 1\nbody: {}\n",
+    );
   });
 
   test("an earlier release is gone back to", async () => {

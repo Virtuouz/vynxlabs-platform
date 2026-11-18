@@ -3,9 +3,11 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import {
   isTenantFile,
+  ontoWritten,
   parseTenantFiles,
   type ResourceFile,
   renderTenantFiles,
+  sameResourceFile,
   TENANT_FOLDER,
   type TenantResource,
 } from "@vynxlabs/manifest";
@@ -196,9 +198,14 @@ export async function tenantAccess(
           ? rendered.content
           : `key: ${resource.key}\n${rendered.content}`;
       const before = here.find((one) => one.path === target)?.content;
-      if (before === content) continue;
+      // A file that says the same is left as it is written, and a change is written into it:
+      // the comments and the order its author gave it stay.
+      if (before !== undefined && sameResourceFile(target, before, content)) continue;
       await mkdir(dirname(join(directory, target)), { recursive: true });
-      await writeFile(join(directory, target), content);
+      await writeFile(
+        join(directory, target),
+        before === undefined ? content : ontoWritten(before, content),
+      );
       written += 1;
       io.out(`  ${before === undefined ? "new    " : "changed"} ${target}`);
     }

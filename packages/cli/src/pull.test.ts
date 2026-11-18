@@ -76,3 +76,35 @@ describe("a pull of files the repository keeps outside platform/", () => {
     expect(read("src/lending/other.variable.yaml")).toBe(limit("1"));
   });
 });
+
+describe("a pull over files written by hand", () => {
+  const limit = (value: string) => `schemaVersion: 1\nbody:\n  default: "${value}"\n`;
+
+  test("a change made in the console is written into the file as its author wrote it", async () => {
+    const written = `# Ours.\nbody: { default: "5" } # one hand\nschemaVersion: 1\n`;
+    put("src/notes/hours.variable.yaml", written);
+    put("platform/notes/days.variable.yaml", `# Days.\n${limit("1")}`);
+    // Both were pulled as they are, so a later change from the console may be written.
+    const first = await pull(
+      [{ path: "notes/days.variable.yaml", content: limit("1") }],
+      [{ path: "src/notes/hours.variable.yaml", content: limit("5") }],
+    );
+    expect(first).toMatchObject({ written: [], unchanged: 2 });
+    const second = await pull(
+      [{ path: "notes/days.variable.yaml", content: limit("2") }],
+      [{ path: "src/notes/hours.variable.yaml", content: limit("6") }],
+    );
+    expect(second.written.map((one) => one.path).sort()).toEqual([
+      "/src/notes/hours.variable.yaml",
+      "notes/days.variable.yaml",
+    ]);
+    expect(read("src/notes/hours.variable.yaml")).toBe(written.replace('"5"', '"6"'));
+    expect(read("platform/notes/days.variable.yaml")).toBe(`# Days.\n${limit("2")}`);
+    // What it wrote is what it remembers: the next pull finds nothing to do.
+    const third = await pull(
+      [{ path: "notes/days.variable.yaml", content: limit("2") }],
+      [{ path: "src/notes/hours.variable.yaml", content: limit("6") }],
+    );
+    expect(third).toMatchObject({ written: [], unchanged: 2 });
+  });
+});

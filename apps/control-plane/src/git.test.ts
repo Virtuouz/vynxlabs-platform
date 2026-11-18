@@ -587,6 +587,22 @@ describe("safety", () => {
       "# How many devices",
     );
 
+    // The developer changes it again. The workspace said nothing else in between, so this
+    // is theirs to take, though the file was never in the console's own form.
+    commitOnBranch(
+      { "src/lending/limit.variable.yaml": written.replace('"5"', '"4" # for now') },
+      "Fewer, for now",
+    );
+    const again = await alice.post(`${ws()}/git/pull`, {});
+    expect(again.body, JSON.stringify(again.body)).toMatchObject({
+      status: "done",
+      state: "synced",
+      conflicts: [],
+    });
+    expect((await alice.get(`${ws()}/resources/lending/limit`)).body.body).toEqual({
+      default: "4",
+    });
+
     // Changed in the console, it is committed where the repository keeps it.
     const saved = await alice.put(`${ws()}/drafts/lending/limit`, {
       kind: "variable",
@@ -604,9 +620,17 @@ describe("safety", () => {
       status: "done",
       state: "synced",
     });
+    // Only the value changed: the comments its author wrote are where they were.
     expect(sh(["show", "vx/dev:src/lending/limit.variable.yaml"], bare())).toBe(
-      'schemaVersion: 1\nbody:\n  default: "6"',
+      '# How many devices one person may hold.\nschemaVersion: 1\nbody:\n  default: "6" # for now',
     );
+    // And the workspace and its branch agree: nothing is left to push or to pull.
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("nothing");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body).toMatchObject({
+      status: "nothing",
+      state: "synced",
+    });
+    expect((await alice.get(`${ws()}/git/compare`)).body.files).toEqual([]);
     expect(() => sh(["show", "vx/dev:platform/lending/limit.variable.yaml"], bare())).toThrow();
     expect(sh(["rev-parse", "vx/dev:src/index.ts"], bare())).toBe(before);
     expect(sh(["diff", "--name-only", "vx/dev~1", "vx/dev"], bare())).toBe(
@@ -644,9 +668,14 @@ describe("safety", () => {
     expect(deployed.body.summary).toMatchObject({ renamed: 2, created: 0, deleted: 0 });
     expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
 
-    expect(sh(["show", "vx/dev:src/lending/cap.variable.yaml"], bare()).split("\n")[0]).toBe(
+    // The file moved with what its author wrote in it: the heading stays on top.
+    expect(sh(["show", "vx/dev:src/lending/cap.variable.yaml"], bare()).split("\n")).toEqual([
+      "# How many devices one person may hold.",
       "key: lending/limit",
-    );
+      "schemaVersion: 1",
+      "body:",
+      '  default: "6" # for now',
+    ]);
     expect(() => sh(["show", "vx/dev:src/lending/limit.variable.yaml"], bare())).toThrow();
     expect(sh(["show", "vx/dev:tools/retention.variable.yaml"], bare()).split("\n")).toEqual([
       "key: lending/retention",

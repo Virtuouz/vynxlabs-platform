@@ -2,7 +2,6 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { HEARTBEAT_SECONDS } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MAX_FILE_BYTES, readFile, storeFile } from "../kernel/data/files.js";
-import { pathNow } from "../kernel/resolve.js";
 import {
   aggregateQueryFrom,
   aggregateRows,
@@ -46,6 +45,7 @@ import { seeWorker } from "../kernel/execution/workers.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { pathNow } from "../kernel/resolve.js";
 import { revealSecret } from "../kernel/secrets.js";
 import { announceRows } from "./data.js";
 import { AnyObject, Id, NoContent, Time } from "./shared.js";
@@ -724,12 +724,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ worker, params, query }) => {
         const path = params["*"];
-        const { run, connector, now } = await declaredGroup(
-          worker,
-          params.id,
-          query.attempt,
-          path,
-        );
+        const { run, connector, now } = await declaredGroup(worker, params.id, query.attempt, path);
         const member = await readGroupMember(kernel, db, {
           tenantId: run.tenant_id,
           workspaceId: run.workspace_id,

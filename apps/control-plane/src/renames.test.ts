@@ -457,9 +457,9 @@ describe("an event that was renamed", () => {
       .where("id", "=", published.body.id)
       .executeTakeFirstOrThrow();
     expect(stored.name).toBe("sales/placed");
-    expect((await alice.post(`${ws(dev)}/events`, { name: "orders/gone", payload: {} })).status).toBe(
-      404,
-    );
+    expect(
+      (await alice.post(`${ws(dev)}/events`, { name: "orders/gone", payload: {} })).status,
+    ).toBe(404);
     expect((await deploy(dev, before)).status).toBe(201);
   });
 });

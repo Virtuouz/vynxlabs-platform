@@ -10,6 +10,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  ontoWritten,
   parseRepositoryConfig,
   REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
@@ -59,6 +60,10 @@ async function walk(root: string, dir = root): Promise<string[]> {
 }
 
 const readText = (file: string) => readFile(file, "utf8").catch(() => undefined);
+
+/** What to write over a file that is here: the change, put into the file as it was written. */
+const asWritten = (path: string, here: string | undefined, content: string) =>
+  here !== undefined && path.endsWith(".yaml") ? ontoWritten(here, content) : content;
 /** A resource's path from one of its files: `orders/sync.script.ts` → `orders/sync`. */
 const stem = (file: string) => file.replace(/\.[a-z_]+\.(yaml|ts)$/, "");
 
@@ -100,9 +105,10 @@ export async function pullInto(
   for (const [path, content] of wanted) {
     const target = join(folder, ...path.split("/"));
     const here = await readText(target);
-    if (here === content) {
+    // A file that says the same is left as it is written here, comments and all.
+    if (here !== undefined && sameResourceFile(path, here, content)) {
       report.unchanged += 1;
-      next[path] = sha(content);
+      next[path] = sha(here);
       continue;
     }
     const untouched = here === undefined || last[path] === sha(here);
@@ -112,8 +118,9 @@ export async function pullInto(
       continue;
     }
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, content);
-    next[path] = sha(content);
+    const writing = asWritten(path, here, content);
+    await writeFile(target, writing);
+    next[path] = sha(writing);
     report.written.push({ path, how: here === undefined ? "new" : "updated" });
   }
   // What the console no longer has goes, unless it was changed here.
@@ -156,8 +163,9 @@ export async function pullInto(
       continue;
     }
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, content);
-    nextElsewhere[path] = sha(content);
+    const writing = asWritten(path, here, content);
+    await writeFile(target, writing);
+    nextElsewhere[path] = sha(writing);
     report.written.push({ path: `/${path}`, how: here === undefined ? "new" : "updated" });
   }
   // Only what a pull wrote is ever removed out there: the rest is the repository's own.

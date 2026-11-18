@@ -1,4 +1,13 @@
-import { parse, stringify } from "yaml";
+import {
+  type Document,
+  isMap,
+  isScalar,
+  isSeq,
+  type Node,
+  parse,
+  parseDocument,
+  stringify,
+} from "yaml";
 import type { BundleManifest } from "./bundle.js";
 import { KIND_PATTERN, PATH_PATTERN } from "./envelope.js";
 import type { KindDefinition } from "./registry.js";
@@ -203,6 +212,107 @@ export function sameResourceFile(path: string, a: string, b: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Writes what `next` says into the file as its author wrote it: the comments, the
+ * order of keys, the quoting and the blank lines of `written` stay wherever what
+ * they sit beside is still there, and only what is said differently is changed.
+ * A key that is new goes where `next` has it among the keys already there.
+ *
+ * The result is read back before it is given. If it does not say exactly what
+ * `next` says, or `written` cannot be read, `next` is given as it is: a file in
+ * the console's own form is always right, and keeping a comment is never worth
+ * a file that says something else.
+ */
+export function ontoWritten(written: string, next: string): string {
+  if (written === next) return next;
+  try {
+    const document = parseDocument(written, { version: "1.2" });
+    const value = parse(next, { version: "1.2" });
+    if (document.errors.length > 0 || !isMap(document.contents)) return next;
+    document.contents = lay(document, document.contents, value, true) as typeof document.contents;
+    // `[a, b]` or `[ a, b ]`: written back with the spacing the author used.
+    const result = document.toString({
+      ...YAML_OPTIONS,
+      flowCollectionPadding: /[[{] \S/.test(written),
+    });
+    return sameResourceFile("it.yaml", result, next) ? result : next;
+  } catch {
+    return next;
+  }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+type Commented = { commentBefore?: string | null; spaceBefore?: boolean };
+const commentOf = (key: unknown): Commented | undefined =>
+  key !== null && typeof key === "object" ? (key as Commented) : undefined;
+
+/**
+ * Makes a node say `value`, changing as little of it as that takes.
+ *
+ * A comment above the first key of a file is the file's heading, and is kept on
+ * whatever key comes first. Inside, a comment above a map's first key is about
+ * that key: it leaves with the key, and stays with it when another goes before.
+ */
+function lay(document: Document, node: unknown, value: unknown, top = false): Node {
+  if (isMap(node) && isRecord(value)) {
+    const wanted = Object.keys(value);
+    const nameOf = (pair: { key: unknown }) =>
+      String(isScalar(pair.key) ? pair.key.value : pair.key);
+    const first = node.items[0];
+    node.items = node.items.filter((pair) => wanted.includes(nameOf(pair)));
+    if (first && node.items[0] !== first) {
+      const heading = commentOf(first.key)?.commentBefore;
+      const next = commentOf(node.items[0]?.key);
+      if (top && heading && next && !next.commentBefore) next.commentBefore = heading;
+      if (!top) node.commentBefore = null;
+    }
+    for (const pair of node.items) pair.value = lay(document, pair.value, value[nameOf(pair)]);
+    for (const [index, name] of wanted.entries()) {
+      if (node.items.some((pair) => nameOf(pair) === name)) continue;
+      // Before the first key already there that comes after it in what is to be said.
+      const later = new Set(wanted.slice(index + 1));
+      const at = node.items.findIndex((pair) => later.has(nameOf(pair)));
+      const pair = document.createPair(name, value[name]);
+      if (at === 0) {
+        const was = commentOf(node.items[0]?.key);
+        const now = commentOf(pair.key);
+        if (top && was?.commentBefore && now) {
+          now.commentBefore = was.commentBefore;
+          was.commentBefore = null;
+        } else if (!top && node.commentBefore && was) {
+          was.commentBefore = node.commentBefore;
+          node.commentBefore = null;
+        }
+      }
+      node.items.splice(at === -1 ? node.items.length : at, 0, pair as (typeof node.items)[0]);
+    }
+    return node;
+  }
+  if (isSeq(node) && Array.isArray(value)) {
+    node.items = value.map((item, index) =>
+      index < node.items.length
+        ? lay(document, node.items[index], item)
+        : document.createNode(item),
+    );
+    return node;
+  }
+  if (isScalar(node) && (value === null || typeof value !== "object")) {
+    if (node.value === value) return node;
+    if (typeof node.value === typeof value && value !== null) {
+      node.value = value;
+      return node;
+    }
+  }
+  // Another shape altogether: written afresh, under the comment the old one had.
+  const fresh = document.createNode(value) as Node;
+  const old = node as Partial<Pick<Node, "comment" | "commentBefore">> | null | undefined;
+  if (old?.commentBefore) fresh.commentBefore = old.commentBefore;
+  if (old?.comment) fresh.comment = old.comment;
+  return fresh;
 }
 
 /**

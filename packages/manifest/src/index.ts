@@ -42,6 +42,7 @@ export {
   ignoredFolder,
   isResourceFile,
   movedFile,
+  ontoWritten,
   type ParsedResources,
   parseRepositoryConfig,
   parseRepositoryFiles,

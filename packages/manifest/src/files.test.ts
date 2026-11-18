@@ -5,6 +5,7 @@ import {
   entryFor,
   ignoredFolder,
   movedFile,
+  ontoWritten,
   parseRepositoryConfig,
   parseRepositoryFiles,
   parseResourceFiles,
@@ -413,5 +414,64 @@ describe("files written back where a repository keeps them", () => {
     expect(sameResourceFile("a.script.ts", "export default 1;\n", "export default 1; \n")).toBe(
       false,
     );
+  });
+});
+
+describe("a change written into a file as its author wrote it", () => {
+  const written = [
+    "# How the desk lends.",
+    "schemaVersion: 1",
+    "",
+    "body:",
+    "  # Two weeks, unless the desk says otherwise.",
+    "  default: '14' # days",
+    "  description: How long a loan lasts.",
+    "  tags: [lending, desk]",
+    "",
+  ].join("\n");
+
+  test("only what is said differently changes: comments, quotes, blank lines and order stay", () => {
+    const next =
+      'schemaVersion: 1\nbody:\n  description: How long a loan lasts.\n  default: "21"\n  tags:\n    - lending\n    - desk\n';
+    expect(ontoWritten(written, next)).toBe(written.replace("'14'", "'21'"));
+    expect(ontoWritten(written, written)).toBe(written);
+  });
+
+  test("a key that is new goes where it belongs, and one that is gone leaves with its comment", () => {
+    const next =
+      "key: loans/days\ntitle: Loan length\nschemaVersion: 1\nbody:\n  description: How long a loan lasts.\n  tags:\n    - lending\n";
+    expect(ontoWritten(written, next)).toBe(
+      [
+        "# How the desk lends.",
+        "key: loans/days",
+        "title: Loan length",
+        "schemaVersion: 1",
+        "",
+        "body:",
+        "  description: How long a loan lasts.",
+        "  tags: [lending]",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("what it gives always says what was to be said, or is the console's own form", () => {
+    const cases = [
+      // A value of another shape.
+      "schemaVersion: 1\nbody:\n  default:\n    from: env\n  description: How long a loan lasts.\n",
+      // A list that grew, and text over several lines.
+      'schemaVersion: 1\nbody:\n  default: "14"\n  description: "One line.\\nAnother."\n  tags:\n    - a\n    - b\n    - c\n',
+    ];
+    for (const next of cases) {
+      const result = ontoWritten(written, next);
+      expect(sameResourceFile("x.yaml", result, next)).toBe(true);
+      expect(result).toContain("# How the desk lends.");
+    }
+    // An alias would change two places at once: what cannot be kept right is not kept.
+    const shared = "schemaVersion: 1\nbody:\n  a: &one { n: 1 }\n  b: *one\n";
+    const apart = "schemaVersion: 1\nbody:\n  a:\n    n: 2\n  b:\n    n: 1\n";
+    expect(sameResourceFile("x.yaml", ontoWritten(shared, apart), apart)).toBe(true);
+    // A file that cannot be read is replaced.
+    expect(ontoWritten("body: [unclosed", cases[0] as string)).toBe(cases[0]);
   });
 });

@@ -1,4 +1,3 @@
-import { resolveResource } from "../resolve.js";
 import { newId } from "@vynxlabs/db";
 import { PLATFORM_EVENT_PREFIX, validateJson } from "@vynxlabs/manifest";
 import type { Trx } from "../audit.js";
@@ -6,6 +5,7 @@ import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";
 import { kickStarted, notPausedAlone, startTarget } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
+import { resolveResource } from "../resolve.js";
 import { ExpressionError } from "./expressions.js";
 
 /** Past this many events in a chain of causes, an event is stored but starts nothing. */

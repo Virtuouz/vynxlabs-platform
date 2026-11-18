@@ -64,6 +64,7 @@ body:
 - A script, connector or trigger source keeps its code beside the file, as `<name>.<kind>.ts`. That code may import only `@vynxlabs/sdk` and `node:` modules.
 - Files can be kept anywhere. Under `platform/`, or under a folder listed in `vynxlabs.yaml`, a file's path is where it is. Anywhere else it says `path:`.
 - A file may say `key:` and `title:` beside its body.
+- Write comments in these files and order them as you like. When the console changes one, only what it changed is rewritten; your comments and your order stay. A comment inside a list stays at its position in the list.
 - `platform schemas` makes your editor complete and check these files as you type. It writes each kind's schema to `.platform/schemas/` and adds the mapping to `.vscode/settings.json`, for the YAML extension of VS Code. Run it again after upgrading the CLI.
 - In the console, the editor of a resource that code defines offers "Move to a file" for the kinds without code. Once that is deployed, remove the definition from the code: a deploy that still has it takes the resource back.
 

@@ -6,10 +6,13 @@ A sample tenant built to test the platform's developer ergonomics and its MCP se
 | --- | --- |
 | Tables: `students`, `devices`, `requests`, `loans` | `src/model.ts` |
 | Scripts: submit, cancel, decide, check out, check in, mark overdue, availability, desk queue, look up a student | `src/scripts.ts` |
-| Review flow: calculators and chargers approved at once, the rest wait for the "Tech Desk" group. Overdue loans are marked each weekday at 07:00 Central | `src/flows.ts` |
+| Review flow: calculators and chargers approved at once, the rest wait for the "Tech Desk" group | `src/flows.ts` |
 | Apps with no code: **Device desk** (queue, check out and check in, shelf) for staff; **Borrow a device** for students | `src/apps.ts` |
 | Help-desk agent: the `helpdesk-assistant` service account over MCP, bound to look-up, availability, queue, submit and cancel | `src/apps.ts`, `setup/agent.mjs` |
+| Settings as files: how long a loan lasts (`loans/days`), and the schedule that marks loans overdue | `platform/loans/` |
 | The tenant's access: the Tech Desk group and the agent's service account | `tenant/` |
+
+Most of it is TypeScript. The two resources under `platform/` are YAML files instead, to show both forms side by side: a file is named `<name>.<kind>.yaml`, its path is where it is kept, and the console edits it as well as you do. Code names such a resource by its path (`variables: ["loans/days"]`). Run `platform schemas` once and VS Code completes and checks these files as you type.
 
 Students are end users with a `student_id` attribute. The tables' rules show them their own record, requests and loans, and every device.
 

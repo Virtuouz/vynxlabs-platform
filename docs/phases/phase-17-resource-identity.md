@@ -1,6 +1,6 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 built except for what its section lists; M6 built in part. Not pushed.
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 and M6 built except for what their sections list. Walked through on the test instance on 2026-11-18. Not pushed.
 Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
@@ -18,11 +18,11 @@ This phase carries out [Decision 0002](../evolution/decisions/0002-resource-iden
 - moving `requests/submit` to `lending/requests/file`, in code and separately in the console, is reported as a rename, keeps runs, bindings and the MCP tool name, and leaves the old URL answering with a warning;
 - promoting that to production does the same rename there.
 
-**Where the exit criterion stands.** Each part is covered by an automated test against a real database, and none was walked through on the test instance:
-- bring-up from the repository: `packages/cli/src/access.test.ts` releases a tenant's access with the CLI from files, and `examples.test.ts` checks the example defines what it names;
-- a title changed with bindings, an approval and a row rule intact: `access-releases.test.ts`, `mcp.test.ts`, `data-access.test.ts`;
-- a move reported as a rename, from code and from the console, with runs, bindings, tool name and old address kept: `renames.test.ts`, `authoring.test.ts`, `git.test.ts`;
-- the same rename on promotion: `renames.test.ts`.
+**Where the exit criterion stands.** Each part is covered by an automated test against a real database, and all but one were walked through, most of it on the test instance, on a tenant that was upgraded from `main` with the example already deployed. See "On the test instance" at the end.
+- bring-up from the repository: `packages/cli/src/access.test.ts` releases a tenant's access with the CLI from files, and `examples.test.ts` checks the example defines what it names. On the instance the tenant already had its group and service account, so the release adopted them. An empty tenant was brought up on the image run locally: `tenant release` made the group and the service account, `deploy` made everything else, and `promote` did the same in production.
+- a title changed with bindings, an approval and a row rule intact: `access-releases.test.ts`, `mcp.test.ts`, `data-access.test.ts`. Walked for bindings and for an approval that was waiting since before the upgrade. **Not walked: a row rule**, since the example has none that names a group.
+- a move reported as a rename, from code and from the console, with runs, bindings, tool name and old address kept: `renames.test.ts`, `authoring.test.ts`, `git.test.ts`. Walked both ways.
+- the same rename on promotion: `renames.test.ts`. Walked, there and back.
 
 ## Owner decisions
 
@@ -128,7 +128,8 @@ A deploy of console drafts is not held: each removal there was a delete of one r
 - **The delete guard still fires when a whole bundle is swapped for another** with scripts that have runs. One test did this and now says which paths it deletes.
 - **`binding.resource`, `app.reads` and an interface action's target are still not checked at build.** A console-made resource is in no uploaded bundle, so a strict check would refuse valid uploads. A schedule's `flow` is now checked, as its `script` was. A binding finds its resource through an alias, and the build rewrites a reference by key.
 - **`platform deploy` now prints a deploy's warnings**, which it never did: in a dev workspace, what is not bound yet.
-- **Not built:** the test that would stop new direct lookups of a resource by path. Most of the fifty or so that exist are authoring lookups that should stay strict, so a count to hold down says little.
+- **A test holds down direct lookups of a resource by path** (`path-lookups.test.ts`, added after the walk-through). It counts, per file, the queries that read the `resource` table by an exact path: 28 in 16 files, each an authoring lookup, a path taken from the bundle a run is pinned to, or a filter that already allows for former paths. A new one fails the test until it goes through `resolveResource` or is added with its reason.
+- **A run pinned to an older bundle reads a renamed variable, connection or event by the path it had, and does not find it.** The worker's lookups of those are by exact path, and a rename moves their values to the new path. Only a run that was already going when the rename was deployed is affected. Not fixed.
 - **The console's promotion screen still cannot allow a deletion** the guard refuses. That comes with M2's confirm step.
 
 ## M2: public names
@@ -151,7 +152,7 @@ A rename alone is not breaking: the alias keeps the old name answering.
 
 ### Findings
 
-- **Two tool names made from paths can still collide** (`a-b` and `a_b`, or two long paths cut at 64 characters). That was always so, and refusing it now would stop repositories that build today. Only a clash that involves a chosen name is refused.
+- **Two tool names made from paths cannot collide any more** (`a-b` and `a_b`, or two long paths cut at 64 characters). This was first left alone, since refusing it stops a repository that builds today. With one instance in use and none outside, the build and the upload now refuse it and say to give one an `mcp.name` or another path: an agent was offered one of the two tools and could never reach the other.
 - **Removing a script counts as breaking**, which the record did not list. An agent that calls a tool that is gone fails the same way as one that calls a renamed one.
 - **Only a promotion to production asks.** A direct deploy to a production workspace, and any deploy to dev, list `breaking` and go ahead.
 - **The settings page's older promote dialog** lists what breaks and sends the confirmation with its Promote button. It has no separate question, and cannot allow a refused deletion: the release screen does both.
@@ -271,10 +272,10 @@ The plan's M5 had eleven steps. Git sync across the repository was built after t
 
 - **`ownership` is still the switch.** There are no `source_file` and `source_generated` columns, and the deploy still decides what it speaks for by `code` and `ui`. Where a file is travels in `meta.source`.
 - **The console does not say which file a TypeScript definition is in.** The SDK does not record where `define*` was called, so `definedIn` is empty for code.
-- **"Move to file" is the takeover there was.** A draft at the path of a repository resource takes it over into the console's folder, and the build then refuses the second definition by name. There is no button for it and no change to what it covers.
+- **"Move to a file" is the takeover there was, now with a button.** The editor of a schedule, trigger, variable, connection or other kind without code says that the repository's code defines it, names the file it becomes, and saves the takeover draft as it is. The build then refuses the second definition by name, and a deploy from the repository that still defines it takes it back. Scripts, connectors and trigger sources keep their own takeover.
 - **A draft's primary key is still its path.** It has a key, unique in the workspace, and is found by path.
-- **A rename is made from the resources list**, not from a panel in each editor, and a title is set through the API only.
-- **Not built:** `platform schemas`, shipping the file schemas in the SDK package, and serving them from the control plane. They are in `schemas/files/` in this repository.
+- **Name and path are one dialog**, opened from the resources list and from the script, flow and resource editors: the key (read only), the path and the title. It saves a draft. An editor with unsaved changes asks for them to be saved first. An app's and an interface's title stays in their own editor. A draft that says `title: null` now takes the title away; it used to keep the old one.
+- **`platform schemas`** writes each kind's file schema to `.platform/schemas/` in the repository and adds the mapping to `.vscode/settings.json` (`yaml.schemas`), keeping what is there. A settings file with comments is left alone and the mapping printed. The schemas come from the CLI, so they match what it builds. **Not built:** shipping them in the SDK package or serving them from the control plane, which the command makes unnecessary.
 - **A file's comments do not survive an edit in the console.** The console writes YAML from the manifest, so the first change made there rewrites the file in its own form.
 - **A pull cannot see TypeScript.** A definition moved from a YAML file into code on the branch reads as that file deleted. The deploy that follows is the same one a console deletion makes.
 - **The folder setting still has to be the same in the repository and the CLI** (`platform` by default): the server takes it from the tenant's repository settings and the CLI from `--resources`.
@@ -290,8 +291,8 @@ The plan's M5 had eleven steps. Git sync across the repository was built after t
 ### What M6 left out
 
 - **`src/scripts.ts` is not split** in either example (726 and 917 lines). The build check that made splitting safe is there, and the guide says how to export from several files.
-- **Neither example moved a resource to YAML** to show both forms side by side.
-- **The device-lending example was not brought up on the test instance.** Its files parse, check and build here. The run through on a live tenant, which is the phase's exit criterion, was not done.
+- **`examples/higher-ed-devices` keeps two resources as YAML files** beside its TypeScript: the `loans/days` variable and the schedule that marks loans overdue, under `platform/loans/`. The script that reads the variable names it by path. `fernhill` is all TypeScript still.
+- **The device-lending example was walked through on the test instance** after this was written: see "On the test instance".
 - **`docs/phases/phase-7-authoring.md` still has its stale notes** (that `platform pull` is not built, and "Changes screen").
 
 ## What was run, and what was not
@@ -299,4 +300,36 @@ The plan's M5 had eleven steps. Git sync across the repository was built after t
 - After each milestone: `pnpm test` (build and every unit and integration test, against Postgres), `pnpm typecheck`, `biome check` on `apps`, `packages` and `docs`, `pnpm check:migrations` and the schema check.
 - **Three or four tests of managed workers in `execution.test.ts` fail in some full runs and pass every time the file is run alone** (49 of 49). They wait on timing that a machine running every suite at once does not always give. They failed in the same way before and after M2's changes.
 - `biome check .` at the repository root reports errors in `temp/`, which is not part of the repository, and one older warning in `e2e/wide.spec.ts`.
-- **The browser tests (`pnpm e2e`) were not run.** They need the built image serving on port 8080 with its stack, which was not up. The console changes of M1 and M2 are covered by component tests only.
+- **The browser tests (`pnpm e2e`) were run on 2026-11-18** against the built image: see below.
+
+## On the test instance
+
+On 2026-11-18 the branch's image was deployed to the test instance, the only instance there is. Its database was at migration 67 with four tenants. One of them, `higher-ed`, had this phase's example deployed from `main` in a dev and a production workspace, with an approval waiting in production. A dump was taken first, and migrations 68 to 74 were run on a copy of it before the deploy.
+
+**What held:**
+
+- **The upgrade.** Seven migrations applied. Resources got keys, the group and the service account got `tech-desk` and `helpdesk-assistant`, and the waiting approval got its approvers by ID.
+- **Access from the repository.** `platform tenant plan` and `release` adopted the group and the service account that were there (two updated, none made), and a second plan found nothing to do. The deploy that followed updated the flow and eight bindings to name them by key.
+- **A group renamed.** The Tech Desk group was renamed to "IT Service Desk" through the API, as the console does. The approval that had waited since before the upgrade, on a run pinned to a bundle that names "Tech Desk", was still listed for the group's member, said the new name, and was approved; the flow finished.
+- **A move in code without a key** was refused by the delete guard, naming both paths and the key to give.
+- **A move in code with the key** was a rename: eight runs listed under either path, the agent's access carried, `run_requests__submit` still offered beside `run_lending__requests__file` and marked with its end date, and a run started at the old path answered with `Deprecation`, `Sunset`, `Warning` and `Vynx-Resource-Moved`.
+- **Promotion** did the same rename in production.
+- **A move in the console.** A script made in the console, deployed and run, was renamed and titled by a draft: one rename, its run kept, the old path answering. A deploy from the repository afterwards left it alone, as something the repository never had.
+- **Going back.** Deploying the repository as committed renamed the script back, and promotion did the same in production.
+
+**What it found, each fixed with a test:**
+
+| Found | Cause | Fix |
+| --- | --- | --- |
+| `POST …/promotions` with no body answered 400. The browser tests caught it; every other test sends `{}` | M2 gave the route a body, and a route with a body schema refuses none | The route takes no body as an empty one |
+| Renaming something back was reported as breaking, and promoting it to production needed `--confirm-breaking` | The path taken back was the resource's own alias, and ending any alias counted as cutting a caller off | Only an alias of another resource counts |
+| `platform tenant plan` did not say that it would undo a change made in the console | The plan's notice was never built: `warnings` was always empty | A release of the whole set names each resource last changed by a one-change release since the last whole one, and says to pull first |
+
+**What the walk-through did that it should not have.** Deploying the test script with `POST …/changes/deploy` and no `paths` also deployed two drafts the operator had left on `screens/borrow` and `screens/desk` in the dev workspace. A deploy from the repository put the screens back, and the two drafts were saved again from the dump, as they were. They are now authored by the developer account at revision 1, and their undo history is gone. Nothing of it was promoted.
+
+**The browser tests:** 47 tests. The first run passed 43, failed the promotion above, and did not run the 3 after it in the same file. With that fixed, 45 passed, and one failed on its own expectation: a pull names what it applied from the repository's root now (`platform/orders/small.flow`), which the test still spelled the old way. With the test corrected its file passes.
+
+**Also found:** the CLI read only the first 200 tenants when looking one up by slug, so an operator of an instance with more could be told they had no access to a tenant they had. It reads every page now. This is not covered by a test.
+
+**Not done:** git sync against a hosted repository. The tests, in the browser too, use a real git server over HTTP on the same machine.
+

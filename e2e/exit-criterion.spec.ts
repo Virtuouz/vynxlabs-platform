@@ -495,7 +495,8 @@ test("a developer edits a file and pushes, and the change is pulled into the wor
   );
   const pulled = ok(await asAda("POST", `${W}/git/pull`, {}), "pull").body;
   expect(pulled.status).toBe("done");
-  expect(pulled.applied).toEqual(["orders/small.flow"]);
+  // Named from the repository's root, as every file a sync speaks of is.
+  expect(pulled.applied).toEqual(["platform/orders/small.flow"]);
   expect((await asAda("GET", `${W}/resources/orders/small`)).body.body.description).toBe(
     "Keeps a small order, as a developer put it.",
   );

@@ -1,0 +1,6 @@
+# Each weekday morning, before the desk opens.
+schemaVersion: 1
+body:
+  script: loans/mark-overdue
+  cron: 0 7 * * 1-5
+  timezone: America/Chicago

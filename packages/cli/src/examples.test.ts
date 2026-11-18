@@ -36,6 +36,18 @@ function namedByKey(manifests: { kind: string; body: Record<string, unknown> }[]
 const has = (resources: TenantResource[]) =>
   resources.map((one) => `${one.kind} ${one.key}`).sort();
 
+test("higher-ed-devices keeps two of its resources as files, beside the ones its code defines", async () => {
+  const built = await buildRepository({ directory: example("higher-ed-devices") });
+  const filed = built.bundle.manifests.filter((manifest) => manifest.ownership === "ui");
+  expect(filed.map((manifest) => `${manifest.kind} ${manifest.path}`).sort()).toEqual([
+    "schedule loans/overdue-each-morning",
+    "variable loans/days",
+  ]);
+  // The script that reads the variable names it by its path, and the build finds it.
+  const checkOut = built.bundle.manifests.find((manifest) => manifest.path === "loans/check-out");
+  expect(checkOut?.body.uses).toMatchObject({ variables: ["loans/days"] });
+}, 120_000);
+
 describe.each(["higher-ed-devices", "fernhill"])("the %s example", (name) => {
   test("builds, with nothing defined and left unexported", async () => {
     const built = await buildRepository({ directory: example(name) });

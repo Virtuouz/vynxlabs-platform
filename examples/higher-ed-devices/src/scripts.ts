@@ -6,7 +6,6 @@ import {
   KINDS,
   Kind,
   Location,
-  loanDays,
   loanOverdue,
   loans,
   requestSubmitted,
@@ -371,7 +370,7 @@ export const checkOut = defineScript({
   }),
   output: loanOut,
   tables: [students, requests, devices, loans],
-  variables: [loanDays],
+  variables: ["loans/days"],
   concurrency: 1,
   async run(input, ctx) {
     let request: Request | null = null;

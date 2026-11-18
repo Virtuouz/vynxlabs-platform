@@ -1,6 +1,6 @@
-import { defineFlow, defineSchedule, step, trigger, z } from "@vynxlabs/sdk";
+import { defineFlow, step, trigger, z } from "@vynxlabs/sdk";
 import { AUTO_APPROVED, requestSubmitted } from "./model.ts";
-import { decideRequest, markOverdue } from "./scripts.ts";
+import { decideRequest } from "./scripts.ts";
 
 /**
  * Every request is reviewed: a calculator or a charger is approved at once; a
@@ -46,10 +46,5 @@ export const review = defineFlow({
   ],
 });
 
-/** Each weekday morning, before the desk opens. */
-export const overdueEachMorning = defineSchedule({
-  path: "loans/overdue-each-morning",
-  script: markOverdue,
-  cron: "0 7 * * 1-5",
-  timezone: "America/Chicago",
-});
+// The schedule that marks loans overdue each weekday morning is a file as well:
+// platform/loans/overdue-each-morning.schedule.yaml.

@@ -28,6 +28,11 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
   - The first push to a new branch leaves resource files outside the console's folder that the workspace does not have, and answers `state: "behind"`.
   - A push that would leave the branch unable to build writes nothing and says why.
   - **Database migration 0074** moves each workspace's sync state to repository paths.
+- **Name and path in the console.** One dialog, on the resources list and in the script, flow and resource editors, shows a resource's key and changes its path and its title, as a draft. `PUT …/drafts/<path>` with `title: null` now takes the title away; it used to keep the old one.
+- **"Move to a file".** The editor of a schedule, trigger, variable or other kind without code, opened on one the repository's code defines, offers to move it to a file: a draft that takes it over as it is.
+- **A release of a tenant's whole access says what it undoes.** `summary.warnings` on `POST …/access/plan` and `…/access/releases` names each group, service account or role that was last changed one at a time, in the console or the API, since the last release of the whole set. `platform tenant plan` prints them.
+- **Fixed: undoing a rename was reported as breaking**, and promoting it to production asked for confirmation. A resource that takes back a path it had cuts nobody off.
+- **Fixed: `POST …/promotions` with no body answered 400** on this branch. It takes none again.
 - **`GET …/resource-files` adds `elsewhere`**: the files of resources kept outside the console's folder, by path from the repository's root. It takes `roots`. `platform pull` writes them where they are.
 - **A group pushed by a directory is marked as the provider's** (`managedBy: "provider"`), and no release removes it.
 - **A deploy that looks like a rename done wrong is refused.** Deleting a script or flow with runs, a table with rows, or anything with access given to it by hand, while creating another of the same kind, answers 409 `rename_suspected` and names each path and what it holds. `allowDelete` (a list of paths) lets it through, on `POST …/deployments`, `POST …/promotions`, a promotion request's decision and `POST …/git/pull`; the promotion preview takes `?allowDelete=a,b`. Deleting a resource in the console is not affected.
@@ -48,9 +53,12 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **Rows that belong to a group should hold its key.** A `text` column checked with `in: "groups"` matches a group's key as well as what it is called. A row that holds the name stops matching when the group is renamed.
 - **An app's session has `groupKeys`**, the keys of an end user's groups, beside `groups`, which is what they are called. Decide by the keys.
 - **Resource files can be kept anywhere in the repository.** `platform build` finds `<name>.<kind>.yaml` in any folder. A file under `platform/` or a root listed in `vynxlabs.yaml` (`roots: [src]`) gets its path from where it is; anywhere else it says `path:`. A file may also say `key:` and `title:`. The console changes only files in its own folder (`platform/`).
-- **`schemas/files/`** has a JSON Schema for each kind's file, for editor completion.
+- **`platform schemas`** writes a JSON Schema for each kind's file to `.platform/schemas/`, and tells VS Code which files each checks (`yaml.schemas` in `.vscode/settings.json`, keeping what is there). `<name>.<kind>.yaml` then completes and is checked as you type. Run it again after upgrading the CLI.
 - **`docs/sdk-guide.md`** covers keys and renames, tool names, files, and a tenant's access. `examples/higher-ed-devices` and `examples/fernhill` name their groups and agents by key and define them under `tenant/`.
 - **Choose the name of an agent's tool.** `defineScript({ …, mcp: { name: "submit_device_request" } })`, and the same on `defineFlow`. The agent sees exactly that, and it no longer changes when the path does. Without it the name is made from the path as before (`run_requests__submit`), and after a rename the old name keeps working for 90 days. Choosing a name for a script that already has a tool changes that tool's name at once: the deploy says so.
+- **Breaking: two scripts, or two flows, whose paths make the same tool name fail the build and the upload.** A tool's name is made from the path with `-` written as `_` and cut at 64 characters, so `desk/look-up` and `desk/look_up` collide, as two long paths can. An agent was offered one and could not reach the other. Give one an `mcp.name`, or another path.
+- **Fixed: the CLI found a tenant by its slug only among the first 200** the key could see. It reads every page.
+- **`examples/higher-ed-devices` keeps two resources as YAML files** under `platform/loans/`, beside its TypeScript.
 
 ## Unreleased: phase 16, visual refinement
 

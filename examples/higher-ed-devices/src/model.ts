@@ -1,4 +1,4 @@
-import { column, defineEvent, defineTable, defineVariable, z } from "@vynxlabs/sdk";
+import { column, defineEvent, defineTable, z } from "@vynxlabs/sdk";
 
 /**
  * Lakeshore State University lends laptops, hotspots, calculators and the like
@@ -145,11 +145,8 @@ export const loans = defineTable({
 
 // ----- Settings -----
 
-export const loanDays = defineVariable({
-  path: "loans/days",
-  description: "How many days a loan lasts unless the desk says otherwise.",
-  default: "14",
-});
+// How long a loan lasts is a variable, loans/days. It is not defined here: it is a file,
+// platform/loans/days.variable.yaml, which the console edits too. Code names it by its path.
 
 // ----- What happens -----
 

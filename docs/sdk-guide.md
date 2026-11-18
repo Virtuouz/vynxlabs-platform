@@ -64,7 +64,8 @@ body:
 - A script, connector or trigger source keeps its code beside the file, as `<name>.<kind>.ts`. That code may import only `@vynxlabs/sdk` and `node:` modules.
 - Files can be kept anywhere. Under `platform/`, or under a folder listed in `vynxlabs.yaml`, a file's path is where it is. Anywhere else it says `path:`.
 - A file may say `key:` and `title:` beside its body.
-- `schemas/files/<kind>.v1.schema.json` describes each file, for your editor.
+- `platform schemas` makes your editor complete and check these files as you type. It writes each kind's schema to `.platform/schemas/` and adds the mapping to `.vscode/settings.json`, for the YAML extension of VS Code. Run it again after upgrading the CLI.
+- In the console, the editor of a resource that code defines offers "Move to a file" for the kinds without code. Once that is deployed, remove the definition from the code: a deploy that still has it takes the resource back.
 
 ```yaml
 # vynxlabs.yaml, at the repository's root
@@ -135,5 +136,5 @@ A row that belongs to a group should hold the group's key. A text column checked
 ## What the build stops
 
 - **A definition that is not exported.** `defineScript(…)` that the entry file does not export is refused by name. Two files exporting the same name through `export *` cancel each other out: export each by name.
-- **Two tools with one chosen name**, and a chosen name that is one of the tools every agent has.
+- **Two tools with one name**, chosen or made from the path, and a chosen name that is one of the tools every agent has. A name made from a path writes `-` as `_` and stops at 64 characters, so `desk/look-up` and `desk/look_up` are one name: give one an `mcp.name`.
 - **A reference to something that is not there**, including a schedule's `flow`.

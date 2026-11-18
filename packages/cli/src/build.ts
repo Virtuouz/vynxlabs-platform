@@ -12,6 +12,7 @@ import {
   bundleExpressions,
   checkBundleAssets,
   checkBundleManifests,
+  formatFor,
   MAX_BUNDLE_SOURCE,
   parseResourceFiles,
   RESOURCE_FOLDER,
@@ -179,8 +180,8 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   // A repository without apps is still written as format 1, so that it keeps deploying
   // to an instance that has not been upgraded yet.
   const unsigned = !manifests.some((manifest) => manifest.kind === "app")
-    ? { formatVersion: 1 as const, ...common }
-    : { formatVersion: 2 as const, ...common, assets: built.assets };
+    ? { formatVersion: formatFor(1, common.manifests), ...common }
+    : { formatVersion: formatFor(2, common.manifests), ...common, assets: built.assets };
   const assetProblems = checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
   if (fromFiles.manifests.length === 0 && coreNodesFor(unsigned.manifests).length === 0) {

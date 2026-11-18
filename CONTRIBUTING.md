@@ -53,6 +53,7 @@ Every route follows the conventions in [docs/phases/phase-0-foundations.md](docs
 The control plane knows nothing about TypeScript. It depends on the manifest format in `schemas/` and the worker protocol in `docs/contracts/worker-protocol.md`.
 
 - A third contract, of the same standing, is the tenant export format in `docs/contracts/tenant-export.md`.
+- What each bundle format adds, and what a reader and a writer owe each other, is in `docs/contracts/bundle.md`.
 - The control plane never imports or runs a tenant's code. Only the CLI (at build time) and the worker do.
 - A change to a kind's schema, the bundle format or a worker route is a change to a contract. Update the schema or the protocol document in the same commit, and keep old bundles and old workers working.
 - The execution tests build bundles by hand and speak the protocol over plain HTTP on purpose. Keep them free of the SDK.

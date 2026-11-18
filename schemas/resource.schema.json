@@ -26,7 +26,53 @@
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
       "maxLength": 255,
-      "description": "Human-readable name, unique within the workspace."
+      "description": "The resource's address and folder, unique within the workspace. A rename changes it and keeps the key."
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "maxLength": 255,
+      "description": "The resource's identity, unique within the workspace. It never changes. Left out when it is the path the resource was made at."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "mcp": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "description": "The name of the tool an agent sees, chosen by the author."
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "file",
+        "generated"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "The file that defines the resource, relative to the repository root."
+        },
+        "generated": {
+          "type": "boolean",
+          "description": "Whether the file runs code to produce the resource, so only the repository can change it."
+        }
+      },
+      "additionalProperties": false
     },
     "ownership": {
       "anyOf": [

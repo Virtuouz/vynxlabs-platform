@@ -1,4 +1,4 @@
-import type { Bundle, BundleManifest } from "./bundle.js";
+import { type Bundle, type BundleManifest, keyOf, needsFormat4 } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
 import { checkForm, type FormTrigger } from "./form.js";
 import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
@@ -43,7 +43,16 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
   /** Paths used twice. That is reported once; references to them are not reported again. */
   const twice = new Set<string>();
 
+  const byKey = new Map<string, BundleManifest>();
   for (const manifest of manifests) {
+    // A key is one resource's. Two manifests at one path are reported as that, below.
+    const sameKey = byKey.get(keyOf(manifest));
+    if (sameKey && sameKey.path !== manifest.path) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): its key "${keyOf(manifest)}" is also the key of ${sameKey.path}. A key belongs to one resource: give one of them a key of its own.`,
+      );
+    }
+    byKey.set(keyOf(manifest), manifest);
     const existing = byPath.get(manifest.path);
     if (existing) {
       twice.add(manifest.path);
@@ -328,6 +337,13 @@ export function checkBundleAssets(
   const problems: string[] = [];
   const assets = bundle.assets ?? [];
   const apps = bundle.manifests.filter((manifest) => manifest.kind === "app");
+  if (bundle.formatVersion < 4) {
+    for (const manifest of bundle.manifests.filter(needsFormat4)) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): a key, a title, a tool name and a source need bundle format 4. Build with a current SDK and CLI.`,
+      );
+    }
+  }
   if (bundle.formatVersion === 1) {
     if (bundle.assets !== undefined) problems.push("assets: a format 1 bundle carries no files.");
     for (const app of apps) {

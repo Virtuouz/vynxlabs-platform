@@ -9,8 +9,11 @@ export {
   ConsoleSources,
   compareVersions,
   coreInRange,
+  formatFor,
+  keyOf,
   MAX_BUNDLE_ASSETS,
   MAX_BUNDLE_SOURCE,
+  needsFormat4,
 } from "./bundle.js";
 export {
   bundleExpressions,
@@ -24,6 +27,7 @@ export {
   envelopeSchemas,
   KIND_PATTERN,
   Manifest,
+  MCP_NAME_PATTERN,
   PATH_PATTERN,
   SLUG_PATTERN,
   StoredResource,

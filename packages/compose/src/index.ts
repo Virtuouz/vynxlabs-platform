@@ -10,6 +10,7 @@ import {
   entryFor,
   type FlowBody,
   flowReferences,
+  formatFor,
   MAX_SOURCE_LENGTH,
 } from "@vynxlabs/manifest";
 import { CORE_NODES, coreManifest } from "@vynxlabs/nodes";
@@ -365,10 +366,10 @@ export async function composeBundle(
   const { consoleSources: _old, ...rest } = base;
   const unsigned: UnsignedBundle =
     consoleManaged.length === 0
-      ? { ...rest, manifests, code }
+      ? { ...rest, formatVersion: formatFor(rest.formatVersion, manifests), manifests, code }
       : {
           ...rest,
-          formatVersion: 3,
+          formatVersion: formatFor(3, manifests),
           manifests,
           code,
           assets: base.assets ?? [],

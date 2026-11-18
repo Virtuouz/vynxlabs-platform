@@ -36,13 +36,26 @@ function namedByKey(manifests: { kind: string; body: Record<string, unknown> }[]
 const has = (resources: TenantResource[]) =>
   resources.map((one) => `${one.kind} ${one.key}`).sort();
 
-test("higher-ed-devices keeps two of its resources as files, beside the ones its code defines", async () => {
+test("higher-ed-devices keeps what has no code as files, beside the logic its code defines", async () => {
   const built = await buildRepository({ directory: example("higher-ed-devices") });
   const filed = built.bundle.manifests.filter((manifest) => manifest.ownership === "ui");
+  // What the console edits is a file from the start, so editing it there is an edit and
+  // never a takeover from the code.
   expect(filed.map((manifest) => `${manifest.kind} ${manifest.path}`).sort()).toEqual([
+    "app borrow",
+    "app desk",
+    "interface screens/borrow",
+    "interface screens/desk",
     "schedule loans/overdue-each-morning",
+    "theme theme",
     "variable loans/days",
   ]);
+  expect(
+    built.bundle.manifests
+      .filter((manifest) => manifest.ownership === "code")
+      .map((manifest) => manifest.kind)
+      .filter((kind) => ["app", "interface", "theme", "variable", "schedule"].includes(kind)),
+  ).toEqual([]);
   // The script that reads the variable names it by its path, and the build finds it.
   const checkOut = built.bundle.manifests.find((manifest) => manifest.path === "loans/check-out");
   expect(checkOut?.body.uses).toMatchObject({ variables: ["loans/days"] });

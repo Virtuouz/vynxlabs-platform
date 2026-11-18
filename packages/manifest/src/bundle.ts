@@ -28,6 +28,31 @@ export type BundleManifest = Static<typeof BundleManifest>;
 export const keyOf = (manifest: { key?: string | undefined; path: string }): string =>
   manifest.key ?? manifest.path;
 
+/** A tool name from a path: letters, digits and underscores, at most 64 characters. */
+export function derivedToolName(prefix: string, path: string): string {
+  const name = `${prefix}_${path.replace(/\//g, "__").replace(/-/g, "_")}`;
+  return name.length <= 64 ? name : name.slice(0, 64);
+}
+
+/** The names of the tools every agent is offered, which no script or flow may take. */
+export const RESERVED_TOOL_NAMES = ["get_run", "get_flow_run", "list_approvals", "decide_approval"];
+
+/**
+ * The name of the tool an agent sees for a script or a flow: the one its author
+ * chose, or one made from its path. Nothing for another kind.
+ */
+export function toolNameOf(resource: {
+  kind: string;
+  path: string;
+  mcp?: { name: string } | undefined;
+}): string | undefined {
+  if (resource.kind !== "script" && resource.kind !== "flow") return undefined;
+  return (
+    resource.mcp?.name ??
+    derivedToolName(resource.kind === "script" ? "run" : "start", resource.path)
+  );
+}
+
 /** Whether a manifest says something only format 4 can carry. */
 export const needsFormat4 = (manifest: BundleManifest): boolean =>
   manifest.key !== undefined ||

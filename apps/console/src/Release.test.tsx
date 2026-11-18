@@ -134,3 +134,70 @@ test("a draft is set aside after asking, and a production workspace has no revie
   // Production has no drafts, so they are not even asked for.
   expect(asked()).toBe(before);
 });
+
+test("a promotion that changes an agent's tool says so, asks, and sends that it was confirmed", async () => {
+  const linked: Place = { ...dev, linkedWorkspaceId: "w2" };
+  const target = { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null };
+  const breaking = [
+    {
+      path: "desk/submit",
+      message:
+        "the tool submit_request is now called file_request. An agent that calls it by the old name will fail.",
+    },
+  ];
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const method = init.method ?? "GET";
+    calls.push({
+      method,
+      url: address,
+      body: init.body ? JSON.parse(init.body as string) : undefined,
+    });
+    const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+    if (method === "POST") {
+      return json({ bundleVersion: 8, bundleId: "b8", workspaceId: "w2" }, 201);
+    }
+    if (address.includes("/promotion-preview")) {
+      return json({
+        target,
+        bundle: { digest: "a".repeat(64), version: 8 },
+        possible: true,
+        refusal: null,
+        summary: { created: 0, updated: 1, deleted: 0, data: [], changes: [], breaking },
+        tried: { runs: 2, failed: 0, flowRuns: 0, flowRunsFailed: 0 },
+        triggers: 0,
+        canPromote: true,
+        request: null,
+      });
+    }
+    if (address.endsWith("/drift")) {
+      return json({
+        target: { ...target, slug: "main" },
+        versions: { here: 8, there: 7 },
+        counts: { changed: 0, only_here: 0, only_there: 0, in_sync: 0 },
+        items: [],
+      });
+    }
+    return json({ items: address.endsWith("/tenants/t1/workspaces") ? [linked, target] : [] });
+  });
+  show(
+    <Release
+      base="/tenants/t1"
+      root={root}
+      link={link}
+      workspace={linked}
+      step="promote"
+      reload={() => {}}
+    />,
+  );
+  expect(
+    await screen.findByText(
+      "The tool submit_request is now called file_request. An agent that calls it by the old name will fail.",
+    ),
+  ).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: /Promote to production/ }));
+  const said = await answer("Promote to production");
+  expect(said).toContain("It also changes what an agent calls");
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({ confirmBreaking: true }),
+  );
+});

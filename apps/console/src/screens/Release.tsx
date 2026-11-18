@@ -49,7 +49,12 @@ interface Summary {
   renamed?: number;
   changes: { change: string; kind: string; path: string; from?: string }[];
   warnings?: { path: string; message: string }[];
+  /** Changes to a name something outside calls: an agent's tool. */
+  breaking?: { path: string; message: string }[];
 }
+
+/** A message from the API starts in lower case, to follow a path. Alone, it is a sentence. */
+const sentence = (message: string) => `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
 
 interface Refusal {
   code: string;
@@ -622,7 +627,11 @@ function PromoteStep({
   workspace: Workspace;
   target: Workspace;
 }) {
-  const preview = useLoad<PromotionPreview>(`${root}/promotion-preview`);
+  /** Paths whoever promotes said may be deleted, after the preview refused to delete them. */
+  const [allowed, setAllowed] = useState<string[]>([]);
+  const preview = useLoad<PromotionPreview>(
+    `${root}/promotion-preview${allowed.length > 0 ? `?allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
+  );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     bundleVersion: number;
@@ -634,6 +643,8 @@ function PromoteStep({
   const [fromRun] = useUrlParam("fromRun");
   const [problem, setProblem] = useState<string>();
   const data = preview.data;
+  // Only production has agents that were told a name and cannot be told another at once.
+  const breaking = target.type === "production" ? (data?.summary?.breaking ?? []) : [];
 
   return (
     <div className="flex flex-col gap-5">
@@ -669,6 +680,37 @@ function PromoteStep({
       ) : (
         <PreviewPanels data={data} targetName={target.name} link={link} />
       )}
+      {data?.refusal?.code === "rename_suspected" && data.canPromote !== false ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="danger"
+            onClick={async () => {
+              const paths = data.refusal?.errors.map((one) => one.path) ?? [];
+              const sure = await ask.confirm({
+                title: `Delete ${paths.join(", ")} in ${target.name}?`,
+                text: "What each one holds there is cut off from whatever is created in its place. If one of them was renamed, give the new one its key in the repository instead, and nothing is lost.",
+                action: "Delete them and look again",
+                danger: true,
+              });
+              if (sure) setAllowed([...allowed, ...paths]);
+            }}
+          >
+            Delete them anyway
+          </Button>
+        </div>
+      ) : null}
+      {breaking.length > 0 ? (
+        <Notice tone="attention">
+          <strong>
+            This changes {breaking.length === 1 ? "a name" : "names"} that something outside calls.
+          </strong>
+          <ul className="mt-2 mb-0 pl-5">
+            {breaking.map((one) => (
+              <li key={`${one.path} ${one.message}`}>{sentence(one.message)}</li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {result ? (
         <Notice tone="success">
@@ -705,7 +747,11 @@ function PromoteStep({
             onClick={async () => {
               const sure = await ask.confirm({
                 title: `Promote to ${target.name}?`,
-                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.`,
+                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.${
+                  breaking.length > 0
+                    ? ` It also changes what an agent calls: ${breaking.map((one) => sentence(one.message)).join(" ")}`
+                    : ""
+                }`,
                 action: "Promote to production",
                 danger: true,
               });
@@ -713,10 +759,12 @@ function PromoteStep({
               setBusy(true);
               setProblem(undefined);
               try {
-                const promoted = await api.post<NonNullable<typeof result>>(
-                  `${root}/promotions`,
-                  {},
-                );
+                const promoted = await api.post<NonNullable<typeof result>>(`${root}/promotions`, {
+                  // Each was shown above and in the question just answered.
+                  ...(breaking.length > 0 ? { confirmBreaking: true } : {}),
+                  ...(allowed.length > 0 ? { allowDelete: allowed } : {}),
+                });
+                setAllowed([]);
                 setResult(promoted);
                 preview.reload();
                 const [runWorkspace, runId] = (fromRun ?? "").split(":");

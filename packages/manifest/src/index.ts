@@ -9,11 +9,14 @@ export {
   ConsoleSources,
   compareVersions,
   coreInRange,
+  derivedToolName,
   formatFor,
   keyOf,
   MAX_BUNDLE_ASSETS,
   MAX_BUNDLE_SOURCE,
   needsFormat4,
+  RESERVED_TOOL_NAMES,
+  toolNameOf,
 } from "./bundle.js";
 export {
   bundleExpressions,

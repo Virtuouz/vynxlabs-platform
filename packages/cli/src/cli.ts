@@ -49,6 +49,7 @@ Work on a tenant repository
   deploy --tenant <slug> --workspace <slug> [--allow-delete <path>]
                                         Build, upload and activate the bundle
   promote --tenant <slug> --workspace <slug> [--preview] [--allow-delete <path>]
+          [--confirm-breaking]
                                         Activate this workspace's bundle in the workspace
                                         it is linked to. Nothing is rebuilt
 
@@ -324,6 +325,7 @@ interface DeploySummary {
   changes?: { change: string; kind: string; path: string; from?: string }[];
   warnings?: { path: string; message: string }[];
   aliasesRemoved?: string[];
+  breaking?: { path: string; message: string }[];
 }
 
 /** A deploy's counts in a sentence. Renames are said only when there are any. */
@@ -356,6 +358,7 @@ function describeChanges(summary: DeploySummary, limit = Number.POSITIVE_INFINIT
       (path) =>
         `  ${path} no longer answers for the resource renamed away from it: it is a resource's own path again`,
     ),
+    ...(summary.breaking ?? []).map((one) => `  Breaking: ${one.message}`),
     ...(summary.warnings ?? []).map((warning) => `  Note: ${warning.message}`),
   ];
 }
@@ -392,7 +395,12 @@ async function dev(args: string[], io: Io) {
 async function promote(args: string[], io: Io) {
   const { values } = parseArgs({
     args,
-    options: { ...targetOptions, ...allowDeleteOption, preview: { type: "boolean" as const } },
+    options: {
+      ...targetOptions,
+      ...allowDeleteOption,
+      preview: { type: "boolean" as const },
+      "confirm-breaking": { type: "boolean" as const },
+    },
   });
   const settings = await loadSettings(io.env);
   const { base } = await locate(settings, values.tenant, values.workspace);
@@ -422,9 +430,22 @@ async function promote(args: string[], io: Io) {
     io.out("Nothing was changed. Run it again without --preview to promote.");
     return;
   }
+  const breaking = (summary.breaking ?? []) as { message: string }[];
+  if (breaking.length > 0 && target.type === "production" && !values["confirm-breaking"]) {
+    throw new CliError(
+      [
+        `Promoting this to ${where} changes a name that something outside calls:`,
+        ...breaking.map((one) => `  - ${one.message}`),
+        "Nothing was changed. Run it again with --confirm-breaking to promote.",
+      ].join("\n"),
+    );
+  }
   const promoted = await request(settings.url, `${base}/promotions`, settings.token, {
     method: "POST",
-    body: allowed.length > 0 ? { allowDelete: allowed } : {},
+    body: {
+      ...(allowed.length > 0 ? { allowDelete: allowed } : {}),
+      ...(values["confirm-breaking"] ? { confirmBreaking: true } : {}),
+    },
   });
   if (promoted.status >= 300) throw refusal(promoted, `promote to ${target.slug}`);
   io.out(

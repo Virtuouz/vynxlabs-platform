@@ -44,6 +44,7 @@ describe("a manifest's key", () => {
     ]);
     expect(checkBundleManifests([variable("a", { mcp: { name: "Submit-It" } })])).toEqual([
       expect.stringContaining("a (variable): /mcp/name must match pattern"),
+      "a (variable): /mcp only a script or a flow is offered to an agent as a tool.",
     ]);
   });
 });

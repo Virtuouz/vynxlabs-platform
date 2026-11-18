@@ -1,6 +1,6 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 and M1 built. Not pushed.
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0, M1 and M2 built. Not pushed.
 Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
@@ -124,3 +124,35 @@ A deploy of console drafts is not held: each removal there was a delete of one r
 - **`platform deploy` now prints a deploy's warnings**, which it never did: in a dev workspace, what is not bound yet.
 - **Not built:** the test that would stop new direct lookups of a resource by path. Most of the fifty or so that exist are authoring lookups that should stay strict, so a count to hold down says little.
 - **The console's promotion screen still cannot allow a deletion** the guard refuses. That comes with M2's confirm step.
+
+## M2: public names
+
+**A script or a flow says the name of its tool.** `mcp: { name }` on `defineScript` and `defineFlow`, carried on the manifest and kept in the resource's `meta`. The agent sees that name as it is, with no `run_` or `start_` in front. Without it the name is made from the path, as before.
+
+**A chosen name is one tool's.** The build and the upload refuse a name that another script's or flow's tool has, one of the four every agent has (`get_run`, `get_flow_run`, `list_approvals`, `decide_approval`), and `mcp` on any other kind.
+
+**Breaking changes are named.** A deploy's summary has `breaking`, one sentence each:
+- a chosen name changed or dropped;
+- a name made from the path replaced by a chosen one, with the path unchanged, so no alias keeps the old name;
+- a script or a flow removed, and its tool with it;
+- a script or a flow made at a path that still answered for one renamed away from it.
+
+A rename alone is not breaking: the alias keeps the old name answering.
+
+**Promoting them to production is confirmed.** Without `confirmBreaking: true` the promotion is refused with 409 `breaking_changes`, listing them. The preview shows them and is not refused. `platform promote` stops and asks for `--confirm-breaking`. The console lists them above the promote button and in the question it asks, and sends the confirmation.
+
+**The console can allow a deletion the guard refused** (left over from M0). When a promotion preview is refused with `rename_suspected`, "Delete them anyway" asks, then previews again with those paths allowed.
+
+### Findings
+
+- **Two tool names made from paths can still collide** (`a-b` and `a_b`, or two long paths cut at 64 characters). That was always so, and refusing it now would stop repositories that build today. Only a clash that involves a chosen name is refused.
+- **Removing a script counts as breaking**, which the record did not list. An agent that calls a tool that is gone fails the same way as one that calls a renamed one.
+- **Only a promotion to production asks.** A direct deploy to a production workspace, and any deploy to dev, list `breaking` and go ahead.
+- **The settings page's older promote dialog** lists what breaks and sends the confirmation with its Promote button. It has no separate question, and cannot allow a refused deletion: the release screen does both.
+
+## What was run, and what was not
+
+- After each milestone: `pnpm test` (build and every unit and integration test, against Postgres), `pnpm typecheck`, `biome check` on `apps`, `packages` and `docs`, `pnpm check:migrations` and the schema check.
+- **Three or four tests of managed workers in `execution.test.ts` fail in some full runs and pass every time the file is run alone** (49 of 49). They wait on timing that a machine running every suite at once does not always give. They failed in the same way before and after M2's changes.
+- `biome check .` at the repository root reports errors in `temp/`, which is not part of the repository, and one older warning in `e2e/wide.spec.ts`.
+- **The browser tests (`pnpm e2e`) were not run.** They need the built image serving on port 8080 with its stack, which was not up. The console changes of M1 and M2 are covered by component tests only.

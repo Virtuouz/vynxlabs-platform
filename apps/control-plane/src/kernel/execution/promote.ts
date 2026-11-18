@@ -142,7 +142,12 @@ export async function promote(
   audit: Audit,
   source: WorkspaceRef,
   principal: Principal,
-  options: { dryRun?: boolean; bundleId?: string; allowDelete?: readonly string[] } = {},
+  options: {
+    dryRun?: boolean;
+    bundleId?: string;
+    allowDelete?: readonly string[];
+    confirmBreaking?: boolean;
+  } = {},
 ) {
   const promotion = await promotionOf(trx, source, options.bundleId);
   const bundle = await adoptBundle(
@@ -157,6 +162,8 @@ export async function promote(
   const result = await deployBundle(kernel, trx, audit, promotion.target, principal, bundle.id, {
     promotedFrom: source.id,
     ...(options.allowDelete ? { allowDelete: options.allowDelete } : {}),
+    // A preview shows what would break. Only the promotion itself has to be told it may.
+    confirmBreaking: options.dryRun === true || options.confirmBreaking === true,
   });
   return { ...result, target: promotion.target };
 }

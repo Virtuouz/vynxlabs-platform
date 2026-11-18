@@ -7,6 +7,7 @@ import {
   keyOf,
   platformKinds,
   renderResourceFiles,
+  toolNameOf,
 } from "@vynxlabs/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
@@ -234,6 +235,11 @@ export async function deployBundle(
      * asked for by name already, as deleting a resource in the console is.
      */
     allowDelete?: readonly string[] | "all";
+    /**
+     * Said by whoever promotes to production, having seen them: this deploy may change or
+     * remove the name of a tool an agent calls.
+     */
+    confirmBreaking?: boolean;
   } = {},
 ) {
   const current = await trx
@@ -287,6 +293,8 @@ export async function deployBundle(
     warnings: [] as { path: string; message: string }[],
     /** Paths that answered for a renamed resource and now are a resource's own again. */
     aliasesRemoved: [] as string[],
+    /** Changes to a name something outside calls: an agent's tool. */
+    breaking: [] as { path: string; message: string }[],
   };
   const note = (change: ResourceChange["change"], kind: string, path: string, from?: string) => {
     if (summary.changes.length < MAX_LISTED_CHANGES) {
@@ -371,6 +379,13 @@ export async function deployBundle(
   }
 
   for (const row of removed) {
+    const tool = toolNameOf({ kind: row.kind, path: row.path, mcp: row.meta.mcp });
+    if (tool !== undefined) {
+      summary.breaking.push({
+        path: row.path,
+        message: `the tool ${tool} is removed with its ${row.kind}. An agent that calls it will fail.`,
+      });
+    }
     await deleteResource(trx, audit, workspace, row.path, kernel.hooks);
     summary.deleted += 1;
     note("deleted", row.kind, row.path);
@@ -402,6 +417,23 @@ export async function deployBundle(
       summary.unchanged += 1;
       continue;
     }
+    // The name of the tool an agent calls is public. A change that leaves the old name
+    // answering nothing is said out loud; a rename leaves an alias, and the old name with it.
+    const toolBefore = stored
+      ? toolNameOf({ kind: stored.kind, path: stored.path, mcp: stored.meta.mcp })
+      : undefined;
+    const toolAfter = toolNameOf(manifest);
+    if (
+      stored &&
+      toolBefore !== undefined &&
+      toolBefore !== toolAfter &&
+      (stored.meta.mcp !== undefined || stored.path === manifest.path)
+    ) {
+      summary.breaking.push({
+        path: manifest.path,
+        message: `the tool ${toolBefore} is now called ${toolAfter}. An agent that calls it by the old name will fail.`,
+      });
+    }
     const result = await putResource(kernel, trx, audit, workspace, {
       path: manifest.path,
       kind: manifest.kind,
@@ -420,6 +452,12 @@ export async function deployBundle(
       summary.warnings.push({ path: manifest.path, message });
     }
     if (result.aliasRemoved) summary.aliasesRemoved.push(manifest.path);
+    if (result.aliasRemoved && (manifest.kind === "script" || manifest.kind === "flow")) {
+      summary.breaking.push({
+        path: manifest.path,
+        message: `the path ${manifest.path} is this ${manifest.kind}'s own again, so it and the tool named after it no longer reach the ${manifest.kind} that was renamed away from it.`,
+      });
+    }
     if (result.created) {
       summary.created += 1;
       note("created", manifest.kind, manifest.path);
@@ -430,6 +468,20 @@ export async function deployBundle(
       summary.updated += 1;
       note("updated", manifest.kind, manifest.path);
     }
+  }
+
+  if (
+    summary.breaking.length > 0 &&
+    current.type === "production" &&
+    options.promotedFrom !== undefined &&
+    !options.confirmBreaking
+  ) {
+    throw new HttpError(
+      409,
+      "breaking_changes",
+      "Promoting this changes a name that something outside calls. Read each one, then promote again confirming them.",
+      summary.breaking,
+    );
   }
 
   // Asked once every rename is done: a renamed connection keeps what it was bound to.

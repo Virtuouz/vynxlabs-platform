@@ -98,6 +98,7 @@ const Summary = Type.Object({
   updated: Type.Integer(),
   renamed: Type.Optional(Type.Integer()),
   aliasesRemoved: Type.Optional(Type.Array(Type.String())),
+  breaking: Type.Optional(Type.Array(Type.Object({ path: Type.String(), message: Type.String() }))),
   unchanged: Type.Integer(),
   deleted: Type.Integer(),
   data: Type.Array(Type.String()),

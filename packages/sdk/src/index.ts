@@ -55,6 +55,16 @@ export interface ResourceNames {
   title?: string;
 }
 
+/**
+ * The name of the tool an agent is offered for a script or a flow. Without it
+ * the name is made from the path (`run_orders__sync`), and so changes when the
+ * path does. Choose one for anything an agent is configured to call: lowercase
+ * letters, digits and underscores, starting with a letter, at most 64.
+ */
+export interface ToolName {
+  name: string;
+}
+
 /** An authored manifest, before the control plane assigns a workspace, ID and version. */
 export interface AuthoredManifest {
   kind: string;
@@ -62,6 +72,7 @@ export interface AuthoredManifest {
   path: string;
   key?: string;
   title?: string;
+  mcp?: ToolName;
   ownership: "code";
   body: Record<string, unknown>;
 }
@@ -96,10 +107,10 @@ const DEFINITIONS = Symbol.for("vynxlabs.definitions");
 
 function resource(
   kind: string,
-  named: string | (ResourceNames & { path: string }),
+  named: string | (ResourceNames & { path: string; mcp?: ToolName | undefined }),
   body: (entry: string) => Record<string, unknown>,
 ) {
-  const { path, key, title } = typeof named === "string" ? { path: named } : named;
+  const { path, key, title, mcp } = typeof named === "string" ? { path: named } : named;
   const defined = (globalThis as Record<symbol, unknown>)[DEFINITIONS];
   if (Array.isArray(defined)) defined.push({ kind, path });
   return {
@@ -113,6 +124,7 @@ function resource(
       // Said only when it is not the path: most resources never say it.
       ...(key !== undefined && key !== path ? { key } : {}),
       ...(title !== undefined ? { title } : {}),
+      ...(mcp !== undefined ? { mcp: { name: mcp.name } } : {}),
       ownership: "code",
       body: body(entry),
     }),
@@ -144,6 +156,8 @@ export type InputKey<I> =
 
 export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType>
   extends ResourceNames {
+  /** The name of the tool an agent sees for it, if it should not follow the path. */
+  mcp?: ToolName;
   /** Unique within the workspace, for example `orders/sync`. */
   path: string;
   description?: string;
@@ -846,6 +860,8 @@ export type FlowEdge<Node extends string> =
   | [from: Node, to: Node, options: { when?: string; error?: boolean }];
 
 export interface FlowOptions<Nodes extends Record<string, FlowNode>> extends ResourceNames {
+  /** The name of the tool an agent sees for it, if it should not follow the path. */
+  mcp?: ToolName;
   path: string;
   description?: string;
   nodes: Nodes;

@@ -1,4 +1,11 @@
-import { type Bundle, type BundleManifest, keyOf, needsFormat4 } from "./bundle.js";
+import {
+  type Bundle,
+  type BundleManifest,
+  keyOf,
+  needsFormat4,
+  RESERVED_TOOL_NAMES,
+  toolNameOf,
+} from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
 import { checkForm, type FormTrigger } from "./form.js";
 import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
@@ -75,6 +82,35 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         problems.push(`${manifest.path} (${manifest.kind}): ${issue.path} ${issue.message}`);
       }
     }
+  }
+
+  // A tool's name is what an agent was told to call. One chosen by an author is one tool's.
+  const tools = new Map<string, BundleManifest>();
+  for (const manifest of manifests) {
+    if (manifest.mcp === undefined) continue;
+    if (manifest.kind !== "script" && manifest.kind !== "flow") {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): /mcp only a script or a flow is offered to an agent as a tool.`,
+      );
+      continue;
+    }
+    if (RESERVED_TOOL_NAMES.includes(manifest.mcp.name)) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): /mcp/name "${manifest.mcp.name}" is the name of a tool every agent has. Choose another.`,
+      );
+    }
+  }
+  for (const manifest of manifests) {
+    const name = toolNameOf(manifest);
+    if (name === undefined) continue;
+    const other = tools.get(name);
+    // Two names made from paths that collide were always possible, and are left as they were.
+    if (other && (manifest.mcp !== undefined || other.mcp !== undefined)) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): its tool would be called "${name}", which is the name of the tool for ${other.path}. Give one of them another mcp.name.`,
+      );
+    }
+    if (!other) tools.set(name, manifest);
   }
 
   const expect = (from: BundleManifest, field: string, path: unknown, kind: string) => {

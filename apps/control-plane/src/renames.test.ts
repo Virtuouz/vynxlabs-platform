@@ -531,4 +531,105 @@ describe("what a deploy by key refuses, and what it works out", () => {
   });
 });
 
+describe("the name of an agent's tool", () => {
+  const named = (name: string | undefined, path = "requests/submit") =>
+    bundle(
+      before.manifests.map((entry) =>
+        entry.kind === "script"
+          ? {
+              ...script(path, entry.body.uses as Record<string, string[]>, "requests/submit"),
+              ...(name ? { mcp: { name } } : {}),
+            }
+          : entry,
+      ),
+    );
+  const offered = async () => {
+    const agent = await t.db
+      .selectFrom("service_account")
+      .select("id")
+      .where("tenant_id", "=", tenant)
+      .where("name", "=", "agent")
+      .executeTakeFirstOrThrow();
+    const tools = (
+      await alice.get(`/tenants/${tenant}/service-accounts/${agent.id}/tools?workspace=${dev}`)
+    ).body.tools as { name: string }[];
+    return tools.map((tool) => tool.name).filter((name) => !/^(get|list|decide)_/.test(name));
+  };
+
+  test("is the one its author chose, and stays through a rename", async () => {
+    expect((await deploy(dev, before)).status).toBe(201);
+    const chosen = await deploy(dev, named("submit_request"));
+    expect(chosen.status, JSON.stringify(chosen.body)).toBe(201);
+    // The name made from the path is gone the moment one is chosen: that is said.
+    expect(chosen.body.summary.breaking).toEqual([
+      {
+        path: "requests/submit",
+        message:
+          "the tool run_requests__submit is now called submit_request. An agent that calls it by the old name will fail.",
+      },
+    ]);
+    expect(await offered()).toContain("submit_request");
+    expect(await offered()).not.toContain("run_requests__submit");
+
+    const moved = await deploy(dev, named("submit_request", "desk/submit"));
+    expect(moved.status, JSON.stringify(moved.body)).toBe(201);
+    expect(moved.body.summary).toMatchObject({ renamed: 1, breaking: [] });
+    expect(await offered()).toContain("submit_request");
+    expect((await offered()).filter((name) => name.includes("desk"))).toEqual([]);
+  });
+
+  test("cannot be another tool's, or one every agent has", async () => {
+    const twice = bundle([
+      ...named("submit_request").manifests,
+      { ...script("other", {}), mcp: { name: "submit_request" } },
+    ]);
+    const refused = await deploy(dev, twice);
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body.errors)).toContain(
+      'its tool would be called \\"submit_request\\", which is the name of the tool for',
+    );
+    const reserved = await deploy(dev, named("get_run"));
+    expect(reserved.status).toBe(400);
+    expect(JSON.stringify(reserved.body.errors)).toContain("is the name of a tool every agent has");
+    const onTable = bundle(
+      before.manifests.map((entry) =>
+        entry.kind === "table" ? { ...entry, mcp: { name: "read_items" } } : entry,
+      ),
+    );
+    expect(JSON.stringify((await deploy(dev, onTable)).body.errors)).toContain(
+      "only a script or a flow is offered to an agent as a tool",
+    );
+  });
+
+  test("changing it is named as breaking, and promoting that to production has to be confirmed", async () => {
+    // Production takes the chosen name first. Its old name was made from a path it is renamed
+    // away from, so that name still answers there: nothing breaks.
+    const first = await alice.post(`${ws(dev)}/promotions`);
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(first.body.summary.breaking).toEqual([]);
+
+    const changed = await deploy(dev, named("file_request", "desk/submit"));
+    expect(changed.status, JSON.stringify(changed.body)).toBe(201);
+    expect(changed.body.summary.breaking).toHaveLength(1);
+
+    const preview = (await alice.get(`${ws(dev)}/promotion-preview`)).body;
+    expect(preview.possible).toBe(true);
+    expect(preview.summary.breaking).toEqual([
+      {
+        path: "desk/submit",
+        message:
+          "the tool submit_request is now called file_request. An agent that calls it by the old name will fail.",
+      },
+    ]);
+    const unconfirmed = await alice.post(`${ws(dev)}/promotions`);
+    expect(unconfirmed.status).toBe(409);
+    expect(unconfirmed.body.code).toBe("breaking_changes");
+    expect(unconfirmed.body.errors).toEqual(preview.summary.breaking);
+
+    const confirmed = await alice.post(`${ws(dev)}/promotions`, { confirmBreaking: true });
+    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(201);
+    expect(confirmed.body.summary.breaking).toEqual(preview.summary.breaking);
+  });
+});
+
 const made = (one: Any) => one.id as string;

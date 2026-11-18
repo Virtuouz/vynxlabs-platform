@@ -290,6 +290,19 @@ describe("keys and titles", () => {
     expect(same.manifests[0]).not.toHaveProperty("key");
   });
 
+  test("a script says the name of its tool, which then does not follow its path", async () => {
+    const bundle = await buildBundle({
+      directory: await repository(
+        `${head}${script('path: "requests/submit", mcp: { name: "submit_device_request" },')}`,
+      ),
+    });
+    expect(bundle.formatVersion).toBe(4);
+    expect(bundle.manifests[0]?.mcp).toEqual({ name: "submit_device_request" });
+    expect(
+      await problems(`${head}${script('path: "requests/submit", mcp: { name: "Submit It" },')}`),
+    ).toEqual([expect.stringContaining("requests/submit (script): /mcp/name must match pattern")]);
+  });
+
   test("a reference written as text may name a resource by its key, and is built as its path", async () => {
     const source = `${head}${script('path: "lending/requests/file", key: "requests/submit", tables: ["items"],')}
 export const items = defineTable({ path: "lending/items", key: "items", columns: { name: column.text() } });

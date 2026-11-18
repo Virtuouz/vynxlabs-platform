@@ -468,6 +468,7 @@ interface Summary {
   unchanged: number;
   data?: string[];
   changes?: { change: string; kind: string; path: string; from?: string }[];
+  breaking?: { path: string; message: string }[];
 }
 interface Preview {
   target: { id: string; slug: string; name: string; type: string };
@@ -581,7 +582,22 @@ export function Promotion({
         {preview ? (
           <div className="flex flex-col gap-3">
             {preview.possible && preview.summary ? (
-              <PreviewBody summary={preview.summary} target={preview.target.name} />
+              <>
+                <PreviewBody summary={preview.summary} target={preview.target.name} />
+                {preview.target.type === "production" && preview.summary.breaking?.length ? (
+                  <Notice tone="attention">
+                    <p className="m-0">
+                      Promoting changes a name that something outside calls. An agent told the old
+                      name will fail until it is told the new one.
+                    </p>
+                    <ul className="mt-1 mb-0 list-disc pl-5">
+                      {preview.summary.breaking.map((entry) => (
+                        <li key={`${entry.path} ${entry.message}`}>{entry.message}</li>
+                      ))}
+                    </ul>
+                  </Notice>
+                ) : null}
+              </>
             ) : (
               <Notice tone="danger">
                 <p className="m-0">It cannot be promoted yet. {preview.refusal?.detail}</p>
@@ -603,6 +619,8 @@ export function Promotion({
                     try {
                       const result = await api.post<{ bundleVersion: number }>(
                         `${root}/promotions`,
+                        // What breaks is listed in this dialog, above the button that sends this.
+                        preview.summary?.breaking?.length ? { confirmBreaking: true } : {},
                       );
                       setOpen(false);
                       setDone(

@@ -175,6 +175,12 @@ const Summary = Type.Object({
         "Paths that still answered for a resource renamed away from them, and that this deploy gave to a resource of their own. Whoever still called the old path now reaches the new resource.",
     }),
   ),
+  breaking: Type.Optional(
+    Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
+      description:
+        "Changes to a name something outside calls: the tool an agent is offered for a script or a flow, changed or removed. Promoting these to production must be confirmed.",
+    }),
+  ),
   changes: Type.Optional(
     Type.Array(
       Type.Object({
@@ -851,6 +857,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: WorkspaceParams,
           body: Type.Optional(
             Type.Object({
+              confirmBreaking: Type.Optional(
+                Type.Boolean({
+                  description:
+                    "Said after reading the promotion preview's `summary.breaking`: this may change " +
+                    "or remove the name of a tool an agent calls. Promoting to production without " +
+                    "it, when there is one, is refused with `breaking_changes`.",
+                }),
+              ),
               allowDelete: Type.Optional(
                 Type.Array(Type.String({ maxLength: 255 }), {
                   maxItems: 200,
@@ -892,14 +906,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: target.id,
         });
         const result = await ctx.mutate((trx, audit) =>
-          promote(
-            kernel,
-            trx,
-            audit,
-            workspace,
-            ctx.principal,
-            body?.allowDelete ? { allowDelete: body.allowDelete } : {},
-          ),
+          promote(kernel, trx, audit, workspace, ctx.principal, {
+            ...(body?.allowDelete ? { allowDelete: body.allowDelete } : {}),
+            ...(body?.confirmBreaking ? { confirmBreaking: true } : {}),
+          }),
         );
         await publishPlatformEvent(kernel, {
           tenantId: target.tenantId,

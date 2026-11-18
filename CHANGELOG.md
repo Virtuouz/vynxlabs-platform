@@ -10,6 +10,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **A deploy matches resources by key, so a resource can be renamed.** The same key at another path is a rename in place: the resource keeps its ID, its history, its runs, its rows and what the workspace bound to it. The summary counts `renamed` and each change says `from`. New refusals: `kind_changed` (a key that belongs to another kind) and `path_taken` (a path the deploy does not free).
 - **The path a renamed resource had keeps answering for 90 days.** Answers reached through it carry `Deprecation`, `Sunset`, `Warning` and `Vynx-Resource-Moved`. An app's old address redirects with 308. `GET …/aliases` lists them and `DELETE …/aliases/<path>` ends one; the console shows them under a workspace's Resources.
 - **Resources answer with `key` and `title`.**
+- **A change to the name of an agent's tool is named, and promoting it to production is confirmed.** A deploy's summary has `breaking`. Promoting one to a production workspace without `confirmBreaking: true` answers 409 `breaking_changes`; the preview lists them. The console asks; `platform promote` takes `--confirm-breaking`.
+- **The release screen can allow a deletion the rename guard refused**, after asking.
 - **A deploy that looks like a rename done wrong is refused.** Deleting a script or flow with runs, a table with rows, or anything with access given to it by hand, while creating another of the same kind, answers 409 `rename_suspected` and names each path and what it holds. `allowDelete` (a list of paths) lets it through, on `POST …/deployments`, `POST …/promotions`, a promotion request's decision and `POST …/git/pull`; the promotion preview takes `?allowDelete=a,b`. Deleting a resource in the console is not affected.
 
 ### For tenant developers
@@ -22,6 +24,7 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **A reference written as text may name a moved resource by its key.** `script: "requests/submit"` keeps building after the move and the build notes the new path. A reference made by passing the definition needs nothing.
 - **Bundle format 4** carries `key` and `title`. The CLI writes it only when a resource says one, so a repository that says none still deploys to an older instance. See `docs/contracts/bundle.md`.
 - A schedule that starts a flow that is not in the repository now fails the build.
+- **Choose the name of an agent's tool.** `defineScript({ …, mcp: { name: "submit_device_request" } })`, and the same on `defineFlow`. The agent sees exactly that, and it no longer changes when the path does. Without it the name is made from the path as before (`run_requests__submit`), and after a rename the old name keeps working for 90 days. Choosing a name for a script that already has a tool changes that tool's name at once: the deploy says so.
 
 ## Unreleased: phase 16, visual refinement
 

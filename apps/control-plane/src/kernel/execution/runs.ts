@@ -5,6 +5,7 @@ import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
+import { formerPaths, resolveResource } from "../resolve.js";
 import { bundleManifest, payloadSchemas } from "./bundles.js";
 import { summarize } from "./redact.js";
 import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
@@ -190,13 +191,23 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     .executeTakeFirst();
   if (!workspace) throw notFound("The workspace");
   const bundleId = request.bundleId ?? workspace.active_bundle_id;
-  const script = await trx
-    .selectFrom("resource")
-    .select(["id", "body"])
-    .where("workspace_id", "=", request.workspaceId)
-    .where("kind", "=", request.relay ? "trigger_source" : "script")
-    .where("path", "=", request.script)
-    .executeTakeFirst();
+  // Asked for by a path it had before it was renamed, it still runs while the alias lasts.
+  const found = request.bundleId
+    ? undefined
+    : await resolveResource(trx, request.workspaceId, request.script, {
+        kind: request.relay ? "trigger_source" : "script",
+      });
+  const alias = found?.alias;
+  if (found?.via === "alias") request = { ...request, script: found.resource.path };
+  const script =
+    found?.resource ??
+    (await trx
+      .selectFrom("resource")
+      .select(["id", "body"])
+      .where("workspace_id", "=", request.workspaceId)
+      .where("kind", "=", request.relay ? "trigger_source" : "script")
+      .where("path", "=", request.script)
+      .executeTakeFirst());
   let resource: { id: string } | undefined = script;
   let body = script
     ? asScript({ kind: request.relay ? "trigger_source" : "script", body: script.body })
@@ -240,10 +251,14 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       .selectFrom("run")
       .selectAll()
       .where("workspace_id", "=", request.workspaceId)
-      .where("script_path", "=", request.script)
+      // The same request sent again after the script was renamed finds its first run.
+      .where("script_path", "in", [
+        request.script,
+        ...(resourceId ? await formerPaths(trx, resourceId) : []),
+      ])
       .where("idempotency_key", "=", key)
       .executeTakeFirst();
-    if (earlier) return { created: false, run: earlier };
+    if (earlier) return { created: false, run: earlier, alias };
   }
 
   const lane = laneOf(resourceId ?? bundleId, body.concurrency, request.input ?? {});
@@ -296,7 +311,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     })
     .returningAll()
     .executeTakeFirstOrThrow();
-  return { created: true, run };
+  return { created: true, run, alias };
 }
 
 export interface WorkerScope {

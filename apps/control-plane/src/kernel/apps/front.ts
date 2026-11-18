@@ -767,6 +767,25 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           ? candidate.path === fixedApp
           : rest === candidate.path || rest.startsWith(`${candidate.path}/`),
       );
+    if (!manifest && fixedApp === undefined) {
+      // An app that was renamed: its old address sends the browser to the new one, for good.
+      const aliases = await db
+        .selectFrom("resource_alias")
+        .innerJoin("resource", "resource.id", "resource_alias.resource_id")
+        .select(["resource_alias.path", "resource.path as now"])
+        .where("resource_alias.workspace_id", "=", workspace.id)
+        .where("resource_alias.kind", "=", "app")
+        .where("resource_alias.expires_at", ">", new Date())
+        .execute();
+      const alias = aliases
+        .sort((a, b) => b.path.length - a.path.length)
+        .find((candidate) => rest === candidate.path || rest.startsWith(`${candidate.path}/`));
+      const [address = "", query] = request.url.split("?", 2);
+      if (alias && address.endsWith(rest)) {
+        const moved = `${address.slice(0, address.length - rest.length)}${alias.now}${rest.slice(alias.path.length)}`;
+        return reply.redirect(query === undefined ? moved : `${moved}?${query}`, 308);
+      }
+    }
     if (!manifest) return missing();
     const body = manifest.body as {
       title: string;

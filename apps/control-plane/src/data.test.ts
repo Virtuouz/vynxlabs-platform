@@ -1193,7 +1193,10 @@ describe("tables made in the console, isolation and guards", () => {
         (row: { title: string }) => row.title,
       ),
     ).toEqual(["kept"]);
-    expect((await alice.get(`${at}/rows/memos`)).status).toBe(404);
+    // The path it had still answers for a while, and says where the table is now.
+    const byOld = await alice.get(`${at}/rows/memos`);
+    expect(byOld.status).toBe(200);
+    expect(byOld.headers["vynx-resource-moved"]).toBe("journal/memos");
 
     // A path that something else has is not taken from it.
     const taken = await put("sales/crm", { ...notes, renameFrom: "journal/memos" });

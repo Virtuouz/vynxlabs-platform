@@ -285,6 +285,8 @@ export async function deployBundle(
     data: [] as string[],
     changes: [] as ResourceChange[],
     warnings: [] as { path: string; message: string }[],
+    /** Paths that answered for a renamed resource and now are a resource's own again. */
+    aliasesRemoved: [] as string[],
   };
   const note = (change: ResourceChange["change"], kind: string, path: string, from?: string) => {
     if (summary.changes.length < MAX_LISTED_CHANGES) {
@@ -415,6 +417,7 @@ export async function deployBundle(
     for (const message of result.warnings) {
       summary.warnings.push({ path: manifest.path, message });
     }
+    if (result.aliasRemoved) summary.aliasesRemoved.push(manifest.path);
     if (result.created) {
       summary.created += 1;
       note("created", manifest.kind, manifest.path);

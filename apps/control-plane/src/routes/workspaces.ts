@@ -6,7 +6,8 @@ import { check } from "../kernel/authorize.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { deleteResource, findResource, putResource } from "../kernel/resources.js";
+import { resolveResource } from "../kernel/resolve.js";
+import { deleteResource, putResource } from "../kernel/resources.js";
 import { setSecret } from "../kernel/secrets.js";
 import {
   AnyObject,
@@ -97,7 +98,11 @@ const Resource = Type.Object({
   id: Id,
   kind: Type.String(),
   schemaVersion: Type.Integer(),
+  key: Type.String({
+    description: "Its identity, which a rename does not change. The path it was made at.",
+  }),
   path: Type.String(),
+  title: Type.Union([Type.String(), Type.Null()]),
   workspace: Type.String({ description: "The workspace's slug." }),
   ownership: Type.Union([Type.Literal("code"), Type.Literal("ui")]),
   version: Type.Integer(),
@@ -108,7 +113,9 @@ interface ResourceRow {
   id: string;
   kind: string;
   schema_version: number;
+  key: string;
   path: string;
+  title: string | null;
   ownership: "code" | "ui";
   version: number;
   body: Record<string, unknown>;
@@ -118,7 +125,9 @@ const toResource = (row: ResourceRow, workspace: WorkspaceRef) => ({
   id: row.id,
   kind: row.kind,
   schemaVersion: row.schema_version,
+  key: row.key,
   path: row.path,
+  title: row.title,
   workspace: workspace.slug,
   ownership: row.ownership,
   version: row.version,
@@ -575,9 +584,11 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const workspace = ctx.workspace as WorkspaceRef;
-        const row = await findResource(db, workspace.id, resourcePath(params));
-        if (!row) throw notFound("The resource");
-        return toResource(row, workspace);
+        // By its path, or by one it had before it was renamed: then the answer says so.
+        const found = await resolveResource(db, workspace.id, resourcePath(params));
+        if (!found) throw notFound("The resource");
+        ctx.moved = found.alias;
+        return toResource(found.resource, workspace);
       },
     );
 
@@ -611,6 +622,105 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return reply
           .code(result.created ? 201 : 200)
           .send(toResource(result.resource as ResourceRow, workspace));
+      },
+    );
+
+    app.get(
+      "/tenants/:t/workspaces/:w/aliases",
+      {
+        config: { access: access.workspace("resource:read") },
+        schema: {
+          summary: "The paths that renamed resources had and that still answer",
+          description:
+            "A rename leaves the old path answering for the resource for 90 days. An answer " +
+            "reached through one carries `Deprecation`, `Sunset` and `Vynx-Resource-Moved`.",
+          tags: ["resources"],
+          params: Type.Object({ t: Id, w: Id }),
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  path: Type.String({ description: "The path it had." }),
+                  kind: Type.String(),
+                  resourceId: Id,
+                  now: Type.String({ description: "The path the resource has now." }),
+                  createdAt: Time,
+                  expiresAt: Time,
+                  lastUsedAt: Type.Union([Time, Type.Null()], {
+                    description:
+                      "When the old path was last asked for, to the hour. Null if it never was.",
+                  }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx }) => {
+        const workspace = ctx.workspace as WorkspaceRef;
+        const rows = await db
+          .selectFrom("resource_alias")
+          .innerJoin("resource", "resource.id", "resource_alias.resource_id")
+          .select([
+            "resource_alias.path",
+            "resource_alias.kind",
+            "resource_alias.resource_id",
+            "resource.path as now",
+            "resource_alias.created_at",
+            "resource_alias.expires_at",
+            "resource_alias.last_used_at",
+          ])
+          .where("resource_alias.workspace_id", "=", workspace.id)
+          .where("resource_alias.expires_at", ">", new Date())
+          .orderBy("resource_alias.path")
+          .execute();
+        return {
+          items: rows.map((row) => ({
+            path: row.path,
+            kind: row.kind,
+            resourceId: row.resource_id,
+            now: row.now,
+            createdAt: iso(row.created_at),
+            expiresAt: iso(row.expires_at),
+            lastUsedAt: row.last_used_at ? iso(row.last_used_at) : null,
+          })),
+        };
+      },
+    );
+
+    app.delete(
+      "/tenants/:t/workspaces/:w/aliases/*",
+      {
+        config: { access: access.workspace("resource:write") },
+        schema: {
+          summary: "Stop an old path answering now",
+          description: "The resource is untouched. Whoever still calls the old path gets 404.",
+          tags: ["resources"],
+          params: ResourceParams,
+          response: { 204: NoContent },
+        },
+      },
+      async ({ ctx, params }, reply) => {
+        const workspace = ctx.workspace as WorkspaceRef;
+        const path = resourcePath(params);
+        await ctx.mutate(async (trx, audit) => {
+          const alias = await trx
+            .deleteFrom("resource_alias")
+            .where("workspace_id", "=", workspace.id)
+            .where("path", "=", path)
+            .returningAll()
+            .executeTakeFirst();
+          if (!alias) throw notFound(`An alias at ${path}`);
+          await audit({
+            action: "resource.alias_removed",
+            targetType: "resource",
+            targetId: alias.resource_id,
+            tenantId: workspace.tenantId,
+            workspaceId: workspace.id,
+            details: { path, kind: alias.kind },
+          });
+        });
+        return reply.code(204).send(null);
       },
     );
 

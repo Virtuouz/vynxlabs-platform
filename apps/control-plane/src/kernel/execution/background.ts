@@ -5,6 +5,7 @@ import { advanceDueFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
 import { pruneRateLimits } from "../ratelimit.js";
 import { rekeyIfRotating } from "../rekey.js";
+import { removeExpiredAliases } from "../resolve.js";
 import { pruneOnce } from "../retention.js";
 import { removeExpiredSso } from "../sso/flow.js";
 import { removeExpiredImports } from "../tenancy/staging.js";
@@ -42,6 +43,7 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
     await removeExpiredSso(kernel.db);
     await removeExpiredAuthorizations(kernel.db);
     await removeOldLinks(kernel.db);
+    await removeExpiredAliases(kernel);
     await removeOldPreviews(kernel);
     await removeExpiredImports(kernel);
     await pruneRateLimits(kernel);

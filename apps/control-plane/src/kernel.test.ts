@@ -776,6 +776,15 @@ describe("resource registry", () => {
       renameFrom: "access/reviewer",
     });
     expect(renamed.body).toMatchObject({ id, path: "access/roles/reviewer", version: 3 });
+    // The path it had answers for it for a while, saying where it is now, until that is ended.
+    const byOld = await alice.client.get(`${base()}/access/reviewer`);
+    expect(byOld.body).toMatchObject({ id, path: "access/roles/reviewer", key: "access/reviewer" });
+    expect(byOld.headers["vynx-resource-moved"]).toBe("access/roles/reviewer");
+    const aliases = `/tenants/${acme}/workspaces/${dev}/aliases`;
+    expect((await alice.client.get(aliases)).body.items).toEqual([
+      expect.objectContaining({ path: "access/reviewer", now: "access/roles/reviewer" }),
+    ]);
+    expect((await alice.client.delete(`${aliases}/access/reviewer`)).status).toBe(204);
     expect((await alice.client.get(`${base()}/access/reviewer`)).status).toBe(404);
     expect((await alice.client.get(`${base()}/access/roles/reviewer`)).body.id).toBe(id);
     expect((await alice.client.get(`${base()}?kind=role`)).body.items).toHaveLength(1);

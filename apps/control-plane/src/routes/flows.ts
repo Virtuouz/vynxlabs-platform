@@ -27,6 +27,7 @@ import { publishEvent } from "../kernel/flows/events.js";
 import { ExpressionError } from "../kernel/flows/expressions.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { resolveResource } from "../kernel/resolve.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
@@ -707,13 +708,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         await findWorkspace(kernel, params.t, params.w);
-        const target = await db
-          .selectFrom("resource")
-          .select("id")
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "flow")
-          .where("path", "=", body.flow)
-          .executeTakeFirst();
+        // By its path, or by one it had before it was renamed.
+        const target = (await resolveResource(db, params.w, body.flow, { kind: "flow" }))?.resource;
         await ctx.authorize("flow_run:write", {
           tenantId: params.t,
           workspaceId: params.w,
@@ -743,6 +739,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const row = await flowRuns(params.w)
           .where("flow_run.id", "=", started.flowRun.id)
           .executeTakeFirstOrThrow();
+        ctx.moved = started.alias;
         return reply.code(started.created ? 201 : 200).send(toFlowRun(row));
       },
     );

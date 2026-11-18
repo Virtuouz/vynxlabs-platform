@@ -17,6 +17,7 @@ import {
   callbackAddress,
   finishAuthorization,
 } from "../kernel/execution/oauth.js";
+import { resolveResource } from "../kernel/resolve.js";
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
@@ -166,6 +167,12 @@ const Summary = Type.Object({
     Type.Array(Type.String(), {
       description:
         "What the deploy did to the workspace's tables, one sentence each. A deploy never drops data.",
+    }),
+  ),
+  aliasesRemoved: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Paths that still answered for a resource renamed away from them, and that this deploy gave to a resource of their own. Whoever still called the old path now reaches the new resource.",
     }),
   ),
   changes: Type.Optional(
@@ -1158,13 +1165,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         await findWorkspace(kernel, params.t, params.w);
-        const target = await db
-          .selectFrom("resource")
-          .select("id")
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "script")
-          .where("path", "=", body.script)
-          .executeTakeFirst();
+        // By its path, or by one it had before it was renamed.
+        const target = (await resolveResource(db, params.w, body.script, { kind: "script" }))
+          ?.resource;
         await ctx.authorize("run:write", {
           tenantId: params.t,
           workspaceId: params.w,
@@ -1197,6 +1200,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select("version")
           .where("id", "=", result.run.bundle_id)
           .executeTakeFirstOrThrow();
+        ctx.moved = result.alias;
         return reply.code(result.created ? 201 : 200).send(toRun(result.run, bundle.version));
       },
     );

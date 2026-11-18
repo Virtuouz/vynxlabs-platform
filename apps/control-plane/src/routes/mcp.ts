@@ -243,6 +243,8 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
       : {}),
   });
 
+  /** The tool each resource got, to give it again under the names it had before a rename. */
+  const named = new Map<string, { prefix: string; path: string; kind: string }>();
   for (const resource of resources) {
     if (tools.length >= MAX_TOOLS) break;
     const scope = { ...target, resourceId: resource.id };
@@ -251,6 +253,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
       const body = resource.body as { description?: string; input?: unknown; output?: unknown };
       const declared = objectSchema(body.input);
       const keyName = keyArgument(declared);
+      named.set(resource.id, { prefix: "run", path: resource.path, kind: "script" });
       tools.push({
         name: toolName("run", resource.path),
         description:
@@ -312,6 +315,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
         ? objectSchema(first.trigger.input)
         : { type: "object", additionalProperties: true };
       const keyName = keyArgument(declared);
+      named.set(resource.id, { prefix: "start", path: resource.path, kind: "flow" });
       tools.push({
         name: toolName("start", resource.path),
         description:
@@ -358,6 +362,31 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           kickFlow(kernel, started.flowRun.id);
           return showFlowRun(await ended(() => readFlowRun(started.flowRun.id)));
         },
+      });
+    }
+  }
+
+  // A tool's name follows its path. After a rename the name it had still answers, while the
+  // alias of the path lasts, and says in its description what to call instead.
+  if (named.size > 0) {
+    const aliases = await db
+      .selectFrom("resource_alias")
+      .select(["resource_id", "path", "expires_at"])
+      .where("workspace_id", "=", workspace.id)
+      .where("resource_id", "in", [...named.keys()])
+      .where("expires_at", ">", new Date())
+      .orderBy("path")
+      .execute();
+    for (const alias of aliases) {
+      const now = named.get(alias.resource_id);
+      if (!now || tools.length >= MAX_TOOLS) continue;
+      const current = tools.find((tool) => tool.name === toolName(now.prefix, now.path));
+      const name = toolName(now.prefix, alias.path);
+      if (!current || tools.some((tool) => tool.name === name)) continue;
+      tools.push({
+        ...current,
+        name,
+        description: `Renamed: call ${current.name} instead. This name stops working on ${alias.expires_at.toISOString().slice(0, 10)}. ${current.description}`,
       });
     }
   }

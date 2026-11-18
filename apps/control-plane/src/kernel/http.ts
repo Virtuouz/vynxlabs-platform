@@ -16,6 +16,7 @@ import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
 import type { Kernel } from "./kernel.js";
 import { resolvePrincipal } from "./principal.js";
+import { type AliasUse, aliasHeaders } from "./resolve.js";
 import { resolveScimCaller, type ScimCaller } from "./sso/scim.js";
 
 type Scope = "instance" | "tenant" | "tenant-or-instance" | "workspace";
@@ -99,6 +100,8 @@ export class RequestContext {
   /** Set on workspace-scoped routes, after the workspace was found in the tenant. */
   workspace: WorkspaceRef | undefined;
   mutated = false;
+  /** Set when the request named a resource by a path it no longer has. The answer says so. */
+  moved: AliasUse | undefined;
   readonly #request: FastifyRequest;
 
   constructor(kernel: Kernel, principal: Principal, request: FastifyRequest) {
@@ -275,6 +278,11 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
     if (declared.scope === "workspace") {
       ctx.workspace = await findWorkspace(kernel, tenantId, params.w as string);
     }
+  });
+
+  // An answer reached through the path a resource used to have says so, and until when.
+  app.addHook("onSend", async (request, reply) => {
+    if (request.ctx?.moved) reply.headers(aliasHeaders(request.ctx.moved));
   });
 
   // A change that did not go through the write path has no audit entry. Refuse to report success.

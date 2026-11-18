@@ -161,7 +161,11 @@ describe("a resource moved to another path", () => {
       })),
     );
     // It gets a run, a row, a value and access given by hand: what a rename has to keep.
-    const started = await alice.post(`${ws(dev)}/runs`, { script: "requests/submit", input: {} });
+    const started = await alice.post(`${ws(dev)}/runs`, {
+      script: "requests/submit",
+      input: {},
+      idempotencyKey: "first",
+    });
     expect(started.status, JSON.stringify(started.body)).toBe(201);
     run = started.body.id;
     expect((await alice.post(`${ws(dev)}/rows/items`, { name: "kept" })).status).toBe(201);
@@ -196,7 +200,12 @@ describe("a resource moved to another path", () => {
     const now = await resource(dev, "lending/requests/file");
     expect(now).toMatchObject({ id: submit.id, path: "lending/requests/file" });
     expect(now.version).toBe(submit.version + 1);
-    expect((await alice.get(`${ws(dev)}/resources/requests/submit`)).status).toBe(404);
+    // Asked for by the path it had, it is still found, at the path it has.
+    expect((await alice.get(`${ws(dev)}/resources/requests/submit`)).body).toMatchObject({
+      id: submit.id,
+      key: "requests/submit",
+      path: "lending/requests/file",
+    });
 
     // Its run is still its run, found under the path it has now.
     expect(
@@ -213,6 +222,129 @@ describe("a resource moved to another path", () => {
     ).toEqual(["kept"]);
     expect(await bound(dev)).toEqual(["lending/api"]);
     expect(deployed.body.summary.warnings).toEqual([]);
+  });
+
+  test("the path it had still answers, says it is on its way out, and names the new one", async () => {
+    const alias = await t.db
+      .selectFrom("resource_alias")
+      .selectAll()
+      .where("workspace_id", "=", dev)
+      .where("path", "=", "requests/submit")
+      .executeTakeFirstOrThrow();
+    expect(alias).toMatchObject({ resource_id: submit.id, kind: "script" });
+    const days = (alias.expires_at.getTime() - Date.now()) / 86_400_000;
+    expect(Math.round(days)).toBe(90);
+
+    // A run asked for by the old path is a run of the script, under the path it has now.
+    const started = await alice.post(`${ws(dev)}/runs`, { script: "requests/submit", input: {} });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect(started.body.script).toBe("lending/requests/file");
+    expect(started.headers["vynx-resource-moved"]).toBe("lending/requests/file");
+    expect(String(started.headers.deprecation)).toMatch(/^@\d+$/);
+    expect(new Date(String(started.headers.sunset)).getTime()).toBeGreaterThan(Date.now());
+    expect(String(started.headers.warning)).toContain(
+      "requests/submit was renamed to lending/requests/file",
+    );
+    // By the path it has, nothing is said.
+    const direct = await alice.post(`${ws(dev)}/runs`, {
+      script: "lending/requests/file",
+      input: {},
+      idempotencyKey: "first",
+    });
+    expect(direct.headers["vynx-resource-moved"]).toBeUndefined();
+    // And the request first sent before the rename is the same request after it.
+    expect(direct.status).toBe(200);
+    expect(direct.body.id).toBe(run);
+
+    const rows = await alice.get(`${ws(dev)}/rows/items`);
+    expect(rows.status).toBe(200);
+    expect(rows.body.items.map((row: Any) => row.name)).toEqual(["kept"]);
+    expect(rows.headers["vynx-resource-moved"]).toBe("lending/items");
+    expect((await alice.get(`${ws(dev)}/rows/lending/items`)).headers.sunset).toBeUndefined();
+  });
+
+  test("the old paths are listed, an agent's tool keeps the name it had, and an old path can be ended now", async () => {
+    const listed = (await alice.get(`${ws(dev)}/aliases`)).body.items as Any[];
+    expect(listed.map((item) => [item.path, item.kind, item.now])).toEqual([
+      ["api", "connection", "lending/api"],
+      ["items", "table", "lending/items"],
+      ["requests/submit", "script", "lending/requests/file"],
+    ]);
+    // Only the ones that were asked for say when.
+    expect(listed.map((item) => item.lastUsedAt !== null)).toEqual([false, true, true]);
+
+    const roles = Object.fromEntries(
+      (
+        await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
+      ).map((role) => [role.name, role.id]),
+    );
+    const agent = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "agent" });
+    // It may start what it is bound to, and see the workspace it is in.
+    for (const roleId of [roles.agent_runner, roles.viewer]) {
+      await alice.post(`/tenants/${tenant}/bindings`, {
+        workspaceId: dev,
+        principalType: "service_account",
+        principalId: agent.body.id,
+        roleId,
+      });
+    }
+    const offered = await alice.get(
+      `/tenants/${tenant}/service-accounts/${agent.body.id}/tools?workspace=${dev}`,
+    );
+    expect(offered.status, JSON.stringify(offered.body)).toBe(200);
+    const tools = offered.body.tools as { name: string; description: string }[];
+    expect(tools.length, JSON.stringify(offered.body)).toBeGreaterThan(0);
+    expect(tools.map((tool) => tool.name).filter((name) => name.startsWith("run_"))).toEqual([
+      "run_lending__requests__file",
+      "run_requests__submit",
+    ]);
+    expect(tools[1]?.description).toMatch(
+      /^Renamed: call run_lending__requests__file instead\. This name stops working on \d{4}-\d{2}-\d{2}\. Runs the script lending\/requests\/file\./,
+    );
+
+    // Ending one by hand: the resource stays, and the old path answers nothing.
+    expect((await alice.delete(`${ws(dev)}/aliases/api`)).status).toBe(204);
+    expect((await alice.delete(`${ws(dev)}/aliases/api`)).status).toBe(404);
+    expect((await alice.get(`${ws(dev)}/resources/api`)).status).toBe(404);
+    const byOld = await alice.get(`${ws(dev)}/resources/items`);
+    expect(byOld.body.path).toBe("lending/items");
+    expect(byOld.body.key).toBe("items");
+    expect(byOld.headers["vynx-resource-moved"]).toBe("lending/items");
+  });
+
+  test("an alias that has expired answers nothing, and a resource made at its path ends it", async () => {
+    await t.db
+      .updateTable("resource_alias")
+      .set({ expires_at: new Date(Date.now() - 1000) })
+      .where("workspace_id", "=", dev)
+      .where("path", "=", "items")
+      .execute();
+    expect((await alice.get(`${ws(dev)}/rows/items`)).status).toBe(404);
+
+    // Something new at the path the connection had. Its path is the old one's key, so it
+    // says a key of its own, as the build asks; then the path is that one's now.
+    const unsaid = await deploy(
+      dev,
+      bundle([...moved.manifests, manifest("connection", "api", { connector: "http" })]),
+    );
+    expect(unsaid.status).toBe(400);
+    expect(JSON.stringify(unsaid.body.errors)).toContain("A key belongs to one resource");
+    const again = await deploy(
+      dev,
+      bundle([...moved.manifests, manifest("connection", "api", { connector: "http" }, "api-2")]),
+    );
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    expect(again.body.summary).toMatchObject({ created: 1, renamed: 0 });
+    // Its alias was ended by hand already, so the deploy ended none.
+    expect(again.body.summary.aliasesRemoved).toEqual([]);
+    const left = await t.db
+      .selectFrom("resource_alias")
+      .select("path")
+      .where("workspace_id", "=", dev)
+      .orderBy("path")
+      .execute();
+    expect(left.map((row) => row.path)).toEqual(["items", "requests/submit"]);
+    expect((await deploy(dev, moved)).body.summary).toMatchObject({ deleted: 1 });
   });
 
   test("promotion does the same rename, and a production connection keeps what it was bound to", async () => {
@@ -240,6 +372,53 @@ describe("a resource moved to another path", () => {
       (await alice.get(`${ws(dev)}/rows/items`)).body.items.map((row: Any) => row.name),
     ).toEqual(["kept"]);
     expect(await bound(dev)).toEqual(["api"]);
+    // The paths are theirs again, and the ones they were moved to now answer for them.
+    const aliases = await t.db
+      .selectFrom("resource_alias")
+      .select("path")
+      .where("workspace_id", "=", dev)
+      .orderBy("path")
+      .execute();
+    expect(aliases.map((row) => row.path)).toEqual([
+      "lending/api",
+      "lending/items",
+      "lending/requests/file",
+    ]);
+  });
+});
+
+describe("an app moved to another path", () => {
+  test("its old address sends the browser to the new one, with the rest of the address kept", async () => {
+    const screen = manifest("interface", "screens/desk", {
+      title: "Desk",
+      pages: [{ id: "home", title: "Home", widgets: [] }],
+    });
+    const app = (path: string, key?: string) =>
+      manifest("app", path, { title: "Desk", interface: "screens/desk" }, key);
+    const withApp = (one: BundleManifest) => {
+      const unsigned = {
+        formatVersion: formatFor(2, [one]),
+        sdkVersion: "0.5.0",
+        core: { min: "0.0.0", below: "99.0.0" },
+        manifests: [...before.manifests, screen, one],
+        code: "export const main = { execute: async () => ({}) };",
+        assets: [],
+      };
+      return { ...unsigned, digest: bundleDigest(unsigned) } as Bundle;
+    };
+    expect((await deploy(dev, withApp(app("desk")))).status).toBe(201);
+    const moved = await deploy(dev, withApp(app("staff/desk", "desk")));
+    expect(moved.status, JSON.stringify(moved.body)).toBe(201);
+    expect(moved.body.summary).toMatchObject({ renamed: 1, created: 0, deleted: 0 });
+
+    const old = await t.app.inject({ method: "GET", url: "/apps/acme/dev/desk/home?tab=2" });
+    expect(old.statusCode).toBe(308);
+    expect(old.headers.location).toBe("/apps/acme/dev/staff/desk/home?tab=2");
+    // An address that was never an app's is simply not found.
+    expect((await t.app.inject({ method: "GET", url: "/apps/acme/dev/nothing/" })).statusCode).toBe(
+      404,
+    );
+    expect((await deploy(dev, before, { allowDelete: ["staff/desk"] })).status).toBe(201);
   });
 });
 

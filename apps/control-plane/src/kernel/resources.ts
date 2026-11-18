@@ -5,6 +5,7 @@ import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
 import type { KindHook } from "./kinds.js";
 import { renamePathState } from "./rename.js";
+import { dropAlias, leaveAlias } from "./resolve.js";
 
 export interface ResourceInput {
   path: string;
@@ -171,6 +172,14 @@ export async function putResource(
     body: input.body,
   });
 
+  // The path it had keeps answering for a while. An alias at the path it has now is over.
+  const aliasRemoved =
+    existing && renamedFrom !== undefined
+      ? await leaveAlias(trx, existing, renamedFrom, input.path)
+      : existing
+        ? false
+        : await dropAlias(trx, workspace.id, input.path);
+
   await audit({
     action: !existing
       ? "resource.created"
@@ -193,6 +202,8 @@ export async function putResource(
   return {
     created: !existing,
     renamedFrom,
+    /** Whether an alias at this path, of a resource renamed away from it, was ended by this. */
+    aliasRemoved,
     warnings,
     resource: await findResource(trx, workspace.id, input.path),
   };

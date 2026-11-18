@@ -18,6 +18,7 @@ import { summarize } from "../execution/redact.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
+import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
 import { expireLinks, mailApprovers } from "./approval-links.js";
 import { buildContext, type ContextStep, readOutput } from "./context.js";
 import { ExpressionError } from "./expressions.js";
@@ -91,7 +92,17 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
         .where("workspace_id", "=", request.workspaceId)
         .executeTakeFirst()
     : undefined;
-  const manifest = bundle ? await bundleManifest(kernel, bundle, "flow", request.flow) : undefined;
+  let manifest = bundle ? await bundleManifest(kernel, bundle, "flow", request.flow) : undefined;
+  let alias: AliasUse | undefined;
+  if (workspace && bundle && !manifest && !request.bundleId) {
+    // Asked for by a path it had before it was renamed, it still starts while the alias lasts.
+    const found = await resolveResource(trx, request.workspaceId, request.flow, { kind: "flow" });
+    if (found?.via === "alias") {
+      alias = found.alias;
+      request = { ...request, flow: found.resource.path };
+      manifest = await bundleManifest(kernel, bundle, "flow", request.flow);
+    }
+  }
   if (!workspace || !bundle || !manifest) throw notFound(`The flow ${request.flow}`);
   const body = manifest.body as unknown as FlowBody;
 
@@ -123,18 +134,6 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
     }
   }
 
-  const key = request.idempotencyKey ?? randomUUID();
-  if (request.idempotencyKey !== undefined) {
-    const earlier = await trx
-      .selectFrom("flow_run")
-      .selectAll()
-      .where("workspace_id", "=", request.workspaceId)
-      .where("flow_path", "=", request.flow)
-      .where("idempotency_key", "=", key)
-      .executeTakeFirst();
-    if (earlier) return { created: false, flowRun: earlier };
-  }
-
   // By the key the bundle gives it: the flow may have been renamed since that bundle.
   const resource = await trx
     .selectFrom("resource")
@@ -143,6 +142,23 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
     .where("kind", "=", "flow")
     .where("key", "=", keyOf(manifest))
     .executeTakeFirst();
+
+  const key = request.idempotencyKey ?? randomUUID();
+  if (request.idempotencyKey !== undefined) {
+    const earlier = await trx
+      .selectFrom("flow_run")
+      .selectAll()
+      .where("workspace_id", "=", request.workspaceId)
+      // The same request sent again after the flow was renamed finds its first run.
+      .where("flow_path", "in", [
+        request.flow,
+        ...(resource ? await formerPaths(trx, resource.id) : []),
+      ])
+      .where("idempotency_key", "=", key)
+      .executeTakeFirst();
+    if (earlier) return { created: false, flowRun: earlier, alias };
+  }
+
   const id = newId();
   const input = await storePayload(kernel, id, "input", request.input ?? {}, "flow-runs");
   const flowRun = await trx
@@ -192,7 +208,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       rerunFrom: request.rerunFrom,
     });
   }
-  return { created: true, flowRun };
+  return { created: true, flowRun, alias };
 }
 
 /**

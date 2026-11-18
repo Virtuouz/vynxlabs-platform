@@ -248,6 +248,43 @@ export const screen = defineInterface({ path: "screens/pets", title: "Pets", pag
   });
 });
 
+describe("a definition the entry file does not export", () => {
+  const script = (name: string, path: string) =>
+    `import { defineScript, z } from "@vynxlabs/sdk";\nexport const ${name} = defineScript({ path: "${path}", input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
+
+  test("is refused by name, where it would have gone missing without a word", async () => {
+    expect(
+      await problems(
+        `${script("kept", "jobs/kept")}const forgotten = defineScript({ path: "jobs/forgotten", input: z.object({}), output: z.object({}), async run() { return {}; } });\nvoid forgotten;`,
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /^jobs\/forgotten \(script\) is defined, but src\/index\.ts does not export it/,
+      ),
+    ]);
+  });
+
+  test("two files exporting the same name through export * are both named", async () => {
+    const dir = await repository('export * from "./a.js";\nexport * from "./b.js";\n');
+    await writeFile(join(dir, "src", "a.ts"), script("submit", "requests/submit"));
+    await writeFile(join(dir, "src", "b.ts"), script("submit", "returns/submit"));
+    const failure = await buildBundle({ directory: dir }).catch((error) => error);
+    expect(failure).toBeInstanceOf(BuildError);
+    expect(
+      (failure as BuildError).problems.map((problem) => problem.split(" is defined")[0]),
+    ).toEqual(["requests/submit (script)", "returns/submit (script)"]);
+  });
+
+  test("the same definition exported under two names is fine", async () => {
+    const dir = await repository(`${script("one", "jobs/one")}export { one as alsoOne };\n`);
+    const bundle = await buildBundle({ directory: dir }).catch((error) => error);
+    // Exported twice is its own mistake, caught as a path used twice or not at all: never as missing.
+    if (bundle instanceof BuildError) {
+      expect(bundle.problems.join("\n")).not.toContain("does not export it");
+    }
+  });
+});
+
 describe("resources managed in the console, as files in the repository", () => {
   const source = `
     import { defineScript, z } from "@vynxlabs/sdk";

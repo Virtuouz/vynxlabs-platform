@@ -29,6 +29,9 @@ interface Definition {
   toManifest(entry: string): BundleManifest;
 }
 
+/** Where the SDK notes what the repository's code defines. The SDK names it the same way. */
+const DEFINITIONS = Symbol.for("vynxlabs.definitions");
+
 const isDefinition = (value: unknown): value is Definition =>
   typeof value === "object" &&
   value !== null &&
@@ -248,11 +251,16 @@ async function loadDefinitions(options: BuildOptions) {
   const file = join(scratch, `build-${process.pid}-${Date.now()}.mjs`);
   await writeFile(file, code);
   let exported: Record<string, unknown>;
+  // The SDK inside the built code notes each definition here as it is made.
+  const scope = globalThis as Record<symbol, unknown>;
+  const defined: { kind: string; path: string }[] = [];
+  scope[DEFINITIONS] = defined;
   try {
     exported = await import(pathToFileURL(file).href);
   } catch (error) {
     throw new BuildError([`${entry} could not be loaded: ${(error as Error).message}`]);
   } finally {
+    delete scope[DEFINITIONS];
     await rm(file, { force: true });
   }
 
@@ -269,6 +277,18 @@ async function loadDefinitions(options: BuildOptions) {
   const definitions = Object.entries(exported).filter((pair): pair is [string, Definition] =>
     isDefinition(pair[1]),
   );
+  const unexported = notExported(
+    defined,
+    definitions.map(([, definition]) => definition),
+  );
+  if (unexported.length > 0) {
+    throw new BuildError(
+      unexported.map(
+        ({ kind, path }) =>
+          `${path} (${kind}) is defined, but ${entry} does not export it, so it would not be deployed. Export it from ${entry}. Two files that export the same name through "export *" cancel each other out: export each by name.`,
+      ),
+    );
+  }
   return {
     code,
     sources: await repositorySources(directory, map),
@@ -276,6 +296,27 @@ async function loadDefinitions(options: BuildOptions) {
     sdk: sdk as { SDK_VERSION: string; CORE_RANGE: object },
     sdkEntry,
   };
+}
+
+/**
+ * What the code defined and the entry file did not export. Counted, since a
+ * definition is a new object each time: two made at one path with one exported
+ * leaves one missing. An SDK from before definitions were noted reports none.
+ */
+function notExported(
+  defined: { kind: string; path: string }[],
+  exported: { kind: string; path: string }[],
+): { kind: string; path: string }[] {
+  const left = new Map<string, number>();
+  const name = (item: { kind: string; path: string }) => `${item.kind} ${item.path}`;
+  for (const item of exported) left.set(name(item), (left.get(name(item)) ?? 0) + 1);
+  const missing = new Map<string, { kind: string; path: string }>();
+  for (const item of defined) {
+    const count = left.get(name(item)) ?? 0;
+    if (count > 0) left.set(name(item), count - 1);
+    else missing.set(name(item), item);
+  }
+  return [...missing.values()];
 }
 
 /**

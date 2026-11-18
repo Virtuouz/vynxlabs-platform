@@ -68,7 +68,18 @@ export function isResourceDefinition(value: unknown): value is ResourceDefinitio
   );
 }
 
+/**
+ * Where the build keeps count of what a repository defines. The build makes the
+ * list before it loads the repository's code, and compares it with what the code
+ * exports: a definition nobody exported would otherwise go missing without a word.
+ * It is on `globalThis` because the build loads a copy of the SDK bundled into the
+ * repository's code, not the one it imports itself. Nothing is kept anywhere else.
+ */
+const DEFINITIONS = Symbol.for("vynxlabs.definitions");
+
 function resource(kind: string, path: string, body: (entry: string) => Record<string, unknown>) {
+  const defined = (globalThis as Record<symbol, unknown>)[DEFINITIONS];
+  if (Array.isArray(defined)) defined.push({ kind, path });
   return {
     [RESOURCE]: true as const,
     kind,

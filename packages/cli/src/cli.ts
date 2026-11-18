@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
+import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
 import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { startDevServer } from "./dev.js";
 import { CliError } from "./errors.js";
@@ -52,6 +53,19 @@ Work on a tenant repository
           [--confirm-breaking]
                                         Activate this workspace's bundle in the workspace
                                         it is linked to. Nothing is rebuilt
+
+A tenant's access: its groups, service accounts, roles and what they are given
+  tenant plan --tenant <slug>           What releasing the repository's files would change
+  tenant release --tenant <slug> [--message <text>] [--allow-delete <kind>/<key>]
+                                        Make the tenant's access what the files say. Files are
+                                        named <key>.<kind>.yaml, such as
+                                        tenant/groups/tech-desk.group.yaml
+  tenant pull --tenant <slug>           Write the tenant's access as it is into the repository
+  tenant releases --tenant <slug>       The releases there were, newest first
+  tenant approve|decline|withdraw <number> --tenant <slug> [--comment <text>]
+                                        Answer a release that waits for a second person
+  tenant rollback <number> --tenant <slug>
+                                        Go back to the access a release left
 
 Move a tenant
   tenant export --tenant <slug> --out <file> [--history]
@@ -479,6 +493,11 @@ async function tenant(args: string[], io: Io) {
   const settings = await loadSettings(io.env);
   const base = `${settings.url.replace(/\/+$/, "")}/api/v1`;
   const authorization = `Bearer ${settings.token}`;
+
+  if (action !== undefined && ACCESS_ACTIONS.includes(action)) {
+    await tenantAccess(action, rest, io, settings, { request, refusal });
+    return;
+  }
 
   if (action === "export") {
     const { values } = parseArgs({

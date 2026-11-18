@@ -106,6 +106,17 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     verbs: { read: "See who holds which role.", write: "Give and take away roles." },
   },
   {
+    kind: "access",
+    label: "Access releases",
+    group: "Tenant",
+    scope: "tenant",
+    verbs: {
+      read: "See how the tenant's access was released, and what a release would change.",
+      write:
+        "Release the tenant's access from its repository, go back to an earlier release, and approve one that waits.",
+    },
+  },
+  {
     kind: "audit",
     label: "Audit log",
     group: "Tenant",

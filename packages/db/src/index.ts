@@ -34,6 +34,7 @@ export type {
   FailureAlert,
   FlowRunStatus,
   GitState,
+  ManagedBy,
   Ownership,
   PlatformSchema,
   PrincipalType,
@@ -42,6 +43,8 @@ export type {
   RunStatus,
   ScopeType,
   StepStatus,
+  TenantReleaseStatus,
+  TenantResource,
   ThemeValues,
   WorkspaceType,
 } from "./schema.js";

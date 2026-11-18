@@ -33,6 +33,8 @@ export interface TenantTable {
   data_location: ColumnType<DataLocation, string | undefined, string>;
   managed_workers: Generated<boolean>;
   console_code: Generated<boolean>;
+  /** Whether a change to the tenant's access waits for a second person. */
+  access_approval: Generated<boolean>;
   created_at: Generated<Date>;
 }
 
@@ -129,10 +131,18 @@ export interface ScimGroupMemberTable {
   user_id: string;
 }
 
+/** Who makes and removes a group or a service account: a release, or an identity provider. */
+export type ManagedBy = "release" | "provider";
+
 export interface PrincipalGroupTable {
   id: string;
   tenant_id: string;
+  /** What code and a repository name it by. Never changes. Made from the name when not given. */
+  key: Generated<string>;
+  /** What people read. It can change. */
   name: string;
+  description: Generated<string>;
+  managed_by: Generated<ManagedBy>;
   created_at: Generated<Date>;
 }
 
@@ -145,7 +155,9 @@ export interface GroupMemberTable {
 export interface ServiceAccountTable {
   id: string;
   tenant_id: string;
+  key: Generated<string>;
   name: string;
+  managed_by: Generated<ManagedBy>;
   description: Generated<string>;
   created_at: Generated<Date>;
 }
@@ -186,6 +198,41 @@ export interface ResourceTable {
 export interface ResourceMeta {
   mcp?: { name: string };
   source?: { file: string; generated: boolean };
+}
+
+/** One thing a tenant's access is made of, as a release and a file in `tenant/` have it. */
+export interface TenantResource {
+  kind: string;
+  key: string;
+  body: Record<string, unknown>;
+}
+
+export type TenantReleaseStatus =
+  | "applied"
+  | "awaiting_approval"
+  | "declined"
+  | "withdrawn"
+  | "superseded";
+
+export interface TenantReleaseTable {
+  id: string;
+  tenant_id: string;
+  number: number;
+  scope: "full" | "partial";
+  content: Json<unknown>;
+  snapshot: ColumnType<TenantResource[] | null, string | null, string | null>;
+  summary: ColumnType<Record<string, unknown>, string | undefined, string>;
+  message: string | null;
+  status: TenantReleaseStatus;
+  origin: "cli" | "console" | "api" | "rollback";
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+  decided_by_type: string | null;
+  decided_by_id: string | null;
+  decided_at: Date | null;
+  comment: string | null;
+  applied_at: Date | null;
 }
 
 /** A path a renamed resource had, which still answers until it expires. */
@@ -351,6 +398,8 @@ export interface GitRepositoryTable {
   verified_at: Date | null;
   credential_kind: Generated<string>;
   release_branch: Generated<string | null>;
+  /** The branch the tenant's access is committed to. */
+  tenant_branch: Generated<string | null>;
   /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
   credential_set_at: ColumnType<Date | null, never, never>;
   credential_set_by_type: ColumnType<string | null, never, never>;
@@ -802,7 +851,9 @@ export interface EndUserTable {
 export interface EndUserGroupTable {
   id: string;
   tenant_id: string;
+  key: Generated<string>;
   name: string;
+  managed_by: Generated<ManagedBy>;
   description: Generated<string>;
   created_at: Generated<Date>;
 }
@@ -1132,6 +1183,7 @@ export interface IdentityGroupMapTable {
   claim_value: string;
   member_group_id: string | null;
   end_user_group_id: string | null;
+  managed_by: Generated<"hand" | "release">;
   created_at: Generated<Date>;
 }
 
@@ -1186,6 +1238,7 @@ export interface PlatformSchema {
   deployment: DeploymentTable;
   resource_draft: ResourceDraftTable;
   resource_alias: ResourceAliasTable;
+  tenant_release: TenantReleaseTable;
   git_repository: GitRepositoryTable;
   workspace_git: WorkspaceGitTable;
   git_operation: GitOperationTable;

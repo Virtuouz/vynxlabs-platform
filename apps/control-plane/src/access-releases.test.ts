@@ -462,7 +462,67 @@ describe("going back, and asking a second person", () => {
     expect(late.body.code).toBe("release_stale");
     expect((await decide(bob, "withdraw", stale.body.id)).status).toBe(409);
     expect((await decide(alice, "withdraw", stale.body.id)).body.status).toBe("withdrawn");
+
+    // What the console changes waits the same way: a group made there is not there yet.
+    const made = await alice.post(`/tenants/${tenant}/groups`, { name: "Night shift" });
+    expect(made.status, JSON.stringify(made.body)).toBe(202);
+    expect(made.body).toMatchObject({ waiting: true, release: { status: "awaiting_approval" } });
+    const groups = async () =>
+      ((await alice.get(`/tenants/${tenant}/groups`)).body.items as Any[]).map((one) => one.key);
+    expect(await groups()).not.toContain("night-shift");
+    expect((await decide(bob, "approve", made.body.release.id)).status).toBe(200);
+    expect(await groups()).toContain("night-shift");
+
+    // And so does giving a group a role.
+    const night = ((await alice.get(`/tenants/${tenant}/groups`)).body.items as Any[]).find(
+      (one) => one.key === "night-shift",
+    );
+    const given = await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "group",
+      principalId: night.id,
+      roleId: roles.viewer,
+    });
+    expect(given.status, JSON.stringify(given.body)).toBe(202);
+    const holds = () =>
+      t.db.selectFrom("binding").select("id").where("principal_id", "=", night.id).execute();
+    expect(await holds()).toHaveLength(0);
+    expect((await decide(bob, "approve", given.body.release.id)).status).toBe(200);
+    const held = await holds();
+    expect(held).toHaveLength(1);
+    const latest = ((await alice.get(`${at()}/releases`)).body.items as Any[])[0];
+    expect(latest).toMatchObject({
+      scope: "partial",
+      origin: "console",
+      message: "Gave viewer to Night shift",
+      createdBy: "alice",
+      decidedBy: "bob",
+    });
+    // Giving a person a role is not part of this: it is done at once, as before.
+    const bobId = (
+      await t.db
+        .selectFrom("member")
+        .select("id")
+        .where("email", "=", "bob@lakeshore.example")
+        .executeTakeFirstOrThrow()
+    ).id;
+    expect(
+      (
+        await alice.post(`/tenants/${tenant}/bindings`, {
+          workspaceId: main,
+          principalType: "member",
+          principalId: bobId,
+          roleId: roles.viewer,
+        })
+      ).status,
+    ).toBe(201);
+
     expect((await alice.put(`${at()}/approval`, { required: false })).status).toBe(200);
+    // With approval off again, taking the role away is done at once, and is in the history.
+    expect((await alice.delete(`/tenants/${tenant}/bindings/${held[0]?.id}`)).status).toBe(204);
+    expect(await holds()).toHaveLength(0);
+    expect(((await alice.get(`${at()}/releases`)).body.items as Any[])[0].message).toBe(
+      "Took viewer from Night shift",
+    );
   });
 
   test("approval needs two who may release, and releasing needs the permission", async () => {

@@ -46,7 +46,9 @@ export interface AccessSummary {
 /** One thing asked for: a resource as it should be, or one that should go. */
 export type AccessAsk =
   | { op: "put"; resource: TenantResource }
-  | { op: "delete"; kind: string; key: string };
+  | { op: "delete"; kind: string; key: string }
+  /** The resource, named by what it is, should not be there. For a binding, which is its content. */
+  | { op: "put-absent"; resource: TenantResource };
 
 const same = (a: unknown, b: unknown): boolean =>
   JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
@@ -68,6 +70,9 @@ const fingerprint = (resources: readonly TenantResource[]): string =>
   createHash("sha256")
     .update(JSON.stringify(sorted(resources)))
     .digest("hex");
+
+/** What a plan comes to: each thing to make or change, and each to remove. */
+type Step = Exclude<AccessAsk, { op: "put-absent" }>;
 
 /** A binding is what it gives to whom, and where. Its key in a file is only a name for that. */
 const bindingIdentity = (body: Record<string, unknown>): string => {
@@ -189,12 +194,17 @@ function plan(
   current: readonly TenantResource[],
   asks: readonly AccessAsk[],
   full: boolean,
-): { steps: AccessAsk[]; unchanged: number } {
+): { steps: Step[]; unchanged: number } {
   const there = new Map(current.map((resource) => [identity(resource), resource]));
-  const steps: AccessAsk[] = [];
+  const steps: Step[] = [];
   let unchanged = 0;
   const wanted = new Set<string>();
   for (const ask of asks) {
+    if (ask.op === "put-absent") {
+      const found = there.get(identity(ask.resource));
+      if (found) steps.push({ op: "delete", kind: found.kind, key: found.key });
+      continue;
+    }
     if (ask.op === "delete") {
       const found = current.find((one) => one.kind === ask.kind && one.key === ask.key);
       if (found) steps.push(ask);
@@ -221,10 +231,10 @@ function plan(
   }
   // What others refer to is made first and removed last.
   const put = steps
-    .filter((step): step is Extract<AccessAsk, { op: "put" }> => step.op === "put")
+    .filter((step): step is Extract<Step, { op: "put" }> => step.op === "put")
     .sort((a, b) => tenantOrder(a.resource, b.resource));
   const gone = steps
-    .filter((step): step is Extract<AccessAsk, { op: "delete" }> => step.op === "delete")
+    .filter((step): step is Extract<Step, { op: "delete" }> => step.op === "delete")
     .sort((a, b) => tenantOrder({ ...b, body: {} }, { ...a, body: {} }));
   return {
     steps: [
@@ -253,7 +263,7 @@ async function applyStep(
   trx: Trx,
   audit: Audit,
   tenantId: string,
-  step: AccessAsk,
+  step: Step,
   current: readonly TenantResource[],
   summary: AccessSummary,
 ): Promise<void> {
@@ -671,7 +681,7 @@ export async function releaseAccess(
   const { steps, unchanged } = plan(current, request.asks, request.scope === "full");
   if (request.scope === "full") {
     const unsaid = steps
-      .filter((step): step is Extract<AccessAsk, { op: "delete" }> => step.op === "delete")
+      .filter((step): step is Extract<Step, { op: "delete" }> => step.op === "delete")
       .filter((step) => step.kind !== "tenant_binding")
       .filter((step) => !request.allowDelete?.includes(`${step.kind}/${step.key}`));
     if (unsaid.length > 0) {
@@ -795,7 +805,7 @@ async function providerManaged(trx: Trx, tenantId: string): Promise<TenantResour
 
 function previewSteps(
   current: readonly TenantResource[],
-  steps: readonly AccessAsk[],
+  steps: readonly Step[],
   unchanged: number,
 ): AccessSummary {
   const summary: AccessSummary = {

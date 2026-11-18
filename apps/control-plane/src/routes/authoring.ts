@@ -96,12 +96,18 @@ const Paths = Type.Optional(
 const Summary = Type.Object({
   created: Type.Integer(),
   updated: Type.Integer(),
+  renamed: Type.Optional(Type.Integer()),
   unchanged: Type.Integer(),
   deleted: Type.Integer(),
   data: Type.Array(Type.String()),
   warnings: Type.Optional(Type.Array(Type.Object({ path: Type.String(), message: Type.String() }))),
   changes: Type.Array(
-    Type.Object({ change: Type.String(), kind: Type.String(), path: Type.String() }),
+    Type.Object({
+      change: Type.String(),
+      kind: Type.String(),
+      path: Type.String(),
+      from: Type.Optional(Type.String()),
+    }),
   ),
 });
 

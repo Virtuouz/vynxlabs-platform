@@ -1129,7 +1129,7 @@ describe("refusals, retiring and purging", () => {
       {
         path: "customers",
         message: expect.stringContaining(
-          'the table "customers" has access given to it and rows, and this deploy creates crm/clients. If one of them is it renamed, give that one renamedFrom: "customers".',
+          'the table "customers" has access given to it and rows, and this deploy creates crm/clients. If one of them is it renamed, give that one key: "customers".',
         ),
       },
     ]);

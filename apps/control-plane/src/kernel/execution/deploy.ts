@@ -1,9 +1,10 @@
-import { newId, sql } from "@vynxlabs/db";
+import { newId, type ResourceMeta, sql } from "@vynxlabs/db";
 import {
   type BundleManifest,
   bundleCompatibility,
   type FlowBody,
   flowGrants,
+  keyOf,
   platformKinds,
   renderResourceFiles,
 } from "@vynxlabs/manifest";
@@ -13,6 +14,7 @@ import { describeChanges } from "../data/plan.js";
 import { HttpError, notFound } from "../errors.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
+import { renamePathState, swapPath } from "../rename.js";
 import { deleteResource, putResource } from "../resources.js";
 import { loadBundle } from "./bundles.js";
 import { unfitBindings } from "./connectors.js";
@@ -146,12 +148,60 @@ function sortKeys(value: unknown): unknown {
  */
 export const OLDEST_SUPPORTED_BUNDLE_CORE = "0.2.0";
 
-/** One resource a deploy created, changed or removed. */
+/** One resource a deploy created, changed, renamed or removed. */
 export interface ResourceChange {
-  change: "created" | "updated" | "deleted";
+  change: "created" | "updated" | "renamed" | "deleted";
   kind: string;
   path: string;
+  /** The path it had, for one that was renamed. */
+  from?: string;
 }
+
+type Stored = {
+  id: string;
+  key: string;
+  path: string;
+  kind: string;
+};
+
+/**
+ * Which resource each manifest is. By key: the key a manifest gives, or its
+ * path. A manifest that gives no key, and whose path-as-key is nobody's, is
+ * the resource of its kind at that path if no other manifest claims that one:
+ * so a bundle from before keys, and a resource whose key is not its path
+ * because it was renamed by hand, are still matched. One that gives no key and
+ * meets a resource of another kind is a new resource in its place, as it
+ * always was.
+ */
+export function matchByKey<M extends BundleManifest, R extends Stored>(
+  manifests: readonly M[],
+  existing: readonly R[],
+): Map<M, R> {
+  const byKey = new Map(existing.map((row) => [row.key, row]));
+  const byPath = new Map(existing.map((row) => [row.path, row]));
+  const matched = new Map<M, R>();
+  const claimed = new Set<string>();
+  for (const manifest of manifests) {
+    const row = byKey.get(keyOf(manifest));
+    if (!row || (manifest.key === undefined && row.kind !== manifest.kind)) continue;
+    matched.set(manifest, row);
+    claimed.add(row.id);
+  }
+  for (const manifest of manifests) {
+    if (matched.has(manifest) || manifest.key !== undefined) continue;
+    const row = byPath.get(manifest.path);
+    if (!row || row.kind !== manifest.kind || claimed.has(row.id)) continue;
+    matched.set(manifest, row);
+    claimed.add(row.id);
+  }
+  return matched;
+}
+
+/** What a manifest says about its resource beside its body, as the registry keeps it. */
+const metaOf = (manifest: BundleManifest): ResourceMeta => ({
+  ...(manifest.mcp ? { mcp: manifest.mcp } : {}),
+  ...(manifest.source ? { source: manifest.source } : {}),
+});
 /** A deploy lists the resources it changed, up to this many. The counts are always complete. */
 const MAX_LISTED_CHANGES = 500;
 
@@ -220,13 +270,171 @@ export async function deployBundle(
     );
   }
   const content = await loadBundle(kernel, bundle);
+  const existing = await trx
+    .selectFrom("resource")
+    .select(["id", "key", "path", "title", "meta", "kind", "schema_version", "body", "ownership"])
+    .where("workspace_id", "=", workspace.id)
+    .execute();
+  const byPath = new Map(existing.map((row) => [row.path, row]));
+  const summary = {
+    created: 0,
+    updated: 0,
+    renamed: 0,
+    unchanged: 0,
+    deleted: 0,
+    data: [] as string[],
+    changes: [] as ResourceChange[],
+    warnings: [] as { path: string; message: string }[],
+  };
+  const note = (change: ResourceChange["change"], kind: string, path: string, from?: string) => {
+    if (summary.changes.length < MAX_LISTED_CHANGES) {
+      summary.changes.push({ change, kind, path, ...(from !== undefined ? { from } : {}) });
+    }
+  };
+  // The tenant's tables and their catalog may be in a database of their own.
+  const data = (await kernel.data.within(trx, workspace.tenantId)).db;
+  const dataBefore = await loadCatalog(data, workspace.id);
+
+  // A bundle speaks for the code-managed resources, and for the console-managed ones
+  // the bundle before it carried. A console-managed resource that no bundle carried,
+  // such as a table made in the console, is left alone by every deploy.
+  const carried = new Set<string>();
+  if (current.active_bundle_id) {
+    const before = await trx
+      .selectFrom("bundle")
+      .select(["id", "storage_key"])
+      .where("id", "=", current.active_bundle_id)
+      .executeTakeFirst();
+    if (before) {
+      const was = (await loadBundle(kernel, before)).manifests;
+      for (const [manifest, row] of matchByKey(was, existing)) {
+        if (manifest.ownership === "ui") carried.add(row.id);
+      }
+    }
+  }
+  // Each manifest is matched to the resource it is, by key. One at another path is a rename.
+  const matched = matchByKey(content.manifests, existing);
+  const kept = new Set([...matched.values()].map((row) => row.id));
+  for (const [manifest, row] of matched) {
+    if (row.kind !== manifest.kind) {
+      throw new HttpError(
+        409,
+        "kind_changed",
+        `${manifest.path} has the key "${row.key}", which is the key of the ${row.kind.replaceAll("_", " ")} at ${row.path}. A resource cannot change kind: give this one a key of its own.`,
+      );
+    }
+  }
+  // Resources the bundle no longer has go first, so a path can be reused by another.
+  const removed = existing
+    .filter((row) => (row.ownership === "code" || carried.has(row.id)) && !kept.has(row.id))
+    // Bindings and triggers before the roles and scripts they refer to.
+    .sort((a, b) => order(b.kind) - order(a.kind));
+  const leaving = new Set(removed.map((row) => row.id));
+  if (options.allowDelete !== "all") {
+    const suspected = await suspectedRenames(
+      trx,
+      data,
+      workspace,
+      removed.filter((row) => !options.allowDelete?.includes(row.path)),
+      content.manifests.filter((manifest) => !matched.has(manifest)),
+      dataBefore,
+    );
+    if (suspected.length > 0) {
+      throw new HttpError(
+        409,
+        "rename_suspected",
+        "This deploy would delete something that holds history or data, and create something of the same kind. " +
+          "If it was renamed, deploying this cuts the new one off from what the old one holds: give the new one the old one's key. " +
+          "To delete it anyway, deploy again allowing each path by name.",
+        suspected,
+      );
+    }
+  }
+  // A path is one resource's. What a manifest wants must be free, or be freed by this deploy.
+  const moving = new Map<string, { id: string; key: string; kind: string; path: string }>();
+  for (const manifest of content.manifests) {
+    const row = matched.get(manifest);
+    const occupant = byPath.get(manifest.path);
+    if (!occupant || occupant.id === row?.id || leaving.has(occupant.id)) continue;
+    const successor = [...matched].find(([, other]) => other.id === occupant.id)?.[0];
+    if (!successor || successor.path === occupant.path) {
+      throw new HttpError(
+        409,
+        "path_taken",
+        `${manifest.path} (${manifest.kind}) cannot be deployed: that is the path of the ${occupant.kind.replaceAll("_", " ")} with the key "${occupant.key}", which this deploy does not move or remove. Rename or remove that one, or give this one that key if it is the same resource.`,
+      );
+    }
+    // The one in the way is renamed by this deploy too: it steps aside first, so two can swap.
+    moving.set(occupant.id, occupant);
+  }
+
+  for (const row of removed) {
+    await deleteResource(trx, audit, workspace, row.path, kernel.hooks);
+    summary.deleted += 1;
+    note("deleted", row.kind, row.path);
+  }
+  for (const row of moving.values()) {
+    await trx
+      .updateTable("resource")
+      .set({ path: swapPath(row.id) })
+      .where("id", "=", row.id)
+      .execute();
+    await renamePathState(trx, data, workspace.id, row, row.path, swapPath(row.id));
+  }
+
+  for (const manifest of content.manifests) {
+    const stored = matched.get(manifest);
+    const title = manifest.title ?? null;
+    const meta = metaOf(manifest);
+    if (
+      stored &&
+      stored.path === manifest.path &&
+      stored.schema_version === manifest.schemaVersion &&
+      stored.ownership === manifest.ownership &&
+      stored.title === title &&
+      same(stored.meta, meta) &&
+      same(stored.body, manifest.body)
+    ) {
+      summary.unchanged += 1;
+      continue;
+    }
+    const result = await putResource(kernel, trx, audit, workspace, {
+      path: manifest.path,
+      kind: manifest.kind,
+      schemaVersion: manifest.schemaVersion,
+      ownership: manifest.ownership,
+      body: manifest.body,
+      key: keyOf(manifest),
+      title,
+      meta,
+      ...(stored ? { match: { id: stored.id } } : {}),
+      ...(stored && moving.has(stored.id) ? { movedFrom: stored.path } : {}),
+      // A resource taken over in the console, or handed back to the repository.
+      switchOwnership: true,
+    });
+    for (const message of result.warnings) {
+      summary.warnings.push({ path: manifest.path, message });
+    }
+    if (result.created) {
+      summary.created += 1;
+      note("created", manifest.kind, manifest.path);
+    } else if (result.renamedFrom !== undefined) {
+      summary.renamed += 1;
+      note("renamed", manifest.kind, manifest.path, result.renamedFrom);
+    } else {
+      summary.updated += 1;
+      note("updated", manifest.kind, manifest.path);
+    }
+  }
+
+  // Asked once every rename is done: a renamed connection keeps what it was bound to.
   const needed = options.allowMissingBindings
     ? []
     : await missingBindings(trx, workspace, content.manifests);
   // A dev workspace takes a deploy with something unbound, and says so: a run that reaches it
   // fails with the same words. Production, and a promotion, refuse it.
   const warnOnly = current.type === "dev" && options.promotedFrom === undefined;
-  const warnings = warnOnly ? needed : [];
+  summary.warnings.unshift(...(warnOnly ? needed : []));
   const missing = warnOnly ? [] : needed;
   if (missing.length > 0) {
     throw new HttpError(
@@ -257,102 +465,6 @@ export async function deployBundle(
       "Something bound in this workspace does not fit the connector this bundle gives it. Bind it again, then deploy again.",
       unfit,
     );
-  }
-
-  const existing = await trx
-    .selectFrom("resource")
-    .select(["id", "path", "kind", "schema_version", "body", "ownership"])
-    .where("workspace_id", "=", workspace.id)
-    .execute();
-  const byPath = new Map(existing.map((row) => [row.path, row]));
-  const summary = {
-    created: 0,
-    updated: 0,
-    unchanged: 0,
-    deleted: 0,
-    data: [] as string[],
-    changes: [] as ResourceChange[],
-    warnings,
-  };
-  const note = (change: ResourceChange["change"], kind: string, path: string) => {
-    if (summary.changes.length < MAX_LISTED_CHANGES) summary.changes.push({ change, kind, path });
-  };
-  // The tenant's tables and their catalog may be in a database of their own.
-  const data = (await kernel.data.within(trx, workspace.tenantId)).db;
-  const dataBefore = await loadCatalog(data, workspace.id);
-
-  // A bundle speaks for the code-managed resources, and for the console-managed ones
-  // the bundle before it carried. A console-managed resource that no bundle carried,
-  // such as a table made in the console, is left alone by every deploy.
-  const carried = new Set<string>();
-  if (current.active_bundle_id) {
-    const before = await trx
-      .selectFrom("bundle")
-      .select(["id", "storage_key"])
-      .where("id", "=", current.active_bundle_id)
-      .executeTakeFirst();
-    if (before) {
-      for (const manifest of (await loadBundle(kernel, before)).manifests) {
-        if (manifest.ownership === "ui") carried.add(manifest.path);
-      }
-    }
-  }
-  // Resources the bundle no longer has go first, so a path can be reused by another kind.
-  const wanted = new Set(content.manifests.map((manifest) => manifest.path));
-  const removed = existing
-    .filter((row) => (row.ownership === "code" || carried.has(row.path)) && !wanted.has(row.path))
-    // Bindings and triggers before the roles and scripts they refer to.
-    .sort((a, b) => order(b.kind) - order(a.kind));
-  if (options.allowDelete !== "all") {
-    const suspected = await suspectedRenames(
-      trx,
-      data,
-      workspace,
-      removed.filter((row) => !options.allowDelete?.includes(row.path)),
-      content.manifests.filter((manifest) => !byPath.has(manifest.path)),
-      dataBefore,
-    );
-    if (suspected.length > 0) {
-      throw new HttpError(
-        409,
-        "rename_suspected",
-        "This deploy would delete something that holds history or data, and create something of the same kind. " +
-          "If it was renamed, deploying this cuts the new one off from what the old one holds. " +
-          "To delete it anyway, deploy again allowing each path by name.",
-        suspected,
-      );
-    }
-  }
-  for (const row of removed) {
-    await deleteResource(trx, audit, workspace, row.path, kernel.hooks);
-    summary.deleted += 1;
-    note("deleted", row.kind, row.path);
-  }
-
-  for (const manifest of content.manifests) {
-    const stored = byPath.get(manifest.path);
-    if (
-      stored &&
-      stored.kind === manifest.kind &&
-      stored.schema_version === manifest.schemaVersion &&
-      stored.ownership === manifest.ownership &&
-      same(stored.body, manifest.body)
-    ) {
-      summary.unchanged += 1;
-      continue;
-    }
-    const result = await putResource(kernel, trx, audit, workspace, {
-      path: manifest.path,
-      kind: manifest.kind,
-      schemaVersion: manifest.schemaVersion,
-      ownership: manifest.ownership,
-      body: manifest.body,
-      // A resource taken over in the console, or handed back to the repository.
-      switchOwnership: true,
-    });
-    if (result.created) summary.created += 1;
-    else summary.updated += 1;
-    note(result.created ? "created" : "updated", manifest.kind, manifest.path);
   }
 
   // Every table is in place now, so a reference to a table that is not there is a mistake.
@@ -414,7 +526,7 @@ async function suspectedRenames(
   trx: Trx,
   data: Trx,
   workspace: WorkspaceRef,
-  removed: { id: string; path: string; kind: string }[],
+  removed: { id: string; key: string; path: string; kind: string }[],
   created: BundleManifest[],
   catalog: Awaited<ReturnType<typeof loadCatalog>>,
 ): Promise<{ path: string; message: string }[]> {
@@ -481,8 +593,8 @@ async function suspectedRenames(
       message:
         `the ${row.kind.replaceAll("_", " ")} "${row.path}" has ${holds.join(" and ")}, and this deploy creates ${named}. ` +
         (row.kind === "table"
-          ? `If one of them is it renamed, give that one renamedFrom: "${row.path}". `
-          : "If one of them is it renamed, keep the old path: a new path starts with none of this. ") +
+          ? `If one of them is it renamed, give that one key: "${row.key}". `
+          : `If one of them is it renamed, give that one key: "${row.key}". `) +
         `To delete it, allow "${row.path}" by name (--allow-delete ${row.path}).`,
     });
   }

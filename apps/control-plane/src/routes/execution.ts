@@ -148,12 +148,18 @@ const toBundle = (row: BundleRow, activeId: string | null) => ({
 const Summary = Type.Object({
   created: Type.Integer(),
   updated: Type.Integer(),
+  renamed: Type.Optional(
+    Type.Integer({
+      description:
+        "Resources whose path changed and whose key did not. Each keeps its ID, its history and what the workspace bound to it.",
+    }),
+  ),
   unchanged: Type.Integer(),
   deleted: Type.Integer(),
   warnings: Type.Optional(
     Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
       description:
-        "In a dev workspace, what the bundle needs that is not bound here yet. The deploy went ahead; a run that reaches one fails.",
+        "What the deploy went ahead with and whoever deployed should know: in a dev workspace, what the bundle needs that is not bound here yet; after a rename, something the new path already had of its own.",
     }),
   ),
   data: Type.Optional(
@@ -168,10 +174,14 @@ const Summary = Type.Object({
         change: Type.Union([
           Type.Literal("created"),
           Type.Literal("updated"),
+          Type.Literal("renamed"),
           Type.Literal("deleted"),
         ]),
         kind: Type.String(),
         path: Type.String(),
+        from: Type.Optional(
+          Type.String({ description: "The path it had, for one that was renamed." }),
+        ),
       }),
       { description: "The resources the deploy changed. At most 500 are listed." },
     ),
@@ -1092,7 +1102,23 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll("run")
           .select("bundle.version as bundle_version")
           .where("run.workspace_id", "=", params.w);
-        if (query.script) select = select.where("run.script_path", "=", query.script);
+        if (query.script) {
+          // The runs of the script that has this path now, under whatever path it had then,
+          // beside any run that was started under this path.
+          const path = query.script;
+          const script = await db
+            .selectFrom("resource")
+            .select("id")
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "script")
+            .where("path", "=", path)
+            .executeTakeFirst();
+          select = select.where((eb) =>
+            script
+              ? eb.or([eb("run.resource_id", "=", script.id), eb("run.script_path", "=", path)])
+              : eb("run.script_path", "=", path),
+          );
+        }
         if (query.status) select = select.where("run.status", "=", query.status);
         if (args.after) select = select.where("run.id", "<", args.after);
         const rows = await select

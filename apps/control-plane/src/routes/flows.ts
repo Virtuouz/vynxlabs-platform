@@ -656,7 +656,25 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params, query }) => {
         const args = pageArgs(query);
         let select = flowRuns(params.w);
-        if (query.flow) select = select.where("flow_run.flow_path", "=", query.flow);
+        if (query.flow) {
+          // The runs of the flow that has this path now, under whatever path it had then.
+          const path = query.flow;
+          const flow = await db
+            .selectFrom("resource")
+            .select("id")
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "flow")
+            .where("path", "=", path)
+            .executeTakeFirst();
+          select = select.where((eb) =>
+            flow
+              ? eb.or([
+                  eb("flow_run.resource_id", "=", flow.id),
+                  eb("flow_run.flow_path", "=", path),
+                ])
+              : eb("flow_run.flow_path", "=", path),
+          );
+        }
         if (query.status) select = select.where("flow_run.status", "=", query.status);
         if (!query.all) select = select.where("flow_run.parent_flow_run_id", "is", null);
         if (args.after) select = select.where("flow_run.id", "<", args.after);

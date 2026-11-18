@@ -28,6 +28,8 @@ export interface ResourceInput {
    * key. Its path may be another: that is a rename.
    */
   match?: { id: string } | undefined;
+  /** The path the matched resource had before the caller moved it aside to free that path. */
+  movedFrom?: string | undefined;
   /**
    * Lets the resource change between code-managed and console-managed. Only a
    * deploy passes it: a bundle is the one thing that may say who manages what.
@@ -77,7 +79,8 @@ export async function putResource(
   if (input.renameFrom !== undefined && !existing) {
     throw notFound(`The resource at ${input.renameFrom}`);
   }
-  const renamedFrom = existing && existing.path !== input.path ? existing.path : undefined;
+  const before = existing ? (input.movedFrom ?? existing.path) : undefined;
+  const renamedFrom = before !== undefined && before !== input.path ? before : undefined;
   if (renamedFrom !== undefined) {
     const occupant = await trx
       .selectFrom("resource")
@@ -154,8 +157,9 @@ export async function putResource(
           (await kernel.data.within(trx, workspace.tenantId)).db,
           workspace.id,
           existing,
-          renamedFrom,
+          existing.path,
           input.path,
+          renamedFrom,
         )
       : [];
 

@@ -43,6 +43,7 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 - **An app's session has `groupKeys`**, the keys of an end user's groups, beside `groups`, which is what they are called. Decide by the keys.
 - **Resource files can be kept anywhere in the repository.** `platform build` finds `<name>.<kind>.yaml` in any folder. A file under `platform/` or a root listed in `vynxlabs.yaml` (`roots: [src]`) gets its path from where it is; anywhere else it says `path:`. A file may also say `key:` and `title:`. The console changes only files in its own folder (`platform/`).
 - **`schemas/files/`** has a JSON Schema for each kind's file, for editor completion.
+- **`docs/sdk-guide.md`** covers keys and renames, tool names, files, and a tenant's access. `examples/higher-ed-devices` and `examples/fernhill` name their groups and agents by key and define them under `tenant/`.
 - **Choose the name of an agent's tool.** `defineScript({ …, mcp: { name: "submit_device_request" } })`, and the same on `defineFlow`. The agent sees exactly that, and it no longer changes when the path does. Without it the name is made from the path as before (`run_requests__submit`), and after a rename the old name keeps working for 90 days. Choosing a name for a script that already has a tool changes that tool's name at once: the deploy says so.
 
 ## Unreleased: phase 16, visual refinement

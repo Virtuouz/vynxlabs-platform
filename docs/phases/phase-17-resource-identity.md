@@ -1,6 +1,6 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 built in part: see what it left out. M6 not started. Not pushed.
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 and M6 built in part: each says what it left out. Not pushed.
 Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
@@ -17,6 +17,12 @@ This phase carries out [Decision 0002](../evolution/decisions/0002-resource-iden
 - renaming the Tech Desk group's title leaves bindings, a waiting approval and a row rule working;
 - moving `requests/submit` to `lending/requests/file`, in code and separately in the console, is reported as a rename, keeps runs, bindings and the MCP tool name, and leaves the old URL answering with a warning;
 - promoting that to production does the same rename there.
+
+**Where the exit criterion stands.** Each part is covered by an automated test against a real database, and none was walked through on the test instance:
+- bring-up from the repository: `packages/cli/src/access.test.ts` releases a tenant's access with the CLI from files, and `examples.test.ts` checks the example defines what it names;
+- a title changed with bindings, an approval and a row rule intact: `access-releases.test.ts`, `mcp.test.ts`, `data-access.test.ts`;
+- a move reported as a rename, from code and from the console, with runs, bindings, tool name and old address kept: `renames.test.ts`, `authoring.test.ts`, `git.test.ts`;
+- the same rename on promotion: `renames.test.ts`.
 
 ## Owner decisions
 
@@ -253,6 +259,20 @@ The plan's M5 had eleven steps. These were not built, and each is a limit on wha
 - **A rename is made from the resources list**, not from a panel in each editor, and a title is set through the API only.
 - **Not built:** `platform schemas`, shipping the file schemas in the SDK package, and serving them from the control plane. They are in `schemas/files/` in this repository.
 - **A developer who moves a file on the branch without `key:`** makes a delete and a create, which the delete guard stops when the old one holds something. Nothing recognises the move for them.
+
+## M6: examples and documentation
+
+- **`examples/higher-ed-devices` brings up its own access.** `tenant/groups/tech-desk.group.yaml` and `tenant/service-accounts/helpdesk-assistant.service_account.yaml` define what its bindings and its review flow name, now by key. The README's "create these first" step is `platform tenant release`.
+- **`examples/fernhill`** names its groups and its agent by key and defines them under `tenant/`. Its setup script still makes them through the API, with the same keys.
+- **Both are built in CI** (`packages/cli/src/examples.test.ts`): each builds under the new checks, says nothing that needs format 4, defines in `tenant/` everything it names by key, and has no binding left that goes by a title. Both are in the root `typecheck`.
+- **`docs/sdk-guide.md`** is new: the three names, moving a resource, tool names, TypeScript or YAML, a tenant's access, and what the build stops. `docs/master-spec.md` says how identity works now. `docs/contracts/bundle.md` and `tenant-export.md` were written in M1.
+
+### What M6 left out
+
+- **`src/scripts.ts` is not split** in either example (726 and 917 lines). The build check that made splitting safe is there, and the guide says how to export from several files.
+- **Neither example moved a resource to YAML** to show both forms side by side.
+- **The device-lending example was not brought up on the test instance.** Its files parse, check and build here. The run through on a live tenant, which is the phase's exit criterion, was not done.
+- **`docs/phases/phase-7-authoring.md` still has its stale notes** (that `platform pull` is not built, and "Changes screen").
 
 ## What was run, and what was not
 

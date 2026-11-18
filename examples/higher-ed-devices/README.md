@@ -9,14 +9,17 @@ A sample tenant built to test the platform's developer ergonomics and its MCP se
 | Review flow: calculators and chargers approved at once, the rest wait for the "Tech Desk" group. Overdue loans are marked each weekday at 07:00 Central | `src/flows.ts` |
 | Apps with no code: **Device desk** (queue, check out and check in, shelf) for staff; **Borrow a device** for students | `src/apps.ts` |
 | Help-desk agent: the `helpdesk-assistant` service account over MCP, bound to look-up, availability, queue, submit and cancel | `src/apps.ts`, `setup/agent.mjs` |
+| The tenant's access: the Tech Desk group and the agent's service account | `tenant/` |
 
 Students are end users with a `student_id` attribute. The tables' rules show them their own record, requests and loans, and every device.
 
 ## Set it up
 
-The tenant needs a "Tech Desk" group and a `helpdesk-assistant` service account before the first deploy, because the bindings name them. Turn triggers on in a dev workspace, or the review flow never starts.
+The repository brings up its own tenant. The Tech Desk group and the `helpdesk-assistant` service account are files under `tenant/`, and the bindings and the review flow name them by key (`tech-desk`, `helpdesk-assistant`), so what they are called can change later without touching the code. Release the tenant's access, then deploy. Turn triggers on in a dev workspace, or the review flow never starts.
 
 ```sh
+platform tenant plan --tenant higher-ed       # what the release would make
+platform tenant release --tenant higher-ed
 platform deploy --tenant higher-ed --workspace devices-dev
 platform promote --tenant higher-ed --workspace devices-dev
 PLATFORM_EMAIL=… PLATFORM_PASSWORD=… node setup/setup.mjs --tenant higher-ed --workspace devices

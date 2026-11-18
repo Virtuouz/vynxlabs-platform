@@ -341,7 +341,7 @@ export const studentsCancel = defineBinding({
 export const deskDecides = defineBinding({
   path: "access/desk-approvals",
   role: decidesApprovals,
-  principal: { type: "group", name: "Tech Desk" },
+  principal: { type: "group", key: "tech-desk" },
 });
 
 /**
@@ -350,7 +350,7 @@ export const deskDecides = defineBinding({
  * and files or withdraws requests for them. It does not hand out devices or
  * decide requests.
  */
-const AGENT = { type: "service_account", name: "helpdesk-assistant" } as const;
+const AGENT = { type: "service_account", key: "helpdesk-assistant" } as const;
 export const agentConnects = defineBinding({
   path: "access/agent-connects",
   role: connects,

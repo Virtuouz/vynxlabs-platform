@@ -75,7 +75,7 @@ export const reorder = defineFlow({
         "{'clinic': trigger.clinic, 'item': trigger.item, 'quantity': trigger.quantity, " +
         "'total': steps.quote.output.amount, 'on_hand': trigger.on_hand}",
       timeoutSeconds: 3 * 24 * 3600,
-      approvers: { groups: ["Practice managers"] },
+      approvers: { groups: ["practice-managers"] },
     }),
     place: step.script(placeOrder, {
       input:

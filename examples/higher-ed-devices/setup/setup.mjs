@@ -4,9 +4,9 @@
 //
 //   PLATFORM_EMAIL=… PLATFORM_PASSWORD=… node setup/setup.mjs --tenant higher-ed --workspace devices-dev
 //
-// The tenant must already have the `helpdesk-assistant` service account and the
-// "Tech Desk" group (the repository's bindings name them). What to sign in with
-// is written to .platform/<workspace>.json.
+// The tenant's `helpdesk-assistant` service account and its Tech Desk group come
+// from the repository's own `tenant/` files: run `platform tenant release` first.
+// What to sign in with is written to .platform/<workspace>.json.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -317,9 +317,13 @@ for (const i of [0, 1, 7]) {
 
 step("A key for the help-desk agent");
 const sa = (await me.get(`${T}/service-accounts`)).items.find(
-  (a) => a.name === "helpdesk-assistant",
+  (a) => a.key === "helpdesk-assistant",
 );
-if (!sa) throw new Error("Create the helpdesk-assistant service account first.");
+if (!sa) {
+  throw new Error(
+    "There is no helpdesk-assistant service account. Run `platform tenant release --tenant <slug>` in this repository first.",
+  );
+}
 const key = await me.post(`${T}/service-accounts/${sa.id}/api-keys`, {
   name: `Help line (${WORKSPACE})`,
 });

@@ -26,7 +26,7 @@ export const review = defineFlow({
     ask: step.approval("Lend a device", {
       detail: "{'request': trigger.request, 'kind': trigger.kind, 'student': trigger.student}",
       timeoutSeconds: 3 * 24 * 3600,
-      approvers: { groups: ["Tech Desk"] },
+      approvers: { groups: ["tech-desk"] },
     }),
     approve: step.script(decideRequest, {
       input: "{'request': trigger.request, 'decision': 'approve'}",

@@ -1,0 +1,233 @@
+# The desk's pages: the queue, checking out and in, and the shelf. No code:
+# edit it here or in the console's builder, whichever is to hand.
+schemaVersion: 1
+body:
+  title: Device desk
+  description: Requests to hand out, loans to take back, and the shelf.
+  pages:
+    - id: queue
+      title: Queue
+      widgets:
+        - id: pending
+          title: Waiting for a decision
+          type: figure
+          table: requests
+          summary:
+            groupBy: []
+            aggregates:
+              - fn: count
+                as: requests
+          filter:
+            column: status
+            value: pending
+          at:
+            x: 0
+            y: 0
+            w: 3
+            h: 3
+        - id: ready
+          title: Ready to collect
+          type: figure
+          table: requests
+          summary:
+            groupBy: []
+            aggregates:
+              - fn: count
+                as: requests
+          filter:
+            column: status
+            value: ready
+          at:
+            x: 3
+            y: 0
+            w: 3
+            h: 3
+        - id: waitlisted
+          title: Waitlisted
+          type: figure
+          table: requests
+          summary:
+            groupBy: []
+            aggregates:
+              - fn: count
+                as: requests
+          filter:
+            column: status
+            value: waitlisted
+          at:
+            x: 6
+            y: 0
+            w: 3
+            h: 3
+        - id: overdue
+          title: Overdue loans
+          type: figure
+          table: loans
+          summary:
+            groupBy: []
+            aggregates:
+              - fn: count
+                as: loans
+          filter:
+            and:
+              - column: status
+                value: out
+              - column: overdue
+                value: true
+          at:
+            x: 9
+            y: 0
+            w: 3
+            h: 3
+        - id: open
+          title: Open requests
+          type: table
+          table: requests
+          fields:
+            - column: number
+            - column: student_name
+              label: Student
+            - column: student_number
+              label: Number
+            - column: kind
+            - column: status
+            - column: device_tag
+              label: Device
+            - column: location
+            - column: needed_by
+              label: Needed by
+          sort:
+            - column: created_at
+          filter:
+            column: status
+            op: in
+            value:
+              - pending
+              - ready
+              - waitlisted
+          pageSize: 25
+          actions:
+            - label: Check out
+              target:
+                kind: script
+                path: loans/check-out
+              input:
+                request: row.number
+              confirm: Hand {{row.device_tag}} to {{row.student_name}}?
+              result:
+                show: output
+                refresh:
+                  - open
+                  - ready
+                  - out
+              enabledWhen: row.device_tag
+          at:
+            x: 0
+            y: 3
+            w: 12
+            h: 9
+        - id: out
+          title: On loan
+          type: table
+          table: loans
+          fields:
+            - column: number
+            - column: device_tag
+              label: Device
+            - column: kind
+            - column: student_name
+              label: Student
+            - column: due_on
+              label: Due
+            - column: overdue
+          sort:
+            - column: due_on
+          filter:
+            column: status
+            value: out
+          pageSize: 25
+          actions:
+            - label: Check in
+              target:
+                kind: script
+                path: loans/check-in
+              input:
+                asset_tag: row.device_tag
+              result:
+                show: output
+                refresh:
+                  - out
+                  - overdue
+                  - open
+          at:
+            x: 0
+            y: 12
+            w: 12
+            h: 9
+      filters:
+        - id: kind
+          label: Kind
+          column: kind
+          type: value
+    - id: shelf
+      title: Shelf
+      widgets:
+        - id: by-kind
+          title: Devices by kind and state
+          type: chart
+          table: devices
+          summary:
+            groupBy:
+              - column: kind
+              - column: status
+            aggregates:
+              - fn: count
+                as: devices
+          options:
+            mark: bar
+            x: kind
+            y: devices
+            series: status
+          at:
+            x: 0
+            y: 0
+            w: 12
+            h: 8
+        - id: devices
+          title: Devices
+          type: table
+          table: devices
+          fields:
+            - column: asset_tag
+              label: Tag
+            - column: kind
+            - column: model
+            - column: location
+              editable: true
+            - column: status
+              editable: true
+            - column: condition
+              editable: true
+            - column: reserved_for
+              label: Set aside for
+            - column: notes
+              editable: true
+          sort:
+            - column: asset_tag
+          pageSize: 50
+          options:
+            allowAdd: true
+          at:
+            x: 0
+            y: 8
+            w: 12
+            h: 12
+      filters:
+        - id: kind
+          label: Kind
+          column: kind
+          type: value
+        - id: location
+          label: Location
+          column: location
+          type: value

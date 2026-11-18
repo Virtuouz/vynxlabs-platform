@@ -4,11 +4,14 @@ import {
   type KindRegistry,
   registerPlatformKinds,
   type TableBody,
+  TENANT_FOLDER,
+  TENANT_KINDS,
 } from "@vynxlabs/manifest";
 import type { Trx } from "./audit.js";
 import { applyTable, retireTable } from "./data/apply.js";
 import type { DataStores } from "./data/stores.js";
 import { badRequest } from "./errors.js";
+import { resolveResource } from "./resolve.js";
 
 export interface AppliedResource {
   id: string;
@@ -64,9 +67,11 @@ const roleHook: KindHook = {
 type PrincipalRef =
   | { type: "member"; email: string }
   | { type: "end_user"; email: string }
-  | { type: "group" | "service_account" | "end_user_group"; name: string }
+  | { type: "group" | "service_account" | "end_user_group"; key?: string; name?: string }
   | { type: "anonymous" }
   | { type: "end_users" };
+
+const folderOf = (kind: string) => TENANT_KINDS.find((one) => one.kind === kind)?.folder ?? kind;
 
 const bindingHook: KindHook = {
   async apply(trx, resource) {
@@ -121,29 +126,34 @@ const bindingHook: KindHook = {
           : principal.type === "end_user_group"
             ? "end_user_group"
             : "service_account";
+      const what = principal.type.replaceAll("_", " ");
+      // By its key, which never changes; or by its title, as bindings named it before keys.
       const found = await trx
         .selectFrom(table)
         .select("id")
         .where("tenant_id", "=", resource.tenantId)
-        .where("name", "=", principal.name)
+        .$if(principal.key !== undefined, (query) =>
+          query.where("key", "=", principal.key as string),
+        )
+        .$if(principal.key === undefined, (query) =>
+          query.where("name", "=", principal.name as string),
+        )
         .executeTakeFirst();
       if (!found) {
-        throw fail(
-          "/body/principal/name",
-          `no ${principal.type.replaceAll("_", " ")} has that name`,
-        );
+        throw principal.key !== undefined
+          ? fail(
+              "/body/principal/key",
+              `no ${what} has the key "${principal.key}" in this tenant. Add ${TENANT_FOLDER}/${folderOf(principal.type)}/${principal.key}.${principal.type}.yaml to the repository and run \`platform tenant release\`, or make it in the console`,
+            )
+          : fail("/body/principal/name", `no ${what} has that name`);
       }
       principalId = found.id;
     }
 
     let resourceId: string | null = null;
     if (body.resource !== undefined) {
-      const target = await trx
-        .selectFrom("resource")
-        .select("id")
-        .where("workspace_id", "=", resource.workspaceId)
-        .where("path", "=", body.resource)
-        .executeTakeFirst();
+      // By its path, or by one it had before it was renamed: the binding is to the resource.
+      const target = (await resolveResource(trx, resource.workspaceId, body.resource))?.resource;
       if (!target) throw fail("/body/resource", "no resource has that path in this workspace");
       resourceId = target.id;
     }

@@ -2,12 +2,13 @@ import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, type PrincipalType as PrincipalKind } from "@vynxlabs/db";
 import { Type } from "typebox";
-import type { Audit, Trx } from "../kernel/audit.js";
+import type { Audit, Db, Trx } from "../kernel/audit.js";
 import { PERMISSION_PATTERN } from "../kernel/authorize.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
+import { releaseOne } from "../kernel/tenant/releases.js";
 import { pageOf } from "../pagination.js";
 import { csvCell } from "./data.js";
 import {
@@ -27,6 +28,8 @@ import {
   NullableTime,
   TenantParams,
   Time,
+  Waiting,
+  waiting,
 } from "./shared.js";
 
 const Permissions = Type.Array(Type.String({ pattern: PERMISSION_PATTERN }), {
@@ -156,34 +159,50 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             description: Type.Optional(Type.String({ maxLength: 500 })),
             permissions: Permissions,
           }),
-          response: { 201: Role },
+          response: { 201: Role, 202: Waiting },
         },
       },
       async ({ ctx, params, body }, reply) => {
-        const role = await ctx.mutate(async (trx, audit) => {
+        const made = await ctx.mutate(async (trx, audit) => {
+          const taken = await trx
+            .selectFrom("role")
+            .select("id")
+            .where("tenant_id", "=", params.t)
+            .where("workspace_id", "is", null)
+            .where("name", "=", body.name)
+            .executeTakeFirst();
+          if (taken) throw conflict(`This tenant already has a role named ${body.name}.`);
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                kind: "tenant_role",
+                key: body.name,
+                body: {
+                  ...(body.description ? { description: body.description } : {}),
+                  permissions: body.permissions,
+                },
+              },
+            },
+            `Made the role ${body.name}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
           const row = await trx
-            .insertInto("role")
-            .values({
-              id: newId(),
-              tenant_id: params.t,
-              workspace_id: null,
-              name: body.name,
-              description: body.description ?? "",
-              permissions: body.permissions,
-              source_resource_id: null,
-            })
-            .returningAll()
+            .selectFrom("role")
+            .selectAll()
+            .where("tenant_id", "=", params.t)
+            .where("workspace_id", "is", null)
+            .where("name", "=", body.name)
             .executeTakeFirstOrThrow();
-          await audit({
-            action: "role.created",
-            targetType: "role",
-            targetId: row.id,
-            tenantId: params.t,
-            details: { name: row.name, permissions: row.permissions },
-          });
-          return row;
+          return { released, row };
         });
-        return reply.code(201).send(toRole(role));
+        return made.row
+          ? reply.code(201).send(toRole(made.row))
+          : reply.code(202).send(waiting(made.released));
       },
     );
 
@@ -213,31 +232,40 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             description: Type.Optional(Type.String({ maxLength: 500 })),
             permissions: Type.Optional(Permissions),
           }),
-          response: { 200: Role },
+          response: { 200: Role, 202: Waiting },
         },
       },
-      async ({ ctx, params, body }) => {
-        const role = await ctx.mutate(async (trx, audit) => {
+      async ({ ctx, params, body }, reply) => {
+        const changed = await ctx.mutate(async (trx, audit) => {
           const current = await editableRole(trx, params.t, params.id);
+          const description = body.description ?? current.description;
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                kind: "tenant_role",
+                key: current.name,
+                body: {
+                  ...(description ? { description } : {}),
+                  permissions: body.permissions ?? current.permissions,
+                },
+              },
+            },
+            `Changed the role ${current.name}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
           const row = await trx
-            .updateTable("role")
-            .set({
-              description: body.description ?? current.description,
-              permissions: body.permissions ?? current.permissions,
-            })
+            .selectFrom("role")
+            .selectAll()
             .where("id", "=", params.id)
-            .returningAll()
             .executeTakeFirstOrThrow();
-          await audit({
-            action: "role.updated",
-            targetType: "role",
-            targetId: row.id,
-            tenantId: params.t,
-            details: { name: row.name, permissions: row.permissions },
-          });
-          return row;
+          return { released, row };
         });
-        return toRole(role);
+        return changed.row ? toRole(changed.row) : reply.code(202).send(waiting(changed.released));
       },
     );
 
@@ -249,11 +277,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Delete a custom role that no binding uses",
           tags: ["permissions"],
           params: Type.Object({ t: Id, id: Id }),
-          response: { 204: NoContent },
+          response: { 204: NoContent, 202: Waiting },
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
+        const released = await ctx.mutate(async (trx, audit) => {
           const role = await editableRole(trx, params.t, params.id);
           const used = await trx
             .selectFrom("binding")
@@ -261,16 +289,18 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("role_id", "=", role.id)
             .executeTakeFirst();
           if (used) throw conflict("The role is still bound. Remove its bindings first.");
-          await trx.deleteFrom("role").where("id", "=", role.id).execute();
-          await audit({
-            action: "role.deleted",
-            targetType: "role",
-            targetId: role.id,
-            tenantId: params.t,
-            details: { name: role.name },
-          });
+          return releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            { op: "delete", kind: "tenant_role", key: role.name },
+            `Deleted the role ${role.name}`,
+          );
         });
-        return reply.code(204).send(null);
+        return released.status === "applied"
+          ? reply.code(204).send(null)
+          : reply.code(202).send(waiting(released));
       },
     );
 
@@ -384,7 +414,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             principalId: Type.Optional(Id),
             roleId: Id,
           }),
-          response: { 201: Type.Object({ id: Id }) },
+          response: { 201: Type.Object({ id: Id }), 202: Waiting },
         },
       },
       async ({ ctx, params, body }, reply) => {
@@ -403,6 +433,48 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         }
 
+        // What a group or a service account is given is part of the tenant's access as it is
+        // released: it is in that history, and waits when the tenant asks for a second person.
+        // What a person is given, and anything at one resource, stays a change made here.
+        const given = resourceId
+          ? undefined
+          : await asTenantBinding(db, tenantId, {
+              principalType: body.principalType,
+              principalId: body.principalId,
+              roleId: body.roleId,
+              workspaceId,
+            });
+        if (given) {
+          const made = await ctx.mutate(async (trx, audit) => {
+            const released = await releaseOne(
+              trx,
+              audit,
+              tenantId,
+              ctx.principal,
+              { op: "put", resource: { kind: "tenant_binding", key: "given", body: given.body } },
+              `Gave ${given.body.role} to ${given.label}`,
+            );
+            if (released.status !== "applied") return { released, id: undefined };
+            const row = await trx
+              .selectFrom("binding")
+              .select("id")
+              .where("tenant_id", "=", tenantId)
+              .where("principal_type", "=", body.principalType)
+              .where("principal_id", "=", body.principalId as string)
+              .where("role_id", "=", body.roleId)
+              .where("resource_id", "is", null)
+              .where("source_resource_id", "is", null)
+              .$if(workspaceId === null, (query) => query.where("workspace_id", "is", null))
+              .$if(workspaceId !== null, (query) =>
+                query.where("workspace_id", "=", workspaceId as string),
+              )
+              .executeTakeFirstOrThrow();
+            return { released, id: row.id };
+          });
+          return made.id
+            ? reply.code(201).send({ id: made.id })
+            : reply.code(202).send(waiting(made.released));
+        }
         const id = await ctx.mutate((trx, audit) =>
           insertBinding(trx, audit, tenantId, { ...body, workspaceId, resourceId }),
         );
@@ -419,7 +491,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Needs `binding:write` at the binding's scope.",
           tags: ["permissions"],
           params: Type.Object({ t: Id, id: Id }),
-          response: { 204: NoContent },
+          response: { 204: NoContent, 202: Waiting },
         },
       },
       async ({ ctx, params }, reply) => {
@@ -432,6 +504,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "binding.resource_id",
             "binding.principal_type",
             "binding.principal_id",
+            "binding.role_id",
             "binding.source_resource_id",
             "role.name",
           ])
@@ -446,6 +519,33 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!binding) throw notFound("The binding");
         if (binding.source_resource_id) {
           throw conflict("This binding comes from a resource. Change the resource instead.");
+        }
+        const taken = binding.resource_id
+          ? undefined
+          : await asTenantBinding(db, params.t, {
+              principalType: binding.principal_type,
+              principalId: binding.principal_id ?? undefined,
+              roleId: binding.role_id,
+              workspaceId: binding.workspace_id,
+            });
+        if (taken) {
+          const released = await ctx.mutate((trx, audit) =>
+            releaseOne(
+              trx,
+              audit,
+              params.t,
+              ctx.principal,
+              // A binding is what it gives to whom: it is named here by that, not by a key.
+              {
+                op: "put-absent",
+                resource: { kind: "tenant_binding", key: "taken", body: taken.body },
+              },
+              `Took ${taken.body.role} from ${taken.label}`,
+            ),
+          );
+          return released.status === "applied"
+            ? reply.code(204).send(null)
+            : reply.code(202).send(waiting(released));
         }
         await ctx.mutate(async (trx, audit) => {
           await trx.deleteFrom("binding").where("id", "=", binding.id).execute();
@@ -879,6 +979,65 @@ const AUDIT_CSV_CAP = 100_000;
  * may be held there and that the principal and scope belong to the tenant,
  * then records it. Shared by giving access and by adding a member with it.
  */
+/**
+ * A binding as part of the tenant's released access, when it is one: a role of
+ * the tenant's own, or one every tenant has, given to a group or a service
+ * account in the tenant or in one workspace. Nothing for any other binding.
+ */
+async function asTenantBinding(
+  db: Db,
+  tenantId: string,
+  given: {
+    principalType: string;
+    principalId: string | undefined;
+    roleId: string;
+    workspaceId: string | null;
+  },
+): Promise<{ body: Record<string, unknown> & { role: string }; label: string } | undefined> {
+  const table =
+    given.principalType === "group"
+      ? "principal_group"
+      : given.principalType === "end_user_group"
+        ? "end_user_group"
+        : given.principalType === "service_account"
+          ? "service_account"
+          : undefined;
+  if (!table || !given.principalId) return undefined;
+  const principal = await db
+    .selectFrom(table)
+    .select(["key", "name"])
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", given.principalId)
+    .executeTakeFirst();
+  const role = await db
+    .selectFrom("role")
+    .select(["name", "workspace_id", "tenant_id"])
+    .where("id", "=", given.roleId)
+    .executeTakeFirst();
+  // A role that one workspace defines is that workspace's to give.
+  if (!principal || !role || role.workspace_id !== null) return undefined;
+  if (role.tenant_id !== null && role.tenant_id !== tenantId) return undefined;
+  let workspace: string | undefined;
+  if (given.workspaceId) {
+    const found = await db
+      .selectFrom("workspace")
+      .select("slug")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", given.workspaceId)
+      .executeTakeFirst();
+    if (!found) return undefined;
+    workspace = found.slug;
+  }
+  return {
+    body: {
+      role: role.name,
+      principal: { type: given.principalType, key: principal.key },
+      ...(workspace ? { workspace } : {}),
+    },
+    label: principal.name,
+  };
+}
+
 export async function insertBinding(
   trx: Trx,
   audit: Audit,

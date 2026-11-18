@@ -1,0 +1,11 @@
+# The colours both apps use, light and dark.
+schemaVersion: 1
+body:
+  tokens:
+    action: "#1d4f91"
+    action-ink: "#ffffff"
+    action-soft: "#e4ecf7"
+  dark:
+    action: "#8db4ea"
+    action-ink: "#0b1f3a"
+    action-soft: "#1a2c45"

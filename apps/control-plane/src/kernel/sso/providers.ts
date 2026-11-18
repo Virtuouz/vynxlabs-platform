@@ -6,6 +6,7 @@ import type { Audit, Db, Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { decryptFor, encryptFor } from "../execution/bindings.js";
 import type { Kernel } from "../kernel.js";
+import { membershipForProvider } from "../tenant/releases.js";
 import { readIdpMetadata } from "./metadata.js";
 
 export type Audience = "members" | "end_users";
@@ -524,6 +525,9 @@ export async function createProvider(
     .returningAll()
     .executeTakeFirstOrThrow();
   const provider = toProvider(row);
+  // What a release said about who is in which group was said before this provider was
+  // there. It is given to the provider now: a repository says it once.
+  if (where.tenantId !== null) await membershipForProvider(trx, where.tenantId);
   await audit({
     action: "identity_provider.created",
     targetType: "identity_provider",

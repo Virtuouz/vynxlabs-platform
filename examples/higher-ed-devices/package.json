@@ -1,0 +1,17 @@
+{
+  "name": "@vynxlabs/example-higher-ed-devices",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lakeshore State University's student device lending: requests, reservations, check-out, returns, and a help-desk agent.",
+  "scripts": {
+    "setup": "node setup/setup.mjs",
+    "agent": "node setup/agent.mjs"
+  },
+  "dependencies": {
+    "@vynxlabs/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  }
+}

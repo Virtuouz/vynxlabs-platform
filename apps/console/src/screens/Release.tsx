@@ -35,7 +35,9 @@ interface DraftRow {
   path: string;
   kind: string;
   deleted: boolean;
-  change: "create" | "update" | "delete" | "take_over";
+  change: "create" | "update" | "delete" | "take_over" | "rename";
+  /** The path the resource has now, when the draft renames it. */
+  renamedFrom?: string;
   updatedAt: string;
   about?: string[];
 }
@@ -45,9 +47,20 @@ interface Summary {
   updated: number;
   deleted: number;
   data: string[];
-  changes: { change: string; kind: string; path: string }[];
+  /** Resources whose path changed and that are still the same resource. */
+  renamed?: number;
+  changes: { change: string; kind: string; path: string; from?: string }[];
   warnings?: { path: string; message: string }[];
+  /** Changes to a name something outside calls: an agent's tool. */
+  breaking?: { path: string; message: string }[];
 }
+
+/** A draft saved more than a day ago: likely not part of what is being released now. */
+export const isOld = (row: { updatedAt: string }, now = Date.now()) =>
+  now - new Date(row.updatedAt).getTime() > 86_400_000;
+
+/** A message from the API starts in lower case, to follow a path. Alone, it is a sentence. */
+const sentence = (message: string) => `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
 
 interface Refusal {
   code: string;
@@ -84,7 +97,8 @@ const CHANGE_TAG: Record<DraftRow["change"], [string, "draft" | "live" | "danger
     create: ["New", "live"],
     update: ["Changed", "draft"],
     delete: ["Removed", "danger"],
-    take_over: ["Taken over", "repository"],
+    take_over: ["Takes over from code", "repository"],
+    rename: ["Renamed", "draft"],
   };
 
 const KIND_LABEL: Record<string, string> = {
@@ -274,6 +288,8 @@ function ReviewStep({
     );
 
   const groups = [...new Set(drafts.map((row) => KIND_LABEL[row.kind] ?? row.kind))];
+  // With none chosen, every draft is deployed: one saved days ago goes with the rest.
+  const old = chosen.size === 0 && drafts.length > 1 ? drafts.filter((row) => isOld(row)) : [];
   const editLink = (row: DraftRow) =>
     row.deleted
       ? undefined
@@ -313,6 +329,16 @@ function ReviewStep({
         minSecond={300}
         first={
           <div className="flex flex-col gap-5 lg:pr-6">
+            {old.length > 0 ? (
+              <Notice tone="attention">
+                {`${old.length === 1 ? "One of these was" : `${old.length} of these were`} saved more than a day ago: ${old
+                  .slice(0, 3)
+                  .map((row) => row.path)
+                  .join(", ")}${
+                  old.length > 3 ? ` and ${old.length - 3} more` : ""
+                }. Deploying deploys every draft here. Check the ones you mean, or set aside what is no longer wanted.`}
+              </Notice>
+            ) : null}
             {groups.map((group) => (
               <section key={group} className="flex flex-col gap-2">
                 <SectionLabel>{group}</SectionLabel>
@@ -349,6 +375,11 @@ function ReviewStep({
                               <Tag tone={CHANGE_TAG[row.change][1]}>
                                 {CHANGE_TAG[row.change][0]}
                               </Tag>
+                              {row.renamedFrom ? (
+                                <span className="text-meta text-ink-muted">
+                                  from <Mono>{row.renamedFrom}</Mono>
+                                </span>
+                              ) : null}
                             </span>
                             <span className="flex items-center gap-1">
                               <span className="text-meta text-ink-subtle">
@@ -382,6 +413,14 @@ function ReviewStep({
                               </Button>
                             </span>
                           </div>
+                          {row.change === "take_over" ? (
+                            <p className="m-0 text-meta text-ink-muted">
+                              The repository's code defines this {row.kind.replaceAll("_", " ")}{" "}
+                              now. Deployed, it becomes a file the console owns, which git sync then
+                              carries. A deploy from the repository that still defines it takes it
+                              back.
+                            </p>
+                          ) : null}
                           {row.about && row.about.length > 0 ? (
                             <ul className="m-0 flex list-none flex-col gap-1 p-0 text-meta text-ink-muted">
                               {row.about.map((line) => (
@@ -620,7 +659,11 @@ function PromoteStep({
   workspace: Workspace;
   target: Workspace;
 }) {
-  const preview = useLoad<PromotionPreview>(`${root}/promotion-preview`);
+  /** Paths whoever promotes said may be deleted, after the preview refused to delete them. */
+  const [allowed, setAllowed] = useState<string[]>([]);
+  const preview = useLoad<PromotionPreview>(
+    `${root}/promotion-preview${allowed.length > 0 ? `?allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
+  );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     bundleVersion: number;
@@ -632,6 +675,8 @@ function PromoteStep({
   const [fromRun] = useUrlParam("fromRun");
   const [problem, setProblem] = useState<string>();
   const data = preview.data;
+  // Only production has agents that were told a name and cannot be told another at once.
+  const breaking = target.type === "production" ? (data?.summary?.breaking ?? []) : [];
 
   return (
     <div className="flex flex-col gap-5">
@@ -667,6 +712,37 @@ function PromoteStep({
       ) : (
         <PreviewPanels data={data} targetName={target.name} link={link} />
       )}
+      {data?.refusal?.code === "rename_suspected" && data.canPromote !== false ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="danger"
+            onClick={async () => {
+              const paths = data.refusal?.errors.map((one) => one.path) ?? [];
+              const sure = await ask.confirm({
+                title: `Delete ${paths.join(", ")} in ${target.name}?`,
+                text: "What each one holds there is cut off from whatever is created in its place. If one of them was renamed, give the new one its key in the repository instead, and nothing is lost.",
+                action: "Delete them and look again",
+                danger: true,
+              });
+              if (sure) setAllowed([...allowed, ...paths]);
+            }}
+          >
+            Delete them anyway
+          </Button>
+        </div>
+      ) : null}
+      {breaking.length > 0 ? (
+        <Notice tone="attention">
+          <strong>
+            This changes {breaking.length === 1 ? "a name" : "names"} that something outside calls.
+          </strong>
+          <ul className="mt-2 mb-0 pl-5">
+            {breaking.map((one) => (
+              <li key={`${one.path} ${one.message}`}>{sentence(one.message)}</li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {result ? (
         <Notice tone="success">
@@ -703,7 +779,11 @@ function PromoteStep({
             onClick={async () => {
               const sure = await ask.confirm({
                 title: `Promote to ${target.name}?`,
-                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.`,
+                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.${
+                  breaking.length > 0
+                    ? ` It also changes what an agent calls: ${breaking.map((one) => sentence(one.message)).join(" ")}`
+                    : ""
+                }`,
                 action: "Promote to production",
                 danger: true,
               });
@@ -711,10 +791,12 @@ function PromoteStep({
               setBusy(true);
               setProblem(undefined);
               try {
-                const promoted = await api.post<NonNullable<typeof result>>(
-                  `${root}/promotions`,
-                  {},
-                );
+                const promoted = await api.post<NonNullable<typeof result>>(`${root}/promotions`, {
+                  // Each was shown above and in the question just answered.
+                  ...(breaking.length > 0 ? { confirmBreaking: true } : {}),
+                  ...(allowed.length > 0 ? { allowDelete: allowed } : {}),
+                });
+                setAllowed([]);
                 setResult(promoted);
                 preview.reload();
                 const [runWorkspace, runId] = (fromRun ?? "").split(":");
@@ -794,7 +876,8 @@ export function PreviewPanels({
           ) : data.summary ? (
             <>
               <p className="m-0 text-ink-muted">
-                Creates {data.summary.created}, changes {data.summary.updated} and removes{" "}
+                Creates {data.summary.created}, changes {data.summary.updated}
+                {data.summary.renamed ? `, renames ${data.summary.renamed}` : ""} and removes{" "}
                 {data.summary.deleted}.
               </p>
               {data.summary.changes.length > 0 ? (
@@ -802,7 +885,7 @@ export function PreviewPanels({
                   {data.summary.changes.map((one) => (
                     <li
                       key={`${one.kind}-${one.path}`}
-                      className="flex items-center gap-2 text-meta"
+                      className="flex flex-wrap items-center gap-2 text-meta"
                     >
                       <Tag
                         tone={
@@ -815,6 +898,12 @@ export function PreviewPanels({
                       >
                         {one.change}
                       </Tag>
+                      {one.from ? (
+                        <>
+                          <Mono>{one.from}</Mono>
+                          <span className="text-ink-subtle">to</span>
+                        </>
+                      ) : null}
                       <Mono>{one.path}</Mono>
                       <span className="text-ink-subtle">{one.kind}</span>
                     </li>

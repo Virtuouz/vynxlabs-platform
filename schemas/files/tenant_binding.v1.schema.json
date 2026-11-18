@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/tenant_binding.v1.schema.json",
+  "title": "tenant_binding file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+      "description": "Its key, when that is not the file's name. It never changes."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "description": "A role of the tenant's own, or one every tenant has, by name."
+        },
+        "principal": {
+          "type": "object",
+          "description": "Who is given the role: a group or a service account, by key. A person is never named here.",
+          "properties": {
+            "type": {
+              "enum": [
+                "group",
+                "service_account",
+                "end_user_group"
+              ]
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+            }
+          },
+          "required": [
+            "type",
+            "key"
+          ],
+          "additionalProperties": false
+        },
+        "workspace": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "The workspace's slug. Without it the role is held in the whole tenant."
+        }
+      },
+      "required": [
+        "role",
+        "principal"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion"
+  ],
+  "additionalProperties": false
+}

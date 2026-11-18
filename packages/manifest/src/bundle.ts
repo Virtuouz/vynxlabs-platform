@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type Static, Type } from "typebox";
-import { KIND_PATTERN, PATH_PATTERN } from "./envelope.js";
+import { KIND_PATTERN, named, PATH_PATTERN } from "./envelope.js";
 
 const VERSION_PATTERN = "^\\d+\\.\\d+\\.\\d+$";
 
@@ -8,18 +8,67 @@ const VERSION_PATTERN = "^\\d+\\.\\d+\\.\\d+$";
  * A manifest as a bundle carries it: no workspace. Up to format 2 every one is
  * code-managed. From format 3 a bundle also carries the resources managed in
  * the console, marked `ui`, so that one bundle is everything a workspace runs.
+ * From format 4 a manifest may say its key, its title, the name of its tool and
+ * the file that defines it.
  */
 export const BundleManifest = Type.Object(
   {
     kind: Type.String({ pattern: KIND_PATTERN, maxLength: 63 }),
     schemaVersion: Type.Integer({ minimum: 1 }),
     path: Type.String({ pattern: PATH_PATTERN, maxLength: 255 }),
+    ...named,
     ownership: Type.Union([Type.Literal("code"), Type.Literal("ui")]),
     body: Type.Record(Type.String(), Type.Unknown()),
   },
   { additionalProperties: false },
 );
 export type BundleManifest = Static<typeof BundleManifest>;
+
+/** A manifest's key: the one it gives, or its path. */
+export const keyOf = (manifest: { key?: string | undefined; path: string }): string =>
+  manifest.key ?? manifest.path;
+
+/** A tool name from a path: letters, digits and underscores, at most 64 characters. */
+export function derivedToolName(prefix: string, path: string): string {
+  const name = `${prefix}_${path.replace(/\//g, "__").replace(/-/g, "_")}`;
+  return name.length <= 64 ? name : name.slice(0, 64);
+}
+
+/** The names of the tools every agent is offered, which no script or flow may take. */
+export const RESERVED_TOOL_NAMES = ["get_run", "get_flow_run", "list_approvals", "decide_approval"];
+
+/**
+ * The name of the tool an agent sees for a script or a flow: the one its author
+ * chose, or one made from its path. Nothing for another kind.
+ */
+export function toolNameOf(resource: {
+  kind: string;
+  path: string;
+  mcp?: { name: string } | undefined;
+}): string | undefined {
+  if (resource.kind !== "script" && resource.kind !== "flow") return undefined;
+  return (
+    resource.mcp?.name ??
+    derivedToolName(resource.kind === "script" ? "run" : "start", resource.path)
+  );
+}
+
+/** Whether a manifest says something only format 4 can carry. */
+export const needsFormat4 = (manifest: BundleManifest): boolean =>
+  manifest.key !== undefined ||
+  manifest.title !== undefined ||
+  manifest.mcp !== undefined ||
+  manifest.source !== undefined;
+
+/**
+ * The format a bundle is written in: the oldest that can carry it, so that it
+ * keeps deploying to an instance that has not been upgraded. `least` is the
+ * format its other contents need.
+ */
+export const formatFor = <V extends 1 | 2 | 3 | 4>(
+  least: V,
+  manifests: readonly BundleManifest[],
+): V | 4 => (manifests.some(needsFormat4) ? 4 : least);
 
 /** The longest path of a file inside an app, and what it may be made of. */
 export const ASSET_PATH_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._@~-]*(/[A-Za-z0-9][A-Za-z0-9._@~-]*)*$";
@@ -112,11 +161,15 @@ export type ConsoleSources = Static<typeof ConsoleSources>;
 /** The unit of deploy: one workspace's manifests and code, immutable once built. */
 export const Bundle = Type.Object(
   {
-    formatVersion: Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)], {
-      description:
-        "2 adds `assets`. 3 lets a manifest be console-managed, and then speaks for every " +
-        "console-managed resource of the workspace. A bundle with neither is still written as 1.",
-    }),
+    formatVersion: Type.Union(
+      [Type.Literal(1), Type.Literal(2), Type.Literal(3), Type.Literal(4)],
+      {
+        description:
+          "2 adds `assets`. 3 lets a manifest be console-managed, and then speaks for every " +
+          "console-managed resource of the workspace. 4 lets a manifest carry `key`, `title`, `mcp` " +
+          "and `source`. A bundle is written in the oldest format that can carry it.",
+      },
+    ),
     sdkVersion: Type.String({ pattern: VERSION_PATTERN }),
     core: Type.Object(
       {
@@ -136,7 +189,7 @@ export const Bundle = Type.Object(
     assets: Type.Optional(
       Type.Array(BundleAsset, {
         maxItems: MAX_BUNDLE_ASSETS,
-        description: "The files of the bundle's apps. Format 2 only.",
+        description: "The files of the bundle's apps. From format 2.",
       }),
     ),
     sources: Type.Optional(BundleSources),

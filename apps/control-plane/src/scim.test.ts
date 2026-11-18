@@ -900,6 +900,19 @@ describe("groups, pushed", () => {
     const made = (await localGroups()).find((group) => group.name === "gold-customers");
     expect(made).toBeTruthy();
     localGold = made.id;
+    // It is the provider's to make and remove: it has a key, so a binding can name it, and it
+    // is not part of the access the tenant releases, so no release removes it.
+    expect(
+      await t.db
+        .selectFrom("end_user_group")
+        .select(["key", "managed_by"])
+        .where("id", "=", localGold)
+        .executeTakeFirst(),
+    ).toEqual({ key: "gold-customers", managed_by: "provider" });
+    const released = (await alice.get(`/tenants/${tenant}/access`)).body.resources as {
+      key: string;
+    }[];
+    expect(released.map((one) => one.key)).not.toContain("gold-customers");
     expect(await membersOf(localGold)).toEqual(["uma@customer.example", "vic@customer.example"]);
     expect((await alice.get(`${providers()}/${customers}/group-maps`)).body.items).toMatchObject([
       { value: "Gold Customers", groupId: localGold },

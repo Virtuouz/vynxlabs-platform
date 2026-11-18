@@ -344,6 +344,22 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
           body: Type.Object({
             decision: Type.Union([Type.Literal("promote"), Type.Literal("decline")]),
             comment: Type.Optional(Type.String({ maxLength: 1000 })),
+            confirmBreaking: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Said after reading the promotion preview's `summary.breaking`: this may change " +
+                  "or remove the name of a tool an agent calls. Promoting to production without " +
+                  "it, when there is one, is refused with `breaking_changes`.",
+              }),
+            ),
+            allowDelete: Type.Optional(
+              Type.Array(Type.String({ maxLength: 255 }), {
+                maxItems: 200,
+                description:
+                  "Paths this may delete although it also creates something of the same kind. " +
+                  "Without it, such a deletion is refused with `rename_suspected`.",
+              }),
+            ),
           }),
           response: { 200: PromotionRequest },
         },
@@ -388,6 +404,8 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
           }
           const promoted = await promote(kernel, trx, audit, source, ctx.principal, {
             bundleId: row.bundle_id,
+            ...(body.allowDelete ? { allowDelete: body.allowDelete } : {}),
+            ...(body.confirmBreaking ? { confirmBreaking: true } : {}),
           });
           const done = await trx
             .updateTable("promotion_request")

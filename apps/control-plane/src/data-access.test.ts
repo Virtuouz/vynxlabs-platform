@@ -434,6 +434,17 @@ describe("scripts and data", () => {
       "only lets you write rows you own, or rows its rules give you",
     );
     expect(done.output.all).toBe(2);
+
+    // The group is renamed. A row holds its key, which did not change, so it is still its row.
+    expect(group.body.key).toBe("ops");
+    const renamed = await alice.patch(`/tenants/${tenant}/groups/${group.body.id}`, {
+      name: "Operations",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect((await asBob()).output.theirs).toEqual(["For ops"]);
+    // A row that holds what the group is called now matches too, as rows written by name do.
+    await alice.post(`${ws()}/rows/notes`, { title: "By its name", team: "Operations" });
+    expect((await asBob()).output.theirs.sort()).toEqual(["By its name", "For ops"]);
   });
 
   test("a script reads and writes an external source it declared", async () => {

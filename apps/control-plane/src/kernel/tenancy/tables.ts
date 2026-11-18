@@ -46,6 +46,8 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "always",
   },
   { table: "service_account", ofTenant: own, key: ["id"], export: "always" },
+  // What the tenant's access was released as, and by whom: its history travels with it.
+  { table: "tenant_release", ofTenant: own, key: ["id"], export: "always" },
   {
     table: "api_key",
     ofTenant: (id) =>
@@ -74,6 +76,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     ofTenant: own,
     ofWorkspace: inWorkspace,
     key: ["resource_id", "version"],
+    export: "always",
+  },
+  // A path a renamed resource had. It comes after the resource it points at.
+  {
+    table: "resource_alias",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id", "path"],
     export: "always",
   },
   {

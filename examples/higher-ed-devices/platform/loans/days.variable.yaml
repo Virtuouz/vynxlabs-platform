@@ -1,0 +1,6 @@
+# A setting the desk changes without a developer: the console edits this file,
+# and so can you. Its path is where it is kept: loans/days.
+schemaVersion: 1
+body:
+  description: How many days a loan lasts unless the desk says otherwise.
+  default: "14"

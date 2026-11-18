@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/app.v1.schema.json",
+  "title": "app file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's identity, when that is not its path. Say it when you move the file: the path the resource had. It never changes."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's path, when the file is kept somewhere that does not give it one."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "entry": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "The file, among the app's files in the bundle, that is the page itself."
+        },
+        "interface": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "An interface of the workspace to serve as this app, in place of files of its own. An app has an entry or an interface, never both."
+        },
+        "fallback": {
+          "type": "boolean",
+          "description": "Whether an address under the app that names no file answers with the entry page, for apps that route in the browser. Default true."
+        },
+        "reads": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255
+          },
+          "description": "The tables the app's code reads, so that whoever shares it can see what it reaches. It informs; the tables' policies and the app's bindings are what decide access."
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "entry"
+          ]
+        },
+        {
+          "required": [
+            "interface"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "body"
+  ],
+  "additionalProperties": false
+}

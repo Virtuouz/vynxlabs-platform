@@ -2,6 +2,70 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 17, resource identity
+
+### For operators
+
+- **Database migrations 0068 to 0070.** Every resource, version and draft gets a `key`, which is its path. `run.resource_id` and `flow_run.resource_id` become nullable and stop holding a bundle's ID. Titles are filled in from bodies. A tenant export's format number does not change.
+- **A deploy matches resources by key, so a resource can be renamed.** The same key at another path is a rename in place: the resource keeps its ID, its history, its runs, its rows and what the workspace bound to it. The summary counts `renamed` and each change says `from`. New refusals: `kind_changed` (a key that belongs to another kind) and `path_taken` (a path the deploy does not free).
+- **The path a renamed resource had keeps answering for 90 days.** Answers reached through it carry `Deprecation`, `Sunset`, `Warning` and `Vynx-Resource-Moved`. An app's old address redirects with 308. `GET …/aliases` lists them and `DELETE …/aliases/<path>` ends one; the console shows them under a workspace's Resources.
+- **Resources answer with `key` and `title`.**
+- **A change to the name of an agent's tool is named, and promoting it to production is confirmed.** A deploy's summary has `breaking`. Promoting one to a production workspace without `confirmBreaking: true` answers 409 `breaking_changes`; the preview lists them. The console asks; `platform promote` takes `--confirm-breaking`.
+- **The release screen can allow a deletion the rename guard refused**, after asking.
+- **Database migrations 0071 and 0072.** Member groups, groups of end users and service accounts get a `key`, made from their name. `tenant_release` records each change to a tenant's access. Roles that could change groups, service accounts or roles are given the new `access:write`.
+- **A tenant's access is released.** `GET …/access` reads a tenant's groups, service accounts, own roles and what they are given as resources and files. `POST …/access/plan` says what releasing a set would change, `POST …/access/releases` does it, and `…/releases/:id/rollback` goes back. See the phase document for the refusals.
+- **Optional approval by a second person.** `PUT …/access/approval`. With it on, a release, and every change to a group, a service account, a tenant role or what one is given made in the console or the API, answers 202 and waits. Routes that used to answer 201 or 204 can now answer 202: `{ waiting: true, release, detail }`.
+- **Groups and service accounts can be renamed** (`PATCH …/groups/:g`, `PATCH …/service-accounts/:id` with `name`). The key stays.
+- **Deleting a group or a service account is refused while a workspace's bundle still gives it access** (`principal_in_use`). It used to remove that access without a word.
+- **`tenantBranch`** on `PUT …/git-repository`: each release of the tenant's access is committed to that branch, under `tenant/`.
+- **Database migration 0073.** Steps waiting for approval get their approvers by ID.
+- **A group can be renamed while an approval waits for it**, and its members still decide it. A group that a waiting step names cannot be deleted. A deploy warns when a flow names its approvers by a group's title, or names a group the tenant does not have.
+- **Groups of end users can be renamed** (`PATCH …/end-user-groups/:g`). A group cannot be called by another group's key.
+- **A resource is renamed from the console.** `PUT …/drafts/<path>` takes `path`, the path the resource is to have, and `title`. A draft answers with `key`, `title`, and `renamedFrom` with `change: "rename"`. New refusal on saving a draft: `path_taken`.
+- **Resources answer with `definedIn`**, the file in the repository that defines one, when its bundle said.
+- **Git sync reads and writes resource files anywhere in the repository**, not one folder. A file under `src/` is pulled, edited in the console and committed back where it is; a rename moves it. A file is rewritten only when what it says changed in the workspace.
+  - **Breaking for API clients:** `conflicts`, `applied` and `changedOnBranch` on `POST …/git/push` and `…/git/pull`, and `files[].path` on `GET …/git/compare`, are now paths from the repository's root (`platform/orders/hello.script`). `resolutions` takes those; the old form is still understood. Compare adds `files[].resource`.
+  - The first push to a new branch leaves resource files outside the console's folder that the workspace does not have, and answers `state: "behind"`.
+  - A push that would leave the branch unable to build writes nothing and says why.
+  - **Database migration 0074** moves each workspace's sync state to repository paths.
+- **Name and path in the console.** One dialog, on the resources list and in the script, flow and resource editors, shows a resource's key and changes its path and its title, as a draft. `PUT …/drafts/<path>` with `title: null` now takes the title away; it used to keep the old one.
+- **"Move to a file".** The editor of a schedule, trigger, variable or other kind without code, opened on one the repository's code defines, offers to move it to a file: a draft that takes it over as it is.
+- **A release of a tenant's whole access says what it undoes.** `summary.warnings` on `POST …/access/plan` and `…/access/releases` names each group, service account or role that was last changed one at a time, in the console or the API, since the last release of the whole set. `platform tenant plan` prints them.
+- **A file written by hand keeps its comments when the console changes it.** A push writes only what is said differently into the file as its author wrote it: comments, order, quoting and blank lines stay. `platform pull` and `platform tenant pull` do the same to the files in a working copy.
+- **Database migration 0075** adds `workspace_git.synced_said`. A workspace's changes since its last sync are now told by what its resources say, so a developer changing a hand-written file twice is no longer a conflict.
+- **A run that was going when a resource was renamed still reaches it** by the path its bundle knows: variables, connections, connection groups, tables and data sources. An event published by a name it had goes out under the name it has now.
+- **Connecting an empty repository says so.** `PUT …/git-repository` answered "The branch was not found" for a repository with no commits. It now says to make a first commit on the default branch, and names the branches there are when the default branch is called something else.
+- **`GET …/git/compare` says what each difference is**: `files[].change` is `new_here`, `removed_here`, `new_there`, `removed_there` or `changed`. The console shows it. A resource taken over from the repository's code shows as new here, since code has no file.
+- **The release screen explains a takeover from code** and points out drafts saved more than a day ago before every draft is deployed. The script editor says that a script the code defines can be replaced from the console, not converted.
+- **Fixed: undoing a rename was reported as breaking**, and promoting it to production asked for confirmation. A resource that takes back a path it had cuts nobody off.
+- **Fixed: `POST …/promotions` with no body answered 400** on this branch. It takes none again.
+- **`GET …/resource-files` adds `elsewhere`**: the files of resources kept outside the console's folder, by path from the repository's root. It takes `roots`. `platform pull` writes them where they are.
+- **A group pushed by a directory is marked as the provider's** (`managedBy: "provider"`), and no release removes it.
+- **A deploy that looks like a rename done wrong is refused.** Deleting a script or flow with runs, a table with rows, or anything with access given to it by hand, while creating another of the same kind, answers 409 `rename_suspected` and names each path and what it holds. `allowDelete` (a list of paths) lets it through, on `POST …/deployments`, `POST …/promotions`, a promotion request's decision and `POST …/git/pull`; the promotion preview takes `?allowDelete=a,b`. Deleting a resource in the console is not affected.
+
+### For tenant developers
+
+- **A definition that is not exported fails the build**, by name. Before, it was left out without a word, and the next deploy deleted it. This includes two files that export the same name through `export *`, which cancel each other out: export each by name. Needs the SDK of this release in the repository; an older SDK builds as before.
+- `platform deploy` and `platform promote` take `--allow-delete <path>`, once per path, for a deletion the instance would refuse as a suspected rename.
+- `platform deploy` lists what it created, updated, renamed and deleted, and prints the deploy's warnings.
+- **Moving a resource to another path.** Give it `key`, set to the path it had: `defineScript({ path: "lending/requests/file", key: "requests/submit", … })`. It stays the same resource. Without `key` it is a delete and a create, which the instance refuses when the old one holds runs, rows or access. Every `define*` also takes `title`.
+- **A key never changes**, and is unique in the workspace. Something new at the path a moved resource had must say a key of its own; the build tells you.
+- **A reference written as text may name a moved resource by its key.** `script: "requests/submit"` keeps building after the move and the build notes the new path. A reference made by passing the definition needs nothing.
+- **Bundle format 4** carries `key` and `title`. The CLI writes it only when a resource says one, so a repository that says none still deploys to an older instance. See `docs/contracts/bundle.md`.
+- A schedule that starts a flow that is not in the repository now fails the build.
+- **A repository can bring up its tenant's access.** Files named `<key>.<kind>.yaml`, kept anywhere in the repository, for `group`, `end_user_group`, `service_account`, `tenant_role` and `tenant_binding`. `platform tenant plan --tenant <slug>` says what a release would change, `platform tenant release` does it, and `platform tenant pull` writes what the tenant has now.
+- **Name a group or a service account by key in a binding:** `principal: { type: "group", key: "tech-desk" }`. A binding by `name` still works, and each deploy tells you the key. A key nobody has fails the deploy and names the file to add.
+- **Name a flow's approvers by the group's key:** `approvers: { groups: ["tech-desk"] }`. By title still works, and the deploy tells you the key.
+- **Rows that belong to a group should hold its key.** A `text` column checked with `in: "groups"` matches a group's key as well as what it is called. A row that holds the name stops matching when the group is renamed.
+- **An app's session has `groupKeys`**, the keys of an end user's groups, beside `groups`, which is what they are called. Decide by the keys.
+- **Resource files can be kept anywhere in the repository.** `platform build` finds `<name>.<kind>.yaml` in any folder. A file under `platform/` or a root listed in `vynxlabs.yaml` (`roots: [src]`) gets its path from where it is; anywhere else it says `path:`. A file may also say `key:` and `title:`. The console changes only files in its own folder (`platform/`).
+- **`platform schemas`** writes a JSON Schema for each kind's file to `.platform/schemas/`, and tells VS Code which files each checks (`yaml.schemas` in `.vscode/settings.json`, keeping what is there). `<name>.<kind>.yaml` then completes and is checked as you type. Run it again after upgrading the CLI.
+- **`docs/sdk-guide.md`** covers keys and renames, tool names, files, and a tenant's access. `examples/higher-ed-devices` and `examples/fernhill` name their groups and agents by key and define them under `tenant/`.
+- **Choose the name of an agent's tool.** `defineScript({ …, mcp: { name: "submit_device_request" } })`, and the same on `defineFlow`. The agent sees exactly that, and it no longer changes when the path does. Without it the name is made from the path as before (`run_requests__submit`), and after a rename the old name keeps working for 90 days. Choosing a name for a script that already has a tool changes that tool's name at once: the deploy says so.
+- **Breaking: two scripts, or two flows, whose paths make the same tool name fail the build and the upload.** A tool's name is made from the path with `-` written as `_` and cut at 64 characters, so `desk/look-up` and `desk/look_up` collide, as two long paths can. An agent was offered one and could not reach the other. Give one an `mcp.name`, or another path.
+- **Fixed: the CLI found a tenant by its slug only among the first 200** the key could see. It reads every page.
+- **`examples/higher-ed-devices` keeps what has no code as YAML files** under `platform/`: apps, screens, theme, a variable and a schedule. Its README explains who owns a resource, and why that split keeps the console from taking anything over.
+
 ## Unreleased: phase 16, visual refinement
 
 ### For operators

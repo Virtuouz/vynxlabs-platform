@@ -17,6 +17,7 @@ import {
   callbackAddress,
   finishAuthorization,
 } from "../kernel/execution/oauth.js";
+import { resolveResource } from "../kernel/resolve.js";
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
@@ -148,12 +149,18 @@ const toBundle = (row: BundleRow, activeId: string | null) => ({
 const Summary = Type.Object({
   created: Type.Integer(),
   updated: Type.Integer(),
+  renamed: Type.Optional(
+    Type.Integer({
+      description:
+        "Resources whose path changed and whose key did not. Each keeps its ID, its history and what the workspace bound to it.",
+    }),
+  ),
   unchanged: Type.Integer(),
   deleted: Type.Integer(),
   warnings: Type.Optional(
     Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
       description:
-        "In a dev workspace, what the bundle needs that is not bound here yet. The deploy went ahead; a run that reaches one fails.",
+        "What the deploy went ahead with and whoever deployed should know: in a dev workspace, what the bundle needs that is not bound here yet; after a rename, something the new path already had of its own.",
     }),
   ),
   data: Type.Optional(
@@ -162,16 +169,32 @@ const Summary = Type.Object({
         "What the deploy did to the workspace's tables, one sentence each. A deploy never drops data.",
     }),
   ),
+  aliasesRemoved: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Paths that still answered for a resource renamed away from them, and that this deploy gave to a resource of their own. Whoever still called the old path now reaches the new resource.",
+    }),
+  ),
+  breaking: Type.Optional(
+    Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
+      description:
+        "Changes to a name something outside calls: the tool an agent is offered for a script or a flow, changed or removed. Promoting these to production must be confirmed.",
+    }),
+  ),
   changes: Type.Optional(
     Type.Array(
       Type.Object({
         change: Type.Union([
           Type.Literal("created"),
           Type.Literal("updated"),
+          Type.Literal("renamed"),
           Type.Literal("deleted"),
         ]),
         kind: Type.String(),
         path: Type.String(),
+        from: Type.Optional(
+          Type.String({ description: "The path it had, for one that was renamed." }),
+        ),
       }),
       { description: "The resources the deploy changed. At most 500 are listed." },
     ),
@@ -616,6 +639,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             message: Type.Optional(
               Type.String({ maxLength: 500, description: "What changed, in a few words." }),
             ),
+            allowDelete: Type.Optional(
+              Type.Array(Type.String({ maxLength: 255 }), {
+                maxItems: 200,
+                description:
+                  "Paths this may delete although it also creates something of the same kind. " +
+                  "Without it, deleting what holds runs, rows or access given by hand is refused " +
+                  "with `rename_suspected`: it is usually a rename.",
+              }),
+            ),
             settleDrafts: Type.Optional(
               Type.Array(
                 Type.Object({ path: Type.String({ maxLength: 255 }), revision: Type.Integer() }),
@@ -655,6 +687,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             {
               ...(body.message ? { message: body.message } : {}),
               ...(body.settleDrafts ? { settle: body.settleDrafts } : {}),
+              ...(body.allowDelete ? { allowDelete: body.allowDelete } : {}),
             },
           ),
         );
@@ -698,6 +731,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "the promotion would do: the resources and tables it would change, or why it would be refused.",
           tags: ["deploys"],
           params: WorkspaceParams,
+          querystring: Type.Object({
+            allowDelete: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  "Paths the promotion may delete although it looks like a rename, separated by commas.",
+              }),
+            ),
+          }),
           response: {
             200: Type.Object({
               target: PromotionTarget,
@@ -735,14 +777,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx }) => {
+      async ({ ctx, query }) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const { target } = await promotionOf(db, workspace);
         await ctx.authorize("deployment:read", {
           tenantId: target.tenantId,
           workspaceId: target.id,
         });
-        const preview = await previewPromotion(kernel, ctx.actor, workspace);
+        const preview = await previewPromotion(
+          kernel,
+          ctx.actor,
+          workspace,
+          undefined,
+          query.allowDelete?.split(",").filter(Boolean),
+        );
         const active = await db
           .selectFrom("workspace")
           .select("active_bundle_id")
@@ -800,6 +848,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       `${base}/promotions`,
       {
         config: { access: access.workspace("deployment:read") },
+        // It took no body before it had anything to be told, and is still called with none.
+        preValidation: (request, _reply, done) => {
+          request.body ??= {};
+          done();
+        },
         schema: {
           summary: "Promote this workspace's active bundle to its linked workspace",
           description:
@@ -807,6 +860,25 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "is rebuilt. Needs `promotion:write` in the workspace promoted to.",
           tags: ["deploys"],
           params: WorkspaceParams,
+          body: Type.Object({
+            confirmBreaking: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Said after reading the promotion preview's `summary.breaking`: this may change " +
+                  "or remove the name of a tool an agent calls. Promoting to production without " +
+                  "it, when there is one, is refused with `breaking_changes`.",
+              }),
+            ),
+            allowDelete: Type.Optional(
+              Type.Array(Type.String({ maxLength: 255 }), {
+                maxItems: 200,
+                description:
+                  "Paths this may delete although it also creates something of the same kind. " +
+                  "Without it, deleting what holds runs, rows or access given by hand is refused " +
+                  "with `rename_suspected`: it is usually a rename.",
+              }),
+            ),
+          }),
           response: {
             201: Type.Object({
               id: Id,
@@ -829,7 +901,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx }, reply) => {
+      async ({ ctx, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const { target } = await promotionOf(db, workspace);
         await ctx.authorize("promotion:write", {
@@ -837,7 +909,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: target.id,
         });
         const result = await ctx.mutate((trx, audit) =>
-          promote(kernel, trx, audit, workspace, ctx.principal),
+          promote(kernel, trx, audit, workspace, ctx.principal, {
+            ...(body?.allowDelete ? { allowDelete: body.allowDelete } : {}),
+            ...(body?.confirmBreaking ? { confirmBreaking: true } : {}),
+          }),
         );
         await publishPlatformEvent(kernel, {
           tenantId: target.tenantId,
@@ -1047,7 +1122,23 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll("run")
           .select("bundle.version as bundle_version")
           .where("run.workspace_id", "=", params.w);
-        if (query.script) select = select.where("run.script_path", "=", query.script);
+        if (query.script) {
+          // The runs of the script that has this path now, under whatever path it had then,
+          // beside any run that was started under this path.
+          const path = query.script;
+          const script = await db
+            .selectFrom("resource")
+            .select("id")
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "script")
+            .where("path", "=", path)
+            .executeTakeFirst();
+          select = select.where((eb) =>
+            script
+              ? eb.or([eb("run.resource_id", "=", script.id), eb("run.script_path", "=", path)])
+              : eb("run.script_path", "=", path),
+          );
+        }
         if (query.status) select = select.where("run.status", "=", query.status);
         if (args.after) select = select.where("run.id", "<", args.after);
         const rows = await select
@@ -1087,13 +1178,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         await findWorkspace(kernel, params.t, params.w);
-        const target = await db
-          .selectFrom("resource")
-          .select("id")
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "script")
-          .where("path", "=", body.script)
-          .executeTakeFirst();
+        // By its path, or by one it had before it was renamed.
+        const target = (await resolveResource(db, params.w, body.script, { kind: "script" }))
+          ?.resource;
         await ctx.authorize("run:write", {
           tenantId: params.t,
           workspaceId: params.w,
@@ -1126,6 +1213,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select("version")
           .where("id", "=", result.run.bundle_id)
           .executeTakeFirstOrThrow();
+        ctx.moved = result.alias;
         return reply.code(result.created ? 201 : 200).send(toRun(result.run, bundle.version));
       },
     );
@@ -1158,7 +1246,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         await ctx.authorize("run:write", {
           tenantId: params.t,
           workspaceId: params.w,
-          resourceId: original.resource_id,
+          ...(original.resource_id ? { resourceId: original.resource_id } : {}),
         });
         if (original.flow_run_id) {
           throw new HttpError(
@@ -1251,12 +1339,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         id: string;
         status: string;
         pool: string | null;
-        resource_id: string;
+        resource_id: string | null;
         concurrency_key: string | null;
       },
     ) => {
       let concurrency: { key: string; value: string; limit: number } | null = null;
-      if (row.concurrency_key !== null) {
+      if (row.concurrency_key !== null && row.resource_id !== null) {
         const resource = await db
           .selectFrom("resource")
           .select("body")
@@ -1270,7 +1358,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       }
       if (row.status !== "queued") return { waitingFor: null, concurrency };
       const absent = await waitingFor(tenantId, workspaceId, row.pool);
-      if (absent || row.concurrency_key === null) return { waitingFor: absent, concurrency };
+      if (absent || row.concurrency_key === null || row.resource_id === null) {
+        return { waitingFor: absent, concurrency };
+      }
       const ahead = await db
         .selectFrom("run")
         .select(db.fn.countAll<string>().as("count"))

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { differenceLabel } from "./screens/GitSync.tsx";
 import { Release } from "./screens/Release.tsx";
 import { answer, show } from "./testing.tsx";
 
@@ -98,6 +99,24 @@ test("drafts are listed with what deploying each would do, and deployed with a m
   });
 });
 
+test("a takeover from code says what it does, and old drafts are pointed out until some are chosen", async () => {
+  drafts = [
+    { ...(drafts[0] as object), path: "screens/desk", kind: "interface", change: "take_over" },
+    { ...(drafts[1] as object), updatedAt: new Date().toISOString() },
+  ];
+  show(review());
+  expect(await screen.findByText("Takes over from code")).toBeTruthy();
+  expect(screen.getByText(/becomes a file the console owns, which git sync/)).toBeTruthy();
+  expect(screen.getByText(/takes it back/)).toBeTruthy();
+  // Deploying with none chosen deploys both: the one saved days ago is named.
+  const stale = screen.getByText(/One of these was saved more than a day ago/);
+  expect(stale.textContent).toContain("screens/desk");
+  expect(stale.textContent).not.toContain("orders/size");
+  // Once the ones meant are chosen, nothing rides along, and nothing needs saying.
+  fireEvent.click(screen.getByLabelText("Choose orders/size"));
+  expect(screen.queryByText(/saved more than a day ago/)).toBeNull();
+});
+
 test("changes that cannot be deployed say why, and offer no deploy", async () => {
   preview = {
     possible: false,
@@ -133,4 +152,81 @@ test("a draft is set aside after asking, and a production workspace has no revie
   expect(screen.queryByText("Review draft")).toBeNull();
   // Production has no drafts, so they are not even asked for.
   expect(asked()).toBe(before);
+});
+
+test("a promotion that changes an agent's tool says so, asks, and sends that it was confirmed", async () => {
+  const linked: Place = { ...dev, linkedWorkspaceId: "w2" };
+  const target = { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null };
+  const breaking = [
+    {
+      path: "desk/submit",
+      message:
+        "the tool submit_request is now called file_request. An agent that calls it by the old name will fail.",
+    },
+  ];
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const method = init.method ?? "GET";
+    calls.push({
+      method,
+      url: address,
+      body: init.body ? JSON.parse(init.body as string) : undefined,
+    });
+    const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+    if (method === "POST") {
+      return json({ bundleVersion: 8, bundleId: "b8", workspaceId: "w2" }, 201);
+    }
+    if (address.includes("/promotion-preview")) {
+      return json({
+        target,
+        bundle: { digest: "a".repeat(64), version: 8 },
+        possible: true,
+        refusal: null,
+        summary: { created: 0, updated: 1, deleted: 0, data: [], changes: [], breaking },
+        tried: { runs: 2, failed: 0, flowRuns: 0, flowRunsFailed: 0 },
+        triggers: 0,
+        canPromote: true,
+        request: null,
+      });
+    }
+    if (address.endsWith("/drift")) {
+      return json({
+        target: { ...target, slug: "main" },
+        versions: { here: 8, there: 7 },
+        counts: { changed: 0, only_here: 0, only_there: 0, in_sync: 0 },
+        items: [],
+      });
+    }
+    return json({ items: address.endsWith("/tenants/t1/workspaces") ? [linked, target] : [] });
+  });
+  show(
+    <Release
+      base="/tenants/t1"
+      root={root}
+      link={link}
+      workspace={linked}
+      step="promote"
+      reload={() => {}}
+    />,
+  );
+  expect(
+    await screen.findByText(
+      "The tool submit_request is now called file_request. An agent that calls it by the old name will fail.",
+    ),
+  ).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: /Promote to production/ }));
+  const said = await answer("Promote to production");
+  expect(said).toContain("It also changes what an agent calls");
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({ confirmBreaking: true }),
+  );
+});
+
+test("a file that differs from the branch says how: new, removed or changed, and on which side", () => {
+  expect(
+    ["new_here", "removed_here", "new_there", "removed_there", "changed"].map((change) =>
+      differenceLabel({ here: change.endsWith("here"), change }),
+    ),
+  ).toEqual(["New here", "Removed here", "New there", "Removed there", "Changed there"]);
+  // An instance from before it said so.
+  expect(differenceLabel({ here: true })).toBe("Changed here");
 });

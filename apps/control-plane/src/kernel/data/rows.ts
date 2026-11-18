@@ -134,7 +134,7 @@ export async function scopeFor(
       kernel.db
         .selectFrom("end_user_group_member")
         .innerJoin("end_user_group", "end_user_group.id", "end_user_group_member.group_id")
-        .select(["end_user_group.id", "end_user_group.name"])
+        .select(["end_user_group.id", "end_user_group.key", "end_user_group.name"])
         .where("end_user_group_member.end_user_id", "=", id)
         .where("end_user_group.tenant_id", "=", tenantId)
         .execute(),
@@ -148,7 +148,7 @@ export async function scopeFor(
     return {
       principalId: id,
       all,
-      groups: groups.flatMap((group) => [group.id, group.name]),
+      groups: groupValues(groups),
       attributes: user?.attributes ?? {},
     };
   }
@@ -156,14 +156,24 @@ export async function scopeFor(
     const groups = await kernel.db
       .selectFrom("group_member")
       .innerJoin("principal_group", "principal_group.id", "group_member.group_id")
-      .select(["principal_group.id", "principal_group.name"])
+      .select(["principal_group.id", "principal_group.key", "principal_group.name"])
       .where("group_member.member_id", "=", id)
       .where("principal_group.tenant_id", "=", tenantId)
       .execute();
-    return { principalId: id, all, groups: groups.flatMap((group) => [group.id, group.name]) };
+    return { principalId: id, all, groups: groupValues(groups) };
   }
   return { principalId: id, all };
 }
+
+/**
+ * What a row may hold to be a group's: its ID, in a uuid column; in a text
+ * column its key, which never changes, or what it is called, as rows written
+ * before keys hold it. A row that holds the name stops matching when the group
+ * is renamed: write the key.
+ */
+export const groupValues = (groups: readonly { id: string; key: string; name: string }[]) => [
+  ...new Set(groups.flatMap((group) => [group.id, group.key, group.name])),
+];
 
 /**
  * Runs a request for a tenant's rows. It runs on a connection signed in as a

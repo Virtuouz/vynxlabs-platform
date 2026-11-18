@@ -2,11 +2,12 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { type DataLocation, newId } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
-import { badRequest, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   ApiKey,
@@ -18,7 +19,19 @@ import {
   toMember,
 } from "./identity.js";
 import { insertBinding } from "./permissions.js";
-import { Id, iso, Name, NoContent, pageArgs, Slug, TenantParams, Time, toPage } from "./shared.js";
+import {
+  Id,
+  iso,
+  Name,
+  NoContent,
+  pageArgs,
+  Slug,
+  TenantParams,
+  Time,
+  toPage,
+  Waiting,
+  waiting,
+} from "./shared.js";
 
 const Tenant = Type.Object({
   id: Id,
@@ -50,11 +63,34 @@ const toTenant = (row: {
   createdAt: iso(row.created_at),
 });
 
-const Group = Type.Object({ id: Id, tenantId: Id, name: Type.String(), createdAt: Time });
-const toGroup = (row: { id: string; tenant_id: string; name: string; created_at: Date }) => ({
+const Group = Type.Object({
+  id: Id,
+  tenantId: Id,
+  key: Type.String({
+    description: "What code and a repository name it by. It never changes.",
+  }),
+  name: Type.String({ description: "What people read. It can change." }),
+  description: Type.String(),
+  managedBy: Type.String({
+    description: "`provider` for one an identity provider made by pushing it, `release` otherwise.",
+  }),
+  createdAt: Time,
+});
+const toGroup = (row: {
+  id: string;
+  tenant_id: string;
+  key: string;
+  name: string;
+  description?: string;
+  managed_by: string;
+  created_at: Date;
+}) => ({
   id: row.id,
   tenantId: row.tenant_id,
+  key: row.key,
   name: row.name,
+  description: row.description ?? "",
+  managedBy: row.managed_by,
   createdAt: iso(row.created_at),
 });
 
@@ -62,13 +98,7 @@ const ServiceAccount = Type.Object({
   ...Group.properties,
   description: Type.String({ description: 'What it is for, in a sentence: "deploys from CI".' }),
 });
-const toServiceAccount = (row: {
-  id: string;
-  tenant_id: string;
-  name: string;
-  description?: string;
-  created_at: Date;
-}) => ({ ...toGroup(row), description: row.description ?? "" });
+const toServiceAccount = toGroup;
 
 const GroupParams = Type.Object({ t: Id, g: Id });
 const GroupMemberParams = Type.Object({ t: Id, g: Id, memberId: Id });
@@ -685,27 +715,106 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Create a group",
           tags: ["identity"],
           params: TenantParams,
-          body: Type.Object({ name: Name }),
-          response: { 201: Group },
+          body: Type.Object({
+            name: Name,
+            description: Type.Optional(Type.String({ maxLength: 300 })),
+          }),
+          response: { 201: Group, 202: Waiting },
         },
       },
       async ({ ctx, params, body }, reply) => {
-        const group = await ctx.mutate(async (trx, audit) => {
+        const made = await ctx.mutate(async (trx, audit) => {
+          const key = await freeKey(trx, params.t, "group", body.name);
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                kind: "group",
+                key,
+                body: {
+                  title: body.name.trim(),
+                  ...(body.description?.trim() ? { description: body.description.trim() } : {}),
+                },
+              },
+            },
+            `Made the group ${body.name.trim()}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
           const row = await trx
-            .insertInto("principal_group")
-            .values({ id: newId(), tenant_id: params.t, name: body.name })
-            .returningAll()
+            .selectFrom("principal_group")
+            .selectAll()
+            .where("tenant_id", "=", params.t)
+            .where("key", "=", key)
             .executeTakeFirstOrThrow();
-          await audit({
-            action: "group.created",
-            targetType: "group",
-            targetId: row.id,
-            tenantId: params.t,
-            details: { name: row.name },
-          });
-          return row;
+          return { released, row };
         });
-        return reply.code(201).send(toGroup(group));
+        return made.row
+          ? reply.code(201).send(toGroup(made.row))
+          : reply.code(202).send(waiting(made.released));
+      },
+    );
+
+    app.patch(
+      "/tenants/:t/groups/:g",
+      {
+        config: { access: access.tenant("group:write") },
+        schema: {
+          summary: "Change what a group is called or what it is for",
+          description:
+            "Its key stays, so everything that names the group by key keeps working. A group " +
+            "an identity provider made can be given a description, and keeps the provider's name.",
+          tags: ["identity"],
+          params: GroupParams,
+          body: Type.Object({
+            name: Type.Optional(Name),
+            description: Type.Optional(Type.String({ maxLength: 300 })),
+          }),
+          response: { 200: Group, 202: Waiting },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const changed = await ctx.mutate(async (trx, audit) => {
+          const now = await accessResource(trx, params.t, "group", params.g);
+          if (!now) throw notFound("The group");
+          if (now.managedBy === "provider" && body.name !== undefined) {
+            throw conflict(
+              "This group is made by the identity provider, which names it. Rename it there.",
+            );
+          }
+          const description =
+            body.description?.trim() ?? (now.resource.body.description as string | undefined);
+          const { description: _was, ...rest } = now.resource.body;
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                ...now.resource,
+                body: {
+                  ...rest,
+                  title: body.name?.trim() ?? (now.resource.body.title as string),
+                  ...(description ? { description } : {}),
+                },
+              },
+            },
+            `Changed the group ${now.resource.body.title as string}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
+          const row = await trx
+            .selectFrom("principal_group")
+            .selectAll()
+            .where("id", "=", params.g)
+            .executeTakeFirstOrThrow();
+          return { released, row };
+        });
+        return changed.row ? toGroup(changed.row) : reply.code(202).send(waiting(changed.released));
       },
     );
 
@@ -744,36 +853,31 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("group:write") },
         schema: {
-          summary: "Delete a group and its bindings",
+          summary: "Delete a group and what it was given",
+          description:
+            "Refused with `principal_in_use` while a workspace's bundle still gives the group " +
+            "access: remove it from that code first, so the bundle and the tenant agree.",
           tags: ["identity"],
           params: GroupParams,
-          response: { 204: NoContent },
+          response: { 204: NoContent, 202: Waiting },
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          await trx
-            .deleteFrom("binding")
-            .where("tenant_id", "=", params.t)
-            .where("principal_type", "=", "group")
-            .where("principal_id", "=", params.g)
-            .execute();
-          const removed = await trx
-            .deleteFrom("principal_group")
-            .where("id", "=", params.g)
-            .where("tenant_id", "=", params.t)
-            .returning("name")
-            .executeTakeFirst();
-          if (!removed) throw notFound("The group");
-          await audit({
-            action: "group.deleted",
-            targetType: "group",
-            targetId: params.g,
-            tenantId: params.t,
-            details: { name: removed.name },
-          });
+        const released = await ctx.mutate(async (trx, audit) => {
+          const now = await accessResource(trx, params.t, "group", params.g);
+          if (!now) throw notFound("The group");
+          return releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            { op: "delete", kind: "group", key: now.resource.key },
+            `Deleted the group ${now.resource.body.title as string}`,
+          );
         });
-        return reply.code(204).send(null);
+        return released.status === "applied"
+          ? reply.code(204).send(null)
+          : reply.code(202).send(waiting(released));
       },
     );
 
@@ -892,31 +996,42 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             name: Name,
             description: Type.Optional(Type.String({ maxLength: 300 })),
           }),
-          response: { 201: ServiceAccount },
+          response: { 201: ServiceAccount, 202: Waiting },
         },
       },
       async ({ ctx, params, body }, reply) => {
-        const account = await ctx.mutate(async (trx, audit) => {
+        const made = await ctx.mutate(async (trx, audit) => {
+          const key = await freeKey(trx, params.t, "service_account", body.name);
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                kind: "service_account",
+                key,
+                body: {
+                  title: body.name.trim(),
+                  ...(body.description?.trim() ? { description: body.description.trim() } : {}),
+                },
+              },
+            },
+            `Made the service account ${body.name.trim()}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
           const row = await trx
-            .insertInto("service_account")
-            .values({
-              id: newId(),
-              tenant_id: params.t,
-              name: body.name,
-              description: body.description?.trim() ?? "",
-            })
-            .returningAll()
+            .selectFrom("service_account")
+            .selectAll()
+            .where("tenant_id", "=", params.t)
+            .where("key", "=", key)
             .executeTakeFirstOrThrow();
-          await audit({
-            action: "service_account.created",
-            targetType: "service_account",
-            targetId: row.id,
-            tenantId: params.t,
-            details: { name: row.name },
-          });
-          return row;
+          return { released, row };
         });
-        return reply.code(201).send(toServiceAccount(account));
+        return made.row
+          ? reply.code(201).send(toServiceAccount(made.row))
+          : reply.code(202).send(waiting(made.released));
       },
     );
 
@@ -925,33 +1040,51 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("service_account:write") },
         schema: {
-          summary: "Change what a service account is for",
+          summary: "Change what a service account is called or what it is for",
+          description: "Its key and its API keys stay.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id }),
-          body: Type.Object({ description: Type.String({ maxLength: 300 }) }),
-          response: { 200: ServiceAccount },
+          body: Type.Object({
+            name: Type.Optional(Name),
+            description: Type.Optional(Type.String({ maxLength: 300 })),
+          }),
+          response: { 200: ServiceAccount, 202: Waiting },
         },
       },
-      async ({ ctx, params, body }) => {
-        const account = await ctx.mutate(async (trx, audit) => {
+      async ({ ctx, params, body }, reply) => {
+        const changed = await ctx.mutate(async (trx, audit) => {
+          const now = await accessResource(trx, params.t, "service_account", params.id);
+          if (!now) throw notFound("The service account");
+          const description =
+            body.description?.trim() ?? (now.resource.body.description as string | undefined);
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                ...now.resource,
+                body: {
+                  title: body.name?.trim() ?? (now.resource.body.title as string),
+                  ...(description ? { description } : {}),
+                },
+              },
+            },
+            `Changed the service account ${now.resource.body.title as string}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
           const row = await trx
-            .updateTable("service_account")
-            .set({ description: body.description.trim() })
+            .selectFrom("service_account")
+            .selectAll()
             .where("id", "=", params.id)
-            .where("tenant_id", "=", params.t)
-            .returningAll()
-            .executeTakeFirst();
-          if (!row) throw notFound("The service account");
-          await audit({
-            action: "service_account.updated",
-            targetType: "service_account",
-            targetId: row.id,
-            tenantId: params.t,
-            details: { name: row.name, description: row.description },
-          });
-          return row;
+            .executeTakeFirstOrThrow();
+          return { released, row };
         });
-        return toServiceAccount(account);
+        return changed.row
+          ? toServiceAccount(changed.row)
+          : reply.code(202).send(waiting(changed.released));
       },
     );
 
@@ -960,40 +1093,30 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("service_account:write") },
         schema: {
-          summary: "Delete a service account, its keys and its bindings",
+          summary: "Delete a service account, its keys and what it was given",
+          description:
+            "Refused with `principal_in_use` while a workspace's bundle still gives it access.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id }),
-          response: { 204: NoContent },
+          response: { 204: NoContent, 202: Waiting },
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          const removed = await trx
-            .deleteFrom("service_account")
-            .where("id", "=", params.id)
-            .where("tenant_id", "=", params.t)
-            .returning("name")
-            .executeTakeFirst();
-          if (!removed) throw notFound("The service account");
-          await trx
-            .deleteFrom("api_key")
-            .where("owner_type", "=", "service_account")
-            .where("owner_id", "=", params.id)
-            .execute();
-          await trx
-            .deleteFrom("binding")
-            .where("principal_type", "=", "service_account")
-            .where("principal_id", "=", params.id)
-            .execute();
-          await audit({
-            action: "service_account.deleted",
-            targetType: "service_account",
-            targetId: params.id,
-            tenantId: params.t,
-            details: { name: removed.name },
-          });
+        const released = await ctx.mutate(async (trx, audit) => {
+          const now = await accessResource(trx, params.t, "service_account", params.id);
+          if (!now) throw notFound("The service account");
+          return releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            { op: "delete", kind: "service_account", key: now.resource.key },
+            `Deleted the service account ${now.resource.body.title as string}`,
+          );
         });
-        return reply.code(204).send(null);
+        return released.status === "applied"
+          ? reply.code(204).send(null)
+          : reply.code(202).send(waiting(released));
       },
     );
 

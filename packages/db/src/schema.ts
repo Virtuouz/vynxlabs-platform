@@ -33,6 +33,8 @@ export interface TenantTable {
   data_location: ColumnType<DataLocation, string | undefined, string>;
   managed_workers: Generated<boolean>;
   console_code: Generated<boolean>;
+  /** Whether a change to the tenant's access waits for a second person. */
+  access_approval: Generated<boolean>;
   created_at: Generated<Date>;
 }
 
@@ -129,10 +131,20 @@ export interface ScimGroupMemberTable {
   user_id: string;
 }
 
+/** Who makes and removes a group or a service account: a release, or an identity provider. */
+export type ManagedBy = "release" | "provider";
+
 export interface PrincipalGroupTable {
   id: string;
   tenant_id: string;
+  /** What code and a repository name it by. Never changes. Made from the name when not given. */
+  key: Generated<string>;
+  /** What people read. It can change. */
   name: string;
+  description: Generated<string>;
+  /** Values of a provider's groups claim that put someone in the group, as a release said. */
+  sso_values: Generated<string[]>;
+  managed_by: Generated<ManagedBy>;
   created_at: Generated<Date>;
 }
 
@@ -145,7 +157,9 @@ export interface GroupMemberTable {
 export interface ServiceAccountTable {
   id: string;
   tenant_id: string;
+  key: Generated<string>;
   name: string;
+  managed_by: Generated<ManagedBy>;
   description: Generated<string>;
   created_at: Generated<Date>;
 }
@@ -170,12 +184,69 @@ export interface ResourceTable {
   workspace_id: string;
   kind: string;
   schema_version: number;
+  /** Its identity, which never changes. The path it was made at, unless it said otherwise. */
+  key: string;
   path: string;
+  title: string | null;
+  /** What a bundle says about it beside its body: `mcp`, `source`. */
+  meta: ColumnType<ResourceMeta, string | undefined, string>;
   ownership: Ownership;
   version: number;
   body: Json<Record<string, unknown>>;
   created_at: Generated<Date>;
   updated_at: Timestamp;
+}
+
+export interface ResourceMeta {
+  mcp?: { name: string };
+  source?: { file: string; generated: boolean };
+}
+
+/** One thing a tenant's access is made of, as a release and a file in `tenant/` have it. */
+export interface TenantResource {
+  kind: string;
+  key: string;
+  body: Record<string, unknown>;
+}
+
+export type TenantReleaseStatus =
+  | "applied"
+  | "awaiting_approval"
+  | "declined"
+  | "withdrawn"
+  | "superseded";
+
+export interface TenantReleaseTable {
+  id: string;
+  tenant_id: string;
+  number: number;
+  scope: "full" | "partial";
+  content: Json<unknown>;
+  snapshot: ColumnType<TenantResource[] | null, string | null, string | null>;
+  summary: ColumnType<Record<string, unknown>, string | undefined, string>;
+  message: string | null;
+  status: TenantReleaseStatus;
+  origin: "cli" | "console" | "api" | "rollback";
+  created_by_type: string;
+  created_by_id: string | null;
+  created_at: Generated<Date>;
+  decided_by_type: string | null;
+  decided_by_id: string | null;
+  decided_at: Date | null;
+  comment: string | null;
+  applied_at: Date | null;
+}
+
+/** A path a renamed resource had, which still answers until it expires. */
+export interface ResourceAliasTable {
+  workspace_id: string;
+  path: string;
+  tenant_id: string;
+  resource_id: string;
+  kind: string;
+  created_at: Generated<Date>;
+  expires_at: Date;
+  last_used_at: Date | null;
 }
 
 export interface ResourceVersionTable {
@@ -185,7 +256,10 @@ export interface ResourceVersionTable {
   workspace_id: string;
   kind: string;
   schema_version: number;
+  key: string;
   path: string;
+  title: string | null;
+  meta: ColumnType<ResourceMeta, string | undefined, string>;
   ownership: Ownership;
   body: ColumnType<Record<string, unknown> | null, string | null, never>;
   deleted: Generated<boolean>;
@@ -299,6 +373,9 @@ export interface BundleTable {
 export interface ResourceDraftTable {
   tenant_id: string;
   workspace_id: string;
+  /** The resource the draft is of. The path, for one that is new. */
+  key: string;
+  title: string | null;
   path: string;
   kind: string;
   schema_version: number;
@@ -323,6 +400,8 @@ export interface GitRepositoryTable {
   verified_at: Date | null;
   credential_kind: Generated<string>;
   release_branch: Generated<string | null>;
+  /** The branch the tenant's access is committed to. */
+  tenant_branch: Generated<string | null>;
   /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
   credential_set_at: ColumnType<Date | null, never, never>;
   credential_set_by_type: ColumnType<string | null, never, never>;
@@ -337,6 +416,7 @@ export interface WorkspaceGitTable {
   branch: string;
   synced_commit: Generated<string | null>;
   synced_files: ColumnType<Record<string, string>, string | undefined, string>;
+  synced_said: ColumnType<Record<string, string> | null, string | null | undefined, string | null>;
   state: Generated<GitState>;
   last_error: Generated<string | null>;
   lease_until: Generated<Date | null>;
@@ -482,7 +562,8 @@ export interface RunTable {
   id: string;
   tenant_id: string;
   workspace_id: string;
-  resource_id: string;
+  /** The resource it is a run of. Null when that was not in the registry when it started. */
+  resource_id: string | null;
   script_path: string;
   /** The worker pool the run waits for. Null for the default pool. */
   pool: Generated<string | null>;
@@ -577,7 +658,8 @@ export interface FlowRunTable {
   id: string;
   tenant_id: string;
   workspace_id: string;
-  resource_id: string;
+  /** The resource it is a run of. Null when that was not in the registry when it started. */
+  resource_id: string | null;
   flow_path: string;
   bundle_id: string;
   trigger_node: string;
@@ -772,7 +854,11 @@ export interface EndUserTable {
 export interface EndUserGroupTable {
   id: string;
   tenant_id: string;
+  key: Generated<string>;
   name: string;
+  /** Values of a provider's groups claim that put someone in the group, as a release said. */
+  sso_values: Generated<string[]>;
+  managed_by: Generated<ManagedBy>;
   description: Generated<string>;
   created_at: Generated<Date>;
 }
@@ -853,6 +939,7 @@ export interface ResourceDraftHistoryTable {
   id: string;
   tenant_id: string;
   workspace_id: string;
+  key: string;
   path: string;
   kind: string;
   schema_version: number;
@@ -1101,6 +1188,7 @@ export interface IdentityGroupMapTable {
   claim_value: string;
   member_group_id: string | null;
   end_user_group_id: string | null;
+  managed_by: Generated<"hand" | "release">;
   created_at: Generated<Date>;
 }
 
@@ -1154,6 +1242,8 @@ export interface PlatformSchema {
   bundle: BundleTable;
   deployment: DeploymentTable;
   resource_draft: ResourceDraftTable;
+  resource_alias: ResourceAliasTable;
+  tenant_release: TenantReleaseTable;
   git_repository: GitRepositoryTable;
   workspace_git: WorkspaceGitTable;
   git_operation: GitOperationTable;

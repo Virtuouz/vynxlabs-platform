@@ -1,9 +1,11 @@
-import { newId, type Ownership } from "@vynxlabs/db";
+import { newId, type Ownership, type ResourceMeta } from "@vynxlabs/db";
 import type { Audit, Db, Trx } from "./audit.js";
-import { badRequest, conflict, notFound } from "./errors.js";
+import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
 import type { KindHook } from "./kinds.js";
+import { renamePathState } from "./rename.js";
+import { dropAlias, leaveAlias } from "./resolve.js";
 
 export interface ResourceInput {
   path: string;
@@ -11,8 +13,24 @@ export interface ResourceInput {
   schemaVersion: number;
   ownership: Ownership;
   body: Record<string, unknown>;
+  /**
+   * Its identity, for one that is new. The path, when it is not given. A resource
+   * that is there keeps the key it has: a key never changes.
+   */
+  key?: string | undefined;
+  /** What people read. Left as it is when not given. */
+  title?: string | null | undefined;
+  /** What a bundle says about it beside its body. Left as it is when not given. */
+  meta?: ResourceMeta | undefined;
   /** Move the resource at this path to `path`, keeping its ID. */
   renameFrom?: string | undefined;
+  /**
+   * The resource this is, when the caller has matched it already, as a deploy does by
+   * key. Its path may be another: that is a rename.
+   */
+  match?: { id: string } | undefined;
+  /** The path the matched resource had before the caller moved it aside to free that path. */
+  movedFrom?: string | undefined;
   /**
    * Lets the resource change between code-managed and console-managed. Only a
    * deploy passes it: a bundle is the one thing that may say who manages what.
@@ -54,18 +72,37 @@ export async function putResource(
     .selectFrom("resource")
     .selectAll()
     .where("workspace_id", "=", workspace.id)
-    .where("path", "=", lookupPath)
+    .$if(input.match !== undefined, (query) => query.where("id", "=", input.match?.id as string))
+    .$if(input.match === undefined, (query) => query.where("path", "=", lookupPath))
     .forUpdate()
     .executeTakeFirst();
+  if (input.match !== undefined && !existing) throw notFound("The resource");
   if (input.renameFrom !== undefined && !existing) {
     throw notFound(`The resource at ${input.renameFrom}`);
   }
+  const before = existing ? (input.movedFrom ?? existing.path) : undefined;
+  const renamedFrom = before !== undefined && before !== input.path ? before : undefined;
+  if (renamedFrom !== undefined) {
+    const occupant = await trx
+      .selectFrom("resource")
+      .select(["kind", "key"])
+      .where("workspace_id", "=", workspace.id)
+      .where("path", "=", input.path)
+      .executeTakeFirst();
+    if (occupant) {
+      throw new HttpError(
+        409,
+        "path_taken",
+        `${renamedFrom} cannot be renamed to ${input.path}: that is the path of ${/^[aeiou]/.test(occupant.kind) ? "an" : "a"} ${occupant.kind.replaceAll("_", " ")}${occupant.key === input.path ? "" : ` (key ${occupant.key})`}. Rename or remove that one first.`,
+      );
+    }
+  }
   if (existing && existing.kind !== input.kind) {
-    throw conflict(`${lookupPath} is a ${existing.kind}. A resource cannot change kind.`);
+    throw conflict(`${existing.path} is a ${existing.kind}. A resource cannot change kind.`);
   }
   if (existing && existing.ownership !== input.ownership && !input.switchOwnership) {
     throw conflict(
-      `${lookupPath} is ${existing.ownership}-managed. A resource is code-managed or UI-managed, never both.`,
+      `${existing.path} is ${existing.ownership}-managed. A resource is code-managed or UI-managed, never both.`,
     );
   }
 
@@ -75,7 +112,10 @@ export async function putResource(
   const columns = {
     kind: input.kind,
     schema_version: input.schemaVersion,
+    key: existing?.key ?? input.key ?? input.path,
     path: input.path,
+    title: input.title !== undefined ? input.title : (existing?.title ?? null),
+    meta: JSON.stringify(input.meta ?? existing?.meta ?? {}),
     ownership: input.ownership,
   };
   if (existing) {
@@ -110,6 +150,20 @@ export async function putResource(
     })
     .execute();
 
+  // What the workspace keeps under the old path comes along, before the kind's hook looks for it.
+  const warnings =
+    existing && renamedFrom !== undefined
+      ? await renamePathState(
+          trx,
+          (await kernel.data.within(trx, workspace.tenantId)).db,
+          workspace.id,
+          existing,
+          existing.path,
+          input.path,
+          renamedFrom,
+        )
+      : [];
+
   await kernel.hooks.get(input.kind)?.apply(trx, {
     id,
     tenantId: workspace.tenantId,
@@ -118,8 +172,20 @@ export async function putResource(
     body: input.body,
   });
 
+  // The path it had keeps answering for a while. An alias at the path it has now is over.
+  const aliasRemoved =
+    existing && renamedFrom !== undefined
+      ? await leaveAlias(trx, existing, renamedFrom, input.path)
+      : existing
+        ? false
+        : await dropAlias(trx, workspace.id, input.path);
+
   await audit({
-    action: existing ? "resource.updated" : "resource.created",
+    action: !existing
+      ? "resource.created"
+      : renamedFrom !== undefined
+        ? "resource.renamed"
+        : "resource.updated",
     targetType: "resource",
     targetId: id,
     tenantId: workspace.tenantId,
@@ -128,13 +194,19 @@ export async function putResource(
       kind: input.kind,
       path: input.path,
       version,
-      ...(input.renameFrom !== undefined && input.renameFrom !== input.path
-        ? { renamedFrom: input.renameFrom }
-        : {}),
+      ...(existing ? { key: existing.key } : {}),
+      ...(renamedFrom !== undefined ? { renamedFrom } : {}),
     },
   });
 
-  return { created: !existing, resource: await findResource(trx, workspace.id, input.path) };
+  return {
+    created: !existing,
+    renamedFrom,
+    /** Whether an alias at this path, of a resource renamed away from it, was ended by this. */
+    aliasRemoved,
+    warnings,
+    resource: await findResource(trx, workspace.id, input.path),
+  };
 }
 
 export async function deleteResource(
@@ -162,7 +234,10 @@ export async function deleteResource(
       workspace_id: existing.workspace_id,
       kind: existing.kind,
       schema_version: existing.schema_version,
+      key: existing.key,
       path: existing.path,
+      title: existing.title,
+      meta: JSON.stringify(existing.meta),
       ownership: existing.ownership,
       body: null,
       deleted: true,

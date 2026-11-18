@@ -416,6 +416,55 @@ describe("an approval that names its approvers", () => {
     });
     expect(decided.status, JSON.stringify(decided.body)).toBeLessThan(300);
   }, 60_000);
+
+  test("the group is renamed while a step waits, and its members still decide it", async () => {
+    const started = answer(
+      await wide.callTool({ name: "start_orders__write_off", arguments: { order: "A-10" } }),
+    );
+    const waiting = async () =>
+      (
+        (await alice.get(`/tenants/${tenant}/approvals`)).body.items as {
+          flowRunId: string;
+          approvers: { text: string } | null;
+        }[]
+      ).find((one) => one.flowRunId === started.flowRunId);
+    expect((await waiting())?.approvers?.text).toBe("the Finance group");
+    // Who may decide was settled, by ID, when the step began to wait.
+    const kept = await t.db
+      .selectFrom("step_run")
+      .select("detail")
+      .where("flow_run_id", "=", started.flowRunId)
+      .where("node_id", "=", "ok")
+      .executeTakeFirstOrThrow();
+    const finance = (
+      (await alice.get(`/tenants/${tenant}/groups`)).body.items as {
+        id: string;
+        key: string;
+        name: string;
+      }[]
+    ).find((group) => group.name === "Finance");
+    expect(finance?.key).toBe("finance");
+    expect(kept.detail).toMatchObject({
+      approvers: { groups: ["Finance"] },
+      approverIds: { groups: [finance?.id], roles: [] },
+    });
+
+    const renamed = await alice.patch(`/tenants/${tenant}/groups/${finance?.id}`, {
+      name: "Finance and Treasury",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    // While the step waits for it, the group cannot be deleted: nobody could decide the step.
+    const kept2 = await alice.delete(`/tenants/${tenant}/groups/${finance?.id}`);
+    expect(kept2.status).toBe(409);
+    expect(kept2.body.code).toBe("principal_in_use");
+    expect(kept2.body.detail).toContain("orders/write-off");
+    // The step says who may decide it by what the group is called now.
+    expect((await waiting())?.approvers?.text).toBe("the Finance and Treasury group");
+    const decided = await alice.post(`${ws()}/flow-runs/${started.flowRunId}/approvals/ok`, {
+      decision: "approve",
+    });
+    expect(decided.status, JSON.stringify(decided.body)).toBeLessThan(300);
+  }, 60_000);
 });
 
 describe("what an agent would be offered, seen from the console", () => {
@@ -492,6 +541,8 @@ describe("who may connect", () => {
     expect(byAgents.map((entry) => entry.action).sort()).toEqual([
       "approval.approved",
       "flow_run.started",
+      "flow_run.started",
+      // The write-off started to see a group renamed while its approval waits.
       "flow_run.started",
       "run.started",
     ]);

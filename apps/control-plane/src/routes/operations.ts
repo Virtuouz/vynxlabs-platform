@@ -526,11 +526,13 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .where("worker.id", "=", run.worker_id)
               .executeTakeFirst()
           : undefined;
-        const script = await db
-          .selectFrom("resource")
-          .select("body")
-          .where("id", "=", run.resource_id)
-          .executeTakeFirst();
+        const script = run.resource_id
+          ? await db
+              .selectFrom("resource")
+              .select("body")
+              .where("id", "=", run.resource_id)
+              .executeTakeFirst()
+          : undefined;
         const body = (script?.body ?? {}) as {
           timeoutSeconds?: number;
           uses?: { connections?: string[] };

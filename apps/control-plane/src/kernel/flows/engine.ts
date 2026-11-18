@@ -6,6 +6,7 @@ import {
   type FlowEdge,
   type FlowGrants,
   type FlowNode,
+  keyOf,
   OTHERWISE,
   reachableFrom,
   validateJson,
@@ -17,7 +18,9 @@ import { summarize } from "../execution/redact.js";
 import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
+import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
 import { expireLinks, mailApprovers } from "./approval-links.js";
+import { resolveApprovers } from "./approvers.js";
 import { buildContext, type ContextStep, readOutput } from "./context.js";
 import { ExpressionError } from "./expressions.js";
 
@@ -90,7 +93,17 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
         .where("workspace_id", "=", request.workspaceId)
         .executeTakeFirst()
     : undefined;
-  const manifest = bundle ? await bundleManifest(kernel, bundle, "flow", request.flow) : undefined;
+  let manifest = bundle ? await bundleManifest(kernel, bundle, "flow", request.flow) : undefined;
+  let alias: AliasUse | undefined;
+  if (workspace && bundle && !manifest && !request.bundleId) {
+    // Asked for by a path it had before it was renamed, it still starts while the alias lasts.
+    const found = await resolveResource(trx, request.workspaceId, request.flow, { kind: "flow" });
+    if (found?.via === "alias") {
+      alias = found.alias;
+      request = { ...request, flow: found.resource.path };
+      manifest = await bundleManifest(kernel, bundle, "flow", request.flow);
+    }
+  }
   if (!workspace || !bundle || !manifest) throw notFound(`The flow ${request.flow}`);
   const body = manifest.body as unknown as FlowBody;
 
@@ -122,25 +135,31 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
     }
   }
 
+  // By the key the bundle gives it: the flow may have been renamed since that bundle.
+  const resource = await trx
+    .selectFrom("resource")
+    .select("id")
+    .where("workspace_id", "=", request.workspaceId)
+    .where("kind", "=", "flow")
+    .where("key", "=", keyOf(manifest))
+    .executeTakeFirst();
+
   const key = request.idempotencyKey ?? randomUUID();
   if (request.idempotencyKey !== undefined) {
     const earlier = await trx
       .selectFrom("flow_run")
       .selectAll()
       .where("workspace_id", "=", request.workspaceId)
-      .where("flow_path", "=", request.flow)
+      // The same request sent again after the flow was renamed finds its first run.
+      .where("flow_path", "in", [
+        request.flow,
+        ...(resource ? await formerPaths(trx, resource.id) : []),
+      ])
       .where("idempotency_key", "=", key)
       .executeTakeFirst();
-    if (earlier) return { created: false, flowRun: earlier };
+    if (earlier) return { created: false, flowRun: earlier, alias };
   }
 
-  const resource = await trx
-    .selectFrom("resource")
-    .select("id")
-    .where("workspace_id", "=", request.workspaceId)
-    .where("kind", "=", "flow")
-    .where("path", "=", request.flow)
-    .executeTakeFirst();
   const id = newId();
   const input = await storePayload(kernel, id, "input", request.input ?? {}, "flow-runs");
   const flowRun = await trx
@@ -149,7 +168,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       id,
       tenant_id: request.tenantId,
       workspace_id: request.workspaceId,
-      resource_id: resource?.id ?? bundle.id,
+      resource_id: resource?.id ?? null,
       flow_path: request.flow,
       bundle_id: bundle.id,
       trigger_node: triggerNode,
@@ -190,7 +209,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       rerunFrom: request.rerunFrom,
     });
   }
-  return { created: true, flowRun };
+  return { created: true, flowRun, alias };
 }
 
 /**
@@ -734,14 +753,37 @@ class Advance {
           break;
         case "approval": {
           const detail = node.detail ? await this.#evaluate("detail", node.detail) : null;
+          const named =
+            node.approvers &&
+            ((node.approvers.groups?.length ?? 0) > 0 || (node.approvers.roles?.length ?? 0) > 0)
+              ? node.approvers
+              : undefined;
+          // Who the approvers are is settled now, by ID: the group can be renamed while the
+          // step waits, and whoever was in it when it was asked is still who decides.
+          const resolved = named
+            ? await resolveApprovers(
+                this.#trx,
+                {
+                  tenantId: this.#flowRun.tenant_id,
+                  workspaceId: this.#flowRun.workspace_id,
+                },
+                named,
+              )
+            : undefined;
           await this.#update(step, {
             status: "waiting",
             detail: {
               title: node.title,
               detail,
-              ...(node.approvers &&
-              ((node.approvers.groups?.length ?? 0) > 0 || (node.approvers.roles?.length ?? 0) > 0)
-                ? { approvers: node.approvers }
+              ...(named && resolved
+                ? {
+                    approvers: named,
+                    approverIds: {
+                      groups: resolved.groups,
+                      roles: resolved.roles,
+                      ...(resolved.unknown.length > 0 ? { later: resolved.later } : {}),
+                    },
+                  }
                 : {}),
             },
             wake_at: node.timeoutSeconds ? new Date(Date.now() + node.timeoutSeconds * 1000) : null,

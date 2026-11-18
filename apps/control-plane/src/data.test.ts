@@ -1118,6 +1118,22 @@ describe("refusals, retiring and purging", () => {
       },
       { policy: { type: "owner", column: "owner_id" } },
     );
+    // Without saying what it was renamed from, it is a delete of a table with rows and a new empty one.
+    const { renamedFrom: _from, ...unsaid } = renamed.body as Record<string, unknown>;
+    const refused = await deploy(
+      bundle([{ ...renamed, body: unsaid }, pointing], "renamed without saying"),
+    );
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("rename_suspected");
+    expect(refused.body.errors).toEqual([
+      {
+        path: "customers",
+        message: expect.stringContaining(
+          'the table "customers" has access given to it and rows, and this deploy creates crm/clients. If one of them is it renamed, give that one key: "customers".',
+        ),
+      },
+    ]);
+
     const deployed = await deploy(bundle([renamed, pointing], "renamed"));
     expect(deployed.status).toBe(201);
     expect((await rows(alice, "crm/clients", "?sort=name")).map((row) => row.name)).toEqual([
@@ -1132,6 +1148,76 @@ describe("refusals, retiring and purging", () => {
 });
 
 describe("tables made in the console, isolation and guards", () => {
+  test("a rename carries what the workspace kept under the old path, and refuses a path that is taken", async () => {
+    const at = ws();
+    const put = (path: string, body: object) => alice.put(`${ws()}/resources/${path}`, body);
+    const connection = {
+      kind: "connection",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: { connector: "http" },
+    };
+    const notes = {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: { columns: { title: { type: "text", required: true } } },
+    };
+    expect((await put("crm", connection)).status).toBe(201);
+    expect(
+      (
+        await alice.put(`${at}/connection-bindings/crm`, {
+          config: { baseUrl: "http://crm.test" },
+        })
+      ).status,
+    ).toBeLessThan(300);
+    const made = await put("memos", notes);
+    expect(made.status).toBe(201);
+    expect((await alice.post(`${at}/rows/memos`, { title: "kept" })).status).toBe(201);
+
+    // The connection keeps what it was bound to.
+    const moved = await put("sales/crm", { ...connection, renameFrom: "crm" });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    const bindings = (await alice.get(`${at}/connection-bindings`)).body.items as {
+      path: string;
+      bound: boolean;
+    }[];
+    expect(bindings.filter((item) => item.bound).map((item) => item.path)).toEqual(["sales/crm"]);
+
+    // The table keeps its rows, though it does not say what it was renamed from.
+    const renamed = await put("journal/memos", { ...notes, renameFrom: "memos" });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body).toMatchObject({ id: made.body.id, path: "journal/memos" });
+    expect(
+      (await alice.get(`${at}/rows/journal/memos`)).body.items.map(
+        (row: { title: string }) => row.title,
+      ),
+    ).toEqual(["kept"]);
+    // The path it had still answers for a while, and says where the table is now.
+    const byOld = await alice.get(`${at}/rows/memos`);
+    expect(byOld.status).toBe(200);
+    expect(byOld.headers["vynx-resource-moved"]).toBe("journal/memos");
+
+    // A path that something else has is not taken from it.
+    const taken = await put("sales/crm", { ...notes, renameFrom: "journal/memos" });
+    expect(taken.status).toBe(409);
+    expect(taken.body.code).toBe("path_taken");
+    expect(taken.body.detail).toContain("that is the path of a connection");
+
+    const audited = await t.db
+      .selectFrom("audit_entry")
+      .select(["action", "details"])
+      .where("target_id", "=", made.body.id)
+      .orderBy("occurred_at")
+      .execute();
+    expect(audited.map((entry) => entry.action)).toEqual(["resource.created", "resource.renamed"]);
+    expect(audited[1]?.details).toMatchObject({
+      path: "journal/memos",
+      key: "memos",
+      renamedFrom: "memos",
+    });
+  });
+
   test("a UI-managed table is created and changed through the resource routes", async () => {
     const body = {
       kind: "table",

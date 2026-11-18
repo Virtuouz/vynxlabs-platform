@@ -9,8 +9,14 @@ export {
   ConsoleSources,
   compareVersions,
   coreInRange,
+  derivedToolName,
+  formatFor,
+  keyOf,
   MAX_BUNDLE_ASSETS,
   MAX_BUNDLE_SOURCE,
+  needsFormat4,
+  RESERVED_TOOL_NAMES,
+  toolNameOf,
 } from "./bundle.js";
 export {
   bundleExpressions,
@@ -24,17 +30,30 @@ export {
   envelopeSchemas,
   KIND_PATTERN,
   Manifest,
+  MCP_NAME_PATTERN,
   PATH_PATTERN,
   SLUG_PATTERN,
   StoredResource,
 } from "./envelope.js";
+export { fileSchemas } from "./file-schema.js";
 export {
   entryFor,
+  fileOf,
+  ignoredFolder,
+  isResourceFile,
+  movedFile,
+  ontoWritten,
   type ParsedResources,
+  parseRepositoryConfig,
+  parseRepositoryFiles,
   parseResourceFiles,
+  REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
+  type RepositoryConfig,
   type ResourceFile,
+  renderRepositoryFiles,
   renderResourceFiles,
+  sameResourceFile,
 } from "./files.js";
 export {
   checkFlow,
@@ -135,6 +154,7 @@ export {
   type PermissionScope,
   type PermissionVerb,
 } from "./permissions.js";
+export { resolveKeyReferences } from "./references.js";
 export {
   type KindDefinition,
   KindRegistry,
@@ -152,3 +172,17 @@ export {
   type TableColumn,
   type TablePolicy,
 } from "./table.js";
+export {
+  checkTenantResources,
+  isTenantFile,
+  isTenantKind,
+  parseTenantFiles,
+  ROLE_KEY_PATTERN,
+  renderTenantFiles,
+  TENANT_FOLDER,
+  TENANT_KEY_PATTERN,
+  TENANT_KINDS,
+  type TenantResource,
+  tenantName,
+  tenantOrder,
+} from "./tenant.js";

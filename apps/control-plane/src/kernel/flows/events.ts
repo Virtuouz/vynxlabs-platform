@@ -5,6 +5,7 @@ import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";
 import { kickStarted, notPausedAlone, startTarget } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
+import { resolveResource } from "../resolve.js";
 import { ExpressionError } from "./expressions.js";
 
 /** Past this many events in a chain of causes, an event is stored but starts nothing. */
@@ -28,17 +29,17 @@ export interface PublishEvent {
  * After the transaction commits, pass `started` to `kickStarted` so that flow
  * runs take their first step at once.
  */
-export async function publishEvent(kernel: Kernel, trx: Trx, event: PublishEvent) {
+export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent) {
+  let event = asked;
   const depth = event.depth ?? 0;
   if (!event.name.startsWith(PLATFORM_EVENT_PREFIX)) {
-    const definition = await trx
-      .selectFrom("resource")
-      .select("body")
-      .where("workspace_id", "=", event.workspaceId)
-      .where("kind", "=", "event")
-      .where("path", "=", event.name)
-      .executeTakeFirst();
-    if (!definition) throw notFound(`The event ${event.name}`);
+    // An event that was renamed is still published by the name it had: by a run pinned to
+    // an older bundle, or by a caller outside. It goes out under the name it has now, which
+    // is the one its subscribers wait for.
+    const found = await resolveResource(trx, event.workspaceId, event.name, { kind: "event" });
+    if (!found) throw notFound(`The event ${event.name}`);
+    const definition = found.resource;
+    if (found.via === "alias") event = { ...event, name: definition.path };
     const issues = validateJson(
       (definition.body as { payload: object }).payload,
       event.payload,

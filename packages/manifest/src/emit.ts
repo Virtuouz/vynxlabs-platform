@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Bundle } from "./bundle.js";
 import { envelopeSchemas } from "./envelope.js";
+import { fileSchemas } from "./file-schema.js";
 import { platformKinds } from "./kinds.js";
 
 /** The contract files as they should be on disk, keyed by file name. */
@@ -15,8 +16,13 @@ export function renderSchemas(): Record<string, string> {
       ...definition.body,
     },
   ]);
+  // A resource as a file in a repository: what an editor completes and checks as it is typed.
+  const files = fileSchemas().map((one) => [
+    `files/${one.kind}.v${one.version}.schema.json`,
+    one.schema,
+  ]);
   return Object.fromEntries(
-    [...Object.entries(envelopeSchemas), ["bundle.schema.json", Bundle], ...kinds].map(
+    [...Object.entries(envelopeSchemas), ["bundle.schema.json", Bundle], ...kinds, ...files].map(
       ([file, schema]) => [file, `${JSON.stringify(schema, null, 2)}\n`],
     ),
   );
@@ -24,6 +30,7 @@ export function renderSchemas(): Record<string, string> {
 
 export async function writeSchemas(dir: string): Promise<void> {
   await mkdir(join(dir, "kinds"), { recursive: true });
+  await mkdir(join(dir, "files"), { recursive: true });
   for (const [file, contents] of Object.entries(renderSchemas())) {
     await writeFile(join(dir, file), contents);
   }

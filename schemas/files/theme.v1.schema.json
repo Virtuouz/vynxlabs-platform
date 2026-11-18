@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/theme.v1.schema.json",
+  "title": "theme file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's identity, when that is not its path. Say it when you move the file: the path the resource had. It never changes."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's path, when the file is kept somewhere that does not give it one."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "tokens": {
+          "type": "object",
+          "properties": {
+            "canvas": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "surface": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "sunken": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "line": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "ink": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "ink-muted": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "action": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "action-ink": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "action-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "attention": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "attention-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "danger": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "danger-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "success": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "success-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "structure": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "raised": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "selected": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "line-strong": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "line-control": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "ink-subtle": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "code-bg": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "focus": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "radius-control": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "radius-panel": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "font": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "font-code": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Values that replace the tenant's, by token name."
+        },
+        "dark": {
+          "type": "object",
+          "properties": {
+            "canvas": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "surface": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "sunken": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "line": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "ink": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "ink-muted": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "action": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "action-ink": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "action-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "attention": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "attention-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "danger": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "danger-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "success": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "success-soft": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "structure": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "raised": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "selected": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "line-strong": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "line-control": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "ink-subtle": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "code-bg": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "focus": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "radius-control": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "radius-panel": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "font": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            },
+            "font-code": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+            }
+          },
+          "additionalProperties": false,
+          "description": "The same, for when the viewer prefers a dark scheme."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "body"
+  ],
+  "additionalProperties": false
+}

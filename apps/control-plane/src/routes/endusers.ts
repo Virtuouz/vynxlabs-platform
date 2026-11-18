@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId, sql } from "@vynxlabs/db";
+import { sql } from "@vynxlabs/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { portalUrl } from "../kernel/apps/address.js";
@@ -26,6 +26,7 @@ import {
 import { access, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireEndUserPasswordAllowed } from "../kernel/sso/people.js";
+import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   Id,
@@ -39,6 +40,8 @@ import {
   TenantParams,
   Time,
   toPage,
+  Waiting,
+  waiting,
 } from "./shared.js";
 
 const EndUser = Type.Object({
@@ -96,7 +99,13 @@ const Session = Type.Object({
     email: NullableString,
     groups: Type.Optional(
       Type.Array(Type.String(), {
-        description: "The names of an end user's groups. Empty for anyone else.",
+        description:
+          "What an end user's groups are called. Empty for anyone else. A name can change: an app that decides by a group should read `groupKeys`.",
+      }),
+    ),
+    groupKeys: Type.Optional(
+      Type.Array(Type.String(), {
+        description: "The keys of an end user's groups, which never change. Empty for anyone else.",
       }),
     ),
     attributes: Type.Optional(
@@ -534,11 +543,11 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             name: GroupName,
             description: Type.Optional(Type.String({ maxLength: 500 })),
           }),
-          response: { 201: Group },
+          response: { 201: Group, 202: Waiting },
         },
       },
       async ({ ctx, params, body }, reply) => {
-        const row = await ctx.mutate(async (trx, audit) => {
+        const made = await ctx.mutate(async (trx, audit) => {
           const taken = await trx
             .selectFrom("end_user_group")
             .select("id")
@@ -546,31 +555,41 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("name", "=", body.name)
             .executeTakeFirst();
           if (taken) throw conflict(`A group of end users named ${body.name} already exists.`);
-          const created = await trx
-            .insertInto("end_user_group")
-            .values({
-              id: newId(),
-              tenant_id: params.t,
-              name: body.name,
-              description: body.description ?? "",
-            })
-            .returningAll()
+          const key = await freeKey(trx, params.t, "end_user_group", body.name);
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                kind: "end_user_group",
+                key,
+                body: {
+                  title: body.name,
+                  ...(body.description?.trim() ? { description: body.description.trim() } : {}),
+                },
+              },
+            },
+            `Made the group of end users ${body.name}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
+          const row = await trx
+            .selectFrom("end_user_group")
+            .selectAll()
+            .where("tenant_id", "=", params.t)
+            .where("key", "=", key)
             .executeTakeFirstOrThrow();
-          await audit({
-            action: "end_user_group.created",
-            targetType: "end_user_group",
-            targetId: created.id,
-            tenantId: params.t,
-            details: { name: created.name },
-          });
-          return created;
+          return { released, row };
         });
+        if (!made.row) return reply.code(202).send(waiting(made.released));
         return reply.code(201).send({
-          id: row.id,
-          name: row.name,
-          description: row.description,
+          id: made.row.id,
+          name: made.row.name,
+          description: made.row.description,
           memberCount: 0,
-          createdAt: iso(row.created_at),
+          createdAt: iso(made.row.created_at),
         });
       },
     );
@@ -608,6 +627,80 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.patch(
+      "/tenants/:t/end-user-groups/:g",
+      {
+        config: { access: access.tenant("end_user_group:write") },
+        schema: {
+          summary: "Change what a group of end users is called or what it is for",
+          description:
+            "Its key stays, so a binding that names it by key, and a row that holds its key, " +
+            "are not touched. A row that holds what the group was called stops being its row: " +
+            "rows should hold the key.",
+          tags: ["end users"],
+          params: GroupParams,
+          body: Type.Object({
+            name: Type.Optional(GroupName),
+            description: Type.Optional(Type.String({ maxLength: 500 })),
+          }),
+          response: { 200: Group, 202: Waiting },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const changed = await ctx.mutate(async (trx, audit) => {
+          const group = await findGroup(trx, params.t, params.g);
+          const now = await accessResource(trx, params.t, "end_user_group", group.id);
+          if (!now) throw notFound("The group");
+          if (now.managedBy === "provider" && body.name !== undefined) {
+            throw conflict(
+              "This group is made by the identity provider, which names it. Rename it there.",
+            );
+          }
+          const description =
+            body.description?.trim() ?? (now.resource.body.description as string | undefined);
+          const { description: _was, ...rest } = now.resource.body;
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                ...now.resource,
+                body: {
+                  ...rest,
+                  title: body.name ?? (now.resource.body.title as string),
+                  ...(description ? { description } : {}),
+                },
+              },
+            },
+            `Changed the group of end users ${group.name}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
+          const row = await trx
+            .selectFrom("end_user_group")
+            .selectAll()
+            .where("id", "=", group.id)
+            .executeTakeFirstOrThrow();
+          const members = await trx
+            .selectFrom("end_user_group_member")
+            .select((eb) => eb.fn.countAll<string>().as("n"))
+            .where("group_id", "=", group.id)
+            .executeTakeFirst();
+          return { released, row, members: Number(members?.n ?? 0) };
+        });
+        if (!changed.row) return reply.code(202).send(waiting(changed.released));
+        return {
+          id: changed.row.id,
+          name: changed.row.name,
+          description: changed.row.description,
+          memberCount: changed.members ?? 0,
+          createdAt: iso(changed.row.created_at),
+        };
+      },
+    );
+
     app.delete(
       "/tenants/:t/end-user-groups/:g",
       {
@@ -618,27 +711,26 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Its members lose what the group was given. A table ruled by the group shows its rows to nobody in it any more.",
           tags: ["end users"],
           params: GroupParams,
-          response: { 204: NoContent },
+          response: { 204: NoContent, 202: Waiting },
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
+        const released = await ctx.mutate(async (trx, audit) => {
           const group = await findGroup(trx, params.t, params.g);
-          await trx
-            .deleteFrom("binding")
-            .where("principal_type", "=", "end_user_group")
-            .where("principal_id", "=", group.id)
-            .execute();
-          await trx.deleteFrom("end_user_group").where("id", "=", group.id).execute();
-          await audit({
-            action: "end_user_group.deleted",
-            targetType: "end_user_group",
-            targetId: group.id,
-            tenantId: params.t,
-            details: { name: group.name },
-          });
+          const now = await accessResource(trx, params.t, "end_user_group", group.id);
+          if (!now) throw notFound("The group");
+          return releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            { op: "delete", kind: "end_user_group", key: now.resource.key },
+            `Deleted the group of end users ${group.name}`,
+          );
         });
-        return reply.code(204).send(null);
+        return released.status === "applied"
+          ? reply.code(204).send(null)
+          : reply.code(202).send(waiting(released));
       },
     );
 

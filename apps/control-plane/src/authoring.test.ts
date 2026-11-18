@@ -527,6 +527,161 @@ describe("deploying drafts", () => {
     expect(after["orders/second"]).toBeUndefined();
     expect(after["orders/hello"]).toBe("ui");
   });
+
+  test("a resource is renamed in the console, and is the same resource at its new path", async () => {
+    const before = (await alice.get(`${ws()}/resources/orders/hello`)).body;
+    const body = scriptBody("export default async () => ({ hello: 'changed' });\n");
+    const renamed = await alice.put(`${ws()}/drafts/orders/hello`, {
+      kind: "script",
+      schemaVersion: 1,
+      body,
+      path: "greetings/hello",
+      title: "Say hello",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body).toMatchObject({
+      path: "greetings/hello",
+      key: "orders/hello",
+      title: "Say hello",
+      change: "rename",
+      renamedFrom: "orders/hello",
+    });
+    // The draft is at the path the resource is to have. What runs has not moved yet.
+    expect((await alice.get(`${ws()}/drafts/orders/hello`)).status).toBe(404);
+    expect((await alice.get(`${ws()}/drafts/greetings/hello`)).body.change).toBe("rename");
+    expect((await alice.get(`${ws()}/resources/orders/hello`)).body.path).toBe("orders/hello");
+
+    // A path that something else has is not taken.
+    await draft("orders/other", scriptBody("export default async () => ({});\n"));
+    const taken = await alice.put(`${ws()}/drafts/orders/other`, {
+      kind: "script",
+      schemaVersion: 1,
+      body,
+      path: "greetings/hello",
+    });
+    expect(taken.status).toBe(409);
+    expect(taken.body.code).toBe("path_taken");
+    expect((await alice.delete(`${ws()}/drafts/orders/other`)).status).toBeLessThan(300);
+
+    const preview = (await alice.get(`${ws()}/changes/preview`)).body;
+    expect(preview.summary).toMatchObject({ renamed: 1, created: 0, deleted: 0 });
+    const deployed = await alice.post(`${ws()}/changes/deploy`, { message: "Move the greeting" });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.summary.changes).toEqual([
+      { change: "renamed", kind: "script", path: "greetings/hello", from: "orders/hello" },
+    ]);
+    const after = (await alice.get(`${ws()}/resources/greetings/hello`)).body;
+    expect(after).toMatchObject({
+      id: before.id,
+      key: "orders/hello",
+      path: "greetings/hello",
+      title: "Say hello",
+    });
+    // Its code runs at the new path, and still answers at the old one for a while.
+    expect((await run("greetings/hello")).output).toEqual({ hello: "changed" });
+    expect((await run("orders/hello")).output).toEqual({ hello: "changed" });
+    expect((await alice.get(`${ws()}/drafts`)).body.items).toEqual([]);
+
+    // A draft that does not speak of the title keeps it. One that says null takes it away.
+    const titled = async (title?: string | null) => {
+      const saved = await alice.put(`${ws()}/drafts/greetings/hello`, {
+        kind: "script",
+        schemaVersion: 1,
+        body,
+        ...(title !== undefined ? { title } : {}),
+      });
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      const done = await alice.post(`${ws()}/changes/deploy`, { paths: ["greetings/hello"] });
+      return done.status === 201
+        ? (await alice.get(`${ws()}/resources/greetings/hello`)).body.title
+        : done.body.code;
+    };
+    expect(await titled()).toBe("Say hello");
+    expect(await titled(null)).toBeNull();
+    expect(await titled("Say hello")).toBe("Say hello");
+  });
+});
+
+describe("a file the repository keeps outside the console's folder", () => {
+  test("is deployed with where it is, is changed in the console like any other, and is written back to its own file", async () => {
+    // As the CLI builds it: the active bundle, and one more resource from a file under src/.
+    const active = await t.db
+      .selectFrom("workspace")
+      .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+      .select("bundle.storage_key")
+      .where("workspace.id", "=", dev)
+      .executeTakeFirstOrThrow();
+    const { digest: _digest, ...content } = JSON.parse(
+      (await t.kernel.storage.get(active.storage_key)).toString("utf8"),
+    ) as Bundle;
+    const kept: BundleManifest = {
+      kind: "variable",
+      schemaVersion: 1,
+      path: "lending/limit",
+      title: "Lending limit",
+      source: { file: "src/lending/limit.variable.yaml", generated: false },
+      ownership: "ui",
+      body: { default: "5" },
+    };
+    const unsigned = {
+      ...content,
+      formatVersion: 4 as const,
+      assets: content.assets ?? [],
+      manifests: [...content.manifests, kept],
+    };
+    const uploaded = await alice.post(`${ws()}/bundles`, {
+      ...unsigned,
+      digest: bundleDigest(unsigned),
+    });
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBeLessThan(300);
+    const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect((await alice.get(`${ws()}/resources/lending/limit`)).body).toMatchObject({
+      title: "Lending limit",
+      definedIn: "src/lending/limit.variable.yaml",
+      ownership: "ui",
+    });
+
+    // What `platform pull` writes into the console's folder does not hold it: it is given
+    // apart, by where the repository keeps it.
+    const pulled = (await alice.get(`${ws()}/resource-files?roots=src`)).body as {
+      files: { path: string }[];
+      elsewhere: { path: string; content: string; resource: string }[];
+    };
+    expect(pulled.files.some((file) => file.path.includes("limit"))).toBe(false);
+    expect(pulled.elsewhere).toEqual([
+      {
+        path: "src/lending/limit.variable.yaml",
+        resource: "lending/limit",
+        content: 'title: Lending limit\nschemaVersion: 1\nbody:\n  default: "5"\n',
+      },
+    ]);
+
+    // It is changed in the console like any other, and its draft is written to its own file.
+    const saved = await alice.put(`${ws()}/drafts/lending/limit`, {
+      kind: "variable",
+      schemaVersion: 1,
+      body: { default: "6" },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const drafted = (await alice.get(`${ws()}/resource-files`)).body as {
+      elsewhere: { path: string; content: string }[];
+    };
+    // Without the repository's roots, the file is made to say its path.
+    expect(drafted.elsewhere.map((file) => [file.path, file.content])).toEqual([
+      [
+        "src/lending/limit.variable.yaml",
+        'path: lending/limit\ntitle: Lending limit\nschemaVersion: 1\nbody:\n  default: "6"\n',
+      ],
+    ]);
+    // Deployed with other drafts, it is still the repository's file.
+    await draft("orders/extra", scriptBody("export default async () => ({});\n"));
+    const again = await alice.post(`${ws()}/changes/deploy`, {});
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    expect((await alice.get(`${ws()}/resources/lending/limit`)).body.definedIn).toBe(
+      "src/lending/limit.variable.yaml",
+    );
+  });
 });
 
 describe("flows drawn in the console", () => {

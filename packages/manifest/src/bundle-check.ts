@@ -1,4 +1,11 @@
-import type { Bundle, BundleManifest } from "./bundle.js";
+import {
+  type Bundle,
+  type BundleManifest,
+  keyOf,
+  needsFormat4,
+  RESERVED_TOOL_NAMES,
+  toolNameOf,
+} from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
 import { checkForm, type FormTrigger } from "./form.js";
 import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
@@ -43,7 +50,16 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
   /** Paths used twice. That is reported once; references to them are not reported again. */
   const twice = new Set<string>();
 
+  const byKey = new Map<string, BundleManifest>();
   for (const manifest of manifests) {
+    // A key is one resource's. Two manifests at one path are reported as that, below.
+    const sameKey = byKey.get(keyOf(manifest));
+    if (sameKey && sameKey.path !== manifest.path) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): its key "${keyOf(manifest)}" is also the key of ${sameKey.path}. A key belongs to one resource: give one of them a key of its own.`,
+      );
+    }
+    byKey.set(keyOf(manifest), manifest);
     const existing = byPath.get(manifest.path);
     if (existing) {
       twice.add(manifest.path);
@@ -68,6 +84,38 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     }
   }
 
+  // A tool's name is what an agent was told to call. One chosen by an author is one tool's.
+  const tools = new Map<string, BundleManifest>();
+  for (const manifest of manifests) {
+    if (manifest.mcp === undefined) continue;
+    if (manifest.kind !== "script" && manifest.kind !== "flow") {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): /mcp only a script or a flow is offered to an agent as a tool.`,
+      );
+      continue;
+    }
+    if (RESERVED_TOOL_NAMES.includes(manifest.mcp.name)) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): /mcp/name "${manifest.mcp.name}" is the name of a tool every agent has. Choose another.`,
+      );
+    }
+  }
+  for (const manifest of manifests) {
+    const name = toolNameOf(manifest);
+    if (name === undefined) continue;
+    const other = tools.get(name);
+    // Two paths can make one name: "-" and "_" are written alike, and a long name is cut
+    // short. An agent would then be offered one tool, and never reach the other.
+    if (other) {
+      problems.push(
+        manifest.mcp === undefined && other.mcp === undefined
+          ? `${manifest.path} (${manifest.kind}): its tool would be called "${name}", as the tool for ${other.path} is: a tool's name is made from the path, with "-" written as "_" and cut at 64 characters. Give one of them an mcp.name, or another path.`
+          : `${manifest.path} (${manifest.kind}): its tool would be called "${name}", which is the name of the tool for ${other.path}. Give one of them another mcp.name.`,
+      );
+    }
+    if (!other) tools.set(name, manifest);
+  }
+
   const expect = (from: BundleManifest, field: string, path: unknown, kind: string) => {
     if (typeof path !== "string") return;
     if (kind === "event" && path.startsWith(PLATFORM_EVENT_PREFIX)) return;
@@ -90,6 +138,9 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     };
     if (manifest.kind === "schedule" || manifest.kind === "trigger") {
       expect(manifest, "script", body.script, "script");
+    }
+    if (manifest.kind === "schedule") {
+      expect(manifest, "flow", (manifest.body as { flow?: unknown }).flow, "flow");
     }
     // A trigger hands its requests, or its ticks, to a source of the kind that takes them.
     const sourced: [string, string | undefined, "webhook" | "poll"][] = [];
@@ -328,6 +379,13 @@ export function checkBundleAssets(
   const problems: string[] = [];
   const assets = bundle.assets ?? [];
   const apps = bundle.manifests.filter((manifest) => manifest.kind === "app");
+  if (bundle.formatVersion < 4) {
+    for (const manifest of bundle.manifests.filter(needsFormat4)) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): a key, a title, a tool name and a source need bundle format 4. Build with a current SDK and CLI.`,
+      );
+    }
+  }
   if (bundle.formatVersion === 1) {
     if (bundle.assets !== undefined) problems.push("assets: a format 1 bundle carries no files.");
     for (const app of apps) {

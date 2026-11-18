@@ -1,0 +1,6 @@
+# The Tech Desk's app, for staff. Its pages are platform/screens/desk.interface.yaml.
+schemaVersion: 1
+body:
+  title: Device desk
+  description: The Tech Desk's queue, loans and shelf.
+  interface: screens/desk

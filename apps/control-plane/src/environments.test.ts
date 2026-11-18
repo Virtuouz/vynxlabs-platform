@@ -209,6 +209,15 @@ describe("promotion", () => {
     const refused = await alice.post(`${ws(dev)}/promotions`);
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("bindings_missing");
+    // A promotion took no body before it had anything to be told. One sent with none is
+    // still a promotion, answered the same way.
+    const bare = await t.app.inject({
+      method: "POST",
+      url: `/api/v1${ws(dev)}/promotions`,
+      headers: { origin: t.config.publicUrl, ...alice.headers },
+    });
+    expect(bare.statusCode, bare.body).toBe(409);
+    expect(bare.json().code).toBe("bindings_missing");
     // Neither the preview nor the refusal left anything behind.
     expect((await alice.get(`${ws(qa)}/bundles`)).body.items).toEqual([]);
     expect((await alice.get(`${ws(qa)}/tables`)).body.items).toEqual([]);
@@ -314,6 +323,42 @@ describe("promotion", () => {
       ["P1", "keep"],
       ["P2", null],
     ]);
+  });
+
+  test("a promotion that would delete a table with rows and create another is refused in the preview, until the path is allowed", async () => {
+    // The table at another path, without saying what it was renamed from.
+    const moved = bundle([
+      manifest("connection", "api", { connector: "http" }),
+      manifest("table", "things", {
+        columns: { title: { type: "text", required: true }, done: { type: "boolean" } },
+      }),
+      script("use", { connections: ["api"], tables: ["things"] }),
+      script("extra"),
+    ]);
+    const uploaded = await alice.post(`${ws(dev)}/bundles`, moved);
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBeLessThan(300);
+    const inDev = await alice.post(`${ws(dev)}/deployments`, {
+      bundleId: uploaded.body.id,
+      allowDelete: ["items"],
+    });
+    expect(inDev.status, JSON.stringify(inDev.body)).toBe(201);
+
+    const preview = (await alice.get(`${ws(dev)}/promotion-preview`)).body;
+    expect(preview).toMatchObject({
+      possible: false,
+      refusal: { code: "rename_suspected", errors: [{ path: "items" }] },
+    });
+    const refused = await alice.post(`${ws(dev)}/promotions`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("rename_suspected");
+    expect((await alice.get(`${ws(qa)}/rows/items`)).body.items[0].title).toBe("Q1");
+
+    const allowed = (await alice.get(`${ws(dev)}/promotion-preview?allowDelete=items`)).body;
+    expect(allowed.possible).toBe(true);
+    expect(allowed.summary).toMatchObject({ created: 1, deleted: 1 });
+
+    // Dev goes back to what QA runs, and the table comes back with it.
+    expect((await deploy(alice, dev, v2)).status).toBe(201);
   });
 
   test("promoting needs the right to deploy where the bundle is going", async () => {

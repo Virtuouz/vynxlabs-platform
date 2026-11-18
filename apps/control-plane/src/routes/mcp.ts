@@ -4,12 +4,17 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { sql } from "@vynxlabs/db";
-import type { FlowBody } from "@vynxlabs/manifest";
+import { derivedToolName, type FlowBody } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { boundInside, check } from "../kernel/authorize.js";
 import { forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { startRun } from "../kernel/execution/runs.js";
-import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
+import {
+  approversOf,
+  approverTitles,
+  describeApprovers,
+  isApprover,
+} from "../kernel/flows/approvers.js";
 import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -42,11 +47,8 @@ interface Tool {
   failed?: (answer: unknown) => boolean;
 }
 
-/** A tool name from a path: letters, digits and underscores, at most 64 characters. */
-export function toolName(prefix: string, path: string): string {
-  const name = `${prefix}_${path.replace(/\//g, "__").replace(/-/g, "_")}`;
-  return name.length <= 64 ? name : name.slice(0, 64);
-}
+/** A tool name from a path. Kept under this name for those who import it from here. */
+export const toolName = derivedToolName;
 
 const objectSchema = (schema: unknown): Record<string, unknown> => {
   const given = (schema ?? {}) as Record<string, unknown>;
@@ -182,7 +184,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
   const tools: Tool[] = [];
   const resources = await db
     .selectFrom("resource")
-    .select(["id", "kind", "path", "body"])
+    .select(["id", "kind", "path", "body", "meta"])
     .where("workspace_id", "=", workspace.id)
     .where("kind", "in", ["script", "flow"])
     .orderBy("path")
@@ -243,6 +245,8 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
       : {}),
   });
 
+  /** The tool each resource got, to give it again under the names it had before a rename. */
+  const named = new Map<string, { prefix: string; name: string }>();
   for (const resource of resources) {
     if (tools.length >= MAX_TOOLS) break;
     const scope = { ...target, resourceId: resource.id };
@@ -251,8 +255,12 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
       const body = resource.body as { description?: string; input?: unknown; output?: unknown };
       const declared = objectSchema(body.input);
       const keyName = keyArgument(declared);
+      named.set(resource.id, {
+        prefix: "run",
+        name: resource.meta.mcp?.name ?? toolName("run", resource.path),
+      });
       tools.push({
-        name: toolName("run", resource.path),
+        name: resource.meta.mcp?.name ?? toolName("run", resource.path),
         description:
           `Runs the script ${resource.path}. ${body.description ?? ""} Waits a short while for it to end. Pass ${keyName} to make a retry safe.`
             .replace(/\s+/g, " ")
@@ -312,8 +320,12 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
         ? objectSchema(first.trigger.input)
         : { type: "object", additionalProperties: true };
       const keyName = keyArgument(declared);
+      named.set(resource.id, {
+        prefix: "start",
+        name: resource.meta.mcp?.name ?? toolName("start", resource.path),
+      });
       tools.push({
-        name: toolName("start", resource.path),
+        name: resource.meta.mcp?.name ?? toolName("start", resource.path),
         description:
           `Starts the flow ${resource.path} and waits a short while for it to end. ${body.description ?? ""} Pass ${keyName} to make a retry safe.`
             .replace(/\s+/g, " ")
@@ -358,6 +370,31 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           kickFlow(kernel, started.flowRun.id);
           return showFlowRun(await ended(() => readFlowRun(started.flowRun.id)));
         },
+      });
+    }
+  }
+
+  // A tool's name follows its path. After a rename the name it had still answers, while the
+  // alias of the path lasts, and says in its description what to call instead.
+  if (named.size > 0) {
+    const aliases = await db
+      .selectFrom("resource_alias")
+      .select(["resource_id", "path", "expires_at"])
+      .where("workspace_id", "=", workspace.id)
+      .where("resource_id", "in", [...named.keys()])
+      .where("expires_at", ">", new Date())
+      .orderBy("path")
+      .execute();
+    for (const alias of aliases) {
+      const now = named.get(alias.resource_id);
+      if (!now || tools.length >= MAX_TOOLS) continue;
+      const current = tools.find((tool) => tool.name === now.name);
+      const name = toolName(now.prefix, alias.path);
+      if (!current || tools.some((tool) => tool.name === name)) continue;
+      tools.push({
+        ...current,
+        name,
+        description: `Renamed: call ${current.name} instead. This name stops working on ${alias.expires_at.toISOString().slice(0, 10)}. ${current.description}`,
       });
     }
   }
@@ -477,7 +514,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           throw new HttpError(
             403,
             "not_an_approver",
-            `Only ${describeApprovers(named)} may decide this approval.`,
+            `Only ${describeApprovers(named, await approverTitles(db, named))} may decide this approval.`,
           );
         }
         const decided = await ctx.mutate(async (trx, audit) => {

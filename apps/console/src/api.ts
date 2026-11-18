@@ -60,6 +60,20 @@ async function read<T>(response: Response): Promise<T> {
       requestId,
     );
   }
+  // A change to a tenant's access that waits for a second person changed nothing. Whoever
+  // asked for it is told so where a failure would be told, in the server's words.
+  if (response.status === 202 && (parsed as { waiting?: unknown } | null)?.waiting === true) {
+    throw new ApiError(
+      202,
+      {
+        code: "awaiting_approval",
+        detail:
+          (parsed as { detail?: string }).detail ??
+          "It waits for a second person. Nothing changed yet.",
+      },
+      requestId,
+    );
+  }
   return parsed as T;
 }
 

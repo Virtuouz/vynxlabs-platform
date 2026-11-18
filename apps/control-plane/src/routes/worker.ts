@@ -45,6 +45,7 @@ import { seeWorker } from "../kernel/execution/workers.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { pathNow } from "../kernel/resolve.js";
 import { revealSecret } from "../kernel/secrets.js";
 import { announceRows } from "./data.js";
 import { AnyObject, Id, NoContent, Time } from "./shared.js";
@@ -413,7 +414,11 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         ) {
           throw forbidden("a task about a connection");
         }
-        return boundConnection(task.tenant_id, task.workspace_id, path);
+        return boundConnection(
+          task.tenant_id,
+          task.workspace_id,
+          await pathNow(db, task.workspace_id, path, "connection"),
+        );
       },
     );
 
@@ -583,11 +588,13 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!body.uses.variables.includes(path)) {
           throw forbidden(`a declared use of the variable "${path}"`);
         }
+        // The script names it as its bundle did. Its value is kept where it is now.
+        const now = await pathNow(db, run.workspace_id, path, "variable");
         const set = await db
           .selectFrom("variable_value")
           .select("value")
           .where("workspace_id", "=", run.workspace_id)
-          .where("path", "=", path)
+          .where("path", "=", now)
           .executeTakeFirst();
         if (set) return { value: set.value };
         const definition = await db
@@ -595,7 +602,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select("body")
           .where("workspace_id", "=", run.workspace_id)
           .where("kind", "=", "variable")
-          .where("path", "=", path)
+          .where("path", "=", now)
           .executeTakeFirst();
         const fallback = (definition?.body as { default?: string } | undefined)?.default;
         if (fallback === undefined) throw notFound(`The variable ${path}`);
@@ -628,7 +635,11 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!may.connection(path)) {
           throw forbidden(`a declared use of the connection "${path}"`);
         }
-        return boundConnection(run.tenant_id, run.workspace_id, path);
+        return boundConnection(
+          run.tenant_id,
+          run.workspace_id,
+          await pathNow(db, run.workspace_id, path, "connection"),
+        );
       },
     );
 
@@ -643,16 +654,19 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       if (!(body.uses.connectionGroups ?? []).includes(path)) {
         throw forbidden(`a declared use of the connection group "${path}"`);
       }
+      const now = await pathNow(db, run.workspace_id, path, "connection_group");
       const definition = await db
         .selectFrom("resource")
         .select("body")
         .where("workspace_id", "=", run.workspace_id)
         .where("kind", "=", "connection_group")
-        .where("path", "=", path)
+        .where("path", "=", now)
         .executeTakeFirst();
       if (!definition) throw notFound(`The connection group ${path}`);
       return {
         run,
+        /** The group's path now: its members are kept under it. */
+        now,
         connector: (definition.body as { connector?: string }).connector ?? "http",
       };
     };
@@ -676,12 +690,12 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ worker, params, query }) => {
         const path = params["*"];
-        const { run } = await declaredGroup(worker, params.id, query.attempt, path);
+        const { run, now } = await declaredGroup(worker, params.id, query.attempt, path);
         const rows = await db
           .selectFrom("connection_group_member")
           .select(["key", "label"])
           .where("workspace_id", "=", run.workspace_id)
-          .where("group_path", "=", path)
+          .where("group_path", "=", now)
           .orderBy("key")
           .limit(1000)
           .execute();
@@ -710,11 +724,11 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ worker, params, query }) => {
         const path = params["*"];
-        const { run, connector } = await declaredGroup(worker, params.id, query.attempt, path);
+        const { run, connector, now } = await declaredGroup(worker, params.id, query.attempt, path);
         const member = await readGroupMember(kernel, db, {
           tenantId: run.tenant_id,
           workspaceId: run.workspace_id,
-          group: path,
+          group: now,
           key: params.key,
         });
         if (!member) {
@@ -885,8 +899,9 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             throw forbidden(`a declared use of the data source "${path}"`);
           }
           try {
-            const source = await openSource(kernel, db, run.tenant_id, run.workspace_id, path);
-            const target = await sourceTable(source.db, source.schema, path, body.table);
+            const now = await pathNow(db, run.workspace_id, path, "data_source");
+            const source = await openSource(kernel, db, run.tenant_id, run.workspace_id, now);
+            const target = await sourceTable(source.db, source.schema, now, body.table);
             return { result: await perform(source.db, target, { principalId: null, all: true }) };
           } catch (error) {
             throw sourceFailure(path, translate(error));
@@ -899,7 +914,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const target = await describeTable(
           (await kernel.data.forTenant(run.tenant_id)).owner,
           run.workspace_id,
-          body.table,
+          await pathNow(db, run.workspace_id, body.table, "table"),
         );
         // A script is the workspace's own code. Acting for a person, it is held to what they may see.
         const person = body.as ? await personType(run.tenant_id, body.as) : undefined;

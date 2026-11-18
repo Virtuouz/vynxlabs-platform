@@ -14,7 +14,12 @@ import {
   stepState,
 } from "../kernel/execution/state.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
-import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
+import {
+  approversOf,
+  approverTitles,
+  describeApprovers,
+  isApprover,
+} from "../kernel/flows/approvers.js";
 import { expressionContext } from "../kernel/flows/context.js";
 import {
   cancelFlowRun,
@@ -27,6 +32,7 @@ import { publishEvent } from "../kernel/flows/events.js";
 import { ExpressionError } from "../kernel/flows/expressions.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { resolveResource } from "../kernel/resolve.js";
 import { PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
@@ -656,7 +662,25 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params, query }) => {
         const args = pageArgs(query);
         let select = flowRuns(params.w);
-        if (query.flow) select = select.where("flow_run.flow_path", "=", query.flow);
+        if (query.flow) {
+          // The runs of the flow that has this path now, under whatever path it had then.
+          const path = query.flow;
+          const flow = await db
+            .selectFrom("resource")
+            .select("id")
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "flow")
+            .where("path", "=", path)
+            .executeTakeFirst();
+          select = select.where((eb) =>
+            flow
+              ? eb.or([
+                  eb("flow_run.resource_id", "=", flow.id),
+                  eb("flow_run.flow_path", "=", path),
+                ])
+              : eb("flow_run.flow_path", "=", path),
+          );
+        }
         if (query.status) select = select.where("flow_run.status", "=", query.status);
         if (!query.all) select = select.where("flow_run.parent_flow_run_id", "is", null);
         if (args.after) select = select.where("flow_run.id", "<", args.after);
@@ -689,13 +713,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         await findWorkspace(kernel, params.t, params.w);
-        const target = await db
-          .selectFrom("resource")
-          .select("id")
-          .where("workspace_id", "=", params.w)
-          .where("kind", "=", "flow")
-          .where("path", "=", body.flow)
-          .executeTakeFirst();
+        // By its path, or by one it had before it was renamed.
+        const target = (await resolveResource(db, params.w, body.flow, { kind: "flow" }))?.resource;
         await ctx.authorize("flow_run:write", {
           tenantId: params.t,
           workspaceId: params.w,
@@ -725,6 +744,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const row = await flowRuns(params.w)
           .where("flow_run.id", "=", started.flowRun.id)
           .executeTakeFirstOrThrow();
+        ctx.moved = started.alias;
         return reply.code(started.created ? 201 : 200).send(toFlowRun(row));
       },
     );
@@ -1297,7 +1317,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where(sql<boolean>`step_run.detail ? 'title'`)
         .orderBy("step_run.started_at");
     type PendingRow = Awaited<ReturnType<ReturnType<typeof pending>["execute"]>>[number];
-    const toApproval = (row: PendingRow) => ({
+    const toApproval = async (row: PendingRow) => ({
       flowRunId: row.flow_run_id,
       workspaceId: row.workspace_id,
       flow: row.flow_path,
@@ -1306,13 +1326,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       detail: redact(row.detail.detail ?? null),
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
-      approvers: (() => {
+      approvers: await (async () => {
         const named = approversOf(row.detail);
         return named
           ? {
               groups: named.groups ?? [],
               roles: named.roles ?? [],
-              text: describeApprovers(named) ?? "",
+              text: describeApprovers(named, await approverTitles(db, named)) ?? "",
             }
           : null;
       })(),
@@ -1415,7 +1435,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const rows = await pending(params.t)
           .where("flow_run.workspace_id", "=", params.w)
           .execute();
-        return { items: rows.map(toApproval) };
+        return { items: await Promise.all(rows.map(toApproval)) };
       },
     );
 
@@ -1458,7 +1478,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ))
           )
             continue;
-          items.push(toApproval(row));
+          items.push(await toApproval(row));
         }
         // With nothing to show, answer exactly as the permission check would.
         if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });
@@ -1504,7 +1524,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           throw new HttpError(
             403,
             "not_an_approver",
-            `Only ${describeApprovers(named)} may decide this approval.`,
+            `Only ${describeApprovers(named, await approverTitles(db, named))} may decide this approval.`,
           );
         }
         await ctx.mutate(async (trx, audit) => {

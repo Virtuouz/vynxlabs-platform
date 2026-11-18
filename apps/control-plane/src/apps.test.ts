@@ -532,6 +532,7 @@ describe("end users", () => {
         id: ed.id,
         name: "Ed",
         email: "ed@customer.example",
+        groupKeys: [],
         groups: [],
         attributes: {},
       },
@@ -1074,6 +1075,22 @@ describe("rows ruled by group and by attribute", () => {
     expect(
       (await alice.post(`/tenants/${tenant}/end-user-groups`, { name: " padded " })).status,
     ).toBe(400);
+    // It is renamed and stays the same group. It cannot take the name that is another's key:
+    // a row that holds that key would become its row.
+    const renamed = await alice.patch(`/tenants/${tenant}/end-user-groups/${spaced.body.id}`, {
+      name: "Reception",
+      description: "Greets visitors.",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body).toMatchObject({
+      id: spaced.body.id,
+      name: "Reception",
+      description: "Greets visitors.",
+    });
+    const shadowing = await alice.patch(`/tenants/${tenant}/end-user-groups/${spaced.body.id}`, {
+      name: "finance",
+    });
+    expect(shadowing.status).toBe(409);
     expect(
       (await alice.delete(`/tenants/${tenant}/end-user-groups/${spaced.body.id}`)).status,
     ).toBe(204);

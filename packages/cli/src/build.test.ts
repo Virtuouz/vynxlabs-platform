@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleDigest } from "@vynxlabs/manifest";
 import { afterAll, describe, expect, test } from "vitest";
-import { BuildError, buildBundle, describeBundle } from "./build.js";
+import { BuildError, buildBundle, buildRepository, describeBundle } from "./build.js";
 
 const example = fileURLToPath(new URL("../../../examples/acme", import.meta.url));
 const scratch: string[] = [];
@@ -248,6 +248,117 @@ export const screen = defineInterface({ path: "screens/pets", title: "Pets", pag
   });
 });
 
+describe("keys and titles", () => {
+  const head =
+    'import { column, defineSchedule, defineScript, defineTable, z } from "@vynxlabs/sdk";\n';
+  const script = (options: string) =>
+    `export const submit = defineScript({ ${options} input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
+
+  test("a repository that says neither builds as it always did, in the oldest format", async () => {
+    const bundle = await buildBundle({
+      directory: await repository(`${head}${script('path: "requests/submit",')}`),
+    });
+    expect(bundle.formatVersion).toBe(1);
+    expect(Object.keys(bundle.manifests[0] ?? {}).sort()).toEqual([
+      "body",
+      "kind",
+      "ownership",
+      "path",
+      "schemaVersion",
+    ]);
+  });
+
+  test("a moved resource says the key it had, and the bundle is written in format 4", async () => {
+    const bundle = await buildBundle({
+      directory: await repository(
+        `${head}${script('path: "lending/requests/file", key: "requests/submit", title: "Submit a device request",')}`,
+      ),
+    });
+    expect(bundle.formatVersion).toBe(4);
+    expect(bundle.manifests[0]).toMatchObject({
+      path: "lending/requests/file",
+      key: "requests/submit",
+      title: "Submit a device request",
+    });
+    // A key that is the path is not written: it says nothing.
+    const same = await buildBundle({
+      directory: await repository(
+        `${head}${script('path: "requests/submit", key: "requests/submit",')}`,
+      ),
+    });
+    expect(same.formatVersion).toBe(1);
+    expect(same.manifests[0]).not.toHaveProperty("key");
+  });
+
+  test("a script says the name of its tool, which then does not follow its path", async () => {
+    const bundle = await buildBundle({
+      directory: await repository(
+        `${head}${script('path: "requests/submit", mcp: { name: "submit_device_request" },')}`,
+      ),
+    });
+    expect(bundle.formatVersion).toBe(4);
+    expect(bundle.manifests[0]?.mcp).toEqual({ name: "submit_device_request" });
+    expect(
+      await problems(`${head}${script('path: "requests/submit", mcp: { name: "Submit It" },')}`),
+    ).toEqual([expect.stringContaining("requests/submit (script): /mcp/name must match pattern")]);
+  });
+
+  test("a reference written as text may name a resource by its key, and is built as its path", async () => {
+    const source = `${head}${script('path: "lending/requests/file", key: "requests/submit", tables: ["items"],')}
+export const items = defineTable({ path: "lending/items", key: "items", columns: { name: column.text() } });
+export const nightly = defineSchedule({ path: "nightly", script: "requests/submit", cron: "0 2 * * *" });`;
+    const built = await buildRepository({ directory: await repository(source) });
+    const body = (path: string) =>
+      built.bundle.manifests.find((manifest) => manifest.path === path)?.body as {
+        script?: string;
+        uses: { tables: string[] };
+      };
+    expect(body("nightly").script).toBe("lending/requests/file");
+    expect(body("lending/requests/file").uses.tables).toEqual(["lending/items"]);
+    expect([...built.notes].sort()).toEqual([
+      'lending/requests/file (script): /body/uses/tables/0 names "items" by its key. It is at "lending/items" now.',
+      'nightly (schedule): /body/script names "requests/submit" by its key. It is at "lending/requests/file" now.',
+    ]);
+  });
+});
+
+describe("a definition the entry file does not export", () => {
+  const script = (name: string, path: string) =>
+    `import { defineScript, z } from "@vynxlabs/sdk";\nexport const ${name} = defineScript({ path: "${path}", input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
+
+  test("is refused by name, where it would have gone missing without a word", async () => {
+    expect(
+      await problems(
+        `${script("kept", "jobs/kept")}const forgotten = defineScript({ path: "jobs/forgotten", input: z.object({}), output: z.object({}), async run() { return {}; } });\nvoid forgotten;`,
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /^jobs\/forgotten \(script\) is defined, but src\/index\.ts does not export it/,
+      ),
+    ]);
+  });
+
+  test("two files exporting the same name through export * are both named", async () => {
+    const dir = await repository('export * from "./a.js";\nexport * from "./b.js";\n');
+    await writeFile(join(dir, "src", "a.ts"), script("submit", "requests/submit"));
+    await writeFile(join(dir, "src", "b.ts"), script("submit", "returns/submit"));
+    const failure = await buildBundle({ directory: dir }).catch((error) => error);
+    expect(failure).toBeInstanceOf(BuildError);
+    expect(
+      (failure as BuildError).problems.map((problem) => problem.split(" is defined")[0]),
+    ).toEqual(["requests/submit (script)", "returns/submit (script)"]);
+  });
+
+  test("the same definition exported under two names is fine", async () => {
+    const dir = await repository(`${script("one", "jobs/one")}export { one as alsoOne };\n`);
+    const bundle = await buildBundle({ directory: dir }).catch((error) => error);
+    // Exported twice is its own mistake, caught as a path used twice or not at all: never as missing.
+    if (bundle instanceof BuildError) {
+      expect(bundle.problems.join("\n")).not.toContain("does not export it");
+    }
+  });
+});
+
 describe("resources managed in the console, as files in the repository", () => {
   const source = `
     import { defineScript, z } from "@vynxlabs/sdk";
@@ -306,6 +417,34 @@ describe("resources managed in the console, as files in the repository", () => {
     expect((await buildBundle({ directory: await repository(source) })).formatVersion).toBe(1);
   });
 
+  test("files are read wherever the repository keeps them, and say where each is when that is not the console's folder", async () => {
+    const dir = await withFiles({
+      "vynxlabs.yaml": "roots: [src]\n",
+      // Beside the feature it belongs to. Its path is where it is, under the root.
+      "src/lending/greeting.variable.yaml":
+        "title: Greeting\nschemaVersion: 1\nbody:\n  default: hi\n",
+      // Kept somewhere that gives no path: it says its own.
+      "ops/limits.variable.yaml": 'path: lending/limit\nschemaVersion: 1\nbody:\n  default: "5"\n',
+      "platform/orders/size.variable.yaml": 'schemaVersion: 1\nbody:\n  default: "9"\n',
+      // Not resources: a test, a kind there is not, and whatever a dependency ships.
+      "src/lending/greeting.test.ts": "export {};\n",
+      "src/lending/notes.memo.yaml": "anything: goes\n",
+      "node_modules/dep/broken.variable.yaml": "not: [valid",
+    });
+    const bundle = await buildBundle({ directory: dir });
+    expect(
+      bundle.manifests
+        .filter((one) => one.ownership === "ui")
+        .map((one) => [one.path, one.title ?? null, one.source?.file ?? null]),
+    ).toEqual([
+      ["lending/greeting", "Greeting", "src/lending/greeting.variable.yaml"],
+      ["lending/limit", null, "ops/limits.variable.yaml"],
+      ["orders/size", null, null],
+    ]);
+    // It carries what only format 4 can: where a file is, and a title.
+    expect(bundle.formatVersion).toBe(4);
+  });
+
   test("a path defined in the code and in a file is refused, as is anything wrong with a file", async () => {
     expect(
       await failing({
@@ -316,7 +455,7 @@ describe("resources managed in the console, as files in the repository", () => {
       "orders/check is defined in src/index.ts and again in platform/orders/check.script.yaml. Keep one. A resource taken over in the console is removed from the code.",
     ]);
     expect(await failing({ "platform/orders/hello.script.yaml": yaml })).toEqual([
-      "platform/orders/hello.script.yaml: needs its source beside it, as orders/hello.script.ts.",
+      "platform/orders/hello.script.yaml: needs its source beside it, as platform/orders/hello.script.ts.",
     ]);
     expect(
       await failing({

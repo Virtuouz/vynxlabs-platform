@@ -32,6 +32,7 @@ import { usePreference } from "../prefs.ts";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 import { SCRIPT_STARTERS, untouchedStarter } from "./starters.ts";
 
@@ -740,6 +741,19 @@ export function ScriptEditor({
             ) : null}
             {readOnly ? null : (
               <div className="flex items-center gap-2">
+                {opened && state !== "new" ? (
+                  <ResourceIdentity
+                    root={root}
+                    link={link}
+                    label="Name and path"
+                    row={{ path: opened, kind, ownership: state === "repository" ? "code" : "ui" }}
+                    unsaved={dirty}
+                    onDone={(next) => {
+                      if (next !== opened) navigate(`${link}/${about.edit}/${next}`);
+                      else setState("draft");
+                    }}
+                  />
+                ) : null}
                 {state === "draft" && opened ? (
                   <Button
                     variant="danger"
@@ -793,7 +807,7 @@ export function ScriptEditor({
                   label="Path"
                   value={path}
                   placeholder={about.example}
-                  hint="Its name in this workspace. It cannot be changed later."
+                  hint="Its name in this workspace. It can be renamed later, and stays the same resource."
                   onChange={setPath}
                 />
               </div>
@@ -850,8 +864,11 @@ export function ScriptEditor({
         />
       ) : fromRepository ? (
         <Notice tone="attention">
-          This {about.noun} is managed in the tenant's repository. Its source is shown here
-          read-only: change it there, or write one of the same path here to take it over.
+          This {about.noun} is defined by the code in the tenant's repository, and is changed there.
+          It cannot be turned into one the console edits: its code leans on the rest of the
+          repository's, and one written here stands alone. Its source is shown read-only. To replace
+          it, make a new {about.noun} here at the same path: deployed, that takes its place, with
+          its history and what is bound to it.
         </Notice>
       ) : state === "repository" ? (
         <Notice tone="attention">

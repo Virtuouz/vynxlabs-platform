@@ -680,11 +680,24 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `A group in the mapping is not a group of ${forMembers ? "members" : "end users"} of this tenant.`,
               );
             }
+            // What a release of the tenant's access mapped is that release's: it is neither
+            // removed here nor written a second time. The list sent back includes it.
             await trx
               .deleteFrom("identity_group_map")
               .where("provider_id", "=", current.id)
+              .where("managed_by", "=", "hand")
               .execute();
-            const seen = new Set<string>();
+            const released = await trx
+              .selectFrom("identity_group_map")
+              .select(["claim_value", "member_group_id", "end_user_group_id"])
+              .where("provider_id", "=", current.id)
+              .execute();
+            const seen = new Set<string>(
+              released.map(
+                (row) => `${row.claim_value}\n${row.member_group_id ?? row.end_user_group_id}`,
+              ),
+            );
+            const held = seen.size;
             for (const item of body.items) {
               const key = `${item.value}\n${item.groupId}`;
               if (seen.has(key)) continue;
@@ -706,7 +719,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               targetType: "identity_provider",
               targetId: current.id,
               tenantId,
-              details: { name: current.name, entries: seen.size },
+              details: { name: current.name, entries: seen.size - held },
             });
           });
           return { items: await maps(current) };

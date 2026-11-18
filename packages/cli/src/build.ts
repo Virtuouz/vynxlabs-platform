@@ -12,10 +12,19 @@ import {
   bundleExpressions,
   checkBundleAssets,
   checkBundleManifests,
+  formatFor,
+  ignoredFolder,
+  isResourceFile,
+  keyOf,
   MAX_BUNDLE_SOURCE,
-  parseResourceFiles,
+  parseRepositoryConfig,
+  parseRepositoryFiles,
+  platformKinds,
+  REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
+  type RepositoryConfig,
   type ResourceFile,
+  resolveKeyReferences,
 } from "@vynxlabs/manifest";
 import { build as esbuild } from "esbuild";
 import { type AppSource, buildApps } from "./apps.js";
@@ -28,6 +37,9 @@ interface Definition {
   path: string;
   toManifest(entry: string): BundleManifest;
 }
+
+/** Where the SDK notes what the repository's code defines. The SDK names it the same way. */
+const DEFINITIONS = Symbol.for("vynxlabs.definitions");
 
 const isDefinition = (value: unknown): value is Definition =>
   typeof value === "object" &&
@@ -43,30 +55,36 @@ export interface BuildOptions {
   resources?: string;
 }
 
-/** Every YAML and TypeScript file under the folder of console-managed resources. None if there is no folder. */
-async function resourceFiles(folder: string): Promise<ResourceFile[]> {
+/**
+ * The repository's resource files, wherever it keeps them: every file named for
+ * a kind, in any folder that is the repository's own. Paths are from the
+ * repository's root.
+ */
+async function resourceFiles(directory: string, config: RepositoryConfig): Promise<ResourceFile[]> {
   const files: ResourceFile[] = [];
-  const walk = async (directory: string) => {
+  const walk = async (folder: string) => {
     let entries: import("node:fs").Dirent[];
     try {
-      entries = await readdir(directory, { withFileTypes: true });
+      entries = await readdir(folder, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile() && /\.(yaml|ts)$/.test(entry.name)) {
-        files.push({
-          path: relative(folder, path).split(sep).join("/"),
-          content: await readFile(path, "utf8"),
-        });
+      const path = join(folder, entry.name);
+      const name = relative(directory, path).split(sep).join("/");
+      if (entry.isDirectory()) {
+        if (!ignoredFolder(name, config)) await walk(path);
+      } else if (entry.isFile() && isResourceFile(name, WORKSPACE_KINDS)) {
+        files.push({ path: name, content: await readFile(path, "utf8") });
       }
     }
   };
-  await walk(folder);
+  await walk(directory);
   return files;
 }
+
+/** The kinds a workspace's resources have. A file named for another kind is not one of them. */
+const WORKSPACE_KINDS: ReadonlySet<string> = new Set(platformKinds.map((kind) => kind.kind));
 
 /** Deploy order: what others refer to comes first. */
 const KIND_ORDER = [
@@ -92,6 +110,8 @@ const KIND_ORDER = [
 /** A built repository: the bundle, and the bytes of the files its apps are made of. */
 export interface Built {
   bundle: Bundle;
+  /** What the build did that whoever builds should know, and that stopped nothing. */
+  notes: string[];
   /** By checksum. Each is uploaded before the bundle that lists it. */
   files: Map<string, Buffer>;
 }
@@ -125,20 +145,39 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
 
   const inOrder = (a: BundleManifest, b: BundleManifest) =>
     KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1);
-  const fromCode = definitions.map(([name, definition]) => definition.toManifest(name));
-  // Resources managed in the console are files in a reserved folder, not code.
+  const authored = definitions.map(([name, definition]) => definition.toManifest(name));
+  // Resources written as files, by the console or by hand, wherever the repository keeps
+  // them. `folder` is where the console writes, and is always read.
   const folder = options.resources ?? RESOURCE_FOLDER;
-  const fromFiles = parseResourceFiles(await resourceFiles(join(directory, folder)));
-  if (fromFiles.problems.length > 0) {
-    throw new BuildError(fromFiles.problems.map((problem) => `${folder}/${problem}`));
-  }
-  const defined = new Map(fromCode.map((manifest) => [manifest.path, manifest]));
-  const twice = fromFiles.manifests.filter((manifest) => defined.has(manifest.path));
+  const said = parseRepositoryConfig(
+    await readFile(join(directory, REPOSITORY_CONFIG), "utf8").catch(() => undefined),
+  );
+  if (said.problems.length > 0) throw new BuildError(said.problems);
+  const parsed = parseRepositoryFiles(await resourceFiles(directory, said.config), {
+    folder,
+    roots: said.config.roots,
+    kinds: WORKSPACE_KINDS,
+  });
+  if (parsed.problems.length > 0) throw new BuildError(parsed.problems);
+  // A reference written as text may name a resource by its key: it is built as the path.
+  const resolved = resolveKeyReferences([...authored, ...parsed.manifests]);
+  const fromCode = resolved.manifests.slice(0, authored.length);
+  const fromFiles = { manifests: resolved.manifests.slice(authored.length) };
+  // One resource, by its path or by its key, is defined once: in the code or in a file.
+  const defined = new Map(
+    fromCode.flatMap((manifest) => [
+      [manifest.path, manifest],
+      [keyOf(manifest), manifest],
+    ]),
+  );
+  const twice = fromFiles.manifests.filter(
+    (manifest) => defined.has(manifest.path) || defined.has(keyOf(manifest)),
+  );
   if (twice.length > 0) {
     throw new BuildError(
       twice.map(
         (manifest) =>
-          `${manifest.path} is defined in ${entry} and again in ${folder}/${manifest.path}.${manifest.kind}.yaml. Keep one. A resource taken over in the console is removed from the code.`,
+          `${manifest.path} is defined in ${entry} and again in ${parsed.files.get(keyOf(manifest)) ?? `${folder}/${manifest.path}.${manifest.kind}.yaml`}. Keep one. A resource taken over in the console is removed from the code.`,
       ),
     );
   }
@@ -176,22 +215,42 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   // A repository without apps is still written as format 1, so that it keeps deploying
   // to an instance that has not been upgraded yet.
   const unsigned = !manifests.some((manifest) => manifest.kind === "app")
-    ? { formatVersion: 1 as const, ...common }
-    : { formatVersion: 2 as const, ...common, assets: built.assets };
+    ? { formatVersion: formatFor(1, common.manifests), ...common }
+    : { formatVersion: formatFor(2, common.manifests), ...common, assets: built.assets };
   const assetProblems = checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
   if (fromFiles.manifests.length === 0 && coreNodesFor(unsigned.manifests).length === 0) {
-    return { bundle: { ...unsigned, digest: bundleDigest(unsigned) }, files: built.files };
+    return {
+      bundle: { ...unsigned, digest: bundleDigest(unsigned) },
+      files: built.files,
+      notes: resolved.rewritten,
+    };
   }
   // Console-managed code is compiled and joined on exactly as the control plane does it.
   try {
     const composed = await composeBundle(unsigned, fromFiles.manifests, { sdkEntry });
     const sorted = { ...composed, manifests: [...composed.manifests].sort(inOrder) };
     const { digest: _stale, ...rest } = sorted;
-    return { bundle: { ...rest, digest: bundleDigest(rest) }, files: built.files };
+    return {
+      bundle: { ...rest, digest: bundleDigest(rest) },
+      files: built.files,
+      notes: resolved.rewritten,
+    };
   } catch (error) {
     if (error instanceof ComposeError) {
-      throw new BuildError(error.problems.map((problem) => `${folder}/${problem}`));
+      // A problem in a resource's code names it by path. Whoever builds needs the file.
+      throw new BuildError(
+        error.problems.map((problem) => {
+          const named = /^(.+)\.([a-z][a-z0-9_]*)\.ts(?=:)/.exec(problem);
+          const manifest = named
+            ? fromFiles.manifests.find((one) => one.path === named[1] && one.kind === named[2])
+            : undefined;
+          const file = manifest ? parsed.files.get(keyOf(manifest)) : undefined;
+          return named && file
+            ? `${file.replace(/\.yaml$/, ".ts")}${problem.slice(named[0].length)}`
+            : `${folder}/${problem}`;
+        }),
+      );
     }
     throw error;
   }
@@ -248,11 +307,16 @@ async function loadDefinitions(options: BuildOptions) {
   const file = join(scratch, `build-${process.pid}-${Date.now()}.mjs`);
   await writeFile(file, code);
   let exported: Record<string, unknown>;
+  // The SDK inside the built code notes each definition here as it is made.
+  const scope = globalThis as Record<symbol, unknown>;
+  const defined: { kind: string; path: string }[] = [];
+  scope[DEFINITIONS] = defined;
   try {
     exported = await import(pathToFileURL(file).href);
   } catch (error) {
     throw new BuildError([`${entry} could not be loaded: ${(error as Error).message}`]);
   } finally {
+    delete scope[DEFINITIONS];
     await rm(file, { force: true });
   }
 
@@ -269,6 +333,18 @@ async function loadDefinitions(options: BuildOptions) {
   const definitions = Object.entries(exported).filter((pair): pair is [string, Definition] =>
     isDefinition(pair[1]),
   );
+  const unexported = notExported(
+    defined,
+    definitions.map(([, definition]) => definition),
+  );
+  if (unexported.length > 0) {
+    throw new BuildError(
+      unexported.map(
+        ({ kind, path }) =>
+          `${path} (${kind}) is defined, but ${entry} does not export it, so it would not be deployed. Export it from ${entry}. Two files that export the same name through "export *" cancel each other out: export each by name.`,
+      ),
+    );
+  }
   return {
     code,
     sources: await repositorySources(directory, map),
@@ -276,6 +352,27 @@ async function loadDefinitions(options: BuildOptions) {
     sdk: sdk as { SDK_VERSION: string; CORE_RANGE: object },
     sdkEntry,
   };
+}
+
+/**
+ * What the code defined and the entry file did not export. Counted, since a
+ * definition is a new object each time: two made at one path with one exported
+ * leaves one missing. An SDK from before definitions were noted reports none.
+ */
+function notExported(
+  defined: { kind: string; path: string }[],
+  exported: { kind: string; path: string }[],
+): { kind: string; path: string }[] {
+  const left = new Map<string, number>();
+  const name = (item: { kind: string; path: string }) => `${item.kind} ${item.path}`;
+  for (const item of exported) left.set(name(item), (left.get(name(item)) ?? 0) + 1);
+  const missing = new Map<string, { kind: string; path: string }>();
+  for (const item of defined) {
+    const count = left.get(name(item)) ?? 0;
+    if (count > 0) left.set(name(item), count - 1);
+    else missing.set(name(item), item);
+  }
+  return [...missing.values()];
 }
 
 /**

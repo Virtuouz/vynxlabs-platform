@@ -40,11 +40,39 @@ export { z };
 export const SDK_VERSION = "0.5.0";
 export const CORE_RANGE = { min: "0.5.0", below: "0.6.0" };
 
+/**
+ * The names every resource has beside its path. The path is its address and can
+ * change. The key is its identity and never does.
+ */
+export interface ResourceNames {
+  /**
+   * The resource's identity. Leave it out: it is the path the resource is made at.
+   * Say it only when you move a resource to another path, as the path it had, so
+   * that it stays the same resource with its history, its data and what was bound to it.
+   */
+  key?: string;
+  /** What people read, in the console and in lists. */
+  title?: string;
+}
+
+/**
+ * The name of the tool an agent is offered for a script or a flow. Without it
+ * the name is made from the path (`run_orders__sync`), and so changes when the
+ * path does. Choose one for anything an agent is configured to call: lowercase
+ * letters, digits and underscores, starting with a letter, at most 64.
+ */
+export interface ToolName {
+  name: string;
+}
+
 /** An authored manifest, before the control plane assigns a workspace, ID and version. */
 export interface AuthoredManifest {
   kind: string;
   schemaVersion: number;
   path: string;
+  key?: string;
+  title?: string;
+  mcp?: ToolName;
   ownership: "code";
   body: Record<string, unknown>;
 }
@@ -68,7 +96,23 @@ export function isResourceDefinition(value: unknown): value is ResourceDefinitio
   );
 }
 
-function resource(kind: string, path: string, body: (entry: string) => Record<string, unknown>) {
+/**
+ * Where the build keeps count of what a repository defines. The build makes the
+ * list before it loads the repository's code, and compares it with what the code
+ * exports: a definition nobody exported would otherwise go missing without a word.
+ * It is on `globalThis` because the build loads a copy of the SDK bundled into the
+ * repository's code, not the one it imports itself. Nothing is kept anywhere else.
+ */
+const DEFINITIONS = Symbol.for("vynxlabs.definitions");
+
+function resource(
+  kind: string,
+  named: string | (ResourceNames & { path: string; mcp?: ToolName | undefined }),
+  body: (entry: string) => Record<string, unknown>,
+) {
+  const { path, key, title, mcp } = typeof named === "string" ? { path: named } : named;
+  const defined = (globalThis as Record<symbol, unknown>)[DEFINITIONS];
+  if (Array.isArray(defined)) defined.push({ kind, path });
   return {
     [RESOURCE]: true as const,
     kind,
@@ -77,11 +121,24 @@ function resource(kind: string, path: string, body: (entry: string) => Record<st
       kind,
       schemaVersion: 1,
       path,
+      // Said only when it is not the path: most resources never say it.
+      ...(key !== undefined && key !== path ? { key } : {}),
+      ...(title !== undefined ? { title } : {}),
+      ...(mcp !== undefined ? { mcp: { name: mcp.name } } : {}),
       ownership: "code",
       body: body(entry),
     }),
   };
 }
+
+/**
+ * The names of a resource whose body has a title of its own: an app, an interface, a
+ * form. That title is the resource's title, and is not said a second time beside it.
+ */
+const named = (options: { path: string; key?: string | undefined }) => ({
+  path: options.path,
+  ...(options.key !== undefined ? { key: options.key } : {}),
+});
 
 /** Removes keys whose value is undefined, so optional fields stay out of the manifest. */
 function compact<T extends Record<string, unknown>>(value: T): Record<string, unknown> {
@@ -97,7 +154,10 @@ export type InputKey<I> =
     ? `input.${Extract<keyof I, string>}` | `input.${Extract<keyof I, string>}.${string}`
     : `input.${string}`;
 
-export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType> {
+export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType>
+  extends ResourceNames {
+  /** The name of the tool an agent sees for it, if it should not follow the path. */
+  mcp?: ToolName;
   /** Unique within the workspace, for example `orders/sync`. */
   path: string;
   description?: string;
@@ -172,7 +232,7 @@ export class SchemaError extends Error {
 export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
   options: ScriptOptions<Input, Output>,
 ): ScriptDefinition {
-  const definition = resource("script", options.path, (entry) =>
+  const definition = resource("script", options, (entry) =>
     compact({
       entry,
       description: options.description,
@@ -221,7 +281,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
   };
 }
 
-export interface ScheduleOptions {
+export interface ScheduleOptions extends ResourceNames {
   path: string;
   script: string | { path: string };
   /** Five-field cron expression, for example `0 6 * * 1-5`. */
@@ -246,7 +306,7 @@ export interface ScheduleOptions {
 }
 
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
-  return resource("schedule", options.path, () =>
+  return resource("schedule", options, () =>
     compact({
       script: pathOf(options.script),
       cron: options.cron,
@@ -291,7 +351,7 @@ export interface WebhookRequest<Body = unknown> {
   rawBody: string;
 }
 
-export interface WebhookOptions {
+export interface WebhookOptions extends ResourceNames {
   path: string;
   /** The script that receives the request. */
   script: string | { path: string };
@@ -377,7 +437,7 @@ export interface TriggerSourceDefinition extends ResourceDefinition {
  * and gives back what is new.
  */
 export function defineTriggerSource(options: TriggerSourceOptions): TriggerSourceDefinition {
-  const definition = resource("trigger_source", options.path, (entry) =>
+  const definition = resource("trigger_source", options, (entry) =>
     compact({
       entry,
       description: options.description,
@@ -400,7 +460,7 @@ export function defineTriggerSource(options: TriggerSourceOptions): TriggerSourc
 }
 
 export function defineWebhook(options: WebhookOptions): ResourceDefinition {
-  return resource("trigger", options.path, () =>
+  return resource("trigger", options, () =>
     compact({
       type: "webhook",
       script: pathOf(options.script),
@@ -441,15 +501,21 @@ export interface FormOptions {
  * of its own under the tenant's portal, with no code of yours.
  */
 export function defineForm(
-  options: FormOptions & { path: string; script: string | { path: string }; enabled?: boolean },
+  options: FormOptions & {
+    path: string;
+    /** The form's identity, said only when it is moved to another path. See `ResourceNames`. */
+    key?: string;
+    script: string | { path: string };
+    enabled?: boolean;
+  },
 ): ResourceDefinition {
-  const { path, script, ...form } = options;
-  return resource("trigger", path, () =>
+  const { path, key, script, ...form } = options;
+  return resource("trigger", named({ path, key }), () =>
     compact({ type: "form", script: pathOf(script), ...form }),
   );
 }
 
-export interface ConnectorOptions<Config, Client> {
+export interface ConnectorOptions<Config, Client> extends ResourceNames {
   /** Unique within the workspace, for example `connectors/shop`. Connections name it by this. */
   path: string;
   description?: string;
@@ -490,7 +556,7 @@ export interface ConnectorDefinition<Config, Client> extends ResourceDefinition 
 export function defineConnector<Config, Client>(
   options: ConnectorOptions<Config, Client>,
 ): ConnectorDefinition<Config, Client> {
-  const definition = resource("connector", options.path, (entry) =>
+  const definition = resource("connector", options, (entry) =>
     compact({ entry, description: options.description, configSchema: options.configSchema }),
   );
   return {
@@ -501,14 +567,14 @@ export function defineConnector<Config, Client>(
   };
 }
 
-export interface ConnectionOptions {
+export interface ConnectionOptions extends ResourceNames {
   path: string;
   /** The connector to use: `http`, `smtp` or `oauth2`, which are built in, or one of your own. */
   connector?: string | { path: string };
   description?: string;
 }
 
-export interface ConnectionGroupOptions {
+export interface ConnectionGroupOptions extends ResourceNames {
   path: string;
   /** The connector every member uses: `http` or `smtp`, which are built in, or one of your own. */
   connector?: string | { path: string };
@@ -522,7 +588,7 @@ export interface ConnectionGroupOptions {
  * it runs: `await ctx.connections("shops").get(input.shop)`.
  */
 export function defineConnectionGroup(options: ConnectionGroupOptions): ResourceDefinition {
-  return resource("connection_group", options.path, () =>
+  return resource("connection_group", options, () =>
     compact({
       connector: options.connector ? pathOf(options.connector) : "http",
       description: options.description,
@@ -532,7 +598,7 @@ export function defineConnectionGroup(options: ConnectionGroupOptions): Resource
 
 /** Declares a connection. Its address and credentials are set per workspace, not here. */
 export function defineConnection(options: ConnectionOptions): ResourceDefinition {
-  return resource("connection", options.path, () =>
+  return resource("connection", options, () =>
     compact({
       connector: options.connector ? pathOf(options.connector) : "http",
       description: options.description,
@@ -540,7 +606,7 @@ export function defineConnection(options: ConnectionOptions): ResourceDefinition
   );
 }
 
-export interface VariableOptions {
+export interface VariableOptions extends ResourceNames {
   path: string;
   description?: string;
   /** Used in a workspace that has not set its own value. */
@@ -549,12 +615,12 @@ export interface VariableOptions {
 
 /** Declares a variable. Each workspace can set its own value. */
 export function defineVariable(options: VariableOptions): ResourceDefinition {
-  return resource("variable", options.path, () =>
+  return resource("variable", options, () =>
     compact({ description: options.description, default: options.default }),
   );
 }
 
-export interface EventOptions<Payload extends z.ZodType> {
+export interface EventOptions<Payload extends z.ZodType> extends ResourceNames {
   /** The event's name, for example `orders/placed`. */
   path: string;
   description?: string;
@@ -566,7 +632,7 @@ export interface EventOptions<Payload extends z.ZodType> {
 export function defineEvent<Payload extends z.ZodType>(
   options: EventOptions<Payload>,
 ): ResourceDefinition {
-  return resource("event", options.path, () =>
+  return resource("event", options, () =>
     compact({
       description: options.description,
       payload: z.toJSONSchema(options.payload, { io: "input" }),
@@ -574,7 +640,7 @@ export function defineEvent<Payload extends z.ZodType>(
   );
 }
 
-export interface EventTriggerOptions {
+export interface EventTriggerOptions extends ResourceNames {
   path: string;
   /** The event to listen for, by name or by definition. */
   event: string | { path: string };
@@ -587,7 +653,7 @@ export interface EventTriggerOptions {
 
 /** Starts a script each time an event is published. */
 export function defineEventTrigger(options: EventTriggerOptions): ResourceDefinition {
-  return resource("trigger", options.path, () =>
+  return resource("trigger", options, () =>
     compact({
       type: "event",
       script: pathOf(options.script),
@@ -793,7 +859,9 @@ export type FlowEdge<Node extends string> =
   | [from: Node, to: Node]
   | [from: Node, to: Node, options: { when?: string; error?: boolean }];
 
-export interface FlowOptions<Nodes extends Record<string, FlowNode>> {
+export interface FlowOptions<Nodes extends Record<string, FlowNode>> extends ResourceNames {
+  /** The name of the tool an agent sees for it, if it should not follow the path. */
+  mcp?: ToolName;
   path: string;
   description?: string;
   nodes: Nodes;
@@ -808,7 +876,7 @@ export interface FlowOptions<Nodes extends Record<string, FlowNode>> {
 export function defineFlow<Nodes extends Record<string, FlowNode>>(
   options: FlowOptions<Nodes>,
 ): ResourceDefinition {
-  return resource("flow", options.path, () =>
+  return resource("flow", options, () =>
     compact({
       description: options.description,
       nodes: options.nodes,
@@ -819,7 +887,8 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
   );
 }
 
-export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>> {
+export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>>
+  extends ResourceNames {
   /** The table's name, for example `crm/orders`. */
   path: string;
   description?: string;
@@ -869,7 +938,7 @@ export interface TableDefinition<Row, Insert> extends ResourceDefinition {
 export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>>(
   options: TableOptions<C>,
 ): TableDefinition<RowOf<C>, InsertOf<C>> {
-  const definition = resource("table", options.path, () =>
+  const definition = resource("table", options, () =>
     compact({
       description: options.description,
       columns: Object.fromEntries(
@@ -887,14 +956,14 @@ export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean
   return { ...definition, kind: "table" };
 }
 
-export interface DataSourceOptions {
+export interface DataSourceOptions extends ResourceNames {
   path: string;
   description?: string;
 }
 
 /** Declares an external Postgres database. Where it is, and its password, are set per workspace. */
 export function defineDataSource(options: DataSourceOptions): ResourceDefinition {
-  return resource("data_source", options.path, () =>
+  return resource("data_source", options, () =>
     compact({ connector: "postgres", description: options.description }),
   );
 }
@@ -921,7 +990,7 @@ export type ThemeToken =
   | "font"
   | "font-code";
 
-export interface ThemeOptions {
+export interface ThemeOptions extends ResourceNames {
   /** Default `theme`. A workspace has one theme. */
   path?: string;
   description?: string;
@@ -936,12 +1005,12 @@ export interface ThemeOptions {
  * branding. Tokens that are not set keep the tenant's value.
  */
 export function defineTheme(options: ThemeOptions): ResourceDefinition {
-  return resource("theme", options.path ?? "theme", () =>
+  return resource("theme", { ...options, path: options.path ?? "theme" }, () =>
     compact({ description: options.description, tokens: options.tokens, dark: options.dark }),
   );
 }
 
-export interface AppOptions {
+export interface AppOptions extends ResourceNames {
   /** Unique within the workspace. It is part of the app's address, for example `orders`. */
   path: string;
   title: string;
@@ -988,7 +1057,7 @@ export function defineApp(options: AppOptions): AppDefinition {
   if ((options.source === undefined) === (options.interface === undefined)) {
     throw new Error(`The app "${options.path}" needs a source or an interface, and not both.`);
   }
-  const definition = resource("app", options.path, () =>
+  const definition = resource("app", named(options), () =>
     options.interface !== undefined
       ? compact({
           title: options.title,
@@ -1010,7 +1079,7 @@ export function defineApp(options: AppOptions): AppDefinition {
   };
 }
 
-export interface InterfaceOptions {
+export interface InterfaceOptions extends ResourceNames {
   /** Unique within the workspace, for example `screens/invoices`. */
   path: string;
   title: string;
@@ -1028,12 +1097,12 @@ export interface InterfaceOptions {
  * workspace's tables, with no code. Serve it with `defineApp({ interface })`.
  */
 export function defineInterface(options: InterfaceOptions): ResourceDefinition {
-  return resource("interface", options.path, () =>
+  return resource("interface", named(options), () =>
     compact({ title: options.title, description: options.description, pages: options.pages }),
   );
 }
 
-export interface RoleOptions {
+export interface RoleOptions extends ResourceNames {
   /** Unique within the workspace, for example `roles/order-reader`. */
   path: string;
   /** The name bindings refer to. Lower case letters, digits and underscores. */
@@ -1045,7 +1114,7 @@ export interface RoleOptions {
 
 /** Declares a custom role for this workspace. */
 export function defineRole(options: RoleOptions): ResourceDefinition & { readonly name: string } {
-  const definition = resource("role", options.path, () =>
+  const definition = resource("role", options, () =>
     compact({
       name: options.name,
       description: options.description,
@@ -1057,6 +1126,11 @@ export function defineRole(options: RoleOptions): ResourceDefinition & { readonl
 
 export type BindingPrincipal =
   | { type: "member"; email: string }
+  /** A group of members, by its key: `tech-desk`. What it is called can change freely. */
+  | { type: "group"; key: string }
+  | { type: "service_account"; key: string }
+  | { type: "end_user_group"; key: string }
+  /** By its title, as before keys. It stops working when the title changes: name it by `key`. */
   | { type: "group"; name: string }
   | { type: "service_account"; name: string }
   /** One person in the tenant's end-user pool. */
@@ -1068,7 +1142,7 @@ export type BindingPrincipal =
   /** Anyone, signed in or not. This is what makes something public. */
   | { type: "anonymous" };
 
-export interface BindingOptions {
+export interface BindingOptions extends ResourceNames {
   /** Unique within the workspace, for example `bindings/portal-orders`. */
   path: string;
   /** A role by name or by definition: built-in, the tenant's, or one this workspace defines. */
@@ -1083,7 +1157,7 @@ export interface BindingOptions {
  * how a repository says who may open an app and whose rows it shows.
  */
 export function defineBinding(options: BindingOptions): ResourceDefinition {
-  return resource("binding", options.path, () =>
+  return resource("binding", options, () =>
     compact({
       role: typeof options.role === "string" ? options.role : options.role.name,
       principal: options.principal,

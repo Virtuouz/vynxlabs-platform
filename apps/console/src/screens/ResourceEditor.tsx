@@ -26,6 +26,7 @@ import {
   WebhookSettings,
   type WebhookTrigger,
 } from "./FlowSteps.tsx";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScheduleFields } from "./ScheduleForm.tsx";
 
 /** The kinds of resource this editor makes and changes: the ones that are settings, with no code. */
@@ -366,6 +367,19 @@ export function ResourceEditor({
           readOnly ? null : (
             <div className="flex items-center gap-2">
               {opened && state !== "new" ? (
+                <ResourceIdentity
+                  root={root}
+                  link={link}
+                  label="Name and path"
+                  row={{ path: opened, kind, ownership: state === "repository" ? "code" : "ui" }}
+                  unsaved={dirty}
+                  onDone={(next) => {
+                    if (next !== opened) navigate(`${link}/resources/edit/${kind}/${next}`);
+                    else setState("draft");
+                  }}
+                />
+              ) : null}
+              {opened && state !== "new" ? (
                 <Button
                   variant="danger"
                   disabled={busy}
@@ -425,7 +439,7 @@ export function ResourceEditor({
                 label={`Path of the new ${about.noun}`}
                 value={path}
                 placeholder={about.example}
-                hint="Its name in this workspace. It cannot be changed later."
+                hint="Its name in this workspace. It can be renamed later, and stays the same resource."
                 onChange={setPath}
               />
             </div>
@@ -440,9 +454,19 @@ export function ResourceEditor({
           edit={path ? `resources/edit/${kind}/${path}` : undefined}
         />
       ) : state === "repository" ? (
-        <Notice tone="attention">
-          This {about.noun} is managed in the tenant's repository. Saving a draft of it takes it
-          over.
+        <Notice
+          tone="attention"
+          action={
+            <Button size="small" disabled={busy} onClick={save}>
+              Move to a file
+            </Button>
+          }
+        >
+          This {about.noun} is defined by the code in the tenant's repository. To change it here,
+          move it to a file: that saves a draft that takes it over. Once deployed it is{" "}
+          <code className="font-mono">{`${path}.${kind}.yaml`}</code>, which the console and the
+          repository both edit. Then remove its definition from the code, or the next deploy from
+          the repository takes it back.
         </Notice>
       ) : null}
       {kept && state === "new" && !dirty ? (

@@ -1,0 +1,6 @@
+# The students' app. Its pages are platform/screens/borrow.interface.yaml.
+schemaVersion: 1
+body:
+  title: Borrow a device
+  description: "For students: ask for a device and see your loans."
+  interface: screens/borrow

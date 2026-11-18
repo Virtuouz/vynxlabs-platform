@@ -10,7 +10,10 @@ import {
   entryFor,
   type FlowBody,
   flowReferences,
+  formatFor,
+  keyOf,
   MAX_SOURCE_LENGTH,
+  resolveKeyReferences,
 } from "@vynxlabs/manifest";
 import { CORE_NODES, coreManifest } from "@vynxlabs/nodes";
 import { build, type Plugin, transform } from "esbuild";
@@ -90,7 +93,8 @@ function sourcesOf(manifests: readonly BundleManifest[]): Source[] {
       problems.push(`${file}: is longer than ${MAX_SOURCE_LENGTH} characters.`);
       continue;
     }
-    const entry = entryFor(manifest.kind, manifest.path);
+    // By the key, as the manifest's own `entry` is: a rename leaves the name as it was.
+    const entry = entryFor(manifest.kind, keyOf(manifest));
     if (manifest.body.entry !== entry) {
       problems.push(`${file}: its entry must be ${entry}.`);
       continue;
@@ -353,22 +357,26 @@ export async function composeBundle(
       wrong.map((manifest) => `${manifest.path} (${manifest.kind}) is not console-managed.`),
     );
   }
-  const taken = new Set(consoleManaged.map((manifest) => manifest.path));
-  const manifests = [
+  // A resource is the console's by its key, wherever it is now, or by its path.
+  const taken = new Set(consoleManaged.flatMap((manifest) => [manifest.path, keyOf(manifest)]));
+  // What refers to a renamed resource by the path it had, which is its key, is built as the
+  // path it has now: a flow drawn before a script moved still finds it.
+  const { manifests } = resolveKeyReferences([
     ...base.manifests.filter(
-      (manifest) => manifest.ownership === "code" && !taken.has(manifest.path),
+      (manifest) =>
+        manifest.ownership === "code" && !taken.has(manifest.path) && !taken.has(keyOf(manifest)),
     ),
     ...consoleManaged,
-  ];
+  ]);
   const { code, consoleSources } = await composeWithSources(base.code, consoleManaged, options);
   // A base composed before carries the console's old sources; these replace them.
   const { consoleSources: _old, ...rest } = base;
   const unsigned: UnsignedBundle =
     consoleManaged.length === 0
-      ? { ...rest, manifests, code }
+      ? { ...rest, formatVersion: formatFor(rest.formatVersion, manifests), manifests, code }
       : {
           ...rest,
-          formatVersion: 3,
+          formatVersion: formatFor(3, manifests),
           manifests,
           code,
           assets: base.assets ?? [],

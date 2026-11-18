@@ -4,6 +4,8 @@ import {
   type InterfaceBody,
   PATH_PATTERN,
   platformKinds,
+  RESOURCE_FOLDER,
+  renderRepositoryFiles,
   renderResourceFiles,
 } from "@vynxlabs/manifest";
 import { Type } from "typebox";
@@ -22,7 +24,7 @@ import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js"
 import { bundleManifest, storeBundle } from "../kernel/execution/bundles.js";
 import { readPayload, startRun } from "../kernel/execution/runs.js";
 import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
-import { draftFiles, markAhead } from "../kernel/git.js";
+import { draftManifests, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { interfaceProblems } from "./interfaces.js";
@@ -34,6 +36,19 @@ function pathOf(params: { "*": string }): string {
   const path = params["*"];
   if (!pathPattern.test(path) || path.length > 255) {
     throw badRequest("The resource path is not valid.");
+  }
+  return path;
+}
+
+/** A path a draft is moved to, checked as a path in an address is. */
+function movedPath(path: string): string {
+  if (!new RegExp(PATH_PATTERN).test(path)) {
+    throw badRequest("The manifest is not valid.", [
+      {
+        path: "/path",
+        message: "is written in lowercase letters, digits, hyphens and underscores, in folders",
+      },
+    ]);
   }
   return path;
 }
@@ -52,11 +67,19 @@ const DraftSummary = Type.Object({
       Type.Literal("update"),
       Type.Literal("delete"),
       Type.Literal("take_over"),
+      Type.Literal("rename"),
     ],
     {
       description:
-        "What deploying the draft does. `take_over` moves a resource from the repository to the console.",
+        "What deploying the draft does. `take_over` moves a resource from the repository to the console. `rename` gives it the draft's path: it stays the same resource.",
     },
+  ),
+  key: Type.String({
+    description: "The resource the draft is of. Its path, for one that is new.",
+  }),
+  title: Type.Union([Type.String(), Type.Null()]),
+  renamedFrom: Type.Optional(
+    Type.String({ description: "The path the resource has now, when the draft renames it." }),
   ),
   updatedByType: Type.String(),
   updatedById: NullableId,
@@ -96,12 +119,20 @@ const Paths = Type.Optional(
 const Summary = Type.Object({
   created: Type.Integer(),
   updated: Type.Integer(),
+  renamed: Type.Optional(Type.Integer()),
+  aliasesRemoved: Type.Optional(Type.Array(Type.String())),
+  breaking: Type.Optional(Type.Array(Type.Object({ path: Type.String(), message: Type.String() }))),
   unchanged: Type.Integer(),
   deleted: Type.Integer(),
   data: Type.Array(Type.String()),
   warnings: Type.Optional(Type.Array(Type.Object({ path: Type.String(), message: Type.String() }))),
   changes: Type.Array(
-    Type.Object({ change: Type.String(), kind: Type.String(), path: Type.String() }),
+    Type.Object({
+      change: Type.String(),
+      kind: Type.String(),
+      path: Type.String(),
+      from: Type.Optional(Type.String()),
+    }),
   ),
 });
 
@@ -113,18 +144,19 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const { db } = kernel;
     const base = "/tenants/:t/workspaces/:w";
 
-    const ownership = async (workspaceId: string, paths: string[]) =>
+    /** The resource each draft is of, by key: who manages it, and the path it has now. */
+    const ownership = async (workspaceId: string, keys: string[]) =>
       new Map(
-        paths.length === 0
+        keys.length === 0
           ? []
           : (
               await db
                 .selectFrom("resource")
-                .select(["path", "ownership"])
+                .select(["key", "path", "ownership"])
                 .where("workspace_id", "=", workspaceId)
-                .where("path", "in", paths)
+                .where("key", "in", keys)
                 .execute()
-            ).map((row) => [row.path, row.ownership]),
+            ).map((row) => [row.key, { ownership: row.ownership, path: row.path }]),
       );
     const summarize = (
       row: {
@@ -136,21 +168,28 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         updated_by_type: string;
         updated_by_id: string | null;
         updated_at: Date;
+        key: string;
+        title: string | null;
       },
-      owned: string | undefined,
+      of: { ownership: string; path: string } | undefined,
     ) => ({
       path: row.path,
+      key: row.key,
+      title: row.title,
+      ...(of && of.path !== row.path && !row.deleted ? { renamedFrom: of.path } : {}),
       kind: row.kind,
       schemaVersion: row.schema_version,
       deleted: row.deleted,
       revision: row.revision,
       change: row.deleted
         ? ("delete" as const)
-        : owned === "code"
+        : of?.ownership === "code"
           ? ("take_over" as const)
-          : owned
-            ? ("update" as const)
-            : ("create" as const),
+          : of && of.path !== row.path
+            ? ("rename" as const)
+            : of
+              ? ("update" as const)
+              : ("create" as const),
       updatedByType: row.updated_by_type,
       updatedById: row.updated_by_id,
       updatedAt: iso(row.updated_at),
@@ -255,7 +294,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         const owned = await ownership(
           workspace.id,
-          rows.map((row) => row.path),
+          rows.map((row) => row.key),
         );
         const deployed = new Map(
           rows.length === 0
@@ -275,7 +314,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         );
         return {
           items: rows.map((row) => ({
-            ...summarize(row, owned.get(row.path)),
+            ...summarize(row, owned.get(row.key)),
             about: describeChange(
               row.kind,
               deployed.get(row.path),
@@ -299,10 +338,34 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "the workspace's console resources with it. With `drafts=false`, what is deployed only.",
           tags: ["authoring"],
           params: WorkspaceParams,
-          querystring: Type.Object({ drafts: Type.Optional(Type.Boolean({ default: true })) }),
+          querystring: Type.Object({
+            drafts: Type.Optional(Type.Boolean({ default: true })),
+            roots: Type.Optional(
+              Type.String({
+                maxLength: 2000,
+                description:
+                  "The repository's roots, as its `vynxlabs.yaml` lists them, separated by commas. " +
+                  "A file under one is not made to say its path.",
+              }),
+            ),
+          }),
           response: {
             200: Type.Object({
-              files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() })),
+              files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() }), {
+                description: "The files of the console's folder, by their path inside it.",
+              }),
+              elsewhere: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  content: Type.String(),
+                  resource: Type.String({ description: "The path of the resource it belongs to." }),
+                }),
+                {
+                  description:
+                    "The files of resources the repository keeps outside the console's folder, " +
+                    "each by its path from the repository's root, as the workspace now has them.",
+                },
+              ),
               bundleVersion: Type.Union([Type.Integer(), Type.Null()]),
               drafts: Type.Array(
                 Type.Object({
@@ -325,12 +388,24 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         // Part of the set would be read as all of it, and a deploy would remove the rest.
         if (!full) throw forbidden("resource:read");
         const withDrafts = query.drafts !== false;
-        const files = withDrafts
-          ? await draftFiles(kernel, db, workspace)
-          : renderResourceFiles(
-              await activeConsoleManaged(kernel, db, workspace.id),
-              platformKinds,
-            );
+        const manifests = withDrafts
+          ? await draftManifests(kernel, db, workspace)
+          : await activeConsoleManaged(kernel, db, workspace.id);
+        // A resource the repository keeps outside the console's folder is written back where it is.
+        const files = renderResourceFiles(
+          manifests.filter((manifest) => manifest.source === undefined),
+          platformKinds,
+        );
+        const roots = (query.roots ?? "").split(",").filter(Boolean);
+        const elsewhere = manifests
+          .filter((manifest) => manifest.source !== undefined)
+          .flatMap((manifest) =>
+            renderRepositoryFiles([manifest], platformKinds, {
+              folder: RESOURCE_FOLDER,
+              roots,
+            }).map((file) => ({ ...file, resource: manifest.path })),
+          )
+          .sort((a, b) => (a.path < b.path ? -1 : 1));
         const drafts = withDrafts
           ? await db
               .selectFrom("resource_draft")
@@ -347,6 +422,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst();
         return {
           files: files.map((file) => ({ path: file.path, content: file.content })),
+          elsewhere,
           bundleVersion: active?.version ?? null,
           drafts,
         };
@@ -376,8 +452,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!row || (!full && !(await screenAt(workspace, path)))) {
           throw notFound(`A draft at ${path}`);
         }
-        const owned = await ownership(workspace.id, [path]);
-        return { ...summarize(row, owned.get(path)), body: row.body };
+        const owned = await ownership(workspace.id, [row.key]);
+        return { ...summarize(row, owned.get(row.key)), body: row.body };
       },
     );
 
@@ -402,6 +478,21 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body: AnyObject,
             deleted: Type.Optional(Type.Boolean()),
             revision: Type.Optional(Type.Integer({ minimum: 1 })),
+            path: Type.Optional(
+              Type.String({
+                maxLength: 255,
+                description:
+                  "The path the resource is to have, when that is not the path in the address: a rename. " +
+                  "The draft is then found at this path. Deployed, it is the same resource at a new path: " +
+                  "its history, its data and what is bound to it stay, and the old path answers for 90 days.",
+              }),
+            ),
+            title: Type.Optional(
+              Type.Union([Type.String({ minLength: 1, maxLength: 200 }), Type.Null()], {
+                description:
+                  "What people read. Left as it is when not given; `null` takes the title away.",
+              }),
+            ),
           }),
           response: { 200: Draft },
         },
@@ -416,15 +507,26 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         if (isCodeKind(body.kind)) await mayWriteCode(ctx, workspace);
         const saved = await ctx.mutate((trx, audit) =>
-          saveDraft(kernel, trx, audit, workspace, ctx.principal, { ...body, path }),
+          saveDraft(kernel, trx, audit, workspace, ctx.principal, {
+            kind: body.kind,
+            schemaVersion: body.schemaVersion,
+            body: body.body,
+            deleted: body.deleted,
+            revision: body.revision,
+            path,
+            ...(body.path !== undefined && body.path !== path
+              ? { moveTo: movedPath(body.path) }
+              : {}),
+            ...(body.title !== undefined ? { title: body.title } : {}),
+          }),
         );
-        const owned = await ownership(workspace.id, [path]);
+        const owned = await ownership(workspace.id, [saved.draft.key]);
         const schemaTaskId =
           body.kind === "script" && !body.deleted
             ? await deriveSchemas(kernel, workspace, ctx.principal, saved.draft)
             : undefined;
         return {
-          ...summarize(saved.draft, owned.get(path)),
+          ...summarize(saved.draft, owned.get(saved.draft.key)),
           body: saved.draft.body,
           ...(schemaTaskId ? { schemaTaskId } : {}),
           ...(body.kind === "interface" && !body.deleted
@@ -531,8 +633,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deleted: kept.deleted,
           }),
         );
-        const owned = await ownership(workspace.id, [kept.path]);
-        return summarize(saved.draft, owned.get(kept.path));
+        const owned = await ownership(workspace.id, [saved.draft.key]);
+        return summarize(saved.draft, owned.get(saved.draft.key));
       },
     );
 

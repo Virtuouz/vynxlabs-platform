@@ -5,12 +5,14 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
+import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
 import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { startDevServer } from "./dev.js";
 import { CliError } from "./errors.js";
 import { type Followed, followRun, Stopped } from "./follow.js";
 import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
+import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
 
 export { CliError };
 
@@ -35,6 +37,9 @@ Sign in
 Work on a tenant repository
   init [directory]                      Write a starter repository
   build                                 Build the bundle and list what it contains
+  schemas                               Write each kind's file schema into .platform/schemas,
+                                        and tell VS Code which files each checks, so that
+                                        <name>.<kind>.yaml completes and is checked as typed
   run <script> [--input <json>]         Run one script on this machine
   run <script|flow> --remote --tenant <slug> --workspace <slug> [--input <json>|@file]
                                         Run it on the platform, from this build, in a dev
@@ -46,11 +51,25 @@ Work on a tenant repository
   dev [app] --tenant <slug> --workspace <slug> [--port <n>]
                                         Serve an app from its source, with reload, against
                                         that workspace's data, as yourself
-  deploy --tenant <slug> --workspace <slug>
+  deploy --tenant <slug> --workspace <slug> [--allow-delete <path>]
                                         Build, upload and activate the bundle
-  promote --tenant <slug> --workspace <slug> [--preview]
+  promote --tenant <slug> --workspace <slug> [--preview] [--allow-delete <path>]
+          [--confirm-breaking]
                                         Activate this workspace's bundle in the workspace
                                         it is linked to. Nothing is rebuilt
+
+A tenant's access: its groups, service accounts, roles and what they are given
+  tenant plan --tenant <slug>           What releasing the repository's files would change
+  tenant release --tenant <slug> [--message <text>] [--allow-delete <kind>/<key>]
+                                        Make the tenant's access what the files say. Files are
+                                        named <key>.<kind>.yaml, such as
+                                        tenant/groups/tech-desk.group.yaml
+  tenant pull --tenant <slug>           Write the tenant's access as it is into the repository
+  tenant releases --tenant <slug>       The releases there were, newest first
+  tenant approve|decline|withdraw <number> --tenant <slug> [--comment <text>]
+                                        Answer a release that waits for a second person
+  tenant rollback <number> --tenant <slug>
+                                        Go back to the access a release left
 
 Move a tenant
   tenant export --tenant <slug> --out <file> [--history]
@@ -193,6 +212,48 @@ async function build(args: string[], io: Io) {
   io.out(`Written to ${file}`);
 }
 
+async function schemas(args: string[], io: Io) {
+  const { values } = parseArgs({ args, options: directoryOption });
+  const directory = resolve(values.dir ?? ".");
+  const written = await writeEditorSchemas(directory);
+  io.out(`Wrote the schemas of ${written.kinds} kinds of file to ${SCHEMA_FOLDER}.`);
+  if (written.settings === "manual") {
+    io.out(
+      ".vscode/settings.json could not be read as plain JSON, so it was left as it is. Add this to it:",
+    );
+    io.out(JSON.stringify({ "yaml.schemas": written.mapping }, null, 2));
+    return;
+  }
+  io.out(
+    written.settings === "written"
+      ? ".vscode/settings.json now says which files each checks. It needs the YAML extension (redhat.vscode-yaml)."
+      : ".vscode/settings.json already says which files each checks.",
+  );
+  io.out("Run this again after upgrading the CLI.");
+}
+
+/**
+ * Finds a tenant by its slug among those the key can see, page by page: an operator
+ * sees every tenant of the instance, which can be more than one page holds.
+ */
+export async function findTenant(settings: Settings, slug: string) {
+  let cursor: string | undefined;
+  do {
+    const page = await request(
+      settings.url,
+      `/tenants?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      settings.token,
+    );
+    if (page.status !== 200) throw refusal(page, "list tenants");
+    const found = (page.body.items as { id: string; slug: string; name?: string }[]).find(
+      (item) => item.slug === slug,
+    );
+    if (found) return found;
+    cursor = page.body.nextCursor ?? undefined;
+  } while (cursor);
+  throw new CliError(`You have no access to a tenant called "${slug}".`);
+}
+
 /** Finds a tenant and workspace by their slugs. */
 export async function locate(
   settings: Settings,
@@ -201,12 +262,7 @@ export async function locate(
 ) {
   if (!tenantSlug || !workspaceSlug)
     throw new CliError("This needs --tenant <slug> and --workspace <slug>.");
-  const tenants = await request(settings.url, "/tenants?limit=200", settings.token);
-  if (tenants.status !== 200) throw refusal(tenants, "list tenants");
-  const tenant = (tenants.body.items as { id: string; slug: string; name?: string }[]).find(
-    (item) => item.slug === tenantSlug,
-  );
-  if (!tenant) throw new CliError(`You have no access to a tenant called "${tenantSlug}".`);
+  const tenant = await findTenant(settings, tenantSlug);
   const workspaces = await request(
     settings.url,
     `/tenants/${tenant.id}/workspaces`,
@@ -256,13 +312,22 @@ const targetOptions = {
   workspace: { type: "string" as const },
 };
 
+/** Paths a deploy or a promotion may delete although it looks like a rename done wrong. */
+const allowDeleteOption = {
+  "allow-delete": { type: "string" as const, multiple: true as const },
+};
+
 async function deploy(args: string[], io: Io) {
-  const { values } = parseArgs({ args, options: { ...directoryOption, ...targetOptions } });
+  const { values } = parseArgs({
+    args,
+    options: { ...directoryOption, ...targetOptions, ...allowDeleteOption },
+  });
   const settings = await loadSettings(io.env);
   const { base, workspace } = await locate(settings, values.tenant, values.workspace);
   const built = await buildRepository({ directory: resolve(values.dir ?? ".") });
   const { bundle } = built;
   for (const line of describeBundle(bundle)) io.out(line);
+  for (const note of built.notes) io.out(`Note: ${note}`);
   await uploadFiles(settings, base, built, io);
 
   const uploaded = await request(settings.url, `${base}/bundles`, settings.token, {
@@ -279,15 +344,18 @@ async function deploy(args: string[], io: Io) {
       : [];
   const deployed = await request(settings.url, `${base}/deployments`, settings.token, {
     method: "POST",
-    body: { bundleId: uploaded.body.id, ...(carried.length > 0 ? { settleDrafts: carried } : {}) },
+    body: {
+      bundleId: uploaded.body.id,
+      ...(carried.length > 0 ? { settleDrafts: carried } : {}),
+      ...(values["allow-delete"]?.length ? { allowDelete: values["allow-delete"] } : {}),
+    },
   });
   if (deployed.status >= 300) throw refusal(deployed, `deploy to ${values.workspace}`);
-  const { created, updated, unchanged, deleted } = deployed.body.summary;
   io.out(
     `Deployed version ${deployed.body.bundleVersion} to ${values.workspace} (${workspace.type}): ` +
-      `${created} created, ${updated} updated, ${deleted} deleted, ${unchanged} unchanged.`,
+      `${counts(deployed.body.summary)}.`,
   );
-  for (const line of (deployed.body.summary.data ?? []) as string[]) io.out(`  ${line}`);
+  for (const line of describeChanges(deployed.body.summary, MAX_DEPLOY_LINES)) io.out(line);
   const settled = (deployed.body.draftsSettled ?? []) as string[];
   if (settled.length > 0) {
     io.out(
@@ -305,19 +373,48 @@ async function deploy(args: string[], io: Io) {
 interface DeploySummary {
   created: number;
   updated: number;
+  renamed?: number;
   unchanged: number;
   deleted: number;
   data?: string[];
-  changes?: { change: string; kind: string; path: string }[];
+  changes?: { change: string; kind: string; path: string; from?: string }[];
+  warnings?: { path: string; message: string }[];
+  aliasesRemoved?: string[];
+  breaking?: { path: string; message: string }[];
 }
 
-/** The resources and tables a deploy changed, or would change, one per line. */
-function describeChanges(summary: DeploySummary): string[] {
+/** A deploy's counts in a sentence. Renames are said only when there are any. */
+const counts = (s: DeploySummary) =>
+  `${s.created} created, ${s.updated} updated, ${s.renamed ? `${s.renamed} renamed, ` : ""}${s.deleted} deleted, ${s.unchanged} unchanged`;
+
+/** A deploy has just listed what the bundle holds, so it names what it created only when that is short. */
+const MAX_DEPLOY_LINES = 30;
+
+/**
+ * The resources and tables a deploy changed, or would change, one per line.
+ * With a limit, a long list keeps what was deleted and counts the rest.
+ */
+function describeChanges(summary: DeploySummary, limit = Number.POSITIVE_INFINITY): string[] {
+  const all = summary.changes ?? [];
+  const shown =
+    all.length > limit
+      ? all.filter((entry) => entry.change === "deleted" || entry.change === "renamed")
+      : all;
   return [
-    ...(summary.changes ?? []).map(
-      (entry) => `  ${entry.change.padEnd(8)} ${entry.kind.padEnd(10)} ${entry.path}`,
+    ...shown.map(
+      (entry) =>
+        `  ${entry.change.padEnd(8)} ${entry.kind.padEnd(10)} ${entry.from ? `${entry.from} -> ` : ""}${entry.path}`,
     ),
+    ...(shown.length < all.length
+      ? [`  and ${all.length - shown.length} created or updated, listed above`]
+      : []),
     ...(summary.data ?? []).map((line) => `  ${line}`),
+    ...(summary.aliasesRemoved ?? []).map(
+      (path) =>
+        `  ${path} no longer answers for the resource renamed away from it: it is a resource's own path again`,
+    ),
+    ...(summary.breaking ?? []).map((one) => `  Breaking: ${one.message}`),
+    ...(summary.warnings ?? []).map((warning) => `  Note: ${warning.message}`),
   ];
 }
 
@@ -353,11 +450,21 @@ async function dev(args: string[], io: Io) {
 async function promote(args: string[], io: Io) {
   const { values } = parseArgs({
     args,
-    options: { ...targetOptions, preview: { type: "boolean" as const } },
+    options: {
+      ...targetOptions,
+      ...allowDeleteOption,
+      preview: { type: "boolean" as const },
+      "confirm-breaking": { type: "boolean" as const },
+    },
   });
   const settings = await loadSettings(io.env);
   const { base } = await locate(settings, values.tenant, values.workspace);
-  const preview = await request(settings.url, `${base}/promotion-preview`, settings.token);
+  const allowed: string[] = values["allow-delete"] ?? [];
+  const preview = await request(
+    settings.url,
+    `${base}/promotion-preview${allowed.length > 0 ? `?allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
+    settings.token,
+  );
   if (preview.status >= 300) throw refusal(preview, `promote ${values.workspace}`);
   const { target, bundle, possible, refusal: why, summary } = preview.body;
   const where = `${target.slug} (${target.type})`;
@@ -372,17 +479,28 @@ async function promote(args: string[], io: Io) {
       ].join("\n"),
     );
   }
-  const counts = (s: DeploySummary) =>
-    `${s.created} created, ${s.updated} updated, ${s.deleted} deleted, ${s.unchanged} unchanged`;
   if (values.preview) {
     io.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
     for (const line of describeChanges(summary)) io.out(line);
     io.out("Nothing was changed. Run it again without --preview to promote.");
     return;
   }
+  const breaking = (summary.breaking ?? []) as { message: string }[];
+  if (breaking.length > 0 && target.type === "production" && !values["confirm-breaking"]) {
+    throw new CliError(
+      [
+        `Promoting this to ${where} changes a name that something outside calls:`,
+        ...breaking.map((one) => `  - ${one.message}`),
+        "Nothing was changed. Run it again with --confirm-breaking to promote.",
+      ].join("\n"),
+    );
+  }
   const promoted = await request(settings.url, `${base}/promotions`, settings.token, {
     method: "POST",
-    body: {},
+    body: {
+      ...(allowed.length > 0 ? { allowDelete: allowed } : {}),
+      ...(values["confirm-breaking"] ? { confirmBreaking: true } : {}),
+    },
   });
   if (promoted.status >= 300) throw refusal(promoted, `promote to ${target.slug}`);
   io.out(
@@ -417,6 +535,11 @@ async function tenant(args: string[], io: Io) {
   const base = `${settings.url.replace(/\/+$/, "")}/api/v1`;
   const authorization = `Bearer ${settings.token}`;
 
+  if (action !== undefined && ACCESS_ACTIONS.includes(action)) {
+    await tenantAccess(action, rest, io, settings, { request, refusal, findTenant });
+    return;
+  }
+
   if (action === "export") {
     const { values } = parseArgs({
       args: rest,
@@ -430,12 +553,7 @@ async function tenant(args: string[], io: Io) {
       throw new CliError("This needs --tenant <slug> and --out <file>.");
     }
     const secret = passphrase(io);
-    const tenants = await request(settings.url, "/tenants?limit=200", settings.token);
-    if (tenants.status !== 200) throw refusal(tenants, "list tenants");
-    const found = (tenants.body.items as { id: string; slug: string }[]).find(
-      (item) => item.slug === values.tenant,
-    );
-    if (!found) throw new CliError(`You have no access to a tenant called "${values.tenant}".`);
+    const found = await findTenant(settings, values.tenant);
     const response = await fetch(`${base}/tenants/${found.id}/exports`, {
       method: "POST",
       headers: { authorization, "content-type": "application/json" },
@@ -831,6 +949,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       case "build":
         await build(rest, io);
+        return 0;
+      case "schemas":
+        await schemas(rest, io);
         return 0;
       case "run":
         if (rest.includes("--remote")) return await runRemote(rest, io);

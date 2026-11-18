@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { newId, sql } from "@vynxlabs/db";
-import { validateJson } from "@vynxlabs/manifest";
+import { keyOf, validateJson } from "@vynxlabs/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
+import { formerPaths, resolveResource } from "../resolve.js";
 import { bundleManifest, payloadSchemas } from "./bundles.js";
 import { summarize } from "./redact.js";
 import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
@@ -190,13 +191,24 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     .executeTakeFirst();
   if (!workspace) throw notFound("The workspace");
   const bundleId = request.bundleId ?? workspace.active_bundle_id;
-  const script = await trx
-    .selectFrom("resource")
-    .select(["id", "body"])
-    .where("workspace_id", "=", request.workspaceId)
-    .where("kind", "=", request.relay ? "trigger_source" : "script")
-    .where("path", "=", request.script)
-    .executeTakeFirst();
+  // Asked for by a path it had before it was renamed, it still runs while the alias lasts.
+  const found = request.bundleId
+    ? undefined
+    : await resolveResource(trx, request.workspaceId, request.script, {
+        kind: request.relay ? "trigger_source" : "script",
+      });
+  const alias = found?.alias;
+  if (found?.via === "alias") request = { ...request, script: found.resource.path };
+  const script =
+    found?.resource ??
+    (await trx
+      .selectFrom("resource")
+      .select(["id", "body"])
+      .where("workspace_id", "=", request.workspaceId)
+      .where("kind", "=", request.relay ? "trigger_source" : "script")
+      .where("path", "=", request.script)
+      .executeTakeFirst());
+  let resource: { id: string } | undefined = script;
   let body = script
     ? asScript({ kind: request.relay ? "trigger_source" : "script", body: script.body })
     : undefined;
@@ -212,11 +224,23 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       ? await bundleManifest(kernel, bundle, "script", request.script)
       : undefined;
     body = pinned?.body as unknown as ScriptBody | undefined;
+    // The script may have been renamed since that bundle, or its path given to another:
+    // the key in the bundle says which resource it is.
+    if (pinned) {
+      resource = await trx
+        .selectFrom("resource")
+        .select("id")
+        .where("workspace_id", "=", request.workspaceId)
+        .where("kind", "=", "script")
+        .where("key", "=", keyOf(pinned))
+        .executeTakeFirst();
+    }
   }
   if (!body || !bundleId) {
     throw notFound(`The script ${request.script}`);
   }
-  const resourceId = script?.id ?? bundleId;
+  // A script that is no longer in the registry still runs, from its bundle, and waits in a lane of its own.
+  const resourceId = resource?.id ?? null;
 
   const issues = validateJson(body.input, request.input ?? {}, "/input");
   if (issues.length > 0) throw badRequest("The input does not match the script's schema.", issues);
@@ -227,13 +251,17 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       .selectFrom("run")
       .selectAll()
       .where("workspace_id", "=", request.workspaceId)
-      .where("script_path", "=", request.script)
+      // The same request sent again after the script was renamed finds its first run.
+      .where("script_path", "in", [
+        request.script,
+        ...(resourceId ? await formerPaths(trx, resourceId) : []),
+      ])
       .where("idempotency_key", "=", key)
       .executeTakeFirst();
-    if (earlier) return { created: false, run: earlier };
+    if (earlier) return { created: false, run: earlier, alias };
   }
 
-  const lane = laneOf(resourceId, body.concurrency, request.input ?? {});
+  const lane = laneOf(resourceId ?? bundleId, body.concurrency, request.input ?? {});
   const id = newId();
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(
@@ -283,7 +311,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     })
     .returningAll()
     .executeTakeFirstOrThrow();
-  return { created: true, run };
+  return { created: true, run, alias };
 }
 
 export interface WorkerScope {

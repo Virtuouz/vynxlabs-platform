@@ -283,7 +283,7 @@ export const decidesApprovals = defineRole({
   permissions: ["approval:read", "approval:write"],
 });
 
-const FRONT_DESK = { type: "end_user_group", name: "Front desk" } as const;
+const FRONT_DESK = { type: "end_user_group", key: "front-desk" } as const;
 export const frontDeskOpens = defineBinding({
   path: "access/front-desk-app",
   role: opensApp,
@@ -350,7 +350,7 @@ export const ownersBook = defineBinding({
  * The phone assistant: an AI agent connected over MCP with a service account's
  * key. It is given these tools and nothing else.
  */
-const AGENT = { type: "service_account", name: "phone-assistant" } as const;
+const AGENT = { type: "service_account", key: "phone-assistant" } as const;
 export const agentFinds = defineBinding({
   path: "access/agent-find-client",
   role: runsScript,
@@ -412,5 +412,5 @@ export const agentApprovals = defineBinding({
 export const managersDecide = defineBinding({
   path: "access/managers-approvals",
   role: decidesApprovals,
-  principal: { type: "group", name: "Practice managers" },
+  principal: { type: "group", key: "practice-managers" },
 });

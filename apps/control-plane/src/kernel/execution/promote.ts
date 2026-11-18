@@ -142,7 +142,12 @@ export async function promote(
   audit: Audit,
   source: WorkspaceRef,
   principal: Principal,
-  options: { dryRun?: boolean; bundleId?: string } = {},
+  options: {
+    dryRun?: boolean;
+    bundleId?: string;
+    allowDelete?: readonly string[];
+    confirmBreaking?: boolean;
+  } = {},
 ) {
   const promotion = await promotionOf(trx, source, options.bundleId);
   const bundle = await adoptBundle(
@@ -156,6 +161,9 @@ export async function promote(
   );
   const result = await deployBundle(kernel, trx, audit, promotion.target, principal, bundle.id, {
     promotedFrom: source.id,
+    ...(options.allowDelete ? { allowDelete: options.allowDelete } : {}),
+    // A preview shows what would break. Only the promotion itself has to be told it may.
+    confirmBreaking: options.dryRun === true || options.confirmBreaking === true,
   });
   return { ...result, target: promotion.target };
 }
@@ -172,6 +180,7 @@ export async function previewPromotion(
   actor: Actor,
   source: WorkspaceRef,
   bundleId?: string,
+  allowDelete?: readonly string[],
 ) {
   const promotion = await promotionOf(kernel.db, source, bundleId);
   const about = {
@@ -190,6 +199,7 @@ export async function previewPromotion(
         await promote(kernel, trx, audit, source, actor.principal, {
           dryRun: true,
           ...(bundleId ? { bundleId } : {}),
+          ...(allowDelete ? { allowDelete } : {}),
         })
       ).summary;
       throw new DryRun();

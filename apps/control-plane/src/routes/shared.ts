@@ -54,3 +54,22 @@ export function toPage<Row, Item>(
         : null,
   };
 }
+
+/**
+ * The answer to a change to a tenant's access that waits for a second person:
+ * nothing changed yet, and this is the release someone else has to approve.
+ */
+export const Waiting = Type.Object(
+  {
+    waiting: Type.Literal(true),
+    release: Type.Object({ id: Id, number: Type.Integer(), status: Type.String() }),
+    detail: Type.String(),
+  },
+  { description: "Nothing changed yet. The tenant asks for a second person to approve it." },
+);
+export const waiting = (release: { id: string; number: number; status: string }) => ({
+  waiting: true as const,
+  release: { id: release.id, number: release.number, status: release.status },
+  detail:
+    "This tenant asks for a second person before its access changes. Nothing changed yet: someone else who may release access has to approve it.",
+});

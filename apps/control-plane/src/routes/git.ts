@@ -21,7 +21,8 @@ const Repository = Type.Object({
   url: Type.String(),
   defaultBranch: Type.String(),
   folder: Type.String({
-    description: "The folder the server writes. Nothing else in the repository is touched.",
+    description:
+      "Where resources made in the console are written. A resource file kept anywhere else is written back where it is; nothing that is not a resource's file is touched.",
   }),
   paused: Type.Boolean({
     description:
@@ -40,6 +41,10 @@ const Repository = Type.Object({
     description:
       "Each promotion commits what production runs to `<releaseBranch>/<workspace>`. Null: off.",
   }),
+  tenantBranch: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "Each release of the tenant's access commits it to this branch, under `tenant/`. Never the default branch: a developer merges it. Null: off.",
+  }),
   ...CredentialSet,
 });
 const State = Type.Union(
@@ -54,7 +59,7 @@ const State = Type.Union(
   {
     description:
       "`ahead`: the workspace has deployed something the branch does not have. `behind`: the " +
-      "folder changed on the branch. `conflict`: a pull found a resource changed on both sides.",
+      "resource's file changed on the branch. `conflict`: a pull found a resource changed on both sides.",
   },
 );
 const Status = Type.Object({
@@ -79,6 +84,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verified_at?: Date | null;
       credential_kind?: string;
       release_branch?: string | null;
+      tenant_branch?: string | null;
     }) => ({
       url: row.url,
       defaultBranch: row.default_branch,
@@ -87,6 +93,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verifiedAt: row.verified_at ? iso(row.verified_at) : null,
       credentialKind: row.credential_kind ?? "token",
       releaseBranch: row.release_branch ?? null,
+      tenantBranch: row.tenant_branch ?? null,
     });
     /** The repository as the API shows it, with when and by whom its token was set. */
     const repositoryOf = async (tenantId: string, row: Parameters<typeof toRepository>[0]) => {
@@ -132,6 +139,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "verified_at",
             "credential_kind",
             "release_branch",
+            "tenant_branch",
           ])
           .where("tenant_id", "=", params.t)
           .executeTakeFirst();
@@ -160,6 +168,9 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             username: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
             token: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
             releaseBranch: Type.Optional(
+              Type.Union([Type.String({ minLength: 1, maxLength: 150 }), Type.Null()]),
+            ),
+            tenantBranch: Type.Optional(
               Type.Union([Type.String({ minLength: 1, maxLength: 150 }), Type.Null()]),
             ),
           }),
@@ -247,8 +258,9 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Commit what the workspace has deployed to its branch",
           description:
-            "One commit, authored by whoever asks. `refused` means the folder changed on the " +
-            "branch since the last sync: pull first. Nothing outside the folder is touched.",
+            "One commit, authored by whoever asks, of each resource's file where the repository " +
+            "keeps it. `refused` means a resource's file changed on the branch since the last " +
+            "sync: pull first. Nothing that is not a resource's file is touched.",
           tags: ["git"],
           params: WorkspaceParams,
           body: Type.Object({
@@ -311,10 +323,30 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               conflicts: Type.Integer(),
               files: Type.Array(
                 Type.Object({
-                  path: Type.String(),
+                  path: Type.String({ description: "From the repository's root." }),
+                  resource: Type.String({
+                    description:
+                      "The resource the file belongs to, as a pull names it in `conflicts` and " +
+                      "takes it in `resolutions`: its file on the branch, without the extension.",
+                  }),
                   here: Type.Boolean(),
                   branch: Type.Boolean(),
                   conflict: Type.Boolean(),
+                  change: Type.Union(
+                    [
+                      Type.Literal("new_here"),
+                      Type.Literal("removed_here"),
+                      Type.Literal("new_there"),
+                      Type.Literal("removed_there"),
+                      Type.Literal("changed"),
+                    ],
+                    {
+                      description:
+                        "What the difference is. `new_here` is a file only the workspace has: a " +
+                        "resource made in the console, or one taken over from the repository's " +
+                        "code, which had no file until then.",
+                    },
+                  ),
                   mine: Type.Optional(NullableString),
                   theirs: Type.Optional(NullableString),
                 }),
@@ -459,7 +491,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("deployment:write") },
         schema: {
-          summary: "Deploy what changed in the folder on the branch",
+          summary: "Deploy what changed in the resource files on the branch",
           description:
             "A resource changed on the branch and not here is taken. A resource changed on " +
             "both sides is a conflict: the answer lists them and deploys nothing. Ask again " +
@@ -473,6 +505,14 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 Type.String({ maxLength: 400 }),
                 Type.Union([Type.Literal("mine"), Type.Literal("theirs")]),
               ),
+            ),
+            allowDelete: Type.Optional(
+              Type.Array(Type.String({ maxLength: 255 }), {
+                maxItems: 200,
+                description:
+                  "Paths this may delete although it also creates something of the same kind. " +
+                  "Without it, such a deletion is refused with `rename_suspected`.",
+              }),
             ),
           }),
           response: {
@@ -495,7 +535,10 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: workspace.id,
         });
         ctx.mutated = true;
-        return pull(kernel, ctx.actor, workspace, { resolutions: body.resolutions });
+        return pull(kernel, ctx.actor, workspace, {
+          resolutions: body.resolutions,
+          allowDelete: body.allowDelete,
+        });
       },
     );
 

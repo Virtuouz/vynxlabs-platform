@@ -50,7 +50,7 @@ export function RepositorySettings({ base }: { base: string }) {
   return (
     <Page
       title="Repository"
-      description="The git repository this tenant's work is kept in. Resources written in the console are committed to it as files in one folder, on a branch per dev workspace. Nothing else in it is touched."
+      description="The git repository this tenant's work is kept in. Resources are committed to it as files, on a branch per dev workspace: each where the repository keeps it, and those made in the console in one folder. Nothing else in it is touched."
     >
       {repository?.paused ? (
         <Notice tone="attention">
@@ -103,7 +103,7 @@ export function RepositorySettings({ base }: { base: string }) {
             name="folder"
             label="Folder"
             value={folder}
-            hint="The one folder the console writes."
+            hint="Where resources made in the console are written."
             onChange={setFolder}
           />
         </div>
@@ -160,7 +160,7 @@ const STATE: Record<State, [StateName, string]> = {
   never: ["never_pushed", "Push to create the branch with what this workspace has deployed."],
   synced: ["synced", "The branch has what this workspace runs."],
   ahead: ["ahead", "This workspace has deployed something the branch does not have. Push it."],
-  behind: ["behind", "Someone changed the folder on the branch. Pull before pushing."],
+  behind: ["behind", "Someone changed a resource's file on the branch. Pull before pushing."],
   conflict: ["conflict", "A resource was changed here and on the branch. Choose which to keep."],
   error: ["sync_failed", ""],
 };

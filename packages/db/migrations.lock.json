@@ -65,5 +65,13 @@
   "0064_credential_set.sql": "61bf87f37f966caaa593925b1e3465bc9306743afe1f1c9ad2f1ca6e38c64e8a",
   "0065_audit_search.sql": "9689f79056ba8012caa7f12565dea81c559fb3e31deed8032050303a699b9942",
   "0066_member_preferences.sql": "9f4e47917cb7c6e95799b038a6bff6cbe1a6f58904c837370c4e6947eb895567",
-  "0067_previous_success.sql": "a30f7cdc24cf8ba112db94d0bb15f4075dc0eea5186dbd2f216874166cc09aaa"
+  "0067_previous_success.sql": "a30f7cdc24cf8ba112db94d0bb15f4075dc0eea5186dbd2f216874166cc09aaa",
+  "0068_resource_keys.sql": "feeb4a6ecd0db324bc194f3e8d330b612bd278b11c748447eb9a1b213d5e6a4a",
+  "0069_run_resource.sql": "65e715f26cc02204ee780f4ba82248f61c35d068cb540f9073097e2936e6b883",
+  "0070_resource_titles.sql": "987ca70f2252d6549cfdb918faaf4c85feedd81b7e2ce10622b4a73221052d81",
+  "0071_access_resources.sql": "bbcb719bee0352782621688da57b39e0067793ed06aeefe1d79efb724cceabcf",
+  "0072_group_membership.sql": "2a82ad75132a13e2bb2680d704513da95bb9388c0224fb68a3beda7fc58bd068",
+  "0073_approver_ids.sql": "52b5cbfc3650873d8e0f732a4a4ef31b98b074d4f49d558c7bd80e64c66bdd1f",
+  "0074_synced_repository_files.sql": "42c416bcebd68b42e8e3e57c9469ef5d651178df89b3a18274c023e14a375759",
+  "0075_synced_said.sql": "4cf7d0c033b0509338f841c99831f5283dff81afe856e98d7805d24d878a1fde"
 }

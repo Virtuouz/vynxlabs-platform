@@ -199,8 +199,15 @@ Pure-data resources need no code, which is what lets a visual editor create them
 
 ### Identity and references
 
-- In files and references, a resource is named by a human-readable path that is unique within its workspace.
-- In the database, it also has an immutable internal ID. A rename changes the path and keeps the ID.
+A resource has three names (Decision 0002, built in phase 17):
+
+- **Key.** Its identity. It matches the resource across bundles, workspaces, the console and the repository, and never changes. It is the path the resource was made at, unless it says otherwise.
+- **Path.** Its address and its folder, unique within its workspace. It can change: the same key at another path is a rename, which keeps the resource's ID, history, data and bindings, and leaves the old path answering for 90 days.
+- **Title.** What people read. It changes freely.
+
+References in bodies are written as paths. One written as the key of a resource that has moved is built as the path it has now. In the database a resource also has an immutable internal ID, which a rename keeps.
+
+A tenant's member groups, groups of end users and service accounts have a key and a title in the same way, and are named by key in bindings, flow approvers and rows.
 
 ### Ownership mode
 
@@ -208,6 +215,8 @@ Each resource is either code-managed or UI-managed, never both.
 
 - **Code-managed** resources come from a repository and are read-only in the interface.
 - **UI-managed** resources are created in the interface and can be exported to files.
+
+A UI-managed resource can also be written by hand as a file anywhere in the repository. The console changes the files in its own folder. One kept elsewhere is the repository's to change, and the console says which file it is.
 
 ### Repositories and sync
 

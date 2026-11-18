@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/schedule.v1.schema.json",
+  "title": "schedule file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's identity, when that is not its path. Say it when you move the file: the path the resource had. It never changes."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's path, when the file is kept somewhere that does not give it one."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "script": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "The script it starts. Give this or `flow`."
+        },
+        "flow": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "The flow it starts, from the flow's manual trigger. Give this or `script`."
+        },
+        "cron": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Five-field cron expression."
+        },
+        "timezone": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "IANA time zone. Default UTC."
+        },
+        "input": {
+          "type": "object"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "overlap": {
+          "enum": [
+            "allow",
+            "skip"
+          ],
+          "description": "`skip` passes over a time when the run it started last is still going. Default `allow`."
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "A trigger source to hand each request or each tick to first. What it returns is what starts the script or flow."
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "description": "CEL expressions over `trigger`, what the trigger was given. Each gives one tag for the run it starts, such as `'order:' + string(trigger.id)`. A tag is up to 64 characters of a-z, 0-9 and _.:-; an expression that fails or gives anything else is left out."
+        }
+      },
+      "required": [
+        "cron"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "script"
+          ]
+        },
+        {
+          "required": [
+            "flow"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "body"
+  ],
+  "additionalProperties": false
+}

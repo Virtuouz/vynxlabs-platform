@@ -13,6 +13,7 @@ import {
   describeTable,
   findRows,
   getRow,
+  groupValues,
   insertRows,
   type Row,
   scopeFor,
@@ -23,6 +24,7 @@ import { badRequest, forbidden } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { findAlias } from "../kernel/resolve.js";
 import { AnyObject, Id, NoContent, NullableString, WorkspaceParams } from "./shared.js";
 
 const pathPattern = new RegExp(PATH_PATTERN);
@@ -201,14 +203,37 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       await findWorkspace(kernel, params.t, params.w);
       const data = (await kernel.data.forTenant(params.t)).owner;
       // The permission may be held at the workspace or at this one table.
-      const known = await data
-        .selectFrom("data_table")
-        .select("resource_id")
-        .where("workspace_id", "=", params.w)
-        .where("tenant_id", "=", params.t)
-        .where("name", "=", table)
-        .where("status", "=", "active")
-        .executeTakeFirst();
+      const lookUp = (name: string) =>
+        data
+          .selectFrom("data_table")
+          .select("resource_id")
+          .where("workspace_id", "=", params.w)
+          .where("tenant_id", "=", params.t)
+          .where("name", "=", name)
+          .where("status", "=", "active")
+          .executeTakeFirst();
+      let known = await lookUp(table);
+      if (!known) {
+        // A table asked for by a path it had before it was renamed still answers, and says so.
+        const alias = await findAlias(kernel.db, params.w, table, ["table"]);
+        const now = alias
+          ? await kernel.db
+              .selectFrom("resource")
+              .select("path")
+              .where("id", "=", alias.resource_id)
+              .executeTakeFirst()
+          : undefined;
+        if (alias && now) {
+          ctx.moved = {
+            path: table,
+            now: now.path,
+            createdAt: alias.created_at,
+            expiresAt: alias.expires_at,
+          };
+          table = now.path;
+          known = await lookUp(table);
+        }
+      }
       const at = {
         tenantId: params.t,
         workspaceId: params.w,
@@ -241,13 +266,13 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const group =
           (await db
             .selectFrom("end_user_group")
-            .select(["id", "name"])
+            .select(["id", "key", "name"])
             .where("id", "=", asGroup)
             .where("tenant_id", "=", tenantId)
             .executeTakeFirst()) ??
           (await db
             .selectFrom("principal_group")
-            .select(["id", "name"])
+            .select(["id", "key", "name"])
             .where("id", "=", asGroup)
             .where("tenant_id", "=", tenantId)
             .executeTakeFirst());
@@ -255,7 +280,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           principalId: "00000000-0000-0000-0000-000000000000",
           all: false,
-          groups: [group.id, group.name],
+          groups: groupValues([group]),
           attributes: {},
         } satisfies DataScope;
       }

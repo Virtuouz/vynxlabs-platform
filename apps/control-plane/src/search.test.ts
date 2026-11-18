@@ -21,6 +21,7 @@ async function resources(workspace: string, list: { kind: string; path: string; 
     workspace_id: workspace,
     kind: one.kind,
     schema_version: 1,
+    key: one.path,
     path: one.path,
     ownership: "code" as const,
     version: 1,

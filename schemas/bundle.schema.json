@@ -22,9 +22,13 @@
         {
           "type": "number",
           "const": 3
+        },
+        {
+          "type": "number",
+          "const": 4
         }
       ],
-      "description": "2 adds `assets`. 3 lets a manifest be console-managed, and then speaks for every console-managed resource of the workspace. A bundle with neither is still written as 1."
+      "description": "2 adds `assets`. 3 lets a manifest be console-managed, and then speaks for every console-managed resource of the workspace. 4 lets a manifest carry `key`, `title`, `mcp` and `source`. A bundle is written in the oldest format that can carry it."
     },
     "sdkVersion": {
       "type": "string",
@@ -75,6 +79,52 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
             "maxLength": 255
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+            "maxLength": 255,
+            "description": "The resource's identity, unique within the workspace. It never changes. Left out when it is the path the resource was made at."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "What people read."
+          },
+          "mcp": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                "description": "The name of the tool an agent sees, chosen by the author."
+              }
+            },
+            "additionalProperties": false
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "file",
+              "generated"
+            ],
+            "properties": {
+              "file": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "description": "The file that defines the resource, relative to the repository root."
+              },
+              "generated": {
+                "type": "boolean",
+                "description": "Whether the file runs code to produce the resource, so only the repository can change it."
+              }
+            },
+            "additionalProperties": false
           },
           "ownership": {
             "anyOf": [
@@ -142,7 +192,7 @@
         "additionalProperties": false
       },
       "maxItems": 5000,
-      "description": "The files of the bundle's apps. Format 2 only."
+      "description": "The files of the bundle's apps. From format 2."
     },
     "sources": {
       "type": "object",

@@ -145,7 +145,7 @@ test("a schedule from the repository opens with its settings, and saving takes i
   expect(((await screen.findByLabelText("When, as a cron line")) as HTMLInputElement).value).toBe(
     "0 2 * * *",
   );
-  expect(screen.getByText(/managed in the tenant's repository/)).toBeTruthy();
+  expect(screen.getByText(/defined by the code in the tenant's repository/)).toBeTruthy();
   // The input is a form drawn from the script's schema.
   expect(((await screen.findByLabelText("Full")) as HTMLInputElement).checked).toBe(true);
   // The next times are shown.
@@ -160,6 +160,21 @@ test("a schedule from the repository opens with its settings, and saving takes i
     cron: "0 2 * * *",
     input: { full: true },
     enabled: false,
+  });
+});
+
+test("a schedule the repository's code defines is moved to a file as it is, by a draft that takes it over", async () => {
+  show(<ResourceEditor root={root} link={link} kind="schedule" path="orders/nightly" editable />);
+  await screen.findByLabelText("When, as a cron line");
+  // It says the file it becomes, and what to do in the code afterwards.
+  expect(screen.getByText("orders/nightly.schedule.yaml")).toBeTruthy();
+  expect(screen.getByText(/remove its definition from the code/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Move to a file" }));
+  await waitFor(() => expect(saved()).toBeTruthy());
+  expect(saved()?.body?.body).toEqual({
+    script: "orders/sync",
+    cron: "0 2 * * *",
+    input: { full: true },
   });
 });
 

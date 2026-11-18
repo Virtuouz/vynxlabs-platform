@@ -976,12 +976,19 @@ async function ensureLocalGroup(
     if (forMembers) {
       await trx
         .insertInto("principal_group")
-        .values({ id: group.id, tenant_id: tenantId, name })
+        // The provider made it and will remove it: a release of the tenant's access never does.
+        .values({ id: group.id, tenant_id: tenantId, name, managed_by: "provider" })
         .execute();
     } else {
       await trx
         .insertInto("end_user_group")
-        .values({ id: group.id, tenant_id: tenantId, name, description: displayName.slice(0, 200) })
+        .values({
+          id: group.id,
+          tenant_id: tenantId,
+          name,
+          description: displayName.slice(0, 200),
+          managed_by: "provider",
+        })
         .execute();
     }
     await audit({

@@ -1,5 +1,7 @@
+import { newId } from "@vynxlabs/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { membershipForProvider } from "./kernel/tenant/releases.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
@@ -315,6 +317,77 @@ describe("what the console made, and what a workspace still uses", () => {
     expect(refused.body.code).toBe("principal_in_use");
     expect(refused.body.detail).toContain("the binding access/desk in main");
     expect((await current()).map((one) => one.key)).toContain("tech-desk");
+  });
+});
+
+describe("identity providers and the tenant's access", () => {
+  test("a provider made after a release is given the group memberships that release said", async () => {
+    // Made as the provider routes make one, without reaching for an issuer that is not there:
+    // the row, and then what making a provider does for the tenant's released access.
+    const made = { body: { id: newId() } };
+    await t.db
+      .insertInto("identity_provider")
+      .values({
+        id: made.body.id,
+        tenant_id: tenant,
+        audience: "members",
+        protocol: "oidc",
+        name: "Lakeshore sign-in",
+        config: JSON.stringify({ issuer: "https://idp.lakeshore.example", clientId: "platform" }),
+        secrets: null,
+      })
+      .execute();
+    await t.db.transaction().execute((trx) => membershipForProvider(trx, tenant));
+    const maps = await t.db
+      .selectFrom("identity_group_map")
+      .innerJoin("principal_group", "principal_group.id", "identity_group_map.member_group_id")
+      .select([
+        "identity_group_map.claim_value",
+        "principal_group.key",
+        "identity_group_map.managed_by",
+      ])
+      .where("identity_group_map.provider_id", "=", made.body.id)
+      .execute();
+    expect(maps).toEqual([
+      { claim_value: "it-tech-desk", key: "tech-desk", managed_by: "release" },
+    ]);
+
+    // A release that changes the values replaces its own, and leaves one made by hand.
+    const group = await t.db
+      .selectFrom("principal_group")
+      .select("id")
+      .where("tenant_id", "=", tenant)
+      .where("key", "=", "tech-desk")
+      .executeTakeFirstOrThrow();
+    const byHand = await alice.put(
+      `/tenants/${tenant}/identity-providers/${made.body.id}/group-maps`,
+      // The whole list as the console sends it back: what the release mapped, and one more.
+      {
+        items: [
+          { value: "it-tech-desk", groupId: group.id },
+          { value: "contractors", groupId: group.id },
+        ],
+      },
+    );
+    expect(byHand.status, JSON.stringify(byHand.body)).toBeLessThan(300);
+    const changed = {
+      ...desk("IT Service Desk"),
+      body: { ...desk("IT Service Desk").body, membership: { sso: { values: ["service-desk"] } } },
+    };
+    expect((await release([lender, changed, students, assistant, lends, sees])).status).toBe(201);
+    const after = await t.db
+      .selectFrom("identity_group_map")
+      .select(["claim_value", "managed_by"])
+      .where("provider_id", "=", made.body.id)
+      .orderBy("claim_value")
+      .execute();
+    expect(after).toEqual([
+      { claim_value: "contractors", managed_by: "hand" },
+      { claim_value: "service-desk", managed_by: "release" },
+    ]);
+    expect(
+      (await release([lender, desk("IT Service Desk"), students, assistant, lends, sees])).status,
+    ).toBe(201);
   });
 });
 

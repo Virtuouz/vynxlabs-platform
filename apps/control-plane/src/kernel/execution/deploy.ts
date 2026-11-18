@@ -470,6 +470,59 @@ export async function deployBundle(
     }
   }
 
+  // A binding or a role whose row is gone, though its definition did not change: a group
+  // deleted and made again, for one. Its definition is applied again, so the access it gives
+  // is what the bundle says. One that changed was applied just now.
+  const unprojected = await sql<{
+    id: string;
+    kind: string;
+    path: string;
+    body: Record<string, unknown>;
+  }>`
+    select r.id, r.kind, r.path, r.body from resource r
+    where r.workspace_id = ${workspace.id} and (
+      (r.kind = 'binding' and not exists (select 1 from binding b where b.source_resource_id = r.id))
+      or (r.kind = 'role' and not exists (select 1 from role o where o.source_resource_id = r.id))
+    )
+    order by r.kind desc, r.path
+  `.execute(trx);
+  for (const row of unprojected.rows) {
+    await kernel.hooks.get(row.kind)?.apply(trx, {
+      id: row.id,
+      tenantId: workspace.tenantId,
+      workspaceId: workspace.id,
+      path: row.path,
+      body: row.body,
+    });
+  }
+  // A binding that names a group or a service account by what it is called works until
+  // someone changes what it is called. Each is named, with the key to use, on every deploy.
+  for (const manifest of content.manifests) {
+    if (manifest.kind !== "binding") continue;
+    const principal = (manifest.body as { principal?: { type?: string; name?: string } }).principal;
+    if (principal?.name === undefined || principal.type === undefined) continue;
+    const table =
+      principal.type === "group"
+        ? "principal_group"
+        : principal.type === "end_user_group"
+          ? "end_user_group"
+          : principal.type === "service_account"
+            ? "service_account"
+            : undefined;
+    if (!table) continue;
+    const named = await trx
+      .selectFrom(table)
+      .select("key")
+      .where("tenant_id", "=", workspace.tenantId)
+      .where("name", "=", principal.name)
+      .executeTakeFirst();
+    if (!named) continue;
+    summary.warnings.push({
+      path: manifest.path,
+      message: `the binding ${manifest.path} names the ${principal.type.replaceAll("_", " ")} by its title "${principal.name}", which can change. Name it by key: "${named.key}".`,
+    });
+  }
+
   if (
     summary.breaking.length > 0 &&
     current.type === "production" &&

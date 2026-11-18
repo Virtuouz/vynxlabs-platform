@@ -50,7 +50,25 @@ export const bindingKind: KindDefinition = {
                 enum: ["group", "service_account", "end_user_group"],
                 description: "group is a group of members. end_user_group is a group of end users.",
               },
-              name: { type: "string" },
+              key: {
+                type: "string",
+                pattern: "^[a-z0-9][a-z0-9_-]{0,62}$",
+                description:
+                  "Its key, which never changes. What it is called can change without this binding noticing.",
+              },
+            },
+            required: ["type", "key"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              type: { enum: ["group", "service_account", "end_user_group"] },
+              name: {
+                type: "string",
+                description:
+                  "Its title, as bindings named it before keys. It still works, and stops working when the title changes: name it by `key`.",
+              },
             },
             required: ["type", "name"],
             additionalProperties: false,

@@ -1126,6 +1126,11 @@ export function defineRole(options: RoleOptions): ResourceDefinition & { readonl
 
 export type BindingPrincipal =
   | { type: "member"; email: string }
+  /** A group of members, by its key: `tech-desk`. What it is called can change freely. */
+  | { type: "group"; key: string }
+  | { type: "service_account"; key: string }
+  | { type: "end_user_group"; key: string }
+  /** By its title, as before keys. It stops working when the title changes: name it by `key`. */
   | { type: "group"; name: string }
   | { type: "service_account"; name: string }
   /** One person in the tenant's end-user pool. */

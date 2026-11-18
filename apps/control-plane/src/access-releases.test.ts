@@ -318,6 +318,98 @@ describe("what the console made, and what a workspace still uses", () => {
   });
 });
 
+describe("a workspace's bindings and the tenant's access", () => {
+  const bundleOf = (principal: object, marker: string): Bundle => {
+    const unsigned = {
+      formatVersion: 1 as const,
+      sdkVersion: "0.5.0",
+      core: { min: "0.0.0", below: "99.0.0" },
+      manifests: [
+        {
+          kind: "binding",
+          schemaVersion: 1,
+          path: "access/desk",
+          ownership: "code" as const,
+          body: { role: "viewer", principal },
+        },
+      ],
+      code: `export const marker = ${JSON.stringify(marker)};`,
+    };
+    return { ...unsigned, digest: bundleDigest(unsigned) };
+  };
+  const deploy = async (bundle: Bundle) => {
+    const uploaded = await alice.post(`/tenants/${tenant}/workspaces/${main}/bundles`, bundle);
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBeLessThan(300);
+    return alice.post(`/tenants/${tenant}/workspaces/${main}/deployments`, {
+      bundleId: uploaded.body.id,
+    });
+  };
+  const given = async () => {
+    const group = await t.db
+      .selectFrom("principal_group")
+      .select("id")
+      .where("tenant_id", "=", tenant)
+      .where("key", "=", "tech-desk")
+      .executeTakeFirstOrThrow();
+    return t.db
+      .selectFrom("binding")
+      .select("id")
+      .where("principal_id", "=", group.id)
+      .where("source_resource_id", "is not", null)
+      .execute();
+  };
+
+  test("a binding that names a group by its title is told the key, on every deploy", async () => {
+    const again = await deploy(bundleOf({ type: "group", name: "IT Service Desk" }, "again"));
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    expect(again.body.summary.warnings).toEqual([
+      {
+        path: "access/desk",
+        message:
+          'the binding access/desk names the group by its title "IT Service Desk", which can change. Name it by key: "tech-desk".',
+      },
+    ]);
+  });
+
+  test("a binding by key holds through a change of title, and a missing key says what to add", async () => {
+    const byKey = await deploy(bundleOf({ type: "group", key: "tech-desk" }, "by key"));
+    expect(byKey.status, JSON.stringify(byKey.body)).toBe(201);
+    expect(byKey.body.summary.warnings).toEqual([]);
+    expect(await given()).toHaveLength(1);
+    const renamed = await release([lender, desk("Lending Desk"), students, assistant, lends, sees]);
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(201);
+    expect(await given()).toHaveLength(1);
+
+    const missing = await deploy(bundleOf({ type: "group", key: "night-shift" }, "missing"));
+    expect(missing.status).toBe(400);
+    expect(missing.body.errors).toEqual([
+      {
+        path: "/body/principal/key",
+        message:
+          'no group has the key "night-shift" in this tenant. Add tenant/groups/night-shift.group.yaml to the repository and run `platform tenant release`, or make it in the console',
+      },
+    ]);
+  });
+
+  test("a binding whose access was lost is given again by the next deploy, though it did not change", async () => {
+    const lost = await given();
+    await t.db
+      .deleteFrom("binding")
+      .where(
+        "id",
+        "in",
+        lost.map((row) => row.id),
+      )
+      .execute();
+    expect(await given()).toHaveLength(0);
+    // The same binding, in a bundle that differs only in its code.
+    const redeployed = await deploy(bundleOf({ type: "group", key: "tech-desk" }, "repaired"));
+    expect(redeployed.status, JSON.stringify(redeployed.body)).toBe(201);
+    expect(redeployed.body.summary).toMatchObject({ unchanged: 1, updated: 0 });
+    expect(await given()).toHaveLength(1);
+  });
+});
+
 describe("going back, and asking a second person", () => {
   test("an earlier release is gone back to as a new release of what it left", async () => {
     const releases = (await alice.get(`${at()}/releases`)).body.items as Any[];

@@ -35,6 +35,7 @@ import { OldPaths } from "./OldPaths.tsx";
 import { ApprovalsQueue, EventsWorkbench, TriggersWorkbench } from "./Operate.tsx";
 import { Overview } from "./Overview.tsx";
 import { Release } from "./Release.tsx";
+import { definedWhere, type NamedResource, RenameResource } from "./RenameResource.tsx";
 import { EDITED_KINDS, isEditedKind, ResourceEditor } from "./ResourceEditor.tsx";
 import { RetentionSettings } from "./Retention.tsx";
 import { RunPage, ToRunPage } from "./RunPage.tsx";
@@ -641,14 +642,7 @@ function WorkspaceDetail({
         })()
       ) : tab === "resources" ? (
         <>
-          <ListScreen<{
-            id: string;
-            path: string;
-            kind: string;
-            ownership: string;
-            version: number;
-            updatedAt: string;
-          }>
+          <ListScreen<NamedResource & { id: string; version: number; updatedAt: string }>
             title="Resources"
             description="Everything deployed to this workspace. Connections, variables, events, schedules and triggers can be made and changed here in a dev workspace. Scripts, flows and apps have screens of their own."
             path={`${root}/resources`}
@@ -678,14 +672,21 @@ function WorkspaceDetail({
                       {row.path}
                     </Link>
                   ) : (
-                    <Code>{row.path}</Code>
+                    <span className="flex flex-col">
+                      <Code>{row.path}</Code>
+                      {row.title ? (
+                        <span className="text-meta text-ink-muted">{row.title}</span>
+                      ) : null}
+                    </span>
                   ),
               },
               { header: "Kind", cell: (row) => row.kind },
               {
-                header: "Managed in",
-                cell: (row) => (row.ownership === "code" ? "Repository" : "Console"),
+                // Said only for one that was moved: until then a resource's key is its path.
+                header: "Key",
+                cell: (row) => (row.key === row.path ? "" : <Code>{row.key}</Code>),
               },
+              { header: "Defined in", cell: (row) => definedWhere(row) },
               { header: "Version", cell: (row) => row.version, align: "end" },
               { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
             ]}
@@ -693,6 +694,21 @@ function WorkspaceDetail({
               title: "No resources yet",
               text: "Resources appear here when they are deployed from the tenant's repository.",
             }}
+            {...(workspace.data.type === "dev"
+              ? {
+                  rowActions: (
+                    row: NamedResource & { id: string; version: number; updatedAt: string },
+                    reload: () => void,
+                  ) => (
+                    <RenameResource
+                      root={root}
+                      link={`/t/${tenantId}/workspaces/${workspaceId}`}
+                      row={row}
+                      onDone={reload}
+                    />
+                  ),
+                }
+              : {})}
           />
           <OldPaths root={root} canEnd />
         </>

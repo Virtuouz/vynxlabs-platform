@@ -219,7 +219,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
                       await api.patch(`${base}/groups/${row.id}`, { name });
                       groups.reload();
                     } catch (error) {
-                      notify.error(failureText(error));
+                      notify.error(error);
                     }
                   }}
                   disabled={row.managedBy === "provider"}

@@ -35,7 +35,9 @@ interface DraftRow {
   path: string;
   kind: string;
   deleted: boolean;
-  change: "create" | "update" | "delete" | "take_over";
+  change: "create" | "update" | "delete" | "take_over" | "rename";
+  /** The path the resource has now, when the draft renames it. */
+  renamedFrom?: string;
   updatedAt: string;
   about?: string[];
 }
@@ -92,6 +94,7 @@ const CHANGE_TAG: Record<DraftRow["change"], [string, "draft" | "live" | "danger
     update: ["Changed", "draft"],
     delete: ["Removed", "danger"],
     take_over: ["Taken over", "repository"],
+    rename: ["Renamed", "draft"],
   };
 
 const KIND_LABEL: Record<string, string> = {
@@ -356,6 +359,11 @@ function ReviewStep({
                               <Tag tone={CHANGE_TAG[row.change][1]}>
                                 {CHANGE_TAG[row.change][0]}
                               </Tag>
+                              {row.renamedFrom ? (
+                                <span className="text-meta text-ink-muted">
+                                  from <Mono>{row.renamedFrom}</Mono>
+                                </span>
+                              ) : null}
                             </span>
                             <span className="flex items-center gap-1">
                               <span className="text-meta text-ink-subtle">

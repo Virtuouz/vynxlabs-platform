@@ -327,6 +327,21 @@ describe("permissions", () => {
       (await alice.client.get(`/tenants/${acme}/groups/${group.body.id}`)).body.members,
     ).toHaveLength(1);
 
+    // What the group is called changes. It is the same group, with its key, and what it gives stays.
+    const renamed = await alice.client.patch(`/tenants/${acme}/groups/${group.body.id}`, {
+      name: "Platform team",
+      description: "Runs the platform.",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body).toMatchObject({
+      id: group.body.id,
+      key: group.body.key,
+      name: "Platform team",
+      description: "Runs the platform.",
+      managedBy: "release",
+    });
+    expect((await bob.client.get(`/tenants/${acme}/workspaces/${prod}`)).status).toBe(200);
+
     expect(
       (await alice.client.delete(`/tenants/${acme}/groups/${group.body.id}/members/${bob.id}`))
         .status,

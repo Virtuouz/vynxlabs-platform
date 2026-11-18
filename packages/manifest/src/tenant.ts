@@ -32,7 +32,7 @@ export interface TenantResource {
 const title = {
   type: "string",
   minLength: 1,
-  maxLength: 100,
+  maxLength: 200,
   pattern: "^\\S(.*\\S)?$",
   description: "What people read. It can change: nothing refers to it.",
 };

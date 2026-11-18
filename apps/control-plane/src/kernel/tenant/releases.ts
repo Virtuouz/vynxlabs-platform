@@ -980,3 +980,53 @@ export async function freeKey(
     if (!taken) return candidate;
   }
 }
+
+/**
+ * One change to the tenant's access, made in the console or through the API: a
+ * release of that change alone, with the same history, and the same wait when
+ * the tenant asks for a second person.
+ */
+export function releaseOne(
+  trx: Trx,
+  audit: Audit,
+  tenantId: string,
+  principal: Principal,
+  ask: AccessAsk,
+  message: string,
+) {
+  return releaseAccess(trx, audit, tenantId, principal, {
+    scope: "partial",
+    asks: [ask],
+    origin: principal.type === "member" ? "console" : "api",
+    message,
+  });
+}
+
+/** The resource a group or a service account is now, to change one thing about it. */
+export async function accessResource(
+  db: Db | Trx,
+  tenantId: string,
+  kind: PrincipalKind,
+  id: string,
+): Promise<{ resource: TenantResource; managedBy: "release" | "provider" } | undefined> {
+  const row = await db
+    .selectFrom(TABLE[kind])
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (!row) return undefined;
+  const values = "sso_values" in row ? [...(row.sso_values as string[])].sort() : [];
+  return {
+    managedBy: row.managed_by,
+    resource: {
+      kind,
+      key: row.key,
+      body: {
+        title: row.name,
+        ...(row.description ? { description: row.description } : {}),
+        ...(values.length > 0 ? { membership: { sso: { values } } } : {}),
+      },
+    },
+  };
+}

@@ -209,6 +209,15 @@ describe("promotion", () => {
     const refused = await alice.post(`${ws(dev)}/promotions`);
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("bindings_missing");
+    // A promotion took no body before it had anything to be told. One sent with none is
+    // still a promotion, answered the same way.
+    const bare = await t.app.inject({
+      method: "POST",
+      url: `/api/v1${ws(dev)}/promotions`,
+      headers: { origin: t.config.publicUrl, ...alice.headers },
+    });
+    expect(bare.statusCode, bare.body).toBe(409);
+    expect(bare.json().code).toBe("bindings_missing");
     // Neither the preview nor the refusal left anything behind.
     expect((await alice.get(`${ws(qa)}/bundles`)).body.items).toEqual([]);
     expect((await alice.get(`${ws(qa)}/tables`)).body.items).toEqual([]);

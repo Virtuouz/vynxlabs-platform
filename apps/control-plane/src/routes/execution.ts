@@ -848,6 +848,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       `${base}/promotions`,
       {
         config: { access: access.workspace("deployment:read") },
+        // It took no body before it had anything to be told, and is still called with none.
+        preValidation: (request, _reply, done) => {
+          request.body ??= {};
+          done();
+        },
         schema: {
           summary: "Promote this workspace's active bundle to its linked workspace",
           description:
@@ -855,27 +860,25 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "is rebuilt. Needs `promotion:write` in the workspace promoted to.",
           tags: ["deploys"],
           params: WorkspaceParams,
-          body: Type.Optional(
-            Type.Object({
-              confirmBreaking: Type.Optional(
-                Type.Boolean({
-                  description:
-                    "Said after reading the promotion preview's `summary.breaking`: this may change " +
-                    "or remove the name of a tool an agent calls. Promoting to production without " +
-                    "it, when there is one, is refused with `breaking_changes`.",
-                }),
-              ),
-              allowDelete: Type.Optional(
-                Type.Array(Type.String({ maxLength: 255 }), {
-                  maxItems: 200,
-                  description:
-                    "Paths this may delete although it also creates something of the same kind. " +
-                    "Without it, deleting what holds runs, rows or access given by hand is refused " +
-                    "with `rename_suspected`: it is usually a rename.",
-                }),
-              ),
-            }),
-          ),
+          body: Type.Object({
+            confirmBreaking: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Said after reading the promotion preview's `summary.breaking`: this may change " +
+                  "or remove the name of a tool an agent calls. Promoting to production without " +
+                  "it, when there is one, is refused with `breaking_changes`.",
+              }),
+            ),
+            allowDelete: Type.Optional(
+              Type.Array(Type.String({ maxLength: 255 }), {
+                maxItems: 200,
+                description:
+                  "Paths this may delete although it also creates something of the same kind. " +
+                  "Without it, deleting what holds runs, rows or access given by hand is refused " +
+                  "with `rename_suspected`: it is usually a rename.",
+              }),
+            ),
+          }),
           response: {
             201: Type.Object({
               id: Id,

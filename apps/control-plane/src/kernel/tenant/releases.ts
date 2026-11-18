@@ -759,6 +759,10 @@ export async function releaseAccess(
       );
     }
   }
+  const undone =
+    request.scope === "full" && request.origin !== "rollback"
+      ? await editsUndone(trx, tenantId, steps)
+      : [];
   const number =
     ((
       await trx
@@ -780,6 +784,7 @@ export async function releaseAccess(
   if (waits) {
     // What it would do is worked out now, for whoever is asked, and again when they answer.
     const summary = previewSteps(current, steps, unchanged);
+    summary.warnings.push(...undone);
     await trx
       .insertInto("tenant_release")
       .values({
@@ -813,7 +818,7 @@ export async function releaseAccess(
     deleted: 0,
     unchanged,
     changes: [],
-    warnings: [],
+    warnings: [...undone],
   };
   for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
   await trx
@@ -852,6 +857,44 @@ export async function releaseAccess(
     applied.set(id, { tenantId, number, message: request.message ?? null, at: Date.now() });
   }
   return { id, number, status: "applied" as const, summary };
+}
+
+/**
+ * What a release of the whole set would put back that was changed one at a time since
+ * the last such release: in the console or through the API, where the repository has not
+ * heard of it. The release goes ahead. Whoever reads its plan is told which change it undoes.
+ */
+async function editsUndone(trx: Trx, tenantId: string, steps: readonly Step[]): Promise<string[]> {
+  const releases = await trx
+    .selectFrom("tenant_release")
+    .select(["number", "scope", "origin", "summary"])
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "applied")
+    .orderBy("number", "desc")
+    .limit(200)
+    .execute();
+  const edited = new Map<string, number>();
+  for (const release of releases) {
+    if (release.scope === "full" && release.origin !== "rollback") break;
+    if (release.scope !== "partial") continue;
+    for (const change of (release.summary as Partial<AccessSummary>).changes ?? []) {
+      const name = `${change.kind}/${change.key}`;
+      if (!edited.has(name)) edited.set(name, release.number);
+    }
+  }
+  const warnings: string[] = [];
+  for (const step of steps) {
+    const one = step.op === "put" ? step.resource : step;
+    if (one.kind === "tenant_binding") continue;
+    const number = edited.get(`${one.kind}/${one.key}`);
+    if (number === undefined) continue;
+    warnings.push(
+      `the ${tenantName(one)} was last changed in release ${number}, outside the repository. This ${
+        step.op === "delete" ? "removes it" : "puts it back as the repository has it"
+      }. To keep that change, pull the tenant's access into the repository first (platform tenant pull).`,
+    );
+  }
+  return warnings;
 }
 
 /** Groups and service accounts an identity provider made: a binding may name them. */

@@ -139,7 +139,15 @@ export async function leaveAlias(
       }),
     )
     .execute();
-  return dropAlias(trx, resource.workspace_id, to);
+  // Renamed back to a path it had: that path was its own alias, and what called it there
+  // still reaches it. Only an alias of another resource is one that stops answering.
+  const ended = await trx
+    .deleteFrom("resource_alias")
+    .where("workspace_id", "=", resource.workspace_id)
+    .where("path", "=", to)
+    .returning("resource_id")
+    .execute();
+  return ended.some((alias) => alias.resource_id !== resource.id);
 }
 
 /** Removes the alias at a path that a resource now has. Says whether there was one. */

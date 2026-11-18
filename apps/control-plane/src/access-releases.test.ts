@@ -273,6 +273,16 @@ describe("what the console made, and what a workspace still uses", () => {
     );
     expect(allowed.status, JSON.stringify(allowed.body)).toBe(201);
     expect(allowed.body.summary).toMatchObject({ deleted: 1 });
+    // The repository never heard of the group. Whoever releases is told which change this undoes.
+    expect(allowed.body.summary.warnings).toEqual([
+      expect.stringMatching(
+        /^the group finance-billing was last changed in release \d+, outside the repository\. This removes it\. /,
+      ),
+    ]);
+    // Said once: the next release of the whole set starts from this one.
+    const again = await release([lender, desk(), students, assistant, lends, sees]);
+    expect(again.body.summary.warnings).toEqual([]);
+    await release([lender, desk("IT Service Desk"), students, assistant, lends, sees]);
   });
 
   test("a group that a workspace's bundle still gives access to is not removed", async () => {

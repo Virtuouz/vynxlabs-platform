@@ -99,6 +99,7 @@ export async function tenantAccess(
       send?: { method: string; body?: unknown },
     ) => Promise<ApiReply>;
     refusal: (reply: ApiReply, doing: string) => CliError;
+    findTenant: (settings: Settings, slug: string) => Promise<{ id: string; slug: string }>;
   },
 ): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -114,12 +115,7 @@ export async function tenantAccess(
   });
   if (!values.tenant) throw new CliError("This needs --tenant <slug>.");
   const call: Call = (path, options) => api.request(settings.url, path, settings.token, options);
-  const tenants = await call("/tenants?limit=200");
-  if (tenants.status !== 200) throw api.refusal(tenants, "list tenants");
-  const found = (tenants.body.items as { id: string; slug: string }[]).find(
-    (item) => item.slug === values.tenant,
-  );
-  if (!found) throw new CliError(`You have no access to a tenant called "${values.tenant}".`);
+  const found = await api.findTenant(settings, values.tenant);
   const base = `/tenants/${found.id}/access`;
   const directory = resolve(values.dir ?? ".");
   const allowDelete: string[] = values["allow-delete"] ?? [];

@@ -232,6 +232,28 @@ async function schemas(args: string[], io: Io) {
   io.out("Run this again after upgrading the CLI.");
 }
 
+/**
+ * Finds a tenant by its slug among those the key can see, page by page: an operator
+ * sees every tenant of the instance, which can be more than one page holds.
+ */
+export async function findTenant(settings: Settings, slug: string) {
+  let cursor: string | undefined;
+  do {
+    const page = await request(
+      settings.url,
+      `/tenants?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      settings.token,
+    );
+    if (page.status !== 200) throw refusal(page, "list tenants");
+    const found = (page.body.items as { id: string; slug: string; name?: string }[]).find(
+      (item) => item.slug === slug,
+    );
+    if (found) return found;
+    cursor = page.body.nextCursor ?? undefined;
+  } while (cursor);
+  throw new CliError(`You have no access to a tenant called "${slug}".`);
+}
+
 /** Finds a tenant and workspace by their slugs. */
 export async function locate(
   settings: Settings,
@@ -240,12 +262,7 @@ export async function locate(
 ) {
   if (!tenantSlug || !workspaceSlug)
     throw new CliError("This needs --tenant <slug> and --workspace <slug>.");
-  const tenants = await request(settings.url, "/tenants?limit=200", settings.token);
-  if (tenants.status !== 200) throw refusal(tenants, "list tenants");
-  const tenant = (tenants.body.items as { id: string; slug: string; name?: string }[]).find(
-    (item) => item.slug === tenantSlug,
-  );
-  if (!tenant) throw new CliError(`You have no access to a tenant called "${tenantSlug}".`);
+  const tenant = await findTenant(settings, tenantSlug);
   const workspaces = await request(
     settings.url,
     `/tenants/${tenant.id}/workspaces`,
@@ -519,7 +536,7 @@ async function tenant(args: string[], io: Io) {
   const authorization = `Bearer ${settings.token}`;
 
   if (action !== undefined && ACCESS_ACTIONS.includes(action)) {
-    await tenantAccess(action, rest, io, settings, { request, refusal });
+    await tenantAccess(action, rest, io, settings, { request, refusal, findTenant });
     return;
   }
 
@@ -536,12 +553,7 @@ async function tenant(args: string[], io: Io) {
       throw new CliError("This needs --tenant <slug> and --out <file>.");
     }
     const secret = passphrase(io);
-    const tenants = await request(settings.url, "/tenants?limit=200", settings.token);
-    if (tenants.status !== 200) throw refusal(tenants, "list tenants");
-    const found = (tenants.body.items as { id: string; slug: string }[]).find(
-      (item) => item.slug === values.tenant,
-    );
-    if (!found) throw new CliError(`You have no access to a tenant called "${values.tenant}".`);
+    const found = await findTenant(settings, values.tenant);
     const response = await fetch(`${base}/tenants/${found.id}/exports`, {
       method: "POST",
       headers: { authorization, "content-type": "application/json" },

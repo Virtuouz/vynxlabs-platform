@@ -103,6 +103,10 @@ const Resource = Type.Object({
   }),
   path: Type.String(),
   title: Type.Union([Type.String(), Type.Null()]),
+  definedIn: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "The file in the tenant's repository that defines it, when the bundle said: for a file kept outside the console's folder, and for code built with an SDK that says where each definition is. Null otherwise.",
+  }),
   workspace: Type.String({ description: "The workspace's slug." }),
   ownership: Type.Union([Type.Literal("code"), Type.Literal("ui")]),
   version: Type.Integer(),
@@ -116,6 +120,7 @@ interface ResourceRow {
   key: string;
   path: string;
   title: string | null;
+  meta: { source?: { file: string } };
   ownership: "code" | "ui";
   version: number;
   body: Record<string, unknown>;
@@ -128,6 +133,7 @@ const toResource = (row: ResourceRow, workspace: WorkspaceRef) => ({
   key: row.key,
   path: row.path,
   title: row.title,
+  definedIn: row.meta.source?.file ?? null,
   workspace: workspace.slug,
   ownership: row.ownership,
   version: row.version,

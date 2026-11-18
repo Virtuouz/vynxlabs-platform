@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newId, sql } from "@vynxlabs/db";
 import {
+  type BundleManifest,
+  keyOf,
   parseResourceFiles,
   platformKinds,
   type ResourceFile,
@@ -573,8 +575,19 @@ async function localFiles(
   db: Db,
   workspace: WorkspaceRef,
 ): Promise<ResourceFile[]> {
-  return renderResourceFiles(await activeConsoleManaged(kernel, db, workspace.id), platformKinds);
+  return renderResourceFiles(
+    (await activeConsoleManaged(kernel, db, workspace.id)).filter(inFolder),
+    platformKinds,
+  );
 }
+
+/**
+ * Whether a resource's file is the console's to write: one kept in the folder
+ * the console writes to. A file the repository keeps somewhere else says where
+ * in `source`, and stays there: the console neither writes it into its folder,
+ * where it would be a second definition, nor removes it.
+ */
+const inFolder = (manifest: BundleManifest) => manifest.source === undefined;
 
 /**
  * Commits what the workspace has deployed to its branch. Refused, with nothing
@@ -872,6 +885,11 @@ export async function pull(
         ...remoteFiles.filter((file) => taken.has(stemOf(file.path))),
       ];
       const parsed = parseResourceFiles(merged);
+      // What the repository keeps outside the folder is not on this side of the sync. It is
+      // still part of what the workspace runs, and is carried as it is.
+      const elsewhere = (await activeConsoleManaged(kernel, db, workspace.id)).filter(
+        (manifest) => !inFolder(manifest),
+      );
       if (parsed.problems.length > 0) {
         const problem = `The files on the branch are not valid: ${parsed.problems.join(" ")}`;
         return {
@@ -889,7 +907,7 @@ export async function pull(
               audit,
               workspace,
               actor.principal,
-              parsed.manifests,
+              [...parsed.manifests, ...elsewhere],
               `Pulled ${tip.commit.slice(0, 7)} from ${link.branch}`,
               options.allowDelete ?? [],
             ),
@@ -1119,19 +1137,24 @@ export async function draftFiles(
     .selectAll()
     .where("workspace_id", "=", workspace.id)
     .execute();
-  const byPath = new Map(deployed.map((manifest) => [manifest.path, manifest]));
+  // By key: a draft that renames a resource replaces its file with one at the new path.
+  const byKey = new Map(deployed.map((manifest) => [keyOf(manifest), manifest]));
   for (const draft of drafts) {
-    if (draft.deleted) byPath.delete(draft.path);
-    else
-      byPath.set(draft.path, {
+    if (draft.deleted) byKey.delete(draft.key);
+    else {
+      const title = draft.title ?? byKey.get(draft.key)?.title;
+      byKey.set(draft.key, {
         kind: draft.kind,
         schemaVersion: draft.schema_version,
         path: draft.path,
+        ...(draft.key !== draft.path ? { key: draft.key } : {}),
+        ...(title ? { title } : {}),
         ownership: "ui",
         body: draft.body as Record<string, unknown>,
       });
+    }
   }
-  return renderResourceFiles([...byPath.values()], platformKinds);
+  return renderResourceFiles([...byKey.values()].filter(inFolder), platformKinds);
 }
 
 /**

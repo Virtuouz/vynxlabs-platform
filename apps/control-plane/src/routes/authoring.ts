@@ -365,7 +365,10 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const files = withDrafts
           ? await draftFiles(kernel, db, workspace)
           : renderResourceFiles(
-              await activeConsoleManaged(kernel, db, workspace.id),
+              // What the repository keeps outside the console's folder is there already.
+              (await activeConsoleManaged(kernel, db, workspace.id)).filter(
+                (manifest) => manifest.source === undefined,
+              ),
               platformKinds,
             );
         const drafts = withDrafts

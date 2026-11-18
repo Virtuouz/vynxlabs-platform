@@ -524,6 +524,36 @@ describe("safety", () => {
     expect((await alice.post(`${ws()}/git/push`, {})).status).toBe(200);
   });
 
+  test("a resource renamed in the console is committed as its file moved, saying the key it keeps", async () => {
+    const code = "export default async () => ({ moved: true });\n";
+    await deployDraft("moves/one", code);
+    expect((await alice.post(`${ws()}/git/push`, {})).status).toBe(200);
+    expect(sh(["show", "vx/dev:platform/moves/one.script.ts"], bare())).toBe(code.trim());
+
+    const renamed = await alice.put(`${ws()}/drafts/moves/one`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody(code),
+      path: "moves/two",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    const deployed = await alice.post(`${ws()}/changes/deploy`, {});
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.summary).toMatchObject({ renamed: 1, created: 0, deleted: 0 });
+    expect((await alice.post(`${ws()}/git/push`, {})).status).toBe(200);
+
+    expect(sh(["show", "vx/dev:platform/moves/two.script.yaml"], bare()).split("\n")[0]).toBe(
+      "key: moves/one",
+    );
+    expect(sh(["show", "vx/dev:platform/moves/two.script.ts"], bare())).toBe(code.trim());
+    expect(() => sh(["show", "vx/dev:platform/moves/one.script.yaml"], bare())).toThrow();
+    // Read back from the branch it is the same resource: a pull finds nothing to do.
+    expect(await state()).toBe("synced");
+    const pulled = await alice.post(`${ws()}/git/pull`, {});
+    expect(pulled.status, JSON.stringify(pulled.body)).toBe(200);
+    expect(pulled.body.applied).toEqual([]);
+  });
+
   test("a release of the tenant's access is committed to the tenant's branch, never the default one", async () => {
     const main = sh(["rev-parse", "main"], bare());
     const saved = await alice.put(`/tenants/${tenant}/git-repository`, {

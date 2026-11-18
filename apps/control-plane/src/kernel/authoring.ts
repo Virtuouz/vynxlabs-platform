@@ -108,10 +108,19 @@ export async function saveDraft(
   }
   const resource = await trx
     .selectFrom("resource")
-    .select(["kind", "ownership", "key"])
+    .select(["kind", "ownership", "key", "meta"])
     .where("workspace_id", "=", workspace.id)
     .where("path", "=", input.path)
     .executeTakeFirst();
+  // A file the repository keeps outside the console's folder is the repository's to change.
+  // A draft of it would be written into the console's folder as a second definition.
+  if (resource?.ownership === "ui" && resource.meta.source) {
+    throw new HttpError(
+      409,
+      "defined_in_file",
+      `${input.path} is defined in ${resource.meta.source.file}, in the tenant's repository. Change it there: the console writes only to its own folder.`,
+    );
+  }
   const existing = await trx
     .selectFrom("resource_draft")
     .selectAll()

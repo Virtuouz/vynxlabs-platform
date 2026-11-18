@@ -584,6 +584,68 @@ describe("deploying drafts", () => {
   });
 });
 
+describe("a file the repository keeps outside the console's folder", () => {
+  test("is deployed with where it is, is not the console's to change, and is not written into the console's folder", async () => {
+    // As the CLI builds it: the active bundle, and one more resource from a file under src/.
+    const active = await t.db
+      .selectFrom("workspace")
+      .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
+      .select("bundle.storage_key")
+      .where("workspace.id", "=", dev)
+      .executeTakeFirstOrThrow();
+    const { digest: _digest, ...content } = JSON.parse(
+      (await t.kernel.storage.get(active.storage_key)).toString("utf8"),
+    ) as Bundle;
+    const kept: BundleManifest = {
+      kind: "variable",
+      schemaVersion: 1,
+      path: "lending/limit",
+      title: "Lending limit",
+      source: { file: "src/lending/limit.variable.yaml", generated: false },
+      ownership: "ui",
+      body: { default: "5" },
+    };
+    const unsigned = {
+      ...content,
+      formatVersion: 4 as const,
+      assets: content.assets ?? [],
+      manifests: [...content.manifests, kept],
+    };
+    const uploaded = await alice.post(`${ws()}/bundles`, {
+      ...unsigned,
+      digest: bundleDigest(unsigned),
+    });
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBeLessThan(300);
+    const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect((await alice.get(`${ws()}/resources/lending/limit`)).body).toMatchObject({
+      title: "Lending limit",
+      definedIn: "src/lending/limit.variable.yaml",
+      ownership: "ui",
+    });
+
+    const refused = await alice.put(`${ws()}/drafts/lending/limit`, {
+      kind: "variable",
+      schemaVersion: 1,
+      body: { default: "6" },
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("defined_in_file");
+    expect(refused.body.detail).toContain("src/lending/limit.variable.yaml");
+
+    // What `platform pull` and a push write is the console's folder: this file is not in it.
+    const files = (await alice.get(`${ws()}/resource-files`)).body.files as { path: string }[];
+    expect(files.some((file) => file.path.includes("limit"))).toBe(false);
+    // And a deploy of other drafts carries it along untouched.
+    await draft("orders/extra", scriptBody("export default async () => ({});\n"));
+    const again = await alice.post(`${ws()}/changes/deploy`, {});
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    expect((await alice.get(`${ws()}/resources/lending/limit`)).body.definedIn).toBe(
+      "src/lending/limit.variable.yaml",
+    );
+  });
+});
+
 describe("flows drawn in the console", () => {
   test("a flow is a draft like any other, carries where its steps sit, and needs no permission to write code", async () => {
     const body = {

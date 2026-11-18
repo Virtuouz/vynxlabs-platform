@@ -16,6 +16,8 @@ export interface CatalogColumn {
 
 export interface CatalogTable {
   id: string;
+  /** The resource that declares it. None for a retired table. */
+  resourceId?: string | null;
   name: string;
   physicalName: string;
   status: "active" | "retired";
@@ -114,12 +116,28 @@ function wanted(name: string, column: TableColumn, physicalName: string): NewCol
  *
  * Nothing is ever dropped. What the definition no longer has is retired.
  */
-export function planTable(catalog: CatalogTable[], name: string, body: TableBody): Plan {
+export function planTable(
+  catalog: CatalogTable[],
+  name: string,
+  body: TableBody,
+  /** The resource that declares the table. Its table is its own, whatever its name is now. */
+  resourceId?: string,
+): Plan {
   const steps: Step[] = [];
   const issues: Plan["issues"] = [];
   const policy: TablePolicy = body.policy ?? { type: "open" };
 
   let table = catalog.find((candidate) => candidate.name === name && candidate.status === "active");
+  if (!table && resourceId !== undefined) {
+    // The resource was renamed: its table follows it, with its rows, and nothing need say so.
+    const own = catalog.find(
+      (candidate) => candidate.resourceId === resourceId && candidate.status === "active",
+    );
+    if (own) {
+      steps.push({ op: "rename_table", tableId: own.id, from: own.name, to: name });
+      table = own;
+    }
+  }
   if (!table && body.renamedFrom !== undefined) {
     // A table that was removed and then renamed in the same deploy is retired by now.
     const source = catalog.find((candidate) => candidate.name === body.renamedFrom);

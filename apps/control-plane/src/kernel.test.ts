@@ -5,6 +5,7 @@ import { mutate, SYSTEM } from "./kernel/audit.js";
 import { authOptions } from "./kernel/auth.js";
 import { check, grants } from "./kernel/authorize.js";
 import { Vault } from "./kernel/crypto.js";
+import { PATH_EXEMPT, PATH_STATE } from "./kernel/rename.js";
 import { revealSecret } from "./kernel/secrets.js";
 import { ADMIN, type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -790,6 +791,34 @@ describe("resource registry", () => {
       { version: 2, path: "access/reviewer" },
       { version: 3, path: "access/roles/reviewer" },
     ]);
+  });
+
+  test("every column that holds a resource's path is carried by a rename, or says why not", async () => {
+    const columns = (
+      await sql<{ name: string }>`
+        select c.table_name || '.' || c.column_name as name
+        from information_schema.columns c
+        where c.table_schema = 'public' and c.data_type = 'text'
+          and (c.column_name = 'path' or c.column_name like '%\_path')
+          and c.table_name not in (select relname from pg_class where relispartition)
+          and exists (
+            select 1 from information_schema.columns w
+            where w.table_schema = 'public' and w.table_name = c.table_name
+              and w.column_name = 'workspace_id'
+          )
+        order by 1
+      `.execute(t.db)
+    ).rows.map((row) => row.name);
+    const known = new Set([
+      ...PATH_STATE.map((state) => `${state.table}.${state.column}`),
+      ...Object.keys(PATH_EXEMPT),
+    ]);
+    expect(columns.filter((name) => !known.has(name))).toEqual([]);
+    // And nothing is listed that is no longer there.
+    const named = new Set(columns);
+    expect(
+      [...known].filter((name) => !named.has(name) && name !== "member_recent_item.ref"),
+    ).toEqual([]);
   });
 
   test("refuses what the manifest rules forbid", async () => {

@@ -51,6 +51,7 @@ export async function loadCatalog(db: Db | Trx, workspaceId: string): Promise<Ca
     .execute();
   return tables.map((table) => ({
     id: table.id,
+    resourceId: table.resource_id,
     name: table.name,
     physicalName: table.physical_name,
     status: table.status,
@@ -119,7 +120,7 @@ export async function applyTable(
 ): Promise<Step[]> {
   const body = resource.body as unknown as TableBody;
   const catalog = await loadCatalog(trx, resource.workspaceId);
-  const plan = planTable(catalog, resource.path, body);
+  const plan = planTable(catalog, resource.path, body, resource.id);
   if (plan.issues.length > 0) {
     throw badRequest(
       `The table "${resource.path}" cannot be changed as its definition asks.`,

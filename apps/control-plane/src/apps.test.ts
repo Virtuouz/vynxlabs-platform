@@ -532,6 +532,7 @@ describe("end users", () => {
         id: ed.id,
         name: "Ed",
         email: "ed@customer.example",
+        groupKeys: [],
         groups: [],
         attributes: {},
       },

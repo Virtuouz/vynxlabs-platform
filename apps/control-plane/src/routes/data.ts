@@ -13,6 +13,7 @@ import {
   describeTable,
   findRows,
   getRow,
+  groupValues,
   insertRows,
   type Row,
   scopeFor,
@@ -265,13 +266,13 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const group =
           (await db
             .selectFrom("end_user_group")
-            .select(["id", "name"])
+            .select(["id", "key", "name"])
             .where("id", "=", asGroup)
             .where("tenant_id", "=", tenantId)
             .executeTakeFirst()) ??
           (await db
             .selectFrom("principal_group")
-            .select(["id", "name"])
+            .select(["id", "key", "name"])
             .where("id", "=", asGroup)
             .where("tenant_id", "=", tenantId)
             .executeTakeFirst());
@@ -279,7 +280,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           principalId: "00000000-0000-0000-0000-000000000000",
           all: false,
-          groups: [group.id, group.name],
+          groups: groupValues([group]),
           attributes: {},
         } satisfies DataScope;
       }

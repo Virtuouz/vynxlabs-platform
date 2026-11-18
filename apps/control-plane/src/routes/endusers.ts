@@ -99,7 +99,13 @@ const Session = Type.Object({
     email: NullableString,
     groups: Type.Optional(
       Type.Array(Type.String(), {
-        description: "The names of an end user's groups. Empty for anyone else.",
+        description:
+          "What an end user's groups are called. Empty for anyone else. A name can change: an app that decides by a group should read `groupKeys`.",
+      }),
+    ),
+    groupKeys: Type.Optional(
+      Type.Array(Type.String(), {
+        description: "The keys of an end user's groups, which never change. Empty for anyone else.",
       }),
     ),
     attributes: Type.Optional(

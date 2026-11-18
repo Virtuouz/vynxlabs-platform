@@ -9,7 +9,12 @@ import { Type } from "typebox";
 import { boundInside, check } from "../kernel/authorize.js";
 import { forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { startRun } from "../kernel/execution/runs.js";
-import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
+import {
+  approversOf,
+  approverTitles,
+  describeApprovers,
+  isApprover,
+} from "../kernel/flows/approvers.js";
 import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -509,7 +514,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           throw new HttpError(
             403,
             "not_an_approver",
-            `Only ${describeApprovers(named)} may decide this approval.`,
+            `Only ${describeApprovers(named, await approverTitles(db, named))} may decide this approval.`,
           );
         }
         const decided = await ctx.mutate(async (trx, audit) => {

@@ -14,7 +14,12 @@ import {
   stepState,
 } from "../kernel/execution/state.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
-import { approversOf, describeApprovers, isApprover } from "../kernel/flows/approvers.js";
+import {
+  approversOf,
+  approverTitles,
+  describeApprovers,
+  isApprover,
+} from "../kernel/flows/approvers.js";
 import { expressionContext } from "../kernel/flows/context.js";
 import {
   cancelFlowRun,
@@ -1312,7 +1317,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where(sql<boolean>`step_run.detail ? 'title'`)
         .orderBy("step_run.started_at");
     type PendingRow = Awaited<ReturnType<ReturnType<typeof pending>["execute"]>>[number];
-    const toApproval = (row: PendingRow) => ({
+    const toApproval = async (row: PendingRow) => ({
       flowRunId: row.flow_run_id,
       workspaceId: row.workspace_id,
       flow: row.flow_path,
@@ -1321,13 +1326,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       detail: redact(row.detail.detail ?? null),
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
-      approvers: (() => {
+      approvers: await (async () => {
         const named = approversOf(row.detail);
         return named
           ? {
               groups: named.groups ?? [],
               roles: named.roles ?? [],
-              text: describeApprovers(named) ?? "",
+              text: describeApprovers(named, await approverTitles(db, named)) ?? "",
             }
           : null;
       })(),
@@ -1430,7 +1435,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const rows = await pending(params.t)
           .where("flow_run.workspace_id", "=", params.w)
           .execute();
-        return { items: rows.map(toApproval) };
+        return { items: await Promise.all(rows.map(toApproval)) };
       },
     );
 
@@ -1473,7 +1478,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ))
           )
             continue;
-          items.push(toApproval(row));
+          items.push(await toApproval(row));
         }
         // With nothing to show, answer exactly as the permission check would.
         if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });
@@ -1519,7 +1524,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           throw new HttpError(
             403,
             "not_an_approver",
-            `Only ${describeApprovers(named)} may decide this approval.`,
+            `Only ${describeApprovers(named, await approverTitles(db, named))} may decide this approval.`,
           );
         }
         await ctx.mutate(async (trx, audit) => {

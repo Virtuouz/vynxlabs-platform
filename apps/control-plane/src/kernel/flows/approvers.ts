@@ -2,8 +2,99 @@ import { sql } from "@vynxlabs/db";
 import type { Db, Trx } from "../audit.js";
 
 export interface Approvers {
+  /** As the flow names them: a group by its key, or by what it was called when the flow was written. */
   groups?: string[];
   roles?: string[];
+  /**
+   * Who that was when the step began to wait, by ID. A step that has these is
+   * matched by them alone, so a group can be renamed while the step waits. A
+   * step that began to wait before they were kept is matched by name.
+   */
+  ids?: {
+    groups: string[];
+    roles: string[];
+    /**
+     * Those that were not there to be found when the step began to wait: a group
+     * made afterwards, say. They are still looked for, by key or by name.
+     */
+    later?: { groups: string[]; roles: string[] };
+  };
+}
+
+/**
+ * Who a step's approvers are, by ID, as the tenant is now. A group is named by
+ * its key, or by what it is called. A role is every role of that name the
+ * workspace can see: its own, the tenant's, and the one every tenant has.
+ */
+export async function resolveApprovers(
+  db: Db | Trx,
+  at: { tenantId: string; workspaceId: string },
+  approvers: Approvers,
+): Promise<{
+  groups: string[];
+  roles: string[];
+  later: { groups: string[]; roles: string[] };
+  unknown: string[];
+}> {
+  const groups: string[] = [];
+  const unknown: string[] = [];
+  const later = { groups: [] as string[], roles: [] as string[] };
+  for (const named of approvers.groups ?? []) {
+    const found = await db
+      .selectFrom("principal_group")
+      .select(["id", "key"])
+      .where("tenant_id", "=", at.tenantId)
+      .where((eb) => eb.or([eb("key", "=", named), eb("name", "=", named)]))
+      .execute();
+    // A key wins over another group that happens to be called the same.
+    const group = found.find((one) => one.key === named) ?? found[0];
+    if (group) groups.push(group.id);
+    else {
+      later.groups.push(named);
+      unknown.push(`the group "${named}"`);
+    }
+  }
+  const roles: string[] = [];
+  for (const named of approvers.roles ?? []) {
+    const found = await db
+      .selectFrom("role")
+      .select("id")
+      .where("name", "=", named)
+      .where((eb) =>
+        eb.or([
+          eb("workspace_id", "=", at.workspaceId),
+          eb.and([eb("tenant_id", "=", at.tenantId), eb("workspace_id", "is", null)]),
+          eb("tenant_id", "is", null),
+        ]),
+      )
+      .execute();
+    if (found.length > 0) roles.push(...found.map((one) => one.id));
+    else {
+      later.roles.push(named);
+      unknown.push(`the role "${named}"`);
+    }
+  }
+  return { groups: [...new Set(groups)], roles: [...new Set(roles)], later, unknown };
+}
+
+/** What each of a step's groups is called now, for saying who may decide it. */
+export async function approverTitles(
+  db: Db | Trx,
+  approvers: Approvers | undefined,
+): Promise<string[] | undefined> {
+  const ids = approvers?.ids?.groups ?? [];
+  if (!approvers?.ids) return undefined;
+  const later = approvers.ids.later?.groups ?? [];
+  if (ids.length === 0) return later.length > 0 ? later : undefined;
+  const rows = await db
+    .selectFrom("principal_group")
+    .select(["id", "name"])
+    .where("id", "in", ids)
+    .execute();
+  return [
+    ...ids.map((id) => rows.find((row) => row.id === id)?.name ?? "a deleted group"),
+    ...later,
+  ];
 }
 
 /** The approvers a waiting step names, read from what the engine kept on it. */
@@ -12,7 +103,13 @@ export function approversOf(detail: Record<string, unknown>): Approvers | undefi
   if (!named) return undefined;
   const groups = (named.groups ?? []).filter((name) => typeof name === "string");
   const roles = (named.roles ?? []).filter((name) => typeof name === "string");
-  return groups.length + roles.length > 0 ? { groups, roles } : undefined;
+  if (groups.length + roles.length === 0) return undefined;
+  const ids = detail.approverIds as Approvers["ids"] | undefined;
+  return {
+    groups,
+    roles,
+    ...(ids && Array.isArray(ids.groups) && Array.isArray(ids.roles) ? { ids } : {}),
+  };
 }
 
 /**
@@ -29,6 +126,43 @@ export async function isApprover(
 ): Promise<boolean> {
   if (!approvers) return true;
   if (!memberId) return false;
+  if (approvers.ids) {
+    const { groups: groupIds, roles: roleIds } = approvers.ids;
+    const byId = await sql<{ yes: boolean }>`
+      select (
+        ${
+          groupIds.length > 0
+            ? sql`exists (
+          select 1 from group_member m
+          where m.member_id = ${memberId} and m.group_id in (${sql.join(groupIds)})
+        )`
+            : sql`false`
+        }
+        or
+        ${
+          roleIds.length > 0
+            ? sql`exists (
+          select 1 from binding b
+          where b.role_id in (${sql.join(roleIds)})
+            and b.tenant_id = ${at.tenantId}
+            and (b.scope_type = 'tenant' or (b.scope_type = 'workspace' and b.workspace_id = ${at.workspaceId}))
+            and (
+              (b.principal_type = 'member' and b.principal_id = ${memberId})
+              or (b.principal_type = 'group' and b.principal_id in (
+                select group_id from group_member where member_id = ${memberId}
+              ))
+            )
+        )`
+            : sql`false`
+        }
+      ) as yes
+    `.execute(db);
+    if (byId.rows[0]?.yes) return true;
+    const later = approvers.ids.later;
+    if (!later || later.groups.length + later.roles.length === 0) return false;
+    // What was not there when the step began to wait is looked for now, as it was named.
+    return isApprover(db, at, memberId, { groups: later.groups, roles: later.roles });
+  }
   const groups = approvers.groups ?? [];
   const roles = approvers.roles ?? [];
   const found = await sql<{ yes: boolean }>`
@@ -39,7 +173,7 @@ export async function isApprover(
         select 1 from principal_group g
         join group_member m on m.group_id = g.id
         where g.tenant_id = ${at.tenantId} and m.member_id = ${memberId}
-          and g.name in (${sql.join(groups)})
+          and (g.key in (${sql.join(groups)}) or g.name in (${sql.join(groups)}))
       )`
           : sql`false`
       }
@@ -67,10 +201,14 @@ export async function isApprover(
 }
 
 /** "the Finance group or the approver role": the approvers in words. */
-export function describeApprovers(approvers: Approvers | undefined): string | null {
+export function describeApprovers(
+  approvers: Approvers | undefined,
+  /** What the groups are called now, from `approverTitles`. Without it, as the flow names them. */
+  titles?: string[],
+): string | null {
   if (!approvers) return null;
   const parts = [
-    ...(approvers.groups ?? []).map((name) => `the ${name} group`),
+    ...(titles ?? approvers.groups ?? []).map((name) => `the ${name} group`),
     ...(approvers.roles ?? []).map((name) => `the ${name} role`),
   ];
   if (parts.length === 0) return null;

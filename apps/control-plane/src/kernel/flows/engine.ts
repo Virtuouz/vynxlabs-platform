@@ -20,6 +20,7 @@ import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
 import { expireLinks, mailApprovers } from "./approval-links.js";
+import { resolveApprovers } from "./approvers.js";
 import { buildContext, type ContextStep, readOutput } from "./context.js";
 import { ExpressionError } from "./expressions.js";
 
@@ -752,14 +753,37 @@ class Advance {
           break;
         case "approval": {
           const detail = node.detail ? await this.#evaluate("detail", node.detail) : null;
+          const named =
+            node.approvers &&
+            ((node.approvers.groups?.length ?? 0) > 0 || (node.approvers.roles?.length ?? 0) > 0)
+              ? node.approvers
+              : undefined;
+          // Who the approvers are is settled now, by ID: the group can be renamed while the
+          // step waits, and whoever was in it when it was asked is still who decides.
+          const resolved = named
+            ? await resolveApprovers(
+                this.#trx,
+                {
+                  tenantId: this.#flowRun.tenant_id,
+                  workspaceId: this.#flowRun.workspace_id,
+                },
+                named,
+              )
+            : undefined;
           await this.#update(step, {
             status: "waiting",
             detail: {
               title: node.title,
               detail,
-              ...(node.approvers &&
-              ((node.approvers.groups?.length ?? 0) > 0 || (node.approvers.roles?.length ?? 0) > 0)
-                ? { approvers: node.approvers }
+              ...(named && resolved
+                ? {
+                    approvers: named,
+                    approverIds: {
+                      groups: resolved.groups,
+                      roles: resolved.roles,
+                      ...(resolved.unknown.length > 0 ? { later: resolved.later } : {}),
+                    },
+                  }
                 : {}),
             },
             wake_at: node.timeoutSeconds ? new Date(Date.now() + node.timeoutSeconds * 1000) : null,

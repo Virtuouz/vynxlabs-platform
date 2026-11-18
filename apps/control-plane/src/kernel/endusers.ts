@@ -282,22 +282,28 @@ export async function endUserIdentity(
   db: Db | Trx,
   tenantId: string,
   principal: { type: string; id: string | null },
-): Promise<{ groups: string[]; attributes: Record<string, string> }> {
-  if (principal.type !== "end_user" || !principal.id) return { groups: [], attributes: {} };
+): Promise<{ groups: string[]; groupKeys: string[]; attributes: Record<string, string> }> {
+  const nobody = { groups: [], groupKeys: [], attributes: {} };
+  if (principal.type !== "end_user" || !principal.id) return nobody;
   const user = await db
     .selectFrom("end_user")
     .select("attributes")
     .where("id", "=", principal.id)
     .where("tenant_id", "=", tenantId)
     .executeTakeFirst();
-  if (!user) return { groups: [], attributes: {} };
+  if (!user) return nobody;
   const groups = await db
     .selectFrom("end_user_group_member")
     .innerJoin("end_user_group", "end_user_group.id", "end_user_group_member.group_id")
-    .select("end_user_group.name")
+    .select(["end_user_group.name", "end_user_group.key"])
     .where("end_user_group_member.end_user_id", "=", principal.id)
     .where("end_user_group.tenant_id", "=", tenantId)
     .orderBy("end_user_group.name")
     .execute();
-  return { groups: groups.map((group) => group.name), attributes: user.attributes ?? {} };
+  return {
+    groups: groups.map((group) => group.name),
+    // What an app decides by: a group's key is the same whatever the group is called.
+    groupKeys: groups.map((group) => group.key),
+    attributes: user.attributes ?? {},
+  };
 }

@@ -1,6 +1,13 @@
 import { describe, expect, test } from "vitest";
 import type { BundleManifest } from "./bundle.js";
-import { entryFor, parseResourceFiles, renderResourceFiles } from "./files.js";
+import {
+  entryFor,
+  ignoredFolder,
+  parseRepositoryConfig,
+  parseRepositoryFiles,
+  parseResourceFiles,
+  renderResourceFiles,
+} from "./files.js";
 import { platformKinds } from "./kinds.js";
 
 const script: BundleManifest = {
@@ -159,7 +166,7 @@ describe("resources as files", () => {
       { path: "Orders/Sync.script.yaml", content: "schemaVersion: 1\nbody: {}\n" },
       { path: "bad.variable.yaml", content: "schemaVersion: 1\nbody: [unclosed\n" },
       { path: "nobody.variable.yaml", content: "schemaVersion: 1\n" },
-      { path: "extra.variable.yaml", content: "schemaVersion: 1\nbody: {}\npath: other\n" },
+      { path: "extra.variable.yaml", content: "schemaVersion: 1\nbody: {}\nowner: me\n" },
       { path: "lonely.script.ts", content: "export default async () => 1;\n" },
       { path: "bare.script.yaml", content: "schemaVersion: 1\nbody: {}\n" },
       { path: "note.variable.ts", content: "x" },
@@ -173,12 +180,140 @@ describe("resources as files", () => {
       "README.md: is not named <path>.<kind>.yaml or <path>.<kind>.ts.",
       expect.stringMatching(/^bad\.variable\.yaml: is not valid YAML\./),
       "bare.script.yaml: needs its source beside it, as bare.script.ts.",
-      "extra.variable.yaml: has keys other than schemaVersion and body: path.",
+      "extra.variable.yaml: has keys other than key, path, title, schemaVersion and body: owner.",
       "nobody.variable.yaml: needs a body.",
       "twice.variable.yaml: the path twice is already used by twice.event.yaml.",
       "lonely.script.ts: has no lonely.script.yaml beside it.",
       "note.variable.ts: a variable has no source.",
     ]);
     expect(manifests.map((manifest) => manifest.path)).toEqual(["note", "ok/fine", "twice"]);
+  });
+});
+
+describe("what a file says beside its body", () => {
+  const kinds = new Set(platformKinds.map((kind) => kind.kind));
+  const variable = (extra = "") => `${extra}schemaVersion: 1\nbody:\n  default: "5"\n`;
+
+  test("a key and a title are read, written back only when they say something, and the bytes of a file without them do not move", () => {
+    const plain = parseResourceFiles([{ path: "limits/size.variable.yaml", content: variable() }]);
+    expect(plain.manifests[0]).toEqual({
+      kind: "variable",
+      schemaVersion: 1,
+      path: "limits/size",
+      ownership: "ui",
+      body: { default: "5" },
+    });
+    expect(renderResourceFiles(plain.manifests, platformKinds)[0]?.content).toBe(variable());
+
+    const moved = parseResourceFiles([
+      {
+        path: "lending/limits/size.variable.yaml",
+        content: variable("key: limits/size\ntitle: Batch size\n"),
+      },
+    ]);
+    expect(moved.problems).toEqual([]);
+    expect(moved.manifests[0]).toMatchObject({
+      path: "lending/limits/size",
+      key: "limits/size",
+      title: "Batch size",
+    });
+    expect(renderResourceFiles(moved.manifests, platformKinds)).toEqual([
+      {
+        path: "lending/limits/size.variable.yaml",
+        content: variable("key: limits/size\ntitle: Batch size\n"),
+      },
+    ]);
+    // A key that is the path says nothing, and is not written.
+    const same = parseResourceFiles([
+      { path: "limits/size.variable.yaml", content: variable("key: limits/size\n") },
+    ]);
+    expect(renderResourceFiles(same.manifests, platformKinds)[0]?.content).toBe(variable());
+  });
+
+  test("a script's code is named by its key, so moving it leaves the code's name as it was", () => {
+    const yaml =
+      "input: {}\noutput: {}\ntimeoutSeconds: 30\nretries: { limit: 0, delaySeconds: 0, backoff: false }\nuses: { connections: [], secrets: [], variables: [] }\n"
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => `  ${line}`)
+        .join("\n");
+    const files = (path: string, head = "") => [
+      { path: `${path}.script.yaml`, content: `${head}schemaVersion: 1\nbody:\n${yaml}\n` },
+      { path: `${path}.script.ts`, content: "export default async () => ({});\n" },
+    ];
+    const before = parseResourceFiles(files("requests/submit")).manifests[0];
+    const after = parseResourceFiles(files("lending/file", "key: requests/submit\n")).manifests[0];
+    expect(after?.body.entry).toBe(before?.body.entry);
+    expect(after?.path).toBe("lending/file");
+  });
+
+  test("a key or a path that is not written as one, and a key used twice, are said by file", () => {
+    expect(
+      parseResourceFiles([
+        { path: "a.variable.yaml", content: variable("key: Not A Key\n") },
+        { path: "b.variable.yaml", content: variable("key: shared\n") },
+        { path: "c.variable.yaml", content: variable("key: shared\n") },
+        { path: "d.variable.yaml", content: variable("title: 4\n") },
+      ]).problems,
+    ).toEqual([
+      "a.variable.yaml: its key is written as a path is: lowercase letters, digits, hyphens and underscores, in folders.",
+      "c.variable.yaml: the key shared is already the key of b.variable.yaml. A key belongs to one resource.",
+      "d.variable.yaml: its title must be text.",
+    ]);
+  });
+
+  test("files are found anywhere in a repository, each getting its path from the root it is under", () => {
+    const parsed = parseRepositoryFiles(
+      [
+        { path: "platform/limits/size.variable.yaml", content: variable() },
+        { path: "src/lending/limits/count.variable.yaml", content: variable() },
+        { path: "src/Features/Desk/open.variable.yaml", content: variable("path: desk/open\n") },
+        {
+          path: "docs/notes/elsewhere.variable.yaml",
+          content: variable("path: notes/elsewhere\n"),
+        },
+        { path: "docs/lost.variable.yaml", content: variable() },
+        // Nobody's: not a kind, a test, a config, and code beside no resource.
+        { path: "src/orders.test.ts", content: "" },
+        { path: "vite.config.ts", content: "" },
+        { path: "src/helpers.script.ts", content: "export const x = 1;" },
+        {
+          path: "src/lending/tech-desk.group.yaml",
+          content: "title: Tech Desk\nschemaVersion: 1\n",
+        },
+      ],
+      { folder: "platform", roots: ["src"], kinds },
+    );
+    expect(parsed.problems).toEqual([
+      "docs/lost.variable.yaml: is outside every folder that gives a resource its path (platform, src). Say its path in the file, as path: <path>, or keep it under one of them.",
+    ]);
+    expect(parsed.manifests.map((one) => [one.path, one.source?.file ?? null])).toEqual([
+      ["notes/elsewhere", "docs/notes/elsewhere.variable.yaml"],
+      // Where the console would have written it: it need not say where it is.
+      ["limits/size", null],
+      ["desk/open", "src/Features/Desk/open.variable.yaml"],
+      ["lending/limits/count", "src/lending/limits/count.variable.yaml"],
+    ]);
+    expect(parsed.files.get("lending/limits/count")).toBe("src/lending/limits/count.variable.yaml");
+  });
+
+  test("a repository says its roots and what to leave unread in vynxlabs.yaml", () => {
+    expect(parseRepositoryConfig(undefined)).toEqual({
+      config: { roots: [], ignore: [] },
+      problems: [],
+    });
+    const read = parseRepositoryConfig("roots: [src/, ./features]\nignore:\n  - vendor\n");
+    expect(read).toEqual({
+      config: { roots: ["src", "features"], ignore: ["vendor"] },
+      problems: [],
+    });
+    expect(ignoredFolder("vendor/lib", read.config)).toBe(true);
+    expect(ignoredFolder("src/node_modules", read.config)).toBe(true);
+    expect(ignoredFolder(".platform", read.config)).toBe(true);
+    expect(ignoredFolder("src/lending", read.config)).toBe(false);
+    expect(parseRepositoryConfig("roots: src\nfolders: [a]\n").problems).toEqual([
+      "vynxlabs.yaml: has keys other than roots and ignore: folders.",
+      "vynxlabs.yaml: roots is a list of folders.",
+    ]);
   });
 });

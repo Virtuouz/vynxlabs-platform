@@ -37,9 +37,15 @@ export {
 } from "./envelope.js";
 export {
   entryFor,
+  ignoredFolder,
+  isResourceFile,
   type ParsedResources,
+  parseRepositoryConfig,
+  parseRepositoryFiles,
   parseResourceFiles,
+  REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
+  type RepositoryConfig,
   type ResourceFile,
   renderResourceFiles,
 } from "./files.js";

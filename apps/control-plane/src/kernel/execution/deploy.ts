@@ -523,6 +523,33 @@ export async function deployBundle(
     });
   }
 
+  // Who may approve a step is found when the step begins to wait. A group the tenant does not
+  // have, or one named by what it is called, is said now, where it can still be put right.
+  for (const manifest of content.manifests) {
+    if (manifest.kind !== "flow") continue;
+    const nodes = (
+      manifest.body as { nodes?: Record<string, { approvers?: { groups?: string[] } }> }
+    ).nodes;
+    for (const [node, body] of Object.entries(nodes ?? {})) {
+      for (const named of body.approvers?.groups ?? []) {
+        const found = await trx
+          .selectFrom("principal_group")
+          .select(["key", "name"])
+          .where("tenant_id", "=", workspace.tenantId)
+          .where((eb) => eb.or([eb("key", "=", named), eb("name", "=", named)]))
+          .execute();
+        if (found.some((group) => group.key === named)) continue;
+        const byName = found[0];
+        summary.warnings.push({
+          path: manifest.path,
+          message: byName
+            ? `the step ${node} of ${manifest.path} names its approvers by the group's title "${named}", which can change. Name it by key: "${byName.key}".`
+            : `the step ${node} of ${manifest.path} asks the group "${named}" to approve, and this tenant has no such group. Until it has, nobody in it can decide the step.`,
+        });
+      }
+    }
+  }
+
   if (
     summary.breaking.length > 0 &&
     current.type === "production" &&

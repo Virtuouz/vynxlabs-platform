@@ -1,6 +1,6 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M3 built. Not pushed.
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 and M6 not started. Not pushed.
 Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
@@ -198,6 +198,29 @@ Each is one file, `<key>.<kind>.yaml`, with the title beside the body. A file's 
 - **The console cannot set `tenantBranch`.** It has no control for `releaseBranch` either: both are set through `PUT …/git-repository`.
 - **Deleting a role that is still bound answers as before** (409, "still bound"), and deleting a group no longer removes access a bundle gave it.
 - **I overwrote `routes/access.ts` while adding the release routes**, which already held the routes that explain why someone has the access they have. It was restored from git before anything was committed, and the new routes are in `routes/access-releases.ts`.
+
+## M4: access by ID
+
+**Approvers.** When a step begins to wait for approval, who its approvers are is resolved and kept on the step as `approverIds`, beside the names the flow gave (`kernel/flows/engine.ts`, `kernel/flows/approvers.ts`).
+- A group is named in a flow by its key, or by what it is called. A role is every role of that name the workspace can see, as before.
+- `isApprover` matches by ID when the step has them. A group renamed while the step waits is still its approver, and the step says who may decide by what the group is called now.
+- An approver that was not there to be found, such as a group made after the step began to wait, is kept by name and still looked for, by key or name. That is what happened before, and a test relied on it.
+- Migration 0073 writes the IDs for steps already waiting.
+- A group that a waiting step names cannot be deleted (`principal_in_use`): nobody could decide the step.
+- A deploy warns when a step names a group by its title, with the key to use, and when it names a group the tenant does not have.
+
+**Row rules.** A person's groups are offered to a table's rules as each group's ID, key and name (`groupValues` in `kernel/data/rows.ts`). A row that holds the key keeps matching through a rename. A row that holds the name matches as long as the name is that. A group cannot be called by another group's key: it would be given the rows that hold that key.
+
+**Apps.** The session an app reads has `groupKeys` beside `groups`. `groups` is still what the groups are called.
+
+**Groups of end users can be renamed** (`PATCH …/end-user-groups/:g`), which M3 held back until row rules matched by key.
+
+### Findings
+
+- **Approvers are resolved when the step starts to wait, not at deploy.** A run is pinned to its bundle and the engine reads the step from that bundle, so IDs worked out at deploy would describe another bundle's steps. The deploy only warns.
+- **A step whose approvers resolve to nobody still waits**, as it did. The plan had it fail. A group can be made, and people put in it, while it waits, which the "later" list above exists for. The deploy warning is what says so early.
+- **Not built: the tenant switch that stops rows matching by name, and the scan for rows that still hold a name.** Matching by name is kept on. Reading every table with a groups rule in a tenant's own database at each deploy was judged not worth its cost while nothing depends on the answer.
+- **`groups` in an app's session was never keys**, as the plan assumed: a group of end users has taken any one-line name since phase 8. So the keys are a new field and `groups` is unchanged.
 
 ## What was run, and what was not
 

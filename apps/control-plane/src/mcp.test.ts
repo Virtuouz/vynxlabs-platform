@@ -453,6 +453,11 @@ describe("an approval that names its approvers", () => {
       name: "Finance and Treasury",
     });
     expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    // While the step waits for it, the group cannot be deleted: nobody could decide the step.
+    const kept2 = await alice.delete(`/tenants/${tenant}/groups/${finance?.id}`);
+    expect(kept2.status).toBe(409);
+    expect(kept2.body.code).toBe("principal_in_use");
+    expect(kept2.body.detail).toContain("orders/write-off");
     // The step says who may decide it by what the group is called now.
     expect((await waiting())?.approvers?.text).toBe("the Finance and Treasury group");
     const decided = await alice.post(`${ws()}/flow-runs/${started.flowRunId}/approvals/ok`, {

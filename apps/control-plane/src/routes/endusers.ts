@@ -627,6 +627,80 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.patch(
+      "/tenants/:t/end-user-groups/:g",
+      {
+        config: { access: access.tenant("end_user_group:write") },
+        schema: {
+          summary: "Change what a group of end users is called or what it is for",
+          description:
+            "Its key stays, so a binding that names it by key, and a row that holds its key, " +
+            "are not touched. A row that holds what the group was called stops being its row: " +
+            "rows should hold the key.",
+          tags: ["end users"],
+          params: GroupParams,
+          body: Type.Object({
+            name: Type.Optional(GroupName),
+            description: Type.Optional(Type.String({ maxLength: 500 })),
+          }),
+          response: { 200: Group, 202: Waiting },
+        },
+      },
+      async ({ ctx, params, body }, reply) => {
+        const changed = await ctx.mutate(async (trx, audit) => {
+          const group = await findGroup(trx, params.t, params.g);
+          const now = await accessResource(trx, params.t, "end_user_group", group.id);
+          if (!now) throw notFound("The group");
+          if (now.managedBy === "provider" && body.name !== undefined) {
+            throw conflict(
+              "This group is made by the identity provider, which names it. Rename it there.",
+            );
+          }
+          const description =
+            body.description?.trim() ?? (now.resource.body.description as string | undefined);
+          const { description: _was, ...rest } = now.resource.body;
+          const released = await releaseOne(
+            trx,
+            audit,
+            params.t,
+            ctx.principal,
+            {
+              op: "put",
+              resource: {
+                ...now.resource,
+                body: {
+                  ...rest,
+                  title: body.name ?? (now.resource.body.title as string),
+                  ...(description ? { description } : {}),
+                },
+              },
+            },
+            `Changed the group of end users ${group.name}`,
+          );
+          if (released.status !== "applied") return { released, row: undefined };
+          const row = await trx
+            .selectFrom("end_user_group")
+            .selectAll()
+            .where("id", "=", group.id)
+            .executeTakeFirstOrThrow();
+          const members = await trx
+            .selectFrom("end_user_group_member")
+            .select((eb) => eb.fn.countAll<string>().as("n"))
+            .where("group_id", "=", group.id)
+            .executeTakeFirst();
+          return { released, row, members: Number(members?.n ?? 0) };
+        });
+        if (!changed.row) return reply.code(202).send(waiting(changed.released));
+        return {
+          id: changed.row.id,
+          name: changed.row.name,
+          description: changed.row.description,
+          memberCount: changed.members ?? 0,
+          createdAt: iso(changed.row.created_at),
+        };
+      },
+    );
+
     app.delete(
       "/tenants/:t/end-user-groups/:g",
       {

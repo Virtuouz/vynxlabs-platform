@@ -415,6 +415,23 @@ async function applyStep(
           `The ${what} ${key} is still given access by ${uses.slice(0, 5).join(", ")}${uses.length > 5 ? ` and ${uses.length - 5} more` : ""}. Remove it from the workspace's code and deploy, then release again.`,
         );
       }
+      if (kind === "group") {
+        const waiting = await sql<{ flow: string; slug: string }>`
+          select f.flow_path as flow, w.slug from step_run s
+          join flow_run f on f.id = s.flow_run_id
+          join workspace w on w.id = f.workspace_id
+          where f.tenant_id = ${tenantId} and s.status = 'waiting'
+            and s.detail -> 'approverIds' -> 'groups' ? ${existing.id}
+          limit 5
+        `.execute(trx);
+        if (waiting.rows.length > 0) {
+          throw new HttpError(
+            409,
+            "principal_in_use",
+            `The group ${key} is who decides an approval that is waiting now: ${waiting.rows.map((row) => `${row.flow} in ${row.slug}`).join(", ")}. Decide or cancel it first, or nobody could.`,
+          );
+        }
+      }
       // What it was given by hand or by a release goes with it.
       await trx
         .deleteFrom("binding")
@@ -452,6 +469,20 @@ async function applyStep(
       .where("name", "=", body.title)
       .where("key", "<>", key)
       .executeTakeFirst();
+    // A table's rows can be a group's by holding its key, or what it is called. A group called
+    // by another's key would be given that one's rows.
+    const shadows = await trx
+      .selectFrom(table)
+      .select("key")
+      .where("tenant_id", "=", tenantId)
+      .where("key", "=", body.title)
+      .where("key", "<>", key)
+      .executeTakeFirst();
+    if (shadows) {
+      throw conflict(
+        `"${body.title}" is the key of another ${what}. A ${what} called by another's key would be given the rows that hold that key.`,
+      );
+    }
     if (clash) {
       throw conflict(
         `"${body.title}" is the title of the ${what} ${clash.key}. Two with one title cannot be told apart by people, or by code that still names one by its title.`,

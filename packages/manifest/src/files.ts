@@ -74,6 +74,57 @@ function ordered(value: unknown, schema: Schema | undefined): unknown {
   return result;
 }
 
+/** One resource's files: its YAML at `file`, and its source beside it when it has code. */
+function renderOne(
+  manifest: BundleManifest,
+  kinds: readonly KindDefinition[],
+  file: string,
+  /** Whether the file has to say the path, because where it is kept does not. */
+  saysPath: boolean,
+): ResourceFile[] {
+  const schema = kinds.find(
+    (kind) => kind.kind === manifest.kind && kind.schemaVersion === manifest.schemaVersion,
+  )?.body as Schema | undefined;
+  const {
+    source,
+    entry: _entry,
+    ...rest
+  } = manifest.body as {
+    source?: { language: string; code: string };
+    entry?: unknown;
+  };
+  const body = CODE_KINDS.has(manifest.kind) ? rest : { ...rest, ...(source ? { source } : {}) };
+  const files: ResourceFile[] = [
+    {
+      path: file,
+      content: stringify(
+        {
+          // Said only when they say something: a file without them is written as it always was.
+          ...(manifest.key !== undefined && manifest.key !== manifest.path
+            ? { key: manifest.key }
+            : {}),
+          ...(saysPath ? { path: manifest.path } : {}),
+          ...(manifest.title !== undefined ? { title: manifest.title } : {}),
+          schemaVersion: manifest.schemaVersion,
+          body: ordered(body, schema),
+        },
+        YAML_OPTIONS,
+      ),
+    },
+  ];
+  if (CODE_KINDS.has(manifest.kind) && source) {
+    const code = source.code.replace(/\r\n?/g, "\n");
+    files.push({
+      path: file.replace(/\.yaml$/, ".ts"),
+      content: code.endsWith("\n") ? code : `${code}\n`,
+    });
+  }
+  return files;
+}
+
+const byPath = (a: ResourceFile, b: ResourceFile) =>
+  a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+
 /**
  * Writes manifests as files. `kinds` gives each kind's schema, which fixes the
  * order of keys. Files come back sorted by path.
@@ -82,44 +133,97 @@ export function renderResourceFiles(
   manifests: readonly BundleManifest[],
   kinds: readonly KindDefinition[],
 ): ResourceFile[] {
-  const files: ResourceFile[] = [];
-  for (const manifest of manifests) {
-    // The platform's own nodes are added again on every compose. They are not the repository's.
-    if (manifest.path.startsWith("core/")) continue;
-    const schema = kinds.find(
-      (kind) => kind.kind === manifest.kind && kind.schemaVersion === manifest.schemaVersion,
-    )?.body as Schema | undefined;
-    const {
-      source,
-      entry: _entry,
-      ...rest
-    } = manifest.body as {
-      source?: { language: string; code: string };
-      entry?: unknown;
-    };
-    const body = CODE_KINDS.has(manifest.kind) ? rest : { ...rest, ...(source ? { source } : {}) };
-    const stem = `${manifest.path}.${manifest.kind}`;
-    files.push({
-      path: `${stem}.yaml`,
-      content: stringify(
-        {
-          // Said only when they say something: a file without them is written as it always was.
-          ...(manifest.key !== undefined && manifest.key !== manifest.path
-            ? { key: manifest.key }
-            : {}),
-          ...(manifest.title !== undefined ? { title: manifest.title } : {}),
-          schemaVersion: manifest.schemaVersion,
-          body: ordered(body, schema),
-        },
-        YAML_OPTIONS,
-      ),
-    });
-    if (CODE_KINDS.has(manifest.kind) && source) {
-      const code = source.code.replace(/\r\n?/g, "\n");
-      files.push({ path: `${stem}.ts`, content: code.endsWith("\n") ? code : `${code}\n` });
-    }
+  return (
+    manifests
+      // The platform's own nodes are added again on every compose. They are not the repository's.
+      .filter((manifest) => !manifest.path.startsWith("core/"))
+      .flatMap((manifest) =>
+        renderOne(manifest, kinds, `${manifest.path}.${manifest.kind}.yaml`, false),
+      )
+      .sort(byPath)
+  );
+}
+
+/**
+ * The path a file's place gives its resource: what is left of its name under
+ * the longest root that holds it. None when it is under no root, or when what
+ * is left is not written as a path is.
+ */
+function pathFromPlace(stem: string, roots: readonly string[]): string | undefined {
+  const root = [...roots]
+    .sort((a, b) => b.length - a.length)
+    .find((one) => stem.startsWith(`${one}/`));
+  const inside = root === undefined ? undefined : stem.slice(root.length + 1);
+  return inside !== undefined && new RegExp(PATH_PATTERN).test(inside) ? inside : undefined;
+}
+
+/**
+ * Where a resource's YAML file is kept in a repository, from the repository's
+ * root: where it was found, or in the folder the console writes to.
+ */
+export function fileOf(manifest: BundleManifest, folder: string): string {
+  const found = manifest.source && !manifest.source.generated ? manifest.source.file : undefined;
+  return found?.endsWith(`.${manifest.kind}.yaml`)
+    ? found
+    : `${folder}/${manifest.path}.${manifest.kind}.yaml`;
+}
+
+/**
+ * Where a file goes when its resource is renamed. A file named for the path
+ * moves with it, in the folder it was in; one that says its path stays where
+ * it is, and says the new one.
+ */
+export function movedFile(file: string, kind: string, from: string, to: string): string {
+  const named = `/${from}.${kind}.yaml`;
+  return file.endsWith(named) ? `${file.slice(0, -named.length)}/${to}.${kind}.yaml` : file;
+}
+
+/**
+ * Whether two versions of a resource's file say the same thing, however each
+ * is written: comments, the order of keys and the quoting are the author's.
+ */
+export function sameResourceFile(path: string, a: string, b: string): boolean {
+  if (a === b) return true;
+  if (!path.endsWith(".yaml")) return false;
+  const sorted = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(sorted)
+      : value !== null && typeof value === "object"
+        ? Object.fromEntries(
+            Object.keys(value)
+              .sort()
+              .map((key) => [key, sorted((value as Record<string, unknown>)[key])]),
+          )
+        : value;
+  try {
+    const [one, other] = [a, b].map((text) =>
+      JSON.stringify(sorted(parse(text, { version: "1.2" }))),
+    );
+    return one === other;
+  } catch {
+    return false;
   }
-  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/**
+ * Writes manifests as the files a repository keeps, each where it was found,
+ * and in `folder` when it was made in the console. Paths are from the
+ * repository's root. A file says its `path` only when its place does not.
+ */
+export function renderRepositoryFiles(
+  manifests: readonly BundleManifest[],
+  kinds: readonly KindDefinition[],
+  options: { folder: string; roots: readonly string[] },
+): ResourceFile[] {
+  const roots = [...new Set([options.folder, ...options.roots])];
+  return manifests
+    .filter((manifest) => !manifest.path.startsWith("core/"))
+    .flatMap((manifest) => {
+      const file = fileOf(manifest, options.folder);
+      const stem = file.slice(0, -`.${manifest.kind}.yaml`.length);
+      return renderOne(manifest, kinds, file, pathFromPlace(stem, roots) !== manifest.path);
+    })
+    .sort(byPath);
 }
 
 const FILE_NAME = /^(.+)\.([a-z][a-z0-9_]*)\.(yaml|ts)$/;
@@ -403,7 +507,6 @@ export function parseRepositoryFiles(
   const problems: string[] = [];
   const yaml = new Map<string, Located>();
   const sources = new Map<string, ResourceFile>();
-  const pathPattern = new RegExp(PATH_PATTERN);
   for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : 1))) {
     if (!isResourceFile(file.path, options.kinds)) continue;
     const [, stem = "", kind = "", extension] = FILE_NAME.exec(file.path) as RegExpExecArray;
@@ -412,10 +515,8 @@ export function parseRepositoryFiles(
       sources.set(name, file);
       continue;
     }
-    const root = roots.find((one) => stem.startsWith(`${one}/`));
-    const inside = root === undefined ? undefined : stem.slice(root.length + 1);
     // A folder whose name is no part of a path: the file has to say its path itself.
-    const resource = inside !== undefined && pathPattern.test(inside) ? inside : undefined;
+    const resource = pathFromPlace(stem, roots);
     yaml.set(name, { ...file, resource, kind, stem: name });
   }
   const found = new Map<string, string>();

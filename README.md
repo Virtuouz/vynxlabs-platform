@@ -64,7 +64,7 @@ To move a change between environments, link a dev workspace to the one it promot
 ### Working from a terminal
 
 ```sh
-platform pull --tenant <slug> --workspace <dev slug>       # what was made in the console, drafts included, into platform/
+platform pull --tenant <slug> --workspace <dev slug>       # what was made in the console, drafts included, into platform/ and the files it changed elsewhere
 platform run orders/handle --remote --tenant <slug> --workspace <dev slug> --input '{"id":"A-1"}'
 platform logs <run id> -f --tenant <slug> --workspace <slug>
 ```

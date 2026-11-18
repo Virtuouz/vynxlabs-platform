@@ -291,7 +291,7 @@ describe("pushing", () => {
     expect(refused.body).toMatchObject({
       status: "refused",
       state: "behind",
-      changedOnBranch: ["orders/hello.script.ts"],
+      changedOnBranch: ["platform/orders/hello.script.ts"],
     });
     expect(await state()).toBe("behind");
   });
@@ -302,7 +302,7 @@ describe("pulling", () => {
     const pulled = await alice.post(`${ws()}/git/pull`, {});
     expect(pulled.body, JSON.stringify(pulled.body)).toMatchObject({
       status: "done",
-      applied: ["orders/hello.script"],
+      applied: ["platform/orders/hello.script"],
       conflicts: [],
       // The workspace still has `orders/other`, which the branch does not.
       state: "ahead",
@@ -343,7 +343,10 @@ describe("pulling", () => {
     );
     const pulled = await alice.post(`${ws()}/git/pull`, {});
     expect(pulled.body).toMatchObject({ status: "done", state: "synced" });
-    expect(pulled.body.applied.sort()).toEqual(["orders/other.script", "orders/third.script"]);
+    expect(pulled.body.applied.sort()).toEqual([
+      "platform/orders/other.script",
+      "platform/orders/third.script",
+    ]);
     expect(await sourceOf("orders/third")).toContain("third: true");
     expect((await alice.get(`${ws()}/resources/orders/other`)).status).toBe(404);
   });
@@ -358,13 +361,14 @@ describe("pulling", () => {
     expect(conflict.body).toMatchObject({
       status: "refused",
       state: "conflict",
-      conflicts: ["orders/hello.script"],
+      conflicts: ["platform/orders/hello.script"],
       applied: [],
     });
     expect(await sourceOf("orders/hello")).toContain("mine");
 
     // Keeping mine deploys nothing, and the next push puts mine on the branch.
     const mine = await alice.post(`${ws()}/git/pull`, {
+      // As a resource was named before files were kept anywhere: still understood.
       resolutions: { "orders/hello.script": "mine" },
     });
     expect(mine.body).toMatchObject({ status: "nothing", state: "ahead", conflicts: [] });
@@ -383,7 +387,7 @@ describe("pulling", () => {
     );
     await deployDraft("orders/hello", "export default async () => ({ hello: 'mine again' });\n");
     const theirs = await alice.post(`${ws()}/git/pull`, {
-      resolutions: { "orders/hello.script": "theirs" },
+      resolutions: { "platform/orders/hello.script": "theirs" },
     });
     expect(theirs.body).toMatchObject({ status: "done", state: "synced" });
     expect(await sourceOf("orders/hello")).toContain("theirs again");
@@ -446,14 +450,16 @@ describe("seeing both sides, drafts and releases", () => {
     expect(compared).toMatchObject({ branch: "vx/dev", exists: true, conflicts: 1 });
     expect(compared.head).toMatchObject({ message: "Branch side", author: "Dev" });
     const clash = compared.files.find(
-      (file: { path: string }) => file.path === "orders/hello.script.ts",
+      (file: { path: string }) => file.path === "platform/orders/hello.script.ts",
     );
     expect(clash).toMatchObject({ here: true, branch: true, conflict: true });
     expect(clash.mine).toContain("here");
     expect(clash.theirs).toContain("branch");
     // Nothing changed by looking.
     expect(await sourceOf("orders/hello")).toContain("here");
-    await alice.post(`${ws()}/git/pull`, { resolutions: { "orders/hello.script": "mine" } });
+    await alice.post(`${ws()}/git/pull`, {
+      resolutions: { "platform/orders/hello.script": "mine" },
+    });
     expect((await alice.post(`${ws()}/git/push`, { message: "Keep here" })).body.status).toBe(
       "done",
     );
@@ -468,7 +474,7 @@ describe("seeing both sides, drafts and releases", () => {
     expect(saved.status).toBe(200);
     const withDrafts = (await alice.get(`${ws()}/git/compare?drafts=true`)).body;
     expect(withDrafts.files.map((file: { path: string }) => file.path)).toContain(
-      "orders/drafted.script.ts",
+      "platform/orders/drafted.script.ts",
     );
     const pushed = await alice.post(`${ws()}/git/push`, {
       message: "Work in progress",
@@ -552,6 +558,202 @@ describe("safety", () => {
     const pulled = await alice.post(`${ws()}/git/pull`, {});
     expect(pulled.status, JSON.stringify(pulled.body)).toBe(200);
     expect(pulled.body.applied).toEqual([]);
+  });
+
+  test("a file a developer keeps under src/ is pulled, edited in the console, and written back where it is", async () => {
+    const written =
+      '# How many devices one person may hold.\nschemaVersion: 1\nbody:\n  default: "5"\n';
+    commitOnBranch(
+      {
+        "vynxlabs.yaml": "roots:\n  - src\n",
+        "src/lending/limit.variable.yaml": written,
+      },
+      "Keep the limit beside the code",
+    );
+    const pulled = await alice.post(`${ws()}/git/pull`, {});
+    expect(pulled.body, JSON.stringify(pulled.body)).toMatchObject({
+      status: "done",
+      state: "synced",
+      applied: ["src/lending/limit.variable"],
+    });
+    expect((await alice.get(`${ws()}/resources/lending/limit`)).body).toMatchObject({
+      ownership: "ui",
+      definedIn: "src/lending/limit.variable.yaml",
+      body: { default: "5" },
+    });
+    // Nothing was said differently here, so the file is left as its author wrote it.
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("nothing");
+    expect(sh(["show", "vx/dev:src/lending/limit.variable.yaml"], bare())).toContain(
+      "# How many devices",
+    );
+
+    // Changed in the console, it is committed where the repository keeps it.
+    const saved = await alice.put(`${ws()}/drafts/lending/limit`, {
+      kind: "variable",
+      schemaVersion: 1,
+      body: { default: "6" },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect((await alice.post(`${ws()}/changes/deploy`, {})).status).toBe(201);
+    expect((await alice.get(`${ws()}/resources/lending/limit`)).body.definedIn).toBe(
+      "src/lending/limit.variable.yaml",
+    );
+    const before = sh(["rev-parse", "vx/dev:src/index.ts"], bare());
+    const pushed = await alice.post(`${ws()}/git/push`, {});
+    expect(pushed.body, JSON.stringify(pushed.body)).toMatchObject({
+      status: "done",
+      state: "synced",
+    });
+    expect(sh(["show", "vx/dev:src/lending/limit.variable.yaml"], bare())).toBe(
+      'schemaVersion: 1\nbody:\n  default: "6"',
+    );
+    expect(() => sh(["show", "vx/dev:platform/lending/limit.variable.yaml"], bare())).toThrow();
+    expect(sh(["rev-parse", "vx/dev:src/index.ts"], bare())).toBe(before);
+    expect(sh(["diff", "--name-only", "vx/dev~1", "vx/dev"], bare())).toBe(
+      "src/lending/limit.variable.yaml",
+    );
+  });
+
+  test("renamed in the console, a file under src/ moves there, and one that says its path stays", async () => {
+    commitOnBranch(
+      {
+        "tools/retention.variable.yaml":
+          'path: lending/retention\nschemaVersion: 1\nbody:\n  default: "30"\n',
+      },
+      "A file outside every root says its path",
+    );
+    expect((await alice.post(`${ws()}/git/pull`, {})).body).toMatchObject({
+      status: "done",
+      applied: ["tools/retention.variable"],
+    });
+    for (const [from, to] of [
+      ["lending/limit", "lending/cap"],
+      ["lending/retention", "lending/keep-for"],
+    ]) {
+      const current = (await alice.get(`${ws()}/resources/${from}`)).body.body;
+      const renamed = await alice.put(`${ws()}/drafts/${from}`, {
+        kind: "variable",
+        schemaVersion: 1,
+        body: current,
+        path: to,
+      });
+      expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    }
+    const deployed = await alice.post(`${ws()}/changes/deploy`, {});
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.summary).toMatchObject({ renamed: 2, created: 0, deleted: 0 });
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+
+    expect(sh(["show", "vx/dev:src/lending/cap.variable.yaml"], bare()).split("\n")[0]).toBe(
+      "key: lending/limit",
+    );
+    expect(() => sh(["show", "vx/dev:src/lending/limit.variable.yaml"], bare())).toThrow();
+    expect(sh(["show", "vx/dev:tools/retention.variable.yaml"], bare()).split("\n")).toEqual([
+      "key: lending/retention",
+      "path: lending/keep-for",
+      "schemaVersion: 1",
+      "body:",
+      '  default: "30"',
+    ]);
+    // Read back from the branch they are the same resources: a pull finds nothing to do.
+    const again = await alice.post(`${ws()}/git/pull`, {});
+    expect(again.body, JSON.stringify(again.body)).toMatchObject({
+      status: "nothing",
+      state: "synced",
+      applied: [],
+    });
+  });
+
+  test("a rename here and a change there to the same file is one conflict, and deleting removes the file", async () => {
+    commitOnBranch(
+      {
+        "src/lending/cap.variable.yaml":
+          'key: lending/limit\nschemaVersion: 1\nbody:\n  default: "9"\n',
+      },
+      "Raise the cap",
+    );
+    const current = (await alice.get(`${ws()}/resources/lending/cap`)).body.body;
+    await alice.put(`${ws()}/drafts/lending/cap`, {
+      kind: "variable",
+      schemaVersion: 1,
+      body: current,
+      path: "lending/ceiling",
+    });
+    expect((await alice.post(`${ws()}/changes/deploy`, {})).status).toBe(201);
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    expect(
+      compared.files
+        .filter((file: { resource: string }) => file.resource === "src/lending/cap.variable")
+        .map((file: { path: string }) => file.path),
+    ).toEqual(["src/lending/cap.variable.yaml", "src/lending/ceiling.variable.yaml"]);
+    const conflict = await alice.post(`${ws()}/git/pull`, {});
+    expect(conflict.body).toMatchObject({
+      status: "refused",
+      conflicts: ["src/lending/cap.variable"],
+    });
+    const theirs = await alice.post(`${ws()}/git/pull`, {
+      resolutions: { "src/lending/cap.variable": "theirs" },
+    });
+    expect(theirs.body, JSON.stringify(theirs.body)).toMatchObject({
+      status: "done",
+      state: "synced",
+    });
+    expect((await alice.get(`${ws()}/resources/lending/cap`)).body).toMatchObject({
+      key: "lending/limit",
+      body: { default: "9" },
+    });
+
+    // Deleted in the console, its file goes from where it was, and nothing else does.
+    const removed = await alice.put(`${ws()}/drafts/lending/keep-for`, {
+      kind: "variable",
+      schemaVersion: 1,
+      body: {},
+      deleted: true,
+    });
+    expect(removed.status, JSON.stringify(removed.body)).toBe(200);
+    expect((await alice.post(`${ws()}/changes/deploy`, {})).status).toBe(201);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+    expect(sh(["diff", "--name-only", "vx/dev~1", "vx/dev"], bare())).toBe(
+      "tools/retention.variable.yaml",
+    );
+  });
+
+  test("the first push to a new branch leaves the files the workspace does not have, for a pull to bring in", async () => {
+    // On the default branch, a resource file this workspace has never seen.
+    sh(["fetch", "-q", "origin", "main"], clone);
+    sh(["checkout", "-q", "-B", "trunk", "FETCH_HEAD"], clone);
+    mkdirSync(join(clone, "src/billing"), { recursive: true });
+    writeFileSync(
+      join(clone, "src/billing/rate.variable.yaml"),
+      'schemaVersion: 1\nbody:\n  default: "2"\n',
+    );
+    writeFileSync(join(clone, "vynxlabs.yaml"), "roots:\n  - src\n");
+    sh(["add", "-A"], clone);
+    sh(
+      ["-c", "user.name=Dev", "-c", "user.email=dev@acme.example", "commit", "-q", "-m", "Rate"],
+      clone,
+    );
+    sh(["push", "-q", "origin", "trunk:main"], clone);
+
+    expect((await alice.put(`${ws()}/git`, { branch: "vx/fresh" })).status).toBe(200);
+    const pushed = await alice.post(`${ws()}/git/push`, {});
+    expect(pushed.body, JSON.stringify(pushed.body)).toMatchObject({
+      status: "done",
+      state: "behind",
+      changedOnBranch: ["src/billing/rate.variable.yaml"],
+    });
+    expect(sh(["show", "vx/fresh:src/billing/rate.variable.yaml"], bare())).toContain('"2"');
+    expect(sh(["show", "vx/fresh:src/lending/cap.variable.yaml"], bare())).toContain('"9"');
+    const pulled = await alice.post(`${ws()}/git/pull`, {});
+    expect(pulled.body, JSON.stringify(pulled.body)).toMatchObject({
+      status: "done",
+      state: "synced",
+      applied: ["src/billing/rate.variable"],
+    });
+    expect((await alice.get(`${ws()}/resources/billing/rate`)).body.definedIn).toBe(
+      "src/billing/rate.variable.yaml",
+    );
+    expect((await alice.put(`${ws()}/git`, { branch: "vx/dev" })).status).toBe(200);
   });
 
   test("a release of the tenant's access is committed to the tenant's branch, never the default one", async () => {

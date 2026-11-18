@@ -585,7 +585,7 @@ describe("deploying drafts", () => {
 });
 
 describe("a file the repository keeps outside the console's folder", () => {
-  test("is deployed with where it is, is not the console's to change, and is not written into the console's folder", async () => {
+  test("is deployed with where it is, is changed in the console like any other, and is written back to its own file", async () => {
     // As the CLI builds it: the active bundle, and one more resource from a file under src/.
     const active = await t.db
       .selectFrom("workspace")
@@ -624,19 +624,39 @@ describe("a file the repository keeps outside the console's folder", () => {
       ownership: "ui",
     });
 
-    const refused = await alice.put(`${ws()}/drafts/lending/limit`, {
+    // What `platform pull` writes into the console's folder does not hold it: it is given
+    // apart, by where the repository keeps it.
+    const pulled = (await alice.get(`${ws()}/resource-files?roots=src`)).body as {
+      files: { path: string }[];
+      elsewhere: { path: string; content: string; resource: string }[];
+    };
+    expect(pulled.files.some((file) => file.path.includes("limit"))).toBe(false);
+    expect(pulled.elsewhere).toEqual([
+      {
+        path: "src/lending/limit.variable.yaml",
+        resource: "lending/limit",
+        content: 'title: Lending limit\nschemaVersion: 1\nbody:\n  default: "5"\n',
+      },
+    ]);
+
+    // It is changed in the console like any other, and its draft is written to its own file.
+    const saved = await alice.put(`${ws()}/drafts/lending/limit`, {
       kind: "variable",
       schemaVersion: 1,
       body: { default: "6" },
     });
-    expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe("defined_in_file");
-    expect(refused.body.detail).toContain("src/lending/limit.variable.yaml");
-
-    // What `platform pull` and a push write is the console's folder: this file is not in it.
-    const files = (await alice.get(`${ws()}/resource-files`)).body.files as { path: string }[];
-    expect(files.some((file) => file.path.includes("limit"))).toBe(false);
-    // And a deploy of other drafts carries it along untouched.
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const drafted = (await alice.get(`${ws()}/resource-files`)).body as {
+      elsewhere: { path: string; content: string }[];
+    };
+    // Without the repository's roots, the file is made to say its path.
+    expect(drafted.elsewhere.map((file) => [file.path, file.content])).toEqual([
+      [
+        "src/lending/limit.variable.yaml",
+        'path: lending/limit\ntitle: Lending limit\nschemaVersion: 1\nbody:\n  default: "6"\n',
+      ],
+    ]);
+    // Deployed with other drafts, it is still the repository's file.
     await draft("orders/extra", scriptBody("export default async () => ({});\n"));
     const again = await alice.post(`${ws()}/changes/deploy`, {});
     expect(again.status, JSON.stringify(again.body)).toBe(201);

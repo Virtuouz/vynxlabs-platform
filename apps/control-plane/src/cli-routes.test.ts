@@ -117,7 +117,12 @@ afterAll(async () => {
 
 describe("the console's resources, as files", () => {
   test("are the deployed set with the drafts laid over it, or the deployed set alone", async () => {
-    expect(await files()).toEqual({ files: [], bundleVersion: null, drafts: [] });
+    expect(await files()).toEqual({
+      files: [],
+      elsewhere: [],
+      bundleVersion: null,
+      drafts: [],
+    });
     for (const [path, value] of [
       ["orders/intake", "'first'"],
       ["orders/archive", "'old'"],

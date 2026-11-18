@@ -37,8 +37,10 @@ export {
 } from "./envelope.js";
 export {
   entryFor,
+  fileOf,
   ignoredFolder,
   isResourceFile,
+  movedFile,
   type ParsedResources,
   parseRepositoryConfig,
   parseRepositoryFiles,
@@ -47,7 +49,9 @@ export {
   RESOURCE_FOLDER,
   type RepositoryConfig,
   type ResourceFile,
+  renderRepositoryFiles,
   renderResourceFiles,
+  sameResourceFile,
 } from "./files.js";
 export {
   checkFlow,

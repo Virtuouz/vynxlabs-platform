@@ -7,6 +7,7 @@ import {
   CORE_PREFIX,
   entryFor,
   keyOf,
+  movedFile,
   validateJson,
 } from "@vynxlabs/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@vynxlabs/sdk";
@@ -108,19 +109,10 @@ export async function saveDraft(
   }
   const resource = await trx
     .selectFrom("resource")
-    .select(["kind", "ownership", "key", "meta"])
+    .select(["kind", "ownership", "key"])
     .where("workspace_id", "=", workspace.id)
     .where("path", "=", input.path)
     .executeTakeFirst();
-  // A file the repository keeps outside the console's folder is the repository's to change.
-  // A draft of it would be written into the console's folder as a second definition.
-  if (resource?.ownership === "ui" && resource.meta.source) {
-    throw new HttpError(
-      409,
-      "defined_in_file",
-      `${input.path} is defined in ${resource.meta.source.file}, in the tenant's repository. Change it there: the console writes only to its own folder.`,
-    );
-  }
   const existing = await trx
     .selectFrom("resource_draft")
     .selectAll()
@@ -362,6 +354,15 @@ export async function composeDrafts(
         ...(draft.key !== draft.path ? { key: draft.key } : {}),
         ...(title ? { title } : {}),
         ...(was?.mcp ? { mcp: was.mcp } : {}),
+        // Its file stays where the repository keeps it, and moves with a rename if it is named for the path.
+        ...(was?.source
+          ? {
+              source: {
+                ...was.source,
+                file: movedFile(was.source.file, draft.kind, was.path, draft.path),
+              },
+            }
+          : {}),
         ownership: "ui",
         body: draft.body,
       });

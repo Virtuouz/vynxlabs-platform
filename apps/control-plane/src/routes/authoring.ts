@@ -4,6 +4,8 @@ import {
   type InterfaceBody,
   PATH_PATTERN,
   platformKinds,
+  RESOURCE_FOLDER,
+  renderRepositoryFiles,
   renderResourceFiles,
 } from "@vynxlabs/manifest";
 import { Type } from "typebox";
@@ -22,7 +24,7 @@ import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js"
 import { bundleManifest, storeBundle } from "../kernel/execution/bundles.js";
 import { readPayload, startRun } from "../kernel/execution/runs.js";
 import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
-import { draftFiles, markAhead } from "../kernel/git.js";
+import { draftManifests, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { interfaceProblems } from "./interfaces.js";
@@ -336,10 +338,34 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "the workspace's console resources with it. With `drafts=false`, what is deployed only.",
           tags: ["authoring"],
           params: WorkspaceParams,
-          querystring: Type.Object({ drafts: Type.Optional(Type.Boolean({ default: true })) }),
+          querystring: Type.Object({
+            drafts: Type.Optional(Type.Boolean({ default: true })),
+            roots: Type.Optional(
+              Type.String({
+                maxLength: 2000,
+                description:
+                  "The repository's roots, as its `vynxlabs.yaml` lists them, separated by commas. " +
+                  "A file under one is not made to say its path.",
+              }),
+            ),
+          }),
           response: {
             200: Type.Object({
-              files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() })),
+              files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() }), {
+                description: "The files of the console's folder, by their path inside it.",
+              }),
+              elsewhere: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  content: Type.String(),
+                  resource: Type.String({ description: "The path of the resource it belongs to." }),
+                }),
+                {
+                  description:
+                    "The files of resources the repository keeps outside the console's folder, " +
+                    "each by its path from the repository's root, as the workspace now has them.",
+                },
+              ),
               bundleVersion: Type.Union([Type.Integer(), Type.Null()]),
               drafts: Type.Array(
                 Type.Object({
@@ -362,15 +388,24 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         // Part of the set would be read as all of it, and a deploy would remove the rest.
         if (!full) throw forbidden("resource:read");
         const withDrafts = query.drafts !== false;
-        const files = withDrafts
-          ? await draftFiles(kernel, db, workspace)
-          : renderResourceFiles(
-              // What the repository keeps outside the console's folder is there already.
-              (await activeConsoleManaged(kernel, db, workspace.id)).filter(
-                (manifest) => manifest.source === undefined,
-              ),
-              platformKinds,
-            );
+        const manifests = withDrafts
+          ? await draftManifests(kernel, db, workspace)
+          : await activeConsoleManaged(kernel, db, workspace.id);
+        // A resource the repository keeps outside the console's folder is written back where it is.
+        const files = renderResourceFiles(
+          manifests.filter((manifest) => manifest.source === undefined),
+          platformKinds,
+        );
+        const roots = (query.roots ?? "").split(",").filter(Boolean);
+        const elsewhere = manifests
+          .filter((manifest) => manifest.source !== undefined)
+          .flatMap((manifest) =>
+            renderRepositoryFiles([manifest], platformKinds, {
+              folder: RESOURCE_FOLDER,
+              roots,
+            }).map((file) => ({ ...file, resource: manifest.path })),
+          )
+          .sort((a, b) => (a.path < b.path ? -1 : 1));
         const drafts = withDrafts
           ? await db
               .selectFrom("resource_draft")
@@ -387,6 +422,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst();
         return {
           files: files.map((file) => ({ path: file.path, content: file.content })),
+          elsewhere,
           bundleVersion: active?.version ?? null,
           drafts,
         };

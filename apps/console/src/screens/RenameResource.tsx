@@ -21,9 +21,7 @@ export function definedWhere(row: NamedResource): string {
 
 /** Why the console cannot rename a resource, or nothing when it can. */
 export function cannotRename(row: NamedResource): string | undefined {
-  if (row.definedIn) {
-    return `It is defined in ${row.definedIn}. Move the file there, and give it key: ${row.key}.`;
-  }
+  // A file is renamed like anything else: it moves with its resource, or says the new path.
   if (row.ownership === "code") {
     return `It is defined in the repository's code. Change its path there, and give it key: "${row.key}".`;
   }

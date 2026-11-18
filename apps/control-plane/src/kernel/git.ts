@@ -5,11 +5,18 @@ import { join } from "node:path";
 import { newId, sql } from "@vynxlabs/db";
 import {
   type BundleManifest,
+  fileOf,
+  ignoredFolder,
+  isResourceFile,
   keyOf,
-  parseResourceFiles,
+  movedFile,
+  parseRepositoryConfig,
+  parseRepositoryFiles,
   platformKinds,
+  REPOSITORY_CONFIG,
+  type RepositoryConfig,
   type ResourceFile,
-  renderResourceFiles,
+  renderRepositoryFiles,
   renderTenantFiles,
   TENANT_FOLDER,
 } from "@vynxlabs/manifest";
@@ -60,10 +67,13 @@ const http: HttpClient = {
 /**
  * Keeping a dev workspace's console-managed resources in a git repository.
  *
- * The repository is the tenant's. The server writes one folder of it, on one
+ * The repository is the tenant's. The server writes its resource files, on one
  * branch per dev workspace, and never the default branch: changes reach that
- * by a pull request, like any other. A push writes what the workspace has
- * deployed. A pull reads what developers changed in the folder and deploys it.
+ * by a pull request, like any other. A resource's file is wherever the
+ * repository keeps it, and is written back there; one made in the console goes
+ * in the console's folder. A push writes what the workspace has deployed. A
+ * pull reads what developers changed in those files and deploys it. Nothing
+ * that is not a resource's file is read or written.
  *
  * Nothing here keeps a clone. Each operation fetches the branch's tip into a
  * scratch directory, works on git's objects directly, and throws the
@@ -209,51 +219,63 @@ async function fetchTip(remote: Remote, branch: string): Promise<Tip> {
 }
 
 /**
- * The most a pull takes in from the folder. A workspace's resources are small
- * text files: far more than this is a mistake, or something pointed at the
- * wrong folder, and reading it all would hold a request open for nothing.
- * Tests lower these.
+ * The most a pull takes in. A workspace's resources are small text files: far
+ * more than this is a mistake, and reading it all would hold a request open
+ * for nothing. Tests lower these.
  */
 export const PULL_LIMITS = { bytes: 8 * 1024 * 1024, files: 2000 };
 
-/** The folder on the branch holds more than a pull takes in. */
-class FolderTooLarge extends Error {}
+/** The branch holds more than a pull takes in. */
+class TooLarge extends Error {}
 
-/** The YAML and TypeScript files under the folder at a commit. With `limited`, up to the limits of a pull. */
-async function readFolder(
+/** The kinds a workspace's resources have. A file named for another kind is not one of them. */
+const WORKSPACE_KINDS: ReadonlySet<string> = new Set(platformKinds.map((kind) => kind.kind));
+
+/** A repository at a commit: its resource files, and what it says about where they are. */
+interface Repository {
+  /** Every file named for a kind, in any folder that is the repository's own, by its path from the root. */
+  files: ResourceFile[];
+  config: RepositoryConfig;
+  /** What is wrong with `vynxlabs.yaml`, if anything. */
+  problems: string[];
+}
+
+/**
+ * Reads a repository's resource files at a commit, wherever it keeps them, as
+ * the CLI's build finds them. With `limited`, up to the limits of a pull.
+ */
+async function readRepository(
   gitdir: string,
   commit: string,
-  folder: string,
   limited = false,
-): Promise<ResourceFile[]> {
+): Promise<Repository> {
   const files: ResourceFile[] = [];
   let bytes = 0;
+  const text = async (oid: string) =>
+    Buffer.from((await git.readBlob({ fs, gitdir, oid })).blob).toString("utf8");
   const { tree: root } = await git.readTree({ fs, gitdir, oid: commit });
-  let entries = root;
-  for (const segment of folder.split("/")) {
-    const next = entries.find((entry) => entry.path === segment && entry.type === "tree");
-    if (!next) return [];
-    entries = (await git.readTree({ fs, gitdir, oid: next.oid })).tree;
-  }
-  const walk = async (tree: typeof entries, prefix: string) => {
+  const said = root.find((entry) => entry.path === REPOSITORY_CONFIG && entry.type === "blob");
+  const { config, problems } = parseRepositoryConfig(said ? await text(said.oid) : undefined);
+  const walk = async (tree: typeof root, prefix: string) => {
     for (const entry of tree) {
       const path = prefix ? `${prefix}/${entry.path}` : entry.path;
       if (entry.type === "tree") {
+        if (ignoredFolder(path, config)) continue;
         await walk((await git.readTree({ fs, gitdir, oid: entry.oid })).tree, path);
-      } else if (entry.type === "blob" && /\.(yaml|ts)$/.test(entry.path)) {
-        const { blob } = await git.readBlob({ fs, gitdir, oid: entry.oid });
-        bytes += blob.byteLength;
+      } else if (entry.type === "blob" && isResourceFile(path, WORKSPACE_KINDS)) {
+        const content = await text(entry.oid);
+        bytes += Buffer.byteLength(content);
         if (limited && (bytes > PULL_LIMITS.bytes || files.length >= PULL_LIMITS.files)) {
-          throw new FolderTooLarge(
-            `The folder ${folder} on the branch holds more than a pull takes in: ${PULL_LIMITS.files} files, or ${Math.round(PULL_LIMITS.bytes / 1024 / 1024)} MB in all. Check that the repository's folder is the right one.`,
+          throw new TooLarge(
+            `The branch holds more than a pull takes in: ${PULL_LIMITS.files} resource files, or ${Math.round(PULL_LIMITS.bytes / 1024 / 1024)} MB in all. Leave out what is not the workspace's with ignore: in ${REPOSITORY_CONFIG}.`,
           );
         }
-        files.push({ path, content: Buffer.from(blob).toString("utf8") });
+        files.push({ path, content });
       }
     }
   };
-  await walk(entries, "");
-  return files.sort((a, b) => (a.path < b.path ? -1 : 1));
+  await walk(root, "");
+  return { files: files.sort((a, b) => (a.path < b.path ? -1 : 1)), config, problems };
 }
 
 type Entry = { mode: string; path: string; oid: string; type: "blob" | "tree" | "commit" };
@@ -306,6 +328,88 @@ async function replaceAt(
     : others;
   if (next.length === 0) return null;
   return git.writeTree({ fs, gitdir, tree: next });
+}
+
+/**
+ * The tree at `oid` with some files written and some removed, each by its path
+ * from the tree's root. Everything else is left exactly as it is: a folder is
+ * rewritten only on the way down to a file that changed.
+ */
+async function patchTree(
+  gitdir: string,
+  oid: string | undefined,
+  changes: readonly { segments: string[]; content: string | null }[],
+): Promise<string | null> {
+  const tree: Entry[] = oid ? (await git.readTree({ fs, gitdir, oid })).tree : [];
+  const next = new Map(tree.map((entry) => [entry.path, entry]));
+  const below = new Map<string, { segments: string[]; content: string | null }[]>();
+  for (const change of changes) {
+    const [first = "", ...rest] = change.segments;
+    if (rest.length > 0) {
+      below.set(first, [...(below.get(first) ?? []), { segments: rest, content: change.content }]);
+    } else if (change.content === null) {
+      next.delete(first);
+    } else {
+      const blob = await git.writeBlob({ fs, gitdir, blob: Buffer.from(change.content, "utf8") });
+      const was = next.get(first);
+      // A file keeps the mode it had.
+      const mode = was?.type === "blob" ? was.mode : "100644";
+      next.set(first, { mode, path: first, oid: blob, type: "blob" });
+    }
+  }
+  for (const [name, inner] of below) {
+    const was = next.get(name);
+    const subtree = await patchTree(gitdir, was?.type === "tree" ? was.oid : undefined, inner);
+    if (subtree) next.set(name, { mode: "040000", path: name, oid: subtree, type: "tree" });
+    else next.delete(name);
+  }
+  if (next.size === 0) return null;
+  return git.writeTree({ fs, gitdir, tree: [...next.values()] });
+}
+
+/** Commits a tree on top of a branch's tip and pushes it. Throws what the remote said. */
+async function commitAndPush(
+  remote: Remote,
+  tip: Tip,
+  branch: string,
+  tree: string | null,
+  author: { name: string; email: string },
+  message: string,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const commit = await git.writeCommit({
+    fs,
+    gitdir: tip.gitdir,
+    commit: {
+      tree: tree ?? (await git.writeTree({ fs, gitdir: tip.gitdir, tree: [] })),
+      parent: [tip.commit],
+      message,
+      author: { ...author, timestamp: now, timezoneOffset: 0 },
+      committer: {
+        name: "Platform",
+        email: "platform@localhost",
+        timestamp: now,
+        timezoneOffset: 0,
+      },
+    },
+  });
+  await git.writeRef({
+    fs,
+    gitdir: tip.gitdir,
+    ref: `refs/heads/${branch}`,
+    value: commit,
+    force: true,
+  });
+  await git.push({
+    fs,
+    http,
+    gitdir: tip.gitdir,
+    url: remote.url,
+    ref: branch,
+    remoteRef: `refs/heads/${branch}`,
+    onAuth: remote.onAuth,
+  });
+  return commit;
 }
 
 /** Takes the workspace's lease for one operation, and gives it back afterwards. */
@@ -569,30 +673,104 @@ export async function followBranch(
   });
 }
 
-/** The files the workspace's deployed console-managed resources make. */
-async function localFiles(
-  kernel: Kernel,
-  db: Db,
-  workspace: WorkspaceRef,
-): Promise<ResourceFile[]> {
-  return renderResourceFiles(
-    (await activeConsoleManaged(kernel, db, workspace.id)).filter(inFolder),
-    platformKinds,
-  );
+/** The file's name without its last extension: a script is its YAML and its source together. */
+const stemOf = (path: string) => path.replace(/\.(yaml|ts)$/, "");
+
+/** The workspace beside its branch: both as files, compared resource by resource. */
+interface Sides {
+  remoteFiles: ResourceFile[];
+  mineFiles: ResourceFile[];
+  theirs: Record<string, string>;
+  mine: Record<string, string>;
+  /**
+   * The resource a file belongs to, named by its file on the branch without the
+   * extension, or by its file here when the branch has none. A resource renamed
+   * on one side is still one resource: both its files belong to it.
+   */
+  resourceOf: (path: string) => string;
+  /** Two of the workspace's resources that would be written to one file. */
+  problems: string[];
 }
 
 /**
- * Whether a resource's file is the console's to write: one kept in the folder
- * the console writes to. A file the repository keeps somewhere else says where
- * in `source`, and stays there: the console neither writes it into its folder,
- * where it would be a second definition, nor removes it.
+ * Sets what the workspace has beside what the branch has.
+ *
+ * A file is the workspace's own writing only where it says something else than
+ * the branch's: where both say the same, the branch's bytes are the
+ * workspace's too. So a file a developer wrote by hand, with comments and in
+ * their own order, is left as they wrote it until what it says is changed here.
  */
-const inFolder = (manifest: BundleManifest) => manifest.source === undefined;
+async function sidesOf(
+  manifests: readonly BundleManifest[],
+  repository: Repository,
+  folder: string,
+): Promise<Sides> {
+  const options = { folder, roots: repository.config.roots };
+  const remote = new Map(repository.files.map((file) => [file.path, file.content]));
+  const parsed = parseRepositoryFiles(repository.files, { ...options, kinds: WORKSPACE_KINDS });
+  const theirKey = new Map<string, string>();
+  const named = new Map<string, string>();
+  const there = new Map<string, BundleManifest>();
+  for (const manifest of parsed.manifests) {
+    const file = parsed.files.get(keyOf(manifest)) as string;
+    there.set(keyOf(manifest), manifest);
+    named.set(keyOf(manifest), stemOf(file));
+    for (const path of [file, `${stemOf(file)}.ts`]) {
+      if (remote.has(path)) theirKey.set(path, keyOf(manifest));
+    }
+  }
+  const myKey = new Map<string, string>();
+  const mineFiles: ResourceFile[] = [];
+  const problems: string[] = [];
+  for (const manifest of manifests) {
+    if (manifest.path.startsWith("core/")) continue;
+    let files = renderRepositoryFiles([manifest], platformKinds, options);
+    const theirs = there.get(keyOf(manifest));
+    if (theirs) {
+      const said = renderRepositoryFiles([theirs], platformKinds, options);
+      if (JSON.stringify(said) === JSON.stringify(files)) {
+        files = files.map((file) => ({
+          path: file.path,
+          content: remote.get(file.path) as string,
+        }));
+      }
+    }
+    for (const file of files) {
+      const other = myKey.get(file.path);
+      if (other !== undefined) {
+        problems.push(
+          `${file.path} would be the file of two resources, ${other} and ${keyOf(manifest)}. Rename one of them, or move its file in the repository.`,
+        );
+        continue;
+      }
+      myKey.set(file.path, keyOf(manifest));
+      mineFiles.push(file);
+    }
+    if (!named.has(keyOf(manifest))) named.set(keyOf(manifest), stemOf(fileOf(manifest, folder)));
+  }
+  mineFiles.sort((a, b) => (a.path < b.path ? -1 : 1));
+  return {
+    remoteFiles: repository.files,
+    mineFiles,
+    theirs: await checksums(repository.files),
+    mine: await checksums(mineFiles),
+    resourceOf: (path) => {
+      const key = theirKey.get(path) ?? myKey.get(path);
+      return (key === undefined ? undefined : named.get(key)) ?? stemOf(path);
+    },
+    problems,
+  };
+}
+
+/** What the repository says about itself that stops a sync, said once. */
+const configProblem = (repository: Repository) =>
+  repository.problems.length > 0 ? repository.problems.join(" ") : undefined;
 
 /**
- * Commits what the workspace has deployed to its branch. Refused, with nothing
- * written, when someone changed the folder on the branch since the last sync:
- * that is pulled first.
+ * Commits what the workspace has deployed to its branch: each resource's file
+ * where the repository keeps it, and nothing else. Refused, with nothing
+ * written, when someone changed a resource's file on the branch since the last
+ * sync: that is pulled first.
  */
 export async function push(
   kernel: Kernel,
@@ -613,10 +791,9 @@ export async function push(
   return withLease(db, workspace.id, async () => {
     const link = await linkOf(db, workspace);
     // With drafts, what is saved and not yet deployed goes too, for a developer to pick up.
-    const files = options.drafts
-      ? await draftFiles(kernel, db, workspace)
-      : await localFiles(kernel, db, workspace);
-    const local = await checksums(files);
+    const manifests = options.drafts
+      ? await draftManifests(kernel, db, workspace)
+      : await activeConsoleManaged(kernel, db, workspace.id);
     let tip: Tip;
     try {
       tip = await fetchTip(remote, link.branch);
@@ -624,11 +801,15 @@ export async function push(
       return failed(db, workspace, actor, "push", remoteProblem(error));
     }
     try {
-      const theirs = await checksums(await readFolder(tip.gitdir, tip.commit, remote.folder));
+      const repository = await readRepository(tip.gitdir, tip.commit);
+      const sides = await sidesOf(manifests, repository, remote.folder);
+      const problem = configProblem(repository) ?? sides.problems[0];
+      if (problem) return failed(db, workspace, actor, "push", problem);
+      const { theirs, mine: local } = sides;
       const base = link.synced_files;
-      const moved = [...new Set([...Object.keys(theirs), ...Object.keys(base)])].filter(
-        (path) => theirs[path] !== base[path] && theirs[path] !== local[path],
-      );
+      const moved = [...new Set([...Object.keys(theirs), ...Object.keys(base)])]
+        .filter((path) => theirs[path] !== base[path] && theirs[path] !== local[path])
+        .sort();
       if (tip.exists && moved.length > 0) {
         await db
           .updateTable("workspace_git")
@@ -647,10 +828,23 @@ export async function push(
           changedOnBranch: moved,
         };
       }
-      const same = Object.keys({ ...theirs, ...local }).every(
-        (path) => theirs[path] === local[path],
+      // A branch made by this push starts as the default branch. The console's folder there
+      // becomes what the workspace has. A resource file kept anywhere else that the workspace
+      // does not have is somebody's work, and is left for a pull to bring in.
+      const mayRemove = (path: string) => tip.exists || path.startsWith(`${remote.folder}/`);
+      const changes = [
+        ...sides.mineFiles
+          .filter((file) => theirs[file.path] !== local[file.path])
+          .map((file) => ({ path: file.path, content: file.content as string | null })),
+        ...Object.keys(theirs)
+          .filter((path) => local[path] === undefined && mayRemove(path))
+          .map((path) => ({ path, content: null })),
+      ];
+      const left = Object.keys(theirs).filter(
+        (path) => local[path] === undefined && !mayRemove(path),
       );
-      if (same && tip.exists) {
+      const state = left.length > 0 ? ("behind" as const) : ("synced" as const);
+      if (changes.length === 0 && tip.exists) {
         await settle(db, workspace, tip.commit, local);
         await record(db, workspace, actor, { kind: "push", status: "nothing", commit: tip.commit });
         return {
@@ -660,63 +854,57 @@ export async function push(
           changedOnBranch: [],
         };
       }
+      // What the branch would then hold is read as a build would read it. A push never
+      // leaves the repository in a state that does not build.
+      const changed = new Set(changes.map((change) => change.path));
+      const after = parseRepositoryFiles(
+        [...sides.remoteFiles.filter((file) => !changed.has(file.path)), ...sides.mineFiles],
+        { folder: remote.folder, roots: repository.config.roots, kinds: WORKSPACE_KINDS },
+      );
+      if (after.problems.length > 0) {
+        return failed(
+          db,
+          workspace,
+          actor,
+          "push",
+          `Nothing was written: the branch would not build afterwards. ${after.problems.join(" ")}`,
+        );
+      }
       const { tree: rootTree } = await git
         .readCommit({ fs, gitdir: tip.gitdir, oid: tip.commit })
         .then((read) => read.commit);
-      const tree = await replaceAt(
+      const tree = await patchTree(
         tip.gitdir,
         rootTree,
-        remote.folder.split("/"),
-        await writeFiles(tip.gitdir, files),
+        changes.map((change) => ({ segments: change.path.split("/"), content: change.content })),
       );
-      const author = await authorOf(db, actor);
-      const now = Math.floor(Date.now() / 1000);
       const message = `${options.message ?? "Deploy from the console"}\n\nWorkspace: ${workspace.slug}\n`;
-      const commit = await git.writeCommit({
-        fs,
-        gitdir: tip.gitdir,
-        commit: {
-          tree: tree ?? (await git.writeTree({ fs, gitdir: tip.gitdir, tree: [] })),
-          parent: [tip.commit],
-          message,
-          author: { ...author, timestamp: now, timezoneOffset: 0 },
-          committer: {
-            name: "Platform",
-            email: "platform@localhost",
-            timestamp: now,
-            timezoneOffset: 0,
-          },
-        },
-      });
-      await git.writeRef({
-        fs,
-        gitdir: tip.gitdir,
-        ref: `refs/heads/${link.branch}`,
-        value: commit,
-        force: true,
-      });
+      let commit: string;
       try {
-        await git.push({
-          fs,
-          http,
-          gitdir: tip.gitdir,
-          url: remote.url,
-          ref: link.branch,
-          remoteRef: `refs/heads/${link.branch}`,
-          onAuth: remote.onAuth,
-        });
+        commit = await commitAndPush(
+          remote,
+          tip,
+          link.branch,
+          tree,
+          await authorOf(db, actor),
+          message,
+        );
       } catch (error) {
         return failed(db, workspace, actor, "push", remoteProblem(error));
       }
-      await settle(db, workspace, commit, local);
+      await settle(db, workspace, commit, local, state);
       await record(db, workspace, actor, {
         kind: "push",
         status: "done",
         commit,
         message: options.message ?? null,
-        detail: { files: files.length },
+        detail: {
+          files: sides.mineFiles.length,
+          written: changes.filter((change) => change.content !== null).length,
+          removed: changes.filter((change) => change.content === null).length,
+        },
       });
-      return { status: "done" as const, state: "synced" as const, commit, changedOnBranch: [] };
+      return { status: "done" as const, state, commit, changedOnBranch: left.sort() };
     } finally {
       await rm(tip.gitdir, { recursive: true, force: true });
     }
@@ -728,13 +916,14 @@ async function settle(
   workspace: WorkspaceRef,
   commit: string,
   files: Record<string, string>,
+  state: "synced" | "behind" = "synced",
 ) {
   await db
     .updateTable("workspace_git")
     .set({
       synced_commit: commit,
       synced_files: JSON.stringify(files),
-      state: "synced",
+      state,
       last_error: null,
       updated_at: new Date(),
     })
@@ -776,13 +965,11 @@ async function authorOf(db: Db, actor: Actor): Promise<{ name: string; email: st
   return { name: "Platform", email: "platform@localhost" };
 }
 
-/** The resource a file belongs to: its name without the last extension. */
-const stemOf = (path: string) => path.replace(/\.(yaml|ts)$/, "");
-
 /**
- * Reads what changed in the folder on the branch and deploys it. A resource
- * changed on both sides is a conflict: nothing is deployed until each one is
- * given to "mine" (what the workspace has) or "theirs" (what the branch has).
+ * Reads what changed in the repository's resource files on the branch and
+ * deploys it. A resource changed on both sides is a conflict: nothing is
+ * deployed until each one is given to "mine" (what the workspace has) or
+ * "theirs" (what the branch has).
  */
 export async function pull(
   kernel: Kernel,
@@ -799,15 +986,16 @@ export async function pull(
   await linkOf(db, workspace);
   return withLease(db, workspace.id, async () => {
     const link = await linkOf(db, workspace);
+    const stopped = async (problem: string) => ({
+      ...(await failed(db, workspace, actor, "pull", problem)),
+      conflicts: [] as string[],
+      applied: [] as string[],
+    });
     let tip: Tip;
     try {
       tip = await fetchTip(remote, link.branch);
     } catch (error) {
-      return {
-        ...(await failed(db, workspace, actor, "pull", remoteProblem(error))),
-        conflicts: [] as string[],
-        applied: [] as string[],
-      };
+      return stopped(remoteProblem(error));
     }
     try {
       if (!tip.exists) {
@@ -820,41 +1008,52 @@ export async function pull(
           applied: [],
         };
       }
-      let remoteFiles: ResourceFile[];
+      let repository: Repository;
       try {
-        remoteFiles = await readFolder(tip.gitdir, tip.commit, remote.folder, true);
+        repository = await readRepository(tip.gitdir, tip.commit, true);
       } catch (error) {
-        if (!(error instanceof FolderTooLarge)) throw error;
-        return {
-          ...(await failed(db, workspace, actor, "pull", error.message)),
-          conflicts: [],
-          applied: [],
-        };
+        if (!(error instanceof TooLarge)) throw error;
+        return stopped(error.message);
       }
-      const theirs = await checksums(remoteFiles);
-      const mineFiles = await localFiles(kernel, db, workspace);
-      const mine = await checksums(mineFiles);
+      const active = await activeConsoleManaged(kernel, db, workspace.id);
+      const sides = await sidesOf(active, repository, remote.folder);
+      const wrong = configProblem(repository);
+      if (wrong) return stopped(wrong);
+      const { theirs, mine, remoteFiles, mineFiles, resourceOf } = sides;
       const base = link.synced_files;
 
-      // Compare resource by resource: a script is its YAML and its source together.
-      const stems = new Set(
-        [...Object.keys(theirs), ...Object.keys(mine), ...Object.keys(base)].map(stemOf),
-      );
-      const differs = (a: Record<string, string>, b: Record<string, string>, stem: string) =>
-        [`${stem}.yaml`, `${stem}.ts`].some((path) => a[path] !== b[path]);
+      // Compare resource by resource: a script is its YAML and its source together, and a
+      // resource renamed on one side is its old file and its new one.
+      const groups = new Map<string, string[]>();
+      for (const path of new Set([
+        ...Object.keys(theirs),
+        ...Object.keys(mine),
+        ...Object.keys(base),
+      ])) {
+        const resource = resourceOf(path);
+        groups.set(resource, [...(groups.get(resource) ?? []), path]);
+      }
+      const differs = (a: Record<string, string>, b: Record<string, string>, resource: string) =>
+        (groups.get(resource) ?? []).some((path) => a[path] !== b[path]);
+      // Before files were kept anywhere, a resource was named without the console's folder.
+      const chosen = (resource: string) =>
+        options.resolutions?.[resource] ??
+        (resource.startsWith(`${remote.folder}/`)
+          ? options.resolutions?.[resource.slice(remote.folder.length + 1)]
+          : undefined);
       const take: string[] = [];
       const conflicts: string[] = [];
       const keep: string[] = [];
-      for (const stem of [...stems].sort()) {
-        if (!differs(theirs, mine, stem)) continue;
-        const theyChanged = differs(theirs, base, stem);
-        const iChanged = differs(mine, base, stem);
-        if (theyChanged && !iChanged) take.push(stem);
+      for (const resource of [...groups.keys()].sort()) {
+        if (!differs(theirs, mine, resource)) continue;
+        const theyChanged = differs(theirs, base, resource);
+        const iChanged = differs(mine, base, resource);
+        if (theyChanged && !iChanged) take.push(resource);
         else if (theyChanged && iChanged) {
-          const resolution = options.resolutions?.[stem];
-          if (resolution === "theirs") take.push(stem);
-          else if (resolution === "mine") keep.push(stem);
-          else conflicts.push(stem);
+          const resolution = chosen(resource);
+          if (resolution === "theirs") take.push(resource);
+          else if (resolution === "mine") keep.push(resource);
+          else conflicts.push(resource);
         }
       }
       if (conflicts.length > 0) {
@@ -881,23 +1080,23 @@ export async function pull(
       // What the workspace would then hold: its own files, with the taken resources as the branch has them.
       const taken = new Set(take);
       const merged = [
-        ...mineFiles.filter((file) => !taken.has(stemOf(file.path))),
-        ...remoteFiles.filter((file) => taken.has(stemOf(file.path))),
+        ...mineFiles.filter((file) => !taken.has(resourceOf(file.path))),
+        ...remoteFiles.filter((file) => taken.has(resourceOf(file.path))),
       ];
-      const parsed = parseResourceFiles(merged);
-      // What the repository keeps outside the folder is not on this side of the sync. It is
-      // still part of what the workspace runs, and is carried as it is.
-      const elsewhere = (await activeConsoleManaged(kernel, db, workspace.id)).filter(
-        (manifest) => !inFolder(manifest),
-      );
+      const parsed = parseRepositoryFiles(merged, {
+        folder: remote.folder,
+        roots: repository.config.roots,
+        kinds: WORKSPACE_KINDS,
+      });
       if (parsed.problems.length > 0) {
-        const problem = `The files on the branch are not valid: ${parsed.problems.join(" ")}`;
-        return {
-          ...(await failed(db, workspace, actor, "pull", problem)),
-          conflicts: [],
-          applied: [],
-        };
+        return stopped(`The files on the branch are not valid: ${parsed.problems.join(" ")}`);
       }
+      // What a file does not say is kept as the resource has it: the name of its tool.
+      const had = new Map(active.map((manifest) => [keyOf(manifest), manifest]));
+      const manifests = parsed.manifests.map((manifest) => {
+        const mcp = had.get(keyOf(manifest))?.mcp;
+        return mcp ? { ...manifest, mcp } : manifest;
+      });
       if (take.length > 0) {
         try {
           await mutate(db, actor, (trx, audit) =>
@@ -907,7 +1106,7 @@ export async function pull(
               audit,
               workspace,
               actor.principal,
-              [...parsed.manifests, ...elsewhere],
+              manifests,
               `Pulled ${tip.commit.slice(0, 7)} from ${link.branch}`,
               options.allowDelete ?? [],
             ),
@@ -918,17 +1117,7 @@ export async function pull(
             error.message,
             ...(error.issues ?? []).map((issue) => `${issue.path} ${issue.message}`),
           ].join(" ");
-          return {
-            ...(await failed(
-              db,
-              workspace,
-              actor,
-              "pull",
-              `What is on the branch cannot be deployed. ${detail}`,
-            )),
-            conflicts: [],
-            applied: [],
-          };
+          return stopped(`What is on the branch cannot be deployed. ${detail}`);
         }
       }
       // For a resource kept as "mine", the branch's version is now the base, so the next push replaces it.
@@ -1046,12 +1235,15 @@ export async function checkRepository(kernel: Kernel, actor: Actor, tenantId: st
 }
 
 export interface CompareFile {
+  /** From the repository's root. */
   path: string;
+  /** The resource the file belongs to, as a pull names it in `conflicts` and `resolutions`. */
+  resource: string;
   /** Changed in the workspace since the last sync. */
   here: boolean;
   /** Changed on the branch since the last sync. */
   branch: boolean;
-  /** Changed on both, differently: a pull would ask which to keep. */
+  /** Its resource was changed on both sides, differently: a pull would ask which to keep. */
   conflict: boolean;
   /** For a conflict, both versions, so they can be set side by side. */
   mine?: string | null;
@@ -1075,24 +1267,38 @@ export async function compareWithBranch(
     throw new HttpError(409, "repository_unreachable", remoteProblem(error));
   });
   try {
-    const remoteFiles = tip.exists ? await readFolder(tip.gitdir, tip.commit, remote.folder) : [];
-    const mineFiles = options.drafts
-      ? await draftFiles(kernel, db, workspace)
-      : await localFiles(kernel, db, workspace);
-    const [theirs, mine] = [await checksums(remoteFiles), await checksums(mineFiles)];
+    const repository = tip.exists
+      ? await readRepository(tip.gitdir, tip.commit)
+      : { files: [], config: { roots: [], ignore: [] }, problems: [] };
+    const sides = await sidesOf(
+      options.drafts
+        ? await draftManifests(kernel, db, workspace)
+        : await activeConsoleManaged(kernel, db, workspace.id),
+      repository,
+      remote.folder,
+    );
+    const { theirs, mine, remoteFiles, mineFiles } = sides;
     const base = link.synced_files;
-    const files: CompareFile[] = [];
-    for (const path of [
+    const paths = [
       ...new Set([...Object.keys(theirs), ...Object.keys(mine), ...Object.keys(base)]),
-    ].sort()) {
+    ].sort();
+    // As a pull sees it: a resource changed on both sides is in conflict, whichever of its
+    // files each side changed.
+    const changed = (side: Record<string, string>) =>
+      new Set(
+        paths.filter((path) => side[path] !== base[path]).map((path) => sides.resourceOf(path)),
+      );
+    const [changedHere, changedThere] = [changed(mine), tip.exists ? changed(theirs) : new Set()];
+    const files: CompareFile[] = [];
+    for (const path of paths) {
       if (theirs[path] === mine[path]) continue;
-      const here = mine[path] !== base[path];
-      const branch = tip.exists && theirs[path] !== base[path];
-      const conflict = here && branch;
+      const resource = sides.resourceOf(path);
+      const conflict = changedHere.has(resource) && changedThere.has(resource);
       files.push({
         path,
-        here,
-        branch,
+        resource,
+        here: mine[path] !== base[path],
+        branch: tip.exists && theirs[path] !== base[path],
         conflict,
         ...(conflict
           ? {
@@ -1125,12 +1331,12 @@ export async function compareWithBranch(
   }
 }
 
-/** The files the workspace's console-managed resources make with its drafts laid over them. */
-export async function draftFiles(
+/** The workspace's console-managed resources with its drafts laid over them. */
+export async function draftManifests(
   kernel: Kernel,
   db: Db,
   workspace: WorkspaceRef,
-): Promise<ResourceFile[]> {
+): Promise<BundleManifest[]> {
   const deployed = await activeConsoleManaged(kernel, db, workspace.id);
   const drafts = await db
     .selectFrom("resource_draft")
@@ -1142,19 +1348,29 @@ export async function draftFiles(
   for (const draft of drafts) {
     if (draft.deleted) byKey.delete(draft.key);
     else {
-      const title = draft.title ?? byKey.get(draft.key)?.title;
+      const was = byKey.get(draft.key);
+      const title = draft.title ?? was?.title;
       byKey.set(draft.key, {
         kind: draft.kind,
         schemaVersion: draft.schema_version,
         path: draft.path,
         ...(draft.key !== draft.path ? { key: draft.key } : {}),
         ...(title ? { title } : {}),
+        ...(was?.mcp ? { mcp: was.mcp } : {}),
+        ...(was?.source
+          ? {
+              source: {
+                ...was.source,
+                file: movedFile(was.source.file, draft.kind, was.path, draft.path),
+              },
+            }
+          : {}),
         ownership: "ui",
         body: draft.body as Record<string, unknown>,
       });
     }
   }
-  return renderResourceFiles([...byKey.values()].filter(inFolder), platformKinds);
+  return [...byKey.values()];
 }
 
 /**
@@ -1195,17 +1411,27 @@ export async function pushRelease(
     return { status: "failed", branch, problem };
   }
   try {
-    const files = await localFiles(kernel, db, workspace);
-    const { tree: rootTree } = await git
-      .readCommit({ fs, gitdir: tip.gitdir, oid: tip.commit })
-      .then((read) => read.commit);
-    const tree = await replaceAt(
-      tip.gitdir,
-      rootTree,
-      remote.folder.split("/"),
-      await writeFiles(tip.gitdir, files),
+    // The branch is what production runs, and no more: a resource file there that
+    // production does not have is removed, wherever it is kept.
+    const repository = await readRepository(tip.gitdir, tip.commit);
+    const sides = await sidesOf(
+      await activeConsoleManaged(kernel, db, workspace.id),
+      repository,
+      remote.folder,
     );
-    if (tip.exists && tree === rootTree) {
+    const files = sides.mineFiles;
+    const changes = [
+      ...files
+        .filter((file) => sides.theirs[file.path] !== sides.mine[file.path])
+        .map((file) => ({
+          segments: file.path.split("/"),
+          content: file.content as string | null,
+        })),
+      ...Object.keys(sides.theirs)
+        .filter((path) => sides.mine[path] === undefined)
+        .map((path) => ({ segments: path.split("/"), content: null })),
+    ];
+    if (tip.exists && changes.length === 0) {
       await record(db, workspace, actor, {
         kind: "push",
         status: "nothing",
@@ -1214,41 +1440,19 @@ export async function pushRelease(
       });
       return { status: "nothing", branch };
     }
-    const author = await authorOf(db, actor);
-    const now = Math.floor(Date.now() / 1000);
-    const commit = await git.writeCommit({
-      fs,
-      gitdir: tip.gitdir,
-      commit: {
-        tree: tree ?? (await git.writeTree({ fs, gitdir: tip.gitdir, tree: [] })),
-        parent: [tip.commit],
-        message: `Promoted version ${options.version} to ${workspace.slug}\n\nWorkspace: ${workspace.slug}\n`,
-        author: { ...author, timestamp: now, timezoneOffset: 0 },
-        committer: {
-          name: "Platform",
-          email: "platform@localhost",
-          timestamp: now,
-          timezoneOffset: 0,
-        },
-      },
-    });
-    await git.writeRef({
-      fs,
-      gitdir: tip.gitdir,
-      ref: `refs/heads/${branch}`,
-      value: commit,
-      force: true,
-    });
+    const { tree: rootTree } = await git
+      .readCommit({ fs, gitdir: tip.gitdir, oid: tip.commit })
+      .then((read) => read.commit);
+    let commit: string;
     try {
-      await git.push({
-        fs,
-        http,
-        gitdir: tip.gitdir,
-        url: remote.url,
-        ref: branch,
-        remoteRef: `refs/heads/${branch}`,
-        onAuth: remote.onAuth,
-      });
+      commit = await commitAndPush(
+        remote,
+        tip,
+        branch,
+        await patchTree(tip.gitdir, rootTree, changes),
+        await authorOf(db, actor),
+        `Promoted version ${options.version} to ${workspace.slug}\n\nWorkspace: ${workspace.slug}\n`,
+      );
     } catch (error) {
       const problem = remoteProblem(error);
       await record(db, workspace, actor, {

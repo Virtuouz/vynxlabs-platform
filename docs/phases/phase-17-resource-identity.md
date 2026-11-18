@@ -1,6 +1,6 @@
 # Phase 17: resource identity, two-way authoring and access as resources
 
-Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 and M6 built in part: each says what it left out. Not pushed.
+Status: in progress on branch `phase-17-resource-identity`, off `main`. M0 to M4 built. M5 built except for what its section lists; M6 built in part. Not pushed.
 Last updated: 2026-11-18
 
 This phase carries out [Decision 0002](../evolution/decisions/0002-resource-identity-and-authoring.md). Today a resource's path is its identity, its address and its folder at once, so:
@@ -241,23 +241,43 @@ Each is one file, `<key>.<kind>.yaml`, with the title beside the body. A file's 
 
 **Renaming and titling from the console.** `PUT …/drafts/<path>` with `path` moves the draft and keeps its key; with `title` it sets one. The draft says `change: "rename"` and `renamedFrom`. Deployed, it is the same resource at the new path. Drafts are composed by key. What refers to a renamed resource by its old path, which is its key, is built as the new path, in the console's compose as in the CLI's build.
 
-**Git.** A resource renamed in the console is committed as its file moved, with `key:` written in, and a pull afterwards finds nothing to do. A file the repository keeps outside the console's folder is not written into that folder by a push or by `platform pull`, and a pull from the branch carries it as it is.
+**Git, across the whole repository.** Sync reads and writes resource files wherever the repository keeps them, and nothing else.
 
-**Console.** The resources list shows title, key (when moved) and where each is defined, with Rename for what the console manages. For what the repository defines the button is off and says how to rename it there. The release screen shows a rename as one.
+| Step | What it does |
+| --- | --- |
+| Read | Walks the branch's tree as the CLI's build does: every `<name>.<kind>.yaml` and the `.ts` beside a script, pruned by `vynxlabs.yaml` and the folders never read. No longer one folder |
+| Compare | Resource by resource, by key. A rename on one side and an edit on the other is one conflict, not a delete and an add |
+| Push | Writes each changed file at its own place and removes only files the last sync recorded. Every other entry in the tree keeps its checksum (`patchTree`) |
+| Pull | Deploys what changed in any of those files. `tools/keep.variable.yaml` that says `path:` is as good as `src/lending/limit.variable.yaml` under a root |
+
+- **A file is rewritten only when what it says changed here.** Where the workspace and the branch say the same, the branch's bytes count as the workspace's. A file written by hand keeps its comments and its order until someone edits that resource in the console; then it is written in the console's form.
+- **A draft of a file outside the console's folder is saved like any other.** The `defined_in_file` refusal is gone. The manifest keeps `source.file`, so the push writes it back there.
+- **A rename moves a file named for its path** (`src/lending/limit.variable.yaml` to `src/lending/cap.variable.yaml`, with `key:`). A file that says `path:` stays where it is and says the new one.
+- **Before writing, a push reads the result as a build would.** If two files would then claim one key or path, nothing is written and the push says which.
+- **The first push to a new branch removes nothing outside the console's folder.** The branch starts as the default branch, which may hold resource files this workspace never had. They are left, the push answers `behind` and names them, and a pull brings them in.
+- **A pull now takes in every resource file on the branch**, as `platform deploy` from that branch would. A repository that holds files for more than one workspace lists what is not this one's under `ignore:` in `vynxlabs.yaml`.
+- **A release branch is a mirror.** A resource file there that production does not have is removed, wherever it is.
+- **Names changed in the API.** `conflicts`, `applied`, `changedOnBranch` and the keys of `resolutions` are now from the repository's root (`platform/orders/hello.script`, not `orders/hello.script`). The old form of a `resolutions` key is still taken. Compare gives each file its `resource`, and marks a conflict by resource.
+- **Migration 0074** rewrites what each workspace last agreed with its branch from folder paths to repository paths, so a workspace that was synced stays synced.
+- **`platform pull`** writes those files too. `GET …/resource-files` gives them apart, as `elsewhere`, and takes the repository's `roots`. A file that already says the same is left as written; one that differs and was never pulled is kept unless `--force`; only a file a pull wrote is ever removed.
+
+**Console.** The resources list shows title, key (when moved) and where each is defined, with Rename for what the console manages, files under `src/` included. For what the repository's code defines the button is off and says how to rename it there. The release screen shows a rename as one.
 
 **Schemas.** `schemas/files/<kind>.v1.schema.json` describes each kind's file, for an editor to complete and check: 17 workspace kinds and the 5 of a tenant's access.
 
 ### What M5 left out
 
-The plan's M5 had eleven steps. These were not built, and each is a limit on what the phase delivers:
+The plan's M5 had eleven steps. Git sync across the repository was built after the rest, at the owner's word. These were not built, and each is a limit on what the phase delivers:
 
-- **The console does not edit a file kept outside its folder.** The plan had git sync read and write resource files anywhere in the repository, patching each file where it was found. Sync still reads and writes one folder. A file elsewhere is the repository's: it is deployed, shown with where it is, and refused as a draft (`defined_in_file`). So "what code can do the console can do" holds for the console's folder and not yet for `src/`.
 - **`ownership` is still the switch.** There are no `source_file` and `source_generated` columns, and the deploy still decides what it speaks for by `code` and `ui`. Where a file is travels in `meta.source`.
 - **The console does not say which file a TypeScript definition is in.** The SDK does not record where `define*` was called, so `definedIn` is empty for code.
 - **"Move to file" is the takeover there was.** A draft at the path of a repository resource takes it over into the console's folder, and the build then refuses the second definition by name. There is no button for it and no change to what it covers.
 - **A draft's primary key is still its path.** It has a key, unique in the workspace, and is found by path.
 - **A rename is made from the resources list**, not from a panel in each editor, and a title is set through the API only.
 - **Not built:** `platform schemas`, shipping the file schemas in the SDK package, and serving them from the control plane. They are in `schemas/files/` in this repository.
+- **A file's comments do not survive an edit in the console.** The console writes YAML from the manifest, so the first change made there rewrites the file in its own form.
+- **A pull cannot see TypeScript.** A definition moved from a YAML file into code on the branch reads as that file deleted. The deploy that follows is the same one a console deletion makes.
+- **The folder setting still has to be the same in the repository and the CLI** (`platform` by default): the server takes it from the tenant's repository settings and the CLI from `--resources`.
 - **A developer who moves a file on the branch without `key:`** makes a delete and a create, which the delete guard stops when the old one holds something. Nothing recognises the move for them.
 
 ## M6: examples and documentation

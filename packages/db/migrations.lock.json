@@ -71,5 +71,6 @@
   "0070_resource_titles.sql": "987ca70f2252d6549cfdb918faaf4c85feedd81b7e2ce10622b4a73221052d81",
   "0071_access_resources.sql": "bbcb719bee0352782621688da57b39e0067793ed06aeefe1d79efb724cceabcf",
   "0072_group_membership.sql": "2a82ad75132a13e2bb2680d704513da95bb9388c0224fb68a3beda7fc58bd068",
-  "0073_approver_ids.sql": "52b5cbfc3650873d8e0f732a4a4ef31b98b074d4f49d558c7bd80e64c66bdd1f"
+  "0073_approver_ids.sql": "52b5cbfc3650873d8e0f732a4a4ef31b98b074d4f49d558c7bd80e64c66bdd1f",
+  "0074_synced_repository_files.sql": "42c416bcebd68b42e8e3e57c9469ef5d651178df89b3a18274c023e14a375759"
 }

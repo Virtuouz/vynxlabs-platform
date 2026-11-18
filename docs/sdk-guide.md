@@ -72,7 +72,11 @@ roots: [src]
 ignore: [vendor]
 ```
 
-The console edits the files in `platform/`. A file you keep elsewhere is yours: the console shows it, says which file it is, and does not change it.
+The console edits these files wherever you keep them. With git sync, a change made in the console is committed to the file it came from, on the workspace's branch; a rename moves the file, or changes its `path:` if it says one. A resource made in the console is written under `platform/`.
+
+- A file is rewritten only when the resource was changed in the console. It is then written in the console's form, so comments in it are lost.
+- Without git sync, `platform pull` writes the console's changes into the same files. It does not overwrite one you changed and never pulled unless you pass `--force`.
+- Code is different. A resource made by `define*` in TypeScript is not a file the console can write, and the console shows it read-only.
 
 A resource is defined once. The build refuses one that is both in the code and in a file, by path or by key, and names both places.
 

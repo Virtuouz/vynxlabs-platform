@@ -4,10 +4,13 @@ import { renderSchemas } from "./emit.js";
 import {
   entryFor,
   ignoredFolder,
+  movedFile,
   parseRepositoryConfig,
   parseRepositoryFiles,
   parseResourceFiles,
+  renderRepositoryFiles,
   renderResourceFiles,
+  sameResourceFile,
 } from "./files.js";
 import { platformKinds } from "./kinds.js";
 import { validateJson } from "./registry.js";
@@ -344,5 +347,71 @@ describe("the published schema of a file", () => {
     // One of a tenant's access has a key and no path, and may be nothing but a title.
     expect(validateJson(schema("group"), { title: "Tech Desk", schemaVersion: 1 })).toEqual([]);
     expect(Object.keys(schema("group").properties)).not.toContain("path");
+  });
+});
+
+describe("files written back where a repository keeps them", () => {
+  const kinds = new Set(platformKinds.map((kind) => kind.kind));
+  const options = { folder: "platform", roots: ["src"] };
+  const files = [
+    {
+      path: "platform/limits/size.variable.yaml",
+      content: 'schemaVersion: 1\nbody:\n  default: "1"\n',
+    },
+    {
+      path: "src/lending/limit.variable.yaml",
+      content: 'schemaVersion: 1\nbody:\n  default: "5"\n',
+    },
+    {
+      path: "tools/keep.variable.yaml",
+      content: 'path: lending/retention\nschemaVersion: 1\nbody:\n  default: "30"\n',
+    },
+    {
+      path: "src/requests/submit.script.yaml",
+      content: "key: old/submit\nschemaVersion: 1\nbody:\n  timeoutSeconds: 30\n",
+    },
+    { path: "src/requests/submit.script.ts", content: "export default async () => 1;\n" },
+  ];
+
+  test("each file comes back at its own place with its own bytes, and says its path only when its place does not", () => {
+    const parsed = parseRepositoryFiles(files, { ...options, kinds });
+    expect(parsed.problems).toEqual([]);
+    expect(renderRepositoryFiles(parsed.manifests, platformKinds, options)).toEqual(
+      [...files].sort((a, b) => (a.path < b.path ? -1 : 1)),
+    );
+    // A repository that does not list src as a root: the file there has to say its path.
+    const limit = parsed.manifests.filter((manifest) => manifest.path === "lending/limit");
+    expect(
+      renderRepositoryFiles(limit, platformKinds, { folder: "platform", roots: [] })[0]?.content,
+    ).toBe('path: lending/limit\nschemaVersion: 1\nbody:\n  default: "5"\n');
+  });
+
+  test("a file named for the path moves with a rename, and one that says its path stays", () => {
+    expect(
+      movedFile("src/lending/limit.variable.yaml", "variable", "lending/limit", "lending/cap"),
+    ).toBe("src/lending/cap.variable.yaml");
+    expect(
+      movedFile("tools/keep.variable.yaml", "variable", "lending/retention", "lending/keep"),
+    ).toBe("tools/keep.variable.yaml");
+  });
+
+  test("two files say the same whatever their comments, order and quoting, and source only when identical", () => {
+    expect(
+      sameResourceFile(
+        "a.variable.yaml",
+        "# Ours\nbody: { default: '5' }\nschemaVersion: 1\n",
+        'schemaVersion: 1\nbody:\n  default: "5"\n',
+      ),
+    ).toBe(true);
+    expect(
+      sameResourceFile(
+        "a.variable.yaml",
+        "schemaVersion: 1\nbody: {}\n",
+        "schemaVersion: 2\nbody: {}\n",
+      ),
+    ).toBe(false);
+    expect(sameResourceFile("a.script.ts", "export default 1;\n", "export default 1; \n")).toBe(
+      false,
+    );
   });
 });

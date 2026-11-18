@@ -67,16 +67,14 @@ test("renaming saves a draft of the resource as it is, at the new path, and chan
   await waitFor(() => expect(done).toBe(1));
 });
 
-test("what the repository defines is renamed there, and the console says how", () => {
+test("what the repository's code defines is renamed there, and a file is renamed like anything else", () => {
   const generated = { ...script, ownership: "code" };
   const filed = { ...script, key: "old/submit", definedIn: "src/lending/submit.script.yaml" };
   expect(cannotRename(script)).toBeUndefined();
   expect(cannotRename(generated)).toBe(
     'It is defined in the repository\'s code. Change its path there, and give it key: "requests/submit".',
   );
-  expect(cannotRename(filed)).toBe(
-    "It is defined in src/lending/submit.script.yaml. Move the file there, and give it key: old/submit.",
-  );
+  expect(cannotRename(filed)).toBeUndefined();
   expect([script, generated, filed].map(definedWhere)).toEqual([
     "Console",
     "Repository",

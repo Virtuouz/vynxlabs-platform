@@ -21,7 +21,8 @@ const Repository = Type.Object({
   url: Type.String(),
   defaultBranch: Type.String(),
   folder: Type.String({
-    description: "The folder the server writes. Nothing else in the repository is touched.",
+    description:
+      "Where resources made in the console are written. A resource file kept anywhere else is written back where it is; nothing that is not a resource's file is touched.",
   }),
   paused: Type.Boolean({
     description:
@@ -58,7 +59,7 @@ const State = Type.Union(
   {
     description:
       "`ahead`: the workspace has deployed something the branch does not have. `behind`: the " +
-      "folder changed on the branch. `conflict`: a pull found a resource changed on both sides.",
+      "resource's file changed on the branch. `conflict`: a pull found a resource changed on both sides.",
   },
 );
 const Status = Type.Object({
@@ -257,8 +258,9 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Commit what the workspace has deployed to its branch",
           description:
-            "One commit, authored by whoever asks. `refused` means the folder changed on the " +
-            "branch since the last sync: pull first. Nothing outside the folder is touched.",
+            "One commit, authored by whoever asks, of each resource's file where the repository " +
+            "keeps it. `refused` means a resource's file changed on the branch since the last " +
+            "sync: pull first. Nothing that is not a resource's file is touched.",
           tags: ["git"],
           params: WorkspaceParams,
           body: Type.Object({
@@ -321,7 +323,12 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               conflicts: Type.Integer(),
               files: Type.Array(
                 Type.Object({
-                  path: Type.String(),
+                  path: Type.String({ description: "From the repository's root." }),
+                  resource: Type.String({
+                    description:
+                      "The resource the file belongs to, as a pull names it in `conflicts` and " +
+                      "takes it in `resolutions`: its file on the branch, without the extension.",
+                  }),
                   here: Type.Boolean(),
                   branch: Type.Boolean(),
                   conflict: Type.Boolean(),
@@ -469,7 +476,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("deployment:write") },
         schema: {
-          summary: "Deploy what changed in the folder on the branch",
+          summary: "Deploy what changed in the resource files on the branch",
           description:
             "A resource changed on the branch and not here is taken. A resource changed on " +
             "both sides is a conflict: the answer lists them and deploys nothing. Ask again " +

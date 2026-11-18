@@ -1,14 +1,20 @@
 /**
  * `platform pull`: the workspace's console resources, drafts included, written
  * as the files `platform/` holds, so a change made in the console reaches the
- * repository. What was written is remembered, so a file changed here since is
- * never overwritten without `--force`.
+ * repository. A resource whose file the repository keeps somewhere else is
+ * written there. What was written is remembered, so a file changed here since
+ * is never overwritten without `--force`.
  */
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
-import { RESOURCE_FOLDER } from "@vynxlabs/manifest";
+import {
+  parseRepositoryConfig,
+  REPOSITORY_CONFIG,
+  RESOURCE_FOLDER,
+  sameResourceFile,
+} from "@vynxlabs/manifest";
 import { type Io, loadSettings, locate, refusal, request } from "./cli.js";
 
 /** What the last pull wrote, by path under `platform/`. */
@@ -21,6 +27,8 @@ export interface Pulled {
    * deploy of it says so, and the drafts are cleared.
    */
   drafts?: Record<string, number>;
+  /** What it wrote outside `platform/`, by path from the repository's root. */
+  elsewhere?: Record<string, string>;
 }
 
 /** Where a repository keeps what its last pull wrote. */
@@ -70,6 +78,15 @@ export async function pullInto(
   files: { path: string; content: string }[],
   force: boolean,
   drafts: { path: string; revision: number }[] = [],
+  /**
+   * The files of resources the repository keeps outside `platform/`, by path from
+   * `directory`. Each is written where it is. One that already says the same thing is
+   * left as its author wrote it.
+   */
+  elsewhere?: {
+    directory: string;
+    files: { path: string; content: string; resource?: string }[];
+  },
 ): Promise<PullReport> {
   const before: Pulled | undefined = await readText(stateFile).then((text) =>
     text ? (JSON.parse(text) as Pulled) : undefined,
@@ -115,15 +132,68 @@ export async function pullInto(
       });
     }
   }
+  const lastElsewhere = before?.workspace === workspace ? (before.elsewhere ?? {}) : {};
+  const nextElsewhere: Record<string, string> = {};
+  const keptResources = new Set<string>();
+  for (const { path, content, resource } of elsewhere?.files ?? []) {
+    const target = join(elsewhere?.directory ?? "", ...path.split("/"));
+    const here = await readText(target);
+    if (here !== undefined && sameResourceFile(path, here, content)) {
+      report.unchanged += 1;
+      nextElsewhere[path] = sha(here);
+      continue;
+    }
+    const untouched = here === undefined || lastElsewhere[path] === sha(here);
+    if (!untouched && !force) {
+      report.kept.push({
+        path: `/${path}`,
+        why: lastElsewhere[path]
+          ? "changed here since it was pulled"
+          : "changed in the console, and not the same here",
+      });
+      if (resource) keptResources.add(resource);
+      if (lastElsewhere[path]) nextElsewhere[path] = lastElsewhere[path];
+      continue;
+    }
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, content);
+    nextElsewhere[path] = sha(content);
+    report.written.push({ path: `/${path}`, how: here === undefined ? "new" : "updated" });
+  }
+  // Only what a pull wrote is ever removed out there: the rest is the repository's own.
+  for (const path of Object.keys(lastElsewhere)) {
+    if (path in nextElsewhere || (elsewhere?.files ?? []).some((file) => file.path === path)) {
+      continue;
+    }
+    const target = join(elsewhere?.directory ?? "", ...path.split("/"));
+    const here = await readText(target);
+    if (here === undefined) continue;
+    if (lastElsewhere[path] === sha(here) || force) {
+      await rm(target);
+      report.removed.push(`/${path}`);
+    } else {
+      report.kept.push({
+        path: `/${path}`,
+        why: "removed or moved in the console, and changed here since it was pulled",
+      });
+      nextElsewhere[path] = lastElsewhere[path] as string;
+    }
+  }
   // A draft whose file was kept as it is here was not taken, and a deploy must not clear it.
-  const keptStems = new Set(report.kept.map((one) => stem(one.path)));
+  const keptStems = new Set([...report.kept.map((one) => stem(one.path)), ...keptResources]);
   const taken = Object.fromEntries(
     drafts
       .filter((draft) => !keptStems.has(draft.path))
       .map((draft) => [draft.path, draft.revision]),
   );
   await mkdir(dirname(stateFile), { recursive: true });
-  const state: Pulled = { workspace, at: new Date().toISOString(), files: next, drafts: taken };
+  const state: Pulled = {
+    workspace,
+    at: new Date().toISOString(),
+    files: next,
+    drafts: taken,
+    ...(Object.keys(nextElsewhere).length > 0 ? { elsewhere: nextElsewhere } : {}),
+  };
   await writeFile(stateFile, `${JSON.stringify(state, null, 2)}\n`);
   return report;
 }
@@ -141,19 +211,30 @@ export async function pull(args: string[], io: Io): Promise<number> {
   });
   const settings = await loadSettings(io.env);
   const { base, workspace } = await locate(settings, values.tenant, values.workspace);
+  const directory = resolve(values.dir ?? ".");
+  // A file under one of the repository's roots is named for its path, and is not made to say it.
+  const { config } = parseRepositoryConfig(await readText(join(directory, REPOSITORY_CONFIG)));
+  const query = new URLSearchParams({
+    ...(values.deployed ? { drafts: "false" } : {}),
+    ...(config.roots.length > 0 ? { roots: config.roots.join(",") } : {}),
+  }).toString();
   const reply = await request(
     settings.url,
-    `${base}/resource-files${values.deployed ? "?drafts=false" : ""}`,
+    `${base}/resource-files${query ? `?${query}` : ""}`,
     settings.token,
   );
   if (reply.status !== 200) throw refusal(reply, "read the workspace's console resources");
-  const { files, drafts, bundleVersion } = reply.body as {
+  const { files, elsewhere, drafts, bundleVersion } = reply.body as {
     files: { path: string; content: string }[];
+    /** Not sent by a server from before files were kept anywhere. */
+    elsewhere?: { path: string; content: string; resource?: string }[];
     drafts: { path: string; revision: number; deleted: boolean }[];
     bundleVersion: number | null;
   };
-  const directory = resolve(values.dir ?? ".");
   const folder = join(directory, RESOURCE_FOLDER);
+  // From the repository's root: a file in the folder, or one kept anywhere, written `/so`.
+  const shown = (path: string) =>
+    path.startsWith("/") ? path.slice(1) : `${RESOURCE_FOLDER}/${path}`;
   const report = await pullInto(
     folder,
     pulledFile(directory),
@@ -161,10 +242,10 @@ export async function pull(args: string[], io: Io): Promise<number> {
     files,
     values.force === true,
     drafts,
+    { directory, files: elsewhere ?? [] },
   );
-  for (const file of report.written)
-    io.out(`  ${file.how.padEnd(8)} ${RESOURCE_FOLDER}/${file.path}`);
-  for (const path of report.removed) io.out(`  removed  ${RESOURCE_FOLDER}/${path}`);
+  for (const file of report.written) io.out(`  ${file.how.padEnd(8)} ${shown(file.path)}`);
+  for (const path of report.removed) io.out(`  removed  ${shown(path)}`);
   const from = [
     bundleVersion !== null ? `version ${bundleVersion}` : "nothing deployed",
     values.deployed ? "" : `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`,
@@ -172,7 +253,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
     .filter(Boolean)
     .join(" and ");
   io.out(
-    `Pulled ${files.length} ${files.length === 1 ? "file" : "files"} from ${values.workspace} (${from}): ` +
+    `Pulled ${files.length + (elsewhere?.length ?? 0)} ${files.length + (elsewhere?.length ?? 0) === 1 ? "file" : "files"} from ${values.workspace} (${from}): ` +
       `${report.written.filter((one) => one.how === "new").length} new, ` +
       `${report.written.filter((one) => one.how === "updated").length} updated, ` +
       `${report.removed.length} removed, ${report.unchanged} unchanged.`,
@@ -181,7 +262,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
     io.err(
       [
         `${report.kept.length} ${report.kept.length === 1 ? "file was" : "files were"} not overwritten:`,
-        ...report.kept.map((one) => `  ${RESOURCE_FOLDER}/${one.path}: ${one.why}`),
+        ...report.kept.map((one) => `  ${shown(one.path)}: ${one.why}`),
         "Keep your change, or run pull again with --force to take the console's.",
       ].join("\n"),
     );

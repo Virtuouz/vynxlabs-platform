@@ -20,6 +20,8 @@ interface Compare {
   conflicts: number;
   files: {
     path: string;
+    /** The resource the file belongs to, as a pull names it. */
+    resource: string;
     here: boolean;
     branch: boolean;
     conflict: boolean;
@@ -75,9 +77,9 @@ export function GitSync({ root, link }: { root: string; link: string }) {
     }
   };
 
-  const stemOf = (path: string) => path.replace(/\.(yaml|ts)$/, "");
+  // A resource is its files together: its YAML, its source, and the old one of a rename.
   const conflicts = (compare.data?.files ?? []).filter((file) => file.conflict);
-  const stems = [...new Set(conflicts.map((file) => stemOf(file.path)))];
+  const stems = [...new Set(conflicts.map((file) => file.resource))];
   const allChosen = stems.every((stem) => choices[stem]);
 
   return (
@@ -233,7 +235,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                     </span>
                   </div>
                   {conflicts
-                    .filter((file) => stemOf(file.path) === stem)
+                    .filter((file) => file.resource === stem)
                     .map((file) => (
                       <div key={file.path} className="grid gap-2 md:grid-cols-2">
                         {(["mine", "theirs"] as const).map((side) => (

@@ -170,12 +170,34 @@ export interface ResourceTable {
   workspace_id: string;
   kind: string;
   schema_version: number;
+  /** Its identity, which never changes. The path it was made at, unless it said otherwise. */
+  key: string;
   path: string;
+  title: string | null;
+  /** What a bundle says about it beside its body: `mcp`, `source`. */
+  meta: ColumnType<ResourceMeta, string | undefined, string>;
   ownership: Ownership;
   version: number;
   body: Json<Record<string, unknown>>;
   created_at: Generated<Date>;
   updated_at: Timestamp;
+}
+
+export interface ResourceMeta {
+  mcp?: { name: string };
+  source?: { file: string; generated: boolean };
+}
+
+/** A path a renamed resource had, which still answers until it expires. */
+export interface ResourceAliasTable {
+  workspace_id: string;
+  path: string;
+  tenant_id: string;
+  resource_id: string;
+  kind: string;
+  created_at: Generated<Date>;
+  expires_at: Date;
+  last_used_at: Date | null;
 }
 
 export interface ResourceVersionTable {
@@ -185,7 +207,10 @@ export interface ResourceVersionTable {
   workspace_id: string;
   kind: string;
   schema_version: number;
+  key: string;
   path: string;
+  title: string | null;
+  meta: ColumnType<ResourceMeta, string | undefined, string>;
   ownership: Ownership;
   body: ColumnType<Record<string, unknown> | null, string | null, never>;
   deleted: Generated<boolean>;
@@ -299,6 +324,9 @@ export interface BundleTable {
 export interface ResourceDraftTable {
   tenant_id: string;
   workspace_id: string;
+  /** The resource the draft is of. The path, for one that is new. */
+  key: string;
+  title: string | null;
   path: string;
   kind: string;
   schema_version: number;
@@ -853,6 +881,7 @@ export interface ResourceDraftHistoryTable {
   id: string;
   tenant_id: string;
   workspace_id: string;
+  key: string;
   path: string;
   kind: string;
   schema_version: number;
@@ -1154,6 +1183,7 @@ export interface PlatformSchema {
   bundle: BundleTable;
   deployment: DeploymentTable;
   resource_draft: ResourceDraftTable;
+  resource_alias: ResourceAliasTable;
   git_repository: GitRepositoryTable;
   workspace_git: WorkspaceGitTable;
   git_operation: GitOperationTable;

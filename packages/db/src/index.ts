@@ -38,6 +38,7 @@ export type {
   PlatformSchema,
   PrincipalType,
   PromotionRequestTable,
+  ResourceMeta,
   RunStatus,
   ScopeType,
   StepStatus,

@@ -76,6 +76,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["resource_id", "version"],
     export: "always",
   },
+  // A path a renamed resource had. It comes after the resource it points at.
+  {
+    table: "resource_alias",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id", "path"],
+    export: "always",
+  },
   {
     table: "resource_draft",
     ofTenant: own,

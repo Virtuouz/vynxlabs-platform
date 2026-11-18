@@ -1,4 +1,4 @@
-import { newId, type Ownership } from "@vynxlabs/db";
+import { newId, type Ownership, type ResourceMeta } from "@vynxlabs/db";
 import type { Audit, Db, Trx } from "./audit.js";
 import { badRequest, conflict, notFound } from "./errors.js";
 import type { WorkspaceRef } from "./http.js";
@@ -11,6 +11,15 @@ export interface ResourceInput {
   schemaVersion: number;
   ownership: Ownership;
   body: Record<string, unknown>;
+  /**
+   * Its identity, for one that is new. The path, when it is not given. A resource
+   * that is there keeps the key it has: a key never changes.
+   */
+  key?: string | undefined;
+  /** What people read. Left as it is when not given. */
+  title?: string | null | undefined;
+  /** What a bundle says about it beside its body. Left as it is when not given. */
+  meta?: ResourceMeta | undefined;
   /** Move the resource at this path to `path`, keeping its ID. */
   renameFrom?: string | undefined;
   /**
@@ -75,7 +84,10 @@ export async function putResource(
   const columns = {
     kind: input.kind,
     schema_version: input.schemaVersion,
+    key: existing?.key ?? input.key ?? input.path,
     path: input.path,
+    title: input.title !== undefined ? input.title : (existing?.title ?? null),
+    meta: JSON.stringify(input.meta ?? existing?.meta ?? {}),
     ownership: input.ownership,
   };
   if (existing) {
@@ -162,7 +174,10 @@ export async function deleteResource(
       workspace_id: existing.workspace_id,
       kind: existing.kind,
       schema_version: existing.schema_version,
+      key: existing.key,
       path: existing.path,
+      title: existing.title,
+      meta: JSON.stringify(existing.meta),
       ownership: existing.ownership,
       body: null,
       deleted: true,

@@ -97,6 +97,12 @@ An import sets `paused` on the repository. The instance the tenant came from may
 
 A bundle in format 3 carries console-managed resources beside the repository's. Nothing else about bundles in an export changes.
 
+## Keys and aliases
+
+A resource, each of its versions, a draft and each kept version of a draft carry `key`: the resource's identity, which a rename does not change. For everything made before keys it is the path. `resource` and `resource_version` also carry `title` and `meta` (what a bundle says about the resource beside its body).
+
+`platform/resource_alias.NNNN.jsonl` carries the paths that renamed resources had and that still answer: `workspace_id`, `path`, `resource_id`, `kind`, `created_at`, `expires_at` and `last_used_at`. An alias that has expired by the time of the import answers nothing there either.
+
 ## The list of contents
 
 `manifest.json`:

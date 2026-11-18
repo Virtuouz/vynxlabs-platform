@@ -265,6 +265,14 @@ describe("upgrading from every earlier database level", () => {
         data_location: { kind: "shared" },
         managed_workers: true,
       });
+      // Every resource and every version of one there was keeps its path as its key.
+      if (level >= 4) {
+        const resources = await db.selectFrom("resource").select(["key", "path"]).execute();
+        expect(resources.every((row) => row.key === row.path)).toBe(true);
+        const versions = await db.selectFrom("resource_version").select(["key", "path"]).execute();
+        expect(versions.length).toBeGreaterThanOrEqual(resources.length);
+        expect(versions.every((row) => row.key === row.path)).toBe(true);
+      }
       // Tenancy arrived at level 3, permissions at 5: before that there was nobody to ask as.
       if (level < 5) return;
 

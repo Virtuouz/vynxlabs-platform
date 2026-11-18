@@ -98,8 +98,24 @@ export async function saveDraft(
       },
     ]);
   }
+  const resource = await trx
+    .selectFrom("resource")
+    .select(["kind", "ownership", "key"])
+    .where("workspace_id", "=", workspace.id)
+    .where("path", "=", input.path)
+    .executeTakeFirst();
+  const existing = await trx
+    .selectFrom("resource_draft")
+    .selectAll()
+    .where("workspace_id", "=", workspace.id)
+    .where("path", "=", input.path)
+    .forUpdate()
+    .executeTakeFirst();
+  // The draft is of the resource at its path, or of a new one that takes the path as its key.
+  const key = existing?.key ?? resource?.key ?? input.path;
+  // Code is named in the bundle by the key, so that a rename leaves it as it is.
   const body = isCodeKind(input.kind)
-    ? { ...input.body, entry: entryFor(input.kind, input.path) }
+    ? { ...input.body, entry: entryFor(input.kind, key) }
     : input.body;
   if (!input.deleted) {
     if (isCodeKind(input.kind) && !body.source) {
@@ -118,12 +134,6 @@ export async function saveDraft(
     if (!validation.ok) throw badRequest("The manifest is not valid.", validation.issues);
   }
 
-  const resource = await trx
-    .selectFrom("resource")
-    .select(["kind", "ownership"])
-    .where("workspace_id", "=", workspace.id)
-    .where("path", "=", input.path)
-    .executeTakeFirst();
   if (resource && resource.kind !== input.kind) {
     throw conflict(`${input.path} is a ${resource.kind}. A resource cannot change kind.`);
   }
@@ -134,13 +144,6 @@ export async function saveDraft(
     );
   }
 
-  const existing = await trx
-    .selectFrom("resource_draft")
-    .selectAll()
-    .where("workspace_id", "=", workspace.id)
-    .where("path", "=", input.path)
-    .forUpdate()
-    .executeTakeFirst();
   if (existing && input.revision !== undefined && input.revision !== existing.revision) {
     throw new HttpError(
       409,
@@ -172,6 +175,7 @@ export async function saveDraft(
         .values({
           tenant_id: workspace.tenantId,
           workspace_id: workspace.id,
+          key,
           path: input.path,
           ...values,
         })
@@ -195,6 +199,7 @@ const DRAFT_HISTORY_KEPT = 30;
 type DraftRow = {
   tenant_id: string;
   workspace_id: string;
+  key: string;
   path: string;
   kind: string;
   schema_version: number;
@@ -214,6 +219,7 @@ async function keepInHistory(trx: Trx, draft: DraftRow, reason: "replaced" | "se
       id: newId(),
       tenant_id: draft.tenant_id,
       workspace_id: draft.workspace_id,
+      key: draft.key,
       path: draft.path,
       kind: draft.kind,
       schema_version: draft.schema_version,
@@ -229,7 +235,7 @@ async function keepInHistory(trx: Trx, draft: DraftRow, reason: "replaced" | "se
   await sql`
     delete from resource_draft_history where id in (
       select id from resource_draft_history
-      where workspace_id = ${draft.workspace_id} and path = ${draft.path}
+      where workspace_id = ${draft.workspace_id} and key = ${draft.key}
       order by kept_at desc offset ${DRAFT_HISTORY_KEPT}
     )
   `.execute(trx);

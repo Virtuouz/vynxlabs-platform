@@ -29,7 +29,7 @@ interface FailedRun {
   id: string;
   tenant_id: string;
   workspace_id: string;
-  resource_id: string;
+  resource_id: string | null;
   script_path: string;
   attempt: number;
   trigger_type: string;
@@ -57,11 +57,13 @@ interface Failure {
 export async function sendAlerts(kernel: Kernel, run: FailedRun): Promise<void> {
   // A failing handler must not start another handler.
   if (run.trigger_type === "alert") return;
-  const script = await kernel.db
-    .selectFrom("resource")
-    .select("body")
-    .where("id", "=", run.resource_id)
-    .executeTakeFirst();
+  const script = run.resource_id
+    ? await kernel.db
+        .selectFrom("resource")
+        .select("body")
+        .where("id", "=", run.resource_id)
+        .executeTakeFirst()
+    : undefined;
   const outcome = await alert(kernel, "run", {
     tenantId: run.tenant_id,
     workspaceId: run.workspace_id,

@@ -510,7 +510,8 @@ export interface RunTable {
   id: string;
   tenant_id: string;
   workspace_id: string;
-  resource_id: string;
+  /** The resource it is a run of. Null when that was not in the registry when it started. */
+  resource_id: string | null;
   script_path: string;
   /** The worker pool the run waits for. Null for the default pool. */
   pool: Generated<string | null>;
@@ -605,7 +606,8 @@ export interface FlowRunTable {
   id: string;
   tenant_id: string;
   workspace_id: string;
-  resource_id: string;
+  /** The resource it is a run of. Null when that was not in the registry when it started. */
+  resource_id: string | null;
   flow_path: string;
   bundle_id: string;
   trigger_node: string;

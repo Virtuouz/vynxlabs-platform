@@ -66,5 +66,6 @@
   "0065_audit_search.sql": "9689f79056ba8012caa7f12565dea81c559fb3e31deed8032050303a699b9942",
   "0066_member_preferences.sql": "9f4e47917cb7c6e95799b038a6bff6cbe1a6f58904c837370c4e6947eb895567",
   "0067_previous_success.sql": "a30f7cdc24cf8ba112db94d0bb15f4075dc0eea5186dbd2f216874166cc09aaa",
-  "0068_resource_keys.sql": "feeb4a6ecd0db324bc194f3e8d330b612bd278b11c748447eb9a1b213d5e6a4a"
+  "0068_resource_keys.sql": "feeb4a6ecd0db324bc194f3e8d330b612bd278b11c748447eb9a1b213d5e6a4a",
+  "0069_run_resource.sql": "65e715f26cc02204ee780f4ba82248f61c35d068cb540f9073097e2936e6b883"
 }

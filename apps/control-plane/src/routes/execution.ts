@@ -1203,7 +1203,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         await ctx.authorize("run:write", {
           tenantId: params.t,
           workspaceId: params.w,
-          resourceId: original.resource_id,
+          ...(original.resource_id ? { resourceId: original.resource_id } : {}),
         });
         if (original.flow_run_id) {
           throw new HttpError(
@@ -1296,12 +1296,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         id: string;
         status: string;
         pool: string | null;
-        resource_id: string;
+        resource_id: string | null;
         concurrency_key: string | null;
       },
     ) => {
       let concurrency: { key: string; value: string; limit: number } | null = null;
-      if (row.concurrency_key !== null) {
+      if (row.concurrency_key !== null && row.resource_id !== null) {
         const resource = await db
           .selectFrom("resource")
           .select("body")
@@ -1315,7 +1315,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       }
       if (row.status !== "queued") return { waitingFor: null, concurrency };
       const absent = await waitingFor(tenantId, workspaceId, row.pool);
-      if (absent || row.concurrency_key === null) return { waitingFor: absent, concurrency };
+      if (absent || row.concurrency_key === null || row.resource_id === null) {
+        return { waitingFor: absent, concurrency };
+      }
       const ahead = await db
         .selectFrom("run")
         .select(db.fn.countAll<string>().as("count"))

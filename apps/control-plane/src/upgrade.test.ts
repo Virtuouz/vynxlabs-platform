@@ -273,6 +273,15 @@ describe("upgrading from every earlier database level", () => {
         expect(versions.length).toBeGreaterThanOrEqual(resources.length);
         expect(versions.every((row) => row.key === row.path)).toBe(true);
       }
+      // A run names a resource or nothing: never the bundle it ran from, as it once could.
+      if (level >= 8) {
+        const stray = await db
+          .selectFrom("run")
+          .select("id")
+          .where("resource_id", "in", db.selectFrom("bundle").select("id"))
+          .execute();
+        expect(stray).toEqual([]);
+      }
       // Tenancy arrived at level 3, permissions at 5: before that there was nobody to ask as.
       if (level < 5) return;
 

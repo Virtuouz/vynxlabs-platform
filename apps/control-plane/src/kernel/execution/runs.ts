@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { newId, sql } from "@vynxlabs/db";
-import { validateJson } from "@vynxlabs/manifest";
+import { keyOf, validateJson } from "@vynxlabs/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
@@ -197,6 +197,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     .where("kind", "=", request.relay ? "trigger_source" : "script")
     .where("path", "=", request.script)
     .executeTakeFirst();
+  let resource: { id: string } | undefined = script;
   let body = script
     ? asScript({ kind: request.relay ? "trigger_source" : "script", body: script.body })
     : undefined;
@@ -212,11 +213,23 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       ? await bundleManifest(kernel, bundle, "script", request.script)
       : undefined;
     body = pinned?.body as unknown as ScriptBody | undefined;
+    // The script may have been renamed since that bundle, or its path given to another:
+    // the key in the bundle says which resource it is.
+    if (pinned) {
+      resource = await trx
+        .selectFrom("resource")
+        .select("id")
+        .where("workspace_id", "=", request.workspaceId)
+        .where("kind", "=", "script")
+        .where("key", "=", keyOf(pinned))
+        .executeTakeFirst();
+    }
   }
   if (!body || !bundleId) {
     throw notFound(`The script ${request.script}`);
   }
-  const resourceId = script?.id ?? bundleId;
+  // A script that is no longer in the registry still runs, from its bundle, and waits in a lane of its own.
+  const resourceId = resource?.id ?? null;
 
   const issues = validateJson(body.input, request.input ?? {}, "/input");
   if (issues.length > 0) throw badRequest("The input does not match the script's schema.", issues);
@@ -233,7 +246,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
     if (earlier) return { created: false, run: earlier };
   }
 
-  const lane = laneOf(resourceId, body.concurrency, request.input ?? {});
+  const lane = laneOf(resourceId ?? bundleId, body.concurrency, request.input ?? {});
   const id = newId();
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(

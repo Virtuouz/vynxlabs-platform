@@ -6,6 +6,7 @@ import {
   type FlowEdge,
   type FlowGrants,
   type FlowNode,
+  keyOf,
   OTHERWISE,
   reachableFrom,
   validateJson,
@@ -134,12 +135,13 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
     if (earlier) return { created: false, flowRun: earlier };
   }
 
+  // By the key the bundle gives it: the flow may have been renamed since that bundle.
   const resource = await trx
     .selectFrom("resource")
     .select("id")
     .where("workspace_id", "=", request.workspaceId)
     .where("kind", "=", "flow")
-    .where("path", "=", request.flow)
+    .where("key", "=", keyOf(manifest))
     .executeTakeFirst();
   const id = newId();
   const input = await storePayload(kernel, id, "input", request.input ?? {}, "flow-runs");
@@ -149,7 +151,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       id,
       tenant_id: request.tenantId,
       workspace_id: request.workspaceId,
-      resource_id: resource?.id ?? bundle.id,
+      resource_id: resource?.id ?? null,
       flow_path: request.flow,
       bundle_id: bundle.id,
       trigger_node: triggerNode,

@@ -17,6 +17,7 @@ import {
   parseResourceFiles,
   RESOURCE_FOLDER,
   type ResourceFile,
+  resolveKeyReferences,
 } from "@vynxlabs/manifest";
 import { build as esbuild } from "esbuild";
 import { type AppSource, buildApps } from "./apps.js";
@@ -96,6 +97,8 @@ const KIND_ORDER = [
 /** A built repository: the bundle, and the bytes of the files its apps are made of. */
 export interface Built {
   bundle: Bundle;
+  /** What the build did that whoever builds should know, and that stopped nothing. */
+  notes: string[];
   /** By checksum. Each is uploaded before the bundle that lists it. */
   files: Map<string, Buffer>;
 }
@@ -129,13 +132,17 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
 
   const inOrder = (a: BundleManifest, b: BundleManifest) =>
     KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.path < b.path ? -1 : 1);
-  const fromCode = definitions.map(([name, definition]) => definition.toManifest(name));
+  const authored = definitions.map(([name, definition]) => definition.toManifest(name));
   // Resources managed in the console are files in a reserved folder, not code.
   const folder = options.resources ?? RESOURCE_FOLDER;
-  const fromFiles = parseResourceFiles(await resourceFiles(join(directory, folder)));
-  if (fromFiles.problems.length > 0) {
-    throw new BuildError(fromFiles.problems.map((problem) => `${folder}/${problem}`));
+  const parsed = parseResourceFiles(await resourceFiles(join(directory, folder)));
+  if (parsed.problems.length > 0) {
+    throw new BuildError(parsed.problems.map((problem) => `${folder}/${problem}`));
   }
+  // A reference written as text may name a resource by its key: it is built as the path.
+  const resolved = resolveKeyReferences([...authored, ...parsed.manifests]);
+  const fromCode = resolved.manifests.slice(0, authored.length);
+  const fromFiles = { manifests: resolved.manifests.slice(authored.length) };
   const defined = new Map(fromCode.map((manifest) => [manifest.path, manifest]));
   const twice = fromFiles.manifests.filter((manifest) => defined.has(manifest.path));
   if (twice.length > 0) {
@@ -185,14 +192,22 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   const assetProblems = checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
   if (fromFiles.manifests.length === 0 && coreNodesFor(unsigned.manifests).length === 0) {
-    return { bundle: { ...unsigned, digest: bundleDigest(unsigned) }, files: built.files };
+    return {
+      bundle: { ...unsigned, digest: bundleDigest(unsigned) },
+      files: built.files,
+      notes: resolved.rewritten,
+    };
   }
   // Console-managed code is compiled and joined on exactly as the control plane does it.
   try {
     const composed = await composeBundle(unsigned, fromFiles.manifests, { sdkEntry });
     const sorted = { ...composed, manifests: [...composed.manifests].sort(inOrder) };
     const { digest: _stale, ...rest } = sorted;
-    return { bundle: { ...rest, digest: bundleDigest(rest) }, files: built.files };
+    return {
+      bundle: { ...rest, digest: bundleDigest(rest) },
+      files: built.files,
+      notes: resolved.rewritten,
+    };
   } catch (error) {
     if (error instanceof ComposeError) {
       throw new BuildError(error.problems.map((problem) => `${folder}/${problem}`));

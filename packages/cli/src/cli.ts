@@ -271,6 +271,7 @@ async function deploy(args: string[], io: Io) {
   const built = await buildRepository({ directory: resolve(values.dir ?? ".") });
   const { bundle } = built;
   for (const line of describeBundle(bundle)) io.out(line);
+  for (const note of built.notes) io.out(`Note: ${note}`);
   await uploadFiles(settings, base, built, io);
 
   const uploaded = await request(settings.url, `${base}/bundles`, settings.token, {

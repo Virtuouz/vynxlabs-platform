@@ -386,7 +386,9 @@ export async function deployBundle(
 
   for (const manifest of content.manifests) {
     const stored = matched.get(manifest);
-    const title = manifest.title ?? null;
+    // An app, an interface and a form have a title in their body: that is their title.
+    const inBody = (manifest.body as { title?: unknown }).title;
+    const title = manifest.title ?? (typeof inBody === "string" && inBody ? inBody : null);
     const meta = metaOf(manifest);
     if (
       stored &&

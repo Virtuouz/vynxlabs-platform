@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleDigest } from "@vynxlabs/manifest";
 import { afterAll, describe, expect, test } from "vitest";
-import { BuildError, buildBundle, describeBundle } from "./build.js";
+import { BuildError, buildBundle, buildRepository, describeBundle } from "./build.js";
 
 const example = fileURLToPath(new URL("../../../examples/acme", import.meta.url));
 const scratch: string[] = [];
@@ -245,6 +245,67 @@ export const screen = defineInterface({ path: "screens/pets", title: "Pets", pag
       "src/index.ts exports no resources. Export what you define with the SDK.",
     ]);
     expect((await problems("export const broken = ;"))[0]).toMatch(/^src\/index\.ts:1: /);
+  });
+});
+
+describe("keys and titles", () => {
+  const head =
+    'import { column, defineSchedule, defineScript, defineTable, z } from "@vynxlabs/sdk";\n';
+  const script = (options: string) =>
+    `export const submit = defineScript({ ${options} input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
+
+  test("a repository that says neither builds as it always did, in the oldest format", async () => {
+    const bundle = await buildBundle({
+      directory: await repository(`${head}${script('path: "requests/submit",')}`),
+    });
+    expect(bundle.formatVersion).toBe(1);
+    expect(Object.keys(bundle.manifests[0] ?? {}).sort()).toEqual([
+      "body",
+      "kind",
+      "ownership",
+      "path",
+      "schemaVersion",
+    ]);
+  });
+
+  test("a moved resource says the key it had, and the bundle is written in format 4", async () => {
+    const bundle = await buildBundle({
+      directory: await repository(
+        `${head}${script('path: "lending/requests/file", key: "requests/submit", title: "Submit a device request",')}`,
+      ),
+    });
+    expect(bundle.formatVersion).toBe(4);
+    expect(bundle.manifests[0]).toMatchObject({
+      path: "lending/requests/file",
+      key: "requests/submit",
+      title: "Submit a device request",
+    });
+    // A key that is the path is not written: it says nothing.
+    const same = await buildBundle({
+      directory: await repository(
+        `${head}${script('path: "requests/submit", key: "requests/submit",')}`,
+      ),
+    });
+    expect(same.formatVersion).toBe(1);
+    expect(same.manifests[0]).not.toHaveProperty("key");
+  });
+
+  test("a reference written as text may name a resource by its key, and is built as its path", async () => {
+    const source = `${head}${script('path: "lending/requests/file", key: "requests/submit", tables: ["items"],')}
+export const items = defineTable({ path: "lending/items", key: "items", columns: { name: column.text() } });
+export const nightly = defineSchedule({ path: "nightly", script: "requests/submit", cron: "0 2 * * *" });`;
+    const built = await buildRepository({ directory: await repository(source) });
+    const body = (path: string) =>
+      built.bundle.manifests.find((manifest) => manifest.path === path)?.body as {
+        script?: string;
+        uses: { tables: string[] };
+      };
+    expect(body("nightly").script).toBe("lending/requests/file");
+    expect(body("lending/requests/file").uses.tables).toEqual(["lending/items"]);
+    expect([...built.notes].sort()).toEqual([
+      'lending/requests/file (script): /body/uses/tables/0 names "items" by its key. It is at "lending/items" now.',
+      'nightly (schedule): /body/script names "requests/submit" by its key. It is at "lending/requests/file" now.',
+    ]);
   });
 });
 

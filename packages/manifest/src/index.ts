@@ -139,6 +139,7 @@ export {
   type PermissionScope,
   type PermissionVerb,
 } from "./permissions.js";
+export { resolveKeyReferences } from "./references.js";
 export {
   type KindDefinition,
   KindRegistry,

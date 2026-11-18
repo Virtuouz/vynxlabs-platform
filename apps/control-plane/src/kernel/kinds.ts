@@ -9,6 +9,7 @@ import type { Trx } from "./audit.js";
 import { applyTable, retireTable } from "./data/apply.js";
 import type { DataStores } from "./data/stores.js";
 import { badRequest } from "./errors.js";
+import { resolveResource } from "./resolve.js";
 
 export interface AppliedResource {
   id: string;
@@ -138,12 +139,8 @@ const bindingHook: KindHook = {
 
     let resourceId: string | null = null;
     if (body.resource !== undefined) {
-      const target = await trx
-        .selectFrom("resource")
-        .select("id")
-        .where("workspace_id", "=", resource.workspaceId)
-        .where("path", "=", body.resource)
-        .executeTakeFirst();
+      // By its path, or by one it had before it was renamed: the binding is to the resource.
+      const target = (await resolveResource(trx, resource.workspaceId, body.resource))?.resource;
       if (!target) throw fail("/body/resource", "no resource has that path in this workspace");
       resourceId = target.id;
     }

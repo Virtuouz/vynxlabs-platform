@@ -100,6 +100,9 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (manifest.kind === "schedule" || manifest.kind === "trigger") {
       expect(manifest, "script", body.script, "script");
     }
+    if (manifest.kind === "schedule") {
+      expect(manifest, "flow", (manifest.body as { flow?: unknown }).flow, "flow");
+    }
     // A trigger hands its requests, or its ticks, to a source of the kind that takes them.
     const sourced: [string, string | undefined, "webhook" | "poll"][] = [];
     if (manifest.kind === "schedule") {

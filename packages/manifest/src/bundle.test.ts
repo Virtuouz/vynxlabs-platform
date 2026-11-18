@@ -48,6 +48,21 @@ describe("a manifest's key", () => {
   });
 });
 
+describe("what a manifest refers to", () => {
+  test("a schedule that starts a flow that is not there is caught", () => {
+    const schedule: BundleManifest = {
+      kind: "schedule",
+      schemaVersion: 1,
+      path: "nightly",
+      ownership: "code",
+      body: { flow: "flows/gone", cron: "0 2 * * *" },
+    };
+    expect(checkBundleManifests([schedule])).toEqual([
+      'nightly (schedule): flow refers to "flows/gone", which is not a flow in this repository.',
+    ]);
+  });
+});
+
 describe("the format a bundle is written in", () => {
   test("is the oldest that can carry it", () => {
     expect(formatFor(1, [variable("a")])).toBe(1);

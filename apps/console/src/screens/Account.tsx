@@ -6,7 +6,7 @@ import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CopyButton, ListScreen, RemoveButton, when } from "../ListScreen.tsx";
+import { CopyButton, ListScreen, RemoveButton } from "../ListScreen.tsx";
 
 export interface KeyRow {
   id: string;
@@ -37,7 +37,12 @@ export const keyColumns = [
       </code>
     ),
   },
-  { header: "Last used", cell: (row: KeyRow) => (row.lastUsedAt ? when(row.lastUsedAt) : "Never") },
+  {
+    // As every list says a time: how long ago, with the moment itself on hover. A time to the
+    // second did not fit the column on a phone for a key used today.
+    header: "Last used",
+    cell: (row: KeyRow) => (row.lastUsedAt ? <Time value={row.lastUsedAt} mode="ago" /> : "Never"),
+  },
   {
     header: "Status",
     cell: (row: KeyRow) =>

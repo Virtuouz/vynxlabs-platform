@@ -79,6 +79,9 @@ export const DOC_CSS = `
   vertical-align: top;
 }
 .vd-doc th { font-weight: 600; white-space: nowrap; }
+.vd-doc .vd-align-left { text-align: left; }
+.vd-doc .vd-align-center { text-align: center; }
+.vd-doc .vd-align-right { text-align: right; }
 .vd-doc .vd-tasks { padding-left: 0.25em; list-style: none; }
 .vd-doc .vd-task input { margin-right: 0.35em; }
 

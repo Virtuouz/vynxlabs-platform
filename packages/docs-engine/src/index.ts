@@ -49,3 +49,15 @@ export {
   type Layer,
   type Stack,
 } from "./stack.js";
+export {
+  appOf,
+  type BuiltApp,
+  buildApp,
+  checkWorkspaceDocs,
+  type DocsApp,
+  docsApps,
+  pagesOf,
+  type ResourceLike,
+  resourceChecker,
+  type WorkspaceOptions,
+} from "./workspace.js";

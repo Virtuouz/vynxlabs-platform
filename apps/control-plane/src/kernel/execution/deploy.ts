@@ -800,6 +800,7 @@ const KIND_ORDER = [
   "connection_group",
   "variable",
   "table",
+  "query",
   "data_source",
   "event",
   "script",
@@ -810,6 +811,9 @@ const KIND_ORDER = [
   "trigger",
   "theme",
   "interface",
+  // After the tables and queries a dashboard asks, and the resources a page is about.
+  "dashboard",
+  "doc",
   "app",
   "binding",
 ];

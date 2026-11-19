@@ -18,6 +18,7 @@ const READ: Record<string, string> = {
   schedule: "trigger:read",
   connection: "connection:read",
   event: "event:read",
+  doc: "doc:read",
 };
 const KINDS = Object.keys(READ);
 const RUN_KINDS = ["run", "flow_run"];

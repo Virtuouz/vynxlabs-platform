@@ -23,6 +23,12 @@
     },
     {
       "path": "../../packages/nodes"
+    },
+    {
+      "path": "../../packages/markup"
+    },
+    {
+      "path": "../../packages/docs-engine"
     }
   ]
 }

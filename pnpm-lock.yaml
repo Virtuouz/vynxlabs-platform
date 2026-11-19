@@ -146,9 +146,15 @@ importers:
       '@volvel/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@volvel/docs-engine':
+        specifier: workspace:*
+        version: link:../../packages/docs-engine
       '@volvel/manifest':
         specifier: workspace:*
         version: link:../../packages/manifest
+      '@volvel/markup':
+        specifier: workspace:*
+        version: link:../../packages/markup
       '@volvel/nodes':
         specifier: workspace:*
         version: link:../../packages/nodes
@@ -322,9 +328,15 @@ importers:
       '@volvel/compose':
         specifier: workspace:*
         version: link:../compose
+      '@volvel/docs-engine':
+        specifier: workspace:*
+        version: link:../docs-engine
       '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
+      '@volvel/markup':
+        specifier: workspace:*
+        version: link:../markup
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2

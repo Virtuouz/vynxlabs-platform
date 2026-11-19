@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 import type { BundleManifest } from "./bundle.js";
 import { renderSchemas } from "./emit.js";
 import {
+  docsRoots,
   entryFor,
   ignoredFolder,
+  isResourceFile,
   movedFile,
   ontoWritten,
   parseRepositoryConfig,
@@ -305,12 +307,12 @@ describe("what a file says beside its body", () => {
 
   test("a repository says its roots and what to leave unread in volvel.yaml", () => {
     expect(parseRepositoryConfig(undefined)).toEqual({
-      config: { roots: [], ignore: [] },
+      config: { roots: [], ignore: [], docs: [] },
       problems: [],
     });
     const read = parseRepositoryConfig("roots: [src/, ./features]\nignore:\n  - vendor\n");
     expect(read).toEqual({
-      config: { roots: ["src", "features"], ignore: ["vendor"] },
+      config: { roots: ["src", "features"], ignore: ["vendor"], docs: [] },
       problems: [],
     });
     expect(ignoredFolder("vendor/lib", read.config)).toBe(true);
@@ -318,9 +320,140 @@ describe("what a file says beside its body", () => {
     expect(ignoredFolder(".platform", read.config)).toBe(true);
     expect(ignoredFolder("src/lending", read.config)).toBe(false);
     expect(parseRepositoryConfig("roots: src\nfolders: [a]\n").problems).toEqual([
-      "volvel.yaml: has keys other than roots and ignore: folders.",
+      "volvel.yaml: has keys other than roots, ignore and docs: folders.",
       "volvel.yaml: roots is a list of folders.",
     ]);
+  });
+});
+
+describe("a page of documentation as a file", () => {
+  const kinds = new Set(platformKinds.map((kind) => kind.kind));
+  const page =
+    "---\ntitle: Refund an order\ntopic: support-refunds\n---\n\nAsk for the RMA first.\n";
+  const table = "schemaVersion: 1\nbody:\n  columns:\n    number:\n      type: text\n";
+
+  test("is a Markdown file under the folder of pages, read as it is, with its path from where it is", () => {
+    const read = parseRepositoryFiles(
+      [
+        { path: "platform/docs/handbook/support/refunds.md", content: page },
+        { path: "platform/docs/handbook/index.md", content: "---\ntitle: Handbook\n---\n" },
+        { path: "platform/orders.table.yaml", content: table },
+        // Markdown anywhere else is nobody's page.
+        { path: "README.md", content: "# Read me\n" },
+        { path: "platform/README.md", content: "# Read me\n" },
+      ],
+      { folder: "platform", roots: [], kinds },
+    );
+    expect(read.problems).toEqual([]);
+    expect(read.manifests.map((one) => [one.kind, one.path, one.title])).toEqual([
+      ["table", "orders", undefined],
+      ["doc", "handbook/index", "Handbook"],
+      ["doc", "handbook/support/refunds", "Refund an order"],
+    ]);
+    const refunds = read.manifests[2];
+    expect(refunds?.body).toEqual({ source: page });
+    expect(refunds?.ownership).toBe("ui");
+    // Where the console would have written it: nothing more needs saying.
+    expect(refunds?.source).toBeUndefined();
+    expect(read.files.get("handbook/support/refunds")).toBe(
+      "platform/docs/handbook/support/refunds.md",
+    );
+  });
+
+  test("is written back as the same bytes, where it was found", () => {
+    const options = { folder: "platform", roots: [], kinds, docs: ["handbook", "platform/docs"] };
+    const files = [
+      { path: "handbook/support/refunds.md", content: page },
+      {
+        path: "platform/docs/made-in-console.md",
+        content: "---\ntitle: Made here\n---\n\nWords.\n",
+      },
+    ];
+    const read = parseRepositoryFiles(files, options);
+    expect(read.problems).toEqual([]);
+    // A page kept in a folder of the repository's own is the repository's to change.
+    expect(read.manifests.map((one) => [one.path, one.source?.file])).toEqual([
+      ["support/refunds", "handbook/support/refunds.md"],
+      ["made-in-console", undefined],
+    ]);
+    expect(renderRepositoryFiles(read.manifests, platformKinds, options)).toEqual(files);
+    expect(isResourceFile("handbook/support/refunds.md", kinds, options.docs)).toBe(true);
+    expect(isResourceFile("handbook/support/chart.png", kinds, options.docs)).toBe(false);
+    expect(isResourceFile("notes/refunds.md", kinds, options.docs)).toBe(false);
+    expect(isResourceFile("handbook/support/refunds.md", kinds)).toBe(false);
+  });
+
+  test("a file given twice is one file, as a push gives the branch's files and the workspace's together", () => {
+    const file = { path: "platform/docs/handbook/index.md", content: page };
+    const read = parseRepositoryFiles([file, { ...file }], {
+      folder: "platform",
+      roots: [],
+      kinds,
+    });
+    expect(read.problems).toEqual([]);
+    expect(read.manifests).toHaveLength(1);
+  });
+
+  test("a repository names its folders of pages, and the console's is used when it names none", () => {
+    const { config } = parseRepositoryConfig("docs: [handbook/, ./guides]\n");
+    expect(config.docs).toEqual(["handbook", "guides"]);
+    expect(docsRoots(config, "platform")).toEqual(["handbook", "guides"]);
+    expect(docsRoots(parseRepositoryConfig(undefined).config, "console")).toEqual(["console/docs"]);
+  });
+
+  test("a file whose name is not a path is refused, and never renamed to fit", () => {
+    const read = parseRepositoryFiles([{ path: "platform/docs/Refund Policy.md", content: page }], {
+      folder: "platform",
+      roots: [],
+      kinds,
+    });
+    expect(read.manifests).toEqual([]);
+    expect(read.problems).toEqual([
+      "platform/docs/Refund Policy.md: a page's name and its folders are written in lowercase letters, digits, hyphens and underscores. Rename the file: nothing renames it for you.",
+    ]);
+  });
+
+  test("a page and another resource cannot have the one path, and a page keeps its identity by its key", () => {
+    const clash = parseRepositoryFiles(
+      [
+        { path: "platform/docs/orders.md", content: page },
+        { path: "platform/orders.table.yaml", content: table },
+      ],
+      { folder: "platform", roots: [], kinds },
+    );
+    expect(clash.problems).toEqual([
+      "platform/docs/orders.md: the path orders is already used by platform/orders.table.yaml.",
+    ]);
+    const moved = parseRepositoryFiles(
+      [
+        {
+          path: "platform/docs/support/refunding.md",
+          content: "---\ntitle: Refunding\nkey: support/refunds\n---\n",
+        },
+      ],
+      { folder: "platform", roots: [], kinds },
+    );
+    expect(moved.manifests[0]).toMatchObject({ path: "support/refunding", key: "support/refunds" });
+  });
+
+  test("moves with its page when the page is renamed, and is the same file whatever its line endings", () => {
+    expect(
+      movedFile("handbook/support/refunds.md", "doc", "support/refunds", "support/returns"),
+    ).toBe("handbook/support/returns.md");
+    expect(sameResourceFile("a.md", "one\r\ntwo\r\n", "one\ntwo\n")).toBe(true);
+    expect(sameResourceFile("a.md", "one\n", "two\n")).toBe(false);
+  });
+
+  test("among the console's own files it is under docs/, and has no YAML schema", () => {
+    const manifest = parseRepositoryFiles(
+      [{ path: "platform/docs/support/refunds.md", content: page }],
+      { folder: "platform", roots: [], kinds },
+    ).manifests;
+    const files = renderResourceFiles(manifest, platformKinds);
+    expect(files).toEqual([{ path: "docs/support/refunds.md", content: page }]);
+    expect(parseResourceFiles(files).manifests).toEqual(manifest);
+    expect(Object.keys(renderSchemas())).not.toContain("files/doc.v1.schema.json");
+    expect(Object.keys(renderSchemas())).toContain("kinds/doc.v1.schema.json");
   });
 });
 

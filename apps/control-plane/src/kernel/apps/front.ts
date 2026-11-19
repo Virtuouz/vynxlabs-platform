@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
+import { type DocsApp, type ResourceLike, urlOf } from "@volvel/docs-engine";
 import { readFormAnswer } from "@volvel/manifest";
+import { ENHANCE_SCRIPT } from "@volvel/markup";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
+import { productNames } from "../docs/product.js";
 import {
   checkEndUserPassword,
   createEndUser,
@@ -32,6 +35,15 @@ import {
 import { samlMetadata } from "../sso/saml.js";
 import { appBasePath, portalPath, portalUrl } from "./address.js";
 import { appFiles, readAsset } from "./assets.js";
+import {
+  DOCS_CSS,
+  DOCS_POLICY,
+  docPage,
+  docsOf,
+  notFoundPage,
+  pageAt,
+  searchPage,
+} from "./docs.js";
 import type { Place } from "./hosts.js";
 import { Limiter } from "./limit.js";
 import {
@@ -795,9 +807,14 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       entry?: string;
       /** Set on an app that serves an interface: its files are the platform's own. */
       interface?: string;
+      /** Set on an app that serves documentation: its pages are drawn here, from the workspace's own. */
+      docs?: string;
       fallback?: boolean;
     };
-    const generated = typeof body.interface === "string";
+    const documents = typeof body.docs === "string";
+    // Neither runs anything a tenant wrote: an interface is drawn by the platform's own
+    // files, and documentation is drawn here.
+    const generated = typeof body.interface === "string" || documents;
     // An app written as code runs only at an address of its own, never where the console's
     // sign-in is, unless the operator knowingly allowed it (decision 0001).
     if (
@@ -859,7 +876,25 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       return html(reply, 403, messagePage(look, NOT_ALLOWED, { portal, who: who(principal) }));
     }
 
-    const runtime = generated ? await kernel.screens.files() : undefined;
+    if (documents) {
+      // A picture kept beside the pages is one of the app's files, and is served as any app's file is.
+      const pictures = appFiles(bundle, manifest.path);
+      if (!pictures.has(file))
+        return serveDocs(request, reply, {
+          look,
+          workspaceId: workspace.id,
+          bundleId: stored.id,
+          resources: bundle.manifests,
+          app: { path: manifest.path, title: body.title, docs: body.docs as string },
+          base,
+          file,
+          pictures,
+        });
+    }
+
+    // The files that draw an interface. A docs app has none of them: what is left to serve
+    // of one, past this point, is a picture of its own.
+    const runtime = generated && !documents ? await kernel.screens.files() : undefined;
     if (runtime && runtime.size === 0) {
       return html(
         reply,
@@ -931,6 +966,70 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     return reply.code(200).header("content-type", asset.contentType).send(content);
   }
 
+  /**
+   * Answers an address under a docs app, for someone who may open the app:
+   * a page, a search, or the page a renamed one moved to.
+   */
+  async function serveDocs(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    at: {
+      look: PageFrame;
+      workspaceId: string;
+      bundleId: string;
+      resources: readonly ResourceLike[];
+      app: DocsApp;
+      base: string;
+      /** What follows the app's own address. */
+      file: string;
+      /** The app's own files: the pictures its pages show. */
+      pictures: ReadonlyMap<string, unknown>;
+    },
+  ) {
+    const docs = docsOf(at.bundleId, at.app, at.resources, productNames(kernel.config));
+    const drawn = {
+      frame: at.look,
+      app: at.app,
+      base: at.base,
+      set: docs.built.set,
+      asset: (file: string) => (at.pictures.has(file) ? `${at.base}${file}` : undefined),
+    };
+    const send = (status: number, body: string) =>
+      reply
+        .code(status)
+        .header("content-type", "text/html; charset=utf-8")
+        .header("content-security-policy", DOCS_POLICY)
+        .header("x-content-type-options", "nosniff")
+        .header("referrer-policy", "same-origin")
+        // Private: it was drawn for someone who may open the app. Checked again each time.
+        .header("cache-control", "private, no-cache")
+        .send(body);
+
+    if (at.file === "_search") {
+      const query = String((request.query as { q?: unknown } | undefined)?.q ?? "").slice(0, 200);
+      return send(200, searchPage(drawn, query, docs.search.search(query, 30)));
+    }
+    const path = pageAt(docs.built.set, at.file);
+    if (path !== undefined) return send(200, docPage(drawn, path));
+
+    // A page that was renamed: its old address sends the browser to the new one, for good.
+    const wanted = `${at.app.docs}/${at.file.replace(/\/+$/, "")}`;
+    const moved = await db
+      .selectFrom("resource_alias")
+      .innerJoin("resource", "resource.id", "resource_alias.resource_id")
+      .select("resource.path as now")
+      .where("resource_alias.workspace_id", "=", at.workspaceId)
+      .where("resource_alias.kind", "=", "doc")
+      .where("resource_alias.path", "in", [wanted, `${wanted}/index`])
+      .where("resource_alias.expires_at", ">", new Date())
+      .executeTakeFirst();
+    if (moved?.now.startsWith(`${at.app.docs}/`)) {
+      const now = moved.now.slice(at.app.docs.length + 1);
+      if (docs.built.set.pages.has(now)) return redirect(reply, `${at.base}${urlOf(now)}`, 308);
+    }
+    return send(404, notFoundPage(drawn));
+  }
+
   // ----- Which is which -----
 
   app.addHook("onRequest", async (request, reply) => {
@@ -943,6 +1042,16 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       if (place.kind === "main" && !path.startsWith("/apps/") && !path.startsWith("/portal/"))
         return;
       return plain(reply, 405, "Method not allowed.");
+    }
+
+    if (path === "/_platform/docs.css" || path === "/_platform/docs.js") {
+      const script = path.endsWith(".js");
+      return reply
+        .code(200)
+        .header("content-type", `${script ? "text/javascript" : "text/css"}; charset=utf-8`)
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "public, max-age=3600")
+        .send(script ? ENHANCE_SCRIPT : DOCS_CSS);
     }
 
     if (path === "/_platform/portal.css") {

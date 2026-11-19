@@ -225,6 +225,19 @@ describe("links", () => {
     ).toBe('<p><a href="/support/refunds#partial">refunds</a></p>');
   });
 
+  test("where a term's page is, is taken as given and not resolved a second time", () => {
+    const html = renderHtml(parse(":term[RMA]{id=rma} and [a page](other)\n"), {
+      term: () => ({ short: "A return.", href: "/docs/glossary" }),
+      link: (href) => (href === "other" ? "/docs/other" : null),
+    });
+    expect(html).toContain('<a href="/docs/glossary">More about RMA</a>');
+    expect(html).toContain('<a href="/docs/other">a page</a>');
+    // It is still held to what a link may be.
+    expect(
+      renderHtml(parse(":term[RMA]{id=rma}\n"), { term: () => ({ href: "javascript:alert(1)" }) }),
+    ).toBe("<p>RMA</p>");
+  });
+
   test("a result may link out and nowhere else", () => {
     const tree = parse("[a](https://example.com) [b](other)\n");
     expect(renderHtml(tree, { profile: "result" })).toBe(

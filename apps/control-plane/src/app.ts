@@ -11,6 +11,7 @@ import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
 import { closeAllSources } from "./kernel/data/sources.js";
+import { consoleDirectory } from "./kernel/docs/product.js";
 import { pushTenantAccess } from "./kernel/git.js";
 import { type Access, access, installAccessControl } from "./kernel/http.js";
 import { defaultIcon, icoOf, webManifest } from "./kernel/icons.js";
@@ -89,12 +90,6 @@ export interface AppOptions {
 }
 
 /** The built console, when there is one to serve. */
-function consoleDirectory(config: Config): string | undefined {
-  if (config.consoleDir) return config.consoleDir;
-  const inRepo = fileURLToPath(new URL("../../console/dist", import.meta.url));
-  return existsSync(inRepo) ? inRepo : undefined;
-}
-
 export async function buildApp(options: AppOptions) {
   const app = Fastify({
     logger: options.logLevel ? { level: options.logLevel } : false,

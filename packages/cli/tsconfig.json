@@ -17,6 +17,12 @@
     },
     {
       "path": "../compose"
+    },
+    {
+      "path": "../markup"
+    },
+    {
+      "path": "../docs-engine"
     }
   ]
 }

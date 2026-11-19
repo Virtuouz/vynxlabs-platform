@@ -90,10 +90,16 @@ const AppItem = Type.Object({
   access: Type.Array(Type.String(), {
     description: "Who is bound to a role at the app itself: anyone, every end user, or a name.",
   }),
-  builtWith: Type.Union([Type.Literal("code"), Type.Literal("builder")], {
-    description: "`builder` for an app that serves an interface made in the console.",
+  builtWith: Type.Union([Type.Literal("code"), Type.Literal("builder"), Type.Literal("docs")], {
+    description:
+      "`builder` for an app that serves an interface made in the console, `docs` for one that serves pages of documentation.",
   }),
   interface: NullableString,
+  docs: Type.Optional(
+    Type.Union([NullableString], {
+      description: "For a docs app: the folder of pages it serves.",
+    }),
+  ),
   reads: Type.Array(Type.String(), {
     description:
       "The tables it reads: those its code declares, or those of its interface's widgets.",
@@ -345,6 +351,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               title?: string;
               description?: string;
               interface?: string;
+              docs?: string;
               reads?: string[];
             };
             const files = assets.filter((asset) => asset.app === resource.path);
@@ -371,8 +378,13 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 })),
               files: files.length,
               bytes: files.reduce((sum, file) => sum + file.size, 0),
-              builtWith: body.interface ? ("builder" as const) : ("code" as const),
+              builtWith: body.docs
+                ? ("docs" as const)
+                : body.interface
+                  ? ("builder" as const)
+                  : ("code" as const),
               interface: body.interface ?? null,
+              docs: body.docs ?? null,
               reads: body.interface ? tablesOf(body.interface) : [...(body.reads ?? [])].sort(),
               access: bound
                 .filter((binding) => binding.resource_id === resource.id)

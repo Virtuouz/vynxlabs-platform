@@ -65,6 +65,13 @@ export const FRONTMATTER_SCHEMA = {
       pattern: ID_PATTERN,
       maxLength: 40,
     },
+    key: {
+      type: "string",
+      description:
+        "The page's identity, when that is not its path. Say it only when you move a page, as the path it had, so that it stays the same page with its history.",
+      pattern: PATH_PATTERN,
+      maxLength: 255,
+    },
     topic: {
       type: "string",
       description:
@@ -153,6 +160,7 @@ export type About = { [Kind in AboutKind]?: string };
 
 export interface Frontmatter {
   title: string;
+  key?: string;
   description?: string;
   order?: number;
   icon?: string;

@@ -1077,9 +1077,15 @@ export interface AppOptions extends ResourceNames {
   source?: string;
   /**
    * The path of an interface to serve as this app, in place of code of its own.
-   * An app has a `source` or an `interface`, never both.
+   * An app has a `source`, an `interface` or `docs`, and only one of them.
    */
   interface?: string;
+  /**
+   * A folder of the workspace's pages of documentation to serve as this app:
+   * every page whose path is under it, such as `handbook`. Its pages are Markdown
+   * files in the repository's folder of pages, or pages made in the console.
+   */
+  docs?: string;
   /** The page inside the built app. Default `index.html`. */
   entry?: string;
   /**
@@ -1108,23 +1114,34 @@ export interface AppDefinition extends ResourceDefinition {
  * holding `app:read` to members, to `end_users`, or to `anonymous` for a public app.
  */
 export function defineApp(options: AppOptions): AppDefinition {
-  if ((options.source === undefined) === (options.interface === undefined)) {
-    throw new Error(`The app "${options.path}" needs a source or an interface, and not both.`);
+  const given = [options.source, options.interface, options.docs].filter(
+    (one) => one !== undefined,
+  ).length;
+  if (given !== 1) {
+    throw new Error(
+      `The app "${options.path}" needs a source, an interface or docs, and only one of them.`,
+    );
   }
   const definition = resource("app", named(options), () =>
-    options.interface !== undefined
+    options.docs !== undefined
       ? compact({
           title: options.title,
           description: options.description,
-          interface: options.interface,
+          docs: options.docs,
         })
-      : compact({
-          title: options.title,
-          description: options.description,
-          entry: options.entry ?? "index.html",
-          fallback: options.fallback,
-          reads: options.reads,
-        }),
+      : options.interface !== undefined
+        ? compact({
+            title: options.title,
+            description: options.description,
+            interface: options.interface,
+          })
+        : compact({
+            title: options.title,
+            description: options.description,
+            entry: options.entry ?? "index.html",
+            fallback: options.fallback,
+            reads: options.reads,
+          }),
   );
   return {
     ...definition,

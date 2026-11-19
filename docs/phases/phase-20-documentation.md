@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M7 are built. M8 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M8 are built. M9 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -385,6 +385,33 @@ Each generator writes to `packages/docs/generated/` (git-ignored). `pnpm docs:ge
 - SDK: `defineApp({ docs })`.
 
 Tests: access for `anonymous`, `end_users`, groups; deploy fails on a bad page; rename redirects; file round trip; export and clone carry docs.
+
+#### Built
+
+- **The kind `doc`** (`packages/manifest/src/kinds.ts`). Its body is its file, whole: `{ source }`, the frontmatter and the Markdown as they were written, up to `MAX_SOURCE_LENGTH`. So what the console saves and what a repository holds are the same bytes. Permissions `doc:read` and `doc:write`.
+- **A page's file is `<path>.md` in a folder of pages** (`packages/manifest/src/files.ts`): the folders a repository names under `docs:` in `volvel.yaml`, or `platform/docs` when it names none. The CLI's build, git sync's push and pull, export and clone all read and write it through the functions they already used for YAML, so none of them has a second way of its own. Markdown anywhere else is nobody's page. A page's title and `key` are read from its own frontmatter.
+- **`app.docs`**, the third thing an app may be: `docs: handbook` serves every page whose path is under `handbook`. `defineApp({ docs })` in the SDK.
+- **A workspace's documentation is checked as a whole on every bundle** (`checkWorkspaceDocs` in the docs engine), where the control plane stores a bundle and where the CLI builds one. A page that does not read, a link, heading, topic or term that is not there, a picture that is not among the app's files, a page about a resource that is not there, two apps serving the same pages, an app serving none, a term or topic defined in two apps, and a term or topic that is the product's own: each refuses the bundle, naming the page and the line.
+- **Served here, as HTML** (`kernel/apps/docs.ts`, and `serveApp` in `front.ts`): the collections across the top, the collection's pages and groups down the side, the page, what is on it, and the pages before and after. It reads with scripts off. Its policy takes no inline script and no inline style. Bindings, `app:read`, the guest limit and hostnames apply as to any app, because it is one.
+- **Search is a form.** `<app>/_search?q=` answers with a page of results, from an index kept for each deployed bundle. So search needs no script either.
+- **A renamed page** answers at its old address with a 308 to its new one, for the 90 days its alias lasts.
+- **Pictures** kept beside the pages are the app's own files: the build collects them, the bundle lists them, and the app serves them as any app serves a file. A picture by `https` address is left to its address.
+- **The stylesheet and the script** are the platform's own, at `/_platform/docs.css` and `/_platform/docs.js`.
+- `doc` is in both deploy orders, with `query` and `dashboard`, which were in neither. The apps list says `docs` for how an app is built, and the console's Apps screen shows it. A page is found by the console's global search.
+
+#### Findings
+
+- **A page in a file is console-managed, as every resource written as a file is.** Only what the SDK defines is code-managed here. A page kept in a folder of the repository's own, outside where the console writes, carries where it was found, and the console already says of such a resource that it is the repository's to change. So the architecture's "code-managed docs are read-only" is that, and needed nothing new.
+- **`key` is in a page's frontmatter.** A page has no envelope to keep its identity in when it moves. The architecture's frontmatter did not have it.
+- **A table's alignment is a class.** The renderer wrote `style="text-align:right"`, and a policy with no inline style refuses that. The golden files changed with it.
+- **A term's link was resolved twice.** Where a term's page is, is given by whoever draws the page. The renderer then passed that address through the page's own link resolver, which took it for a link from this page and dropped it. And a term whose only content was a link that may not be followed drew an empty box. Both found by the served page's tests, both fixed in markup.
+- **A push failed once a workspace held any page.** A push reads the branch's files and the workspace's together, so an unchanged file is given twice. YAML files were kept by name, so twice was once. Pages were kept in a list, and the second was "already used". Found by taking one page through a pull and a push against a real repository, and not by the unit tests of the file form.
+- **A term that names a column is its word alone on a served page.** What a column is for is told to whoever may read the table. A reader of a public handbook may not, and the page cannot ask on their behalf. The console's reader, in M9, can.
+- **Search is on the server, not an index sent to the browser.** The plan had a static index for each app. A form and a page of results work with scripts off, and the browser is sent nothing but what was asked for.
+- **A page deeper than a group is counted from the app's folder**, not from the workspace: `handbook/a/b/c/page` is three folders down in the app that serves `handbook`.
+- **Not built:** a cache of the drawn page. The set and the index are kept for each bundle, and a page is drawn from its tree on each request, which is string building.
+- **Not seen in a browser**, for the reason M5 gives. What is asserted is the HTML.
+- 1,928 tests: 18 of the served app, 7 of the file form, 3 of the build, 1 through git.
 
 ### M9: docs in the console
 

@@ -480,3 +480,100 @@ describe("resources managed in the console, as files in the repository", () => {
     ).toContain("timeoutSeconds");
   });
 });
+
+describe("a repository with documentation", () => {
+  const PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const source = `
+    import { defineApp, defineBinding } from "@volvel/sdk";
+    export const help = defineApp({ path: "help", title: "Handbook", docs: "handbook" });
+    export const open = defineBinding({
+      path: "bindings/help",
+      role: "portal_user",
+      principal: { type: "anonymous" },
+      resource: help,
+    });
+  `;
+  const withPages = async (pages: Record<string, string | Buffer>, config?: string) => {
+    const dir = await repository(source);
+    if (config !== undefined) await writeFile(join(dir, "volvel.yaml"), config);
+    for (const [name, content] of Object.entries(pages)) {
+      await mkdir(dirname(join(dir, name)), { recursive: true });
+      await writeFile(join(dir, name), content);
+    }
+    return dir;
+  };
+
+  test("reads its pages from the folder of pages, as they are, and its pictures as the app's files", async () => {
+    const home =
+      "---\ntitle: Handbook\n---\n\nSee [refunds](support/refunds).\n\n![The till](img/till.png)\n";
+    const refunds = "---\ntitle: Refund an order\ntopic: support-refunds\n---\n\nAsk first.\n";
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": home,
+      "platform/docs/handbook/support/refunds.md": refunds,
+      "platform/docs/handbook/img/till.png": PNG,
+      // Not a page: it is in no folder of pages.
+      "README.md": "# Read me\n\n[broken](nowhere)\n",
+    });
+    const built = await buildRepository({ directory });
+    const docs = built.bundle.manifests.filter((manifest) => manifest.kind === "doc");
+    expect(docs.map((doc) => [doc.path, doc.title, doc.ownership])).toEqual([
+      ["handbook/index", "Handbook", "ui"],
+      ["handbook/support/refunds", "Refund an order", "ui"],
+    ]);
+    expect(docs[0]?.body).toEqual({ source: home });
+    expect(built.bundle.manifests.map((manifest) => manifest.kind)).toEqual([
+      "doc",
+      "doc",
+      "app",
+      "binding",
+    ]);
+    expect(built.bundle.assets).toEqual([
+      {
+        app: "help",
+        path: "img/till.png",
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+        size: PNG.length,
+        contentType: "image/png",
+      },
+    ]);
+    expect(built.files.get(built.bundle.assets?.[0]?.sha256 as string)).toEqual(PNG);
+  });
+
+  test("reads them from the folders a repository names, and from nowhere else", async () => {
+    const directory = await withPages(
+      {
+        "docs/handbook/index.md": "---\ntitle: Handbook\n---\n",
+        "platform/docs/handbook/ignored.md": "---\ntitle: Not read\n---\n",
+      },
+      "docs: [docs]\n",
+    );
+    const built = await buildRepository({ directory });
+    expect(
+      built.bundle.manifests.filter((manifest) => manifest.kind === "doc").map((doc) => doc.path),
+    ).toEqual(["handbook/index"]);
+  });
+
+  test("does not build when a page does not read or a link leads nowhere", async () => {
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": "---\ntitle: Handbook\n---\n\n[gone](missing)\n\n::nope\n",
+      "platform/docs/handbook/Bad Name.md": "---\ntitle: Bad\n---\n",
+    });
+    await expect(buildRepository({ directory })).rejects.toMatchObject({
+      problems: [
+        "platform/docs/handbook/Bad Name.md: a page's name and its folders are written in lowercase letters, digits, hyphens and underscores. Rename the file: nothing renames it for you.",
+      ],
+    });
+    await rm(join(directory, "platform/docs/handbook/Bad Name.md"));
+    await expect(buildRepository({ directory })).rejects.toMatchObject({
+      problems: [
+        'handbook/index (doc): line 5: The link to "missing" leads nowhere: there is no page at missing.',
+        expect.stringContaining(
+          'handbook/index (doc): line 7: There is no component named "nope".',
+        ),
+      ],
+    });
+  });
+});

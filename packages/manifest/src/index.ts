@@ -84,6 +84,8 @@ export {
 export { ERROR_CODES, type ErrorCode, type ErrorCodeEntry, isErrorCode } from "./errors.js";
 export { fileSchemas } from "./file-schema.js";
 export {
+  DOC_KIND,
+  docsRoots,
   entryFor,
   fileOf,
   ignoredFolder,
@@ -170,6 +172,7 @@ export {
   connectionKind,
   connectorKind,
   dataSourceKind,
+  docKind,
   ENUM_COLORS,
   eventKind,
   flowKind,

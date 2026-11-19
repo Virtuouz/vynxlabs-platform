@@ -1325,7 +1325,16 @@ export const appKind: KindDefinition = {
         maxLength: 255,
         description:
           "An interface of the workspace to serve as this app, in place of files of its own. " +
-          "An app has an entry or an interface, never both.",
+          "An app has an entry, an interface or docs, and only one of them.",
+      },
+      docs: {
+        type: "string",
+        pattern: PATH_PATTERN,
+        maxLength: 255,
+        description:
+          "A folder of the workspace's pages of documentation to serve as this app: every page " +
+          "whose path is under it. Its `index` page is the home page, each folder directly under " +
+          "it is a collection, and each folder under a collection is a group.",
       },
       fallback: {
         type: "boolean",
@@ -1344,7 +1353,33 @@ export const appKind: KindDefinition = {
       },
     },
     required: ["title"],
-    oneOf: [{ required: ["entry"] }, { required: ["interface"] }],
+    oneOf: [{ required: ["entry"] }, { required: ["interface"] }, { required: ["docs"] }],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * One page of documentation. Its body is its file, as it is: a few lines of
+ * frontmatter, then Markdown. Nothing in it is code and nothing in it runs.
+ * What it says is checked when it is deployed, together with the pages
+ * around it, since a link is only right or wrong beside what it leads to.
+ */
+export const docKind: KindDefinition = {
+  kind: "doc",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    description:
+      "A page of documentation. Kept in a repository as a Markdown file, `<path>.md`, in a folder of pages, and not as YAML.",
+    properties: {
+      source: {
+        type: "string",
+        maxLength: MAX_SOURCE_LENGTH,
+        description:
+          "The page as its file holds it: its title and what else it says of itself between two lines of `---`, then its Markdown.",
+      },
+    },
+    required: ["source"],
     additionalProperties: false,
   },
 };
@@ -1368,6 +1403,7 @@ export const platformKinds: KindDefinition[] = [
   themeKind,
   interfaceKind,
   dashboardKind,
+  docKind,
   appKind,
   bindingKind,
 ];

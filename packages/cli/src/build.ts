@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Environment } from "@marcbachmann/cel-js";
 import { ComposeError, composeBundle, coreNodesFor } from "@volvel/compose";
+import { checkWorkspaceDocs } from "@volvel/docs-engine";
 import {
   type Bundle,
   type BundleManifest,
@@ -12,6 +14,7 @@ import {
   bundleExpressions,
   checkBundleAssets,
   checkBundleManifests,
+  docsRoots,
   formatFor,
   ignoredFolder,
   isResourceFile,
@@ -27,7 +30,7 @@ import {
   resolveKeyReferences,
 } from "@volvel/manifest";
 import { build as esbuild } from "esbuild";
-import { type AppSource, buildApps } from "./apps.js";
+import { type AppSource, type BuiltApps, buildApps, contentTypeOf } from "./apps.js";
 import { BuildError } from "./errors.js";
 
 export { BuildError };
@@ -60,7 +63,12 @@ export interface BuildOptions {
  * a kind, in any folder that is the repository's own. Paths are from the
  * repository's root.
  */
-async function resourceFiles(directory: string, config: RepositoryConfig): Promise<ResourceFile[]> {
+async function resourceFiles(
+  directory: string,
+  config: RepositoryConfig,
+  /** The folders of pages: a Markdown file under one is a page of documentation. */
+  docs: readonly string[],
+): Promise<ResourceFile[]> {
   const files: ResourceFile[] = [];
   const walk = async (folder: string) => {
     let entries: import("node:fs").Dirent[];
@@ -74,13 +82,65 @@ async function resourceFiles(directory: string, config: RepositoryConfig): Promi
       const name = relative(directory, path).split(sep).join("/");
       if (entry.isDirectory()) {
         if (!ignoredFolder(name, config)) await walk(path);
-      } else if (entry.isFile() && isResourceFile(name, WORKSPACE_KINDS)) {
+      } else if (entry.isFile() && isResourceFile(name, WORKSPACE_KINDS, docs)) {
         files.push({ path: name, content: await readFile(path, "utf8") });
       }
     }
   };
   await walk(directory);
   return files;
+}
+
+const PICTURE = /\.(png|jpe?g|gif|webp|avif|svg)$/i;
+
+/**
+ * The pictures of each docs app: every picture in a folder of pages whose
+ * place puts it under the app's own folder. `handbook/support/chart.png` in a
+ * folder of pages is `support/chart.png` of the app that serves `handbook`.
+ */
+async function docPictures(
+  directory: string,
+  docs: readonly string[],
+  manifests: readonly BundleManifest[],
+): Promise<BuiltApps> {
+  const found: BuiltApps = { assets: [], files: new Map() };
+  const apps = manifests.flatMap((manifest) => {
+    const serves = (manifest.body as { docs?: unknown }).docs;
+    return manifest.kind === "app" && typeof serves === "string"
+      ? [{ path: manifest.path, prefix: `${serves}/` }]
+      : [];
+  });
+  if (apps.length === 0) return found;
+  const walk = async (folder: string, under: string): Promise<void> => {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await readdir(folder, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const name = under === "" ? entry.name : `${under}/${entry.name}`;
+      if (entry.isDirectory()) await walk(join(folder, entry.name), name);
+      else if (entry.isFile() && PICTURE.test(entry.name)) {
+        const app = apps.find((one) => name.startsWith(one.prefix));
+        if (!app) continue;
+        const content = await readFile(join(folder, entry.name));
+        const sha256 = createHash("sha256").update(content).digest("hex");
+        const path = name.slice(app.prefix.length);
+        if (found.assets.some((asset) => asset.app === app.path && asset.path === path)) continue;
+        found.assets.push({
+          app: app.path,
+          path,
+          sha256,
+          size: content.length,
+          contentType: contentTypeOf(path),
+        });
+        found.files.set(sha256, content);
+      }
+    }
+  };
+  for (const root of docs) await walk(join(directory, root), "");
+  return found;
 }
 
 /** The kinds a workspace's resources have. A file named for another kind is not one of them. */
@@ -94,6 +154,7 @@ const KIND_ORDER = [
   "connection_group",
   "variable",
   "table",
+  "query",
   "data_source",
   "event",
   "script",
@@ -103,6 +164,9 @@ const KIND_ORDER = [
   "flow",
   "theme",
   "interface",
+  // After the tables and queries a dashboard asks, and the resources a page is about.
+  "dashboard",
+  "doc",
   "app",
   "binding",
 ];
@@ -153,10 +217,12 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
     await readFile(join(directory, REPOSITORY_CONFIG), "utf8").catch(() => undefined),
   );
   if (said.problems.length > 0) throw new BuildError(said.problems);
-  const parsed = parseRepositoryFiles(await resourceFiles(directory, said.config), {
+  const docs = docsRoots(said.config, folder);
+  const parsed = parseRepositoryFiles(await resourceFiles(directory, said.config, docs), {
     folder,
     roots: said.config.roots,
     kinds: WORKSPACE_KINDS,
+    docs,
   });
   if (parsed.problems.length > 0) throw new BuildError(parsed.problems);
   // A reference written as text may name a resource by its key: it is built as the path.
@@ -204,6 +270,10 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
       source: (definition as unknown as { source: string }).source,
     }));
   const built = await buildApps(directory, apps);
+  // A docs app's own files are the pictures kept beside its pages.
+  const pictures = await docPictures(directory, docs, manifests);
+  built.assets.push(...pictures.assets);
+  for (const [sha256, content] of pictures.files) built.files.set(sha256, content);
 
   const common = {
     sdkVersion: sdk.SDK_VERSION as string,
@@ -402,7 +472,11 @@ async function repositorySources(
 
 /** Everything wrong with a set of manifests, each problem naming the resource and field. */
 export function check(manifests: BundleManifest[]): string[] {
-  const problems = checkBundleManifests(manifests);
+  const problems = [
+    ...checkBundleManifests(manifests),
+    // The instance checks pages against the product's own terms too, which a build does not know.
+    ...checkWorkspaceDocs(manifests),
+  ];
   for (const { where, expression } of bundleExpressions(manifests)) {
     try {
       cel.parse(expression);

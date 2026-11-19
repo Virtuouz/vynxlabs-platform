@@ -1,19 +1,23 @@
 import { PATH_PATTERN } from "./envelope.js";
+import { DOC_KIND } from "./files.js";
 import { platformKinds } from "./kinds.js";
 import { TENANT_KEY_PATTERN, TENANT_KINDS } from "./tenant.js";
 
 /** The schema of each kind's file, for the newest version of the kind. */
 export function fileSchemas(): { kind: string; version: number; schema: object }[] {
   return [
-    ...platformKinds.map((definition) => ({
-      kind: definition.kind,
-      version: definition.schemaVersion,
-      schema: fileSchema(
-        definition.kind,
-        definition.schemaVersion,
-        forFile(definition.kind, definition.body),
-      ),
-    })),
+    ...platformKinds
+      // A page of documentation is a Markdown file, not a YAML one: it has no file schema.
+      .filter((definition) => definition.kind !== DOC_KIND)
+      .map((definition) => ({
+        kind: definition.kind,
+        version: definition.schemaVersion,
+        schema: fileSchema(
+          definition.kind,
+          definition.schemaVersion,
+          forFile(definition.kind, definition.body),
+        ),
+      })),
     ...TENANT_KINDS.map((definition) => ({
       kind: definition.kind,
       version: definition.schemaVersion,

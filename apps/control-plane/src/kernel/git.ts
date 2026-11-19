@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { newId, sql } from "@volvel/db";
 import {
   type BundleManifest,
+  docsRoots,
   fileOf,
   ignoredFolder,
   isResourceFile,
@@ -273,6 +274,8 @@ interface Repository {
 async function readRepository(
   gitdir: string,
   commit: string,
+  /** Where the console writes: its `docs` folder holds pages when the repository names no other. */
+  folder: string,
   limited = false,
 ): Promise<Repository> {
   const files: ResourceFile[] = [];
@@ -282,13 +285,14 @@ async function readRepository(
   const { tree: root } = await git.readTree({ fs, gitdir, oid: commit });
   const said = root.find((entry) => entry.path === REPOSITORY_CONFIG && entry.type === "blob");
   const { config, problems } = parseRepositoryConfig(said ? await text(said.oid) : undefined);
+  const docs = docsRoots(config, folder);
   const walk = async (tree: typeof root, prefix: string) => {
     for (const entry of tree) {
       const path = prefix ? `${prefix}/${entry.path}` : entry.path;
       if (entry.type === "tree") {
         if (ignoredFolder(path, config)) continue;
         await walk((await git.readTree({ fs, gitdir, oid: entry.oid })).tree, path);
-      } else if (entry.type === "blob" && isResourceFile(path, WORKSPACE_KINDS)) {
+      } else if (entry.type === "blob" && isResourceFile(path, WORKSPACE_KINDS, docs)) {
         const content = await text(entry.oid);
         bytes += Buffer.byteLength(content);
         if (limited && (bytes > PULL_LIMITS.bytes || files.length >= PULL_LIMITS.files)) {
@@ -700,7 +704,7 @@ export async function followBranch(
 }
 
 /** The file's name without its last extension: a script is its YAML and its source together. */
-const stemOf = (path: string) => path.replace(/\.(yaml|ts)$/, "");
+const stemOf = (path: string) => path.replace(/\.(yaml|ts|md)$/, "");
 
 /** The workspace beside its branch: both as files, compared resource by resource. */
 interface Sides {
@@ -754,7 +758,11 @@ async function sidesOf(
 ): Promise<Sides> {
   const options = { folder, roots: repository.config.roots };
   const remote = new Map(repository.files.map((file) => [file.path, file.content]));
-  const parsed = parseRepositoryFiles(repository.files, { ...options, kinds: WORKSPACE_KINDS });
+  const parsed = parseRepositoryFiles(repository.files, {
+    ...options,
+    kinds: WORKSPACE_KINDS,
+    docs: docsRoots(repository.config, folder),
+  });
   const theirKey = new Map<string, string>();
   const named = new Map<string, string>();
   const there = new Map<string, BundleManifest>();
@@ -860,7 +868,7 @@ export async function push(
       return failed(db, workspace, actor, "push", remoteProblem(error));
     }
     try {
-      const repository = await readRepository(tip.gitdir, tip.commit);
+      const repository = await readRepository(tip.gitdir, tip.commit, remote.folder);
       const sides = await sidesOf(manifests, repository, remote.folder);
       const problem = configProblem(repository) ?? sides.problems[0];
       if (problem) return failed(db, workspace, actor, "push", problem);
@@ -918,7 +926,12 @@ export async function push(
       const changed = new Set(changes.map((change) => change.path));
       const after = parseRepositoryFiles(
         [...sides.remoteFiles.filter((file) => !changed.has(file.path)), ...sides.mineFiles],
-        { folder: remote.folder, roots: repository.config.roots, kinds: WORKSPACE_KINDS },
+        {
+          folder: remote.folder,
+          roots: repository.config.roots,
+          kinds: WORKSPACE_KINDS,
+          docs: docsRoots(repository.config, remote.folder),
+        },
       );
       if (after.problems.length > 0) {
         return failed(
@@ -1071,7 +1084,7 @@ export async function pull(
       }
       let repository: Repository;
       try {
-        repository = await readRepository(tip.gitdir, tip.commit, true);
+        repository = await readRepository(tip.gitdir, tip.commit, remote.folder, true);
       } catch (error) {
         if (!(error instanceof TooLarge)) throw error;
         return stopped(error.message);
@@ -1148,6 +1161,7 @@ export async function pull(
         folder: remote.folder,
         roots: repository.config.roots,
         kinds: WORKSPACE_KINDS,
+        docs: docsRoots(repository.config, remote.folder),
       });
       if (parsed.problems.length > 0) {
         return stopped(`The files on the branch are not valid: ${parsed.problems.join(" ")}`);
@@ -1345,8 +1359,8 @@ export async function compareWithBranch(
   });
   try {
     const repository = tip.exists
-      ? await readRepository(tip.gitdir, tip.commit)
-      : { files: [], config: { roots: [], ignore: [] }, problems: [] };
+      ? await readRepository(tip.gitdir, tip.commit, remote.folder)
+      : { files: [], config: { roots: [], ignore: [], docs: [] }, problems: [] };
     const sides = await sidesOf(
       options.drafts
         ? await draftManifests(kernel, db, workspace)
@@ -1502,7 +1516,7 @@ export async function pushRelease(
   try {
     // The branch is what production runs, and no more: a resource file there that
     // production does not have is removed, wherever it is kept.
-    const repository = await readRepository(tip.gitdir, tip.commit);
+    const repository = await readRepository(tip.gitdir, tip.commit, remote.folder);
     const sides = await sidesOf(
       await activeConsoleManaged(kernel, db, workspace.id),
       repository,

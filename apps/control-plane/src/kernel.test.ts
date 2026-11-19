@@ -753,6 +753,7 @@ describe("resource registry", () => {
       "connector",
       "dashboard",
       "data_source",
+      "doc",
       "event",
       "flow",
       "interface",

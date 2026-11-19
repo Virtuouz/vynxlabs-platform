@@ -96,10 +96,11 @@ export function allowed(node: Component, ctx: Context): boolean {
 }
 
 /** The address a link is drawn with, or nothing when it is drawn as words. */
-export function hrefOf(href: string, ctx: Context): string | undefined {
+export function hrefOf(href: string, ctx: Context, given = false): string | undefined {
   const safe = safeHref(href, PROFILES[ctx.profile].links);
   if (safe === undefined) return undefined;
-  const mapped = ctx.options.link?.(safe);
+  // An address a resolver already gave, such as where a term's page is, is not resolved again.
+  const mapped = given ? undefined : ctx.options.link?.(safe);
   if (mapped === null) return undefined;
   const final = mapped ?? safe;
   // What a resolver gives back is checked as what an author writes is. A topic
@@ -201,7 +202,8 @@ function usual(node: Node, ctx: Context): Drawn[] {
           const align = node.align[index];
           return el(
             row.header ? "th" : "td",
-            align ? { style: `text-align:${align}` } : {},
+            // A class, not a style: a page is served under a policy that takes no inline styles.
+            align ? { class: `vd-align-${align}` } : {},
             drawAll(cell.children, ctx),
           );
         });
@@ -296,11 +298,12 @@ function component(node: Component, ctx: Context): Drawn[] {
     }
     case "term": {
       const info = ctx.options.term?.(node.props);
-      if (!info || (!info.short && !info.href)) return inside();
+      const href = info?.href ? hrefOf(info.href, { ...ctx, profile: "docs" }, true) : undefined;
+      // Nothing to say, or only an address that may not be followed: the word alone.
+      if (!info || (!info.short && !href)) return inside();
       const id = `${ctx.options.idPrefix ?? "vd"}-term-${++ctx.ids}`;
       const tip: Drawn[] = [];
       if (info.short) tip.push(info.short);
-      const href = info.href ? hrefOf(info.href, { ...ctx, profile: "docs" }) : undefined;
       if (href) {
         if (info.short) tip.push(" ");
         tip.push(

@@ -20,7 +20,9 @@ export interface AppSummary {
   bytes: number;
   /** Who is bound at the app itself: "anyone", "every end user", an email or a group's name. */
   access: string[];
-  builtWith?: "code" | "builder";
+  builtWith?: "code" | "builder" | "docs";
+  /** For a docs app: the folder of pages it serves. */
+  docs?: string | null;
   interface?: string | null;
   /** The tables it reads: declared by its code, or its interface's widgets. */
   reads?: string[];
@@ -305,7 +307,9 @@ function ShareDialog({
         <p className="m-0 text-ink-muted">
           {app?.builtWith === "code"
             ? "Its code declares no tables. Ask its developer to list them with `reads` in defineApp."
-            : "It shows no table."}
+            : app?.builtWith === "docs"
+              ? "It serves pages of documentation, and reads no table."
+              : "It shows no table."}
         </p>
       ) : (
         tablePaths.map((table) => {
@@ -404,7 +408,9 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
   const open = list.data?.items.find((row) => row.id === chosen);
   const unserved =
     instance.data?.appsAddress === "none" &&
-    (list.data?.items ?? []).some((row) => row.builtWith !== "builder" && !row.interface);
+    (list.data?.items ?? []).some(
+      (row) => row.builtWith !== "builder" && row.builtWith !== "docs" && !row.interface,
+    );
   return (
     <>
       {unserved ? (
@@ -461,6 +467,8 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
             cell: (row) =>
               row.builtWith === "builder" ? (
                 <Tag tone="draft">App Builder</Tag>
+              ) : row.builtWith === "docs" ? (
+                <Tag tone="draft">Documentation</Tag>
               ) : (
                 <Tag tone="repository">Repository</Tag>
               ),
@@ -519,9 +527,11 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                       value:
                         open.builtWith === "builder"
                           ? `In the App Builder (${open.interface})`
-                          : "In the repository",
+                          : open.builtWith === "docs"
+                            ? `From the pages under ${open.docs}`
+                            : "In the repository",
                     },
-                    ...(open.builtWith !== "builder"
+                    ...(open.builtWith !== "builder" && open.builtWith !== "docs"
                       ? [
                           {
                             label: "Files",

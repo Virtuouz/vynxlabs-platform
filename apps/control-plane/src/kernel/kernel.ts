@@ -18,6 +18,7 @@ import { type KindHook, registerDataHooks, registerKernelKinds } from "./kinds.j
 import { Mailer } from "./mail.js";
 import { Metrics } from "./metrics.js";
 import { StreamHub } from "./stream.js";
+import { Telemetry } from "./telemetry.js";
 
 /** Everything the kernel's routes and services share. */
 export interface Kernel {
@@ -50,6 +51,8 @@ export interface Kernel {
   stream: StreamHub;
   /** What this replica counted: runs ended, waits, refusals. */
   metrics: Metrics;
+  /** Traces and metrics sent by OTLP, when the operator named somewhere to send them. */
+  telemetry: Telemetry;
 }
 
 export function createKernel(
@@ -101,6 +104,7 @@ export function createKernel(
     mail: new Mailer(config, log),
     stream: new StreamHub(database, log),
     metrics: new Metrics(),
+    telemetry: new Telemetry(config.telemetry, version, log),
     screens: new RuntimeFiles(
       config.screensDir ??
         fileURLToPath(new URL("../../../../packages/screens/runtime/dist", import.meta.url)),

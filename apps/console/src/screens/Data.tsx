@@ -1,18 +1,22 @@
+import { ENUM_COLORS, enumColor } from "@vynxlabs/manifest";
 import {
   Button,
+  Dialog,
   EmptyState,
   Grid,
   type GridColumn,
   type GridSort,
-  Menu,
+  MultiSelectField,
   Notice,
   parseValue,
   SelectField,
   SideSheet,
   showValue,
+  TextAreaField,
   TextField,
+  ValueChip,
 } from "@vynxlabs/ui";
-import { Columns3, Download } from "lucide-react";
+import { ArrowDown, ArrowUp, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -21,7 +25,7 @@ import { count } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
-import { ViewsMenu } from "../kit/views.tsx";
+import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam, useUrlState } from "../router.tsx";
 import {
@@ -46,7 +50,22 @@ const TYPES: { value: string; label: string }[] = [
   { value: "uuid", label: "ID" },
   { value: "reference", label: "Row of another table" },
   { value: "file", label: "File" },
+  { value: "enum", label: "One of a list" },
+  { value: "enum_list", label: "Several of a list" },
 ];
+
+/** One value an enum column offers, with what people read and the colour it is drawn on. */
+interface ColumnValue {
+  value: string;
+  label?: string;
+  color?: string;
+}
+
+/** A value of an enum column as a chip: its label on its colour. One the column no longer offers is plain. */
+function ValueOf({ column, value }: { column: RowColumn; value: string }) {
+  const found = column.values?.find((one) => one.value === value);
+  return <ValueChip color={enumColor(found?.color)}>{found?.label ?? value}</ValueChip>;
+}
 const typeLabel = (type: string) => TYPES.find((entry) => entry.value === type)?.label ?? type;
 
 // ----- Rows: shared by workspace tables and the tables of an external source -----
@@ -57,6 +76,10 @@ interface RowColumn {
   required: boolean;
   /** False for columns the platform fills in, and for types it only reads. */
   writable: boolean;
+  /** For an enum or an enum_list: the values it offers, in order. */
+  values?: ColumnValue[];
+  /** For a reference: the table it points to. */
+  references?: string | null;
 }
 
 interface RowsBrowserProps {
@@ -82,6 +105,9 @@ export function toFilter(type: string, text: string): object | null {
   if (trimmed === "") return null;
   if (/^(empty|null)$/i.test(trimmed)) return { op: "is_null", value: true };
   if (type === "text") return { op: "contains", value: trimmed };
+  // An enum is found by a value spelled out, a list by one value it has.
+  if (type === "enum") return { op: "eq", value: trimmed };
+  if (type === "enum_list") return { op: "has", value: trimmed };
   const compared = /^(>=|<=|>|<)\s*(.+)$/.exec(trimmed);
   const op = compared
     ? { ">=": "gte", "<=": "lte", ">": "gt", "<": "lt" }[compared[1] as ">"]
@@ -94,7 +120,12 @@ const ROWS_URL = {
   sort: { type: "string" },
   filter: { type: "string" },
   page: { type: "string" },
+  /** The columns shown, in order. Empty means every column, as the table has them. */
+  cols: { type: "list" },
+  /** What links and saved views from before phase 18 say: the columns left out. Read, never written. */
   hide: { type: "list" },
+  /** "1" when the first column scrolls away with the rest. It stays in view otherwise. */
+  unlock: { type: "string" },
   density: { type: "string", default: "standard" },
   row: { type: "string", push: true },
 } as const;
@@ -127,7 +158,15 @@ function RowsBrowser(props: RowsBrowserProps) {
   const [back, setBack] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // The columns shown, in order: as chosen, or all of them less what an older link hides.
+  const known = new Set(columns.map((column) => column.name));
+  const chosen = url.cols.filter((name) => known.has(name));
   const hidden = new Set(url.hide);
+  const order =
+    chosen.length > 0
+      ? chosen
+      : columns.filter((column) => !hidden.has(column.name)).map((column) => column.name);
+  const lockFirst = url.unlock !== "1";
   const compact = url.density === "compact";
 
   let filter: object | undefined;
@@ -144,9 +183,14 @@ function RowsBrowser(props: RowsBrowserProps) {
   if (filter) query.set("filter", JSON.stringify(filter));
   if (url.sort) query.set("sort", url.sort);
   if (url.page) query.set("cursor", url.page);
-  const page = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
-    `${props.rowsPath}?${query}`,
-  );
+  // What stands for the rows a reference points to comes with the page, for up to five of them.
+  const pointing = columns.filter((column) => column.references).slice(0, 5);
+  if (pointing.length > 0) query.set("expand", pointing.map((column) => column.name).join(","));
+  const page = useLoad<{
+    items: DataRow[];
+    nextCursor: string | null;
+    expanded?: Record<string, Record<string, unknown>>;
+  }>(`${props.rowsPath}?${query}`);
   const canChange = rowPath !== null && keyColumn !== null;
   const keyOf = (row: DataRow) => String(row[keyColumn ?? ""] ?? JSON.stringify(row));
   // Rows saved in place since this page was loaded. They are shown as saved without loading again.
@@ -170,13 +214,13 @@ function RowsBrowser(props: RowsBrowserProps) {
   const exportHref = custom
     ? `/api/v1${props.rowsPath.replace("/rows/", "/rows-export/")}?${exportQuery}`
     : null;
-  const grid: GridColumn[] = columns
-    .filter((column) => !hidden.has(column.name))
+  const grid: GridColumn[] = order
+    .flatMap((name) => columns.find((column) => column.name === name) ?? [])
     .map((column) => ({
       name: column.name,
       type: column.type,
       editable: canChange && column.writable && column.type !== "file",
-      sortable: column.type !== "json",
+      sortable: !["json", "enum_list"].includes(column.type),
       filterable: !["json", "ARRAY"].includes(column.type),
     }));
   const saveRow = async (row: DataRow, values: Record<string, unknown>) => {
@@ -220,28 +264,27 @@ function RowsBrowser(props: RowsBrowserProps) {
             "Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
         </p>
         <span className="flex flex-wrap items-center gap-2">
-          <Menu
-            ariaLabel="Columns shown"
-            triggerClassName="inline-flex h-7 items-center gap-1.5 rounded-control border border-line px-3 text-body-sm hover:bg-sunken"
-            label={
-              <>
-                <Columns3 aria-hidden="true" size={14} /> Columns
-                {hidden.size > 0 ? (
-                  <span className="text-ink-muted">({columns.length - hidden.size})</span>
-                ) : null}
-              </>
-            }
-            items={columns.map((column) => ({
-              label: column.name,
-              current: !hidden.has(column.name),
-              onSelect: () => {
-                const next = new Set(hidden);
-                if (next.has(column.name)) next.delete(column.name);
-                else if (next.size < columns.length - 1) next.add(column.name);
-                setUrl({ hide: [...next] });
-              },
-            }))}
-          />
+          <ColumnsMenu
+            columns={columns.map((column) => ({ key: column.name, label: column.name }))}
+            shown={order.length === columns.length && chosen.length === 0 ? undefined : order}
+            onChange={(next) => setUrl({ cols: next ?? [], hide: [] })}
+          >
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={lockFirst}
+                onChange={() => setUrl({ unlock: lockFirst ? "1" : undefined })}
+                className="mt-0.5 size-4 accent-[var(--color-action)]"
+              />
+              <span className="flex flex-col">
+                Lock the first column
+                <span className="text-body-sm text-ink-muted">
+                  It stays in view when the table is scrolled sideways. Put the column you want
+                  first.
+                </span>
+              </span>
+            </label>
+          </ColumnsMenu>
           <Button
             size="small"
             aria-pressed={compact}
@@ -287,6 +330,7 @@ function RowsBrowser(props: RowsBrowserProps) {
         <div className="min-w-0 flex-1">
           <Grid<DataRow>
             navigation="grid"
+            lockFirst={lockFirst}
             density={compact ? "compact" : "standard"}
             label={props.label}
             columns={grid}
@@ -321,6 +365,27 @@ function RowsBrowser(props: RowsBrowserProps) {
                   <a className="text-action" href={`/api/v1${props.filesPath}/${value}/content`}>
                     Download
                   </a>
+                );
+              }
+              const meta = columns.find((one) => one.name === column.name);
+              if (meta && column.type === "enum" && typeof value === "string") {
+                return <ValueOf column={meta} value={value} />;
+              }
+              if (meta && column.type === "enum_list" && Array.isArray(value)) {
+                return (
+                  <span className="inline-flex flex-wrap gap-1">
+                    {value.map((one) => (
+                      <ValueOf key={String(one)} column={meta} value={String(one)} />
+                    ))}
+                  </span>
+                );
+              }
+              if (column.type === "reference" && typeof value === "string") {
+                // The row it points to, by what that table says stands for a row.
+                const label = page.data?.expanded?.[column.name]?.[value];
+                if (label !== undefined && label !== null) return String(label);
+                return (
+                  <span className="font-mono text-code-sm text-ink-muted">{String(value)}</span>
                 );
               }
               if (column.name === keyColumn && column.type === "uuid") {
@@ -422,6 +487,29 @@ function RowsBrowser(props: RowsBrowserProps) {
 }
 
 /** A row's values, changed in the inspector beside the grid and saved together. */
+/** What an enum column offers in a form: nothing, then each value by its label. A value it holds and no longer offers stays in the list. */
+function valueOptions(column: RowColumn, held: string) {
+  const offered = (column.values ?? []).map((one) => ({
+    value: one.value,
+    label: one.label ?? one.value,
+  }));
+  return [
+    { value: "", label: column.required ? "Choose" : "No value" },
+    ...offered,
+    ...(held && !offered.some((one) => one.value === held)
+      ? [{ value: held, label: `${held} (no longer offered)` }]
+      : []),
+  ];
+}
+const listOf = (text: string) =>
+  text
+    .split(",")
+    .map((one) => one.trim())
+    .filter(Boolean);
+
+/** Text longer than this is edited in a text area, as the kit's forms do. */
+const LONG_TEXT = 200;
+
 function RowEditor({
   row,
   columns,
@@ -437,14 +525,21 @@ function RowEditor({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const shown = (column: RowColumn) =>
-    column.type === "json" || typeof row[column.name] === "object"
-      ? row[column.name] === null || row[column.name] === undefined
-        ? ""
-        : JSON.stringify(row[column.name])
-      : row[column.name] === null || row[column.name] === undefined
-        ? ""
-        : String(row[column.name]);
+    column.type === "enum_list"
+      ? showValue("enum_list", row[column.name])
+      : column.type === "json" || typeof row[column.name] === "object"
+        ? row[column.name] === null || row[column.name] === undefined
+          ? ""
+          : JSON.stringify(row[column.name], null, 2)
+        : row[column.name] === null || row[column.name] === undefined
+          ? ""
+          : String(row[column.name]);
   const dirty = Object.keys(text).length > 0;
+  // JSON, and text that is already long or runs over lines, gets room to be read.
+  const roomy = (column: RowColumn) => {
+    const value = shown(column);
+    return column.type === "json" || value.length > LONG_TEXT || value.includes("\n");
+  };
   return (
     <form
       className="flex flex-col gap-3"
@@ -476,7 +571,38 @@ function RowEditor({
       }}
     >
       {columns.map((column) =>
-        editable && column.writable && column.type !== "file" ? (
+        editable && column.writable && column.type === "enum" ? (
+          <SelectField
+            key={column.name}
+            name={column.name}
+            label={column.name}
+            value={text[column.name] ?? shown(column)}
+            options={valueOptions(column, text[column.name] ?? shown(column))}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : editable && column.writable && column.type === "enum_list" ? (
+          <MultiSelectField
+            key={column.name}
+            label={column.name}
+            value={listOf(text[column.name] ?? shown(column))}
+            options={valueOptions(column, "").slice(1)}
+            error={errors[column.name]}
+            onChange={(value) =>
+              setText((current) => ({ ...current, [column.name]: value.join(",") }))
+            }
+          />
+        ) : editable && column.writable && column.type !== "file" && roomy(column) ? (
+          <TextAreaField
+            key={column.name}
+            name={column.name}
+            label={column.name}
+            value={text[column.name] ?? shown(column)}
+            required={false}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : editable && column.writable && column.type !== "file" ? (
           <TextField
             key={column.name}
             name={column.name}
@@ -633,6 +759,27 @@ function AddRow({
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
+          ) : column.type === "enum" ? (
+            <SelectField
+              key={column.name}
+              name={column.name}
+              label={column.name}
+              value={values[column.name] ?? ""}
+              options={valueOptions(column, "")}
+              error={errors[column.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+            />
+          ) : column.type === "enum_list" ? (
+            <MultiSelectField
+              key={column.name}
+              label={column.name}
+              value={listOf(values[column.name] ?? "")}
+              options={valueOptions(column, "").slice(1)}
+              error={errors[column.name]}
+              onChange={(value) =>
+                setValues((current) => ({ ...current, [column.name]: value.join(",") }))
+              }
+            />
           ) : column.type === "file" ? (
             <label key={column.name} className="flex flex-col gap-1 text-body-sm font-medium">
               {column.name}
@@ -648,6 +795,17 @@ function AddRow({
                 }}
               />
             </label>
+          ) : column.type === "json" ? (
+            <TextAreaField
+              key={column.name}
+              name={column.name}
+              label={column.name}
+              value={values[column.name] ?? ""}
+              required={false}
+              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}`}
+              error={errors[column.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+            />
           ) : (
             <TextField
               key={column.name}
@@ -753,6 +911,11 @@ interface TableColumn {
   unique: boolean;
   default: unknown;
   references: string | null;
+  /** For a reference: restrict, set_null or cascade. */
+  onDelete?: string | null;
+  values?: ColumnValue[];
+  /** Values the column had and no longer offers. Rows may still hold them. */
+  retiredValues?: string[];
   status: "active" | "retired";
   held: number | null;
 }
@@ -762,6 +925,8 @@ interface TableDetail {
   status: "active" | "retired";
   managedIn: "code" | "ui";
   policy: { type: string; column?: string; rules?: Rule[] };
+  /** The column that stands for a row where another table refers to it. */
+  display?: string | null;
   rowCount: number;
   stored: { schema: string; table: string };
   columns: TableColumn[];
@@ -829,6 +994,8 @@ export function TableView({ root, name, link }: { root: string; name: string; li
               required:
                 column.required && (column.default === null || column.default === undefined),
               writable: true,
+              ...(column.values ? { values: column.values } : {}),
+              references: column.references,
             })),
             ...SYSTEM_COLUMNS,
           ]}
@@ -863,6 +1030,290 @@ function PurgeButton({
   );
 }
 
+/** What a reference does when the row it points to is deleted. */
+const ON_DELETE = [
+  {
+    value: "restrict",
+    label: "Refuse the deletion",
+    short: "A row that is pointed to cannot be deleted",
+  },
+  {
+    value: "set_null",
+    label: "Empty this column",
+    short: "Emptied when the row it points to is deleted",
+  },
+  {
+    value: "cascade",
+    label: "Delete this row too",
+    short: "Deleted when the row it points to is deleted",
+  },
+];
+
+function OnDeleteDialog({
+  column,
+  onClose,
+  onSave,
+}: {
+  column: TableColumn;
+  onClose: () => void;
+  onSave: (onDelete: string) => Promise<void>;
+}) {
+  const [rule, setRule] = useState(column.onDelete ?? "restrict");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog open onClose={onClose} title={`When a row ${column.name} points to is deleted`}>
+      <div className="flex flex-col gap-4">
+        <SelectField
+          name="onDelete"
+          label={`What happens to the row that holds ${column.name}`}
+          value={rule}
+          options={ON_DELETE.map((one) => ({ value: one.value, label: one.label }))}
+          onChange={setRule}
+        />
+        {rule === "cascade" ? (
+          <Notice tone="attention">
+            Deleting a row of {column.references} will delete every row here that points to it.
+          </Notice>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onSave(rule);
+              } catch {
+                // The definition says what went wrong, above the columns.
+              } finally {
+                setBusy(false);
+                onClose();
+              }
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+const COLOR_NAMES = Object.keys(ENUM_COLORS);
+
+interface EditedValue {
+  /** Stays the same while the value is retyped, so the list does not lose its place. */
+  key: number;
+  value: string;
+  label: string;
+  color: string;
+  /** The value as it was when the dialog opened: retyped, rows that hold it are rewritten. */
+  was?: string;
+}
+
+/** The values of an enum column: what each is called, the colour it is drawn on, and their order. */
+function ValuesDialog({
+  column,
+  onClose,
+  onSave,
+}: {
+  column: TableColumn;
+  onClose: () => void;
+  onSave: (values: (string | Record<string, string>)[]) => Promise<void>;
+}) {
+  const [rows, setRows] = useState<EditedValue[]>(() =>
+    (column.values ?? []).map((one, key) => ({
+      key,
+      value: one.value,
+      label: one.label ?? "",
+      color: one.color ?? "",
+      was: one.value,
+    })),
+  );
+  const [busy, setBusy] = useState(false);
+  const edit = (key: number, change: Partial<EditedValue>) =>
+    setRows((current) => current.map((row) => (row.key === key ? { ...row, ...change } : row)));
+  const move = (at: number, by: -1 | 1) =>
+    setRows((current) => {
+      const to = at + by;
+      if (to < 0 || to >= current.length) return current;
+      const next = [...current];
+      [next[at], next[to]] = [next[to] as EditedValue, next[at] as EditedValue];
+      return next;
+    });
+  const typed = rows.map((row) => row.value.trim());
+  const ownColor = (color: string) => color !== "" && !COLOR_NAMES.includes(color);
+  const problem = typed.some((value) => value === "")
+    ? "Every value needs to be typed."
+    : new Set(typed).size !== typed.length
+      ? "Two values are the same."
+      : rows.some((row) => ownColor(row.color) && !/^#[0-9a-fA-F]{6}$/.test(row.color))
+        ? "A colour of your own is written as # and six digits, such as #7c3aed."
+        : rows.length === 0
+          ? "A column needs at least one value."
+          : undefined;
+  const gone = (column.values ?? [])
+    .map((one) => one.value)
+    .filter((value) => !rows.some((row) => row.was === value));
+  return (
+    <Dialog open onClose={onClose} title={`Values of ${column.name}`}>
+      <div className="flex flex-col gap-4">
+        <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Values, in order">
+          {rows.map((row, at) => (
+            <li key={row.key} className="flex flex-col gap-2 rounded-panel border border-line p-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-32 flex-1">
+                  <TextField
+                    name={`value-${row.key}`}
+                    label="Value"
+                    value={row.value}
+                    onChange={(value) => edit(row.key, { value })}
+                  />
+                </div>
+                <div className="min-w-32 flex-1">
+                  <TextField
+                    name={`label-${row.key}`}
+                    label="Shown as"
+                    required={false}
+                    value={row.label}
+                    onChange={(label) => edit(row.key, { label })}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="w-40">
+                  <SelectField
+                    name={`color-${row.key}`}
+                    label="Colour"
+                    value={ownColor(row.color) ? "custom" : row.color}
+                    options={[
+                      { value: "", label: "None" },
+                      ...COLOR_NAMES.map((name) => ({ value: name, label: name })),
+                      { value: "custom", label: "One of your own" },
+                    ]}
+                    onChange={(color) =>
+                      edit(row.key, { color: color === "custom" ? "#7c3aed" : color })
+                    }
+                  />
+                </div>
+                {ownColor(row.color) ? (
+                  <div className="w-32">
+                    <TextField
+                      name={`hex-${row.key}`}
+                      label="As #rrggbb"
+                      value={row.color}
+                      onChange={(color) => edit(row.key, { color })}
+                    />
+                  </div>
+                ) : null}
+                <span className="flex h-control items-center">
+                  <ValueChip color={enumColor(row.color || undefined)}>
+                    {row.label || row.value || "Value"}
+                  </ValueChip>
+                </span>
+                <span className="ml-auto inline-flex gap-1">
+                  <Button
+                    size="small"
+                    variant="quiet"
+                    aria-label={`Move ${row.value || "this value"} up`}
+                    disabled={at === 0}
+                    onClick={() => move(at, -1)}
+                  >
+                    <ArrowUp aria-hidden="true" size={14} />
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="quiet"
+                    aria-label={`Move ${row.value || "this value"} down`}
+                    disabled={at === rows.length - 1}
+                    onClick={() => move(at, 1)}
+                  >
+                    <ArrowDown aria-hidden="true" size={14} />
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="quiet"
+                    onClick={() =>
+                      setRows((current) => current.filter((one) => one.key !== row.key))
+                    }
+                  >
+                    Remove
+                  </Button>
+                </span>
+              </div>
+              {row.was !== undefined && row.was !== row.value.trim() && row.value.trim() !== "" ? (
+                <p className="m-0 text-body-sm text-ink-muted">
+                  Rows that hold <Code>{row.was}</Code> will hold <Code>{row.value.trim()}</Code>.
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        <div>
+          <Button
+            size="small"
+            onClick={() =>
+              setRows((current) => [
+                ...current,
+                {
+                  key: Math.max(-1, ...current.map((one) => one.key)) + 1,
+                  value: "",
+                  label: "",
+                  color: "",
+                },
+              ])
+            }
+          >
+            Add a value
+          </Button>
+        </div>
+        {gone.length > 0 ? (
+          <Notice tone="plain">
+            {gone.join(", ")} will no longer be offered. Rows that hold{" "}
+            {gone.length === 1 ? "it" : "them"} keep {gone.length === 1 ? "it" : "them"}.
+          </Notice>
+        ) : null}
+        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={problem !== undefined}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onSave(
+                  rows.map((row) => {
+                    const value = row.value.trim();
+                    const full: Record<string, string> = {
+                      value,
+                      ...(row.label.trim() ? { label: row.label.trim() } : {}),
+                      ...(row.color ? { color: row.color } : {}),
+                      ...(row.was !== undefined && row.was !== value
+                        ? { renamedFrom: row.was }
+                        : {}),
+                    };
+                    return Object.keys(full).length === 1 ? value : full;
+                  }),
+                );
+              } catch {
+                // The definition says what went wrong, above the columns.
+              } finally {
+                setBusy(false);
+                onClose();
+              }
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 interface TableBody {
   description?: string;
   columns: Record<string, Record<string, unknown>>;
@@ -885,6 +1336,8 @@ function Definition({
   // `/tenants/<id>`, the part of the workspace's address the tenant's people are listed under.
   const tenantBase = root.split("/workspaces/")[0];
   const [adding, setAdding] = useState(false);
+  // The column whose values, or whose rule for a delete, are being changed.
+  const [optionsOf, setOptionsOf] = useState<TableColumn>();
   const [failure, setFailure] = useState<string>();
   const active = table.columns.filter((column) => column.status === "active");
   const retired = table.columns.filter((column) => column.status === "retired");
@@ -937,7 +1390,34 @@ function Definition({
             { header: "Column", cell: (row) => <Code>{row.name}</Code> },
             {
               header: "Holds",
-              cell: (row) => (row.references ? `A row of ${row.references}` : typeLabel(row.type)),
+              cell: (row) =>
+                row.references ? (
+                  <span className="flex flex-col">
+                    <span>A row of {row.references}</span>
+                    <span className="text-meta text-ink-muted">
+                      {ON_DELETE.find((one) => one.value === (row.onDelete ?? "restrict"))?.short}
+                    </span>
+                  </span>
+                ) : row.values ? (
+                  <span className="flex flex-col gap-1">
+                    <span>{typeLabel(row.type)}</span>
+                    <span className="inline-flex flex-wrap gap-1">
+                      {row.values.map((one) => (
+                        <ValueChip key={one.value} color={enumColor(one.color)}>
+                          {one.label ?? one.value}
+                        </ValueChip>
+                      ))}
+                    </span>
+                    {row.retiredValues && row.retiredValues.length > 0 ? (
+                      <span className="text-meta text-ink-muted">
+                        No longer offered, kept on the rows that hold them:{" "}
+                        {row.retiredValues.join(", ")}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  typeLabel(row.type)
+                ),
             },
             {
               header: "Rules",
@@ -962,6 +1442,11 @@ function Definition({
                     align: "end" as const,
                     cell: (row: TableColumn) => (
                       <span className="inline-flex gap-1">
+                        {row.values || row.references ? (
+                          <Button size="small" variant="quiet" onClick={() => setOptionsOf(row)}>
+                            {row.values ? "Values" : "On delete"}
+                          </Button>
+                        ) : null}
                         <Button
                           size="small"
                           variant="quiet"
@@ -1057,6 +1542,10 @@ function Definition({
                               body.columns[row.name] = {
                                 type: row.type,
                                 ...(row.references ? { references: row.references } : {}),
+                                // An enum comes back with every value its rows may hold.
+                                ...(row.values
+                                  ? { values: [...row.values, ...(row.retiredValues ?? [])] }
+                                  : {}),
                               };
                             }),
                           )
@@ -1073,6 +1562,40 @@ function Definition({
           />
         </section>
       ) : null}
+
+      <section className="flex flex-col gap-2">
+        <h2 className="m-0 text-title font-semibold">What stands for a row</h2>
+        <p className="m-0 max-w-measure text-ink-muted">
+          Where another table points to a row of this one, this column is shown in place of the
+          row's ID.
+        </p>
+        {editable ? (
+          <div className="max-w-xs">
+            <SelectField
+              name="display"
+              label="The column that stands for a row"
+              labelHidden
+              value={table.display ?? ""}
+              options={[
+                { value: "", label: "None: the row's ID" },
+                ...active
+                  .filter((column) => !["json", "file", "enum_list"].includes(column.type))
+                  .map((column) => ({ value: column.name, label: column.name })),
+              ]}
+              onChange={(display) =>
+                void quietly(
+                  change((body) => {
+                    if (display) body.display = display;
+                    else delete body.display;
+                  }),
+                )
+              }
+            />
+          </div>
+        ) : (
+          <p className="m-0">{table.display ? <Code>{table.display}</Code> : "The row's ID."}</p>
+        )}
+      </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="m-0 text-title font-semibold">Who sees rows</h2>
@@ -1127,6 +1650,31 @@ function Definition({
         </section>
       ) : null}
 
+      {optionsOf?.values ? (
+        <ValuesDialog
+          column={optionsOf}
+          onClose={() => setOptionsOf(undefined)}
+          onSave={(values) =>
+            change((body) => {
+              const column = body.columns[optionsOf.name];
+              if (column) column.values = values;
+            })
+          }
+        />
+      ) : optionsOf?.references ? (
+        <OnDeleteDialog
+          column={optionsOf}
+          onClose={() => setOptionsOf(undefined)}
+          onSave={(onDelete) =>
+            change((body) => {
+              const column = body.columns[optionsOf.name];
+              if (!column) return;
+              if (onDelete === "restrict") delete column.onDelete;
+              else column.onDelete = onDelete;
+            })
+          }
+        />
+      ) : null}
       <CreateDialog
         open={adding}
         onClose={() => setAdding(false)}
@@ -1149,6 +1697,21 @@ function Definition({
               },
             },
             {
+              name: "onDelete",
+              label: "When the row it points to is deleted",
+              required: false,
+              when: (values) => values.type === "reference",
+              options: ON_DELETE.map((one) => ({ value: one.value, label: one.label })),
+            },
+            {
+              name: "values",
+              label: "Values",
+              required: false,
+              placeholder: "new, paid, shipped",
+              hint: "Separated by commas, in the order they are offered. Labels and colours are set afterwards, under Values.",
+              when: (values) => values.type === "enum" || values.type === "enum_list",
+            },
+            {
               name: "required",
               label: "Must every row have one?",
               options: [
@@ -1163,11 +1726,25 @@ function Definition({
               hint: "Optional.",
             },
           ],
-          submit: ({ name = "", type = "text", references, required, fallback }) =>
+          submit: ({
+            name = "",
+            type = "text",
+            references,
+            onDelete,
+            values,
+            required,
+            fallback,
+          }) =>
             change((body) => {
               body.columns[name] = {
                 type,
                 ...(type === "reference" && references ? { references } : {}),
+                ...(type === "reference" && onDelete && onDelete !== "restrict"
+                  ? { onDelete }
+                  : {}),
+                ...(type === "enum" || type === "enum_list"
+                  ? { values: listOf(values ?? "") }
+                  : {}),
                 ...(required === "yes" ? { required: true } : {}),
                 ...(fallback ? { default: parseValue(type, fallback) } : {}),
               };

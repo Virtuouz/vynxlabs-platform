@@ -13,8 +13,17 @@ import { SYSTEM } from "./kernel/audit.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { pushTenantAccess } from "./kernel/git.js";
 import { access, installAccessControl } from "./kernel/http.js";
+import { defaultIcon, icoOf, webManifest } from "./kernel/icons.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
+import { observe } from "./kernel/metrics.js";
 import { postgresRateLimitStore } from "./kernel/ratelimit.js";
+import {
+  newSpanId,
+  newTraceId,
+  parseTraceparent,
+  type TraceContext,
+  withTrace,
+} from "./kernel/telemetry.js";
 import { takeReleased } from "./kernel/tenant/releases.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
@@ -36,6 +45,7 @@ import { executionRoutes } from "./routes/execution.js";
 import { flowRoutes } from "./routes/flows.js";
 import { gitRoutes } from "./routes/git.js";
 import { healthRoutes } from "./routes/health.js";
+import { iconRoutes, instanceIcon } from "./routes/icons.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { instanceControlRoutes } from "./routes/instance-control.js";
@@ -49,6 +59,7 @@ import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { preferenceRoutes } from "./routes/preferences.js";
 import { promotionRequestRoutes } from "./routes/promotion-requests.js";
+import { queryRoutes } from "./routes/queries.js";
 import { scimRoutes } from "./routes/scim.js";
 import { searchRoutes } from "./routes/search.js";
 import { sourceRoutes } from "./routes/sources.js";
@@ -135,9 +146,47 @@ export async function buildApp(options: AppOptions) {
   app.addHook("onClose", () => kernel.stream.close());
 
   app.setErrorHandler(errorHandler);
+  app.decorateRequest("trace", null as unknown as TraceContext);
+  app.decorateRequest("traceParent", undefined);
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
+    // A caller that is already part of a trace says so, and the request joins it.
+    const incoming = parseTraceparent(request.headers.traceparent);
+    request.traceParent = incoming?.spanId;
+    request.trace = { traceId: incoming?.traceId ?? newTraceId(), spanId: newSpanId() };
+    reply.header("x-trace-id", request.trace.traceId);
   });
+  // What the handler starts, a run or a flow run, is found to belong to the request's trace.
+  app.addHook("preHandler", (request, _reply, done) => withTrace(request.trace, done));
+  app.addHook("onResponse", async (request, reply) => {
+    const route = request.routeOptions.url ?? "unmatched";
+    const status = String(reply.statusCode);
+    const seconds = reply.elapsedTime / 1000;
+    observe.http(kernel.metrics, { method: request.method, route, status }, seconds);
+    const kind = request.routeOptions.config?.access?.kind;
+    // A worker asking for work, and a scrape, are not work anyone follows.
+    if (!kernel.telemetry.tracing || kind === "worker" || kind === "worker-host") return;
+    if (route.endsWith("/metrics") || route.endsWith("/health")) return;
+    const end = Date.now();
+    kernel.telemetry.span({
+      ...request.trace,
+      parentSpanId: request.traceParent,
+      name: `${request.method} ${route}`,
+      kind: "server",
+      start: end - reply.elapsedTime,
+      end,
+      attributes: {
+        "http.request.method": request.method,
+        "http.route": route,
+        "http.response.status_code": reply.statusCode,
+        "url.path": request.url.split("?")[0],
+        "platform.request.id": request.id,
+        "platform.tenant.id": (request.params as { t?: string } | undefined)?.t,
+      },
+      error: reply.statusCode >= 500 ? `HTTP ${reply.statusCode}` : undefined,
+    });
+  });
+  app.addHook("onClose", () => kernel.telemetry.close());
   if (options.onRoute) app.addHook("onRoute", options.onRoute);
 
   app.addHook("onClose", () => kernel.mail.close());
@@ -208,6 +257,8 @@ export async function buildApp(options: AppOptions) {
       await api.register(mcpRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
+      await api.register(iconRoutes(kernel));
+      await api.register(queryRoutes(kernel));
       await api.register(sourceRoutes(kernel));
       await api.register(locationRoutes(kernel));
       await api.register(environmentRoutes(kernel));
@@ -250,6 +301,33 @@ export async function buildApp(options: AppOptions) {
     { prefix: API_PREFIX },
   );
 
+  // What a browser asks for at the root of a site, whatever page it is on: the icon for its
+  // tab, and what the console is called when it is kept on a home screen.
+  app.get("/favicon.ico", { config: { access: access.public } }, async (_request, reply) => {
+    const icon = (await instanceIcon(kernel, 32)) ?? defaultIcon(32);
+    return reply
+      .header("content-type", "image/x-icon")
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", "public, max-age=300")
+      .send(icoOf(icon, 32));
+  });
+  app.get("/site.webmanifest", { config: { access: access.public } }, async (_request, reply) => {
+    const branding = await kernel.db
+      .selectFrom("instance_branding")
+      .select("product_name")
+      .executeTakeFirst();
+    return reply
+      .header("content-type", "application/manifest+json")
+      .header("cache-control", "public, max-age=300")
+      .send(
+        webManifest(
+          branding?.product_name ?? "Console",
+          `${API_PREFIX}/instance/branding/icons`,
+          "/",
+        ),
+      );
+  });
+
   const consoleDir = consoleDirectory(options.config);
   if (consoleDir) {
     await app.register(fastifyStatic, {
@@ -278,6 +356,15 @@ export async function buildApp(options: AppOptions) {
   });
 
   return app;
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    /** The trace this request is part of, and the span the request itself is. */
+    trace: TraceContext;
+    /** The caller's span, when the caller sent a `traceparent`. */
+    traceParent: string | undefined;
+  }
 }
 
 declare module "fastify" {

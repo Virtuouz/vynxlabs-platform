@@ -153,8 +153,26 @@ export class Metrics {
   }
 }
 
+/** Seconds, from a request answered at once to one that waits for work, as a worker's does. */
+export const HTTP_BUCKETS = [0.005, 0.025, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60];
+
 /** What a run's end, or a claim, adds to the metrics. */
 export const observe = {
+  /** A request answered: by the route's pattern, never its address, so the series stay few. */
+  http(
+    metrics: Metrics,
+    labels: { method: string; route: string; status: string },
+    seconds: number,
+  ) {
+    metrics.inc("platform_http_requests_total", "Requests answered, by route and status.", labels);
+    metrics.observe(
+      "platform_http_request_duration_seconds",
+      "How long a request took to answer, by route.",
+      { method: labels.method, route: labels.route },
+      seconds,
+      HTTP_BUCKETS,
+    );
+  },
   runEnded(
     metrics: Metrics,
     run: { workspace_id: string; started_at: Date | null; finished_at?: Date | null },

@@ -48,3 +48,41 @@ describe("a table's row types", () => {
     });
   });
 });
+
+describe("enum columns, and references that say what a delete does", () => {
+  test("a row's type is narrowed to the values, one or several, and the definition carries them as written", () => {
+    const loans = defineTable({
+      path: "loans",
+      display: "title",
+      columns: {
+        title: column.text({ required: true }),
+        status: column.enum(
+          ["new", { value: "on_loan", label: "On loan", color: "blue" }, "returned"],
+          { required: true, default: "new" },
+        ),
+        extras: column.enumList(["charger", "case"]),
+        device: column.reference("devices", { onDelete: "set_null" }),
+      },
+    });
+    type Row = NonNullable<typeof loans.__row>;
+    type Insert = NonNullable<typeof loans.__insert>;
+    expectTypeOf<Row["status"]>().toEqualTypeOf<"new" | "on_loan" | "returned">();
+    expectTypeOf<Row["extras"]>().toEqualTypeOf<("charger" | "case")[] | null>();
+    // Required with a default: a row may be written without it.
+    expectTypeOf<Insert>().toMatchTypeOf<{ title: string }>();
+    expectTypeOf<{ title: string }>().toMatchTypeOf<Insert>();
+    expect(loans.toManifest("loans").body).toMatchObject({
+      display: "title",
+      columns: {
+        status: {
+          type: "enum",
+          values: ["new", { value: "on_loan", label: "On loan", color: "blue" }, "returned"],
+          required: true,
+          default: "new",
+        },
+        extras: { type: "enum_list", values: ["charger", "case"] },
+        device: { type: "reference", references: "devices", onDelete: "set_null" },
+      },
+    });
+  });
+});

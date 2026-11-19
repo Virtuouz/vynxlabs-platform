@@ -287,6 +287,8 @@ function bundle(
           type: "approval",
           title: "Approve the order",
           detail: "{'order': trigger.id, 'total': trigger.total}",
+          // It matters beyond this workspace, so the tenant's page lists it too.
+          surface: "tenant",
         },
         send: set({ sent: "trigger.id" }),
         refused: set({ why: "steps.gate.error.message" }),

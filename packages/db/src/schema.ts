@@ -604,6 +604,10 @@ export interface RunTable {
   output_summary: Generated<string | null>;
   /** The value of the script's concurrency key in this run's input, when it has one. */
   concurrency_key: Generated<string | null>;
+  /** The trace it is part of: 32 hex digits. Null on one from before traces were kept. */
+  trace_id: string | null;
+  /** The span it hangs from in that trace, when something that had one started it. */
+  trace_parent: string | null;
 }
 
 export interface RunLogTable {
@@ -688,6 +692,10 @@ export interface FlowRunTable {
   output_summary: Generated<string | null>;
   /** The flow run this one retries. */
   retry_of: string | null;
+  /** The trace it is part of: 32 hex digits. Null on one from before traces were kept. */
+  trace_id: string | null;
+  /** The span it hangs from in that trace, when something that had one started it. */
+  trace_parent: string | null;
 }
 
 export interface StepRunTable {
@@ -759,6 +767,16 @@ export interface DataTableTable {
   previous_names: Generated<string[]>;
   retired_at: Date | null;
   created_at: Generated<Date>;
+  /** The column that stands for a row where another table refers to it. */
+  display_column: string | null;
+}
+
+/** What a column keeps beside its type. */
+export interface DataColumnOptions {
+  /** An enum's values, in order, each with its label and colour. */
+  values?: { value: string; label?: string; color?: string }[];
+  /** Values the column had and no longer offers. Rows may still hold them. */
+  retired?: string[];
 }
 
 export interface DataColumnTable {
@@ -771,6 +789,9 @@ export interface DataColumnTable {
   is_unique: Generated<boolean>;
   default_value: ColumnType<unknown, string | null | undefined, string | null>;
   reference_table: string | null;
+  /** For a reference: `restrict`, `set_null` or `cascade`. Null means `restrict`. */
+  on_delete: string | null;
+  options: ColumnType<DataColumnOptions | null, string | null | undefined, string | null>;
   previous_names: Generated<string[]>;
   status: CatalogStatus;
   retired_at: Date | null;
@@ -932,6 +953,8 @@ export interface TenantPortalTable {
   theme: ColumnType<ThemeValues, string | undefined, string>;
   logo_key: string | null;
   logo_content_type: string | null;
+  /** The icons made from the logo, by size in pixels: each a key in file storage. */
+  icons: ColumnType<Record<string, string>, string | undefined, string>;
   updated_at: Generated<Date>;
 }
 
@@ -1117,6 +1140,8 @@ export interface InstanceBrandingTable {
   theme: ColumnType<ThemeValues, string | undefined, string>;
   logo_key: string | null;
   logo_content_type: string | null;
+  /** The icons made from the logo, by size in pixels: each a key in file storage. */
+  icons: ColumnType<Record<string, string>, string | undefined, string>;
   updated_at: Generated<Date>;
 }
 

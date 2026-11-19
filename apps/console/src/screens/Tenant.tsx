@@ -47,6 +47,7 @@ const Extensions = lazy(() => import("./Authoring.tsx").then((m) => ({ default: 
 const ScriptEditor = lazy(() =>
   import("./Authoring.tsx").then((m) => ({ default: m.ScriptEditor })),
 );
+const Queries = lazy(() => import("./Queries.tsx").then((m) => ({ default: m.Queries })));
 const Dashboards = lazy(() => import("./Dashboards.tsx").then((m) => ({ default: m.Dashboards })));
 const DashboardView = lazy(() =>
   import("./Dashboards.tsx").then((m) => ({ default: m.DashboardView })),
@@ -73,7 +74,7 @@ import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { GiveAccess } from "./GiveAccess.tsx";
 import { EndUserGroups } from "./Groups.tsx";
-import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
+import { ACCESS_TABS, type AccessTab, endUsersFramed, MembersAndAccess } from "./Members.tsx";
 import { ConnectionPage, EventPage, ScriptPage, SecretPage, VariablePage } from "./ObjectPages.tsx";
 import type { Role } from "./Roles.tsx";
 import { RunComparePage } from "./RunCompare.tsx";
@@ -241,13 +242,13 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
       ) : isAccessTab(section) ? (
         <MembersAndAccess base={base} tenantId={tenantId} tab={section} />
       ) : section === "end-users" ? (
-        <EndUsers base={base} />
+        <EndUsers base={base} framed={endUsersFramed(tenantId, "end-users")} />
       ) : section === "branding" ? (
         <Branding base={base} />
       ) : section === "domains" ? (
         <Domains base={base} />
       ) : section === "end-user-groups" ? (
-        <EndUserGroups base={base} />
+        <EndUserGroups base={base} framed={endUsersFramed(tenantId, "end-user-groups")} />
       ) : section === "service-accounts" ? (
         <ServiceAccounts base={base} path={path} />
       ) : section === "operator-access" ? (
@@ -368,6 +369,7 @@ function ExportSection({ base }: { base: string }) {
 /** Every tab a workspace has. Any other address in a workspace has no page. */
 const WORKSPACE_TABS = new Set([
   "alerts",
+  "approvals",
   "apps",
   "changes",
   "connections",
@@ -379,6 +381,7 @@ const WORKSPACE_TABS = new Set([
   "flows",
   "git",
   "overview",
+  "queries",
   "release",
   "resources",
   "runs",
@@ -488,6 +491,8 @@ function WorkspaceDetail({
       ) : tab === "flow-runs" && rest ? (
         // A flow run's page is the run page now; old links still arrive.
         <ToRunPage to={`/t/${tenantId}/workspaces/${workspaceId}/runs/${rest}`} />
+      ) : tab === "queries" ? (
+        <Queries root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "dashboards" && rest ? (
         <DashboardView
           key={rest}
@@ -598,6 +603,12 @@ function WorkspaceDetail({
         />
       ) : tab === "runs" ? (
         <RunsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "approvals" ? (
+        <ApprovalsQueue
+          base={`/tenants/${tenantId}`}
+          tenantId={tenantId}
+          workspaceId={workspaceId}
+        />
       ) : tab === "triggers" ? (
         <TriggersWorkbench
           root={root}

@@ -254,6 +254,7 @@ Every data request has a time limit. Past it, the statement is stopped and the r
 | `DATA_POOL_SIZE` | 10 | Connections for every tenant's table requests, per replica |
 | `DATA_TENANT_CONNECTIONS` | A third of `DATA_POOL_SIZE`, at least 2 | Table requests one tenant may have open at once, per replica |
 | `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
+| `SQL_STATEMENT_TIMEOUT_MS` | 15000 | How long one query written in SQL may run before it is stopped |
 
 Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `platform_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
 
@@ -511,7 +512,15 @@ The console keeps its own look whichever tenant is open. An operator brands it o
 
 ## Metrics
 
-`GET /api/v1/metrics` answers in the Prometheus text format, to an operator (`instance:read`). Scrape it with an API key of an operator's.
+`GET /api/v1/metrics` answers in the Prometheus text format. Set `METRICS_TOKEN` in the instance's environment, 32 characters or more, and a scraper sends it as `Authorization: Bearer <token>`: it then needs no member and no API key. A member or key that holds `instance:read` reads the same address as before. With no token set, only they do.
+
+```yaml
+scrape_configs:
+  - job_name: platform
+    metrics_path: /api/v1/metrics
+    authorization: { credentials_file: /etc/prometheus/platform-token }
+    static_configs: [{ targets: ["platform.example.com"] }]
+```
 
 What waits, read from the database at each scrape, so every replica says the same:
 
@@ -536,9 +545,40 @@ What happened, counted by the replica that saw it. Each replica answers for its 
 | `platform_webhook_refusals_total{reason}` | Refused webhook requests: `signature`, `body`, `paused` |
 | `platform_alerts_total{outcome}` | Failure alerts `delivered`, `failed`, or `suppressed` as a repeat |
 
+Requests, counted by each replica:
+
+| Series | What it is |
+| --- | --- |
+| `platform_http_requests_total{method,route,status}` | Requests answered. `route` is the route's pattern, such as `/api/v1/tenants/:t/workspaces/:w/runs`, never an address with an ID in it |
+| `platform_http_request_duration_seconds{method,route}` | How long they took. A worker waiting for work holds its request open, so its route is slow by design |
+
 Workspaces are labeled by their slugs. On an instance with very many tenants, set `METRICS_WORKSPACE_LABELS=false`: the per-workspace queue series are left out, and the counted ones carry no tenant or workspace.
 
 The Workers page of each tenant shows the same queue: what waits where, the oldest wait, and what each worker holds.
+
+## OpenTelemetry
+
+The platform sends traces and metrics by OTLP to an endpoint you name, and ships no collector, no Prometheus and no dashboards of its own. With no endpoint named it sends nothing and keeps nothing to send. It reads the settings OpenTelemetry names itself:
+
+| Setting | What it does |
+| --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Where to send, such as `http://collector:4318`. `/v1/traces` and `/v1/metrics` are added to it |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers to send with it, as `name=value,name=value`: a vendor's API key goes here |
+| `OTEL_SERVICE_NAME` | What the instance calls itself. Default `platform` |
+| `OTEL_TRACES_EXPORTER=none`, `OTEL_METRICS_EXPORTER=none` | Send only the other |
+| `OTEL_METRIC_EXPORT_INTERVAL` | How often metrics are sent, in milliseconds. Default 60000 |
+
+It speaks OTLP over HTTP as JSON (`http/json`), which the OpenTelemetry Collector and most vendors take on port 4318. It does not speak gRPC or protobuf.
+
+**A trace** follows one piece of work: the HTTP request, the run or flow run it started, the run's wait for a worker, its execution, and each step of a flow, with the runs and flows a step starts hanging from that step. A request that carries a W3C `traceparent` header joins its caller's trace. A run or flow run a schedule, a webhook or an event started begins a trace of its own. Spans are sent when the work ends. Requests of the worker protocol and scrapes are not traced.
+
+Every response carries its trace in `x-trace-id`, and a run and a flow run say theirs as `traceId` and on their pages in the console. The ID is kept whether or not anything is sent, so it can be searched for later.
+
+**Metrics** by OTLP are the series of the Prometheus endpoint under the same names, cumulative since the replica started. Use one or the other, not both, or a series is counted twice.
+
+**A worker** sends one span for each attempt it executes, and only when its own environment has `OTEL_EXPORTER_OTLP_ENDPOINT`. A worker in a client's network that is not given one sends nothing anywhere but the control plane. Workers the instance starts itself are not given the instance's settings, so the run's spans come from the control plane alone.
+
+If the endpoint does not answer, spans are dropped, never held back for long or sent twice: at most 2,000 wait, and the log says so once a minute.
 
 ## When something is wrong
 

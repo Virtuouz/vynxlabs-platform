@@ -6,6 +6,7 @@ import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { formerPaths, resolveResource } from "../resolve.js";
+import { traceFor, traceRun } from "../trace.js";
 import { bundleManifest, payloadSchemas } from "./bundles.js";
 import { summarize } from "./redact.js";
 import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
@@ -263,6 +264,17 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
 
   const lane = laneOf(resourceId ?? bundleId, body.concurrency, request.input ?? {});
   const id = newId();
+  // A step's run is part of its flow run's trace; any other, of the request that asked for it.
+  const flowRun = request.step
+    ? await trx
+        .selectFrom("flow_run")
+        .select("trace_id")
+        .where("id", "=", request.step.flowRunId)
+        .executeTakeFirst()
+    : undefined;
+  const trace = traceFor(
+    request.step ? { traceId: flowRun?.trace_id ?? null, ...request.step } : undefined,
+  );
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(
     queueName(request.workspaceId, body.worker),
@@ -308,6 +320,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
       scheduled_for: request.startAfter ?? null,
       tags: [...new Set(request.tags ?? [])].slice(0, MAX_TAGS),
       concurrency_key: lane?.key ?? null,
+      ...trace,
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -505,6 +518,7 @@ export async function completeRun(
     .where("id", "=", run.id)
     .execute();
   observe.runEnded(kernel.metrics, { ...run, finished_at: finishedAt }, "succeeded");
+  traceRun(kernel, { ...run, finished_at: finishedAt }, "succeeded");
   await afterRun(kernel, run, "succeeded", output);
 }
 
@@ -595,6 +609,7 @@ export async function finishFailed(kernel: Kernel, runId: string, error: RunFail
     .executeTakeFirst();
   if (!run) return;
   observe.runEnded(kernel.metrics, run, "failed");
+  traceRun(kernel, run, "failed", error.message);
   await afterRun(kernel, run, "failed", error);
   // Inside a flow, the flow decides what a failed step means.
   if (run.flow_run_id) return;
@@ -627,6 +642,7 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
     .returningAll()
     .executeTakeFirstOrThrow();
   observe.runEnded(kernel.metrics, cancelled, "cancelled");
+  traceRun(kernel, cancelled, "cancelled");
   return cancelled;
 }
 

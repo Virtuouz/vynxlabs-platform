@@ -691,9 +691,22 @@ describe("a member's own dashboards", () => {
   let dev: string;
   let id: string;
   const base = () => `/tenants/${tenant}/workspaces/${dev}/dashboards`;
-  const page = (widgets: object[]) => ({ id: "main", title: "Stock", widgets });
+  const board = (widgets: object[], filters: object[] = []) => ({
+    version: 2,
+    ...(filters.length > 0 ? { filters } : {}),
+    widgets,
+  });
+  const held = {
+    id: "held",
+    type: "table",
+    source: { visual: { table: "stock", columns: ["item", "held"], sort: [{ by: "item" }] } },
+  };
+  const data = (client: Client, widget: string, filters?: object) =>
+    client.get(
+      `${base()}/${id}/widgets/${widget}/data${filters ? `?filters=${encodeURIComponent(JSON.stringify(filters))}` : ""}`,
+    );
 
-  test("a dashboard is made empty, and saved as a page of widgets with no deploy", async () => {
+  test("a dashboard is made empty, and saved as widgets that each ask a question, with no deploy", async () => {
     mona = await t.signIn("mona@acme.example", PASSWORD);
     dev = (await alice.get(`/tenants/${tenant}/workspaces`)).body.items.find(
       (workspace: Any) => workspace.slug === "dev",
@@ -702,37 +715,67 @@ describe("a member's own dashboards", () => {
     expect(made.status, JSON.stringify(made.body)).toBe(201);
     id = made.body.id;
     expect(made.body).toMatchObject({
+      kind: "member",
       title: "Stock at a glance",
       mine: true,
       owner: "Mona",
       shared: false,
       revision: 1,
-      page: { id: "main", widgets: [] },
-      problems: [],
+      body: { version: 2, widgets: [] },
+      upgraded: false,
     });
+    await alice.post(`/tenants/${tenant}/workspaces/${dev}/rows/stock`, {
+      item: "Bolts",
+      held: 40,
+    });
+    await alice.post(`/tenants/${tenant}/workspaces/${dev}/rows/stock`, { item: "Nuts", held: 25 });
     const saved = await mona.put(`${base()}/${id}`, {
       revision: 1,
-      page: page([
-        { id: "held", type: "table", table: "stock", fields: [{ column: "item" }], at },
-        { id: "bad", type: "table", table: "stock", fields: [{ column: "nope" }], at },
+      body: board([
+        held,
+        {
+          id: "bad",
+          type: "table",
+          source: { visual: { table: "stock", columns: ["nope"] } },
+        },
       ]),
     });
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
     expect(saved.body.revision).toBe(2);
-    expect(saved.body.page.widgets).toHaveLength(2);
-    // What is wrong is said, against the tables that are there, and it is saved all the same.
-    expect(saved.body.problems.map((problem: Any) => problem.message)).toEqual([
-      'there is no column "nope" in the table "stock"',
+    expect(saved.body.body.widgets).toHaveLength(2);
+    // Each widget is asked for what it shows.
+    const shown = await data(mona, "held");
+    expect(shown.status, JSON.stringify(shown.body)).toBe(200);
+    expect(shown.body.columns.map((column: Any) => column.name)).toEqual(["item", "held"]);
+    expect(shown.body.rows).toEqual([
+      ["Bolts", 40],
+      ["Nuts", 25],
     ]);
-    expect((await mona.get(`${base()}/${id}`)).body.page.widgets[0].id).toBe("held");
+    // What is wrong with one is said when it is asked, against the tables that are there.
+    const wrong = await data(mona, "bad");
+    expect(wrong.status).toBe(400);
+    expect(JSON.stringify(wrong.body)).toContain('stock has no column \\"nope\\"');
+    expect((await data(mona, "nothing")).status).toBe(404);
   });
 
-  test("a page that is not a page is refused, and so is a save over a newer one", async () => {
+  test("a dashboard that is not one is refused, and so is a save over a newer one", async () => {
     const wrong = await mona.put(`${base()}/${id}`, {
-      page: { id: "main", title: "x", widgets: [{ id: "a" }] },
+      body: { version: 2, widgets: [{ id: "a" }] },
     });
     expect(wrong.status).toBe(400);
-    expect(wrong.body.errors[0].path).toContain("/page/widgets/0");
+    expect(wrong.body.errors[0].path).toContain("/body/widgets/0");
+    // A widget that shows something must say what it asks, and a filter it takes must be there.
+    const hollow = await mona.put(`${base()}/${id}`, {
+      body: board([
+        { id: "a", type: "figure" },
+        { ...held, filters: [{ filter: "when", column: "created_at" }] },
+      ]),
+    });
+    expect(hollow.status).toBe(400);
+    expect(hollow.body.errors.map((one: Any) => one.message)).toEqual([
+      "a figure needs a query to show",
+      'the dashboard has no filter "when"',
+    ]);
     const stale = await mona.put(`${base()}/${id}`, { revision: 1, title: "Late" });
     expect(stale.status).toBe(409);
     expect((await mona.put(`${base()}/${id}`, { title: "Stock" })).body).toMatchObject({
@@ -749,7 +792,7 @@ describe("a member's own dashboards", () => {
     expect((await alice.get(base())).body.items).toMatchObject([
       { id, title: "Stock", mine: false, owner: "Mona", shared: true },
     ]);
-    expect((await alice.get(`${base()}/${id}`)).body.page.widgets).toHaveLength(2);
+    expect((await alice.get(`${base()}/${id}`)).body.body.widgets).toHaveLength(2);
     expect((await alice.put(`${base()}/${id}`, { title: "Mine now" })).status).toBe(403);
     expect((await alice.delete(`${base()}/${id}`)).status).toBe(403);
     await mona.put(`${base()}/${id}`, { shared: false });
@@ -771,7 +814,7 @@ describe("a member's own dashboards", () => {
     ]);
   });
 
-  test("it can be shown to some groups only, and a figure shows one total", async () => {
+  test("it can be shown to some groups only", async () => {
     const group = await alice.post(`/tenants/${tenant}/groups`, { name: "Stock keepers" });
     expect(group.status, JSON.stringify(group.body)).toBe(201);
     const shared = await mona.put(`${base()}/${id}`, { sharedWith: [group.body.id] });
@@ -779,9 +822,11 @@ describe("a member's own dashboards", () => {
     expect(shared.body.sharedWith).toEqual([{ id: group.body.id, name: "Stock keepers" }]);
     // Alice is not in the group, so she still does not see it.
     expect((await alice.get(`${base()}/${id}`)).status).toBe(404);
+    expect((await data(alice, "held")).status).toBe(404);
     const me = (await alice.get("/me")).body.principal.id;
     await alice.put(`/tenants/${tenant}/groups/${group.body.id}/members/${me}`);
     expect((await alice.get(`${base()}/${id}`)).status).toBe(200);
+    expect((await data(alice, "held")).status).toBe(200);
     expect((await alice.get(base())).body.items[0].sharedWith).toHaveLength(1);
     expect(
       (await mona.put(`${base()}/${id}`, { sharedWith: ["00000000-0000-7000-8000-00000000dead"] }))
@@ -789,23 +834,180 @@ describe("a member's own dashboards", () => {
     ).toBe(400);
     await mona.put(`${base()}/${id}`, { sharedWith: [] });
     expect((await alice.get(`${base()}/${id}`)).status).toBe(404);
+  });
 
-    const figure = { id: "total", type: "figure", table: "stock", at };
-    const missing = await mona.put(`${base()}/${id}`, { page: page([figure]) });
-    expect(missing.body.problems.map((problem: Any) => problem.message)).toContain(
-      "a figure needs a total to show",
-    );
-    const counted = await mona.put(`${base()}/${id}`, {
-      page: {
-        ...page([
-          { ...figure, summary: { groupBy: [], aggregates: [{ fn: "count", as: "items" }] } },
-        ]),
-        filters: [{ id: "when", label: "Added", column: "created_at", type: "date" }],
-      },
+  test("a figure shows one total, a filter narrows what every widget bound to it asks, and groups come in order", async () => {
+    const saved = await mona.put(`${base()}/${id}`, {
+      body: board(
+        [
+          {
+            id: "total",
+            type: "figure",
+            source: {
+              visual: {
+                table: "stock",
+                measures: [
+                  { fn: "count", as: "items" },
+                  { fn: "sum", column: "held", as: "held" },
+                ],
+              },
+            },
+            filters: [
+              { filter: "when", column: "created_at" },
+              { filter: "named", column: "item" },
+            ],
+            options: { value: "held" },
+          },
+          {
+            id: "by-item",
+            type: "chart",
+            source: {
+              visual: {
+                table: "stock",
+                groupBy: [{ column: "item" }, { column: "created_at", bucket: "month" }],
+                measures: [{ fn: "avg", column: "held", as: "average" }],
+              },
+            },
+            options: { mark: "bar", x: "item", y: "average" },
+          },
+        ],
+        [
+          { name: "when", label: "Added", type: "date_range", default: "last_30_days" },
+          { name: "named", type: "text" },
+        ],
+      ),
     });
-    expect(counted.status, JSON.stringify(counted.body)).toBe(200);
-    expect(counted.body.problems).toEqual([]);
-    expect(counted.body.page.filters).toHaveLength(1);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect((await data(mona, "total")).body.rows).toEqual([[2, 65]]);
+    const today = new Date().toISOString().slice(0, 10);
+    // The whole of a range's last day counts, and a day before anything was added leaves nothing.
+    expect((await data(mona, "total", { when: { from: today, to: today } })).body.rows).toEqual([
+      [2, 65],
+    ]);
+    expect(
+      (await data(mona, "total", { when: { from: "2020-01-01", to: "2020-12-31" } })).body.rows,
+    ).toEqual([[0, null]]);
+    expect((await data(mona, "total", { named: "bol" })).body.rows).toEqual([[1, 40]]);
+    // A filter that is not set narrows nothing, and one the dashboard does not have is not looked at.
+    expect((await data(mona, "total", { named: "", other: 1 })).body.rows).toEqual([[2, 65]]);
+    const grouped = await data(mona, "by-item");
+    expect(grouped.body.columns.map((column: Any) => column.name)).toEqual([
+      "item",
+      "created_at_month",
+      "average",
+    ]);
+    expect(grouped.body.rows.map((row: Any[]) => [row[0], row[2]])).toEqual([
+      ["Bolts", 40],
+      ["Nuts", 25],
+    ]);
+    expect(grouped.body.rows[0][1]).toBe(`${today.slice(0, 7)}-01`);
+  });
+
+  test("SQL written into a widget needs the permission to write SQL, and is read as any query is", async () => {
+    const written = (sql: string) =>
+      board([{ id: "q", type: "table", source: { sql, values: [30] }, filters: [] }]);
+    // Mona keeps dashboards and may not write SQL.
+    const hers = await mona.put(`${base()}/${id}`, {
+      body: written("select item from stock where held > $1"),
+    });
+    expect(hers.status).toBe(403);
+    // Alice may, on a dashboard of her own.
+    const own = (await alice.post(base(), { title: "Alice's" })).body.id;
+    const refused = await alice.put(`${base()}/${own}`, { body: written("delete from stock") });
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body)).toContain("Only SELECT");
+    const saved = await alice.put(`${base()}/${own}`, {
+      body: written("select item, held from stock where held > $1 order by item"),
+      shared: true,
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // Mona looks at it without the permission to write SQL: the query is the dashboard's.
+    const seen = await mona.get(`${base()}/${own}/widgets/q/data`);
+    expect(seen.status, JSON.stringify(seen.body)).toBe(200);
+    expect(seen.body.rows).toEqual([["Bolts", 40]]);
+    expect((await alice.delete(`${base()}/${own}`)).status).toBe(204);
+  });
+
+  test("a dashboard made before phase 18 is shown as one of now, and asks what it asked", async () => {
+    // As it was kept: one page of an interface, with a table, a figure, a chart and a page filter.
+    const at = { x: 0, y: 0, w: 6, h: 4 };
+    const old = {
+      id: "main",
+      title: "Old",
+      filters: [{ id: "added-on", label: "Added", column: "created_at", type: "date" }],
+      widgets: [
+        {
+          id: "list",
+          type: "table",
+          table: "stock",
+          fields: [{ column: "item" }, { column: "held" }],
+          sort: [{ column: "held", desc: true }],
+          filter: { column: "held", op: "gt", value: 10 },
+          at: { ...at, y: 4 },
+        },
+        {
+          id: "count",
+          type: "figure",
+          table: "stock",
+          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "held", as: "held" }] },
+          at,
+        },
+        {
+          id: "chart",
+          type: "chart",
+          table: "stock",
+          summary: {
+            groupBy: [{ column: "created_at", bucket: "month" }],
+            aggregates: [{ fn: "count", as: "items" }],
+          },
+          options: { mark: "line", x: "created_at", y: "items" },
+          at: { ...at, x: 6 },
+        },
+        {
+          id: "note",
+          type: "text",
+          options: { text: "Counted weekly." },
+          at: { ...at, y: 8, w: 12 },
+        },
+        { id: "followed", type: "card", table: "stock", link: { from: "list", type: "same" }, at },
+      ],
+    };
+    await t.db
+      .updateTable("member_dashboard")
+      .set({ body: JSON.stringify(old) })
+      .where("id", "=", id)
+      .execute();
+    const now = (await mona.get(`${base()}/${id}`)).body;
+    expect(now.upgraded).toBe(true);
+    expect(now.body).toMatchObject({
+      version: 2,
+      filters: [{ name: "added_on", label: "Added", type: "date_range" }],
+    });
+    // In reading order, and without the card that followed another widget's row.
+    expect(now.body.widgets.map((widget: Any) => `${widget.id} ${widget.type}`)).toEqual([
+      "count figure",
+      "chart chart",
+      "list table",
+      "note text",
+    ]);
+    expect(now.body.widgets[1].options).toMatchObject({
+      mark: "line",
+      x: "created_at_month",
+      y: "items",
+    });
+    expect((await data(mona, "count")).body.rows).toEqual([[65]]);
+    expect((await data(mona, "list")).body.rows).toEqual([
+      ["Bolts", 40],
+      ["Nuts", 25],
+    ]);
+    expect((await data(mona, "chart")).body.rows).toHaveLength(1);
+    expect(
+      (await data(mona, "count", { added_on: { from: "2020-01-01", to: "2020-01-31" } })).body.rows,
+    ).toEqual([[null]]);
+    // Saved, it is kept as it reads now.
+    const kept = await mona.put(`${base()}/${id}`, { body: now.body });
+    expect(kept.status, JSON.stringify(kept.body)).toBe(200);
+    expect(kept.body.upgraded).toBe(false);
   });
 
   test("a dashboard belongs to a member, there is a limit to them, and deleting one touches no table", async () => {

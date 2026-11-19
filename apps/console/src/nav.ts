@@ -12,6 +12,7 @@ import {
   Database,
   Download,
   FileCode2,
+  FileSearch,
   Fingerprint,
   Gauge,
   GitBranch,
@@ -116,11 +117,13 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "runs", label: "Runs", icon: Play },
     { slug: "events", label: "Events", icon: Radio },
     { slug: "triggers", label: "Triggers", icon: Zap },
+    { slug: "approvals", label: "Approvals", icon: CircleCheck },
     { slug: "release", label: "Releases", icon: Rocket },
     { slug: "git", label: "Git sync", icon: GitCompareArrows },
   ],
   data: [
     { slug: "tables", label: "Tables", icon: Table2 },
+    { slug: "queries", label: "Queries", icon: FileSearch },
     { slug: "sources", label: "Data sources", icon: Database },
     { slug: "dashboards", label: "Dashboards", icon: Gauge },
   ],
@@ -155,7 +158,6 @@ export const TENANT_GROUPS: readonly (readonly [label: string, sections: readonl
     [
       { slug: "members", label: "Members & access", icon: UserRound },
       { slug: "end-users", label: "End users", icon: Globe },
-      { slug: "end-user-groups", label: "End-user groups", icon: UsersRound },
       { slug: "service-accounts", label: "Service accounts", icon: Bot },
       { slug: "operator-access", label: "Operator access", icon: LifeBuoy },
     ],
@@ -228,7 +230,7 @@ const EDITORS = [
  * after the workspace.
  */
 const WORKBENCHES: RegExp[] = [
-  /^(runs|triggers|events)(\/|$)/,
+  /^(runs|triggers|events|approvals)(\/|$)/,
   /^(flows|scripts|apps)$/,
   /^flows\/(new|edit\/)/,
 ];
@@ -248,14 +250,16 @@ const INSTANCE_WORKBENCHES = new Set([
 
 /**
  * A tenant's addresses that belong to another entry in the navigation: groups,
- * roles and access are tabs of Members & access, and the tenant itself opens
- * on its overview.
+ * roles, access and releases are tabs of Members & access, groups of end users
+ * are a tab of End users, and the tenant itself opens on its overview.
  */
 export const TENANT_ALIASES: Record<string, string> = {
   "": "overview",
   groups: "members",
   roles: "members",
   access: "members",
+  releases: "members",
+  "end-user-groups": "end-users",
 };
 
 /** Where a path is: which area, which screen, and whether it is an editor. */

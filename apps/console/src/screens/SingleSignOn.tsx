@@ -616,7 +616,7 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
         <Notice tone="attention">
           {audience === "members"
             ? "This tenant has no groups yet. Create one under Groups."
-            : "This tenant has no groups of end users yet. Create one under End-user groups."}
+            : "This tenant has no groups of end users yet. Create one under End users, on the Groups tab."}
         </Notice>
       ) : null}
     </div>

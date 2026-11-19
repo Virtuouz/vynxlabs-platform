@@ -19,6 +19,7 @@ import {
 } from "./context.js";
 import { type MachineProbe, type MachineShare, NODE_OVERHEAD_MB, procProbe } from "./machine.js";
 import type { FromRunner, ToRunner } from "./runner.js";
+import { attemptSpan, sendAttemptSpan, type WorkerTelemetry } from "./trace.js";
 
 export type WorkerLog = (
   level: "info" | "warn" | "error",
@@ -50,6 +51,8 @@ export interface WorkerOptions {
   machine?: MachineShare;
   /** Where memory is read from. Replaced in tests. */
   probe?: MachineProbe;
+  /** Where this worker sends a span for each attempt. Without it, it sends none. */
+  telemetry?: WorkerTelemetry | undefined;
 }
 
 /** A bundle's code on disk, and what it says it contains. */
@@ -417,6 +420,9 @@ export class Worker {
 
   async #execute(job: Job): Promise<void> {
     const runPath = `/runs/${job.runId}`;
+    const began = Date.now();
+    /** Why the attempt failed, when it did: said on its span. */
+    let failed: string | undefined;
     const abort = new AbortController();
     /** Why the attempt ended early, when the control plane ended it. */
     let ended: AttemptOver | CredentialRefused | undefined;
@@ -556,6 +562,7 @@ export class Worker {
       // A canceled or reclaimed attempt has nothing left to report.
       if (ended || error instanceof AttemptOver) return;
       const failure = error instanceof Error ? error : new Error(String(error));
+      failed = failure.message;
       await this.#call("POST", `${runPath}/fail`, {
         attempt: job.attempt,
         ...logs,
@@ -578,6 +585,12 @@ export class Worker {
       // Whatever the script left running ends with its attempt. An aborted one had its
       // grace to stop by itself; any other is ended now.
       endScript(script, killing);
+      // The worker's own span of the attempt, sent only by a worker told where to send it.
+      const telemetry = this.#options.telemetry;
+      const span = telemetry
+        ? attemptSpan(telemetry, job, this.id, began, Date.now(), failed)
+        : undefined;
+      if (telemetry && span) void sendAttemptSpan(telemetry, span);
     }
   }
 

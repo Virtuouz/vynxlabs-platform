@@ -3,6 +3,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { type Branding, BrandMark, useBrand } from "../kit/brand.tsx";
+import { sendIcons } from "../kit/icons.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
@@ -84,6 +85,13 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
     try {
       await api.upload("/instance/branding/logo", file, "PUT");
       notify.success("The logo is replaced.");
+      // The icons for the tab and the home screen are drawn from it here, by the browser, once
+      // the logo itself is in place: a logo is not held up by its icons.
+      void sendIcons(file, "/instance/branding/icons", (path, body) =>
+        api.upload(path, new File([body], "icon.png", { type: "image/png" }), "PUT"),
+      ).catch(() =>
+        notify.info("The icons could not be made from the logo, so the tab keeps the icon it had."),
+      );
       brand.reload();
       reload();
     } catch (caught) {
@@ -126,6 +134,7 @@ function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {
               confirm="Remove the logo? The console shows the name's initials instead."
               run={async () => {
                 await api.delete("/instance/branding/logo");
+                await api.delete("/instance/branding/icons");
                 brand.reload();
               }}
               onDone={reload}

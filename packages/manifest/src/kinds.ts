@@ -1,3 +1,4 @@
+import { dashboardKind } from "./dashboard.js";
 import { PATH_PATTERN } from "./envelope.js";
 import { interfaceBodySchema } from "./interface.js";
 import type { KindDefinition, KindRegistry } from "./registry.js";
@@ -718,6 +719,11 @@ export const flowKind: KindDefinition = {
                   },
                   additionalProperties: false,
                 },
+                surface: {
+                  enum: ["workspace", "tenant"],
+                  description:
+                    "Where the approval is listed while it waits: in its workspace alone, or on the tenant's page as well. Left out, its workspace alone.",
+                },
               },
               ["title"],
             ),
@@ -885,6 +891,81 @@ export const variableKind: KindDefinition = {
   },
 };
 
+/** The kinds of value a saved query's parameter takes. */
+export const QUERY_PARAMETER_TYPES = [
+  "text",
+  "integer",
+  "number",
+  "boolean",
+  "date",
+  "timestamp",
+] as const;
+export type QueryParameterType = (typeof QUERY_PARAMETER_TYPES)[number];
+
+/**
+ * A query kept by name: one SELECT over the workspace's tables, with the
+ * parameters it takes. It is run by whoever may read it and the tables it
+ * names, as themselves: each table's row policy applies to them.
+ */
+export const queryKind: KindDefinition = {
+  kind: "query",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      description: { type: "string", maxLength: 500 },
+      sql: {
+        type: "string",
+        minLength: 1,
+        maxLength: 20000,
+        description:
+          "One SELECT. A table is named by its path, in double quotes when it has a `/` or a `-`. A parameter is written $1, $2 and so on, in the order of `parameters`.",
+      },
+      parameters: {
+        type: "array",
+        maxItems: 20,
+        description: "What the query is given each time it is run: `$1` is the first.",
+        items: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              pattern: "^[a-z][a-z0-9_]*$",
+              maxLength: 55,
+              description: "What the parameter is called by whoever runs the query.",
+            },
+            type: { enum: [...QUERY_PARAMETER_TYPES] },
+            label: { type: "string", minLength: 1, maxLength: 100 },
+            default: {
+              description: "Used when the query is run without this parameter.",
+            },
+            required: { type: "boolean" },
+          },
+          required: ["name", "type"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["sql"],
+    additionalProperties: false,
+  },
+};
+
+export interface QueryParameter {
+  name: string;
+  type: QueryParameterType;
+  label?: string;
+  default?: unknown;
+  required?: boolean;
+}
+
+/** The body of a `query` manifest, version 1. */
+export interface QueryBody {
+  description?: string;
+  sql: string;
+  parameters?: QueryParameter[];
+}
+
 export const COLUMN_TYPES = [
   "text",
   "integer",
@@ -896,8 +977,36 @@ export const COLUMN_TYPES = [
   "uuid",
   "reference",
   "file",
+  "enum",
+  "enum_list",
 ] as const;
 export type ColumnType = (typeof COLUMN_TYPES)[number];
+
+/**
+ * The colours a value of an enum column can be given by name. Each is one
+ * colour, drawn as the value's background in a light theme and a dark one,
+ * with black or white text over it, whichever is easier to read. Any other
+ * colour is given as `#rrggbb`.
+ */
+export const ENUM_COLORS = {
+  gray: "#6b7280",
+  red: "#dc2626",
+  orange: "#ea580c",
+  amber: "#d97706",
+  green: "#16a34a",
+  teal: "#0d9488",
+  blue: "#2563eb",
+  violet: "#7c3aed",
+  pink: "#db2777",
+} as const;
+
+const enumValue = {
+  type: "string",
+  minLength: 1,
+  maxLength: 100,
+  // A value is one line of text with no comma, so that a list of them can be written as one.
+  pattern: "^[^,\\n\\r]+$",
+} as const;
 
 /** Columns every table has. A definition cannot declare them. */
 export const SYSTEM_COLUMNS = ["id", "created_at", "updated_at"] as const;
@@ -927,6 +1036,42 @@ export const tableKind: KindDefinition = {
                 "Used for a row that gives no value, and for existing rows when the column is added.",
             },
             references: { ...path, description: "For a reference: the table it points to." },
+            onDelete: {
+              enum: ["restrict", "set_null", "cascade"],
+              description:
+                "For a reference: what happens to this row when the row it points to is deleted. `restrict` refuses the deletion, `set_null` empties the column, `cascade` deletes this row too. Left out, `restrict`.",
+            },
+            values: {
+              type: "array",
+              minItems: 1,
+              maxItems: 200,
+              description:
+                "For an enum or an enum_list: the values a row may hold, in the order they are offered and sorted.",
+              items: {
+                oneOf: [
+                  enumValue,
+                  {
+                    type: "object",
+                    properties: {
+                      value: enumValue,
+                      label: { type: "string", minLength: 1, maxLength: 100 },
+                      color: {
+                        type: "string",
+                        pattern: `^(${Object.keys(ENUM_COLORS).join("|")}|#[0-9a-fA-F]{6})$`,
+                        description: "A colour by name, or as #rrggbb.",
+                      },
+                      renamedFrom: {
+                        ...enumValue,
+                        description:
+                          "The value's previous spelling. Rows that hold it are rewritten.",
+                      },
+                    },
+                    required: ["value"],
+                    additionalProperties: false,
+                  },
+                ],
+              },
+            },
             renamedFrom: {
               type: "string",
               pattern: columnName,
@@ -936,6 +1081,12 @@ export const tableKind: KindDefinition = {
           required: ["type"],
           additionalProperties: false,
         },
+      },
+      display: {
+        type: "string",
+        pattern: columnName,
+        description:
+          "The column that stands for a row where another table refers to it, in place of its ID.",
       },
       policy: {
         oneOf: [
@@ -1188,6 +1339,7 @@ export const platformKinds: KindDefinition[] = [
   connectionGroupKind,
   variableKind,
   tableKind,
+  queryKind,
   dataSourceKind,
   eventKind,
   scriptKind,
@@ -1197,6 +1349,7 @@ export const platformKinds: KindDefinition[] = [
   flowKind,
   themeKind,
   interfaceKind,
+  dashboardKind,
   appKind,
   bindingKind,
 ];

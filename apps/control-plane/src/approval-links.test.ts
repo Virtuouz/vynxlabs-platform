@@ -20,6 +20,7 @@ const flow = (approvers?: { groups?: string[]; roles?: string[] }) => ({
       type: "approval",
       title: "Refund the Brooks family",
       detail: "{'amount': trigger.amount}",
+      surface: "tenant",
       ...(approvers ? { approvers } : {}),
     },
     done: { type: "set", values: { refunded: "trigger.amount" } },

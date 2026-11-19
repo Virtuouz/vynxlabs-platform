@@ -137,7 +137,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   async function frame(tenant: Tenant, workspaceId?: string): Promise<PageFrame> {
     const portal = await db
       .selectFrom("tenant_portal")
-      .select("logo_key")
+      .select(["logo_key", "icons"])
       .where("tenant_id", "=", tenant.id)
       .executeTakeFirst();
     const base = `/api/v1/tenants/${tenant.id}`;
@@ -145,6 +145,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       tenantName: tenant.name,
       themeHref: workspaceId ? `${base}/workspaces/${workspaceId}/theme.css` : `${base}/theme.css`,
       logoHref: portal?.logo_key ? `${base}/portal/logo` : undefined,
+      // The tenant's own icons, when its logo gave it any.
+      iconsHref:
+        portal?.icons && Object.keys(portal.icons).length > 0 ? `${base}/portal/icons` : undefined,
     };
   }
 
@@ -886,6 +889,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       const page = injectContext(content.toString("utf8"), {
         base,
         themeHref: look.themeHref,
+        iconsHref: look.iconsHref,
         data: {
           api: "/api/v1",
           tenant: {

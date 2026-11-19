@@ -575,6 +575,7 @@ describe("running", () => {
         default: "5",
         value: "80",
         updatedAt: expect.any(String),
+        draft: null,
       },
     ]);
     expect((await finished(await start("use-all"))).output.size).toBe("80");

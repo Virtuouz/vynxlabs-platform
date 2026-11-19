@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 import { parseMachine } from "./machine.js";
+import { telemetryFromEnv } from "./trace.js";
 import { Worker } from "./worker.js";
 
 const { values } = parseArgs({
@@ -79,6 +80,8 @@ const worker = new Worker({
   url,
   token,
   ...(machine ? { machine } : {}),
+  // Spans are sent only when this worker's own environment names somewhere to send them.
+  telemetry: telemetryFromEnv(process.env),
   ...(values.concurrency ? { concurrency: Number(values.concurrency) } : {}),
   ...(idleExit ? { idleExitSeconds: Number(idleExit) } : {}),
   log: (level, message, fields) =>

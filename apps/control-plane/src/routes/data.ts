@@ -134,7 +134,13 @@ export const CSV_CAP = 100_000;
  */
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
-  let text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  // A list of an enum's values is written as the values, not as JSON.
+  const list = Array.isArray(value) && value.every((one) => typeof one === "string");
+  let text = list
+    ? (value as string[]).join(";")
+    : typeof value === "object"
+      ? JSON.stringify(value)
+      : String(value);
   if (/^[=+\-@\t\r]/.test(text) && typeof value === "string") text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
@@ -159,6 +165,26 @@ const Column = Type.Object({
   unique: Type.Boolean(),
   default: Type.Unknown(),
   references: NullableString,
+  onDelete: Type.Optional(
+    Type.Union([NullableString], {
+      description: "For a reference: restrict, set_null or cascade.",
+    }),
+  ),
+  values: Type.Optional(
+    Type.Array(
+      Type.Object({
+        value: Type.String(),
+        label: Type.Optional(Type.String()),
+        color: Type.Optional(Type.String()),
+      }),
+      { description: "For an enum or an enum_list: the values it offers, in order." },
+    ),
+  ),
+  retiredValues: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Values it had and no longer offers. Rows may still hold them.",
+    }),
+  ),
   status: Type.Union([Type.Literal("active"), Type.Literal("retired")]),
   held: Type.Union([Type.Integer(), Type.Null()], {
     description: "For a retired column: how many rows still hold a value in it.",
@@ -374,6 +400,11 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               status: Type.String(),
               managedIn: Type.String(),
               policy: AnyObject,
+              display: Type.Optional(
+                Type.Union([NullableString], {
+                  description: "The column that stands for a row where another table refers to it.",
+                }),
+              ),
               rowCount: Type.Integer(),
               stored: Type.Object(
                 { schema: Type.String(), table: Type.String() },
@@ -417,6 +448,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           status: table.status,
           managedIn: resource?.ownership ?? "code",
           policy: table.policy as Record<string, unknown>,
+          display: table.display ?? null,
           rowCount: Number(count.rows[0]?.n ?? 0),
           stored: { schema, table: table.physicalName },
           columns: table.columns.map((column) => ({
@@ -426,6 +458,10 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             unique: column.unique,
             default: column.default ?? null,
             references: column.referenceTable,
+            ...(column.referenceTable ? { onDelete: column.onDelete ?? "restrict" } : {}),
+            ...(column.options?.values
+              ? { values: column.options.values, retiredValues: column.options.retired ?? [] }
+              : {}),
             status: column.status,
             held: held.get(column.id) ?? null,
           })),
@@ -481,6 +517,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: WildParams,
           querystring: Type.Object({
             ...RowsQuery.properties,
+            expand: Type.Optional(
+              Type.String({
+                maxLength: 300,
+                description:
+                  "Reference columns, separated by commas, at most five. For each, `expanded` " +
+                  "gives what stands for every row pointed to: the value of the target table's " +
+                  "`display` column, by the row's ID. A row the caller may not read is left out.",
+              }),
+            ),
             as: Type.Optional(
               Type.String({
                 format: "uuid",
@@ -496,16 +541,64 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
             ),
           }),
-          response: { 200: RowsPage },
+          response: {
+            200: Type.Object({
+              ...RowsPage.properties,
+              expanded: Type.Optional(
+                Type.Record(Type.String(), Type.Record(Type.String(), Type.Unknown()), {
+                  description:
+                    "By reference column, then by the ID pointed to: what stands for that row.",
+                }),
+              ),
+            }),
+          },
         },
       },
       async ({ ctx, params, query }) => {
         const entered = await enter(ctx, params, wildPath(params), "read");
         const scope = await seenAs(params.t, entered.scope, query.as, query.asGroup);
         const asked = parseRowsQuery(query);
-        return toRowsPage(
+        const page = toRowsPage(
           await withData(kernel, params.t, scope, (data) => findRows(data, entered.target, asked)),
         );
+        const wanted = (query.expand ?? "")
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean);
+        if (wanted.length === 0) return page;
+        if (wanted.length > 5) throw badRequest("At most five columns can be expanded.");
+        const expanded: Record<string, Record<string, unknown>> = {};
+        for (const name of wanted) {
+          const column = entered.target.columns.find((one) => one.name === name);
+          if (!column?.references) {
+            throw badRequest(`"${name}" is not a reference column of ${entered.target.name}.`);
+          }
+          expanded[name] = {};
+          const ids = [
+            ...new Set(page.items.map((row) => row[name]).filter((id) => typeof id === "string")),
+          ];
+          if (ids.length === 0) continue;
+          // What stands for a row is read as the caller reads that table: with their
+          // permission there, and through its own row policy.
+          let pointed: Awaited<ReturnType<typeof enter>>;
+          try {
+            pointed = await enter(ctx, params, column.references, "read");
+          } catch {
+            continue;
+          }
+          const display = pointed.target.display;
+          if (!display || !pointed.target.columns.some((one) => one.name === display)) continue;
+          const found = await withData(kernel, params.t, pointed.scope, (data) =>
+            findRows(data, pointed.target, {
+              filter: { column: "id", op: "in", value: ids },
+              limit: 1000,
+            }),
+          );
+          for (const row of found.items) {
+            (expanded[name] as Record<string, unknown>)[String(row.id)] = row[display] ?? null;
+          }
+        }
+        return { ...page, expanded };
       },
     );
 

@@ -1,6 +1,6 @@
 # Vynxlabs platform: master specification
 
-Last updated: 2026-11-12
+Last updated: 2026-11-18
 
 ## How to use this document
 
@@ -261,6 +261,7 @@ The model is role-based access control with groups.
 - A **binding** grants a role to a principal at a scope.
 - A **principal** is a user, a group, a service account or the anonymous principal.
 - A **scope** is the instance, a tenant, a workspace or a single resource.
+- A permission may be **explicit**: given only by its own name, never by a wildcard. No role holds it until someone adds it to one, not tenant admin and not a role made before the permission existed. It is for what should be decided on purpose each time, such as deleting a production workspace and running SQL.
 
 Tenant admin and workspace admin are roles bound at those scopes. An operator admin exists at instance scope and has no access to tenant data by default. To look inside a tenant, an operator opens a time-limited access grant with a stated reason. Each grant, and everything done under it, is audited and visible to the tenant's admins. While a grant is live, the console says so on every screen of that tenant: the operator may fold the notice to a mark in the header, but not remove it. The one exception is the tenant an operator creates: they may choose, when creating it, to be its first member, holding tenant admin. That is recorded in the new tenant's own audit log, and the tenant's admins can remove it like any other membership.
 
@@ -309,6 +310,10 @@ Postgres is the only platform database, custom tables live in one schema per wor
 - The SDK gives scripts and apps typed access to custom tables.
 - Apps reach data through the public API, which applies permissions and row policies.
 - Row policies are enforced for every caller, including scripts acting on behalf of an end user.
+- Who is asking is told to the database as a claim the control plane signs. A row policy checks the signature with a key the connection that reads rows cannot reach, so nothing run on that connection can claim to be someone else.
+- A workspace's tables can be asked a question in SQL, and only asked: one SELECT, read by Postgres's own parser and written again from what was read, over the workspace's tables by their paths, calling only functions on a list the platform keeps. Each table named needs the permission to read its rows, and each table's row policy applies to whoever asks. It has a permission of its own, which is explicit. A query kept by name is a resource, and is run by whoever may read its tables. The row API takes no SQL. [Decision 0003](evolution/decisions/0003-read-only-sql.md) records the design.
+- A column may hold one of a list of values, or several. The database holds it to them. A value that leaves the list is retired like a column: kept on the rows that hold it and offered no more.
+- A reference says what happens when the row it points to is deleted, and a table says which column stands for a row where another table points to it.
 
 ### Data sources
 
@@ -393,7 +398,7 @@ The engine must be designed for branching, looping over items, parallel paths, w
 
 A loop over items fails as soon as one item fails, unless it is told to carry on. It then gives `{ error: { message } }` in place of each failed item's result, and succeeds.
 
-An approval step may name who can decide it, as groups or roles. A person then needs both the approval permission and a place in one of those. A step that names nobody can be decided by anyone holding the permission.
+An approval step may name who can decide it, as groups or roles. A person then needs both the approval permission and a place in one of those. A step that names nobody can be decided by anyone holding the permission. An approval belongs to its workspace and is listed and decided there. A step may say that it is also listed for the whole tenant, for a decision that matters beyond its workspace.
 
 ### Layout
 
@@ -436,6 +441,7 @@ Environments are workspaces, flagged production or dev at creation, and changes 
 - Every workspace is created as either production or dev. The flag can never be changed afterwards.
 - A dev workspace can be linked to a production workspace.
 - A dev workspace can also push to another dev workspace, for example from development to QA.
+- A dev workspace is deleted by whoever may manage workspaces. A production workspace is deleted only by someone given the explicit permission for exactly that. Whether one is ever deleted is the tenant's decision, not the platform's.
 
 ### Deploys
 
@@ -481,6 +487,15 @@ Custom interfaces are resources built and served by the platform, so identity, p
 
 The generated tier takes its idea from Grist: typed tables and linked views. Grist itself is not embedded, and there is no spreadsheet formula engine.
 
+### Dashboards
+
+A dashboard is for asking, where an app is for doing. It reads and changes nothing.
+
+- A dashboard is a set of widgets (figures, charts, tables, pivots), each drawing the answer to a query, and filters that whoever reads it sets.
+- A query is built from menus over a table and the tables its references point to, is a query the workspace keeps, or is SQL. All three are run the same way, under the same rules as any read-only query.
+- Whoever looks at a dashboard is given the rows each table's policy gives them. Two people may see different numbers on the same dashboard, and that is the point.
+- A dashboard is a member's own, shared when they choose, or a resource of the workspace: versioned, deployed and promoted.
+
 ### Admin console
 
 The platform's own interface covers resources, runs, logs, users, settings and the database studio. It is built with the same component kit and the same public API as client apps.
@@ -498,6 +513,7 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 ### Branding
 
 - Branding is a set of theme tokens defined at the tenant and overridable per workspace. It applies to the tenant's apps, portal and sign-in pages.
+- A logo gives its icons: what a browser's tab and a phone's home screen show for the console, and for a tenant's portal and apps. They are made from the logo where it is chosen.
 - The console's branding is a separate set of the same tokens, with a product name and a logo, defined once per instance.
 - The component kit must be built on theme tokens from its first version. Retrofitting them later is costly.
 
@@ -583,7 +599,7 @@ Failures can notify people and can start an error-handling script or flow, confi
 
 ### Operator health
 
-The instance exposes metrics and structured logs in standard formats, including queue depth and worker status, so an operator can monitor it with ordinary tools.
+The instance exposes metrics, traces and structured logs in standard formats, including queue depth and worker status, so an operator can monitor it with ordinary tools.
 
 ## Open source, licensing and the ownership promise
 

@@ -63,6 +63,8 @@ export interface Run {
   errorSummary?: string | null;
   tags?: string[];
   rerunOf?: string | null;
+  /** The trace the run is part of, as OpenTelemetry writes it. */
+  traceId?: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -810,7 +812,13 @@ export function Connections({ root }: { root: string }) {
 export function Variables({ root }: { root: string }) {
   const variableUses = useReferences(root, "variable");
   return (
-    <ListScreen<{ path: string; description: string; default: string | null; value: string | null }>
+    <ListScreen<{
+      path: string;
+      description: string;
+      default: string | null;
+      value: string | null;
+      draft?: "new" | "changed" | "removed" | null;
+    }>
       title="Variables"
       description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
       path={`${root}/variable-values`}
@@ -818,7 +826,26 @@ export function Variables({ root }: { root: string }) {
       columns={[
         {
           header: "Variable",
-          cell: (row) => <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />,
+          cell: (row) => (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {row.draft === "new" ? (
+                // It has no page yet: its editor is where it is.
+                <Link
+                  to={`${consoleLink(root)}/resources/edit/variable/${row.path}`}
+                  className="font-mono text-code text-action"
+                >
+                  {row.path}
+                </Link>
+              ) : (
+                <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />
+              )}
+              {row.draft === "new" ? (
+                <StatePill state="draft">Draft, never deployed</StatePill>
+              ) : row.draft ? (
+                <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+              ) : null}
+            </span>
+          ),
         },
         {
           header: "Read by",
@@ -1288,6 +1315,8 @@ interface ConnectionGroup {
   description: string;
   connector: string;
   members: GroupMember[];
+  /** A change made in the console that waits to be deployed. */
+  draft?: "new" | "changed" | "removed" | null;
 }
 
 /**
@@ -1321,13 +1350,32 @@ export function ConnectionGroups({ root }: { root: string }) {
           <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">
             <div className="min-w-0">
               <code className="font-mono text-code font-semibold">{group.path}</code>
+              {group.draft === "new" ? (
+                <span className="ml-3">
+                  <StatePill state="draft">Draft, never deployed</StatePill>
+                </span>
+              ) : group.draft ? (
+                <span className="ml-3">
+                  <Tag tone="draft">{group.draft === "removed" ? "Removing" : "Draft"}</Tag>
+                </span>
+              ) : null}
               {group.description ? (
                 <span className="ml-3 text-ink-muted">{group.description}</span>
               ) : null}
             </div>
-            <Button size="small" variant="primary" onClick={() => setAdding(group.path)}>
-              Add a member
-            </Button>
+            {group.draft === "new" ? (
+              // Its members are kept by the deployed group, so there is nowhere to put one yet.
+              <Button
+                size="small"
+                href={`${consoleLink(root)}/resources/edit/connection_group/${group.path}`}
+              >
+                Open the draft
+              </Button>
+            ) : (
+              <Button size="small" variant="primary" onClick={() => setAdding(group.path)}>
+                Add a member
+              </Button>
+            )}
           </div>
           {group.members.length === 0 ? (
             <p className="m-0 px-4 py-3 text-ink-muted">

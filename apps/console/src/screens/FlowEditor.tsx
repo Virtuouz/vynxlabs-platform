@@ -1657,6 +1657,19 @@ export function FlowEditor({
                       onChange={(title) => update(chosen.id, { title })}
                     />
                     {expression("Detail to show", "detail")}
+                    <SelectField
+                      name="surface"
+                      label="Where it waits"
+                      hint="An approval is always listed in this workspace. One that matters beyond it can be listed for the whole tenant too."
+                      value={(node.surface as string) ?? "workspace"}
+                      options={[
+                        { value: "workspace", label: "This workspace" },
+                        { value: "tenant", label: "This workspace and the tenant" },
+                      ]}
+                      onChange={(surface) =>
+                        update(chosen.id, { surface: surface === "tenant" ? "tenant" : undefined })
+                      }
+                    />
                   </>
                 ) : null}
                 {node.type === "fail"

@@ -6,6 +6,7 @@ import { buildApp } from "./app.js";
 import type { Config } from "./config.js";
 import { recentAuthLog } from "./kernel/auth.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
+import { TELEMETRY_OFF } from "./kernel/telemetry.js";
 import { MemoryObjectStore, type ObjectStore } from "./storage.js";
 
 export const ADMIN = { email: "operator@example.com", password: "operator-password-1" };
@@ -32,6 +33,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     managedWorkers: false,
     workerHostToken: undefined,
     metricsWorkspaceLabels: true,
+    metricsToken: undefined,
+    telemetry: TELEMETRY_OFF,
     managedWorkerUser: "same",
     retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
     // The tests' stand-in services listen on this machine.
@@ -51,6 +54,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
       dataPoolSize: 10,
       dataTenantConnections: undefined,
       dataStatementTimeoutMs: 15_000,
+      sqlStatementTimeoutMs: 15_000,
       triggersPaused: false,
       scheduleBacklogLimit: 200,
     },

@@ -90,11 +90,16 @@ function formSchema(fields: WidgetField[], info: TableInfo | undefined): FormSch
       .map((field) => field.column),
     properties: Object.fromEntries(
       writable.map((field) => {
-        const type = info?.columns.find((column) => column.name === field.column)?.type ?? "text";
+        const column = info?.columns.find((one) => one.name === field.column);
+        const type = column?.type ?? "text";
         return [
           field.column,
           {
             ...(FORM_TYPES[type] ?? { type: "string" }),
+            // One of a column's values is chosen from them.
+            ...(type === "enum" && column?.values
+              ? { enum: column.values.map((one) => one.value) }
+              : {}),
             title: field.label ?? heading(field.column),
           },
         ];
@@ -253,6 +258,19 @@ function WidgetView({
     [fields, info, lookups],
   );
 
+  // A value of an enum, or several of them, by label and on its colour.
+  const chips = useCallback(
+    (column: string, value: unknown) => {
+      const offered = info?.columns.find((candidate) => candidate.name === column)?.values;
+      if (!offered || (typeof value !== "string" && !Array.isArray(value))) return undefined;
+      return (typeof value === "string" ? [value] : value.map(String)).map((one) => {
+        const found = offered.find((candidate) => candidate.value === one);
+        return { label: found?.label ?? one, ...(found?.color ? { color: found.color } : {}) };
+      });
+    },
+    [info],
+  );
+
   if (widget.type === "text") {
     return <p className="m-0 whitespace-pre-wrap">{widget.options?.text}</p>;
   }
@@ -343,6 +361,7 @@ function WidgetView({
     rows: data.rows,
     loading: data.loading,
     display,
+    chips,
     ...(selected?.id !== undefined ? { selectedId: String(selected.id) } : {}),
     ...(followed ? { onSelect } : {}),
     ...(data.cursor

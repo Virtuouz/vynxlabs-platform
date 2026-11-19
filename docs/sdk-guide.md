@@ -146,6 +146,83 @@ step.approval("Lend a device", { approvers: { groups: ["tech-desk"] } });
 
 A row that belongs to a group should hold the group's key. A text column checked with `in: "groups"` matches the key, and still matches what the group is called.
 
+## Tables: choices, references and questions
+
+**A column that holds a choice** is an enum. Its row type is the values themselves, so a script that writes a value the column does not have fails to compile, and the database refuses whatever gets past that.
+
+```ts
+export const loans = defineTable({
+  path: "loans",
+  display: "number",
+  columns: {
+    number: column.text({ required: true, unique: true }),
+    status: column.enum(
+      ["out", { value: "returned", label: "Returned", color: "green" }],
+      { required: true, default: "out" },
+    ),
+    extras: column.enumList(["charger", "case"]),
+    device: column.reference(devices, { onDelete: "set_null" }),
+  },
+});
+```
+
+- Take a value out and the rows that hold it keep it; nobody is offered it again.
+- Spell a value anew with `renamedFrom` and every row is rewritten in the deploy.
+- A colour is `gray`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `violet` or `pink`, or any `#rrggbb`. The text over it is black or white, whichever reads better.
+- `onDelete` is `restrict` (the default: deleting a row that is pointed to is refused), `set_null` or `cascade`.
+- `display` is the column shown where another table points to a row of this one.
+
+**A question across tables** is a query: one SELECT, kept by name.
+
+```ts
+export const feesByDevice = defineQuery({
+  path: "reports/fees",
+  sql: `select d.name, sum(l.fee) as fees
+        from loans l join devices d on d.id = l.device
+        where l.fee >= $1 group by d.name order by fees desc`,
+  parameters: [{ name: "least", type: "integer", default: 0 }],
+});
+```
+
+- A table is named by its path, in double quotes when it has a `/` or a `-`: `"lending/loans"`.
+- A query reads. It cannot change a row, name a table that is not the workspace's, or call a function outside the list `GET …/queries/schema` gives.
+- Whoever runs it needs `data:read` on each table it names, and gets the rows each table's policy gives them. A query over an owner's table gives each person their own rows.
+- Two columns of the same name are one in the result: name them apart with `as`.
+
+**A dashboard** is a file: filters, and widgets that each ask a query. It deploys and promotes like any other resource, and whoever opens it gets the rows each table's policy gives them.
+
+```yaml
+# platform/reports/lending.dashboard.yaml
+schemaVersion: 1
+body:
+  version: 2
+  title: Lending
+  filters:
+    - { name: lent, label: Checked out, type: date_range, default: last_90_days }
+  widgets:
+    - id: by-month
+      title: Loans by month and status
+      type: pivot
+      width: 12
+      source:
+        visual:
+          table: loans
+          groupBy: [{ column: checked_out_at, bucket: month }, { column: status }]
+          measures: [{ fn: count, as: loans }]
+      filters: [{ filter: lent, column: checked_out_at }]
+      options: { rows: [checked_out_at_month], columns: [status], value: loans, cell: sum }
+    - id: saved
+      type: table
+      source: { query: reports/loans-by-month }
+      filters: [{ filter: lent, parameter: since, part: from }]
+```
+
+- A widget's `source` is one of three: `visual` (a table, groups and measures, which the platform writes as SQL), `query` (a saved query by its path) or `sql` (written in the widget, which needs `sql:read` of whoever deploys it).
+- A widget is a `figure`, `chart`, `table`, `pivot` or `note`. Its `width` is in twelfths of the page.
+- A filter reaches a widget only where the widget binds it: to a `column` of its table, or to a `parameter` of its query.
+- A date grouped by `month` comes back as `<column>_month`.
+- The easiest way to write one is to build it in the console and choose **Keep it as a resource**.
+
 ## What the build stops
 
 - **A definition that is not exported.** `defineScript(…)` that the entry file does not export is refused by name. Two files exporting the same name through `export *` cancel each other out: export each by name.

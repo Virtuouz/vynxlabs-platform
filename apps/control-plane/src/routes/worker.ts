@@ -47,6 +47,7 @@ import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { pathNow } from "../kernel/resolve.js";
 import { revealSecret } from "../kernel/secrets.js";
+import { runTraceparent } from "../kernel/trace.js";
 import { announceRows } from "./data.js";
 import { AnyObject, Id, NoContent, Time } from "./shared.js";
 
@@ -68,6 +69,13 @@ const Job = Type.Object({
   }),
   heartbeatSeconds: Type.Integer({ description: "Send a heartbeat at least this often." }),
   idempotencyKey: Type.String(),
+  traceparent: Type.Optional(
+    Type.String({
+      description:
+        "The trace the run is part of, as a W3C `traceparent` whose span is the run's " +
+        "execution. A worker that sends spans of its own hangs them from it.",
+    }),
+  ),
   trigger: AnyObject,
   startedBy: Type.Object(
     { type: Type.String(), id: Type.Union([Id, Type.Null()]) },
@@ -308,6 +316,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 idempotencyKey: run.idempotency_key,
                 trigger: { type: run.trigger_type, ...run.trigger_detail, grants: undefined },
                 startedBy: { type: run.started_by_type, id: run.started_by_id },
+                // The trace the run is part of, for a worker that sends spans of its own.
+                ...(runTraceparent(run) ? { traceparent: runTraceparent(run) as string } : {}),
               },
             };
           }

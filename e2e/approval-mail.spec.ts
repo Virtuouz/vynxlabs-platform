@@ -145,7 +145,8 @@ test("an approver approves from the mail on a phone, and the console says who an
       timeout: 15_000,
     })
     .toBe("succeeded");
-  await admin.goto(`/t/${tenant.id}/approvals`);
+  // An approval is its workspace's (phase 18): the tenant's page lists only a step that asks for it.
+  await admin.goto(`/t/${tenant.id}/workspaces/${dev.id}/approvals`);
   await admin.getByRole("radio", { name: /Decided/ }).click();
   await expect(admin.getByText(/Receipt checked/)).toBeVisible();
   await expect(admin.getByText(/decided from the mail/)).toBeVisible();

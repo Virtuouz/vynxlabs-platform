@@ -26,6 +26,8 @@ export interface Job {
   startedBy?: { type: string; id: string | null };
   /** The most memory the script may use. Absent from an older control plane. */
   memoryMb?: number;
+  /** The trace the run is part of, as a W3C `traceparent`. Absent from an older control plane. */
+  traceparent?: string;
 }
 
 /** The kinds of task this worker does for the control plane (decision 0001). */

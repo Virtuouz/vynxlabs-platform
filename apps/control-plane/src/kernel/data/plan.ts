@@ -1,4 +1,16 @@
-import type { ColumnType, TableBody, TableColumn, TablePolicy } from "@vynxlabs/manifest";
+import {
+  type ColumnType,
+  type EnumValue,
+  enumValues,
+  isEnumType,
+  type OnDelete,
+  type TableBody,
+  type TableColumn,
+  type TablePolicy,
+} from "@vynxlabs/manifest";
+
+/** One value of an enum column as the catalog keeps it: without where it was renamed from. */
+export type KeptValue = Omit<EnumValue, "renamedFrom">;
 
 export interface CatalogColumn {
   id: string;
@@ -9,6 +21,10 @@ export interface CatalogColumn {
   unique: boolean;
   default: unknown;
   referenceTable: string | null;
+  /** For a reference: what happens to the row when the one it points to is deleted. */
+  onDelete?: OnDelete | null;
+  /** For an enum: the values it has, and those it had and still allows in rows. */
+  options?: { values?: KeptValue[]; retired?: string[] } | null;
   /** Names the column has had before its current one. */
   previousNames: string[];
   status: "active" | "retired";
@@ -24,6 +40,8 @@ export interface CatalogTable {
   policy: TablePolicy;
   /** Paths the table has had before its current one. */
   previousNames: string[];
+  /** The column that stands for a row where another table refers to it. */
+  display?: string | null;
   columns: CatalogColumn[];
 }
 
@@ -35,6 +53,9 @@ export interface NewColumn {
   unique: boolean;
   default: unknown;
   referenceTable: string | null;
+  onDelete: OnDelete | null;
+  /** For an enum: its values. */
+  values: KeptValue[] | null;
 }
 
 /** One change to make. The steps of a plan are applied in order, in one transaction. */
@@ -62,6 +83,25 @@ export type Step =
   | { op: "set_unique"; table: string; columnId: string; name: string; unique: boolean }
   | { op: "set_default"; table: string; columnId: string; name: string; default: unknown }
   | { op: "set_reference"; table: string; columnId: string; name: string; referenceTable: string }
+  | { op: "set_on_delete"; table: string; columnId: string; name: string; onDelete: OnDelete }
+  | {
+      op: "set_values";
+      table: string;
+      columnId: string;
+      name: string;
+      values: KeptValue[];
+      /** Values spelled anew. Rows that hold the old spelling are rewritten. */
+      renames: { from: string; to: string }[];
+    }
+  | {
+      /** A text column becomes an enum, which it may when every row already holds one of the values. */
+      op: "to_enum";
+      table: string;
+      columnId: string;
+      name: string;
+      values: KeptValue[];
+    }
+  | { op: "set_display"; table: string; display: string | null }
   | { op: "set_policy"; table: string; policy: TablePolicy };
 
 export interface Plan {
@@ -78,6 +118,8 @@ const WIDENINGS: Record<string, ColumnType[]> = {
   uuid: ["text"],
   date: ["text"],
   timestamp: ["text"],
+  // An enum is text that is held to a list, so letting go of the list loses nothing.
+  enum: ["text"],
 };
 
 /** A name for a table inside the workspace's schema. */
@@ -105,8 +147,13 @@ function wanted(name: string, column: TableColumn, physicalName: string): NewCol
     unique: column.unique ?? false,
     default: column.default ?? null,
     referenceTable: column.references ?? null,
+    onDelete: column.type === "reference" ? (column.onDelete ?? "restrict") : null,
+    values: isEnumType(column.type) ? kept(column.values) : null,
   };
 }
+
+const kept = (values: TableColumn["values"]): KeptValue[] =>
+  enumValues(values).map(({ renamedFrom: _from, ...rest }) => rest);
 
 /**
  * Works out what to change so that a workspace's table matches its
@@ -183,6 +230,7 @@ export function planTable(
     });
     steps.push({ op: "create_table", name, physicalName, columns });
     steps.push({ op: "set_policy", table: name, policy });
+    if (body.display) steps.push({ op: "set_display", table: name, display: body.display });
     return { steps, issues };
   }
 
@@ -265,7 +313,10 @@ export function planTable(
 
     kept.add(current.id);
     const target = { table: name, columnId: current.id, name: columnName };
-    if (current.type !== want.type) {
+    if (current.type === "text" && want.type === "enum" && want.values) {
+      // Allowed when the rows already hold nothing else, which only the rows can say.
+      steps.push({ op: "to_enum", ...target, values: want.values });
+    } else if (current.type !== want.type) {
       if (WIDENINGS[current.type]?.includes(want.type)) {
         steps.push({ op: "widen_column", ...target, to: want.type });
       } else {
@@ -275,6 +326,24 @@ export function planTable(
         });
         continue;
       }
+    }
+    if (current.type === want.type && want.values && !same(current.options?.values, want.values)) {
+      const known = new Set([
+        ...(current.options?.values ?? []).map((one) => one.value),
+        ...(current.options?.retired ?? []),
+      ]);
+      const now = new Set(want.values.map((one) => one.value));
+      steps.push({
+        op: "set_values",
+        ...target,
+        values: want.values,
+        // A value the column had, spelled anew: not one it never had, and not one already renamed.
+        renames: enumValues(column.values).flatMap((one) =>
+          one.renamedFrom !== undefined && known.has(one.renamedFrom) && !now.has(one.renamedFrom)
+            ? [{ from: one.renamedFrom, to: one.value }]
+            : [],
+        ),
+      });
     }
     // A column that was retired lost its rules, so they are stated again when it comes back.
     const restored = current.status === "retired";
@@ -297,6 +366,9 @@ export function planTable(
     ) {
       steps.push({ op: "set_reference", ...target, referenceTable: want.referenceTable });
     }
+    if (want.onDelete !== null && (current.onDelete ?? "restrict") !== want.onDelete) {
+      steps.push({ op: "set_on_delete", ...target, onDelete: want.onDelete });
+    }
   }
 
   for (const column of table.columns) {
@@ -304,7 +376,15 @@ export function planTable(
       steps.push({ op: "retire_column", table: name, columnId: column.id, name: column.name });
     }
   }
-  if (!same(table.policy, policy)) steps.push({ op: "set_policy", table: name, policy });
+  if ((table.display ?? null) !== (body.display ?? null)) {
+    steps.push({ op: "set_display", table: name, display: body.display ?? null });
+  }
+  // A table that comes back from retirement is given its policy again: while it was away
+  // its policy may have been taken off, when it named a column that had gone.
+  const restored = steps.some((step) => step.op === "restore_table");
+  if (!same(table.policy, policy) || restored) {
+    steps.push({ op: "set_policy", table: name, policy });
+  }
   return { steps, issues };
 }
 

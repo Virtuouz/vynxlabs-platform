@@ -2,6 +2,7 @@ import { newId } from "@vynxlabs/db";
 import {
   checkTable,
   type KindRegistry,
+  type QueryBody,
   registerPlatformKinds,
   type TableBody,
   TENANT_FOLDER,
@@ -9,6 +10,7 @@ import {
 } from "@vynxlabs/manifest";
 import type { Trx } from "./audit.js";
 import { applyTable, retireTable } from "./data/apply.js";
+import { checkQuery, QueryRefused } from "./data/query/parse.js";
 import type { DataStores } from "./data/stores.js";
 import { badRequest } from "./errors.js";
 import { resolveResource } from "./resolve.js";
@@ -182,8 +184,51 @@ export function registerKernelKinds(kinds: KindRegistry, hooks: Map<string, Kind
   hooks.set("binding", bindingHook);
 }
 
+/**
+ * A saved query is read when it is stored, as it will be read when it is run:
+ * one SELECT, calling only what is allowed. Whether the tables it names are
+ * there is found when it runs, since a deploy may bring a query and its
+ * tables together, in either order.
+ */
+const queryHook: KindHook = {
+  async apply(_trx, resource) {
+    const body = resource.body as unknown as QueryBody;
+    let checked: Awaited<ReturnType<typeof checkQuery>>;
+    try {
+      checked = await checkQuery(body.sql, { schema: "q", tables: new Set(), anyTable: true });
+    } catch (error) {
+      if (!(error instanceof QueryRefused)) throw error;
+      throw badRequest("The query cannot be saved.", [
+        {
+          path: error.line ? `/body/sql/${error.line}:${error.column}` : "/body/sql",
+          message: error.message,
+        },
+      ]);
+    }
+    const declared = body.parameters?.length ?? 0;
+    if (checked.parameters !== declared) {
+      throw badRequest("The query cannot be saved.", [
+        {
+          path: "/body/parameters",
+          message:
+            checked.parameters > declared
+              ? `the query uses $${checked.parameters}, and ${declared === 0 ? "no parameters are" : `only ${declared} ${declared === 1 ? "is" : "are"}`} listed`
+              : `${declared} ${declared === 1 ? "parameter is" : "parameters are"} listed, and the query uses ${checked.parameters === 0 ? "none" : `only $1 to $${checked.parameters}`}`,
+        },
+      ]);
+    }
+    const names = (body.parameters ?? []).map((one) => one.name);
+    if (new Set(names).size !== names.length) {
+      throw badRequest("The query cannot be saved.", [
+        { path: "/body/parameters", message: "two parameters have the same name" },
+      ]);
+    }
+  },
+};
+
 /** The hook that makes a table resource's definition real, wherever the tenant's tables live. */
 export function registerDataHooks(hooks: Map<string, KindHook>, data: DataStores) {
+  hooks.set("query", queryHook);
   hooks.set("table", {
     async apply(trx, resource) {
       // A bundle's tables were checked when it was built. A table saved in the console was not.

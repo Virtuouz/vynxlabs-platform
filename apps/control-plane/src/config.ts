@@ -1,4 +1,5 @@
 import { type EgressAllow, parseEgressAllow } from "./kernel/egress.js";
+import { readHeaders, type TelemetryConfig } from "./kernel/telemetry.js";
 export interface Config {
   databaseUrl: string;
   s3: {
@@ -35,6 +36,10 @@ export interface Config {
   workerHostToken: string | undefined;
   /** Whether metrics carry tenant and workspace labels. Off for an instance with very many. */
   metricsWorkspaceLabels: boolean;
+  /** What a scraper presents to read the metrics, so that it needs no member. */
+  metricsToken: string | undefined;
+  /** Where traces and metrics are sent by OTLP, when anywhere. */
+  telemetry: TelemetryConfig;
   /**
    * The user managed workers run as: their own, so that a script cannot read the
    * control plane's environment, or `same`, the control plane's, by the operator's choice.
@@ -91,6 +96,8 @@ export interface Limits {
   dataTenantConnections: number | undefined;
   /** How long one data operation may take before it is stopped, in milliseconds. */
   dataStatementTimeoutMs: number;
+  /** How long one query written in SQL may run before it is stopped. */
+  sqlStatementTimeoutMs: number;
   /**
    * Starts with every trigger in every tenant paused, whatever the console says: the
    * operator's emergency stop, for an instance that cannot stay up long enough to pause them.
@@ -243,6 +250,25 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if (metricsLabels !== "true" && metricsLabels !== "false") {
     problems.push("METRICS_WORKSPACE_LABELS must be true or false.");
   }
+  const metricsToken = value("METRICS_TOKEN");
+  if (metricsToken !== undefined && metricsToken.length < 32) {
+    problems.push("METRICS_TOKEN must be at least 32 characters.");
+  }
+  // The names OpenTelemetry gives its own settings, so what an operator already has works.
+  const otlpEndpoint = value("OTEL_EXPORTER_OTLP_ENDPOINT")?.replace(/\/+$/, "");
+  if (otlpEndpoint !== undefined && !/^https?:\/\//.test(otlpEndpoint)) {
+    problems.push("OTEL_EXPORTER_OTLP_ENDPOINT must be an http or https address.");
+  }
+  const otlpProtocol = value("OTEL_EXPORTER_OTLP_PROTOCOL") ?? "http/json";
+  if (otlpEndpoint !== undefined && otlpProtocol !== "http/json") {
+    problems.push(
+      "OTEL_EXPORTER_OTLP_PROTOCOL must be http/json: the only one the platform speaks.",
+    );
+  }
+  const otlpInterval = Number(value("OTEL_METRIC_EXPORT_INTERVAL") ?? "60000");
+  if (!Number.isFinite(otlpInterval) || otlpInterval < 1000) {
+    problems.push("OTEL_METRIC_EXPORT_INTERVAL must be a number of milliseconds, 1000 or more.");
+  }
   if (managed === "host" && (workerHostToken === undefined || workerHostToken.length < 32)) {
     problems.push("MANAGED_WORKERS=host needs WORKER_HOST_TOKEN, of at least 32 characters.");
   }
@@ -293,6 +319,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     dataPoolSize: whole("DATA_POOL_SIZE", 2, 500) ?? 10,
     dataTenantConnections: whole("DATA_TENANT_CONNECTIONS", 1, 500),
     dataStatementTimeoutMs: whole("DATA_STATEMENT_TIMEOUT_MS", 1000, 600_000) ?? 15_000,
+    sqlStatementTimeoutMs: whole("SQL_STATEMENT_TIMEOUT_MS", 1000, 600_000) ?? 15_000,
     triggersPaused: (value("TRIGGERS_PAUSED") ?? "false") === "true",
     scheduleBacklogLimit: whole("SCHEDULE_BACKLOG_LIMIT", 0, 1_000_000) ?? 200,
   };
@@ -327,6 +354,15 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     managedWorkers: managed === "host" || managed === "process" ? managed : false,
     workerHostToken: managed === "host" ? workerHostToken : undefined,
     metricsWorkspaceLabels: metricsLabels === "true",
+    metricsToken,
+    telemetry: {
+      endpoint: otlpEndpoint,
+      headers: readHeaders(value("OTEL_EXPORTER_OTLP_HEADERS")),
+      serviceName: value("OTEL_SERVICE_NAME") ?? "platform",
+      traces: value("OTEL_TRACES_EXPORTER") !== "none",
+      metrics: value("OTEL_METRICS_EXPORTER") !== "none",
+      metricsIntervalMs: otlpInterval,
+    },
     managedWorkerUser: workerUser === "same" ? "same" : { uid: workerUid, gid: workerGid },
     retention,
     egressAllow: typeof egress === "string" ? { networks: [], hosts: [] } : egress,

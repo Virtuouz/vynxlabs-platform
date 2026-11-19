@@ -44,8 +44,10 @@ test("higher-ed-devices keeps what has no code as files, beside the logic its co
   expect(filed.map((manifest) => `${manifest.kind} ${manifest.path}`).sort()).toEqual([
     "app borrow",
     "app desk",
+    "dashboard reports/lending",
     "interface screens/borrow",
     "interface screens/desk",
+    "query reports/loans-by-month",
     "schedule loans/overdue-each-morning",
     "theme theme",
     "variable loans/days",

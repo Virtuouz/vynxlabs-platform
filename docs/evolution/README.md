@@ -14,7 +14,7 @@ This directory holds the discovery, analysis and plan for turning the platform f
 | [06-strategy.md](06-strategy.md) | Target identity, principles, architectural readiness, shared primitives |
 | [07-roadmap.md](07-roadmap.md) | P0–P3 with full fields, quick wins, and a sequencing graph |
 | [specs/](specs/) | Implementation-ready specs S1–S8 for the top initiatives |
-| [decisions/](decisions/) | Decision records. [0001](decisions/0001-execution-boundary.md): the execution boundary, accepted. [0002](decisions/0002-resource-identity-and-authoring.md): resource identity, two-way authoring and access as resources, accepted, being built as [phase 17](../phases/phase-17-resource-identity.md) |
+| [decisions/](decisions/) | Decision records. [0001](decisions/0001-execution-boundary.md): the execution boundary, accepted. [0002](decisions/0002-resource-identity-and-authoring.md): resource identity, two-way authoring and access as resources, accepted, built as [phase 17](../phases/phase-17-resource-identity.md). [0003](decisions/0003-read-only-sql.md): read-only SQL over a workspace's tables, accepted as proposed, built as M7 to M9 of [phase 18](../phases/phase-18-data-insight.md) |
 
 ## Evidence labels
 

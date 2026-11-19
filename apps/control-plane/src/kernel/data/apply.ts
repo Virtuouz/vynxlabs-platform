@@ -3,6 +3,8 @@ import { newId, sql } from "@vynxlabs/db";
 import {
   type ColumnType,
   conditionColumn,
+  isEnumType,
+  type OnDelete,
   type RowRule,
   type TableBody,
   type TablePolicy,
@@ -10,7 +12,7 @@ import {
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { AppliedResource } from "../kinds.js";
-import { type CatalogTable, type NewColumn, planTable, type Step } from "./plan.js";
+import { type CatalogTable, type KeptValue, type NewColumn, planTable, type Step } from "./plan.js";
 
 /** The database role that requests for tenant data switch to. Row policies apply to it. */
 
@@ -27,6 +29,9 @@ const SQL_TYPE: Record<ColumnType, string> = {
   uuid: "uuid",
   reference: "uuid",
   file: "uuid",
+  // Held to the column's values by a check, not by a Postgres enum, which cannot lose a value.
+  enum: "text",
+  enum_list: "text[]",
 };
 
 /** Every table and column a workspace has, active or retired. */
@@ -68,14 +73,23 @@ export async function loadCatalog(db: Db | Trx, workspaceId: string): Promise<Ca
         unique: column.is_unique,
         default: column.default_value,
         referenceTable: column.reference_table,
+        onDelete: column.on_delete as OnDelete | null,
+        options: column.options,
         previousNames: column.previous_names,
         status: column.status,
       })),
+    display: table.display_column,
   }));
 }
 
+const textArray = (values: readonly string[]) =>
+  values.length === 0
+    ? sql`'{}'::text[]`
+    : sql`array[${sql.join(values.map((value) => sql.lit(value)))}]::text[]`;
+
 function literal(type: ColumnType, value: unknown) {
   if (type === "json") return sql`${sql.lit(JSON.stringify(value))}::jsonb`;
+  if (type === "enum_list") return textArray(value as string[]);
   return sql`${sql.lit(value as string | number | boolean)}::${sql.raw(SQL_TYPE[type])}`;
 }
 
@@ -90,6 +104,34 @@ function columnDefinition(column: NewColumn) {
 
 export const constraintName = (prefix: string, table: string, column: string) =>
   `${prefix}_${createHash("sha256").update(`${table}.${column}`).digest("hex").slice(0, 16)}`;
+
+/**
+ * Holds an enum column to its values: the ones it has, and the ones it had
+ * and rows may still hold. With no values the column is held to nothing.
+ */
+async function setValuesCheck(
+  trx: Trx,
+  schema: string,
+  table: string,
+  column: { physicalName: string; type: string },
+  allowed: readonly string[] | null,
+) {
+  const name = sql.id(constraintName("ev", table, column.physicalName));
+  const target = sql.id(schema, table);
+  await sql`alter table ${target} drop constraint if exists ${name}`.execute(trx);
+  if (allowed === null) return;
+  const physical = sql.id(column.physicalName);
+  const check =
+    column.type === "enum_list"
+      ? sql`${physical} <@ ${textArray(allowed)}`
+      : sql`${physical} = any (${textArray(allowed)})`;
+  await sql`alter table ${target} add constraint ${name} check (${check})`.execute(trx);
+}
+
+/** Every value an enum column allows in a row: those it offers and those it has retired. */
+const allowedValues = (
+  options: { values?: KeptValue[]; retired?: string[] } | null | undefined,
+) => [...(options?.values ?? []).map((one) => one.value), ...(options?.retired ?? [])];
 
 /** Lifts the rule that a column must have a value, in whichever form it was put in place. */
 async function dropRequired(
@@ -200,6 +242,15 @@ async function applyStep(
     for (const column of step.columns) {
       await insertColumn(trx, tableId, column);
       if (column.unique) await setUnique(trx, schema, step.physicalName, column.physicalName, true);
+      if (column.values) {
+        await setValuesCheck(
+          trx,
+          schema,
+          step.physicalName,
+          column,
+          column.values.map((one) => one.value),
+        );
+      }
     }
     return;
   }
@@ -231,6 +282,14 @@ async function applyStep(
     await setPolicy(trx, role, schema, table, step.policy);
     return;
   }
+  if (step.op === "set_display") {
+    await trx
+      .updateTable("data_table")
+      .set({ display_column: step.display })
+      .where("id", "=", table.id)
+      .execute();
+    return;
+  }
 
   if (step.op === "add_column") {
     const { column } = step;
@@ -246,6 +305,15 @@ async function applyStep(
     await sql`alter table ${target} add column ${columnDefinition(column)}`.execute(trx);
     await insertColumn(trx, table.id, column);
     if (column.unique) await setUnique(trx, schema, table.physical_name, column.physicalName, true);
+    if (column.values) {
+      await setValuesCheck(
+        trx,
+        schema,
+        table.physical_name,
+        column,
+        column.values.map((one) => one.value),
+      );
+    }
     return;
   }
 
@@ -288,6 +356,19 @@ async function applyStep(
         .execute();
       break;
     case "widen_column":
+      // An enum that becomes text is let go of its list.
+      await setValuesCheck(
+        trx,
+        schema,
+        table.physical_name,
+        { physicalName: column.physical_name, type: column.type },
+        null,
+      );
+      await trx
+        .updateTable("data_column")
+        .set({ options: null })
+        .where("id", "=", column.id)
+        .execute();
       await sql`
         alter table ${target} alter column ${physical} type ${sql.raw(SQL_TYPE[step.to])}
         using ${physical}::${sql.raw(SQL_TYPE[step.to])}
@@ -387,6 +468,75 @@ async function applyStep(
         .where("id", "=", column.id)
         .execute();
       break;
+    case "set_on_delete":
+      // The constraint itself is made again by `reconcileReferences`, which compares it with this.
+      await trx
+        .updateTable("data_column")
+        .set({ on_delete: step.onDelete })
+        .where("id", "=", column.id)
+        .execute();
+      break;
+    case "to_enum": {
+      const values = step.values.map((one) => one.value);
+      const others = await sql<{ value: string }>`
+        select distinct ${physical} as value from ${target}
+        where ${physical} is not null and not (${physical} = any (${textArray(values)}))
+        limit 6
+      `.execute(trx);
+      if (others.rows.length > 0) {
+        const named = others.rows.slice(0, 5).map((row) => `"${row.value}"`);
+        throw refuse(
+          step.table,
+          column.name,
+          `cannot become an enum while rows hold other values: ${named.join(", ")}${
+            others.rows.length > 5 ? " and more" : ""
+          }. Add them to its values, or change those rows first.`,
+        );
+      }
+      await setValuesCheck(
+        trx,
+        schema,
+        table.physical_name,
+        { physicalName: column.physical_name, type: "enum" },
+        values,
+      );
+      await trx
+        .updateTable("data_column")
+        .set({ type: "enum", options: JSON.stringify({ values: step.values, retired: [] }) })
+        .where("id", "=", column.id)
+        .execute();
+      break;
+    }
+    case "set_values": {
+      const before = column.options ?? {};
+      const now = step.values.map((one) => one.value);
+      const renamed = new Set(step.renames.map((one) => one.from));
+      // What the column had and no longer offers stays allowed, so no row is in the wrong.
+      const retired = allowedValues(before).filter(
+        (value) => !now.includes(value) && !renamed.has(value),
+      );
+      const held = { physicalName: column.physical_name, type: column.type };
+      await setValuesCheck(trx, schema, table.physical_name, held, null);
+      for (const { from, to } of step.renames) {
+        if (column.type === "enum_list") {
+          await sql`
+            update ${target} set ${physical} = array_replace(${physical}, ${from}, ${to})
+            where ${physical} @> array[${from}]::text[]
+          `.execute(trx);
+        } else {
+          await sql`update ${target} set ${physical} = ${to} where ${physical} = ${from}`.execute(
+            trx,
+          );
+        }
+      }
+      await setValuesCheck(trx, schema, table.physical_name, held, [...now, ...retired]);
+      await trx
+        .updateTable("data_column")
+        .set({ options: JSON.stringify({ values: step.values, retired }) })
+        .where("id", "=", column.id)
+        .execute();
+      break;
+    }
   }
 }
 
@@ -406,6 +556,8 @@ async function insertColumn(trx: Trx, tableId: string, column: NewColumn) {
           ? null
           : JSON.stringify(column.default),
       reference_table: column.referenceTable,
+      on_delete: column.onDelete,
+      options: column.values ? JSON.stringify({ values: column.values, retired: [] }) : null,
       status: "active",
     })
     .execute();
@@ -424,10 +576,15 @@ async function setUnique(trx: Trx, schema: string, table: string, column: string
 /** The names a table's row policies may have had. All are dropped before the wanted ones are made. */
 const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"];
 
-/** The groups and attributes of whoever is asking, as `withData` sets them for the transaction. */
-const GROUPS = sql`(select jsonb_array_elements_text(coalesce(nullif(current_setting('app.groups', true), ''), '[]')::jsonb))`;
-const attribute = (name: string) =>
-  sql`(coalesce(nullif(current_setting('app.attrs', true), ''), '{}')::jsonb ->> ${sql.lit(name)})`;
+/**
+ * Who is asking, from the claim `withData` signs for the transaction. Written
+ * as a subquery so that it is checked and read once for a statement, not once
+ * for every row.
+ */
+const CLAIM = sql`(select vx.claim())`;
+const PRINCIPAL = sql`(${CLAIM} ->> 'principal')`;
+const GROUPS = sql`(select jsonb_array_elements_text(coalesce(${CLAIM} -> 'groups', '[]'::jsonb)))`;
+const attribute = (name: string) => sql`(${CLAIM} -> 'attrs' ->> ${sql.lit(name)})`;
 
 /** Replaces a table's row policy with the one its definition asks for. */
 async function setPolicy(
@@ -454,12 +611,12 @@ async function setPolicy(
       ).physical_name,
     );
   // Whoever may see every row is past every policy.
-  const everything = sql`current_setting('app.data_all', true) = 'on'`;
+  const everything = sql`coalesce((${CLAIM} ->> 'all')::boolean, false)`;
   if (policy.type === "owner") {
     // A caller sees and writes a row when it is theirs, or when they may see every row.
     const allowed = sql`
       ${everything}
-      or ${await physical(policy.column)}::text = current_setting('app.principal', true)
+      or ${await physical(policy.column)}::text = ${PRINCIPAL}
     `;
     await sql`
       create policy rows on ${target} for all to ${sql.id(role)}
@@ -472,7 +629,7 @@ async function setPolicy(
       const column = await physical(when.column);
       if ("is" in when) {
         // No one is nobody's: a request from no person matches no row.
-        return sql`(current_setting('app.principal', true) <> '' and ${column}::text = current_setting('app.principal', true))`;
+        return sql`(${PRINCIPAL} <> '' and ${column}::text = ${PRINCIPAL})`;
       }
       if ("in" in when) return sql`${column}::text in ${GROUPS}`;
       return sql`${column}::text = ${attribute(when.equals.attribute)}`;
@@ -505,6 +662,62 @@ async function setPolicy(
     .set({ policy: JSON.stringify(policy) })
     .where("id", "=", table.id)
     .execute();
+}
+
+/**
+ * Compiles again every row policy that still reads who is asking from the
+ * plain settings an earlier version used. Run once for a database when it is
+ * opened: after it, a policy trusts only the signed claim.
+ */
+export async function upgradePolicies(owner: Db, role: string): Promise<number> {
+  const old = await sql<{ schema: string; table: string }>`
+    select distinct schemaname as schema, tablename as "table" from pg_policies
+    where schemaname ~ '^ws_[0-9a-f]{32}$'
+      and (coalesce(qual, '') like '%current_setting(''app.%'
+        or coalesce(with_check, '') like '%current_setting(''app.%')
+  `.execute(owner);
+  if (old.rows.length === 0) return 0;
+  let done = 0;
+  await owner.transaction().execute(async (trx) => {
+    for (const { schema, table } of old.rows) {
+      const hex = schema.slice(3);
+      const workspaceId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+      const row = await trx
+        .selectFrom("data_table")
+        .select(["id", "physical_name", "policy", "status"])
+        .where("workspace_id", "=", workspaceId)
+        .where("physical_name", "=", table)
+        .executeTakeFirst();
+      if (!row) continue;
+      // A retired table is read by nobody, and its policy may name a column that is gone.
+      // It is then left with none, which lets nothing through, and is given its policy
+      // again when the table comes back.
+      const policy = row.policy as TablePolicy;
+      const named =
+        policy.type === "owner"
+          ? [policy.column]
+          : policy.type === "rules"
+            ? policy.rules.flatMap((rule) => conditionColumn(rule.when) ?? [])
+            : [];
+      const there = await trx
+        .selectFrom("data_column")
+        .select("name")
+        .where("table_id", "=", row.id)
+        .where("status", "=", "active")
+        .execute();
+      const whole = named.every((name) => there.some((column) => column.name === name));
+      if (whole) {
+        await setPolicy(trx, role, schema, row, policy);
+      } else {
+        const target = sql.id(schema, table);
+        for (const name of POLICY_NAMES) {
+          await sql`drop policy if exists ${sql.id(name)} on ${target}`.execute(trx);
+        }
+      }
+      done += 1;
+    }
+  });
+  return done;
 }
 
 /** Makes a table's indexes the ones its definition lists. Only indexes the platform made are touched. */
@@ -548,6 +761,14 @@ async function reconcileIndexes(
   }
 }
 
+/** What each rule is in a constraint, and the letter Postgres keeps for it. */
+const ON_DELETE: Record<OnDelete, { sql: string; code: string }> = {
+  // Plain, as every reference was made before the rule could be said.
+  restrict: { sql: "", code: "a" },
+  set_null: { sql: "on delete set null", code: "n" },
+  cascade: { sql: "on delete cascade", code: "c" },
+};
+
 /**
  * Gives every reference column its foreign key. A table may refer to one that
  * comes later in the same deploy, so this runs again once all are in place,
@@ -562,6 +783,7 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
       "data_column.physical_name",
       "data_column.name",
       "data_column.reference_table",
+      "data_column.on_delete",
       "data_table.physical_name as table_physical",
       "data_table.name as table_name",
     ])
@@ -593,15 +815,31 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
       continue;
     }
     const name = constraintName("fk", reference.table_physical, reference.physical_name);
-    const exists = await sql`
-      select 1 from pg_constraint c join pg_namespace n on n.oid = c.connamespace
+    const rule = (reference.on_delete ?? "restrict") as OnDelete;
+    // What the constraint there is points at, and what it does on a delete.
+    const existing = await sql<{ target: string; action: string }>`
+      select t.relname as target, c.confdeltype as action
+      from pg_constraint c
+      join pg_namespace n on n.oid = c.connamespace
+      join pg_class t on t.oid = c.confrelid
       where n.nspname = ${schema} and c.conname = ${name}
     `.execute(trx);
-    if (exists.rows.length > 0) continue;
+    const there = existing.rows[0];
+    const own = sql.id(schema, reference.table_physical);
+    if (there) {
+      if (there.target === target.physical_name && there.action === ON_DELETE[rule].code) continue;
+      // It points at another table, or does something else on a delete: made again as asked.
+      await sql`alter table ${own} drop constraint ${sql.id(name)}`.execute(trx);
+    }
     await sql`
-      alter table ${sql.id(schema, reference.table_physical)}
+      alter table ${own}
       add constraint ${sql.id(name)} foreign key (${sql.id(reference.physical_name)})
-      references ${sql.id(schema, target.physical_name)} (id)
+      references ${sql.id(schema, target.physical_name)} (id) ${sql.raw(ON_DELETE[rule].sql)}
+    `.execute(trx);
+    // Finding the rows that point at one, for a join or for the delete's own check, without reading them all.
+    await sql`
+      create index if not exists ${sql.id(constraintName("rx", reference.table_physical, reference.physical_name))}
+      on ${own} (${sql.id(reference.physical_name)})
     `.execute(trx);
   }
 }
@@ -629,6 +867,8 @@ export async function restoreStructure(trx: Trx, role: string, workspaceId: stri
         unique: false,
         default: column.default,
         referenceTable: null,
+        onDelete: null,
+        values: null,
       }),
     );
     await sql`
@@ -662,6 +902,15 @@ export async function restoreRules(
       const physical = sql.id(column.physicalName);
       if (column.unique) {
         await setUnique(trx, schema, table.physicalName, column.physicalName, true);
+      }
+      if (isEnumType(column.type)) {
+        await setValuesCheck(
+          trx,
+          schema,
+          table.physicalName,
+          column,
+          allowedValues(column.options),
+        );
       }
       if (column.required) {
         const missing =

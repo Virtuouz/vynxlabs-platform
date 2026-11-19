@@ -114,7 +114,7 @@ export function Flows({
         waiting > 0 ? (
           <HeadNote>
             {waiting} run{waiting === 1 ? " is" : "s are"} waiting for a person.{" "}
-            <Link to={link.replace(/\/workspaces\/.*$/, "/approvals")}>Decide</Link>
+            <Link to={`${link}/approvals`}>Decide</Link>
           </HeadNote>
         ) : undefined
       }
@@ -580,6 +580,8 @@ export interface FlowRunDetail extends FlowRunRow {
   errorSummary: string | null;
   tags: string[];
   retryOf: string | null;
+  /** The trace the flow run and its runs are part of. */
+  traceId?: string | null;
   retries: { id: string; state: RunState; createdAt: string }[];
   startedBy: { type: string; id: string | null };
   input: unknown;

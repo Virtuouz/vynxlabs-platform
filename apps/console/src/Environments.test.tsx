@@ -141,7 +141,7 @@ test("a workspace that is not linked offers no promotion, and a production works
   expect(container.textContent).toBe("");
 });
 
-test("triggers are paused and resumed, and only a dev workspace can be deleted", async () => {
+test("triggers are paused and resumed, and a production workspace says what deleting it needs", async () => {
   routes[`PATCH /api/v1${base}/workspaces/w-dev`] = () => [200, {}];
   const reload = vi.fn();
   const { rerender } = render(
@@ -166,7 +166,10 @@ test("triggers are paused and resumed, and only a dev workspace can be deleted",
   await waitFor(() => expect(sent("PATCH")[1]?.body).toEqual({ triggersPaused: false }));
 
   rerender(<WorkspaceControls base={base} tenantId="t1" workspace={main} reload={reload} />);
-  expect(screen.queryByRole("button", { name: "Delete workspace" })).toBeNull();
+  // A production workspace can be deleted too, by whoever was given the permission for it,
+  // and the row says that nobody has it until then.
+  expect(screen.getByRole("button", { name: "Delete workspace" })).toBeTruthy();
+  expect(screen.getByText(/no role has until it\s+is added to one by name/)).toBeTruthy();
 });
 
 test("cloning asks about data and safety, and says what the copy can reach", async () => {

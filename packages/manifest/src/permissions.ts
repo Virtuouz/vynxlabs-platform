@@ -24,6 +24,12 @@ export interface PermissionKind {
   group: "Instance" | "Tenant" | "Workspace" | "Code and runs" | "Flows" | "Data" | "Apps";
   /** Whether an end user, or a member signed in to apps only, can hold it. */
   appFacing?: true;
+  /**
+   * Given only by its own name. `*:*`, `*:write` and the like do not give it,
+   * so no role holds it until someone writes it into one: not the tenant's
+   * administrator, and not a role made before the permission existed.
+   */
+  explicit?: true;
 }
 
 export const PERMISSION_KINDS: readonly PermissionKind[] = [
@@ -202,6 +208,17 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "workspace_production",
+    label: "Deleting production",
+    group: "Workspace",
+    scope: "workspace",
+    explicit: true,
+    verbs: {
+      write:
+        "Delete a production workspace, with everything in it. No role has this until it is added to one by name: a wildcard does not give it.",
+    },
+  },
+  {
     kind: "resource",
     label: "Resources",
     group: "Workspace",
@@ -345,6 +362,16 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "sql",
+    label: "Queries in SQL",
+    group: "Data",
+    scope: "workspace",
+    explicit: true,
+    verbs: {
+      read: "Write a query in SQL and run it over the workspace's tables. It only reads, each table needs its own permission to read rows, and each table's row policy still applies. A wildcard does not give this.",
+    },
+  },
+  {
     kind: "data",
     label: "Rows",
     group: "Data",
@@ -430,6 +457,11 @@ export function isKnownPermission(permission: string): boolean {
   const [kind, verb] = permission.split(":");
   const entry = BY_KIND.get(kind ?? "");
   return entry !== undefined && verb !== undefined && verb in entry.verbs;
+}
+
+/** Whether `kind` is given only by its own name, never by a wildcard. */
+export function isExplicitKind(kind: string): boolean {
+  return BY_KIND.get(kind)?.explicit === true;
 }
 
 /** Whether a role may list `permission`: a known one, or one with `*` for a known kind or for all. */

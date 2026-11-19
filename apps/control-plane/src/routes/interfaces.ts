@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
   checkInterface,
+  enumColor,
   type InterfaceBody,
   interfaceTables,
   type TableBody,
@@ -29,6 +30,16 @@ const TableView = Type.Object({
       type: Type.String(),
       required: Type.Boolean(),
       references: Type.Union([Type.String(), Type.Null()]),
+      values: Type.Optional(
+        Type.Array(
+          Type.Object({
+            value: Type.String(),
+            label: Type.Optional(Type.String()),
+            color: Type.Optional(Type.String()),
+          }),
+          { description: "For an enum or an enum_list: the values it offers, in order." },
+        ),
+      ),
     }),
   ),
 });
@@ -313,7 +324,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const columns = canRead
             ? await data
                 .selectFrom("data_column")
-                .select(["name", "type", "required", "reference_table"])
+                .select(["name", "type", "required", "reference_table", "options"])
                 .where("table_id", "=", table.id)
                 .where("status", "=", "active")
                 .orderBy("created_at")
@@ -337,6 +348,15 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 type: column.type,
                 required: column.required,
                 references: column.reference_table,
+                // A colour by name is given as the colour itself: a page needs no list of names.
+                ...(column.options?.values
+                  ? {
+                      values: column.options.values.map((one) => {
+                        const color = enumColor(one.color);
+                        return { ...one, ...(color ? { color } : {}) };
+                      }),
+                    }
+                  : {}),
               })),
             ],
           };

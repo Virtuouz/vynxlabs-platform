@@ -11,6 +11,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { Db, Trx } from "../audit.js";
 import type { Vault } from "../crypto.js";
 import { HttpError, notFound } from "../errors.js";
+import { upgradePolicies } from "./apply.js";
 import { TenantGate } from "./gate.js";
 
 /** A connection to the database that holds a tenant's custom tables and their catalog. */
@@ -111,6 +112,7 @@ export class DataStores {
   platform(options: { setUp?: boolean } = {}): Promise<DataStore> {
     this.#platform ??= this.#secret()
       .then((secret) => this.#database.openDataStore(secret, options))
+      .then((store) => this.#upgraded(store, options.setUp !== false))
       .catch((error) => {
         this.#platform = undefined;
         throw error;
@@ -123,8 +125,20 @@ export class DataStores {
     return this.#vault.sealForInstance(`database-location:${name}`, connectionString);
   }
 
+  /** Brings a store's row policies up to how who is asking is now told. Once, when it is opened. */
+  async #upgraded(store: DataStore, writable = true): Promise<DataStore> {
+    if (!writable) return store;
+    const changed = await upgradePolicies(store.owner, store.role);
+    if (changed > 0) this.#log.info({ tables: changed }, "row policies now read the signed claim");
+    return store;
+  }
+
   /** Opens a connection string as a data store, setting it up if it is new. Does not remember it. */
   async connect(connectionString: string): Promise<DataStore> {
+    return this.#upgraded(await this.#open(connectionString));
+  }
+
+  async #open(connectionString: string): Promise<DataStore> {
     return openDataStore({
       connectionString,
       secret: await this.#secret(),

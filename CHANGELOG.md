@@ -2,6 +2,41 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 18, data you can ask questions of
+
+### For operators
+
+- **Database migrations 0076 to 0078.** Every approval there was keeps its place on the tenant's Approvals page. Columns gain what an enum's values are and what a reference does on a delete, and tables the column that stands for a row. Three built-in roles are given `sql:read`.
+- **Row policies now read a signed claim.** Each database that holds tenants' tables gets a schema `vx` with a key and a function, `vx.claim()`. The first time an instance on this version opens a database, it compiles every table's row policy again to read who is asking from that claim, and says so in its log. Nothing is asked of the operator. A dedicated database must be reachable and writable for it, as for any upgrade.
+- **`SQL_STATEMENT_TIMEOUT_MS`** (15000) is how long one query written in SQL may run.
+- **A production workspace can be deleted**, by someone who holds `workspace_production:write`. No role holds it, not `tenant_admin` and not an operator: it is given only by adding it to a role by name. `DELETE …/workspaces/:w` answers 403 for production where it answered 409.
+- **A permission can be explicit**: only its own name gives it, and `*:*` does not. `workspace_production:write` and `sql:read` are. `GET …/permissions` says which.
+- **Approvals are a workspace's.** `GET /tenants/:t/approvals` and `…/approvals/decided` now list only approvals whose step says `surface: tenant`. `GET …/workspaces/:w/approvals` takes `mine=true`, and `…/workspaces/:w/approvals/decided` is new. The console has an Approvals page under each workspace's Operate.
+- **Triggers, variables and connection groups are listed from their drafts**, each with `draft`: `new`, `changed`, `removed` or null. A client that compared these lists exactly sees the new field.
+- **New routes:** `POST …/queries/run`, `GET …/queries/schema`, `GET …/queries`, `GET …/queries/saved/*`. Rows take `?expand=`.
+- **Dashboards ask queries.** `PUT …/dashboards/:d` takes `body`, a dashboard as the `dashboard` schema describes it, where it took `page`; `GET` answers with `body` and `upgraded` where it had `page` and `problems`. A dashboard made before this is given converted, and is stored converted when it is next saved. `GET …/dashboards/:d/widgets/:widget/data` gives what a widget shows. Dashboards the workspace keeps as resources are listed with members' own.
+- **`GET …/queries/visual`** runs a query built from menus, and **`GET …/queries/schema` no longer needs `sql:read`**: it gives the tables the caller may read rows of.
+- **Database migration 0080.** A run and a flow run keep the trace they are part of.
+- **OpenTelemetry.** Set `OTEL_EXPORTER_OTLP_ENDPOINT` and the instance sends traces and metrics by OTLP (HTTP with JSON) to it; set nothing and it sends nothing. One trace is the request, the run or flow run it started, the wait for a worker, the execution and each flow step. No collector is shipped. See "OpenTelemetry" in the self-hosting guide.
+- **Prometheus.** `METRICS_TOKEN` lets a scraper read `/api/v1/metrics` with no member or API key. Two new series count requests by route and status and time them.
+- **Every response has `x-trace-id`**, and a run and a flow run say their `traceId`.
+- **Database migration 0079.** The console and each tenant's portal keep icons made from their logo.
+- **The console has an icon.** `/favicon.ico` and `/site.webmanifest` are answered at the root, where `/favicon.ico` used to answer with the console's page. An instance with no logo gets the platform's own icon. Setting a logo in the console makes the icons from it, in the browser. **A logo set through the API alone gets none**: send `PUT /instance/branding/icons/:size` (or `/tenants/:t/portal/icons/:size`) for 32, 180, 192 and 512 as well, each a PNG of that size.
+- **New dependencies:** `pgsql-parser` in the control plane (Postgres's own parser, as WebAssembly), and `@dnd-kit` in the console. Both MIT.
+
+### For tenant developers
+
+- **Enum columns.** `column.enum(["new", "paid"])` holds one of its values and `column.enumList([...])` several. A row's type is narrowed to them, and the database refuses anything else. A value can be written `{ value, label, color, renamedFrom }`. A value taken out of the definition stays on the rows that hold it and is offered no more; one given `renamedFrom` is rewritten in every row.
+- **A text column becomes an enum** only when every row already holds one of its values. The deploy is refused otherwise, naming the values in the way.
+- **References say what a delete does**: `column.reference("devices", { onDelete: "set_null" })`, or `cascade`. Left out, the deletion is refused as before. Every reference is now indexed.
+- **A reference pointed at another table is held to that table.** It was not before: the old constraint stayed. A deploy that changes where a reference points is refused while rows point at the old table.
+- **`display`** on a table names the column that stands for a row. `GET …/rows/<table>?expand=<column>` gives it for the rows a reference points to.
+- **SQL.** With `sql:read`, `POST …/queries/run` runs one SELECT over the workspace's tables, each named by its path. Only reading is possible, each table needs `data:read`, and each table's row policy applies to the caller. See [Decision 0003](docs/evolution/decisions/0003-read-only-sql.md) for what a query may and may not contain.
+- **`defineQuery`** keeps a query by name, with parameters. It is run with `GET …/queries/saved/<path>` by whoever may read its tables, as themselves.
+- **Dashboards** are figures, charts, tables and pivots over queries: built from menus over a table and the tables its references point to, from a saved query, or from SQL. A dashboard's filters narrow every widget bound to them, a number opens the rows behind it, and a result downloads as CSV or a spreadsheet. A dashboard can be kept as a `dashboard` resource, deployed and promoted like anything else.
+- **An approval step takes `surface: "tenant"`** to be listed on the tenant's Approvals page as well as its workspace's. **A step that says nothing is now listed in its workspace only.** Flows whose approvals should be seen tenant-wide need the line added.
+- **A table that comes back from retirement is given its row policy again**, whether or not the policy changed.
+
 ## Unreleased: phase 17, resource identity
 
 ### For operators

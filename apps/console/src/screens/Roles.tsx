@@ -26,6 +26,8 @@ interface PermissionKind {
   group: string;
   scope: "instance" | "tenant" | "workspace";
   appFacing: boolean;
+  /** Given only by its own name: no role holds it through a wildcard. */
+  explicit?: boolean;
   verbs: { verb: "read" | "write"; permission: string; description: string }[];
 }
 
@@ -190,6 +192,11 @@ export function PermissionPicker({
                         <code className="font-mono text-code-sm text-ink-muted">{entry.kind}</code>
                         {entry.appFacing ? (
                           <span className="text-meta text-ink-muted">End users can hold it</span>
+                        ) : null}
+                        {entry.explicit ? (
+                          <span className="text-meta text-ink-muted">
+                            Given only when ticked here: "everything" does not include it
+                          </span>
                         ) : null}
                       </span>
                     </th>

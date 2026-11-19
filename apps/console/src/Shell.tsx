@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   Search,
   Sun,
+  UsersRound,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "./api.ts";
@@ -548,9 +549,20 @@ function useGoTo(
   useShortcut("go.flows", go("flows"), { enabled: Boolean(workspaceId) });
   useShortcut("go.scripts", go("scripts"), { enabled: Boolean(workspaceId) });
   useShortcut("go.triggers", go("triggers"), { enabled: Boolean(workspaceId) });
-  useShortcut("go.approvals", () => tenantId && navigate(`/t/${tenantId}/approvals`), {
-    enabled: Boolean(tenantId),
-  });
+  // In a workspace, its own approvals; otherwise the ones surfaced to the tenant.
+  useShortcut(
+    "go.approvals",
+    () =>
+      tenantId &&
+      navigate(
+        workspaceId
+          ? `/t/${tenantId}/workspaces/${workspaceId}/approvals`
+          : `/t/${tenantId}/approvals`,
+      ),
+    {
+      enabled: Boolean(tenantId),
+    },
+  );
   useShortcut("search", () => {
     for (const selector of SEARCH_BOXES) {
       const box = document.querySelector<HTMLInputElement>(selector);
@@ -743,6 +755,14 @@ export function Shell({
           to: `/t/${tenantId}/${section.slug}`,
           icon: section.icon,
         });
+      // A tab of End users since phase 18, and still found by its name.
+      list.push({
+        key: "t-end-user-groups",
+        label: "End-user groups",
+        where: tenant?.name ?? "Tenant",
+        to: `/t/${tenantId}/end-user-groups`,
+        icon: UsersRound,
+      });
     }
     for (const one of me.tenants)
       list.push({

@@ -30,7 +30,9 @@
               "json",
               "uuid",
               "reference",
-              "file"
+              "file",
+              "enum",
+              "enum_list"
             ]
           },
           "required": {
@@ -48,6 +50,62 @@
             "maxLength": 255,
             "description": "For a reference: the table it points to."
           },
+          "onDelete": {
+            "enum": [
+              "restrict",
+              "set_null",
+              "cascade"
+            ],
+            "description": "For a reference: what happens to this row when the row it points to is deleted. `restrict` refuses the deletion, `set_null` empties the column, `cascade` deletes this row too. Left out, `restrict`."
+          },
+          "values": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "For an enum or an enum_list: the values a row may hold, in the order they are offered and sorted.",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[^,\\n\\r]+$"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[^,\\n\\r]+$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^(gray|red|orange|amber|green|teal|blue|violet|pink|#[0-9a-fA-F]{6})$",
+                      "description": "A colour by name, or as #rrggbb."
+                    },
+                    "renamedFrom": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[^,\\n\\r]+$",
+                      "description": "The value's previous spelling. Rows that hold it are rewritten."
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
           "renamedFrom": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]*$",
@@ -59,6 +117,11 @@
         ],
         "additionalProperties": false
       }
+    },
+    "display": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "The column that stands for a row where another table refers to it, in place of its ID."
     },
     "policy": {
       "oneOf": [

@@ -49,6 +49,11 @@ export interface GridProps<Row extends Record<string, unknown>> {
    * value to change is a button of its own, as tenant apps have it.
    */
   navigation?: "grid";
+  /**
+   * With `navigation="grid"`: whether the first column stays in view when the
+   * grid is scrolled sideways. It does unless this says otherwise.
+   */
+  lockFirst?: boolean;
   /** Row height, with `navigation="grid"`: compact rows are 28 px. */
   density?: "compact" | "standard";
   /** Rows chosen with checkboxes, with `navigation="grid"`, for something done to all of them. */
@@ -61,6 +66,8 @@ const NUMERIC = new Set(["integer", "number"]);
 /** A stored value as text a person can read and edit. */
 export function showValue(type: string, value: unknown): string {
   if (value === null || value === undefined) return "";
+  // Several of a column's values, as they are typed: with commas between.
+  if (type === "enum_list" && Array.isArray(value)) return value.join(", ");
   if (type === "json" || typeof value === "object") return JSON.stringify(value);
   if (type === "boolean") return value ? "Yes" : "No";
   if (type === "timestamp" && typeof value === "string") {
@@ -75,6 +82,8 @@ export function showValue(type: string, value: unknown): string {
 /** The text a cell is edited as: the stored value, not its friendly form. */
 function editText(type: string, value: unknown): string {
   if (value === null || value === undefined) return "";
+  // Several of a column's values, as they are typed: with commas between.
+  if (type === "enum_list" && Array.isArray(value)) return value.join(", ");
   if (type === "json" || typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
@@ -96,6 +105,12 @@ export function parseValue(type: string, text: string): unknown {
     if (/^(true|yes|y|1)$/i.test(trimmed)) return true;
     if (/^(false|no|n|0)$/i.test(trimmed)) return false;
     throw new Error("Enter yes or no.");
+  }
+  if (type === "enum_list") {
+    return trimmed
+      .split(",")
+      .map((one) => one.trim())
+      .filter(Boolean);
   }
   if (type === "json") {
     try {
@@ -287,6 +302,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
     );
   };
   const pad = props.density === "compact" ? "py-1" : "py-1.5";
+  const lockFirst = props.lockFirst ?? true;
   const head = `border-b border-line-strong bg-sunken px-3 text-meta font-medium text-ink-subtle`;
   const all = rows.map((row) => props.rowKey(row));
   const toggle = (key: string) => {
@@ -389,7 +405,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
             ) : null}
             {columns.map((column, index) => {
               const sorted = sort?.column === column.name ? sort : undefined;
-              const pinned = index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : "";
+              const pinned =
+                lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : "";
               return (
                 <th
                   key={column.name}
@@ -417,7 +434,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
               {columns.map((column, index) => (
                 <td
                   key={column.name}
-                  className={`${head} pb-2 font-normal ${index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
+                  className={`${head} pb-2 font-normal ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
                 >
                   {column.filterable ? (
                     <input
@@ -495,7 +512,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                         key={column.name}
                         className={`max-w-80 truncate border-line border-b px-3 align-middle ${pad} ${
                           NUMERIC.has(column.type) ? "text-right tabular-nums" : ""
-                        } ${index === 0 ? `sticky ${checking ? "left-8" : "left-0"} ${ground}` : ""}`}
+                        } ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"} ${ground}` : ""}`}
                         onDoubleClick={() => {
                           if (column.editable && onEdit && custom === undefined) {
                             setActive({ r, c });

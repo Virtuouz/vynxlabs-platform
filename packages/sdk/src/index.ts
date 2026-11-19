@@ -620,6 +620,41 @@ export function defineVariable(options: VariableOptions): ResourceDefinition {
   );
 }
 
+export interface QueryOptions extends ResourceNames {
+  /** The query's name, for example `reports/fees`. */
+  path: string;
+  description?: string;
+  /**
+   * One SELECT over the workspace's tables. A table is named by its path, in
+   * double quotes when it has a `/` or a `-`. A parameter is `$1`, `$2` and so
+   * on, in the order of `parameters`.
+   */
+  sql: string;
+  /** What the query is given each time it is run: `$1` is the first. */
+  parameters?: {
+    name: string;
+    type: "text" | "integer" | "number" | "boolean" | "date" | "timestamp";
+    label?: string;
+    default?: unknown;
+    required?: boolean;
+  }[];
+}
+
+/**
+ * Declares a query the workspace keeps by name. It only reads. Whoever runs it
+ * needs to be allowed to read each table it names, and each table's row policy
+ * applies to them: a dashboard built on it shows each person their own rows.
+ */
+export function defineQuery(options: QueryOptions): ResourceDefinition {
+  return resource("query", options, () =>
+    compact({
+      description: options.description,
+      sql: options.sql,
+      parameters: options.parameters,
+    }),
+  );
+}
+
 export interface EventOptions<Payload extends z.ZodType> extends ResourceNames {
   /** The event's name, for example `orders/placed`. */
   path: string;
@@ -823,6 +858,8 @@ export const step = {
    * Pauses until a person approves. Rejecting, or the timeout passing, fails the
    * step. `approvers` names who may decide: members of these groups, or holders
    * of these roles. Without it, anyone who may decide approvals here may.
+   * It is listed in its workspace; `surface: "tenant"` lists it on the tenant's
+   * page too.
    */
   approval: (
     title: string,
@@ -830,6 +867,7 @@ export const step = {
       detail?: string;
       timeoutSeconds?: number;
       approvers?: { groups?: string[]; roles?: string[] };
+      surface?: "workspace" | "tenant";
     } = {},
   ): FlowNode =>
     compact({
@@ -838,6 +876,7 @@ export const step = {
       detail: options.detail,
       timeoutSeconds: options.timeoutSeconds,
       approvers: options.approvers,
+      surface: options.surface,
     }) as FlowNode,
   /** Runs another flow from its manual trigger and waits for it. */
   subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>
@@ -893,6 +932,11 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
   path: string;
   description?: string;
   columns: C;
+  /**
+   * The column that stands for a row where another table refers to it: a
+   * device's name in place of its ID.
+   */
+  display?: Extract<keyof C, string>;
   /**
    * Who may see which rows. With `owner`, a person sees and changes only the
    * rows whose owner column holds their ID. Without a policy, permissions alone decide.
@@ -951,6 +995,7 @@ export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean
           : { type: "owner", column: options.policy.owner },
       indexes: options.indexes,
       renamedFrom: options.renamedFrom,
+      display: options.display,
     }),
   );
   return { ...definition, kind: "table" };

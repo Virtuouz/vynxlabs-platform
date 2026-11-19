@@ -334,10 +334,7 @@ export function Overview({
             title={`${approvals} run${approvals === 1 ? " is" : "s are"} waiting for a person`}
             detail="An approval step pauses a flow until someone decides."
             action={
-              <Button
-                size="small"
-                onClick={() => navigate(link.replace(/\/workspaces\/.*$/, "/approvals"))}
-              >
+              <Button size="small" onClick={() => navigate(`${link}/approvals`)}>
                 Decide
               </Button>
             }

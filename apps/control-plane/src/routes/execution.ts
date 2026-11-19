@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
@@ -17,6 +18,8 @@ import {
   callbackAddress,
   finishAuthorization,
 } from "../kernel/execution/oauth.js";
+import { RequestContext } from "../kernel/http.js";
+import { resolvePrincipal } from "../kernel/principal.js";
 import { resolveResource } from "../kernel/resolve.js";
 // A Test's result is kept as the connection's health, by whichever replica sees it end.
 import "../kernel/execution/connection-health.js";
@@ -246,6 +249,11 @@ const Run = Type.Object({
   errorSummary: NullableString,
   tags: Type.Array(Type.String()),
   rerunOf: Type.Union([Id, Type.Null()], { description: "The run this one runs again." }),
+  traceId: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "The trace the run is part of, as OpenTelemetry writes it: the same on the request " +
+      "that started it and on its flow run. Null on a run from before traces were kept.",
+  }),
   createdAt: Time,
   scheduledFor: Type.Union([Time, Type.Null()], {
     description: "When a delayed or scheduled run was due. Time waited counts from here.",
@@ -298,6 +306,7 @@ interface RunRow {
   error: { message: string } | null;
   error_summary: string | null;
   tags: string[];
+  trace_id?: string | null;
   created_at: Date;
   scheduled_for?: Date | null;
   started_at: Date | null;
@@ -321,6 +330,7 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
     row.trigger_type === "rerun" && typeof row.trigger_detail.of === "string"
       ? row.trigger_detail.of
       : null,
+  traceId: row.trace_id ?? null,
   createdAt: iso(row.created_at),
   scheduledFor: isoOrNull(row.scheduled_for ?? null),
   startedAt: isoOrNull(row.started_at),
@@ -1678,6 +1688,23 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Object({ reason: Type.String(), problem: Type.String(), at: Time }),
                     Type.Null(),
                   ]),
+                  resourceKind: Type.String({
+                    description:
+                      "The kind of resource that defines it: `schedule`, `trigger`, or `flow` for a flow's trigger node.",
+                  }),
+                  draft: Type.Union(
+                    [
+                      Type.Literal("new"),
+                      Type.Literal("changed"),
+                      Type.Literal("removed"),
+                      Type.Null(),
+                    ],
+                    {
+                      description:
+                        "A change made in the console that waits to be deployed. `new` is a trigger " +
+                        "that has never been deployed: it is listed from its draft and does not fire.",
+                    },
+                  ),
                 }),
               ),
             }),
@@ -1689,7 +1716,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectFrom("trigger_state")
           .innerJoin("resource", "resource.id", "trigger_state.resource_id")
           .selectAll("trigger_state")
-          .select(["resource.path", "resource.body"])
+          .select(["resource.path", "resource.body", "resource.kind"])
           .where("trigger_state.workspace_id", "=", params.w)
           .orderBy("resource.path")
           .execute();
@@ -1704,6 +1731,17 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tenantId: params.t,
           workspaceId: params.w,
         });
+        const drafts = await db
+          .selectFrom("resource_draft")
+          .select(["path", "kind", "body", "deleted"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "in", ["schedule", "trigger", "flow"])
+          .execute();
+        const draftOf = (kind: string, path: string): "new" | "changed" | "removed" | null => {
+          const draft = drafts.find((one) => one.kind === kind && one.path === path);
+          if (!draft) return null;
+          return draft.deleted ? "removed" : "changed";
+        };
         const pauses = await db
           .selectFrom("trigger_pause")
           .selectAll()
@@ -1806,9 +1844,63 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               nextFireAt: isoOrNull(row.next_fire_at),
               lastFiredAt: isoOrNull(row.last_fired_at),
               url: token ? address : null,
+              resourceKind: row.kind,
+              draft: draftOf(row.kind, row.path),
             };
           }),
         );
+        // Triggers made in the console and not deployed yet are listed too, from their draft.
+        // Nothing has registered them, so they have no next time and no address, and do not fire.
+        const deployed = new Set(rows.map((row) => `${row.kind} ${row.path}`));
+        for (const draft of drafts) {
+          if (draft.deleted || deployed.has(`${draft.kind} ${draft.path}`)) continue;
+          if (draft.kind !== "schedule" && draft.kind !== "trigger") continue;
+          const body = (draft.body ?? {}) as {
+            type?: string;
+            script?: string;
+            flow?: string;
+            event?: string;
+            enabled?: boolean;
+            cron?: string;
+            timezone?: string;
+            overlap?: "allow" | "skip";
+          };
+          const schedule = draft.kind === "schedule";
+          let next: Date | undefined;
+          if (schedule && body.cron) {
+            try {
+              next = nextFireTimes(body.cron, body.timezone, 1)[0];
+            } catch {
+              // A draft may hold a cron that is not usable yet. Its editor says so.
+            }
+          }
+          items.push({
+            path: draft.path,
+            node: "",
+            type: (schedule
+              ? "schedule"
+              : (body.type ?? "webhook")) as (typeof rows)[number]["type"],
+            script: body.script ?? body.flow ?? "",
+            targetKind: body.flow ? "flow" : "script",
+            event: body.event ?? null,
+            enabled: body.enabled ?? true,
+            paused: null,
+            lastRun: null,
+            lastRefusal: null,
+            cron: body.cron ?? null,
+            timezone: schedule ? (body.timezone ?? "UTC") : null,
+            overlap: schedule ? (body.overlap ?? "allow") : null,
+            lastSkippedAt: null,
+            lastSkipReason: null,
+            // When it would first fire, were it deployed now.
+            nextFireAt: next ? iso(next) : null,
+            lastFiredAt: null,
+            url: null,
+            resourceKind: draft.kind,
+            draft: "new",
+          });
+        }
+        items.sort((a, b) => a.path.localeCompare(b.path));
         // One script's or flow's triggers, for its page.
         return { items: query.target ? items.filter((one) => one.script === query.target) : items };
       },
@@ -2234,6 +2326,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   path: Type.String(),
                   description: Type.String(),
                   connector: Type.String(),
+                  draft: Type.Optional(
+                    Type.Union(
+                      [
+                        Type.Literal("new"),
+                        Type.Literal("changed"),
+                        Type.Literal("removed"),
+                        Type.Null(),
+                      ],
+                      {
+                        description:
+                          "A change made in the console that waits to be deployed. `new` is a " +
+                          "group that has never been deployed: a script cannot use it yet.",
+                      },
+                    ),
+                  ),
                   configSchema: AnyObject,
                   members: Type.Array(
                     Type.Object({
@@ -2252,13 +2359,32 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params }) => {
-        const groups = await db
+        const deployed = await db
           .selectFrom("resource")
           .select(["path", "body"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "connection_group")
           .orderBy("path")
           .execute();
+        // A group made or changed in the console and not deployed yet is listed too, from its draft.
+        const drafts = await db
+          .selectFrom("resource_draft")
+          .select(["path", "body", "deleted"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection_group")
+          .execute();
+        const stateOf = (path: string): "new" | "changed" | "removed" | null => {
+          const draft = drafts.find((one) => one.path === path);
+          if (!draft) return null;
+          if (!deployed.some((one) => one.path === path)) return "new";
+          return draft.deleted ? "removed" : "changed";
+        };
+        const groups = [
+          ...deployed,
+          ...drafts
+            .filter((one) => !one.deleted && !deployed.some((row) => row.path === one.path))
+            .map((one) => ({ path: one.path, body: one.body })),
+        ].sort((a, b) => a.path.localeCompare(b.path));
         const members = await db
           .selectFrom("connection_group_member")
           .select([
@@ -2282,6 +2408,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const body = group.body as { description?: string; connector?: string };
             return {
               path: group.path,
+              draft: stateOf(group.path),
               description: body.description ?? "",
               connector: body.connector ?? "http",
               configSchema: (connectorSchema(body.connector ?? "http", connectors) ??
@@ -2672,13 +2799,35 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .selectAll()
         .where("workspace_id", "=", params.w)
         .execute();
-      const paths = [...new Set([...definitions, ...values].map((row) => row.path))].sort();
+      // A variable made or changed in the console and not deployed yet is listed too, from its draft.
+      const drafts = await db
+        .selectFrom("resource_draft")
+        .select(["path", "body", "deleted"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "variable")
+        .execute();
+      const fresh = drafts.filter(
+        (draft) => !draft.deleted && !definitions.some((row) => row.path === draft.path),
+      );
+      const paths = [
+        ...new Set([...definitions, ...values, ...fresh].map((row) => row.path)),
+      ].sort();
       return {
         items: paths.map((path) => {
-          const definition = definitions.find((row) => row.path === path)?.body as
-            | { description?: string; default?: string }
-            | undefined;
+          const drafted = drafts.find((row) => row.path === path);
+          const isNew = fresh.some((row) => row.path === path);
+          const definition = (
+            isNew ? drafted?.body : definitions.find((row) => row.path === path)?.body
+          ) as { description?: string; default?: string } | undefined;
+          const draft: "new" | "changed" | "removed" | null = isNew
+            ? "new"
+            : drafted
+              ? drafted.deleted
+                ? "removed"
+                : "changed"
+              : null;
           return {
+            draft,
             path,
             description: definition?.description ?? "",
             default: definition?.default ?? null,
@@ -2706,6 +2855,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   default: NullableString,
                   value: NullableString,
                   updatedAt: Type.Optional(NullableTime),
+                  draft: Type.Optional(
+                    Type.Union(
+                      [
+                        Type.Literal("new"),
+                        Type.Literal("changed"),
+                        Type.Literal("removed"),
+                        Type.Null(),
+                      ],
+                      {
+                        description:
+                          "A change made in the console that waits to be deployed. `new` is a " +
+                          "variable that has never been deployed: a script cannot read it yet.",
+                      },
+                    ),
+                  ),
                 }),
               ),
             }),
@@ -3212,192 +3376,213 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Operator health -----
 
+    /** Every series the instance has, as Prometheus reads them. */
+    const metricsText = async (): Promise<string> => {
+      const runs = await sql<{ status: string; n: string }>`
+      select status, count(*) as n from run where status in ('queued', 'running') group by status
+    `.execute(db);
+      const oldest = await sql<{ seconds: string | null }>`
+      select extract(epoch from now() - min(coalesce(scheduled_for, created_at))) as seconds
+      from run where status = 'queued' and coalesce(scheduled_for, created_at) <= now()
+    `.execute(db);
+      const workers = await sql<{ managed: boolean; n: string }>`
+      select c.managed, count(*) as n from worker w
+      join worker_credential c on c.id = w.credential_id
+      where w.last_seen_at > now() - make_interval(secs => ${WORKER_STALE_SECONDS})
+      group by c.managed
+    `.execute(db);
+      const count = (status: string) =>
+        Number(runs.rows.find((row) => row.status === status)?.n ?? 0);
+      const workerCount = (managed: boolean) =>
+        Number(workers.rows.find((row) => row.managed === managed)?.n ?? 0);
+      const lines = [
+        "# HELP platform_runs_queued Runs waiting for a worker.",
+        "# TYPE platform_runs_queued gauge",
+        `platform_runs_queued ${count("queued")}`,
+        "# HELP platform_runs_running Runs in progress.",
+        "# TYPE platform_runs_running gauge",
+        `platform_runs_running ${count("running")}`,
+        "# HELP platform_queue_oldest_seconds Age of the oldest run that is due and still waiting.",
+        "# TYPE platform_queue_oldest_seconds gauge",
+        `platform_queue_oldest_seconds ${Math.max(0, Math.round(Number(oldest.rows[0]?.seconds ?? 0)))}`,
+        "# HELP platform_workers Workers heard from recently.",
+        "# TYPE platform_workers gauge",
+        `platform_workers{kind="managed"} ${workerCount(true)}`,
+        `platform_workers{kind="standalone"} ${workerCount(false)}`,
+      ];
+
+      // Where the work waits, by workspace and pool: from the database, so every replica agrees.
+      const byPlace = kernel.config.metricsWorkspaceLabels;
+      const waiting = await sql<{
+        tenant: string;
+        workspace: string;
+        pool: string | null;
+        n: string;
+        oldest: string | null;
+      }>`
+      select t.slug as tenant, w.slug as workspace, r.pool, count(*) as n,
+        extract(epoch from now() - min(coalesce(r.scheduled_for, r.created_at))) as oldest
+      from run r
+      join workspace w on w.id = r.workspace_id
+      join tenant t on t.id = r.tenant_id
+      where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now()
+      group by t.slug, w.slug, r.pool
+    `.execute(db);
+      if (byPlace) {
+        lines.push(
+          "# HELP platform_workspace_runs_queued Runs due and waiting for a worker, by workspace and pool.",
+          "# TYPE platform_workspace_runs_queued gauge",
+          ...waiting.rows.map(
+            (row) =>
+              `platform_workspace_runs_queued${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
+          ),
+          "# HELP platform_workspace_queue_oldest_seconds How long the oldest due run of a workspace has waited.",
+          "# TYPE platform_workspace_queue_oldest_seconds gauge",
+        );
+        const oldestBy = new Map<string, { tenant: string; workspace: string; seconds: number }>();
+        for (const row of waiting.rows) {
+          const key = `${row.tenant}/${row.workspace}`;
+          const seconds = Math.max(0, Math.round(Number(row.oldest ?? 0)));
+          if ((oldestBy.get(key)?.seconds ?? -1) < seconds) {
+            oldestBy.set(key, { tenant: row.tenant, workspace: row.workspace, seconds });
+          }
+        }
+        for (const one of oldestBy.values()) {
+          lines.push(
+            `platform_workspace_queue_oldest_seconds${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
+          );
+        }
+      }
+      const flows = await sql<{ state: string; n: string }>`
+      select ${flowStateSql("f")} as state, count(*) as n from flow_run f
+      where f.status = 'running' group by 1
+    `.execute(db);
+      lines.push(
+        "# HELP platform_flow_runs Flow runs in progress, by state.",
+        "# TYPE platform_flow_runs gauge",
+        ...flows.rows.map(
+          (row) => `platform_flow_runs${labelText({ state: row.state })} ${Number(row.n)}`,
+        ),
+      );
+      const tasks = await sql<{ kind: string; n: string }>`
+      select kind, count(*) as n from task where status = 'queued' group by kind
+    `.execute(db);
+      lines.push(
+        "# HELP platform_tasks_queued Tasks waiting for a worker, by kind.",
+        "# TYPE platform_tasks_queued gauge",
+        ...tasks.rows.map(
+          (row) => `platform_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
+        ),
+      );
+      // What each machine that shares its slots is running: the gauge to set an alert on
+      // beside the slots the operator gave it.
+      const machines = await sql<{ machine: string; n: number }>`
+      select w.machine, count(*)::int as n
+      from (
+        select worker_id from run where status = 'running'
+        union all
+        select worker_id from task where status = 'running'
+      ) busy
+      join worker w on w.id = busy.worker_id
+      where w.machine is not null
+      group by w.machine
+    `.execute(db);
+      lines.push(
+        "# HELP platform_machine_running Scripts running on each machine whose workers share its run slots.",
+        "# TYPE platform_machine_running gauge",
+        ...machines.rows.map(
+          (row) => `platform_machine_running${labelText({ machine: row.machine })} ${row.n}`,
+        ),
+      );
+      const pools = await kernel.data.poolStats();
+      lines.push(
+        "# HELP platform_db_pool Connections of this replica's pools to the platform database: open, idle, and requests waiting for one.",
+        "# TYPE platform_db_pool gauge",
+        ...Object.entries(pools).flatMap(([pool, stats]) =>
+          (["total", "idle", "waiting"] as const).map(
+            (state) => `platform_db_pool${labelText({ pool, state })} ${stats[state]}`,
+          ),
+        ),
+      );
+      const size = await sql<{ bytes: string }>`
+      select pg_database_size(current_database()) as bytes
+    `.execute(db);
+      const readOnly = await kernel.readOnly().catch(() => false);
+      lines.push(
+        "# HELP platform_database_size_bytes The platform database's size on disk. Alert well before its volume is full.",
+        "# TYPE platform_database_size_bytes gauge",
+        `platform_database_size_bytes ${Number(size.rows[0]?.bytes ?? 0)}`,
+        "# HELP platform_database_read_only 1 while the platform database takes no writes, such as when its disk is full.",
+        "# TYPE platform_database_read_only gauge",
+        `platform_database_read_only ${readOnly ? 1 : 0}`,
+      );
+      const memory = procProbe.memory();
+      if (memory) {
+        lines.push(
+          "# HELP platform_memory_available_bytes Memory this replica's machine can still give out.",
+          "# TYPE platform_memory_available_bytes gauge",
+          `platform_memory_available_bytes ${Math.round(memory.availableMb * 1024 * 1024)}`,
+          "# HELP platform_memory_total_bytes All of this replica's machine's memory.",
+          "# TYPE platform_memory_total_bytes gauge",
+          `platform_memory_total_bytes ${Math.round(memory.totalMb * 1024 * 1024)}`,
+        );
+      }
+
+      // What this replica counted, with workspaces named by their slugs.
+      const ids = [...kernel.metrics.workspaceIds()];
+      const names = new Map(
+        (ids.length === 0
+          ? []
+          : await db
+              .selectFrom("workspace")
+              .innerJoin("tenant", "tenant.id", "workspace.tenant_id")
+              .select(["workspace.id", "workspace.slug", "tenant.slug as tenant"])
+              .where("workspace.id", "in", ids)
+              .execute()
+        ).map((row) => [row.id, { tenant: row.tenant, workspace: row.slug }]),
+      );
+      const counted = kernel.metrics.render((labels) => {
+        const { workspace, ...rest } = labels;
+        if (workspace === undefined) return labels;
+        if (!byPlace) return rest;
+        const named = names.get(workspace);
+        // Where it was first, then what it was.
+        return named ? { ...named, ...rest } : { tenant: "gone", workspace: "gone", ...rest };
+      });
+      return `${lines.join("\n")}\n${counted}`;
+    };
+    // The same series, sent by OTLP when the operator named somewhere to send them.
+    kernel.telemetry.startMetrics(metricsText);
+
     app.get(
       "/metrics",
       {
-        config: { access: access.instance("instance:read") },
+        // Read by a member who holds `instance:read`, or by a scraper that presents the
+        // instance's metrics token: the handler checks which.
+        config: { access: access.public },
         schema: {
           summary: "Instance metrics in Prometheus text format",
+          description:
+            "For a member or an API key that holds `instance:read`, or for a scraper that " +
+            "sends `Authorization: Bearer <METRICS_TOKEN>`, the token the operator set in " +
+            "the instance's environment. A scraper then needs no member.",
           tags: ["instance"],
           response: { 200: Type.String() },
         },
       },
-      async (_request, reply) => {
-        const runs = await sql<{ status: string; n: string }>`
-          select status, count(*) as n from run where status in ('queued', 'running') group by status
-        `.execute(db);
-        const oldest = await sql<{ seconds: string | null }>`
-          select extract(epoch from now() - min(coalesce(scheduled_for, created_at))) as seconds
-          from run where status = 'queued' and coalesce(scheduled_for, created_at) <= now()
-        `.execute(db);
-        const workers = await sql<{ managed: boolean; n: string }>`
-          select c.managed, count(*) as n from worker w
-          join worker_credential c on c.id = w.credential_id
-          where w.last_seen_at > now() - make_interval(secs => ${WORKER_STALE_SECONDS})
-          group by c.managed
-        `.execute(db);
-        const count = (status: string) =>
-          Number(runs.rows.find((row) => row.status === status)?.n ?? 0);
-        const workerCount = (managed: boolean) =>
-          Number(workers.rows.find((row) => row.managed === managed)?.n ?? 0);
-        const lines = [
-          "# HELP platform_runs_queued Runs waiting for a worker.",
-          "# TYPE platform_runs_queued gauge",
-          `platform_runs_queued ${count("queued")}`,
-          "# HELP platform_runs_running Runs in progress.",
-          "# TYPE platform_runs_running gauge",
-          `platform_runs_running ${count("running")}`,
-          "# HELP platform_queue_oldest_seconds Age of the oldest run that is due and still waiting.",
-          "# TYPE platform_queue_oldest_seconds gauge",
-          `platform_queue_oldest_seconds ${Math.max(0, Math.round(Number(oldest.rows[0]?.seconds ?? 0)))}`,
-          "# HELP platform_workers Workers heard from recently.",
-          "# TYPE platform_workers gauge",
-          `platform_workers{kind="managed"} ${workerCount(true)}`,
-          `platform_workers{kind="standalone"} ${workerCount(false)}`,
-        ];
-
-        // Where the work waits, by workspace and pool: from the database, so every replica agrees.
-        const byPlace = kernel.config.metricsWorkspaceLabels;
-        const waiting = await sql<{
-          tenant: string;
-          workspace: string;
-          pool: string | null;
-          n: string;
-          oldest: string | null;
-        }>`
-          select t.slug as tenant, w.slug as workspace, r.pool, count(*) as n,
-            extract(epoch from now() - min(coalesce(r.scheduled_for, r.created_at))) as oldest
-          from run r
-          join workspace w on w.id = r.workspace_id
-          join tenant t on t.id = r.tenant_id
-          where r.status = 'queued' and coalesce(r.scheduled_for, r.created_at) <= now()
-          group by t.slug, w.slug, r.pool
-        `.execute(db);
-        if (byPlace) {
-          lines.push(
-            "# HELP platform_workspace_runs_queued Runs due and waiting for a worker, by workspace and pool.",
-            "# TYPE platform_workspace_runs_queued gauge",
-            ...waiting.rows.map(
-              (row) =>
-                `platform_workspace_runs_queued${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
-            ),
-            "# HELP platform_workspace_queue_oldest_seconds How long the oldest due run of a workspace has waited.",
-            "# TYPE platform_workspace_queue_oldest_seconds gauge",
-          );
-          const oldestBy = new Map<
-            string,
-            { tenant: string; workspace: string; seconds: number }
-          >();
-          for (const row of waiting.rows) {
-            const key = `${row.tenant}/${row.workspace}`;
-            const seconds = Math.max(0, Math.round(Number(row.oldest ?? 0)));
-            if ((oldestBy.get(key)?.seconds ?? -1) < seconds) {
-              oldestBy.set(key, { tenant: row.tenant, workspace: row.workspace, seconds });
-            }
-          }
-          for (const one of oldestBy.values()) {
-            lines.push(
-              `platform_workspace_queue_oldest_seconds${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
-            );
-          }
+      async (request, reply) => {
+        const token = kernel.config.metricsToken;
+        const sent = /^Bearer (.+)$/i.exec(request.headers.authorization ?? "")?.[1];
+        const scraper =
+          token !== undefined &&
+          sent !== undefined &&
+          sent.length === token.length &&
+          timingSafeEqual(Buffer.from(sent), Buffer.from(token));
+        if (!scraper) {
+          const principal = await resolvePrincipal(kernel, request);
+          await new RequestContext(kernel, principal, request).authorize("instance:read", {});
         }
-        const flows = await sql<{ state: string; n: string }>`
-          select ${flowStateSql("f")} as state, count(*) as n from flow_run f
-          where f.status = 'running' group by 1
-        `.execute(db);
-        lines.push(
-          "# HELP platform_flow_runs Flow runs in progress, by state.",
-          "# TYPE platform_flow_runs gauge",
-          ...flows.rows.map(
-            (row) => `platform_flow_runs${labelText({ state: row.state })} ${Number(row.n)}`,
-          ),
-        );
-        const tasks = await sql<{ kind: string; n: string }>`
-          select kind, count(*) as n from task where status = 'queued' group by kind
-        `.execute(db);
-        lines.push(
-          "# HELP platform_tasks_queued Tasks waiting for a worker, by kind.",
-          "# TYPE platform_tasks_queued gauge",
-          ...tasks.rows.map(
-            (row) => `platform_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
-          ),
-        );
-        // What each machine that shares its slots is running: the gauge to set an alert on
-        // beside the slots the operator gave it.
-        const machines = await sql<{ machine: string; n: number }>`
-          select w.machine, count(*)::int as n
-          from (
-            select worker_id from run where status = 'running'
-            union all
-            select worker_id from task where status = 'running'
-          ) busy
-          join worker w on w.id = busy.worker_id
-          where w.machine is not null
-          group by w.machine
-        `.execute(db);
-        lines.push(
-          "# HELP platform_machine_running Scripts running on each machine whose workers share its run slots.",
-          "# TYPE platform_machine_running gauge",
-          ...machines.rows.map(
-            (row) => `platform_machine_running${labelText({ machine: row.machine })} ${row.n}`,
-          ),
-        );
-        const pools = await kernel.data.poolStats();
-        lines.push(
-          "# HELP platform_db_pool Connections of this replica's pools to the platform database: open, idle, and requests waiting for one.",
-          "# TYPE platform_db_pool gauge",
-          ...Object.entries(pools).flatMap(([pool, stats]) =>
-            (["total", "idle", "waiting"] as const).map(
-              (state) => `platform_db_pool${labelText({ pool, state })} ${stats[state]}`,
-            ),
-          ),
-        );
-        const size = await sql<{ bytes: string }>`
-          select pg_database_size(current_database()) as bytes
-        `.execute(db);
-        const readOnly = await kernel.readOnly().catch(() => false);
-        lines.push(
-          "# HELP platform_database_size_bytes The platform database's size on disk. Alert well before its volume is full.",
-          "# TYPE platform_database_size_bytes gauge",
-          `platform_database_size_bytes ${Number(size.rows[0]?.bytes ?? 0)}`,
-          "# HELP platform_database_read_only 1 while the platform database takes no writes, such as when its disk is full.",
-          "# TYPE platform_database_read_only gauge",
-          `platform_database_read_only ${readOnly ? 1 : 0}`,
-        );
-        const memory = procProbe.memory();
-        if (memory) {
-          lines.push(
-            "# HELP platform_memory_available_bytes Memory this replica's machine can still give out.",
-            "# TYPE platform_memory_available_bytes gauge",
-            `platform_memory_available_bytes ${Math.round(memory.availableMb * 1024 * 1024)}`,
-            "# HELP platform_memory_total_bytes All of this replica's machine's memory.",
-            "# TYPE platform_memory_total_bytes gauge",
-            `platform_memory_total_bytes ${Math.round(memory.totalMb * 1024 * 1024)}`,
-          );
-        }
-
-        // What this replica counted, with workspaces named by their slugs.
-        const ids = [...kernel.metrics.workspaceIds()];
-        const names = new Map(
-          (ids.length === 0
-            ? []
-            : await db
-                .selectFrom("workspace")
-                .innerJoin("tenant", "tenant.id", "workspace.tenant_id")
-                .select(["workspace.id", "workspace.slug", "tenant.slug as tenant"])
-                .where("workspace.id", "in", ids)
-                .execute()
-          ).map((row) => [row.id, { tenant: row.tenant, workspace: row.slug }]),
-        );
-        const counted = kernel.metrics.render((labels) => {
-          const { workspace, ...rest } = labels;
-          if (workspace === undefined) return labels;
-          if (!byPlace) return rest;
-          const named = names.get(workspace);
-          // Where it was first, then what it was.
-          return named ? { ...named, ...rest } : { tenant: "gone", workspace: "gone", ...rest };
-        });
-        return reply.type("text/plain; version=0.0.4").send(`${lines.join("\n")}\n${counted}`);
+        return reply.type("text/plain; version=0.0.4").send(await metricsText());
       },
     );
   };

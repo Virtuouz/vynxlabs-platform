@@ -19,6 +19,7 @@ import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.j
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
+import { traceFlowRun, traceFor } from "../trace.js";
 import { expireLinks, mailApprovers } from "./approval-links.js";
 import { resolveApprovers } from "./approvers.js";
 import { buildContext, type ContextStep, readOutput } from "./context.js";
@@ -161,6 +162,17 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
   }
 
   const id = newId();
+  // A flow a step started is part of that step's flow run's trace.
+  const above = request.parent
+    ? await trx
+        .selectFrom("flow_run")
+        .select("trace_id")
+        .where("id", "=", request.parent.flowRunId)
+        .executeTakeFirst()
+    : undefined;
+  const trace = traceFor(
+    request.parent ? { traceId: above?.trace_id ?? null, ...request.parent } : undefined,
+  );
   const input = await storePayload(kernel, id, "input", request.input ?? {}, "flow-runs");
   const flowRun = await trx
     .insertInto("flow_run")
@@ -182,6 +194,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       parent_item: request.parent?.item ?? null,
       started_by_type: request.startedBy.type,
       started_by_id: request.startedBy.id,
+      ...trace,
       idempotency_key: key,
       tags: [...new Set(request.tags ?? [])].slice(0, MAX_TAGS),
       retry_of: request.retryOf ?? null,
@@ -485,6 +498,9 @@ type FlowRunRow = {
   trigger_detail: Record<string, unknown>;
   parent_flow_run_id: string | null;
   tags: string[];
+  trace_id?: string | null;
+  trace_parent?: string | null;
+  created_at?: Date;
 };
 
 class Advance {
@@ -775,6 +791,8 @@ class Advance {
             detail: {
               title: node.title,
               detail,
+              // Where it is listed while it waits: its workspace always, the tenant when it says so.
+              ...(node.surface === "tenant" ? { surface: "tenant" } : {}),
               ...(named && resolved
                 ? {
                     approvers: named,
@@ -1115,6 +1133,7 @@ class Advance {
       .where("id", "=", this.#flowRun.id)
       .execute();
     observe.flowRunEnded(this.#kernel.metrics, status);
+    traceFlowRun(this.#kernel, this.#flowRun, this.#steps.values(), status, error?.message);
     return { status, flowRun: this.#flowRun, error };
   }
 
@@ -1141,7 +1160,7 @@ async function cancelFlowTree(kernel: Kernel, trx: Trx, flowRunId: string): Prom
     .set({ status: "cancelled", finished_at: new Date() })
     .where("id", "=", flowRunId)
     .where("status", "=", "running")
-    .returning(["id", "workspace_id"])
+    .returningAll()
     .executeTakeFirst();
   if (!flowRun) return;
   observe.flowRunEnded(kernel.metrics, "cancelled");
@@ -1165,6 +1184,14 @@ async function cancelFlowTree(kernel: Kernel, trx: Trx, flowRunId: string): Prom
     .where("flow_run_id", "=", flowRunId)
     .where("status", "in", ACTIVE)
     .execute();
+  if (kernel.telemetry.tracing) {
+    const steps = await trx
+      .selectFrom("step_run")
+      .select(["node_id", "item_key", "status", "started_at", "finished_at"])
+      .where("flow_run_id", "=", flowRunId)
+      .execute();
+    traceFlowRun(kernel, flowRun, steps, "cancelled");
+  }
 }
 
 /** Cancels a flow run that is in progress, with its running steps. */

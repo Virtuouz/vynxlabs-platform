@@ -129,6 +129,11 @@
         "resource": {
           "type": "string",
           "description": "Path of one resource to bind at. Omit to bind at the workspace."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Why the grant is there, for whoever reads it later."
         }
       },
       "required": [

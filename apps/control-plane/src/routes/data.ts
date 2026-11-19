@@ -160,6 +160,9 @@ export const toRowsPage = (found: {
 
 const Column = Type.Object({
   name: Type.String(),
+  description: Type.Optional(
+    Type.String({ description: "What the column holds, when its definition says." }),
+  ),
   type: Type.String(),
   required: Type.Boolean(),
   unique: Type.Boolean(),
@@ -397,6 +400,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: {
             200: Type.Object({
               name: Type.String(),
+              description: Type.Optional(
+                Type.String({ description: "What the table is for, when its definition says." }),
+              ),
               status: Type.String(),
               managedIn: Type.String(),
               policy: AnyObject,
@@ -425,11 +431,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!table) return describeTable(data, params.w, name) as never;
         const resource = await db
           .selectFrom("resource")
-          .select("ownership")
+          .select(["ownership", "body"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "table")
           .where("path", "=", name)
           .executeTakeFirst();
+        // What the table and its columns are for is in its definition, not in the catalog.
+        const defined = (resource?.body ?? {}) as {
+          description?: string;
+          columns?: Record<string, { description?: string }>;
+        };
         const schema = workspaceSchema(params.w);
         const count = await sql<{
           n: string;
@@ -445,6 +456,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         return {
           name,
+          ...(defined.description ? { description: defined.description } : {}),
           status: table.status,
           managedIn: resource?.ownership ?? "code",
           policy: table.policy as Record<string, unknown>,
@@ -453,6 +465,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           stored: { schema, table: table.physicalName },
           columns: table.columns.map((column) => ({
             name: column.name,
+            ...(defined.columns?.[column.name]?.description
+              ? { description: defined.columns[column.name]?.description as string }
+              : {}),
             type: column.type,
             required: column.required,
             unique: column.unique,

@@ -441,6 +441,40 @@ export async function runFlow<Output = unknown>(
   return run.output as Output;
 }
 
+// ----- What the workspace's words mean -----
+
+/** A glossary term the workspace's documentation defines. */
+export interface Term {
+  id: string;
+  /** The term as it is written in text. */
+  term: string;
+  aliases: string[];
+  /** What it means, in plain text. */
+  short: string;
+  /** Where to read more: a docs app by its path, and the page inside it. */
+  page: { app: string; path: string } | null;
+}
+
+/** What a resource of the workspace is for. */
+export interface Described {
+  kind: string;
+  path: string;
+  title: string | null;
+  description: string | null;
+  /** For a table: its columns that say what they hold. */
+  columns?: { name: string; description: string }[];
+}
+
+/**
+ * The glossary terms of the app's workspace, and what its tables, columns,
+ * scripts and flows are for, as far as the person using the app may know:
+ * a table's and its columns' when they may read its rows, a script's or a
+ * flow's when they may start it. Nothing is said of anything else.
+ */
+export function terms(): Promise<{ terms: Term[]; resources: Described[] }> {
+  return api.get(`${workspacePath()}/terms`);
+}
+
 // ----- Who is using the app -----
 
 export interface Session {

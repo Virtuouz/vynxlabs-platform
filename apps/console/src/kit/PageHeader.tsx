@@ -1,4 +1,4 @@
-import { Popover } from "@volvel/ui";
+import { Popover, TermText } from "@volvel/ui";
 import { Info } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { openHelp, useHelp } from "../help/store.ts";
@@ -105,6 +105,8 @@ export function PageHeader({
     );
   }
   const named = typeof title === "string" ? title : "this page";
+  // A description in words may use the workspace's own terms. One made of elements is left as it is.
+  const said = typeof description === "string" ? <TermText>{description}</TermText> : description;
   // Folded, the description is behind the ⓘ, with the way to the page's help under it.
   // Shown, or with none, the ⓘ opens the help itself.
   const help = folded ? (
@@ -140,7 +142,7 @@ export function PageHeader({
           <div className="min-w-0 basis-full lg:order-2 lg:flex-1 lg:basis-0">{toolbar}</div>
         ) : null}
         {description && !folded ? (
-          <p className="order-last m-0 max-w-measure basis-full text-ink-muted">{description}</p>
+          <p className="order-last m-0 max-w-measure basis-full text-ink-muted">{said}</p>
         ) : null}
         {after ? <div className="order-last basis-full">{after}</div> : null}
       </header>
@@ -157,7 +159,7 @@ export function PageHeader({
             {state}
           </div>
           {description && !folded ? (
-            <p className="m-0 max-w-measure text-ink-muted">{description}</p>
+            <p className="m-0 max-w-measure text-ink-muted">{said}</p>
           ) : null}
           {meta ? (
             <div className="flex flex-wrap items-center gap-2 pt-0.5 text-meta">{meta}</div>

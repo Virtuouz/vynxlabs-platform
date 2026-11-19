@@ -16,6 +16,8 @@ export interface TableInfo {
   canWrite: boolean;
   columns: {
     name: string;
+    /** What the column holds, when its definition says. */
+    description?: string;
     type: string;
     required: boolean;
     references: string | null;

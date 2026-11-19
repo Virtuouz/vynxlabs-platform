@@ -6,6 +6,7 @@ export {
   type AppTable,
   api,
   appContext,
+  type Described,
   type Filter,
   type FindOptions,
   type FlowRun,
@@ -26,7 +27,9 @@ export {
   signOut,
   staffSignInUrl,
   startFlow,
+  type Term,
   table,
+  terms,
   totalOf,
 } from "./client.ts";
 export {

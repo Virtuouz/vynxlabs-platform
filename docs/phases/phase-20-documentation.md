@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M5 are built, and the work stops here for the owner's first look. M6 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M6 are built. M7 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -311,6 +311,28 @@ Tests: every nav entry resolves a topic; `F1` opens the panel at it; a dialog's 
 - `:term[status]{table=… column=…}` resolves against the same API.
 
 Tests: the visibility matrix from the document's §18; nothing leaks to an end user without a binding.
+
+#### Built
+
+- **`description`**, 500 characters at most, on a table's columns, on `binding`, on `schedule`, and on the webhook and event forms of `trigger`. The SDK's `column.*()`, `defineSchedule`, `defineWebhook`, `defineEventTrigger` and `defineBinding` take it. The schemas are emitted again, and nothing's version moved.
+- **`GET /tenants/:t/workspaces/:w/terms`** (`routes/terms.ts`): the descriptions of tables and their columns, scripts, flows, apps, connections and queries, each given only to a caller who may already use what it describes. A table's goes to whoever holds `table:read` or `data:read`, at the workspace or at that table. A script's or a flow's goes to whoever may read it or start it. `resource:read` reads them all. An end user holds only the permissions apps use, so the member's half of each rule never answers for one.
+- **The table's own route and the interface's route give descriptions too**, the first to the console and the second to whoever may read the table's rows through an app.
+- **A grid's heading has an ⓘ** where its column says what it holds (`Grid` in the kit), in the console's rows and in a tenant's app alike. Pressing it does not sort.
+- **A column is described in the console**: "Describe" beside Rename, on a table managed there. The description shows under the column's name, and the table's own leads its page.
+- **Roles**: each permission has one toggletip that says what reading and changing allow, where each checkbox had a native `title`.
+- **A workspace's glossary** (`GlossaryProvider`, `TermText` in the kit; `help/glossary.tsx` in the console): a term is underlined where a grid's heading, a page's title-line description or a field's hint first uses it, as whole words, whatever its capitals, the longest term first. Never in a row's values. The help panel has the switch that turns it off.
+- **`terms()` in `@volvel/app`**, and the app that draws interfaces wraps what it draws in the glossary.
+
+#### Findings
+
+- **The terms list is empty until M10.** A glossary term is defined by a page of documentation, and pages are not resources until M8. The route, the matching and the underlining are built and tested with terms given by hand.
+- **A field's label is not underlined, and its hint is.** A term is a button, and a button inside a `label` is not allowed: a label may hold only the control it names. The decision said labels. The hint under the field is the nearest text that can hold one.
+- **A heading that sorts is already a button**, in the grid that is not edited in place. A term in it is explained behind the heading's ⓘ, not underlined. A heading that does not sort, and every heading of the grid that is edited in place, underlines it.
+- **The database keeps a table's columns in no order.** The route sorts them by name, or the same question gave two answers.
+- **A workspace with many resources that say nothing of themselves costs no permission checks**: only a resource with something to say is asked about.
+- **Not built:** a description field in the console's forms for a schedule and a trigger. Both are edited as their definition in the resource editor, where the new field is accepted. And nothing caches the route's answer by caller on the server yet: the console asks once for a workspace and keeps it.
+- **Not built here:** `:term[status]{table=… column=…}` drawn from this route. It needs somewhere a tenant's page is drawn, which is M9's reader.
+- 1,887 tests. The route's are in `interfaces.test.ts`, beside the apps and end users they need.
 
 ### M7: the reference writes itself
 

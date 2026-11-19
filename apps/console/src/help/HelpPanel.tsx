@@ -1,11 +1,12 @@
 import type { Manifest, PageFile, SearchHit } from "@volvel/docs-engine";
 import { resolveLink } from "@volvel/docs-engine";
-import { Button, Doc, Notice, Skeleton } from "@volvel/ui";
+import { Button, CheckboxField, Doc, Notice, Skeleton } from "@volvel/ui";
 import { ArrowLeft, Link2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../ask.tsx";
 import { useBrand } from "../kit/brand.tsx";
 import { loadManifest, loadPage, searchHelp } from "./content.ts";
+import { useUnderlineTerms } from "./glossary.tsx";
 import { closeHelp, openHelp, showPageHelp, useHelp } from "./store.ts";
 
 /** An address inside the panel: it opens another page of the help where this one is. */
@@ -56,6 +57,7 @@ export function pageFor(
 export function HelpPanel() {
   const { topic, target } = useHelp();
   const brand = useBrand();
+  const [underline, setUnderline] = useUnderlineTerms();
   const manifest = useLoaded(loadManifest, "manifest");
   const [query, setQuery] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
@@ -243,6 +245,15 @@ export function HelpPanel() {
             }}
           />
         )}
+      </div>
+      <div className="shrink-0 border-line border-t px-4 py-2">
+        <CheckboxField
+          label="Underline my team's terms on screens"
+          hint="Where a heading or a description uses a word your team's documentation defines."
+          name="underline-terms"
+          checked={underline}
+          onChange={setUnderline}
+        />
       </div>
     </div>
   );

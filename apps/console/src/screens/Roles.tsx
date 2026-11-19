@@ -1,4 +1,4 @@
-import { Button, Closing, Notice, SideSheet, TextField } from "@volvel/ui";
+import { Button, Closing, Notice, SideSheet, TextField, Toggletip, Tooltip } from "@volvel/ui";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
@@ -190,6 +190,18 @@ export function PermissionPicker({
                       <span className="flex flex-wrap items-center gap-2">
                         {entry.label}
                         <code className="font-mono text-code-sm text-ink-muted">{entry.kind}</code>
+                        <Toggletip label={`What ${entry.label} allows`} title={entry.label}>
+                          <dl className="m-0 flex flex-col gap-2">
+                            {entry.verbs.map((verb) => (
+                              <div key={verb.verb}>
+                                <dt className="font-medium text-ink">
+                                  {verb.verb === "read" ? "Read" : "Change"}
+                                </dt>
+                                <dd className="m-0">{verb.description}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </Toggletip>
                         {entry.appFacing ? (
                           <span className="text-meta text-ink-muted">End users can hold it</span>
                         ) : null}
@@ -209,7 +221,6 @@ export function PermissionPicker({
                               type="checkbox"
                               className={box}
                               aria-label={found.permission}
-                              title={found.description}
                               checked={allows(value, entry.kind, verb)}
                               onChange={(event) =>
                                 onChange(
@@ -224,8 +235,9 @@ export function PermissionPicker({
                               }
                             />
                           ) : (
-                            <span className="text-ink-muted" title="Nothing checks this">
-                              –
+                            <span className="text-ink-muted">
+                              <span aria-hidden="true">–</span>
+                              <span className="sr-only">Nothing checks this</span>
                             </span>
                           )}
                         </td>
@@ -277,10 +289,12 @@ function Summary({ role, kinds }: { role: Role; kinds: readonly PermissionKind[]
       allows(role.permissions, entry.kind, "write"),
   ).length;
   return (
-    <span className="text-ink-muted" title={role.permissions.join("  ")}>
-      Reads {read === kinds.length ? "everything" : `${read} of ${kinds.length}`}
-      {write > 0 ? `, changes ${write}` : ""}
-    </span>
+    <Tooltip label={role.permissions.join("  ")}>
+      <span className="text-ink-muted">
+        Reads {read === kinds.length ? "everything" : `${read} of ${kinds.length}`}
+        {write > 0 ? `, changes ${write}` : ""}
+      </span>
+    </Tooltip>
   );
 }
 

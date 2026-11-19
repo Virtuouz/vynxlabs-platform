@@ -14,8 +14,10 @@ import {
   WORKSPACE_SECTIONS,
   whereIs,
 } from "../nav.ts";
+import { setPreference } from "../prefs.ts";
 import { show } from "../testing.tsx";
 import { forgetHelp } from "./content.ts";
+import { WorkspaceGlossary } from "./glossary.tsx";
 import { HelpDock, useHelpInAddress } from "./HelpDock.tsx";
 import { pageFor } from "./HelpPanel.tsx";
 import {
@@ -297,6 +299,54 @@ describe("the page's own heading", () => {
   test("a screen with no topic has no help control", () => {
     show(<PageHeader title="Somewhere" />);
     expect(screen.queryByRole("button", { name: /Help for/ })).toBeNull();
+  });
+});
+
+describe("a workspace's own terms", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (!String(url).endsWith("/tenants/acme/workspaces/dev/terms")) {
+        return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+      }
+      return new Response(
+        JSON.stringify({
+          terms: [
+            { id: "rma", term: "RMA", aliases: [], short: "A return authorisation.", page: null },
+          ],
+          resources: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+  });
+
+  test("are underlined in a page's description, and can be turned off", async () => {
+    const screenOf = () => (
+      <WorkspaceGlossary tenantId="acme" workspaceId="dev">
+        <PageHeader title="Returns" description="Every RMA the shop has issued." />
+      </WorkspaceGlossary>
+    );
+    show(screenOf());
+    fireEvent.click(await screen.findByRole("button", { name: "RMA" }));
+    await screen.findByText("A return authorisation.");
+    cleanup();
+    act(() => setPreference("terms.underline", false));
+    show(screenOf());
+    await screen.findByText("Every RMA the shop has issued.");
+    expect(screen.queryByRole("button", { name: "RMA" })).toBeNull();
+    act(() => setPreference("terms.underline", true));
+  });
+
+  test("outside a workspace nothing is asked for and nothing is underlined", () => {
+    const asked = vi.fn(async () => new Response("{}", { status: 404 }));
+    vi.stubGlobal("fetch", asked);
+    show(
+      <WorkspaceGlossary tenantId="acme" workspaceId={undefined}>
+        <PageHeader title="Members" description="Every RMA." />
+      </WorkspaceGlossary>,
+    );
+    expect(asked).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "RMA" })).toBeNull();
   });
 });
 

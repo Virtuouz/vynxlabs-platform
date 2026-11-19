@@ -93,6 +93,8 @@ export interface WidgetField {
   name: string;
   /** What to call it. The name, when left out. */
   label?: string;
+  /** What it holds, said in words, behind a small ⓘ beside its heading. */
+  description?: string | undefined;
   /** What it holds: text, integer, number, boolean, timestamp and so on. */
   type?: string;
   /** Whether it can be changed in place, when the screen gives a way to save it. */
@@ -171,6 +173,7 @@ const fieldSchema = {
   properties: {
     name: { type: "string", description: "The key of the value in each row." },
     label: { type: "string", description: "What to call it." },
+    description: { type: "string", description: "What it holds, said in words." },
     type: {
       type: "string",
       default: "text",
@@ -242,6 +245,7 @@ registerWidget<TableWidgetConfig>({
           columns={config.columns.map((column) => ({
             name: column.name,
             label: column.label,
+            description: column.description,
             type: column.type ?? "text",
             editable: column.editable === true && edit !== undefined,
           }))}

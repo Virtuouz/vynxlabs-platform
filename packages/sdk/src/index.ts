@@ -283,6 +283,8 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
 
 export interface ScheduleOptions extends ResourceNames {
   path: string;
+  /** What it is for, in plain text. */
+  description?: string;
   script: string | { path: string };
   /** Five-field cron expression, for example `0 6 * * 1-5`. */
   cron: string;
@@ -308,6 +310,7 @@ export interface ScheduleOptions extends ResourceNames {
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
   return resource("schedule", options, () =>
     compact({
+      description: options.description,
       script: pathOf(options.script),
       cron: options.cron,
       timezone: options.timezone,
@@ -353,6 +356,8 @@ export interface WebhookRequest<Body = unknown> {
 
 export interface WebhookOptions extends ResourceNames {
   path: string;
+  /** What it is for, in plain text. */
+  description?: string;
   /** The script that receives the request. */
   script: string | { path: string };
   enabled?: boolean;
@@ -463,6 +468,7 @@ export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   return resource("trigger", options, () =>
     compact({
       type: "webhook",
+      description: options.description,
       script: pathOf(options.script),
       enabled: options.enabled,
       input: options.input,
@@ -677,6 +683,8 @@ export function defineEvent<Payload extends z.ZodType>(
 
 export interface EventTriggerOptions extends ResourceNames {
   path: string;
+  /** What it is for, in plain text. */
+  description?: string;
   /** The event to listen for, by name or by definition. */
   event: string | { path: string };
   /** The script that receives the event's payload as its input. */
@@ -691,6 +699,7 @@ export function defineEventTrigger(options: EventTriggerOptions): ResourceDefini
   return resource("trigger", options, () =>
     compact({
       type: "event",
+      description: options.description,
       script: pathOf(options.script),
       event: pathOf(options.event),
       filter: options.filter,
@@ -1190,6 +1199,8 @@ export type BindingPrincipal =
 export interface BindingOptions extends ResourceNames {
   /** Unique within the workspace, for example `bindings/portal-orders`. */
   path: string;
+  /** Why the grant is there, for whoever reads it later. */
+  description?: string;
   /** A role by name or by definition: built-in, the tenant's, or one this workspace defines. */
   role: string | { name: string };
   principal: BindingPrincipal;
@@ -1207,6 +1218,7 @@ export function defineBinding(options: BindingOptions): ResourceDefinition {
       role: typeof options.role === "string" ? options.role : options.role.name,
       principal: options.principal,
       resource: options.resource === undefined ? undefined : pathOf(options.resource),
+      description: options.description,
     }),
   );
 }

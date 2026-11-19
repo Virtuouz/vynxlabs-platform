@@ -4,7 +4,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { parse } from "@volvel/markup";
 import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { Details, Doc, Term, TermScope, Toggletip, Tree, type TreeNode } from "./index.ts";
+import {
+  Details,
+  Doc,
+  GlossaryProvider,
+  Grid,
+  Term,
+  TermScope,
+  TermText,
+  Toggletip,
+  Tree,
+  type TreeNode,
+} from "./index.ts";
 
 afterEach(cleanup);
 
@@ -272,5 +283,159 @@ describe("a page of documentation", () => {
     expect(container.querySelector("[data-vd-tabs]")).toBeTruthy();
     expect(container.querySelector(".vd-term-tip")?.textContent).toContain("Where resources live.");
     expect(screen.queryByRole("tab")).toBeNull();
+  });
+});
+
+describe("a glossary around a screen", () => {
+  const terms = [
+    { id: "workspace", term: "workspace", aliases: ["workspaces"], short: "Where resources live." },
+    { id: "dev-workspace", term: "dev workspace", short: "A workspace that can be changed." },
+    { id: "rma", term: "RMA", aliases: ["return authorisation"], short: "A return authorisation." },
+    { id: "order", term: "order", short: "What a customer bought." },
+  ];
+  const underlined = () => screen.getAllByRole("button").map((button) => button.textContent);
+
+  test("underlines a term as whole words, whatever its capitals, and the longest that fits", () => {
+    render(
+      <GlossaryProvider terms={terms}>
+        <p>
+          <TermText>Each Dev Workspace has an rma queue</TermText>
+        </p>
+        <p>
+          <TermText>Reorder the border, in order</TermText>
+        </p>
+      </GlossaryProvider>,
+    );
+    // "Reorder" and "border" hold the letters of "order" and are not it.
+    expect(underlined()).toEqual(["Dev Workspace", "rma", "order"]);
+  });
+
+  test("a term is underlined once on a screen, by whichever of its spellings comes first", () => {
+    render(
+      <GlossaryProvider terms={terms}>
+        <h1>
+          <TermText>Workspaces</TermText>
+        </h1>
+        <p>
+          <TermText>This workspace and that workspace. A return authorisation is an RMA.</TermText>
+        </p>
+      </GlossaryProvider>,
+    );
+    expect(underlined()).toEqual(["Workspaces", "return authorisation"]);
+  });
+
+  test("says what the term means, and offers the way to read more when there is one", async () => {
+    render(
+      <GlossaryProvider
+        terms={terms}
+        more={(term) => <a href={`/docs/${term.id}`}>Open the page</a>}
+      >
+        <TermText>Status of the RMA</TermText>
+      </GlossaryProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "RMA" }));
+    await screen.findByText("A return authorisation.");
+    expect(screen.getByRole("link", { name: "Open the page" }).getAttribute("href")).toBe(
+      "/docs/rma",
+    );
+  });
+
+  test("with no glossary, or an empty one, text is text", () => {
+    render(
+      <>
+        <TermText>A workspace.</TermText>
+        <GlossaryProvider terms={[]}>
+          <TermText>Another workspace.</TermText>
+        </GlossaryProvider>
+      </>,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  test("a term written with marks a pattern would read is matched as it is written", () => {
+    render(
+      <GlossaryProvider terms={[{ id: "cpp", term: "C++ (legacy)", short: "The old build." }]}>
+        <TermText>Built with C++ (legacy) tools</TermText>
+      </GlossaryProvider>,
+    );
+    expect(underlined()).toEqual(["C++ (legacy)"]);
+  });
+});
+
+describe("a grid's headings", () => {
+  const rows = [{ id: "1", status: "open", total: 4 }];
+
+  test("say what a column holds behind an ⓘ, and pressing it does not sort", async () => {
+    const onSort = vi.fn();
+    render(
+      <Grid
+        label="Rows of orders"
+        rows={rows}
+        rowKey={(row) => row.id}
+        empty="No rows."
+        onSort={onSort}
+        columns={[
+          {
+            name: "status",
+            type: "text",
+            sortable: true,
+            description: "Where the order is in its life.",
+          },
+          { name: "total", type: "number", sortable: true },
+        ]}
+      />,
+    );
+    expect(screen.getAllByRole("button", { name: /^About / })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "About status" }));
+    await screen.findByText("Where the order is in its life.");
+    expect(onSort).not.toHaveBeenCalled();
+  });
+
+  test("a heading that sorts keeps its one button, and says what a term in it means beside it", async () => {
+    const onSort = vi.fn();
+    render(
+      <GlossaryProvider
+        terms={[{ id: "status", term: "status", short: "Where it is in its life." }]}
+      >
+        <Grid
+          label="Rows of orders"
+          rows={rows}
+          rowKey={(row) => row.id}
+          empty="No rows."
+          onSort={onSort}
+          columns={[
+            { name: "status", type: "text", sortable: true },
+            { name: "total", type: "number" },
+          ]}
+        />
+      </GlossaryProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "About status" }));
+    await screen.findByText("Where it is in its life.");
+    expect(onSort).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "status" }));
+    expect(onSort).toHaveBeenCalledWith("status");
+    // A value in a row is never looked at, whatever it says.
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
+
+  test("a heading that does not sort underlines the term in it", async () => {
+    render(
+      <GlossaryProvider
+        terms={[{ id: "status", term: "status", short: "Where it is in its life." }]}
+      >
+        <Grid
+          label="Rows of orders"
+          rows={[{ id: "1", status: "status unknown" }]}
+          rowKey={(row) => row.id}
+          empty="No rows."
+          columns={[{ name: "status", type: "text" }]}
+        />
+      </GlossaryProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "status" }));
+    await screen.findByText("Where it is in its life.");
+    // The row holds the word too, and it is left alone there.
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 });

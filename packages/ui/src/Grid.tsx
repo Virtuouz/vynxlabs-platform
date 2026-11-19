@@ -1,17 +1,49 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
+import { TermText, Toggletip, useGlossaryMatch } from "./Term.tsx";
 
 export interface GridColumn {
   name: string;
   /** What the heading says. The name, when left out. */
   label?: string | undefined;
+  /** What the column holds, behind a small ⓘ beside its heading. */
+  description?: string | undefined;
   /** What the column holds: text, integer, number, boolean, timestamp, date, json and so on. */
   type: string;
   /** Lets a cell be changed in place. */
   editable?: boolean;
   sortable?: boolean;
   filterable?: boolean;
+}
+
+/**
+ * The ⓘ beside a column's heading that says what the column holds. Pressing it
+ * does not sort. `term` is for a heading that is itself a button and so cannot
+ * underline a word: a term of the glossary it uses is then explained here.
+ */
+function About({ column, term = false }: { column: GridColumn; term?: boolean }) {
+  const name = column.label ?? column.name;
+  const found = useGlossaryMatch(name);
+  const meaning = term && found ? found : undefined;
+  if (!column.description && !meaning) return null;
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: only keeps the press from reaching the heading, which sorts.
+    <span
+      className="ml-1 inline-flex align-middle font-normal normal-case"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <Toggletip label={`About ${name}`} title={name}>
+        {column.description}
+        {meaning ? (
+          <p className={column.description ? "m-0 mt-2" : "m-0"}>
+            <span className="font-medium text-ink">{meaning.term}:</span> {meaning.short}
+          </p>
+        ) : null}
+      </Toggletip>
+    </span>
+  );
 }
 
 export interface GridSort {
@@ -418,7 +450,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   onClick={() => column.sortable && props.onSort?.(column.name)}
                   {...cellProps(0, index + offset)}
                 >
-                  {column.label ?? column.name}
+                  <TermText>{column.label ?? column.name}</TermText>
+                  <About column={column} />
                   {sorted ? (
                     <span aria-hidden="true" className="ml-1 inline-flex align-middle text-action">
                       {sorted.descending ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
@@ -594,8 +627,9 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                       </span>
                     </button>
                   ) : (
-                    (column.label ?? column.name)
+                    <TermText>{column.label ?? column.name}</TermText>
                   )}
+                  <About column={column} term={Boolean(column.sortable && props.onSort)} />
                 </th>
               );
             })}

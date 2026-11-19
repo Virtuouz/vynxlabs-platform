@@ -75,6 +75,8 @@ export interface TableClient<Row, Insert = Partial<Row>> {
 }
 
 export interface ColumnOptions<Required extends boolean = boolean> {
+  /** What the column holds, in plain text. Shown on its heading and where documentation names it. */
+  description?: string;
   /** A row must have a value. */
   required?: Required;
   /** No two rows may share a value. */

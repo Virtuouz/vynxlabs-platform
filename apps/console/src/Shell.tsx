@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "./api.ts";
+import { WorkspaceGlossary } from "./help/glossary.tsx";
 import { HelpDock, useHelpInAddress } from "./help/HelpDock.tsx";
 import { openHelp, setSectionTopic, toggleHelp, useHelp } from "./help/store.ts";
 import { BrandMark, useBrand } from "./kit/brand.tsx";
@@ -1269,7 +1270,9 @@ export function Shell({
         >
           {where.workbench ? (
             <ErrorBoundary resetOn={path} what="This page">
-              {children}
+              <WorkspaceGlossary tenantId={tenantId} workspaceId={workspaceId}>
+                {children}
+              </WorkspaceGlossary>
             </ErrorBoundary>
           ) : (
             <div
@@ -1281,7 +1284,9 @@ export function Shell({
               }`}
             >
               <ErrorBoundary resetOn={path} what="This page">
-                {children}
+                <WorkspaceGlossary tenantId={tenantId} workspaceId={workspaceId}>
+                  {children}
+                </WorkspaceGlossary>
               </ErrorBoundary>
             </div>
           )}

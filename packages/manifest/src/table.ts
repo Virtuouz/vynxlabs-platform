@@ -17,6 +17,8 @@ export type OnDelete = "restrict" | "set_null" | "cascade";
 
 export interface TableColumn {
   type: ColumnType;
+  /** What the column holds, in plain text. */
+  description?: string;
   required?: boolean;
   unique?: boolean;
   default?: unknown;

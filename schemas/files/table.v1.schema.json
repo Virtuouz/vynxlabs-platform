@@ -57,6 +57,11 @@
                   "enum_list"
                 ]
               },
+              "description": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "What the column holds, in plain text. Shown on the column's heading and wherever a page of documentation names the column."
+              },
               "required": {
                 "type": "boolean"
               },

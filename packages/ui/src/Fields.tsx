@@ -1,6 +1,7 @@
 import { Field } from "@base-ui/react/field";
 import type { ChangeEvent, ReactNode } from "react";
 import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import { TermText } from "./Term.tsx";
 
 /** A control's own box. An invalid one has a danger edge, beside the words that say why. */
 export const control =
@@ -51,7 +52,9 @@ export function FieldFrame({
       </div>
       {children}
       {hint ? (
-        <Field.Description className="m-0 text-body-sm text-ink-muted">{hint}</Field.Description>
+        <Field.Description className="m-0 text-body-sm text-ink-muted">
+          <TermText>{hint}</TermText>
+        </Field.Description>
       ) : null}
       {error ? (
         <Field.Error match role="alert" className="m-0 text-body-sm text-danger">

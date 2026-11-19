@@ -82,7 +82,14 @@ export { Sparkline } from "./Sparkline.tsx";
 export { Avatar, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
-export { Term, TermScope, Toggletip } from "./Term.tsx";
+export {
+  GlossaryProvider,
+  type GlossaryTerm,
+  Term,
+  TermScope,
+  TermText,
+  Toggletip,
+} from "./Term.tsx";
 export {
   Timeline,
   type TimelineProps,

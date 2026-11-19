@@ -75,6 +75,8 @@ const typeLabel = (type: string) => TYPES.find((entry) => entry.value === type)?
 
 interface RowColumn {
   name: string;
+  /** What the column holds, shown behind its heading's ⓘ. */
+  description?: string | undefined;
   type: string;
   required: boolean;
   /** False for columns the platform fills in, and for types it only reads. */
@@ -221,6 +223,7 @@ function RowsBrowser(props: RowsBrowserProps) {
     .flatMap((name) => columns.find((column) => column.name === name) ?? [])
     .map((column) => ({
       name: column.name,
+      description: column.description,
       type: column.type,
       editable: canChange && column.writable && column.type !== "file",
       sortable: !["json", "enum_list"].includes(column.type),
@@ -910,6 +913,8 @@ export function Tables({ root, link }: { root: string; link: string }) {
 
 interface TableColumn {
   name: string;
+  /** What the column holds, when its definition says. */
+  description?: string;
   type: string;
   required: boolean;
   unique: boolean;
@@ -926,6 +931,8 @@ interface TableColumn {
 
 interface TableDetail {
   name: string;
+  /** What the table is for, when its definition says. */
+  description?: string;
   status: "active" | "retired";
   managedIn: "code" | "ui";
   policy: { type: string; column?: string; rules?: Rule[] };
@@ -964,7 +971,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
   return (
     <Page
       title={data.name}
-      description={`${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
     >
       {retired ? (
         <Notice
@@ -994,6 +1001,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           columns={[
             ...active.map((column) => ({
               name: column.name,
+              description: column.description,
               type: column.type,
               required:
                 column.required && (column.default === null || column.default === undefined),
@@ -1392,7 +1400,19 @@ function Definition({
           rowKey={(row) => row.name}
           empty={<p className="m-0 text-ink-muted">No columns.</p>}
           columns={[
-            { header: "Column", cell: (row) => <Code>{row.name}</Code> },
+            {
+              header: "Column",
+              cell: (row) => (
+                <span className="flex flex-col gap-0.5">
+                  <Code>{row.name}</Code>
+                  {row.description ? (
+                    <span className="max-w-measure text-meta text-ink-muted">
+                      {row.description}
+                    </span>
+                  ) : null}
+                </span>
+              ),
+            },
             {
               header: "Holds",
               cell: (row) =>
@@ -1452,6 +1472,34 @@ function Definition({
                             {row.values ? "Values" : "On delete"}
                           </Button>
                         ) : null}
+                        <Button
+                          size="small"
+                          variant="quiet"
+                          onClick={async () => {
+                            const next = await ask.prompt({
+                              title: `What ${row.name} holds`,
+                              label: "Description",
+                              hint: "In plain words, 500 characters at most. Shown on the column's heading. Leave it empty to say nothing.",
+                              initial: row.description ?? "",
+                              action: "Save",
+                              required: false,
+                              multiline: true,
+                            });
+                            if (next === null) return;
+                            const said = next.trim().slice(0, 500);
+                            if (said === (row.description ?? "")) return;
+                            void quietly(
+                              change((body) => {
+                                const column = body.columns[row.name];
+                                if (!column) return;
+                                if (said === "") delete column.description;
+                                else column.description = said;
+                              }),
+                            );
+                          }}
+                        >
+                          Describe
+                        </Button>
                         <Button
                           size="small"
                           variant="quiet"

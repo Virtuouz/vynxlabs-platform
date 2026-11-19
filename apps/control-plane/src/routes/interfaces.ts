@@ -27,6 +27,9 @@ const TableView = Type.Object({
   columns: Type.Array(
     Type.Object({
       name: Type.String(),
+      description: Type.Optional(
+        Type.String({ description: "What the column holds, when its definition says." }),
+      ),
       type: Type.String(),
       required: Type.Boolean(),
       references: Type.Union([Type.String(), Type.Null()]),
@@ -321,6 +324,19 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
           const where = { ...at, resourceId: table.resource_id ?? undefined };
           const canRead = await ctx.allowed("data:read", where);
+          // What each column is for, from the table's definition, for whoever may read its rows.
+          const said =
+            canRead && table.resource_id
+              ? ((
+                  (
+                    await db
+                      .selectFrom("resource")
+                      .select("body")
+                      .where("id", "=", table.resource_id)
+                      .executeTakeFirst()
+                  )?.body as TableBody | undefined
+                )?.columns ?? {})
+              : {};
           const columns = canRead
             ? await data
                 .selectFrom("data_column")
@@ -345,6 +361,9 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 : []),
               ...columns.map((column) => ({
                 name: column.name,
+                ...(said[column.name]?.description
+                  ? { description: said[column.name]?.description as string }
+                  : {}),
                 type: column.type,
                 required: column.required,
                 references: column.reference_table,

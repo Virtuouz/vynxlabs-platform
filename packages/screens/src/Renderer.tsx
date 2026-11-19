@@ -308,6 +308,7 @@ function WidgetView({
   const kitFields: KitField[] = fields.map((field) => ({
     name: field.column,
     label: field.label ?? heading(field.column),
+    description: info.columns.find((column) => column.name === field.column)?.description,
     type: typeOf(widget, info, field.column),
     editable: field.editable === true && canWrite && !SYSTEM.has(field.column),
   }));

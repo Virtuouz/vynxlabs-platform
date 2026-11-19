@@ -6,9 +6,11 @@ import {
   appContext,
   signInUrl,
   signOut,
+  type Term,
   table,
+  terms,
 } from "@volvel/app";
-import { Button, Notice } from "@volvel/ui";
+import { Button, GlossaryProvider, Notice } from "@volvel/ui";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { type DataClient, InterfaceRenderer, type InterfaceView } from "../src/index.ts";
@@ -55,6 +57,14 @@ function App() {
   const context = appContext();
   const [view, setView] = useState<InterfaceView>();
   const [problem, setProblem] = useState<string>();
+  // What the workspace's words mean, as far as this person may know. An app works without it.
+  const [glossary, setGlossary] = useState<Term[]>([]);
+  useEffect(() => {
+    terms().then(
+      (found) => setGlossary(found.terms),
+      () => {},
+    );
+  }, []);
   // The page that is open is in the address, so that it can be linked to and reloaded.
   const [pageId, setPageId] = useState(() => window.location.hash.slice(1) || undefined);
 
@@ -111,18 +121,20 @@ function App() {
       </header>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {view ? (
-        <InterfaceRenderer
-          body={view.interface}
-          tables={view.tables}
-          client={client}
-          targets={view.targets}
-          member={who.type === "member"}
-          pageId={pageId}
-          onPage={(id) => {
-            setPageId(id);
-            window.history.replaceState(null, "", `#${id}`);
-          }}
-        />
+        <GlossaryProvider terms={glossary}>
+          <InterfaceRenderer
+            body={view.interface}
+            tables={view.tables}
+            client={client}
+            targets={view.targets}
+            member={who.type === "member"}
+            pageId={pageId}
+            onPage={(id) => {
+              setPageId(id);
+              window.history.replaceState(null, "", `#${id}`);
+            }}
+          />
+        </GlossaryProvider>
       ) : problem ? null : (
         <p className="m-0 text-ink-muted">Loading…</p>
       )}

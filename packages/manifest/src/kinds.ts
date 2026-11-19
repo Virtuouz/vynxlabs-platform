@@ -98,6 +98,11 @@ export const bindingKind: KindDefinition = {
         type: "string",
         description: "Path of one resource to bind at. Omit to bind at the workspace.",
       },
+      description: {
+        type: "string",
+        maxLength: 500,
+        description: "Why the grant is there, for whoever reads it later.",
+      },
     },
     required: ["role", "principal"],
     additionalProperties: false,
@@ -302,6 +307,11 @@ export const scheduleKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
+      description: {
+        type: "string",
+        maxLength: 500,
+        description: "What the schedule is for.",
+      },
       script: { ...path, description: "The script it starts. Give this or `flow`." },
       flow: {
         ...path,
@@ -454,6 +464,7 @@ export const triggerKind: KindDefinition = {
         type: "object",
         properties: {
           type: { const: "webhook" },
+          description: { type: "string", maxLength: 500, description: "What the trigger is for." },
           script: path,
           enabled: { type: "boolean" },
           tags: tagExpressions,
@@ -466,6 +477,7 @@ export const triggerKind: KindDefinition = {
         type: "object",
         properties: {
           type: { const: "event" },
+          description: { type: "string", maxLength: 500, description: "What the trigger is for." },
           script: path,
           event: { ...path, description: "The event to listen for." },
           filter: {
@@ -1029,6 +1041,12 @@ export const tableKind: KindDefinition = {
           type: "object",
           properties: {
             type: { enum: [...COLUMN_TYPES] },
+            description: {
+              type: "string",
+              maxLength: 500,
+              description:
+                "What the column holds, in plain text. Shown on the column's heading and wherever a page of documentation names the column.",
+            },
             required: { type: "boolean" },
             unique: { type: "boolean" },
             default: {

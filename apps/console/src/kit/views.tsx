@@ -1,6 +1,15 @@
+import { closestCenter, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button, Dialog, Menu, type MenuItem, Tooltip } from "@vynxlabs/ui";
-import { ArrowDown, ArrowUp, Bookmark, Columns3 } from "lucide-react";
-import { useState } from "react";
+import { ArrowDown, ArrowUp, Bookmark, Columns3, GripVertical } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { navigate } from "../router.tsx";
@@ -185,19 +194,24 @@ export function ViewsMenu({
 
 /**
  * Which columns a list shows, and in what order: a check to show or hide
- * each, and Move up and Move down, so the order is changed by keyboard as
- * easily as by pointer. The first column says what a row is and stays.
+ * each, and an order changed by dragging a column between two others, which
+ * part to make room for it. Move up and Move down do the same from the
+ * keyboard, as do the up and down arrows on a column's handle. Unless a list says otherwise its first column
+ * says what a row is, stays, and is not listed here.
  */
 export function ColumnsMenu({
   columns,
   shown,
   onChange,
+  children,
 }: {
-  /** Every column but the first, which always shows. */
+  /** The columns that can be chosen and ordered. */
   columns: { key: string; label: string }[];
   /** The keys shown, in order; absent means every column, as defined. */
   shown: string[] | undefined;
   onChange: (next: string[] | undefined) => void;
+  /** More about the columns that the list lets its reader choose, such as locking the first. */
+  children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const order = shown && shown.length > 0 ? shown : columns.map((column) => column.key);
@@ -210,14 +224,23 @@ export function ColumnsMenu({
       next.length === all.length && next.every((key, at) => key === all[at]) ? undefined : next,
     );
   };
+  // What a screen reader is told when a column is moved from the keyboard.
+  const [said, setSaid] = useState("");
   const move = (key: string, by: -1 | 1) => {
     const at = order.indexOf(key);
     const to = at + by;
     if (at < 0 || to < 0 || to >= order.length) return;
-    const next = [...order];
-    [next[at], next[to]] = [next[to] as string, next[at] as string];
-    set(next);
+    set(arrayMove(order, at, to));
+    setSaid(`${labelOf(key)} is now ${to + 1} of ${order.length}.`);
   };
+  // Dragging is the pointer's. From the keyboard the handle's arrows move a column one place at
+  // a time, which needs no picking up and putting down.
+  const sensors = useSensors(
+    // A few pixels before it counts as a drag, so a press on the handle is still a press.
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+  // What is said aloud is put inside the dialog: a modal hides the rest of the page from a screen reader.
+  const [spoken, setSpoken] = useState<HTMLElement | null>(null);
   return (
     <>
       <Tooltip label="Choose and order the columns">
@@ -231,48 +254,48 @@ export function ColumnsMenu({
         </button>
       </Tooltip>
       <Dialog open={open} onClose={() => setOpen(false)} title="Columns">
-        <div className="flex flex-col gap-3">
-          <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Shown, in order">
-            {order.map((key, at) => (
-              <li
-                key={key}
-                className="flex items-center gap-2 rounded-control px-2 py-1 hover:bg-sunken"
-              >
-                <label className="flex min-w-0 flex-1 items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked
-                    disabled={order.length === 1}
-                    onChange={() => set(order.filter((one) => one !== key))}
-                    className="size-4 accent-[var(--color-action)]"
+        <div ref={setSpoken} className="flex flex-col gap-3">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+            accessibility={{
+              ...(spoken ? { container: spoken } : {}),
+              screenReaderInstructions: {
+                draggable: "Press the up and down arrows to move this column one place.",
+              },
+            }}
+            onDragEnd={({ active, over }) => {
+              if (!over || active.id === over.id) return;
+              set(
+                arrayMove(order, order.indexOf(String(active.id)), order.indexOf(String(over.id))),
+              );
+            }}
+          >
+            <SortableContext items={order} strategy={verticalListSortingStrategy}>
+              <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Shown, in order">
+                {order.map((key, at) => (
+                  <ShownColumn
+                    key={key}
+                    id={key}
+                    label={labelOf(key)}
+                    only={order.length === 1}
+                    first={at === 0}
+                    last={at === order.length - 1}
+                    onHide={() => set(order.filter((one) => one !== key))}
+                    onMove={(by) => move(key, by)}
                   />
-                  <span className="truncate">{labelOf(key)}</span>
-                </label>
-                <Button
-                  size="small"
-                  variant="quiet"
-                  aria-label={`Move ${labelOf(key)} up`}
-                  disabled={at === 0}
-                  onClick={() => move(key, -1)}
-                >
-                  <ArrowUp aria-hidden="true" size={14} />
-                </Button>
-                <Button
-                  size="small"
-                  variant="quiet"
-                  aria-label={`Move ${labelOf(key)} down`}
-                  disabled={at === order.length - 1}
-                  onClick={() => move(key, 1)}
-                >
-                  <ArrowDown aria-hidden="true" size={14} />
-                </Button>
-              </li>
-            ))}
-          </ul>
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
+          <span role="status" className="sr-only">
+            {said}
+          </span>
           {hidden.length > 0 ? (
             <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Hidden">
               {hidden.map((column) => (
-                <li key={column.key} className="flex items-center gap-2 px-2 py-1">
+                <li key={column.key} className="flex items-center gap-2 py-1 pr-2 pl-8">
                   <label className="flex items-center gap-2 text-ink-muted">
                     <input
                       type="checkbox"
@@ -286,6 +309,7 @@ export function ColumnsMenu({
               ))}
             </ul>
           ) : null}
+          {children ? <div className="border-line border-t pt-3">{children}</div> : null}
           <div className="flex justify-between gap-2">
             <Button size="small" variant="quiet" onClick={() => onChange(undefined)}>
               Show every column
@@ -297,5 +321,89 @@ export function ColumnsMenu({
         </div>
       </Dialog>
     </>
+  );
+}
+
+/** One shown column in the list: its handle, its check, and its two arrows. */
+function ShownColumn({
+  id,
+  label,
+  only,
+  first,
+  last,
+  onHide,
+  onMove,
+}: {
+  id: string;
+  label: string;
+  /** The last one shown cannot be hidden. */
+  only: boolean;
+  first: boolean;
+  last: boolean;
+  onHide: () => void;
+  onMove: (by: -1 | 1) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  return (
+    <li
+      ref={setNodeRef}
+      // Where the others move to make room, and how long they take: the library's, on `motion-fast`'s curve.
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`flex items-center gap-2 rounded-control bg-surface px-2 py-1 hover:bg-sunken ${
+        isDragging ? "relative layer-sticky shadow-overlay" : ""
+      }`}
+    >
+      <button
+        type="button"
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={`Move ${label}: drag it, or press the up and down arrows`}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+          event.preventDefault();
+          onMove(event.key === "ArrowUp" ? -1 : 1);
+        }}
+        className="flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded-control text-ink-subtle hover:text-ink active:cursor-grabbing"
+      >
+        <GripVertical aria-hidden="true" size={14} />
+      </button>
+      <label className="flex min-w-0 flex-1 items-center gap-2">
+        <input
+          type="checkbox"
+          checked
+          disabled={only}
+          onChange={onHide}
+          className="size-4 accent-[var(--color-action)]"
+        />
+        <span className="truncate">{label}</span>
+      </label>
+      <Button
+        size="small"
+        variant="quiet"
+        aria-label={`Move ${label} up`}
+        disabled={first}
+        onClick={() => onMove(-1)}
+      >
+        <ArrowUp aria-hidden="true" size={14} />
+      </Button>
+      <Button
+        size="small"
+        variant="quiet"
+        aria-label={`Move ${label} down`}
+        disabled={last}
+        onClick={() => onMove(1)}
+      >
+        <ArrowDown aria-hidden="true" size={14} />
+      </Button>
+    </li>
   );
 }

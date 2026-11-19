@@ -4,15 +4,15 @@ import {
   Grid,
   type GridColumn,
   type GridSort,
-  Menu,
   Notice,
   parseValue,
   SelectField,
   SideSheet,
   showValue,
+  TextAreaField,
   TextField,
 } from "@vynxlabs/ui";
-import { Columns3, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -21,7 +21,7 @@ import { count } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
-import { ViewsMenu } from "../kit/views.tsx";
+import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam, useUrlState } from "../router.tsx";
 import {
@@ -94,7 +94,12 @@ const ROWS_URL = {
   sort: { type: "string" },
   filter: { type: "string" },
   page: { type: "string" },
+  /** The columns shown, in order. Empty means every column, as the table has them. */
+  cols: { type: "list" },
+  /** What links and saved views from before phase 18 say: the columns left out. Read, never written. */
   hide: { type: "list" },
+  /** "1" when the first column scrolls away with the rest. It stays in view otherwise. */
+  unlock: { type: "string" },
   density: { type: "string", default: "standard" },
   row: { type: "string", push: true },
 } as const;
@@ -127,7 +132,15 @@ function RowsBrowser(props: RowsBrowserProps) {
   const [back, setBack] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // The columns shown, in order: as chosen, or all of them less what an older link hides.
+  const known = new Set(columns.map((column) => column.name));
+  const chosen = url.cols.filter((name) => known.has(name));
   const hidden = new Set(url.hide);
+  const order =
+    chosen.length > 0
+      ? chosen
+      : columns.filter((column) => !hidden.has(column.name)).map((column) => column.name);
+  const lockFirst = url.unlock !== "1";
   const compact = url.density === "compact";
 
   let filter: object | undefined;
@@ -170,8 +183,8 @@ function RowsBrowser(props: RowsBrowserProps) {
   const exportHref = custom
     ? `/api/v1${props.rowsPath.replace("/rows/", "/rows-export/")}?${exportQuery}`
     : null;
-  const grid: GridColumn[] = columns
-    .filter((column) => !hidden.has(column.name))
+  const grid: GridColumn[] = order
+    .flatMap((name) => columns.find((column) => column.name === name) ?? [])
     .map((column) => ({
       name: column.name,
       type: column.type,
@@ -220,28 +233,27 @@ function RowsBrowser(props: RowsBrowserProps) {
             "Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
         </p>
         <span className="flex flex-wrap items-center gap-2">
-          <Menu
-            ariaLabel="Columns shown"
-            triggerClassName="inline-flex h-7 items-center gap-1.5 rounded-control border border-line px-3 text-body-sm hover:bg-sunken"
-            label={
-              <>
-                <Columns3 aria-hidden="true" size={14} /> Columns
-                {hidden.size > 0 ? (
-                  <span className="text-ink-muted">({columns.length - hidden.size})</span>
-                ) : null}
-              </>
-            }
-            items={columns.map((column) => ({
-              label: column.name,
-              current: !hidden.has(column.name),
-              onSelect: () => {
-                const next = new Set(hidden);
-                if (next.has(column.name)) next.delete(column.name);
-                else if (next.size < columns.length - 1) next.add(column.name);
-                setUrl({ hide: [...next] });
-              },
-            }))}
-          />
+          <ColumnsMenu
+            columns={columns.map((column) => ({ key: column.name, label: column.name }))}
+            shown={order.length === columns.length && chosen.length === 0 ? undefined : order}
+            onChange={(next) => setUrl({ cols: next ?? [], hide: [] })}
+          >
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={lockFirst}
+                onChange={() => setUrl({ unlock: lockFirst ? "1" : undefined })}
+                className="mt-0.5 size-4 accent-[var(--color-action)]"
+              />
+              <span className="flex flex-col">
+                Lock the first column
+                <span className="text-body-sm text-ink-muted">
+                  It stays in view when the table is scrolled sideways. Put the column you want
+                  first.
+                </span>
+              </span>
+            </label>
+          </ColumnsMenu>
           <Button
             size="small"
             aria-pressed={compact}
@@ -287,6 +299,7 @@ function RowsBrowser(props: RowsBrowserProps) {
         <div className="min-w-0 flex-1">
           <Grid<DataRow>
             navigation="grid"
+            lockFirst={lockFirst}
             density={compact ? "compact" : "standard"}
             label={props.label}
             columns={grid}
@@ -422,6 +435,9 @@ function RowsBrowser(props: RowsBrowserProps) {
 }
 
 /** A row's values, changed in the inspector beside the grid and saved together. */
+/** Text longer than this is edited in a text area, as the kit's forms do. */
+const LONG_TEXT = 200;
+
 function RowEditor({
   row,
   columns,
@@ -440,11 +456,16 @@ function RowEditor({
     column.type === "json" || typeof row[column.name] === "object"
       ? row[column.name] === null || row[column.name] === undefined
         ? ""
-        : JSON.stringify(row[column.name])
+        : JSON.stringify(row[column.name], null, 2)
       : row[column.name] === null || row[column.name] === undefined
         ? ""
         : String(row[column.name]);
   const dirty = Object.keys(text).length > 0;
+  // JSON, and text that is already long or runs over lines, gets room to be read.
+  const roomy = (column: RowColumn) => {
+    const value = shown(column);
+    return column.type === "json" || value.length > LONG_TEXT || value.includes("\n");
+  };
   return (
     <form
       className="flex flex-col gap-3"
@@ -476,7 +497,17 @@ function RowEditor({
       }}
     >
       {columns.map((column) =>
-        editable && column.writable && column.type !== "file" ? (
+        editable && column.writable && column.type !== "file" && roomy(column) ? (
+          <TextAreaField
+            key={column.name}
+            name={column.name}
+            label={column.name}
+            value={text[column.name] ?? shown(column)}
+            required={false}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : editable && column.writable && column.type !== "file" ? (
           <TextField
             key={column.name}
             name={column.name}
@@ -648,6 +679,17 @@ function AddRow({
                 }}
               />
             </label>
+          ) : column.type === "json" ? (
+            <TextAreaField
+              key={column.name}
+              name={column.name}
+              label={column.name}
+              value={values[column.name] ?? ""}
+              required={false}
+              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}`}
+              error={errors[column.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+            />
           ) : (
             <TextField
               key={column.name}

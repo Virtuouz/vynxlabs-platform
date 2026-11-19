@@ -1,4 +1,4 @@
-import { type HTMLAttributes, type ReactNode, useEffect, useRef, useState } from "react";
+import { type HTMLAttributes, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 
 /**
  * Whether a sheet or dialog is open, as its own parts are told. One that is
@@ -75,8 +75,13 @@ export function Closing<T>({
 export function Appear({
   open,
   children,
+  ref,
   ...rest
-}: { open: boolean; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
+}: {
+  open: boolean;
+  children: ReactNode;
+  ref?: Ref<HTMLDivElement>;
+} & HTMLAttributes<HTMLDivElement>) {
   const [present, setPresent] = useState(open);
   const [phase, setPhase] = useState<"starting" | "ending" | undefined>(
     open ? "starting" : undefined,
@@ -117,6 +122,7 @@ export function Appear({
   return (
     <div
       {...rest}
+      ref={ref}
       data-drawer=""
       data-starting-style={phase === "starting" ? "" : undefined}
       data-ending-style={phase === "ending" ? "" : undefined}

@@ -162,6 +162,7 @@ description (pages) | (?) help popover (workbenches)
 - **Sizing.** `body-sm` 13/18 in the 48 px header; object crumb in `code-sm` when it is a path or ID; truncation in the middle of long paths with the full value in a Tooltip.
 - **Responsive behaviour.** Below 1024 px: workspace + object, section folded. Below 768 px: the object crumb only, with a back chevron to the section.
 - **Usage guidance.** One breadcrumb, in the shell. A screen supplies its object crumb through a hook; it never renders its own.
+- **As built (phase 19).** The tenant is a link to the tenant. The workspace's name is a link to its overview, and the switcher is the button beside the name. The section is a link whenever something is open in it; an editor that has not named what it shows is named by the end of its address until it does, so every editor has a way back. Below 768 px the section is a back chevron. A unit test opens one address for each kind of editor and expects the link (`Shell.test.tsx`).
 - **Anti-patterns.** Any per-screen "All …" link; a `<button>` used for navigation (`screens/SingleSignOn.tsx:1008-1013`); "promotes to X" as plain text beside the crumbs (`Shell.tsx:783-785`) — it becomes a link to the same object in the target workspace (P1-3).
 
 ### 3.3 Toolbar

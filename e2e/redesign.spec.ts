@@ -209,22 +209,26 @@ test("the component kit looks as reviewed, whole, in light and in dark", async (
   }
 });
 
-test("on a phone the navigation is a drawer that opens and closes", async () => {
+test("on a phone the navigation is a drawer, and another area's screen is reached in one opening", async () => {
   await admin.setViewportSize({ width: 390, height: 844 });
-  await admin.goto(`/t/${tenant.id}/workspaces/${workspace}/overview`);
+  await admin.goto(`/t/${tenant.id}/workspaces/${workspace}/scripts`);
   await expect(admin.getByRole("navigation", { name: "Main" })).toBeHidden();
   await admin.getByRole("button", { name: "Open the menu" }).click();
   const drawer = admin.getByRole("dialog");
   await expect(drawer).toBeVisible();
   await expect(drawer).toHaveAccessibleName(PRODUCT);
-  await expect(drawer.getByRole("link", { name: "Operate" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Operate" })).toBeVisible();
   await admin.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
-  // Choosing a screen in the drawer goes there and closes it.
+  // From Scripts to Dashboards: the area is pressed, which keeps the drawer open and shows
+  // its screens, and the screen is chosen, which goes there and closes it.
   await admin.getByRole("button", { name: "Open the menu" }).click();
-  await drawer.getByRole("link", { name: "Operate" }).click();
+  await drawer.getByRole("button", { name: "Data" }).click();
+  await expect(drawer).toBeVisible();
+  await expect(admin).toHaveURL(/\/scripts$/);
+  await drawer.getByRole("link", { name: "Dashboards" }).click();
   await expect(drawer).toBeHidden();
-  await expect(admin).toHaveURL(/\/runs$/);
+  await expect(admin).toHaveURL(/\/dashboards$/);
 });
 
 test("the console carries the instance's name and color, and not the tenant's", async ({

@@ -371,16 +371,20 @@ export function Link({
   children,
   className,
   current,
+  "aria-label": label,
 }: {
   to: string;
   children: ReactNode;
   className?: string;
   current?: boolean;
+  /** For a link that is only an icon. */
+  "aria-label"?: string;
 }) {
   return (
     <a
       href={to}
       className={className}
+      aria-label={label}
       aria-current={current ? "page" : undefined}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;

@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. This document is milestone 0. Nothing is built, and the owner decisions below are proposals until the owner answers them.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 in progress. M1 to M9 are built first, one after another, and the work then stops for the owner before M10. Nothing is built yet.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -48,27 +48,28 @@ Some of the notes are already so, or are not what they seemed:
 
 ## Owner decisions
 
-All proposed. The first three decide how large this phase is.
+Answered by the owner on 2026-11-18.
 
-| Area | Proposal | Why |
-| --- | --- | --- |
-| Shape | One branch, `phase-18-data-insight`, milestones one after another, commits `Phase 18: …`. **If the phase is to be split, the line falls after M9**: M1 to M9 stand on their own, and the dashboards of M10 to M12 need M7 to M9 | The dashboard work is about as large as everything before it |
-| SQL | Read only. No write and no delete by SQL in this phase | A write by SQL would skip what the row API does around one: checking types, filling the owner column, the audit entry and the events a change publishes. Bulk changes are a script's work |
-| SQL permission | One new kind, `sql`, with `read` only: "Run read-only SQL across the workspace's tables, held to each table's row policy." Not app-facing, so an end user never holds it | The catalog's verbs are `read` and `write`. A `delete` verb is a change to every role and is not needed until SQL writes are |
-| Decision record | Write [Decision 0003](../evolution/decisions/) for SQL before M7 is built, as 0002 was for identity | It reverses a rule phase 4 states three times: "No route accepts SQL" |
-| Enum storage | `text` with a `CHECK` constraint, not a Postgres `ENUM` | A native enum cannot lose a value, which fights "a deploy never drops data" |
-| Enum strictness | The database refuses a value the column does not have. Grist only marks such a cell as invalid | Scripts, flows and agents write rows here, not only a person at a grid |
-| Many choices in one cell | Not in this phase (Grist's "Choice List") | It is a second type with its own filters and joins |
-| A reference's label | A table names its `display` column once. A widget's `show` still overrides it | Grist asks per reference column. Here the same answer is wanted in the grid, in forms, in SQL completion and in dashboards |
-| Dashboards | Rebuilt around a saved query, in their own editor. They stop being an app page | An app is for doing something. A dashboard is for asking |
-| Who owns a dashboard | A member's, as now, and a dashboard can also be saved as a resource so it is versioned and promoted | Phase 7 decided "dashboards are a member's". A report a business depends on has to reach production the way everything else does |
-| Deleting production | A permission of its own, `workspace_production:write`, that no wildcard gives. Not `*:*`, not `workspace:*`. It is bound to a person by name, and binding it is audited | The owner's rule: the user decides, and nobody holds it without being given it. Today `tenant_admin` holds every permission by `*:*`, so the catalog needs a mark for "never by wildcard" |
-| Approvals | The workspace's Operate section gets an Approvals page of that workspace's approvals. The tenant's page stays, as everything waiting for me anywhere, and can be narrowed to a workspace | Read as: where approvals are seen and decided. If the owner meant who may approve, a flow step already names its approvers, and a role bound at one workspace already limits them to it |
-| Deploying in dev | Deploy stays the moment a change takes effect in a dev workspace, as a commit is. What changes: every list shows drafts, marked, and a draft can be opened, tried where that means something, and deployed by itself from where it is listed | A trigger that fired from a draft would mean two definitions of one resource running. Scripts and flows already work this way and the owner did not find them confusing |
-| Text areas | At least 4 rows everywhere the shared field is used, growing with what it holds to 12, then scrolling | The owner's rule. It raises the dozen call sites that ask for 2 or 3 |
-| Dragging | `@dnd-kit` for the columns list, with the arrows kept for the keyboard | It gives the gap animation and keyboard sorting. The alternative is pointer handling by hand, as the pane dividers do. Its licence is checked against the dependency policy in M0 |
-| Favicons | Made when a logo is uploaded, with `@realfavicongenerator/generate-favicon` and `image-adapter-node` (both ISC, 0.9.0), for the instance's console and each tenant's portal and generated apps | The adapter brings `sharp`, a native module and the first image library in the build. Checked in M0, with a fallback of serving the logo as the icon |
-| Telemetry | OpenTelemetry traces and metrics sent by OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, and nothing loaded when it is not. The Prometheus endpoint stays, gains HTTP series, and can be scraped with a token of its own | The spec asks for "standard formats … ordinary tools" |
+| Area | Decision |
+| --- | --- |
+| Shape | One branch, `phase-18-data-insight`, one phase, commits `Phase 18: …`. M1 to M9 are built in order, and the work stops there for the owner before the dashboards of M10 to M12 |
+| SQL | Read only. No write and no delete by SQL in this phase. A write by SQL would skip what the row API does around one: checking types, filling the owner column, the audit entry and the events a change publishes |
+| SQL permission | One new kind, `sql`, with `read` only. Not app-facing, so an end user never holds it. No `delete` verb until SQL writes need one |
+| Decision record | Decision 0003 is written before M7 is built, and waits for the owner's answer, as 0002 did. It reverses a rule phase 4 states three times: "No route accepts SQL" |
+| Enum storage | `text` with a `CHECK` constraint, not a Postgres `ENUM`, which cannot lose a value |
+| Enum strictness | The database refuses a value the column does not have. Grist only marks such a cell as invalid; here scripts, flows and agents write rows too |
+| Many choices in one cell | Built, as a second type: `enum` holds one value and `enum_list` several, as Grist's Choice and Choice List |
+| Enum colours | A value's colour is one of the kit's palette names or any hex colour. Its text is black or white, whichever contrasts more with it, worked out and not chosen |
+| A reference's label | A table names its `display` column once. A widget's `show` still overrides it |
+| Table columns | Any column of a table's rows can be dragged to any place, the first included. Locking the first column is a switch, so the locked column is whichever one is first. Only the reordering control is shared with the runs and audit lists |
+| Dragging | `@dnd-kit` for the columns list, with the arrows kept for the keyboard, if its licence passes the dependency policy in M0 |
+| Text areas | Each field keeps the fewest rows it has now. It grows with what it holds up to a limit, then scrolls. The handle that drags it taller stays, and a field the user has dragged stops sizing itself |
+| Deploying in dev | Deploy stays the moment a change takes effect in a dev workspace, as a commit is. Every list shows drafts, marked, and a draft can be opened, edited and deployed by itself from where it is listed. A draft trigger does not fire |
+| Approvals | An approval belongs to its workspace and is shown and decided there. A flow's approval step can say it also surfaces to the tenant's page. A step that says nothing is its workspace's only |
+| Deleting production | A permission of its own, `workspace_production:write`, that no wildcard gives: not `*:*`, not `workspace:*`. No role holds it until someone is given it by name |
+| Dashboards | Rebuilt around a saved query, in their own editor. A member's, as now, and a dashboard can also be saved as a resource. Looked at again at the pause after M9 |
+| Favicons | First find out what it takes with no new package. The two `@realfavicongenerator` packages bring `sharp`, a native module, and are the fallback |
+| Telemetry | The platform speaks the formats: OpenTelemetry by OTLP, and Prometheus text. It ships no collector, no Prometheus and no dashboard of its own |
 
 ## Milestones
 
@@ -78,8 +79,8 @@ All proposed. The first three decide how large this phase is.
 | M1 | Console: the drawer's motion, the runs scroll, text areas, end-user groups as a tab | S |
 | M2 | Console: one columns control, dragged, on runs, audit and a table's rows; the first column locked or not | M |
 | M3 | Drafts in every list; triggers listed, edited and deployed from the Triggers screen | M |
-| M4 | Access: deleting a production workspace by its own permission; approvals in a workspace | M |
-| M5 | Enum columns (migration 0076) | M |
+| M4 | Access: deleting a production workspace by its own permission; approvals in a workspace, surfaced to the tenant when a step says so | M |
+| M5 | Enum columns, one value or several | M |
 | M6 | References: `onDelete`, an index, a display column, labels in the grid, `expand` in the row API | M |
 | M7 | Decision 0003, then the query layer: parse, allow, views, identity that cannot be claimed, limits | L |
 | M8 | `sql:read`, the query route, and the SQL editor with completion | M |
@@ -96,15 +97,15 @@ All proposed. The first three decide how large this phase is.
 
 - **The drawer.** `DockedInspector` slides in over `motion-slow` and out again, staying mounted until its closing motion ends. Changing its contents moves nothing. The sheet form is left as it is. The new motion is a transition on tokens, so `enforce.test.ts` needs no new keyframe; the global reduced-motion rule (`tokens.css:289`) already turns it off. It applies to every list, not only the eight named, since they share the component.
 - **The runs scroll.** One scroller for the list. Seen in a browser first, then fixed, and the virtualised list and the sticky header checked against the scroller that is left.
-- **Text areas.** `TextAreaField` grows with its text between 4 and 12 lines. A table's row form uses it for `json` and for text that already holds a line break or more than 200 characters, with JSON shown indented.
+- **Text areas.** `TextAreaField` keeps `rows` as the fewest lines it shows, grows with its text to 12, then scrolls. Its resize handle stays, and once it has been dragged the field keeps the height it was given. A table's row form uses it for `json` and for text that already holds a line break or more than 200 characters, with JSON shown indented.
 - **End-user groups** become the second tab of End users, in the way `ACCESS_TABS` does it. The old address goes to the new one, and the palette's and other screens' links are moved.
 
 ### M2: columns
 
 - `ColumnsMenu` reorders by dragging a row between two others, which part to leave the gap. The arrows stay for the keyboard and for a screen reader.
-- A table's rows use it in place of their own menu. The address carries `cols`, as runs and audit do. A saved view or a link that says `hide` is still read.
-- The first column of a table's rows can be unlocked and locked from the same control. The choice is kept with the view.
-- "Rows" in the owner's note is read as columns: rows have no order of their own beyond the sort.
+- A table's rows use it in place of their own menu, with every column in it: any column can be put first. The address carries `cols`, as runs and audit do. A saved view or a link that says `hide` is still read.
+- Locking the first column is a switch in the same control, on by default. With it on, whichever column is first stays in view. The choice is kept with the view.
+- The runs and audit lists keep their key column first and get the dragging only.
 
 ### M3: drafts are listed, and triggers are worked on where they are listed
 
@@ -116,7 +117,8 @@ All proposed. The first three decide how large this phase is.
 ### M4: access
 
 - **Deleting production.** `deleteWorkspace` allows a production workspace when the caller holds `workspace_production:write` there. It still asks for the slug, still refuses while runs are in progress, and still unlinks the dev workspaces that promote to it. The console offers an export first. The catalog marks the permission as explicit, and `authorize` does not let a wildcard match an explicit permission. No migration gives it to anyone.
-- **Approvals in a workspace.** Operate gets Approvals, fed by the workspace's route, which is brought level with the tenant's: what waits for me, and what was decided. The tenant's page takes a workspace filter, and the workspace's overview and flows pages link to their own.
+- **Approvals in a workspace.** Operate gets Approvals, fed by the workspace's route, which is brought level with the tenant's: what waits for me, and what was decided. The workspace's overview and flows pages link to it.
+- **Approvals that surface.** An approval step says `surface: tenant` to be listed on the tenant's page as well. A step that says nothing is listed in its workspace only. What a step says is kept on it when it starts to wait, and a migration marks every step already waiting as `tenant`, so nothing that waits today leaves the tenant's page. A deploy says once that approvals are now their workspace's unless a step says otherwise.
 
 ### M5: enum columns
 
@@ -127,14 +129,20 @@ status:
     - new
     - { value: on_loan, label: On loan, color: blue }
     - { value: returned, renamedFrom: back }
+accessories:
+  type: enum_list
+  values: [charger, case, { value: dock, color: "#7c3aed" }]
 ```
 
-- Stored as `text` with a `CHECK` that lists every value the column has had and not purged. A value taken out of the definition is retired: rows keep it, nothing offers it, a write of it is refused by the API, and purging it is the explicit, audited action there is for columns.
+- `enum` holds one value and is stored as `text`. `enum_list` holds several, in the order given, and is stored as `text[]` with a `CHECK` that every item is one of the column's values.
+- A `color` is a palette name or a hex colour. A value is drawn on its colour with black or white text, whichever `contrastRatio` (`packages/ui/src/contrast.ts`) says is easier to read.
+
+- The `CHECK` lists every value the column has had and not purged. A value taken out of the definition is retired: rows keep it, nothing offers it, a write of it is refused by the API, and purging it is the explicit, audited action there is for columns.
 - `renamedFrom` on a value rewrites the rows that hold the old one, in the deploy's transaction.
 - The order of `values` is the order they sort and are offered in.
-- New plan steps `set_values` and `rename_value`. The catalog's `data_column` gets `options jsonb` (migration 0076, and the same in a dedicated database).
+- New plan steps `set_values` and `rename_value`. The catalog's `data_column` gets `options jsonb` (a migration, and the same in a dedicated database).
 - Widenings: `enum` to `text` always. `text` to `enum` only when every row already holds one of the values, checked at deploy and refused naming the values that are in the way.
-- Touched: `COLUMN_TYPES` and both table schemas, `SQL_TYPE`, `planTable`, `toDatabase`, the filter grammar (`eq`, `ne`, `in`), `column.enum([...])` in the SDK typed as a union, the console's type picker and column editor, the rows grid and row form, `FORM_TYPES` and the value filter in `packages/screens`, CSV export, tenant export and import, and an external Postgres enum read as an enum that cannot be changed.
+- Touched: `COLUMN_TYPES` and both table schemas, `SQL_TYPE`, `planTable`, `toDatabase`, the filter grammar (`eq`, `ne`, `in`, and `has` for a list), `column.enum([...])` in the SDK typed as a union, the console's type picker and column editor, the rows grid and row form, `FORM_TYPES` and the value filter in `packages/screens`, CSV export, tenant export and import, and an external Postgres enum read as an enum that cannot be changed.
 
 ### M6: references
 
@@ -191,11 +199,14 @@ tables ─▶ query (built from menus, or written) ─▶ result ─▶ widgets
 
 ### M12: favicons
 
-Uploading a logo makes `favicon.ico`, a 32 px PNG, a 180 px touch icon, 192 and 512 px icons and a web manifest, kept in object storage beside the logo. The console's page, the portal's sign-in pages and a generated app's page link to them. An app with its own files keeps its own. An instance with no logo gets the product's default.
+A logo gives the console, the portal's sign-in pages and a generated app's page an icon: `favicon.ico`, a 32 px PNG, a 180 px touch icon, 192 and 512 px icons and a web manifest, kept in object storage beside the logo. An app with its own files keeps its own. An instance with no logo gets the product's default.
+
+**Without a new package first.** The server has no image library, and none is needed if the sizes are made where the logo is chosen: the console draws it onto a canvas at each size and uploads the results with it; an SVG logo is also served as the icon as it is; and an `.ico` is a PNG behind a 22-byte header. What this cannot do is make icons for a logo set through the API alone, which would get the logo itself as its icon. If that falls short, the two `@realfavicongenerator` packages and `sharp` are the fallback. Settled when M12 is planned.
 
 ### M13: telemetry
 
 - Traces: an HTTP request, the run or flow run it starts, the queue wait, the worker's execution and each flow step are one trace. The trace's ID is carried in the worker protocol and shown on the run page beside the request ID.
+- Nothing is shipped beside the platform: no collector, no Prometheus, no dashboards. It sends OTLP to whatever endpoint the operator names, loads no OpenTelemetry code when none is named, and answers a Prometheus scrape.
 - Metrics by OTLP: the series the Prometheus endpoint has, under the same names.
 - Prometheus: request count and duration by route and status, and a scrape token set in the environment so a scraper needs no member.
 - A worker inside a client's network sends nothing unless it is configured to.
@@ -213,6 +224,7 @@ Proposed changes to the spec and to earlier phases, each to be agreed before its
 | Two tiers of app | Generated apps cover "table, detail, form and chart views" | Dashboards are named as their own thing beside the two tiers |
 | Non-goals | "A spreadsheet formula engine" | Unchanged. Calculated columns are SQL expressions |
 | Phase 5 | A production workspace is deleted only with its tenant | By whoever holds the permission for it, which nobody holds unless given |
+| Phase 3, approvals | Every waiting approval is listed for the tenant | For its workspace, and for the tenant when its step says so |
 | Permission model | A wildcard gives every permission of its kind | Except a permission marked explicit |
 | Operator health | "metrics and structured logs in standard formats" | And traces |
 

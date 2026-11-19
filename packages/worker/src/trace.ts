@@ -26,7 +26,7 @@ export function telemetryFromEnv(env: NodeJS.ProcessEnv): WorkerTelemetry | unde
     const at = pair.indexOf("=");
     if (at > 0) headers[pair.slice(0, at).trim().toLowerCase()] = pair.slice(at + 1).trim();
   }
-  return { endpoint, headers, serviceName: env.OTEL_SERVICE_NAME ?? "platform-worker" };
+  return { endpoint, headers, serviceName: env.OTEL_SERVICE_NAME ?? "volvel-worker" };
 }
 
 /** The span of one attempt, as OTLP's JSON has it, or nothing when the job carries no trace. */
@@ -45,11 +45,11 @@ export function attemptSpan(
     resourceSpans: [
       {
         resource: {
-          attributes: [text("service.name", telemetry.serviceName ?? "platform-worker")],
+          attributes: [text("service.name", telemetry.serviceName ?? "volvel-worker")],
         },
         scopeSpans: [
           {
-            scope: { name: "platform-worker" },
+            scope: { name: "volvel-worker" },
             spans: [
               {
                 traceId: found[1],

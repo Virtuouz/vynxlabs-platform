@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import { Redo2, Undo2 } from "lucide-react";
 import { keysOf } from "./keys.ts";
 

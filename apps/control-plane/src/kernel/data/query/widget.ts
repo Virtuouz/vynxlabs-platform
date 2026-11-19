@@ -6,8 +6,8 @@ import type {
   VisualBucket,
   VisualCondition,
   VisualQuery,
-} from "@vynxlabs/manifest";
-import { groupName } from "@vynxlabs/manifest";
+} from "@volvel/manifest";
+import { groupName } from "@volvel/manifest";
 import { badRequest, notFound } from "../../errors.js";
 import type { Kernel } from "../../kernel.js";
 import { resolveResource } from "../../resolve.js";

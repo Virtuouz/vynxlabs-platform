@@ -14,8 +14,8 @@ import {
   keyOf,
   MAX_SOURCE_LENGTH,
   resolveKeyReferences,
-} from "@vynxlabs/manifest";
-import { CORE_NODES, coreManifest } from "@vynxlabs/nodes";
+} from "@volvel/manifest";
+import { CORE_NODES, coreManifest } from "@volvel/nodes";
 import { build, type Plugin, transform } from "esbuild";
 
 /**
@@ -29,7 +29,7 @@ import { build, type Plugin, transform } from "esbuild";
  * repository's own code is never compiled a second time.
  *
  * The compiler never executes what it compiles, and it reads nothing from
- * disk on the source's behalf: console source may import `@vynxlabs/sdk` and
+ * disk on the source's behalf: console source may import `@volvel/sdk` and
  * `node:` modules, and nothing else.
  */
 
@@ -63,7 +63,7 @@ export class ComposeError extends Error {
 
 export interface ComposeOptions {
   /**
-   * The file `@vynxlabs/sdk` resolves to. The CLI passes the one installed in
+   * The file `@volvel/sdk` resolves to. The CLI passes the one installed in
    * the repository, the control plane its own.
    */
   sdkEntry: string;
@@ -118,7 +118,7 @@ function describer(sources: Source[]): string {
     )
     .filter(Boolean)
     .join(", ");
-  return `import { z as __vx_z } from "@vynxlabs/sdk";
+  return `import { z as __vx_z } from "@volvel/sdk";
 const __vx_declared = { ${declared} };
 exports.__vx_describe = (entry) => {
   const declared = Object.hasOwn(__vx_declared, entry) ? __vx_declared[entry] : undefined;
@@ -155,7 +155,7 @@ function lockdown(sources: Source[], sdkEntry: string): Plugin {
       context.onResolve({ filter: /.*/ }, async (args) => {
         if (args.pluginData?.inner) return undefined;
         if (args.kind === "entry-point") return { path: "entry", namespace: "vx" };
-        if (args.namespace === "vx" && args.path === "@vynxlabs/sdk") {
+        if (args.namespace === "vx" && args.path === "@volvel/sdk") {
           trusted.add(sdkEntry);
           return { path: sdkEntry };
         }
@@ -176,7 +176,7 @@ function lockdown(sources: Source[], sdkEntry: string): Plugin {
         return {
           errors: [
             {
-              text: `Code written in the console may import only @vynxlabs/sdk and node: modules, not "${args.path}". Put shared code and packages in the repository.`,
+              text: `Code written in the console may import only @volvel/sdk and node: modules, not "${args.path}". Put shared code and packages in the repository.`,
             },
           ],
         };

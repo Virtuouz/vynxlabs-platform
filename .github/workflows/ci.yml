@@ -121,7 +121,7 @@ jobs:
           done
           exit 1
       - name: Build the image
-        run: docker build -t vynxlabs-platform:e2e .
+        run: docker build -t volvel/volvel:e2e .
       - name: Run the image beside them
         # On the host's network, so that the instance, the browser and the test's own git
         # server all reach each other and Keycloak at localhost, as its realm expects. The
@@ -140,7 +140,7 @@ jobs:
             -e MANAGED_WORKERS=process -e MANAGED_WORKER_USER=same \
             -e EGRESS_ALLOW=127.0.0.0/8,::1,localhost \
             -e MAIL_CAPTURE_DIR=/mail -v /tmp/vx-mail:/mail \
-            vynxlabs-platform:e2e
+            volvel/volvel:e2e
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/api/v1/readyz > /dev/null && exit 0
             sleep 1

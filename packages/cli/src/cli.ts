@@ -74,7 +74,7 @@ A tenant's access: its groups, service accounts, roles and what they are given
 Move a tenant
   tenant export --tenant <slug> --out <file> [--history]
                                         Write everything the tenant has to one file. The file's
-                                        passphrase is read from PLATFORM_EXPORT_PASSPHRASE
+                                        passphrase is read from VOLVEL_EXPORT_PASSPHRASE
   tenant import <file> [--slug <slug>] [--location <name>]
                                         Bring an exported tenant into this instance. Operators only
 
@@ -90,11 +90,11 @@ See what ran
 
 build, run, dev, deploy and pull read the repository in the current directory, or --dir <path>.
 Create an API key in the console under your account menu.
-PLATFORM_URL and PLATFORM_TOKEN override the saved settings.`;
+VOLVEL_URL and VOLVEL_TOKEN override the saved settings.`;
 
 export function settingsPath(env: Io["env"]): string {
   const base = env.XDG_CONFIG_HOME ?? join(env.HOME ?? homedir(), ".config");
-  return join(base, "vynxlabs-platform", "config.json");
+  return join(base, "volvel", "config.json");
 }
 
 export async function loadSettings(env: Io["env"]): Promise<Settings> {
@@ -104,10 +104,10 @@ export async function loadSettings(env: Io["env"]): Promise<Settings> {
   } catch {
     // Not signed in yet. The environment may still supply everything.
   }
-  const url = env.PLATFORM_URL ?? saved.url;
-  const token = env.PLATFORM_TOKEN ?? saved.token;
+  const url = env.VOLVEL_URL ?? saved.url;
+  const token = env.VOLVEL_TOKEN ?? saved.token;
   if (!url || !token) {
-    throw new CliError("Not signed in. Run: platform login --url <url> --token <api key>");
+    throw new CliError("Not signed in. Run: volvel login --url <url> --token <api key>");
   }
   return { url, token };
 }
@@ -511,10 +511,10 @@ async function promote(args: string[], io: Io) {
 
 /** The passphrase for an export file. Kept out of the command line, where it would be visible to others. */
 function passphrase(io: Io): string {
-  const value = io.env.PLATFORM_EXPORT_PASSPHRASE;
+  const value = io.env.VOLVEL_EXPORT_PASSPHRASE;
   if (!value) {
     throw new CliError(
-      "Set PLATFORM_EXPORT_PASSPHRASE to the passphrase for the export file. It protects every secret the tenant has: make it long, and pass it on separately from the file.",
+      "Set VOLVEL_EXPORT_PASSPHRASE to the passphrase for the export file. It protects every secret the tenant has: make it long, and pass it on separately from the file.",
     );
   }
   return value;
@@ -588,7 +588,7 @@ async function tenant(args: string[], io: Io) {
       options: { slug: { type: "string" as const }, location: { type: "string" as const } },
     });
     const [path] = positionals;
-    if (!path) throw new CliError("This needs the export file: platform tenant import <file>");
+    if (!path) throw new CliError("This needs the export file: volvel tenant import <file>");
     const secret = passphrase(io);
     const file = resolve(path);
     const { size } = await stat(file).catch(() => {
@@ -647,7 +647,7 @@ async function tenant(args: string[], io: Io) {
     for (const line of report.notCarried) io.out(`Not carried: ${line}`);
     return;
   }
-  throw new CliError("Use: platform tenant export ..., or: platform tenant import <file>");
+  throw new CliError("Use: volvel tenant export ..., or: volvel tenant import <file>");
 }
 
 export const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);
@@ -778,7 +778,7 @@ async function runs(args: string[], io: Io) {
   }
   if (run.status === "queued" || run.status === "running") {
     io.out(
-      `To follow it: platform logs ${id} -f --tenant ${values.tenant} --workspace ${values.workspace}`,
+      `To follow it: volvel logs ${id} -f --tenant ${values.tenant} --workspace ${values.workspace}`,
     );
   }
 }
@@ -799,7 +799,7 @@ async function logs(args: string[], io: Io): Promise<number> {
   });
   const [id] = positionals;
   if (!id)
-    throw new CliError("Say which run: platform logs <run id> --tenant <slug> --workspace <slug>");
+    throw new CliError("Say which run: volvel logs <run id> --tenant <slug> --workspace <slug>");
   const settings = await loadSettings(io.env);
   const { base, tenant } = await locate(settings, values.tenant, values.workspace);
   const watch = interruptible();
@@ -846,7 +846,7 @@ async function runRemote(args: string[], io: Io): Promise<number> {
     },
   });
   const [path] = positionals;
-  if (!path) throw new CliError("Say what to run: platform run <script or flow path> --remote ...");
+  if (!path) throw new CliError("Say what to run: volvel run <script or flow path> --remote ...");
   const input = await inputOf(values.input);
   const settings = await loadSettings(io.env);
   const { base, workspace, tenant } = await locate(settings, values.tenant, values.workspace);

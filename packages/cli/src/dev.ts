@@ -52,7 +52,7 @@ export async function startDevServer(options: DevOptions) {
     plugins: [
       ...("plugins" in settings ? (settings.plugins as unknown[]) : []),
       {
-        name: "vynxlabs-app-context",
+        name: "volvel-app-context",
         transformIndexHtml: () => [
           {
             tag: "script",

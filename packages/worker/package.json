@@ -1,11 +1,11 @@
 {
-  "name": "@vynxlabs/worker",
+  "name": "@volvel/worker",
   "version": "0.5.0",
   "private": true,
   "type": "module",
   "bin": {
-    "platform-worker": "./dist/bin.js",
-    "platform-worker-host": "./dist/host-bin.js"
+    "volvel-worker": "./dist/bin.js",
+    "volvel-worker-host": "./dist/host-bin.js"
   },
   "exports": {
     ".": {
@@ -18,8 +18,8 @@
     "dist"
   ],
   "dependencies": {
-    "@vynxlabs/manifest": "workspace:*",
-    "@vynxlabs/sdk": "workspace:*",
+    "@volvel/manifest": "workspace:*",
+    "@volvel/sdk": "workspace:*",
     "nodemailer": "^7"
   },
   "devDependencies": {

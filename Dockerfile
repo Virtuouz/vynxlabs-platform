@@ -24,7 +24,7 @@ COPY packages packages
 RUN pnpm build
 # A self-contained copy of the control plane with production dependencies only.
 # It includes the worker, which the control plane starts for tenants that have work.
-RUN pnpm --filter @vynxlabs/control-plane deploy --prod /out
+RUN pnpm --filter @volvel/control-plane deploy --prod /out
 
 FROM node:24-slim
 # Managed workers run as vxrun, a user of their own, so a tenant's script can neither read
@@ -32,10 +32,10 @@ FROM node:24-slim
 # CAP_SETGID. Only node-cp, the copy of node the control plane runs on, holds them: a
 # worker and its scripts run on plain node and hold none, so they cannot switch back.
 # Without those capabilities in the container, node-cp cannot start at all, and
-# platform-start runs the control plane on plain node instead: it then refuses managed
+# volvel-start runs the control plane on plain node instead: it then refuses managed
 # workers to tenants whose code is written outside the operator. See docs/self-hosting.md.
 #
-# The same image runs the worker host (platform-worker-host), which starts managed workers
+# The same image runs the worker host (volvel-worker-host), which starts managed workers
 # in a container of its own; iptables lets it keep them from private addresses.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libcap2-bin iptables \
@@ -55,6 +55,6 @@ COPY --from=build /repo/apps/console/dist ./console
 COPY --from=build /repo/packages/screens/runtime/dist ./screens
 USER node
 EXPOSE 8080
-COPY --chmod=755 deploy/image/platform-start /usr/local/bin/platform-start
-COPY --chmod=755 deploy/image/platform-worker-host /usr/local/bin/platform-worker-host
-CMD ["platform-start", "dist/main.js"]
+COPY --chmod=755 deploy/image/volvel-start /usr/local/bin/volvel-start
+COPY --chmod=755 deploy/image/volvel-worker-host /usr/local/bin/volvel-worker-host
+CMD ["volvel-start", "dist/main.js"]

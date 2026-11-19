@@ -6,7 +6,7 @@ import {
   contrastRatio,
   Notice,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";

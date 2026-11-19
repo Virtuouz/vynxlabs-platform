@@ -1,5 +1,5 @@
 import dagre from "@dagrejs/dagre";
-import { Panel } from "@vynxlabs/ui";
+import { Panel } from "@volvel/ui";
 import { useMemo, useRef, useState } from "react";
 import { type RunState, STATE_STROKE, stateLabel } from "./kit/status.tsx";
 

@@ -347,7 +347,7 @@ export async function followRun(
 /** Following was stopped, by Ctrl+C: the run goes on. */
 export class Stopped extends CliError {
   constructor(id: string) {
-    super(`Stopped following. The run goes on: platform logs ${id} -f to follow it again.`);
+    super(`Stopped following. The run goes on: volvel logs ${id} -f to follow it again.`);
   }
 }
 

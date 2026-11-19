@@ -160,7 +160,7 @@ function pool(connectionString: string, max: number, onError?: (error: Error) =>
     // A connection opened while the database took no writes keeps refusing them: renewed each minute.
     maxLifetimeSeconds: 60,
     connectionTimeoutMillis: 5_000,
-    application_name: "vynxlabs-platform-data",
+    application_name: "volvel-data",
   });
   // An idle connection the server closes must not take the control plane down.
   made.on("error", (error) => onError?.(error));

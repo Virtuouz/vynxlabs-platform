@@ -1,4 +1,4 @@
-import { Button, Closing, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Closing, JsonView, Menu, Notice, TextField } from "@volvel/ui";
 import {
   CircleCheck,
   CirclePause,

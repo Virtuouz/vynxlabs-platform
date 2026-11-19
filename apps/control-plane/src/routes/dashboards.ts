@@ -1,12 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import {
   checkDashboard,
   DASHBOARD_VERSION,
   type DashboardBody,
   isOldDashboard,
   upgradeDashboard,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { Type } from "typebox";
 import { checkQuery, QueryRefused } from "../kernel/data/query/parse.js";
 import { checkFor, QUERY_ROWS, refusal, runQuery } from "../kernel/data/query/run.js";

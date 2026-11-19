@@ -1,4 +1,4 @@
-import { appContext, logoUrl, signOut, totalOf, useQuery, useSession } from "@vynxlabs/app";
+import { appContext, logoUrl, signOut, totalOf, useQuery, useSession } from "@volvel/app";
 import {
   Avatar,
   Button,
@@ -7,7 +7,7 @@ import {
   PageShell,
   SegmentedControl,
   ToastProvider,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Board } from "./Board.tsx";

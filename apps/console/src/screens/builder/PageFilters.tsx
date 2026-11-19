@@ -1,6 +1,6 @@
-import type { InterfacePage } from "@vynxlabs/manifest";
-import { heading, type TableInfo } from "@vynxlabs/screens";
-import { Button, SelectField, TextField } from "@vynxlabs/ui";
+import type { InterfacePage } from "@volvel/manifest";
+import { heading, type TableInfo } from "@volvel/screens";
+import { Button, SelectField, TextField } from "@volvel/ui";
 import { Plus } from "lucide-react";
 
 /**

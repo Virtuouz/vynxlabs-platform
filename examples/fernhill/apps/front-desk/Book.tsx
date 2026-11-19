@@ -1,4 +1,4 @@
-import { runScript, useQuery } from "@vynxlabs/app";
+import { runScript, useQuery } from "@volvel/app";
 import {
   Button,
   DateStepper,
@@ -7,8 +7,8 @@ import {
   SelectField,
   TextAreaField,
   useToast,
-} from "@vynxlabs/ui";
-import { TriangleAlert } from "@vynxlabs/ui/icons";
+} from "@volvel/ui";
+import { TriangleAlert } from "@volvel/ui/icons";
 import { useState } from "react";
 import type { Reason } from "../../src/constants.ts";
 import { ClientSearch } from "./Clients.tsx";

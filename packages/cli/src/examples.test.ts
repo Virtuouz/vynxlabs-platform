@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { checkTenantResources, type TenantResource } from "@vynxlabs/manifest";
+import { checkTenantResources, type TenantResource } from "@volvel/manifest";
 import { describe, expect, test } from "vitest";
 import { readAccess } from "./access.js";
 import { buildRepository } from "./build.js";

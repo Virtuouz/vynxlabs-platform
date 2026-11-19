@@ -12,7 +12,7 @@ import {
   type VisualCondition,
   type VisualQuery,
   type WidgetSource,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import {
   Button,
   CheckboxField,
@@ -22,7 +22,7 @@ import {
   SideSheet,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
 import { Loading } from "../../kit/LoadState.tsx";

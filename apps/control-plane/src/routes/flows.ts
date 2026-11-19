@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
-import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import { type FlowBody, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";

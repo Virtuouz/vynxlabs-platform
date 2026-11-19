@@ -1,5 +1,5 @@
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
-import { Button, Menu, type MenuItem, Skeleton } from "@vynxlabs/ui";
+import { Button, Menu, type MenuItem, Skeleton } from "@volvel/ui";
 import { MoreHorizontal, Rows3 } from "lucide-react";
 import {
   isValidElement,

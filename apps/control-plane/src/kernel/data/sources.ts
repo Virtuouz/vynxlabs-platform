@@ -1,4 +1,4 @@
-import { type Kysely, newId, openExternalPostgres, sql } from "@vynxlabs/db";
+import { type Kysely, newId, openExternalPostgres, sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 import { checkHost, guardedLookup } from "../egress.js";
 import { badRequest, HttpError, notFound } from "../errors.js";

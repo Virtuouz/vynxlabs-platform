@@ -1,4 +1,4 @@
-import { Dialog, type JsonSchema, Notice, SchemaForm } from "@vynxlabs/ui";
+import { Dialog, type JsonSchema, Notice, SchemaForm } from "@volvel/ui";
 import { useState } from "react";
 import type { ApiError } from "./api.ts";
 import { failureText } from "./ask.tsx";

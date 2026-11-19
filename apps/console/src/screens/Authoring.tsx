@@ -10,7 +10,7 @@ import {
   Tabs,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
@@ -36,7 +36,7 @@ import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
 import { SCRIPT_STARTERS, untouchedStarter } from "./starters.ts";
 
-const STARTER = `import { type ScriptContext, z } from "@vynxlabs/sdk";
+const STARTER = `import { type ScriptContext, z } from "@volvel/sdk";
 
 /** What it takes. Saving reads it, so a run's input is checked against it, and forms ask for it. */
 export const input = z.object({
@@ -71,7 +71,7 @@ export default (
 });
 `;
 
-const WEBHOOK_SOURCE_STARTER = `import type { ScriptContext, WebhookRequest, WebhookSourceResult } from "@vynxlabs/sdk";
+const WEBHOOK_SOURCE_STARTER = `import type { ScriptContext, WebhookRequest, WebhookSourceResult } from "@volvel/sdk";
 
 /**
  * Handed each request to a webhook that names this source. What it returns
@@ -89,7 +89,7 @@ export default async function (
 }
 `;
 
-const POLL_SOURCE_STARTER = `import type { PollResult, PollTick, ScriptContext } from "@vynxlabs/sdk";
+const POLL_SOURCE_STARTER = `import type { PollResult, PollTick, ScriptContext } from "@volvel/sdk";
 
 /**
  * Run on each tick of a schedule that names this source. It gives back what

@@ -1,5 +1,5 @@
-import { appContext, signInUrl, table, useQuery, useSession } from "@vynxlabs/app";
-import { EmptyState, Notice, PageShell } from "@vynxlabs/ui";
+import { appContext, signInUrl, table, useQuery, useSession } from "@volvel/app";
+import { EmptyState, Notice, PageShell } from "@volvel/ui";
 import { createRoot } from "react-dom/client";
 import type { notices } from "../../src/index.ts";
 import "./styles.css";

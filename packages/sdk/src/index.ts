@@ -77,7 +77,7 @@ export interface AuthoredManifest {
   body: Record<string, unknown>;
 }
 
-const RESOURCE = "__vynxlabsResource";
+const RESOURCE = "__volvelResource";
 
 /** Something a tenant repository exports for the build to pick up. */
 export interface ResourceDefinition {
@@ -103,7 +103,7 @@ export function isResourceDefinition(value: unknown): value is ResourceDefinitio
  * It is on `globalThis` because the build loads a copy of the SDK bundled into the
  * repository's code, not the one it imports itself. Nothing is kept anywhere else.
  */
-const DEFINITIONS = Symbol.for("vynxlabs.definitions");
+const DEFINITIONS = Symbol.for("volvel.definitions");
 
 function resource(
   kind: string,

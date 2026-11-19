@@ -1,7 +1,7 @@
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { leanSchema } from "./routes/mcp.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";

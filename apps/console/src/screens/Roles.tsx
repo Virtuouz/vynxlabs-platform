@@ -1,4 +1,4 @@
-import { Button, Closing, Notice, SideSheet, TextField } from "@vynxlabs/ui";
+import { Button, Closing, Notice, SideSheet, TextField } from "@volvel/ui";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";

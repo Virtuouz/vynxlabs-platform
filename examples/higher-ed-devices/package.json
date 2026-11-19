@@ -1,5 +1,5 @@
 {
-  "name": "@vynxlabs/example-higher-ed-devices",
+  "name": "@volvel/example-higher-ed-devices",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "agent": "node setup/agent.mjs"
   },
   "dependencies": {
-    "@vynxlabs/sdk": "workspace:*"
+    "@volvel/sdk": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2"

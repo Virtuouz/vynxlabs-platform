@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import { useNavigationGuard } from "../router.tsx";
 import { useShortcut } from "./keys.ts";
 

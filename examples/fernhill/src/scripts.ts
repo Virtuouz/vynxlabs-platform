@@ -1,4 +1,4 @@
-import { defineScript, type ScriptContext, z } from "@vynxlabs/sdk";
+import { defineScript, type ScriptContext, z } from "@volvel/sdk";
 import {
   type AppointmentStatus,
   CLINICS,

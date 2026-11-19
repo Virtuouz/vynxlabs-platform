@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
-import type { Database, JobQueue, TenantRouter } from "@vynxlabs/db";
-import { KindRegistry } from "@vynxlabs/manifest";
+import type { Database, JobQueue, TenantRouter } from "@volvel/db";
+import { KindRegistry } from "@volvel/manifest";
 import type { FastifyBaseLogger } from "fastify";
 import type { Config } from "../config.js";
 import type { ObjectStore } from "../storage.js";

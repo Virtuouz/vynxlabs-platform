@@ -1,4 +1,4 @@
-import { Popover } from "@vynxlabs/ui";
+import { Popover } from "@volvel/ui";
 import { Info } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { usePreference } from "../prefs.ts";

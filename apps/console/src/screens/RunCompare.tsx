@@ -1,4 +1,4 @@
-import { Button, Panel } from "@vynxlabs/ui";
+import { Button, Panel } from "@volvel/ui";
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { useLoad } from "../api.ts";

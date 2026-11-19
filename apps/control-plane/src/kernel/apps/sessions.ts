@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { type Actor, type Db, type Principal, type Trx, writeAudit } from "../audit.js";
 import type { Kernel } from "../kernel.js";

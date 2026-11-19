@@ -1,12 +1,4 @@
-import {
-  Button,
-  Closing,
-  ComboboxField,
-  Dialog,
-  EmptyState,
-  Notice,
-  TextField,
-} from "@vynxlabs/ui";
+import { Button, Closing, ComboboxField, Dialog, EmptyState, Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";

@@ -1,4 +1,4 @@
-import { useQuery } from "@vynxlabs/app";
+import { useQuery } from "@volvel/app";
 import {
   Badge,
   Button,
@@ -7,8 +7,8 @@ import {
   NumberField,
   SegmentedControl,
   useToast,
-} from "@vynxlabs/ui";
-import { Phone } from "@vynxlabs/ui/icons";
+} from "@volvel/ui";
+import { Phone } from "@volvel/ui/icons";
 import { useMemo, useState } from "react";
 import {
   attempt,

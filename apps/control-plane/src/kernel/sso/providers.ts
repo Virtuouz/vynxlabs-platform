@@ -1,5 +1,5 @@
 import { X509Certificate } from "node:crypto";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { generate } from "selfsigned";
 import { portalUrl } from "../apps/address.js";
 import type { Audit, Db, Trx } from "../audit.js";
@@ -420,7 +420,7 @@ async function cleanConfig(
 
 /** A key and a certificate of this side's own, for one SAML provider. */
 async function newSamlKey(): Promise<{ privateKey: string; certificate: string }> {
-  const made = await generate([{ name: "commonName", value: "Vynxlabs platform" }], {
+  const made = await generate([{ name: "commonName", value: "Volvel" }], {
     keySize: 2048,
     algorithm: "sha256",
     notAfterDate: new Date(Date.now() + 10 * 365 * 86_400_000),

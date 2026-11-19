@@ -5,7 +5,7 @@
  * keeps it so.
  */
 
-import { duration } from "@vynxlabs/ui";
+import { duration } from "@volvel/ui";
 
 export { duration };
 

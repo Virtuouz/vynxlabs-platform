@@ -1,6 +1,6 @@
 # Backing services for local development and tests. The control plane itself
 # runs on the host with `pnpm dev`.
-name: vynxlabs-platform-dev
+name: volvel-dev
 
 services:
   postgres:

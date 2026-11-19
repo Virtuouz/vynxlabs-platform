@@ -1,4 +1,4 @@
-import { Button, type GridColumn, Notice, TextField } from "@vynxlabs/ui";
+import { Button, type GridColumn, Notice, TextField } from "@volvel/ui";
 import { Play, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";

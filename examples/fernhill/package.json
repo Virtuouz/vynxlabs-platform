@@ -1,5 +1,5 @@
 {
-  "name": "@vynxlabs/example-fernhill",
+  "name": "@volvel/example-fernhill",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,9 @@
     "agent": "node setup/agent.mjs"
   },
   "dependencies": {
-    "@vynxlabs/sdk": "workspace:*",
-    "@vynxlabs/app": "workspace:*",
-    "@vynxlabs/ui": "workspace:*",
+    "@volvel/sdk": "workspace:*",
+    "@volvel/app": "workspace:*",
+    "@volvel/ui": "workspace:*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

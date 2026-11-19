@@ -1,6 +1,6 @@
-import { Database } from "@vynxlabs/db";
-import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
-import { isGrantablePermission, isKnownPermission, PERMISSION_KINDS } from "@vynxlabs/manifest";
+import { Database } from "@volvel/db";
+import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
+import { isGrantablePermission, isKnownPermission, PERMISSION_KINDS } from "@volvel/manifest";
 import type { RouteOptions } from "fastify";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { buildApp } from "./app.js";

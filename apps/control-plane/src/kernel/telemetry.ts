@@ -36,7 +36,7 @@ export interface TelemetryConfig {
 export const TELEMETRY_OFF: TelemetryConfig = {
   endpoint: undefined,
   headers: {},
-  serviceName: "platform",
+  serviceName: "volvel",
   traces: false,
   metrics: false,
   metricsIntervalMs: 60_000,
@@ -295,7 +295,7 @@ export class Telemetry {
   }
 
   get #scope() {
-    return { name: "platform", version: this.#version };
+    return { name: "volvel", version: this.#version };
   }
 
   /** Keeps a finished span to send. It costs nothing when nothing is sent. */

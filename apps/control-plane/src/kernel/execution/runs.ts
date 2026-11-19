@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { newId, sql } from "@vynxlabs/db";
-import { keyOf, validateJson } from "@vynxlabs/manifest";
+import { newId, sql } from "@volvel/db";
+import { keyOf, validateJson } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";

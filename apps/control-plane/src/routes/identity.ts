@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId, sql } from "@vynxlabs/db";
-import { PERMISSION_KINDS } from "@vynxlabs/manifest";
-import { CORE_NODES } from "@vynxlabs/nodes";
+import { newId, sql } from "@volvel/db";
+import { PERMISSION_KINDS } from "@volvel/manifest";
+import { CORE_NODES } from "@volvel/nodes";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Trx } from "../kernel/audit.js";

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { InterfacePage, PageWidget } from "@vynxlabs/manifest";
+import type { InterfacePage, PageWidget } from "@volvel/manifest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { DataClient, Filter, Row, TableInfo } from "./data.ts";
 import { InterfaceRenderer, LOOKUP_BATCH, PageRenderer } from "./Renderer.tsx";

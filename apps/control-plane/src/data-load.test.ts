@@ -1,4 +1,4 @@
-import { isPoolTimeout, sql } from "@vynxlabs/db";
+import { isPoolTimeout, sql } from "@volvel/db";
 import Fastify from "fastify";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { withData } from "./kernel/data/rows.js";

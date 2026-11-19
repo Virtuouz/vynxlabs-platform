@@ -1,6 +1,6 @@
 import { type FastifyPluginAsyncTypebox, Type } from "@fastify/type-provider-typebox";
-import type { TenantResource } from "@vynxlabs/db";
-import { renderTenantFiles, TENANT_FOLDER } from "@vynxlabs/manifest";
+import type { TenantResource } from "@volvel/db";
+import { renderTenantFiles, TENANT_FOLDER } from "@volvel/manifest";
 import { mutate } from "../kernel/audit.js";
 import { HttpError } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";

@@ -8,7 +8,7 @@ import {
   SelectField,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";

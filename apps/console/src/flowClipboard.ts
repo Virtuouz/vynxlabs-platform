@@ -22,7 +22,7 @@ export interface ClipEdge {
   error?: boolean;
 }
 export interface Clip {
-  vynxlabsFlowSteps: 1;
+  volvelFlowSteps: 1;
   steps: ClipStep[];
   edges: ClipEdge[];
 }
@@ -30,7 +30,7 @@ export interface Clip {
 /** The chosen steps and the connections between them, ready for the clipboard. */
 export function copySteps(steps: ClipStep[], edges: ClipEdge[], chosen: Set<string>): Clip {
   return {
-    vynxlabsFlowSteps: 1,
+    volvelFlowSteps: 1,
     steps: steps.filter((step) => chosen.has(step.id)),
     // Only connections inside what was copied: one to a step left behind would dangle.
     edges: edges.filter((edge) => chosen.has(edge.from) && chosen.has(edge.to)),
@@ -41,11 +41,7 @@ export function copySteps(steps: ClipStep[], edges: ClipEdge[], chosen: Set<stri
 export function readClip(text: string): Clip | undefined {
   try {
     const value = JSON.parse(text) as Partial<Clip>;
-    if (
-      value?.vynxlabsFlowSteps !== 1 ||
-      !Array.isArray(value.steps) ||
-      !Array.isArray(value.edges)
-    )
+    if (value?.volvelFlowSteps !== 1 || !Array.isArray(value.steps) || !Array.isArray(value.edges))
       return undefined;
     const steps = value.steps.filter(
       (step): step is ClipStep =>
@@ -55,7 +51,7 @@ export function readClip(text: string): Clip | undefined {
         Number.isFinite(step.position?.y),
     );
     if (steps.length === 0) return undefined;
-    return { vynxlabsFlowSteps: 1, steps, edges: value.edges as ClipEdge[] };
+    return { volvelFlowSteps: 1, steps, edges: value.edges as ClipEdge[] };
   } catch {
     return undefined;
   }

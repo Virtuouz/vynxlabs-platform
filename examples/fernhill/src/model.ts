@@ -1,11 +1,4 @@
-import {
-  column,
-  defineConnection,
-  defineEvent,
-  defineTable,
-  defineVariable,
-  z,
-} from "@vynxlabs/sdk";
+import { column, defineConnection, defineEvent, defineTable, defineVariable, z } from "@volvel/sdk";
 import { APPOINTMENT_STATES, CLINICS } from "./constants.ts";
 
 export { APPOINTMENT_STATES, CLINICS, REASONS } from "./constants.ts";

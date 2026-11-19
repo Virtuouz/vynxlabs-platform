@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { Db, Principal, Trx } from "../audit.js";
 import { HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";

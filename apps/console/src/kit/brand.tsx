@@ -10,7 +10,7 @@ export interface Branding {
 }
 
 const DEFAULT: Branding = {
-  productName: "Vynxlabs",
+  productName: "Volvel",
   named: false,
   logo: false,
   theme: { tokens: {}, dark: {} },

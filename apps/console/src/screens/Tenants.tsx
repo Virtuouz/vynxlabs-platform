@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import { api, isOperator, type Me } from "../api.ts";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { KeyValues } from "../kit/layout.tsx";

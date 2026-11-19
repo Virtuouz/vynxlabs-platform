@@ -7,7 +7,7 @@ import {
   RESOURCE_FOLDER,
   renderRepositoryFiles,
   renderResourceFiles,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { Type } from "typebox";
 import { mutate } from "../kernel/audit.js";
 import {
@@ -333,7 +333,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "The workspace's console resources as repository files",
           description:
             "Every resource made in the console, with the drafts laid over what is deployed, " +
-            "as the files `platform/` holds in a repository: what `platform pull` writes, and " +
+            "as the files `platform/` holds in a repository: what `volvel pull` writes, and " +
             "what Git sync commits. The whole set: a bundle with a `platform/` folder replaces " +
             "the workspace's console resources with it. With `drafts=false`, what is deployed only.",
           tags: ["authoring"],
@@ -344,7 +344,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Type.String({
                 maxLength: 2000,
                 description:
-                  "The repository's roots, as its `vynxlabs.yaml` lists them, separated by commas. " +
+                  "The repository's roots, as its `volvel.yaml` lists them, separated by commas. " +
                   "A file under one is not made to say its path.",
               }),
             ),
@@ -904,7 +904,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 format: "uuid",
                 description:
                   "A bundle uploaded to this workspace with `preview`, such as a local build " +
-                  "(`platform run --remote`): run from it as it is, in a dev workspace only.",
+                  "(`volvel run --remote`): run from it as it is, in a dev workspace only.",
               }),
             ),
             triggerNode: Type.Optional(

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import { Type } from "typebox";
 import { WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { access, findWorkspace } from "../kernel/http.js";

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Database, sql } from "@vynxlabs/db";
-import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { Database, sql } from "@volvel/db";
+import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 

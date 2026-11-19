@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startTestApp, type TestApp } from "@vynxlabs/control-plane/testing";
+import { startTestApp, type TestApp } from "@volvel/control-plane/testing";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { run, settingsPath } from "./cli.js";
 
@@ -35,7 +35,7 @@ async function cli(args: string[], env: Record<string, string> = {}) {
 test("commands that need a sign-in say how to sign in", async () => {
   expect(await cli(["whoami"])).toMatchObject({
     code: 1,
-    err: expect.stringContaining("platform login"),
+    err: expect.stringContaining("volvel login"),
   });
 });
 
@@ -64,7 +64,7 @@ test("login saves the settings for the user only, then whoami and status work", 
 });
 
 test("the environment overrides saved settings, and an unreachable instance is explained", async () => {
-  const result = await cli(["status"], { PLATFORM_URL: "http://127.0.0.1:1" });
+  const result = await cli(["status"], { VOLVEL_URL: "http://127.0.0.1:1" });
   expect(result).toMatchObject({
     code: 1,
     err: expect.stringContaining("Could not reach http://127.0.0.1:1"),

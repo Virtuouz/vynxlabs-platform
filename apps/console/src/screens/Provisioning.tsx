@@ -1,4 +1,4 @@
-import { Button, CheckboxField, EmptyState, Facts, Notice, SelectField } from "@vynxlabs/ui";
+import { Button, CheckboxField, EmptyState, Facts, Notice, SelectField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";

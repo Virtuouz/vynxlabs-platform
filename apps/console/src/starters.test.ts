@@ -1,4 +1,4 @@
-import { checkFlow, type FlowBody } from "@vynxlabs/manifest";
+import { checkFlow, type FlowBody } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { FLOW_STARTERS, SCRIPT_STARTERS, untouchedStarter } from "./screens/starters.ts";
 

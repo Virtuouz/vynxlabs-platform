@@ -1,4 +1,4 @@
-import { Button, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";

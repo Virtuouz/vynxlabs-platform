@@ -4,8 +4,8 @@
 //
 //   node setup/setup.mjs [--reset]
 //
-// PLATFORM_URL (default http://localhost:8080), and the instance's first
-// operator in PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD. The stand-ins
+// VOLVEL_URL (default http://localhost:8080), and the instance's first
+// operator in VOLVEL_ADMIN_EMAIL and VOLVEL_ADMIN_PASSWORD. The stand-ins
 // must be running: node stand-ins/server.mjs. --reset deletes an existing
 // fernhill tenant first. What to sign in with is written to .platform/demo.json.
 import { execFileSync } from "node:child_process";
@@ -15,10 +15,10 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(dirname(fileURLToPath(import.meta.url)));
 const CLI = join(HERE, "../../packages/cli/dist/bin.js");
-const URL_ = (process.env.PLATFORM_URL ?? "http://localhost:8080").replace(/\/$/, "");
+const URL_ = (process.env.VOLVEL_URL ?? "http://localhost:8080").replace(/\/$/, "");
 const ADMIN = {
-  email: process.env.PLATFORM_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.PLATFORM_ADMIN_PASSWORD ?? "change-me-please",
+  email: process.env.VOLVEL_ADMIN_EMAIL ?? "admin@example.com",
+  password: process.env.VOLVEL_ADMIN_PASSWORD ?? "change-me-please",
 };
 const STAND_INS = process.env.STAND_INS ?? "http://127.0.0.1:4020";
 const PASSWORD = "fernhill-demo-2026";
@@ -281,7 +281,7 @@ const mayaKey = await maya.post("/api-keys", { name: "Maya's CLI" });
 const cli = (args, token) =>
   execFileSync("node", [CLI, ...args], {
     cwd: HERE,
-    env: { ...process.env, PLATFORM_URL: URL_, PLATFORM_TOKEN: token },
+    env: { ...process.env, VOLVEL_URL: URL_, VOLVEL_TOKEN: token },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Kysely, type PlatformSchema, sql } from "@vynxlabs/db";
+import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
 import { loadCatalog, workspaceSchema } from "../apply.js";
 
 /**

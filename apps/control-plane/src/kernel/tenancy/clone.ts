@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import { type Actor, type Audit, mutate, type Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
 import { bindSource, credentialName as sourceCredentialName } from "../data/sources.js";

@@ -1,4 +1,4 @@
-import { ENUM_COLORS, enumColor } from "@vynxlabs/manifest";
+import { ENUM_COLORS, enumColor } from "@volvel/manifest";
 import {
   Button,
   Closing,
@@ -18,7 +18,7 @@ import {
   TextField,
   useFlip,
   ValueChip,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";

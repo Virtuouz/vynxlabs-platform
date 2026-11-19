@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type FileHandle, open } from "node:fs/promises";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import { type Actor, mutate, type Trx } from "../audit.js";
 import type { PassphraseWrappedKey } from "../crypto.js";
 import { restoreRules, restoreStructure, workspaceSchema } from "../data/apply.js";

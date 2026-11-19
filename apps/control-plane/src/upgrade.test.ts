@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { type Database, type Kysely, type PlatformSchema, sql } from "@vynxlabs/db";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { type Database, type Kysely, type PlatformSchema, sql } from "@volvel/db";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import { revealSecret } from "./kernel/secrets.js";
@@ -389,7 +389,7 @@ describe("upgrading from every earlier database level", () => {
         passphrase: "a long enough passphrase",
       });
       expect(exported.status).toBe(200);
-      expect(exported.bytes.toString("latin1")).toContain('"format": "vynxlabs-tenant-export"');
+      expect(exported.bytes.toString("latin1")).toContain('"format": "volvel-tenant-export"');
     } finally {
       await upgraded.stop();
     }

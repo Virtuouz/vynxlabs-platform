@@ -1,4 +1,4 @@
-import { Panel, SideSheet } from "@vynxlabs/ui";
+import { Panel, SideSheet } from "@volvel/ui";
 import { CircleAlert, X } from "lucide-react";
 import {
   cloneElement,

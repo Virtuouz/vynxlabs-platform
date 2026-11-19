@@ -1,4 +1,4 @@
-import { useFlip } from "@vynxlabs/ui";
+import { useFlip } from "@volvel/ui";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,

@@ -54,7 +54,7 @@ test("pasted into another flow without those names, they keep them", () => {
 
 test("names that chain (a becomes b while b becomes b_2) are not renamed twice", () => {
   const clip: Clip = {
-    vynxlabsFlowSteps: 1,
+    volvelFlowSteps: 1,
     steps: [
       { id: "a", position: { x: 0, y: 0 }, node: { type: "set", values: { v: "steps.b.output" } } },
       { id: "b", position: { x: 0, y: 0 }, node: { type: "set", values: { v: "steps.a.output" } } },

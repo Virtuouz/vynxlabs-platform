@@ -303,7 +303,7 @@ describe("what a file says beside its body", () => {
     expect(parsed.files.get("lending/limits/count")).toBe("src/lending/limits/count.variable.yaml");
   });
 
-  test("a repository says its roots and what to leave unread in vynxlabs.yaml", () => {
+  test("a repository says its roots and what to leave unread in volvel.yaml", () => {
     expect(parseRepositoryConfig(undefined)).toEqual({
       config: { roots: [], ignore: [] },
       problems: [],
@@ -318,8 +318,8 @@ describe("what a file says beside its body", () => {
     expect(ignoredFolder(".platform", read.config)).toBe(true);
     expect(ignoredFolder("src/lending", read.config)).toBe(false);
     expect(parseRepositoryConfig("roots: src\nfolders: [a]\n").problems).toEqual([
-      "vynxlabs.yaml: has keys other than roots and ignore: folders.",
-      "vynxlabs.yaml: roots is a list of folders.",
+      "volvel.yaml: has keys other than roots and ignore: folders.",
+      "volvel.yaml: roots is a list of folders.",
     ]);
   });
 });

@@ -1,4 +1,4 @@
-import type { Database, Listener } from "@vynxlabs/db";
+import type { Database, Listener } from "@volvel/db";
 import type { FastifyBaseLogger } from "fastify";
 
 /** What a browser is told: something changed, and what. Never the data itself. */

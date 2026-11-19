@@ -185,7 +185,7 @@ export function aliasHeaders(alias: AliasUse): Record<string, string> {
   return {
     deprecation: `@${Math.floor(alias.createdAt.getTime() / 1000)}`,
     sunset: alias.expiresAt.toUTCString(),
-    "vynx-resource-moved": alias.now,
+    "volvel-resource-moved": alias.now,
     warning: `299 - "${alias.path} was renamed to ${alias.now}. The old path stops answering on ${alias.expiresAt.toISOString().slice(0, 10)}."`,
   };
 }

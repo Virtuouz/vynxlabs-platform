@@ -16,7 +16,7 @@ log() {
 }
 
 if command -v iptables >/dev/null 2>&1 && iptables -n -L OUTPUT >/dev/null 2>&1; then
-  plane_host=$(printf '%s' "${PLATFORM_URL:-}" | sed -E 's#^[a-z]+://(\[[^]]+\]|[^/:]+).*#\1#')
+  plane_host=$(printf '%s' "${VOLVEL_URL:-}" | sed -E 's#^[a-z]+://(\[[^]]+\]|[^/:]+).*#\1#')
   for address in $(getent ahostsv4 "$plane_host" 2>/dev/null | awk '{print $1}' | sort -u); do
     iptables -A OUTPUT -m owner --uid-owner "$uid" -d "$address" -j ACCEPT
   done
@@ -40,4 +40,4 @@ else
   log warn "no NET_ADMIN: workers are kept from the instance's services by the container network alone, and may reach link-local addresses such as cloud metadata"
 fi
 
-exec node /app/node_modules/@vynxlabs/worker/dist/host-bin.js "$@"
+exec node /app/node_modules/@volvel/worker/dist/host-bin.js "$@"

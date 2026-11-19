@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import {
   CircleCheck,
   CirclePause,

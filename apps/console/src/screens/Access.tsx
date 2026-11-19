@@ -1,4 +1,4 @@
-import { Notice, TextField } from "@vynxlabs/ui";
+import { Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { clock } from "../kit/format.ts";

@@ -1,4 +1,4 @@
-import { Database } from "@vynxlabs/db";
+import { Database } from "@volvel/db";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";

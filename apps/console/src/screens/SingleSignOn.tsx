@@ -12,7 +12,7 @@ import {
   Tabs,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";

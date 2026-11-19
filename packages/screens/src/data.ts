@@ -1,4 +1,4 @@
-import type { InterfaceBody } from "@vynxlabs/manifest";
+import type { InterfaceBody } from "@volvel/manifest";
 
 export type Row = Record<string, unknown>;
 

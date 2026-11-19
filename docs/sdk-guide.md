@@ -25,7 +25,7 @@ export const submit = defineScript({
 });
 ```
 
-The deploy reports `renamed script requests/submit -> lending/requests/file`. It is the same resource: its run history, its rows if it is a table, what the workspace bound to it and what it was given access to all stay. `requests/submit` keeps answering for 90 days, with `Deprecation`, `Sunset` and `Vynx-Resource-Moved` on the answer.
+The deploy reports `renamed script requests/submit -> lending/requests/file`. It is the same resource: its run history, its rows if it is a table, what the workspace bound to it and what it was given access to all stay. `requests/submit` keeps answering for 90 days, with `Deprecation`, `Sunset` and `Volvel-Resource-Moved` on the answer.
 
 Without `key` a new path is a delete and a create. The instance refuses that when the old resource holds runs, rows or access given by hand, and tells you the key to add. `--allow-delete <path>` is for when you mean it.
 
@@ -57,7 +57,7 @@ A resource has one owner: the code that defines it, or a file. Which one decides
 | In git sync | No. Sync never reads or writes TypeScript | Yes |
 | Right for | Tables, scripts and flows that share code | What has no code: apps, screens, themes, variables, schedules, triggers, connections |
 
-The console cannot edit TypeScript. Saving a draft of something the code defines, and deploying it, **takes it over**: it becomes a file the console owns, with the same key, history and bindings. The definition is still in your code, so the next `platform deploy` takes it back, and so on until you remove it from one side. A script the code defines cannot be taken over at all, because its code leans on the rest of yours: the console can only replace it with one written there, at the same path.
+The console cannot edit TypeScript. Saving a draft of something the code defines, and deploying it, **takes it over**: it becomes a file the console owns, with the same key, history and bindings. The definition is still in your code, so the next `volvel deploy` takes it back, and so on until you remove it from one side. A script the code defines cannot be taken over at all, because its code leans on the rest of yours: the console can only replace it with one written there, at the same path.
 
 Keep what the console should edit as files from the start and none of this comes up.
 
@@ -73,15 +73,15 @@ body:
   default: "5"
 ```
 
-- A script, connector or trigger source keeps its code beside the file, as `<name>.<kind>.ts`. That code may import only `@vynxlabs/sdk` and `node:` modules.
-- Files can be kept anywhere. Under `platform/`, or under a folder listed in `vynxlabs.yaml`, a file's path is where it is. Anywhere else it says `path:`.
+- A script, connector or trigger source keeps its code beside the file, as `<name>.<kind>.ts`. That code may import only `@volvel/sdk` and `node:` modules.
+- Files can be kept anywhere. Under `platform/`, or under a folder listed in `volvel.yaml`, a file's path is where it is. Anywhere else it says `path:`.
 - A file may say `key:` and `title:` beside its body.
 - Write comments in these files and order them as you like. When the console changes one, only what it changed is rewritten; your comments and your order stay. A comment inside a list stays at its position in the list.
-- `platform schemas` makes your editor complete and check these files as you type. It writes each kind's schema to `.platform/schemas/` and adds the mapping to `.vscode/settings.json`, for the YAML extension of VS Code. Run it again after upgrading the CLI.
+- `volvel schemas` makes your editor complete and check these files as you type. It writes each kind's schema to `.platform/schemas/` and adds the mapping to `.vscode/settings.json`, for the YAML extension of VS Code. Run it again after upgrading the CLI.
 - In the console, the editor of a resource that code defines offers "Move to a file" for the kinds without code. Once that is deployed, remove the definition from the code: a deploy that still has it takes the resource back.
 
 ```yaml
-# vynxlabs.yaml, at the repository's root
+# volvel.yaml, at the repository's root
 roots: [src]
 ignore: [vendor]
 ```
@@ -89,7 +89,7 @@ ignore: [vendor]
 The console edits these files wherever you keep them. With git sync, a change made in the console is committed to the file it came from, on the workspace's branch; a rename moves the file, or changes its `path:` if it says one. A resource made in the console is written under `platform/`.
 
 - A file is rewritten only when the resource was changed in the console. It is then written in the console's form, so comments in it are lost.
-- Without git sync, `platform pull` writes the console's changes into the same files. It does not overwrite one you changed and never pulled unless you pass `--force`.
+- Without git sync, `volvel pull` writes the console's changes into the same files. It does not overwrite one you changed and never pulled unless you pass `--force`.
 - Code is different. A resource made by `define*` in TypeScript is not a file the console can write, and the console shows it read-only.
 
 A resource is defined once. The build refuses one that is both in the code and in a file, by path or by key, and names both places.
@@ -130,12 +130,12 @@ body:
 The file's name is the key. Who is in a group is never in the repository: people belong to the identity provider.
 
 ```sh
-platform tenant plan --tenant <slug>      # what a release would change
-platform tenant release --tenant <slug>
-platform tenant pull --tenant <slug>      # write what the tenant has now
+volvel tenant plan --tenant <slug>      # what a release would change
+volvel tenant release --tenant <slug>
+volvel tenant pull --tenant <slug>      # write what the tenant has now
 ```
 
-A release makes the tenant's access what the files say. It removes what the files lack only with `--allow-delete <kind>/<key>`, and never while a workspace's bundle still gives the group or service account access. If the tenant asks for a second person, the release waits until someone else approves it (`platform tenant approve <number>`).
+A release makes the tenant's access what the files say. It removes what the files lack only with `--allow-delete <kind>/<key>`, and never while a workspace's bundle still gives the group or service account access. If the tenant asks for a second person, the release waits until someone else approves it (`volvel tenant approve <number>`).
 
 Then name them by key in the workspace's code, so that what they are called can change:
 

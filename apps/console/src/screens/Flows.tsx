@@ -9,7 +9,7 @@ import {
   Tabs,
   Timeline,
   type TimelineRow,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { ListChecks, Play, Workflow } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";

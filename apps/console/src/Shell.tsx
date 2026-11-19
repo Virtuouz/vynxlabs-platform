@@ -1,4 +1,4 @@
-import { Appear, Menu, SideSheet } from "@vynxlabs/ui";
+import { Appear, Menu, SideSheet } from "@volvel/ui";
 import {
   ChevronLeft,
   ChevronRight,

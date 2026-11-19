@@ -10,7 +10,7 @@ import {
   SelectField,
   SideSheet,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";

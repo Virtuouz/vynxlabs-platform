@@ -1,4 +1,4 @@
-import { type PlatformSchema, sql } from "@vynxlabs/db";
+import { type PlatformSchema, sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 
 type Condition = ReturnType<typeof sql>;

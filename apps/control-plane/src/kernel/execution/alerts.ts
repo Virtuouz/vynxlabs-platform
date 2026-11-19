@@ -1,5 +1,5 @@
-import type { FailureAlert } from "@vynxlabs/db";
-import { sql } from "@vynxlabs/db";
+import type { FailureAlert } from "@volvel/db";
+import { sql } from "@volvel/db";
 import { mutate, SYSTEM } from "../audit.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";

@@ -18,7 +18,7 @@ const { values } = parseArgs({
 });
 
 if (values.help) {
-  console.log(`Usage: platform-worker --url <control plane url> --token <worker credential>
+  console.log(`Usage: volvel-worker --url <control plane url> --token <worker credential>
 
 Runs a tenant's scripts. It only makes outbound calls to the control plane.
 
@@ -29,7 +29,7 @@ Options:
   --concurrency <n>   Runs handled at once. Default 4.
   --idle-exit <s>     Exit after this many seconds with nothing to do.
 
-PLATFORM_URL and PLATFORM_WORKER_TOKEN can be used instead of the flags.`);
+VOLVEL_URL and VOLVEL_WORKER_TOKEN can be used instead of the flags.`);
   process.exit(0);
 }
 
@@ -43,18 +43,16 @@ async function firstLine(): Promise<string | undefined> {
   return undefined;
 }
 
-const url = values.url ?? process.env.PLATFORM_URL;
+const url = values.url ?? process.env.VOLVEL_URL;
 const token = values["token-stdin"]
   ? await firstLine()
-  : (values.token ?? process.env.PLATFORM_WORKER_TOKEN);
+  : (values.token ?? process.env.VOLVEL_WORKER_TOKEN);
 if (!url || !token) {
-  console.error(
-    "platform-worker needs --url and --token, or PLATFORM_URL and PLATFORM_WORKER_TOKEN.",
-  );
+  console.error("volvel-worker needs --url and --token, or VOLVEL_URL and VOLVEL_WORKER_TOKEN.");
   process.exit(2);
 }
 // The credential is in memory now. Nothing a script spawns should inherit it.
-delete process.env.PLATFORM_WORKER_TOKEN;
+delete process.env.VOLVEL_WORKER_TOKEN;
 
 // Scripts run as this worker's own user. With the kernel's ptrace protection off, a
 // script's process could read this one's memory, credential included.
@@ -73,9 +71,9 @@ try {
   // Not Linux, or no Yama: nothing to say.
 }
 
-const idleExit = values["idle-exit"] ?? process.env.PLATFORM_WORKER_IDLE_EXIT;
+const idleExit = values["idle-exit"] ?? process.env.VOLVEL_WORKER_IDLE_EXIT;
 // Set by the worker host or control plane that started this worker: the machine it shares.
-const machine = parseMachine(process.env.PLATFORM_WORKER_MACHINE);
+const machine = parseMachine(process.env.VOLVEL_WORKER_MACHINE);
 const worker = new Worker({
   url,
   token,

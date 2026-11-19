@@ -1,4 +1,4 @@
-import { Button, Closing, JsonView, LogViewer, Menu, Notice, ResultView, Tabs } from "@vynxlabs/ui";
+import { Button, Closing, JsonView, LogViewer, Menu, Notice, ResultView, Tabs } from "@volvel/ui";
 import {
   ChevronDown,
   CircleX,

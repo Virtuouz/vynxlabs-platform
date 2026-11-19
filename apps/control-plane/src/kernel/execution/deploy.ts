@@ -1,4 +1,4 @@
-import { newId, type ResourceMeta, sql } from "@vynxlabs/db";
+import { newId, type ResourceMeta, sql } from "@volvel/db";
 import {
   type BundleManifest,
   bundleCompatibility,
@@ -8,7 +8,7 @@ import {
   platformKinds,
   renderResourceFiles,
   toolNameOf,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";

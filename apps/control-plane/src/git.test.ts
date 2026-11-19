@@ -425,7 +425,7 @@ describe("pulling", () => {
     );
     const pulled = await alice.post(`${ws()}/git/pull`, {});
     expect(pulled.body.status).toBe("failed");
-    expect(pulled.body.problem).toContain("may import only @vynxlabs/sdk and node: modules");
+    expect(pulled.body.problem).toContain("may import only @volvel/sdk and node: modules");
     expect(await sourceOf("orders/hello")).toContain("theirs again");
     expect((await alice.get(`${ws()}/git`)).body).toMatchObject({ state: "error" });
     // Put right on the branch, the next pull goes through.
@@ -594,7 +594,7 @@ describe("safety", () => {
       '# How many devices one person may hold.\nschemaVersion: 1\nbody:\n  default: "5"\n';
     commitOnBranch(
       {
-        "vynxlabs.yaml": "roots:\n  - src\n",
+        "volvel.yaml": "roots:\n  - src\n",
         "src/lending/limit.variable.yaml": written,
       },
       "Keep the limit beside the code",
@@ -785,7 +785,7 @@ describe("safety", () => {
       join(clone, "src/billing/rate.variable.yaml"),
       'schemaVersion: 1\nbody:\n  default: "2"\n',
     );
-    writeFileSync(join(clone, "vynxlabs.yaml"), "roots:\n  - src\n");
+    writeFileSync(join(clone, "volvel.yaml"), "roots:\n  - src\n");
     sh(["add", "-A"], clone);
     sh(
       ["-c", "user.name=Dev", "-c", "user.email=dev@acme.example", "commit", "-q", "-m", "Rate"],

@@ -33,7 +33,7 @@ export async function listen(options: ListenOptions): Promise<Listener> {
   const connect = async (again: boolean): Promise<void> => {
     const next = new pg.Client({
       connectionString: options.connectionString,
-      application_name: "vynxlabs-platform-events",
+      application_name: "volvel-events",
     });
     let lost = false;
     const onLost = (error?: Error) => {

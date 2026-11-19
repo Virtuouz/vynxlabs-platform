@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import {
   Bundle,
   type BundleManifest,
@@ -7,7 +7,7 @@ import {
   checkBundleAssets,
   checkBundleManifests,
   validateJson,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { missingAssets } from "../apps/assets.js";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { badRequest, HttpError } from "../errors.js";

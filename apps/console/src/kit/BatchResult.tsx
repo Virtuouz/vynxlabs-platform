@@ -1,4 +1,4 @@
-import { Button, Closing, Dialog } from "@vynxlabs/ui";
+import { Button, Closing, Dialog } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
 import { notify } from "../ask.tsx";
 import { CopyIcon } from "./copy.tsx";

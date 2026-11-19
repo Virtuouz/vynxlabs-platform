@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import { api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { ListCollection } from "../kit/ListCollection.tsx";

@@ -2,20 +2,21 @@
 // deployed to: students, the devices on the shelf, a term's loans so far, three
 // students who can sign in, and a key for the help-desk agent.
 //
-//   PLATFORM_EMAIL=… PLATFORM_PASSWORD=… node setup/setup.mjs --tenant higher-ed --workspace devices-dev
+//   VOLVEL_EMAIL=… VOLVEL_PASSWORD=… node setup/setup.mjs --tenant higher-ed --workspace devices-dev
 //
 // The tenant's `helpdesk-assistant` service account and its Tech Desk group come
-// from the repository's own `tenant/` files: run `platform tenant release` first.
+// from the repository's own `tenant/` files: run `volvel tenant release` first.
 // What to sign in with is written to .platform/<workspace>.json.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(dirname(fileURLToPath(import.meta.url)));
-const URL_ = (process.env.PLATFORM_URL ?? "https://vynxlabs-platform-test.fly.dev").replace(
-  /\/$/,
-  "",
-);
+if (!process.env.VOLVEL_URL) {
+  console.error("Set VOLVEL_URL to the instance's address.");
+  process.exit(1);
+}
+const URL_ = process.env.VOLVEL_URL.replace(/\/$/, "");
 const arg = (name) => process.argv[process.argv.indexOf(`--${name}`) + 1];
 const TENANT = arg("tenant") ?? "higher-ed";
 const WORKSPACE = arg("workspace") ?? "devices-dev";
@@ -57,7 +58,7 @@ function client(cookie) {
   };
 }
 
-const me = client(await session(process.env.PLATFORM_EMAIL, process.env.PLATFORM_PASSWORD));
+const me = client(await session(process.env.VOLVEL_EMAIL, process.env.VOLVEL_PASSWORD));
 const tenant = (await me.get("/tenants?limit=200")).items.find((t) => t.slug === TENANT);
 if (!tenant) throw new Error(`No tenant ${TENANT}.`);
 const T = `/tenants/${tenant.id}`;
@@ -321,7 +322,7 @@ const sa = (await me.get(`${T}/service-accounts`)).items.find(
 );
 if (!sa) {
   throw new Error(
-    "There is no helpdesk-assistant service account. Run `platform tenant release --tenant <slug>` in this repository first.",
+    "There is no helpdesk-assistant service account. Run `volvel tenant release --tenant <slug>` in this repository first.",
   );
 }
 const key = await me.post(`${T}/service-accounts/${sa.id}/api-keys`, {

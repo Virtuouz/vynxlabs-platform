@@ -10,8 +10,8 @@ import {
   RELATIVE_RANGES,
   WIDGET_SIZE,
   type WidgetPlace,
-} from "@vynxlabs/manifest";
-import { settle, usePlacement } from "@vynxlabs/screens";
+} from "@volvel/manifest";
+import { settle, usePlacement } from "@volvel/screens";
 import {
   Button,
   CheckboxField,
@@ -23,7 +23,7 @@ import {
   Notice,
   SelectField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { Ellipsis, Move, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, invalidatePrefix, useLoad } from "../api.ts";

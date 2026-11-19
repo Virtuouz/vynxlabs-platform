@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleDigest } from "@vynxlabs/manifest";
+import { bundleDigest } from "@volvel/manifest";
 import { afterAll, describe, expect, test } from "vitest";
 import { BuildError, buildBundle, buildRepository, describeBundle } from "./build.js";
 
@@ -15,10 +15,10 @@ async function repository(source: string) {
   const dir = await mkdtemp(join(tmpdir(), "tenant-"));
   scratch.push(dir);
   await mkdir(join(dir, "src"));
-  await mkdir(join(dir, "node_modules", "@vynxlabs"), { recursive: true });
+  await mkdir(join(dir, "node_modules", "@volvel"), { recursive: true });
   await symlink(
-    join(example, "node_modules", "@vynxlabs", "sdk"),
-    join(dir, "node_modules", "@vynxlabs", "sdk"),
+    join(example, "node_modules", "@volvel", "sdk"),
+    join(dir, "node_modules", "@volvel", "sdk"),
   );
   await writeFile(join(dir, "package.json"), '{"type":"module"}');
   await writeFile(join(dir, "src", "index.ts"), source);
@@ -175,8 +175,7 @@ describe("building the example repository", () => {
 });
 
 describe("a repository with mistakes", () => {
-  const head =
-    'import { defineScript, defineSchedule, defineConnection, z } from "@vynxlabs/sdk";\n';
+  const head = 'import { defineScript, defineSchedule, defineConnection, z } from "@volvel/sdk";\n';
   const script = (extra = "") =>
     `export const s = defineScript({ path: "jobs/a", input: z.object({}), output: z.object({}), ${extra} async run() { return {}; } });\n`;
 
@@ -204,8 +203,7 @@ describe("a repository with mistakes", () => {
   });
 
   test("catches a flow that does not hold together", async () => {
-    const flowHead =
-      'import { defineFlow, defineScript, step, trigger, z } from "@vynxlabs/sdk";\n';
+    const flowHead = 'import { defineFlow, defineScript, step, trigger, z } from "@volvel/sdk";\n';
     const source = `${flowHead}${script()}export const f = defineFlow({
       path: "flows/broken",
       nodes: {
@@ -234,7 +232,7 @@ describe("a repository with mistakes", () => {
     // What refers to a path used twice is not reported again: the one problem is the clash.
     expect(
       await problems(
-        `import { column, defineApp, defineInterface, defineTable } from "@vynxlabs/sdk";
+        `import { column, defineApp, defineInterface, defineTable } from "@volvel/sdk";
 export const pets = defineTable({ path: "pets", columns: { name: column.text() } });
 export const app = defineApp({ path: "pets", title: "Pets", interface: "screens/pets" });
 export const visits = defineTable({ path: "visits", columns: { pet: column.reference("pets") } });
@@ -250,7 +248,7 @@ export const screen = defineInterface({ path: "screens/pets", title: "Pets", pag
 
 describe("keys and titles", () => {
   const head =
-    'import { column, defineSchedule, defineScript, defineTable, z } from "@vynxlabs/sdk";\n';
+    'import { column, defineSchedule, defineScript, defineTable, z } from "@volvel/sdk";\n';
   const script = (options: string) =>
     `export const submit = defineScript({ ${options} input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
 
@@ -324,7 +322,7 @@ export const nightly = defineSchedule({ path: "nightly", script: "requests/submi
 
 describe("a definition the entry file does not export", () => {
   const script = (name: string, path: string) =>
-    `import { defineScript, z } from "@vynxlabs/sdk";\nexport const ${name} = defineScript({ path: "${path}", input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
+    `import { defineScript, z } from "@volvel/sdk";\nexport const ${name} = defineScript({ path: "${path}", input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
 
   test("is refused by name, where it would have gone missing without a word", async () => {
     expect(
@@ -361,7 +359,7 @@ describe("a definition the entry file does not export", () => {
 
 describe("resources managed in the console, as files in the repository", () => {
   const source = `
-    import { defineScript, z } from "@vynxlabs/sdk";
+    import { defineScript, z } from "@volvel/sdk";
     export const check = defineScript({
       path: "orders/check",
       input: z.object({}),
@@ -419,7 +417,7 @@ describe("resources managed in the console, as files in the repository", () => {
 
   test("files are read wherever the repository keeps them, and say where each is when that is not the console's folder", async () => {
     const dir = await withFiles({
-      "vynxlabs.yaml": "roots: [src]\n",
+      "volvel.yaml": "roots: [src]\n",
       // Beside the feature it belongs to. Its path is where it is, under the root.
       "src/lending/greeting.variable.yaml":
         "title: Greeting\nschemaVersion: 1\nbody:\n  default: hi\n",

@@ -10,7 +10,7 @@ import {
   SelectField,
   Skeleton,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { Identifier } from "../kit/copy.tsx";

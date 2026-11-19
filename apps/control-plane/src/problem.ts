@@ -1,5 +1,5 @@
 import { STATUS_CODES } from "node:http";
-import { isPoolTimeout } from "@vynxlabs/db";
+import { isPoolTimeout } from "@volvel/db";
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { type Static, Type } from "typebox";
 import { EgressRefused } from "./kernel/egress.js";

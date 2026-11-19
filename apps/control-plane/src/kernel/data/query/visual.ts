@@ -4,7 +4,7 @@ import {
   VISUAL_FUNCTIONS,
   type VisualCondition,
   type VisualQuery,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 
 /**
  * Writes the SQL of a query built from menus. What it writes is one SELECT

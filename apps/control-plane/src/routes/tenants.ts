@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { type DataLocation, newId } from "@vynxlabs/db";
+import { type DataLocation, newId } from "@volvel/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";

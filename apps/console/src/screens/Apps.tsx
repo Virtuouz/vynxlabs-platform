@@ -1,4 +1,4 @@
-import { Button, Notice, SelectField, SideSheet, Tabs } from "@vynxlabs/ui";
+import { Button, Notice, SelectField, SideSheet, Tabs } from "@volvel/ui";
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";

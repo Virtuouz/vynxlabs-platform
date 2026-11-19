@@ -2,6 +2,26 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 20, the name Volvel, and documentation
+
+The product is named Volvel. Every name that said Vynxlabs or `platform` where a person or a program meets it has changed, and no old name is accepted. There was no published version and no instance to keep working.
+
+### For operators
+
+- The image's entry scripts are `volvel-start` and `volvel-worker-host`, and the worker's commands are `volvel-worker` and `volvel-worker-host`.
+- In the Compose files: `PLATFORM_IMAGE` is `VOLVEL_IMAGE` and `PLATFORM_BIND` is `VOLVEL_BIND`. The project is named `volvel`, so Compose looks for volumes under that name. An install made under the old name keeps its data in the old volumes: start from new, or pass `-p vynxlabs-platform`.
+- A worker reads `VOLVEL_URL`, `VOLVEL_WORKER_TOKEN`, `VOLVEL_WORKER_IDLE_EXIT` and `VOLVEL_WORKER_MACHINE`.
+- `OTEL_SERVICE_NAME` is `volvel` when it is not set, and `volvel-worker` for a worker.
+- An instance with no product name of its own shows "Volvel".
+- A tenant export is stamped `volvel-tenant-export`. An export made before this is not read.
+
+### For tenant developers
+
+- The packages are `@volvel/sdk`, `@volvel/app` and `@volvel/ui`. Change every import.
+- The command is `volvel`, not `platform`: `volvel deploy`, `volvel dev`. It reads `VOLVEL_URL`, `VOLVEL_TOKEN` and `VOLVEL_EXPORT_PASSPHRASE`, and keeps its sign-in in `~/.config/volvel/`. Sign in again.
+- A repository says where its files are in `volvel.yaml`, not `vynxlabs.yaml`. The `platform/` folder keeps its name.
+- A resource that was renamed answers at its old path with the header `Volvel-Resource-Moved`.
+
 ## Unreleased: phase 19, dashboards placed by drag, and motion that is kept
 
 ### For operators

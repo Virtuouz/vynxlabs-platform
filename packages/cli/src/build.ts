@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Environment } from "@marcbachmann/cel-js";
-import { ComposeError, composeBundle, coreNodesFor } from "@vynxlabs/compose";
+import { ComposeError, composeBundle, coreNodesFor } from "@volvel/compose";
 import {
   type Bundle,
   type BundleManifest,
@@ -25,7 +25,7 @@ import {
   type RepositoryConfig,
   type ResourceFile,
   resolveKeyReferences,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { build as esbuild } from "esbuild";
 import { type AppSource, buildApps } from "./apps.js";
 import { BuildError } from "./errors.js";
@@ -39,12 +39,12 @@ interface Definition {
 }
 
 /** Where the SDK notes what the repository's code defines. The SDK names it the same way. */
-const DEFINITIONS = Symbol.for("vynxlabs.definitions");
+const DEFINITIONS = Symbol.for("volvel.definitions");
 
 const isDefinition = (value: unknown): value is Definition =>
   typeof value === "object" &&
   value !== null &&
-  (value as Record<string, unknown>).__vynxlabsResource === true;
+  (value as Record<string, unknown>).__volvelResource === true;
 
 export interface BuildOptions {
   /** The tenant repository. */
@@ -322,12 +322,12 @@ async function loadDefinitions(options: BuildOptions) {
 
   let sdkEntry: string;
   try {
-    sdkEntry = createRequire(join(directory, "package.json")).resolve("@vynxlabs/sdk");
+    sdkEntry = createRequire(join(directory, "package.json")).resolve("@volvel/sdk");
   } catch {
-    throw new BuildError(["@vynxlabs/sdk is not installed in this repository."]);
+    throw new BuildError(["@volvel/sdk is not installed in this repository."]);
   }
   const sdk = await import(pathToFileURL(sdkEntry).href).catch(() => {
-    throw new BuildError(["@vynxlabs/sdk is not installed in this repository."]);
+    throw new BuildError(["@volvel/sdk is not installed in this repository."]);
   });
 
   const definitions = Object.entries(exported).filter((pair): pair is [string, Definition] =>

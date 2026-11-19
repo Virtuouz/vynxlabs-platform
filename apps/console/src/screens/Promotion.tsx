@@ -1,4 +1,4 @@
-import { Button, Closing, Notice, SideSheet, TextAreaField } from "@vynxlabs/ui";
+import { Button, Closing, Notice, SideSheet, TextAreaField } from "@volvel/ui";
 import { GitPullRequestArrow } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";

@@ -1,4 +1,4 @@
-import { type Kysely, newId, type PlatformSchema, sql, type Transaction } from "@vynxlabs/db";
+import { type Kysely, newId, type PlatformSchema, sql, type Transaction } from "@volvel/db";
 
 import { commitDataTransactions, rollbackDataTransactions } from "./data/stores.js";
 

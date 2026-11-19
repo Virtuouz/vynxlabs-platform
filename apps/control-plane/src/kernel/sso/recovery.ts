@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 
 /** How many codes a member is given at once. */

@@ -1,4 +1,4 @@
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { describeChange } from "./kernel/describe.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";

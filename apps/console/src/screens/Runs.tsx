@@ -1,4 +1,4 @@
-import { Button, JsonView, LogViewer, type MenuItem, Notice, ResultView, Tabs } from "@vynxlabs/ui";
+import { Button, JsonView, LogViewer, type MenuItem, Notice, ResultView, Tabs } from "@volvel/ui";
 import {
   ArrowUp,
   ArrowUpRight,

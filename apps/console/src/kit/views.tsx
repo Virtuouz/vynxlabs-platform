@@ -7,7 +7,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Dialog, Menu, type MenuItem, MoveButtons, Tooltip, useFlip } from "@vynxlabs/ui";
+import { Button, Dialog, Menu, type MenuItem, MoveButtons, Tooltip, useFlip } from "@volvel/ui";
 import { Bookmark, Columns3, GripVertical } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { api, useLoad } from "../api.ts";

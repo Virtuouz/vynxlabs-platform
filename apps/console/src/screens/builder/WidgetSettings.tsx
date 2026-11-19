@@ -1,5 +1,5 @@
-import type { InterfacePage, PageWidget, WidgetAction, WidgetLink } from "@vynxlabs/manifest";
-import { type Filter, heading, type TableInfo } from "@vynxlabs/screens";
+import type { InterfacePage, PageWidget, WidgetAction, WidgetLink } from "@volvel/manifest";
+import { type Filter, heading, type TableInfo } from "@volvel/screens";
 import {
   Button,
   CheckboxField,
@@ -10,7 +10,7 @@ import {
   TextAreaField,
   TextField,
   useFlip,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
 import { ActionSettings, RowActionsSettings, type TargetFacts } from "../ActionSettings.tsx";
 import { BUCKETS, FUNCTIONS, OPERATORS, SYSTEM } from "./data.ts";

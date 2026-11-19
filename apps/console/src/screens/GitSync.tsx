@@ -1,4 +1,4 @@
-import { Button, Notice } from "@vynxlabs/ui";
+import { Button, Notice } from "@volvel/ui";
 import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";

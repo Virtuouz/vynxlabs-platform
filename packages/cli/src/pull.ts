@@ -1,5 +1,5 @@
 /**
- * `platform pull`: the workspace's console resources, drafts included, written
+ * `volvel pull`: the workspace's console resources, drafts included, written
  * as the files `platform/` holds, so a change made in the console reaches the
  * repository. A resource whose file the repository keeps somewhere else is
  * written there. What was written is remembered, so a file changed here since
@@ -15,7 +15,7 @@ import {
   REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
   sameResourceFile,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { type Io, loadSettings, locate, refusal, request } from "./cli.js";
 
 /** What the last pull wrote, by path under `platform/`. */

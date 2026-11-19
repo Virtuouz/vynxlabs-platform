@@ -5,7 +5,7 @@ import {
   type InterfaceBody,
   interfaceTables,
   type TableBody,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { type Static, Type } from "typebox";
 import {
   actionsOf,

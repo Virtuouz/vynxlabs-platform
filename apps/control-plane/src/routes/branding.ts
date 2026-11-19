@@ -2,7 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { Type } from "typebox";
 import { cleanTheme, themeCss } from "../kernel/apps/theme.js";
 import { badRequest, notFound } from "../kernel/errors.js";
@@ -11,7 +11,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { NoContent } from "./shared.js";
 
 /** What the console calls itself when the operator has not named it. */
-export const DEFAULT_PRODUCT_NAME = "Vynxlabs";
+export const DEFAULT_PRODUCT_NAME = "Volvel";
 
 const LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 const MAX_LOGO_BYTES = 512 * 1024;

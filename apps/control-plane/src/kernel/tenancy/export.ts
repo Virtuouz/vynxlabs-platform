@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Kysely, type PlatformSchema, sql, type Transaction } from "@vynxlabs/db";
+import { type Kysely, type PlatformSchema, sql, type Transaction } from "@volvel/db";
 import { workspaceSchema } from "../data/apply.js";
 import { notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
@@ -7,7 +7,7 @@ import { tenantKey } from "../tenant-keys.js";
 import { OWNED_TABLES, type OwnedTable } from "./tables.js";
 import { TAR_END, tarEntry } from "./tar.js";
 
-export const EXPORT_FORMAT = "vynxlabs-tenant-export";
+export const EXPORT_FORMAT = "volvel-tenant-export";
 export const EXPORT_FORMAT_VERSION = 1;
 /** What an export never carries, said in the manifest so that whoever imports it knows what to make again. */
 export const NOT_CARRIED = [

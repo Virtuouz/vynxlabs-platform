@@ -1,4 +1,4 @@
-import { Button, JsonView, Notice } from "@vynxlabs/ui";
+import { Button, JsonView, Notice } from "@volvel/ui";
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";

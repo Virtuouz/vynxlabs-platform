@@ -358,7 +358,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     telemetry: {
       endpoint: otlpEndpoint,
       headers: readHeaders(value("OTEL_EXPORTER_OTLP_HEADERS")),
-      serviceName: value("OTEL_SERVICE_NAME") ?? "platform",
+      serviceName: value("OTEL_SERVICE_NAME") ?? "volvel",
       traces: value("OTEL_TRACES_EXPORTER") !== "none",
       metrics: value("OTEL_METRICS_EXPORTER") !== "none",
       metricsIntervalMs: otlpInterval,

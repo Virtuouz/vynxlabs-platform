@@ -1,4 +1,4 @@
-import { Button, TextField } from "@vynxlabs/ui";
+import { Button, TextField } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";

@@ -3,7 +3,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { Type } from "typebox";
 import { appUrl, domainUrl } from "../kernel/apps/address.js";
 import { MAX_ASSET_BYTES, storeAsset } from "../kernel/apps/assets.js";

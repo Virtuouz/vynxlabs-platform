@@ -1,6 +1,6 @@
-import { useQuery } from "@vynxlabs/app";
-import { Badge, Button, DateStepper, EmptyState, Notice, useToast } from "@vynxlabs/ui";
-import { TriangleAlert } from "@vynxlabs/ui/icons";
+import { useQuery } from "@volvel/app";
+import { Badge, Button, DateStepper, EmptyState, Notice, useToast } from "@volvel/ui";
+import { TriangleAlert } from "@volvel/ui/icons";
 import { useCallback, useMemo, useState } from "react";
 import {
   type Appointment,

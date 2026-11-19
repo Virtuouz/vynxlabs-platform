@@ -4,7 +4,7 @@
  * editor's preview builds it again from a run that has happened. One function
  * for both, so a preview never says something the run would not.
  */
-import type { StepStatus } from "@vynxlabs/db";
+import type { StepStatus } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 
 /** The part of a step's row an expression's context is made from. */

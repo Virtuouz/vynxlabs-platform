@@ -7,7 +7,7 @@ import {
   type TableBody,
   type TableColumn,
   type TablePolicy,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 
 /** One value of an enum column as the catalog keeps it: without where it was renamed from. */
 export type KeptValue = Omit<EnumValue, "renamedFrom">;

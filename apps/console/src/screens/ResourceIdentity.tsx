@@ -1,4 +1,4 @@
-import { Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Dialog, Notice, TextField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";

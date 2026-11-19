@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { type BundleManifest, bundleDigest, entryFor } from "@vynxlabs/manifest";
+import { type BundleManifest, bundleDigest, entryFor } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   CONSOLE_MARKER,
@@ -62,8 +62,8 @@ const base: UnsignedBundle = {
 };
 const hello = script(
   "orders/hello",
-  'import type { ScriptContext } from "@vynxlabs/sdk";\n' +
-    'import { SDK_VERSION } from "@vynxlabs/sdk";\n' +
+  'import type { ScriptContext } from "@volvel/sdk";\n' +
+    'import { SDK_VERSION } from "@volvel/sdk";\n' +
     'import { hostname } from "node:os";\n' +
     "export default async function (input: { name: string }, ctx: ScriptContext) {\n" +
     '  if (input.name === "boom") throw new Error("boom from the console");\n' +
@@ -109,7 +109,7 @@ describe("composing a bundle", () => {
   test("what a console script declares as input and output is read as JSON Schema from the bundle", async () => {
     const typed = script(
       "orders/typed",
-      'import { z } from "@vynxlabs/sdk";\n' +
+      'import { z } from "@volvel/sdk";\n' +
         "export const input = z.object({ name: z.string(), count: z.number().int().default(1) });\n" +
         "export const output = z.object({ greeting: z.string() });\n" +
         'export default async (input: { name: string }) => ({ greeting: "hi " + input.name });\n',
@@ -166,7 +166,7 @@ describe("composing a bundle", () => {
       require: `const x = require(${secret}); export default async () => x;`,
       dynamic: `export default async () => (await import(${secret})).default;`,
       package: 'import x from "esbuild"; export default async () => x;',
-      insideSdk: 'import x from "@vynxlabs/sdk/package.json"; export default async () => x;',
+      insideSdk: 'import x from "@volvel/sdk/package.json"; export default async () => x;',
       asText: `import x from ${secret} with { type: "text" }; export default async () => x;`,
       otherSource:
         'import x from "vx-source:orders/hello.script.ts"; export default async () => x;',
@@ -177,9 +177,7 @@ describe("composing a bundle", () => {
         [script(`attack/${name.toLowerCase()}`, code)],
         options,
       );
-      await expect(attempt, name).rejects.toThrow(
-        /may import only @vynxlabs\/sdk and node: modules/,
-      );
+      await expect(attempt, name).rejects.toThrow(/may import only @volvel\/sdk and node: modules/);
     }
     // A URL is not an import: it builds, and nothing is read.
     const url = await composeCode(

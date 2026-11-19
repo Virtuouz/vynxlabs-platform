@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
-import { PATH_PATTERN } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
 import {

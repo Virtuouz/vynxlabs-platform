@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import { Type } from "typebox";
 import { badRequest } from "../kernel/errors.js";
 import { readConnection } from "../kernel/execution/bindings.js";

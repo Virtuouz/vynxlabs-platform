@@ -1,4 +1,4 @@
-import { Button, Closing, JsonView } from "@vynxlabs/ui";
+import { Button, Closing, JsonView } from "@volvel/ui";
 import { FileCode2, ListChecks } from "lucide-react";
 import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";

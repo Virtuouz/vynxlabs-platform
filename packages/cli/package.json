@@ -1,23 +1,23 @@
 {
-  "name": "@vynxlabs/cli",
+  "name": "@volvel/cli",
   "version": "0.5.0",
   "private": true,
   "type": "module",
   "bin": {
-    "platform": "./dist/bin.js"
+    "volvel": "./dist/bin.js"
   },
   "files": [
     "dist"
   ],
   "devDependencies": {
-    "@vynxlabs/control-plane": "workspace:*",
-    "@vynxlabs/example-acme": "workspace:*",
-    "@vynxlabs/worker": "workspace:*"
+    "@volvel/control-plane": "workspace:*",
+    "@volvel/example-acme": "workspace:*",
+    "@volvel/worker": "workspace:*"
   },
   "dependencies": {
     "@marcbachmann/cel-js": "^8.0.0",
-    "@vynxlabs/compose": "workspace:*",
-    "@vynxlabs/manifest": "workspace:*",
+    "@volvel/compose": "workspace:*",
+    "@volvel/manifest": "workspace:*",
     "esbuild": "^0.28.2"
   },
   "exports": {

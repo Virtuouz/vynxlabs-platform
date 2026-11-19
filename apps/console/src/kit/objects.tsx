@@ -1,4 +1,4 @@
-import { Notice } from "@vynxlabs/ui";
+import { Notice } from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { Link } from "../router.tsx";

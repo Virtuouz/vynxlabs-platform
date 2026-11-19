@@ -1,4 +1,4 @@
-import { Button, Facts, Notice, ResultView, SelectField } from "@vynxlabs/ui";
+import { Button, Facts, Notice, ResultView, SelectField } from "@volvel/ui";
 import { X } from "lucide-react";
 import { InputForm } from "../InputDialog.tsx";
 import { between } from "../kit/format.ts";

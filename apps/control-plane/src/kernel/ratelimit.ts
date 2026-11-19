@@ -1,5 +1,5 @@
 import type { FastifyRateLimitOptions, FastifyRateLimitStoreCtor } from "@fastify/rate-limit";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import type { Kernel } from "./kernel.js";
 
 type Result = { current: number; ttl: number };

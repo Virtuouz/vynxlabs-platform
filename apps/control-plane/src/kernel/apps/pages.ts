@@ -1,6 +1,6 @@
 /** The platform's own pages for a tenant's apps: signing in, setting a password, and saying no. */
 
-import { FORM_TEXT_LIMIT, type FormTrigger } from "@vynxlabs/manifest";
+import { FORM_TEXT_LIMIT, type FormTrigger } from "@volvel/manifest";
 
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",

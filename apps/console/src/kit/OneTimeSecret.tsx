@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
 import { ask } from "../ask.tsx";
 import { CopyButton } from "../ListScreen.tsx";

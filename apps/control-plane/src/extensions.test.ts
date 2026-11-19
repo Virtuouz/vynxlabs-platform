@@ -2,8 +2,8 @@ import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -381,7 +381,7 @@ describe("a connector of the tenant's own", () => {
       uses: { connections: ["megaphone"], secrets: [], variables: [] },
       source: {
         language: "typescript",
-        code: 'import type { ScriptContext } from "@vynxlabs/sdk";\nexport default async (input: { text: string }, ctx: ScriptContext) => ({\n  said: (await ctx.connection<{ shout(text: string): string }>("megaphone")).shout(input.text),\n});\n',
+        code: 'import type { ScriptContext } from "@volvel/sdk";\nexport default async (input: { text: string }, ctx: ScriptContext) => ({\n  said: (await ctx.connection<{ shout(text: string): string }>("megaphone")).shout(input.text),\n});\n',
       },
     });
     expect(caller.status, JSON.stringify(caller.body)).toBe(200);
@@ -811,7 +811,7 @@ describe("the core nodes, and nodes of a tenant's own", () => {
       node: { label: "Count rows", icon: "hash", category: "Ours", takes: ["table"] },
       source: {
         language: "typescript",
-        code: 'import type { ScriptContext } from "@vynxlabs/sdk";\nexport default async (input: { table: string }, ctx: ScriptContext) => ({\n  rows: (await ctx.table(input.table).find({ limit: 100 })).length,\n});\n',
+        code: 'import type { ScriptContext } from "@volvel/sdk";\nexport default async (input: { table: string }, ctx: ScriptContext) => ({\n  rows: (await ctx.table(input.table).find({ limit: 100 })).length,\n});\n',
       },
     });
     expect(counter.status, JSON.stringify(counter.body)).toBe(200);
@@ -1296,7 +1296,7 @@ describe("a trigger that is a form", () => {
 describe("a repository whose flows use core nodes", () => {
   test("deploys beside what was made in the console, and removes none of it", async () => {
     // What the CLI builds for such a repository: its own resources, and the nodes its flows use.
-    const { composeBundle } = await import("@vynxlabs/compose");
+    const { composeBundle } = await import("@volvel/compose");
     const { fileURLToPath } = await import("node:url");
     const built = await composeBundle(
       {
@@ -1321,7 +1321,7 @@ describe("a repository whose flows use core nodes", () => {
         code: "",
       },
       [],
-      { sdkEntry: fileURLToPath(import.meta.resolve("@vynxlabs/sdk")) },
+      { sdkEntry: fileURLToPath(import.meta.resolve("@volvel/sdk")) },
     );
     // The nodes make it a bundle of the newest format, though the repository has no console folder.
     expect(built.formatVersion).toBe(3);

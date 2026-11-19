@@ -14,7 +14,7 @@ import {
   TextField,
   useFlip,
   useKeys,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import {
   addEdge,
   Background,

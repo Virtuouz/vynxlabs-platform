@@ -1,4 +1,4 @@
-import { type Bundle, type BundleManifest, bundleDigest, formatFor } from "@vynxlabs/manifest";
+import { type Bundle, type BundleManifest, bundleDigest, formatFor } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -288,7 +288,7 @@ describe("a resource moved to another path", () => {
     const started = await alice.post(`${ws(dev)}/runs`, { script: "requests/submit", input: {} });
     expect(started.status, JSON.stringify(started.body)).toBe(201);
     expect(started.body.script).toBe("lending/requests/file");
-    expect(started.headers["vynx-resource-moved"]).toBe("lending/requests/file");
+    expect(started.headers["volvel-resource-moved"]).toBe("lending/requests/file");
     expect(String(started.headers.deprecation)).toMatch(/^@\d+$/);
     expect(new Date(String(started.headers.sunset)).getTime()).toBeGreaterThan(Date.now());
     expect(String(started.headers.warning)).toContain(
@@ -300,7 +300,7 @@ describe("a resource moved to another path", () => {
       input: {},
       idempotencyKey: "first",
     });
-    expect(direct.headers["vynx-resource-moved"]).toBeUndefined();
+    expect(direct.headers["volvel-resource-moved"]).toBeUndefined();
     // And the request first sent before the rename is the same request after it.
     expect(direct.status).toBe(200);
     expect(direct.body.id).toBe(run);
@@ -308,7 +308,7 @@ describe("a resource moved to another path", () => {
     const rows = await alice.get(`${ws(dev)}/rows/items`);
     expect(rows.status).toBe(200);
     expect(rows.body.items.map((row: Any) => row.name)).toEqual(["kept"]);
-    expect(rows.headers["vynx-resource-moved"]).toBe("lending/items");
+    expect(rows.headers["volvel-resource-moved"]).toBe("lending/items");
     expect((await alice.get(`${ws(dev)}/rows/lending/items`)).headers.sunset).toBeUndefined();
   });
 
@@ -358,7 +358,7 @@ describe("a resource moved to another path", () => {
     const byOld = await alice.get(`${ws(dev)}/resources/items`);
     expect(byOld.body.path).toBe("lending/items");
     expect(byOld.body.key).toBe("items");
-    expect(byOld.headers["vynx-resource-moved"]).toBe("lending/items");
+    expect(byOld.headers["volvel-resource-moved"]).toBe("lending/items");
   });
 
   test("an alias that has expired answers nothing, and a resource made at its path ends it", async () => {

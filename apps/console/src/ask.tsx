@@ -8,7 +8,7 @@ import {
   TooltipProvider,
   useDialogs,
   useToast,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { type ReactNode, useState } from "react";
 import { type ApiError, makeQueryClient, setActiveClient } from "./api.ts";
 import { navigate, setLeaveQuestion } from "./router.tsx";

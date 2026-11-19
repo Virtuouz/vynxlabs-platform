@@ -7,7 +7,7 @@ import {
   Notice,
   Panel,
   saveText,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -244,12 +244,12 @@ export function Scripts({
           ) : editable ? (
             <>
               Write one here, or deploy them from the tenant's repository with{" "}
-              <code className="font-mono">platform deploy</code>.
+              <code className="font-mono">volvel deploy</code>.
             </>
           ) : (
             <>
               Scripts reach production when a dev workspace is promoted here, or with{" "}
-              <code className="font-mono">platform deploy</code> from the tenant's repository.
+              <code className="font-mono">volvel deploy</code> from the tenant's repository.
             </>
           ),
         ...(items.length === 0 && editable
@@ -580,7 +580,7 @@ export function Deployments({ root }: { root: string }) {
       ]}
       empty={{
         title: "Nothing has been deployed",
-        text: "Deploy what was saved here from Release, promote a dev workspace into this one, or deploy from the tenant's repository with platform deploy.",
+        text: "Deploy what was saved here from Release, promote a dev workspace into this one, or deploy from the tenant's repository with volvel deploy.",
       }}
       rowActions={(row, reload) =>
         row.active ? null : (
@@ -1233,7 +1233,7 @@ export function Workers({ base }: { base: string }) {
       }>
         as="section"
         title="Credentials for standalone workers"
-        description={`A worker outside the platform signs in with one of these: platform-worker --url ${instanceUrl} --token followed by the credential. The full command is shown when a credential is made.`}
+        description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token followed by the credential. The full command is shown when a credential is made.`}
         path={`${base}/worker-credentials`}
         rowKey={(row) => row.id}
         columns={[
@@ -1275,7 +1275,7 @@ export function Workers({ base }: { base: string }) {
           },
           afterCreate: (result, dismiss) => {
             const token = (result as { token: string }).token;
-            const command = `platform-worker --url ${instanceUrl} --token ${token}`;
+            const command = `volvel-worker --url ${instanceUrl} --token ${token}`;
             return (
               <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
                 <p className="m-0">Start a worker with it:</p>

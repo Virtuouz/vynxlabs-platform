@@ -66,7 +66,7 @@ export class Database {
       max: QUEUE_CONNECTIONS,
       maxLifetimeSeconds: CONNECTION_LIFETIME_SECONDS,
       connectionTimeoutMillis: CONNECTION_WAIT_MS,
-      application_name: "vynxlabs-platform-queue",
+      application_name: "volvel-queue",
     });
     this.#queuePool.on("error", (error) => options.onConnectionError?.(error));
     this.#kysely = new Kysely<PlatformSchema>({

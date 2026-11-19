@@ -2,7 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { validateJson } from "@vynxlabs/manifest";
+import { validateJson } from "@volvel/manifest";
 import { Type } from "typebox";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
 import { MAX_FILE_BYTES, readFile, storeFile, toStoredFile } from "../kernel/data/files.js";

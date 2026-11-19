@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import type { RetentionDays } from "../config.js";
 import type { Kernel } from "./kernel.js";
 

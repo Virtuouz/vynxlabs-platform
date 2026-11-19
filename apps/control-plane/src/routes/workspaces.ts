@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId, sql } from "@vynxlabs/db";
-import { PATH_PATTERN } from "@vynxlabs/manifest";
+import { newId, sql } from "@volvel/db";
+import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { check } from "../kernel/authorize.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
@@ -639,7 +639,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "The paths that renamed resources had and that still answer",
           description:
             "A rename leaves the old path answering for the resource for 90 days. An answer " +
-            "reached through one carries `Deprecation`, `Sunset` and `Vynx-Resource-Moved`.",
+            "reached through one carries `Deprecation`, `Sunset` and `Volvel-Resource-Moved`.",
           tags: ["resources"],
           params: Type.Object({ t: Id, w: Id }),
           response: {

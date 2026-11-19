@@ -31,7 +31,7 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-const CHATTY = `import type { ScriptContext } from "@vynxlabs/sdk";
+const CHATTY = `import type { ScriptContext } from "@volvel/sdk";
 
 export default async function (_given: unknown, ctx: ScriptContext) {
   for (let line = 1; line <= 1200; line += 1) ctx.log.info(\`line \${line}\`);

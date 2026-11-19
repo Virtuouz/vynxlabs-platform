@@ -1,5 +1,5 @@
-import { type BundleManifest, validateJson } from "@vynxlabs/manifest";
-import { httpConnector, oauth2Connector, smtpConfigSchema } from "@vynxlabs/sdk";
+import { type BundleManifest, validateJson } from "@volvel/manifest";
+import { httpConnector, oauth2Connector, smtpConfigSchema } from "@volvel/sdk";
 
 /** What the configuration of a connection must fit, for the connectors every worker has. */
 export const BUILTIN_CONFIG_SCHEMAS: Record<string, object> = {

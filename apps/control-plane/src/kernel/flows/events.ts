@@ -1,5 +1,5 @@
-import { newId } from "@vynxlabs/db";
-import { PLATFORM_EVENT_PREFIX, validateJson } from "@vynxlabs/manifest";
+import { newId } from "@volvel/db";
+import { PLATFORM_EVENT_PREFIX, validateJson } from "@volvel/manifest";
 import type { Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";

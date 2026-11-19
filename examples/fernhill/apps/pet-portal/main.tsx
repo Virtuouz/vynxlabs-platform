@@ -9,7 +9,7 @@ import {
   table,
   useQuery,
   useSession,
-} from "@vynxlabs/app";
+} from "@volvel/app";
 import {
   Avatar,
   Badge,
@@ -26,7 +26,7 @@ import {
   TextAreaField,
   ToastProvider,
   useToast,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import {
   Bird,
   CalendarPlus,
@@ -39,7 +39,7 @@ import {
   Rabbit,
   Receipt,
   TriangleAlert,
-} from "@vynxlabs/ui/icons";
+} from "@volvel/ui/icons";
 import { type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 // Values and clock helpers that import nothing, so they are safe in the browser.

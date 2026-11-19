@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -284,7 +284,7 @@ describe("trying a draft out", () => {
       throw new Error(`Task ${id} did not end.`);
     };
     const typed =
-      'import { z } from "@vynxlabs/sdk";\n' +
+      'import { z } from "@volvel/sdk";\n' +
       "export const input = z.object({ name: z.string().min(1) });\n" +
       "export const output = z.object({ hello: z.string() });\n" +
       "export default async (input: { name: string }) => ({ hello: input.name });\n";
@@ -358,7 +358,7 @@ describe("trying a draft out", () => {
     expect(
       (await alice.get(`${ws()}/changes/preview?paths=orders/reads`)).body.refusal.errors[0]
         .message,
-    ).toContain("may import only @vynxlabs/sdk and node: modules");
+    ).toContain("may import only @volvel/sdk and node: modules");
     await alice.delete(`${ws()}/drafts/orders/broken`);
     await alice.delete(`${ws()}/drafts/orders/reads`);
   });
@@ -642,7 +642,7 @@ describe("a file the repository keeps outside the console's folder", () => {
       ownership: "ui",
     });
 
-    // What `platform pull` writes into the console's folder does not hold it: it is given
+    // What `volvel pull` writes into the console's folder does not hold it: it is given
     // apart, by where the repository keeps it.
     const pulled = (await alice.get(`${ws()}/resource-files?roots=src`)).body as {
       files: { path: string }[];

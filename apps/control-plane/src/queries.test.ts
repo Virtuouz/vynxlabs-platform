@@ -1,5 +1,5 @@
-import { type Kysely, type PlatformSchema, sql } from "@vynxlabs/db";
-import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
+import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
+import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import { querySchema } from "./kernel/data/query/views.js";

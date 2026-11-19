@@ -6,7 +6,7 @@ import {
   SelectField,
   SideSheet,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -792,7 +792,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
         <p className="m-0 text-body-sm text-ink-muted">
           The passphrase protects the secrets in the file. The rest of it, rows and files included,
           can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
-          the command line instead: <Code>{"platform tenant export"}</Code>.
+          the command line instead: <Code>{"volvel tenant export"}</Code>.
         </p>
       </form>
     </Page>
@@ -1270,7 +1270,7 @@ export function TenantImport() {
           </div>
           <p className="m-0 text-body-sm text-ink-muted">
             The export must come from an instance at the same version as this one. For a large file,
-            use the command line: <Code>{"platform tenant import <file>"}</Code>.
+            use the command line: <Code>{"volvel tenant import <file>"}</Code>.
           </p>
         </form>
       )}

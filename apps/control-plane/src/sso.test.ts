@@ -111,7 +111,7 @@ const b64 = (value: Buffer | string) => Buffer.from(value).toString("base64url")
 class OidcProvider {
   readonly keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
   readonly stranger = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  readonly clientId = "vynx-console";
+  readonly clientId = "volvel-console";
   readonly clientSecret = "oidc-secret-71c0";
   issuer = "";
   #server!: Server;

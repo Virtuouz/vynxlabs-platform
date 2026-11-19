@@ -5,8 +5,8 @@
  * for this run. A task asks for nothing: what it needs, it is given at start.
  */
 import { pathToFileURL } from "node:url";
-import type { BundleManifest } from "@vynxlabs/manifest";
-import type { ScriptContext } from "@vynxlabs/sdk";
+import type { BundleManifest } from "@volvel/manifest";
+import type { ScriptContext } from "@volvel/sdk";
 import {
   type Bound,
   buildContext,

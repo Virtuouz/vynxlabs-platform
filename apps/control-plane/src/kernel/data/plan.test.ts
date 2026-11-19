@@ -1,4 +1,4 @@
-import type { TableBody } from "@vynxlabs/manifest";
+import type { TableBody } from "@volvel/manifest";
 import { describe, expect, test } from "vitest";
 import { type CatalogTable, type Plan, planTable, type Step } from "./plan.js";
 

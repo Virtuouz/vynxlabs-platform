@@ -1,4 +1,4 @@
-import { Button, Skeleton } from "@vynxlabs/ui";
+import { Button, Skeleton } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import type { ApiError, Loaded } from "../api.ts";
 

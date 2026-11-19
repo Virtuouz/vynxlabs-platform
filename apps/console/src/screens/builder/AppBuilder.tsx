@@ -1,6 +1,6 @@
-import type { InterfaceBody } from "@vynxlabs/manifest";
-import { heading } from "@vynxlabs/screens";
-import { Button, Notice, TextField } from "@vynxlabs/ui";
+import type { InterfaceBody } from "@volvel/manifest";
+import { heading } from "@volvel/screens";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { Monitor, Plus, Smartphone, Tablet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";

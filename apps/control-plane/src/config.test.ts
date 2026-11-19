@@ -47,7 +47,7 @@ describe("configuration", () => {
       telemetry: {
         endpoint: undefined,
         headers: {},
-        serviceName: "platform",
+        serviceName: "volvel",
         traces: true,
         metrics: true,
         metricsIntervalMs: 60000,

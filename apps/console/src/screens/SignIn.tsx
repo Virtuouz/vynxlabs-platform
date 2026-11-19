@@ -1,4 +1,4 @@
-import { Button, ContainedArea, Notice, TextField } from "@vynxlabs/ui";
+import { Button, ContainedArea, Notice, TextField } from "@volvel/ui";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api } from "../api.ts";

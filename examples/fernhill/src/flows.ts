@@ -1,4 +1,4 @@
-import { defineFlow, defineSchedule, defineWebhook, step, trigger, z } from "@vynxlabs/sdk";
+import { defineFlow, defineSchedule, defineWebhook, step, trigger, z } from "@volvel/sdk";
 import { CLINICS } from "./constants.ts";
 import { invoices, registrationReceived, registrations, stockLow, visitDone } from "./model.ts";
 import {

@@ -32,7 +32,7 @@ test("no screen draws a list of its own", () => {
       if (/<table\b/.test(line) && !why.includes("table-allowed:")) {
         found.push(`${path.slice(here.length)}:${index + 1} draws a <table>`);
       }
-      if (/import \{[^}]*\bTable\b[^}]*\} from "@vynxlabs\/ui"/.test(line)) {
+      if (/import \{[^}]*\bTable\b[^}]*\} from "@volvel\/ui"/.test(line)) {
         found.push(`${path.slice(here.length)}:${index + 1} imports the kit's Table`);
       }
     });

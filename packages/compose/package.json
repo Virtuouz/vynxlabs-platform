@@ -1,5 +1,5 @@
 {
-  "name": "@vynxlabs/compose",
+  "name": "@volvel/compose",
   "version": "0.5.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,8 @@
     "dist"
   ],
   "dependencies": {
-    "@vynxlabs/manifest": "workspace:*",
-    "@vynxlabs/nodes": "workspace:*",
+    "@volvel/manifest": "workspace:*",
+    "@volvel/nodes": "workspace:*",
     "esbuild": "^0.28.2"
   }
 }

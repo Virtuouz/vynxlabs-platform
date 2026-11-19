@@ -1,4 +1,4 @@
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 import type { Kernel } from "../kernel.js";
 import { openSource, sourceFailure } from "./sources.js";

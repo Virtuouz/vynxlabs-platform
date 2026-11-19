@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { HEARTBEAT_SECONDS } from "@vynxlabs/db";
+import { HEARTBEAT_SECONDS } from "@volvel/db";
 import { Type } from "typebox";
 import { MAX_FILE_BYTES, readFile, storeFile } from "../kernel/data/files.js";
 import {

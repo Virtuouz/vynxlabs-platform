@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { type Client, startTestApp, type TestApp } from "@vynxlabs/control-plane/testing";
-import { Worker } from "@vynxlabs/worker";
+import { type Client, startTestApp, type TestApp } from "@volvel/control-plane/testing";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
 import { startDevServer } from "./dev.js";
@@ -559,10 +559,10 @@ describe("working locally", () => {
 
   test("tenant export writes the archive, and tenant import sends it to an instance", async () => {
     const file = join(home, "acme.tar");
-    const secret = { PLATFORM_EXPORT_PASSPHRASE: "a passphrase long enough" };
+    const secret = { VOLVEL_EXPORT_PASSPHRASE: "a passphrase long enough" };
     const unset = await cli(["tenant", "export", "--tenant", "acme", "--out", file]);
     expect(unset.code).toBe(1);
-    expect(unset.err).toContain("Set PLATFORM_EXPORT_PASSPHRASE");
+    expect(unset.err).toContain("Set VOLVEL_EXPORT_PASSPHRASE");
 
     const exported = await cli(
       ["tenant", "export", "--tenant", "acme", "--out", file, "--history"],
@@ -574,7 +574,7 @@ describe("working locally", () => {
     const bytes = await readFile(file);
     // A tar archive that ends with its list of contents.
     expect(bytes.subarray(257, 262).toString()).toBe("ustar");
-    expect(bytes.toString("latin1")).toContain('"format": "vynxlabs-tenant-export"');
+    expect(bytes.toString("latin1")).toContain('"format": "volvel-tenant-export"');
 
     // Importing is for operators: the tenant's own key is refused.
     const asTenant = await cli(["tenant", "import", file], secret);
@@ -582,13 +582,13 @@ describe("working locally", () => {
     expect(asTenant.err).toContain("Could not import the tenant.");
     const operator = (await t.admin.post("/api-keys", { name: "import" })).body.token as string;
     const wrong = await cli(["tenant", "import", file], {
-      PLATFORM_TOKEN: operator,
-      PLATFORM_EXPORT_PASSPHRASE: "not the right passphrase",
+      VOLVEL_TOKEN: operator,
+      VOLVEL_EXPORT_PASSPHRASE: "not the right passphrase",
     });
     expect(wrong.err).toContain("The passphrase does not open this export.");
     // The whole file arrived and was checked: the only objection is that the tenant is already here.
     const here = await cli(["tenant", "import", file, "--slug", "acme-copy"], {
-      PLATFORM_TOKEN: operator,
+      VOLVEL_TOKEN: operator,
       ...secret,
     });
     expect(here.err).toContain("This tenant is already on this instance.");
@@ -686,7 +686,7 @@ describe("working locally", () => {
     expect(await readFile(join(directory, "src", "index.ts"), "utf8")).toContain("defineScript");
     expect(
       JSON.parse(await readFile(join(directory, "package.json"), "utf8")).dependencies,
-    ).toHaveProperty("@vynxlabs/sdk");
+    ).toHaveProperty("@volvel/sdk");
     expect((await cli(["init", directory])).err).toContain("is not empty");
   });
 });

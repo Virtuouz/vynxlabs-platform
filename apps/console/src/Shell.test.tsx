@@ -200,7 +200,7 @@ test("a chosen theme is put on the page and remembered, and the system's is the 
 });
 
 test("without a logo the mark is the name's initials", () => {
-  expect(monogram("Vynxlabs")).toBe("vy");
+  expect(monogram("Volvel")).toBe("vo");
   expect(monogram("Northwind Ops")).toBe("no");
 });
 
@@ -211,19 +211,19 @@ test("each page's tab title says what is open, the section, the workspace and th
     </Shell>
   );
   const { rerender } = show(at("/t/t1/workspaces/w2/runs"));
-  await waitFor(() => expect(document.title).toBe("Runs · Sandbox · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("Runs · Sandbox · Volvel"));
   rerender(at("/t/t1/workspaces/w2/scripts/edit/orders/sync"));
-  await waitFor(() => expect(document.title).toBe("orders/sync · Scripts · Sandbox · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("orders/sync · Scripts · Sandbox · Volvel"));
   rerender(at("/t/t1/workspaces/w2/scripts/new"));
-  await waitFor(() => expect(document.title).toBe("New script · Scripts · Sandbox · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("New script · Scripts · Sandbox · Volvel"));
   rerender(at("/t/t1/roles"));
-  await waitFor(() => expect(document.title).toBe("Members & access · Acme · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("Members & access · Acme · Volvel"));
   rerender(
     <Shell me={operator} path="/instance/branding" tenantId={undefined} onSignOut={() => {}}>
       <p>Screen</p>
     </Shell>,
   );
-  await waitFor(() => expect(document.title).toBe("Console branding · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("Console branding · Volvel"));
 });
 
 test("the first tab stop skips to the content, and a new page takes focus to its heading", async () => {

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { Database, sql } from "@vynxlabs/db";
-import { createTestDatabase } from "@vynxlabs/db/testing";
+import { Database, sql } from "@volvel/db";
+import { createTestDatabase } from "@volvel/db/testing";
 import type { RouteOptions } from "fastify";
 import { buildApp } from "./app.js";
 import type { Config } from "./config.js";

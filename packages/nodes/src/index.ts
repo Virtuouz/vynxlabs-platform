@@ -10,7 +10,7 @@
  * one thing and nothing else.
  */
 
-import { type BundleManifest, CORE_PREFIX, entryFor } from "@vynxlabs/manifest";
+import { type BundleManifest, CORE_PREFIX, entryFor } from "@volvel/manifest";
 
 export { CORE_PREFIX };
 
@@ -89,7 +89,7 @@ export const CORE_NODES: readonly CoreNode[] = [
       type: "object",
       properties: { status: { type: "integer" }, headers: { type: "object" }, body: {} },
     },
-    code: `import type { HttpClient, ScriptContext } from "@vynxlabs/sdk";
+    code: `import type { HttpClient, ScriptContext } from "@volvel/sdk";
 
 interface Input {
   connection?: string;
@@ -174,7 +174,7 @@ export default async (input: Input, ctx: ScriptContext) => {
       additionalProperties: false,
     },
     output: { type: "object", properties: { messageId: { type: "string" } } },
-    code: `import type { ScriptContext, SmtpClient } from "@vynxlabs/sdk";
+    code: `import type { ScriptContext, SmtpClient } from "@volvel/sdk";
 
 interface Input {
   connection: string;
@@ -236,7 +236,7 @@ export default async (input: Input, ctx: ScriptContext) => {
       type: "object",
       properties: { rows: { type: "array" }, count: { type: "integer" }, row: {} },
     },
-    code: `import type { ScriptContext } from "@vynxlabs/sdk";
+    code: `import type { ScriptContext } from "@volvel/sdk";
 
 interface Input {
   table: string;
@@ -288,7 +288,7 @@ export default async (input: Input, ctx: ScriptContext) => {
       additionalProperties: false,
     },
     output: { type: "object", properties: { row: {}, deleted: { type: "boolean" } } },
-    code: `import type { ScriptContext } from "@vynxlabs/sdk";
+    code: `import type { ScriptContext } from "@volvel/sdk";
 
 interface Input {
   table: string;
@@ -325,7 +325,7 @@ export default async (input: Input, ctx: ScriptContext) => {
       additionalProperties: false,
     },
     output: { type: "object", properties: { published: { type: "boolean" } } },
-    code: `import type { ScriptContext } from "@vynxlabs/sdk";
+    code: `import type { ScriptContext } from "@volvel/sdk";
 
 export default async (
   input: { event: string; payload?: Record<string, unknown> },

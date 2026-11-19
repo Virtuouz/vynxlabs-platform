@@ -1,4 +1,4 @@
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import { generate } from "selfsigned";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { dns } from "./kernel/apps/challenge.js";

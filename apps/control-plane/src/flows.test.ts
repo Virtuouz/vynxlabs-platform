@@ -1,8 +1,8 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { advanceDueFlows, startFlowRun } from "./kernel/flows/engine.js";

@@ -36,7 +36,7 @@ monaco.typescript.typescriptDefaults.setCompilerOptions({
   lib: ["es2023", "webworker"],
 });
 // The SDK's own declarations, as built, so the editor knows every export the SDK has.
-const sdk = "file:///node_modules/@vynxlabs/sdk";
+const sdk = "file:///node_modules/@volvel/sdk";
 const libraries: Record<string, string> = {
   "context.d.ts": contextTypes,
   "extensions.d.ts": extensionTypes,
@@ -45,7 +45,7 @@ const libraries: Record<string, string> = {
   "oauth2.d.ts": oauth2Types,
   "smtp.d.ts": smtpTypes,
   "tables.d.ts": tableTypes,
-  "package.json": '{"name":"@vynxlabs/sdk","types":"./index.d.ts"}',
+  "package.json": '{"name":"@volvel/sdk","types":"./index.d.ts"}',
 };
 for (const [name, content] of Object.entries(libraries)) {
   monaco.typescript.typescriptDefaults.addExtraLib(content, `${sdk}/${name}`);

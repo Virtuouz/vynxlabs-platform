@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { Db, Trx } from "./audit.js";
 import type { SecretName, Vault } from "./crypto.js";
 import { tenantKey } from "./tenant-keys.js";

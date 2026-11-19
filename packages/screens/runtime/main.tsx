@@ -7,8 +7,8 @@ import {
   signInUrl,
   signOut,
   table,
-} from "@vynxlabs/app";
-import { Button, Notice } from "@vynxlabs/ui";
+} from "@volvel/app";
+import { Button, Notice } from "@volvel/ui";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { type DataClient, InterfaceRenderer, type InterfaceView } from "../src/index.ts";

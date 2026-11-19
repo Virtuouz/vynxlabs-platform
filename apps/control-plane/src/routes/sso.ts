@@ -2,7 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { challengeMet, challengeOf } from "../kernel/apps/challenge.js";

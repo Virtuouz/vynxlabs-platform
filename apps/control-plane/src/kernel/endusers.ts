@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Audit, Db, Trx } from "./audit.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";

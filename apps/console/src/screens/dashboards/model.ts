@@ -4,7 +4,7 @@ import type {
   DashboardWidgetOptions,
   RelativeRange,
   ValueFormat,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { amount } from "../../kit/format.ts";
 
 /**

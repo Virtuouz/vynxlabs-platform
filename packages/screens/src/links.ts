@@ -1,4 +1,4 @@
-import type { PageWidget, WidgetSummary } from "@vynxlabs/manifest";
+import type { PageWidget, WidgetSummary } from "@volvel/manifest";
 import type { Filter, Row } from "./data.ts";
 
 /** The name a group comes back from the API under: its column, and its bucket when it has one. */

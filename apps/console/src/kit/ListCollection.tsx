@@ -1,4 +1,4 @@
-import { Button, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
 import { useLoad } from "../api.ts";
 import { type CreateConfig, CreateDialog } from "../ListScreen.tsx";

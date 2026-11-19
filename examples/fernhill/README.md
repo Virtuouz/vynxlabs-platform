@@ -25,7 +25,7 @@ pnpm install
 pnpm build                                        # the CLI and the SDK this uses
 node examples/fernhill/stand-ins/server.mjs &     # TextLine and VetSupply on :4020
 cd examples/fernhill
-PLATFORM_URL=http://localhost:8080 node setup/setup.mjs          # --reset to start over
+VOLVEL_URL=http://localhost:8080 node setup/setup.mjs          # --reset to start over
 ```
 
 `setup.mjs` does what Fernhill's people would do:
@@ -87,7 +87,7 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
 9. **Ship a change as Devi.** Change the reminder text in `src/scripts.ts` and deploy it to the sandbox:
 
    ```sh
-   PLATFORM_URL=… PLATFORM_TOKEN=<Devi's key> node ../../packages/cli/dist/bin.js deploy --tenant fernhill --workspace sandbox
+   VOLVEL_URL=… VOLVEL_TOKEN=<Devi's key> node ../../packages/cli/dist/bin.js deploy --tenant fernhill --workspace sandbox
    ```
 
    Then, as Maya, review it in Release and promote it. Repository scripts are read-only in the console's editor.
@@ -135,7 +135,7 @@ Building Fernhill and using it as its people and its agent turned up these probl
 
 **The UI kit, for custom apps**
 
-- **Fixed: icons.** They come from `@vynxlabs/ui/icons`.
+- **Fixed: icons.** They come from `@volvel/ui/icons`.
 - **Fixed: missing pieces.** There are now `SegmentedControl`, `Card` (since phase 16, `Panel`), `Avatar`, `Skeleton` and `DateStepper`, and `Button` takes `href`.
 - **Fixed: `PageShell` suits apps that switch screens in the browser.** Its navigation takes `onSelect`, and it takes `width="full"`.
 - **Fixed: `DateField` takes `timeZone`.**

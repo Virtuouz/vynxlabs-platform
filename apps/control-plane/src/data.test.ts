@@ -1,6 +1,6 @@
-import { type Kysely, type PlatformSchema, sql } from "@vynxlabs/db";
-import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
+import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import { describeTable, findRows, withData } from "./kernel/data/rows.js";
@@ -1509,7 +1509,7 @@ describe("tables made in the console, isolation and guards", () => {
     // The path it had still answers for a while, and says where the table is now.
     const byOld = await alice.get(`${at}/rows/memos`);
     expect(byOld.status).toBe(200);
-    expect(byOld.headers["vynx-resource-moved"]).toBe("journal/memos");
+    expect(byOld.headers["volvel-resource-moved"]).toBe("journal/memos");
 
     // A path that something else has is not taken from it.
     const taken = await put("sales/crm", { ...notes, renameFrom: "journal/memos" });

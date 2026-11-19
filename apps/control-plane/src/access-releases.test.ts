@@ -1,5 +1,5 @@
-import { newId } from "@vynxlabs/db";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { newId } from "@volvel/db";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { membershipForProvider } from "./kernel/tenant/releases.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -469,7 +469,7 @@ describe("a workspace's bindings and the tenant's access", () => {
       {
         path: "/body/principal/key",
         message:
-          'no group has the key "night-shift" in this tenant. Add tenant/groups/night-shift.group.yaml to the repository and run `platform tenant release`, or make it in the console',
+          'no group has the key "night-shift" in this tenant. Add tenant/groups/night-shift.group.yaml to the repository and run `volvel tenant release`, or make it in the console',
       },
     ]);
   });

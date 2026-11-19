@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { newId, sql } from "@vynxlabs/db";
-import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@vynxlabs/manifest";
-import type { TriggerSource } from "@vynxlabs/sdk";
+import { newId, sql } from "@volvel/db";
+import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@volvel/manifest";
+import type { TriggerSource } from "@volvel/sdk";
 import { CronExpressionParser } from "cron-parser";
 import type { Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";

@@ -538,9 +538,9 @@ export interface RepositoryConfig {
 }
 
 /** The name of the file at a repository's root that says where its resource files are. */
-export const REPOSITORY_CONFIG = "vynxlabs.yaml";
+export const REPOSITORY_CONFIG = "volvel.yaml";
 
-/** Reads `vynxlabs.yaml`. A repository without one keeps its resource files in the one folder. */
+/** Reads `volvel.yaml`. A repository without one keeps its resource files in the one folder. */
 export function parseRepositoryConfig(text: string | undefined): {
   config: RepositoryConfig;
   problems: string[];

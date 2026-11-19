@@ -1,4 +1,4 @@
-import { Button, Notice } from "@vynxlabs/ui";
+import { Button, Notice } from "@volvel/ui";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 /**

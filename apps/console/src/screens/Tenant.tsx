@@ -1,4 +1,4 @@
-import { Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { Button, EmptyState, Menu, Notice, TextField } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";

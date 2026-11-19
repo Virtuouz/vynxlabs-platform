@@ -1,4 +1,4 @@
-import { CheckboxField, Closing, Dialog, Kbd } from "@vynxlabs/ui";
+import { CheckboxField, Closing, Dialog, Kbd } from "@volvel/ui";
 import {
   Activity,
   Boxes,

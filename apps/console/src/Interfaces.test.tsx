@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { InterfaceBody } from "@vynxlabs/manifest";
+import type { InterfaceBody } from "@volvel/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
 import { Interfaces } from "./screens/Interfaces.tsx";

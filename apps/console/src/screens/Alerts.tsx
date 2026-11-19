@@ -1,4 +1,4 @@
-import { Badge, Button, SelectField } from "@vynxlabs/ui";
+import { Badge, Button, SelectField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";

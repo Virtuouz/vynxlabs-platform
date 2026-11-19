@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import {
   type BundleManifest,
   fileOf,
@@ -20,7 +20,7 @@ import {
   renderRepositoryFiles,
   renderTenantFiles,
   TENANT_FOLDER,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import type { HttpClient } from "isomorphic-git";
 import git from "isomorphic-git";
 import type { Actor, Db } from "./audit.js";
@@ -262,7 +262,7 @@ interface Repository {
   /** Every file named for a kind, in any folder that is the repository's own, by its path from the root. */
   files: ResourceFile[];
   config: RepositoryConfig;
-  /** What is wrong with `vynxlabs.yaml`, if anything. */
+  /** What is wrong with `volvel.yaml`, if anything. */
   problems: string[];
 }
 

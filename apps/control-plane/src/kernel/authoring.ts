@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
-import { ComposeError, composeBundle, SOURCE_KINDS, type UnsignedBundle } from "@vynxlabs/compose";
-import { newId, sql } from "@vynxlabs/db";
+import { ComposeError, composeBundle, SOURCE_KINDS, type UnsignedBundle } from "@volvel/compose";
+import { newId, sql } from "@volvel/db";
 import {
   type Bundle,
   type BundleManifest,
@@ -9,8 +9,8 @@ import {
   keyOf,
   movedFile,
   validateJson,
-} from "@vynxlabs/manifest";
-import { CORE_RANGE, SDK_VERSION } from "@vynxlabs/sdk";
+} from "@volvel/manifest";
+import { CORE_RANGE, SDK_VERSION } from "@volvel/sdk";
 import { type Audit, type Db, mutate, type Principal, type Trx } from "./audit.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import { loadBundle, storeBundle } from "./execution/bundles.js";
@@ -30,7 +30,7 @@ import type { Kernel } from "./kernel.js";
  */
 
 /** The SDK that console-written code is compiled against: the control plane's own. */
-const sdkEntry = fileURLToPath(import.meta.resolve("@vynxlabs/sdk"));
+const sdkEntry = fileURLToPath(import.meta.resolve("@volvel/sdk"));
 
 /** Whether a kind's manifest carries source, and so needs the permission to write code. */
 export const isCodeKind = (kind: string) => SOURCE_KINDS.includes(kind);

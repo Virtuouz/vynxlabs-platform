@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 is done. M1 is under way.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 and M1 are built. M2 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -134,6 +134,28 @@ Each milestone leaves the system deployable. M2 to M4 have no user-visible effec
 - **Not done by the agent:** renaming the GitHub repository and the local folder, creating the new Fly app, and destroying the old one. Those are the owner's.
 
 Tests: the whole suite passes; a test fails if `vynxlabs` appears anywhere outside `docs/phases/`, `docs/evolution/`, `docs/uiux/`, the CHANGELOG's past sections and the company mentions on an allow-list.
+
+#### Built
+
+- Every package is `@volvel/*`, and 359 files changed with them. The root package is `volvel`.
+- The command is `volvel`, with its sign-in under `~/.config/volvel/`. The worker's are `volvel-worker` and `volvel-worker-host`, and the image starts with `volvel-start`.
+- The thirteen `PLATFORM_*` variables are `VOLVEL_*`. `PLATFORM_EVENT_PREFIX` is not one of them: it is a constant in the code for event names that start `platform/`, and it stays.
+- `volvel.yaml`, `volvel-tenant-export`, `Volvel-Resource-Moved`, `volvel.definitions`, `__volvelResource`, `volvelFlowSteps`, and `"@volvel/sdk"` in the console's starter scripts, the compile's lockdown and the editor.
+- An instance with no name of its own shows "Volvel". So do the API description, the sign-in library and the SSO certificate.
+- Compose projects are `volvel` and `volvel-dev`, the image is `volvel/volvel`, and the Keycloak development client is `volvel`.
+- `examples/higher-ed-devices/setup/setup.mjs` no longer falls back to the old test instance's address. It asks for `VOLVEL_URL`.
+- `packages/manifest/src/name.test.ts` fails when the old name comes back anywhere but the record of earlier phases, and allows the company's name only in the three documents that mean the company.
+- The changelog says what an operator and a tenant developer change.
+
+#### Findings
+
+- **Run on the final state:** lint over the tracked folders, typecheck, the whole suite (1,703 tests on Postgres), `check:schemas`, `check:migrations`, `check:licenses`, and the console's build.
+- **Not run:** the browser tests (`pnpm e2e`) and the image build. Both wait for the development stack to be brought up under its new name.
+- **The development stack on this machine still runs as `vynxlabs-platform-dev`.** The tests reach it by port, so they pass. `pnpm stack:up` would now start a second stack named `volvel-dev` on the same ports. The old one has to be taken down first, and its volumes hold whatever is in the local database. Left for the owner to say.
+- A shorter name let eight wrapped lines fit on one, and the formatter put them back. Nothing else moved.
+- One test chose the worker's variables by the old prefix and found none. It was the only failure.
+- Metric names (`platform_db_pool`), the database, its user and the bucket are still `platform`. They were not in the decision.
+- **For the owner:** the GitHub repository and the folder on disk are still named `vynxlabs-platform`, and `deploy/fly/fly.toml` now names an app, `volvel`, that does not exist yet.
 
 ### M2: `@volvel/markup`
 

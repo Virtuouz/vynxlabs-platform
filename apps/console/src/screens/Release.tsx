@@ -1,4 +1,4 @@
-import { Button, Notice, SideSheet, TextField } from "@vynxlabs/ui";
+import { Button, Notice, SideSheet, TextField } from "@volvel/ui";
 import { ArrowRight, History, Rocket, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";

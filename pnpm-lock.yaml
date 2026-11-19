@@ -55,10 +55,10 @@ importers:
       '@tanstack/react-virtual':
         specifier: 3.13.12
         version: 3.13.12(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@vynxlabs/screens':
+      '@volvel/screens':
         specifier: workspace:*
         version: link:../../packages/screens
-      '@vynxlabs/ui':
+      '@volvel/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@xyflow/react':
@@ -92,7 +92,7 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.3.0
         version: 6.3.0(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      '@vynxlabs/manifest':
+      '@volvel/manifest':
         specifier: workspace:*
         version: link:../../packages/manifest
       happy-dom:
@@ -131,22 +131,22 @@ importers:
       '@node-saml/node-saml':
         specifier: ^5
         version: 5.2.0
-      '@vynxlabs/compose':
+      '@volvel/compose':
         specifier: workspace:*
         version: link:../../packages/compose
-      '@vynxlabs/db':
+      '@volvel/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@vynxlabs/manifest':
+      '@volvel/manifest':
         specifier: workspace:*
         version: link:../../packages/manifest
-      '@vynxlabs/nodes':
+      '@volvel/nodes':
         specifier: workspace:*
         version: link:../../packages/nodes
-      '@vynxlabs/sdk':
+      '@volvel/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk
-      '@vynxlabs/worker':
+      '@volvel/worker':
         specifier: workspace:*
         version: link:../../packages/worker
       '@xmldom/xmldom':
@@ -198,13 +198,13 @@ importers:
 
   examples/acme:
     dependencies:
-      '@vynxlabs/app':
+      '@volvel/app':
         specifier: workspace:*
         version: link:../../packages/app
-      '@vynxlabs/sdk':
+      '@volvel/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@vynxlabs/ui':
+      '@volvel/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -235,13 +235,13 @@ importers:
 
   examples/fernhill:
     dependencies:
-      '@vynxlabs/app':
+      '@volvel/app':
         specifier: workspace:*
         version: link:../../packages/app
-      '@vynxlabs/sdk':
+      '@volvel/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@vynxlabs/ui':
+      '@volvel/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -275,7 +275,7 @@ importers:
 
   examples/higher-ed-devices:
     dependencies:
-      '@vynxlabs/sdk':
+      '@volvel/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
     devDependencies:
@@ -310,32 +310,32 @@ importers:
       '@marcbachmann/cel-js':
         specifier: ^8.0.0
         version: 8.0.0
-      '@vynxlabs/compose':
+      '@volvel/compose':
         specifier: workspace:*
         version: link:../compose
-      '@vynxlabs/manifest':
+      '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
     devDependencies:
-      '@vynxlabs/control-plane':
+      '@volvel/control-plane':
         specifier: workspace:*
         version: link:../../apps/control-plane
-      '@vynxlabs/example-acme':
+      '@volvel/example-acme':
         specifier: workspace:*
         version: link:../../examples/acme
-      '@vynxlabs/worker':
+      '@volvel/worker':
         specifier: workspace:*
         version: link:../worker
 
   packages/compose:
     dependencies:
-      '@vynxlabs/manifest':
+      '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
-      '@vynxlabs/nodes':
+      '@volvel/nodes':
         specifier: workspace:*
         version: link:../nodes
       esbuild:
@@ -375,19 +375,19 @@ importers:
 
   packages/nodes:
     dependencies:
-      '@vynxlabs/manifest':
+      '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
 
   packages/screens:
     dependencies:
-      '@vynxlabs/app':
+      '@volvel/app':
         specifier: workspace:*
         version: link:../app
-      '@vynxlabs/manifest':
+      '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
-      '@vynxlabs/ui':
+      '@volvel/ui':
         specifier: workspace:*
         version: link:../ui
       react:
@@ -473,10 +473,10 @@ importers:
 
   packages/worker:
     dependencies:
-      '@vynxlabs/manifest':
+      '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
-      '@vynxlabs/sdk':
+      '@volvel/sdk':
         specifier: workspace:*
         version: link:../sdk
       nodemailer:

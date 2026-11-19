@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Worker } from "@vynxlabs/worker";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { decryptFor, encryptFor } from "./kernel/execution/bindings.js";
 import { accessToken } from "./kernel/execution/oauth.js";

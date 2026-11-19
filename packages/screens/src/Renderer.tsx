@@ -1,4 +1,4 @@
-import type { InterfaceBody, InterfacePage, PageWidget, WidgetField } from "@vynxlabs/manifest";
+import type { InterfaceBody, InterfacePage, PageWidget, WidgetField } from "@volvel/manifest";
 import {
   Button,
   chartSpecFor,
@@ -11,7 +11,7 @@ import {
   useDialogs,
   Widget,
   type WidgetContext,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import type React from "react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton, type PageScope, selectedBy, useActions } from "./actions.tsx";

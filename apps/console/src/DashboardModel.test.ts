@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DashboardWidget } from "@vynxlabs/manifest";
+import type { DashboardWidget } from "@volvel/manifest";
 import { describe, expect, test } from "vitest";
 import {
   BEFORE,

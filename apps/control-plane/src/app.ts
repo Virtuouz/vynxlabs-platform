@@ -4,7 +4,7 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
-import { type Database, newId } from "@vynxlabs/db";
+import { type Database, newId } from "@volvel/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
 import type { Config, LogLevel } from "./config.js";
@@ -201,7 +201,7 @@ export async function buildApp(options: AppOptions) {
     openapi: {
       openapi: "3.1.0",
       info: {
-        title: "Vynxlabs platform API",
+        title: "Volvel API",
         version: options.version,
         description:
           "The one public API of the platform. Errors are RFC 9457 problem details " +

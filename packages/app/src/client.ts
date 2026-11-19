@@ -56,14 +56,14 @@ let cached: AppContext | undefined;
 
 /**
  * The context the platform put in the page. It is read from an element the
- * platform adds when it serves the app, and when `platform dev` serves it.
+ * platform adds when it serves the app, and when `volvel dev` serves it.
  */
 export function appContext(): AppContext {
   if (cached) return cached;
   const element = globalThis.document?.getElementById("vx-context");
   if (!element?.textContent) {
     throw new Error(
-      "This page was not served by the platform. Open the app at its address, or run it with: platform dev",
+      "This page was not served by the platform. Open the app at its address, or run it with: volvel dev",
     );
   }
   cached = JSON.parse(element.textContent) as AppContext;

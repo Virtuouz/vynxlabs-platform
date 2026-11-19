@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { TenantNotFoundError } from "@vynxlabs/db";
+import { TenantNotFoundError } from "@volvel/db";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   type Actor,

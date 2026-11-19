@@ -8,7 +8,7 @@ import {
   type VisualCondition,
   type VisualQuery,
   type WidgetPlace,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import {
   Button,
   Chart,
@@ -20,7 +20,7 @@ import {
   SelectField,
   Sparkline,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { ArrowDownRight, ArrowUpRight, Ellipsis, Minus } from "lucide-react";
 import {
   type CSSProperties,

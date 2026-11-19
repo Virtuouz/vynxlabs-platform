@@ -1,4 +1,4 @@
-import { defineApp, defineBinding, defineInterface, defineRole, defineTheme } from "@vynxlabs/sdk";
+import { defineApp, defineBinding, defineInterface, defineRole, defineTheme } from "@volvel/sdk";
 import { reorder } from "./flows.ts";
 import {
   bookAppointment,

@@ -10,6 +10,7 @@ import {
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { sendIcons } from "../kit/icons.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { Page, RemoveButton } from "../ListScreen.tsx";
@@ -391,6 +392,11 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
       await api.upload(`${base}/portal/logo`, file, "PUT");
       setVersion((current) => current + 1);
       notify.success("The logo is replaced.");
+      // The icons its sign-in pages and apps show in a tab are drawn from it here, once the
+      // logo itself is in place.
+      void sendIcons(file, `${base}/portal/icons`, (path, body) =>
+        api.upload(path, new File([body], "icon.png", { type: "image/png" }), "PUT"),
+      ).catch(() => notify.info("The tenant's icons could not be made from the logo."));
       reload();
     } catch (error) {
       setProblem((error as ApiError).message);
@@ -413,7 +419,10 @@ function Logo({ base, has, reload }: { base: string; has: boolean; reload: () =>
           <RemoveButton
             label="Remove logo"
             confirm="Remove the logo? The sign-in pages show the tenant's name alone."
-            run={() => api.delete(`${base}/portal/logo`)}
+            run={async () => {
+              await api.delete(`${base}/portal/logo`);
+              await api.delete(`${base}/portal/icons`);
+            }}
             onDone={reload}
           />
         </div>

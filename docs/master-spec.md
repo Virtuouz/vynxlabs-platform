@@ -513,6 +513,7 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 ### Branding
 
 - Branding is a set of theme tokens defined at the tenant and overridable per workspace. It applies to the tenant's apps, portal and sign-in pages.
+- A logo gives its icons: what a browser's tab and a phone's home screen show for the console, and for a tenant's portal and apps. They are made from the logo where it is chosen.
 - The console's branding is a separate set of the same tokens, with a product name and a logo, defined once per instance.
 - The component kit must be built on theme tokens from its first version. Retrofitting them later is costly.
 

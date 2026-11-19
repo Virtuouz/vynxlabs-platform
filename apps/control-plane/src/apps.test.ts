@@ -1770,6 +1770,8 @@ describe("guards", () => {
           apps.test(route) &&
           // A provider's email domains are exercised in sso.test.ts.
           !route.includes("/identity-providers/") &&
+          // A tenant's icons are exercised in branding.test.ts.
+          !route.includes("/portal/icons") &&
           !(own.test(route) && !route.startsWith("DELETE")),
       ),
     ).toEqual([]);

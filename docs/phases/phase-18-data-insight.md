@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M11 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M12 built. M13 (telemetry) and M14 (the walk-through) remain. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -412,9 +412,22 @@ tables ─▶ query (built from menus, or written) ─▶ result ─▶ widgets
 
 ### M12: favicons
 
-A logo gives the console, the portal's sign-in pages and a generated app's page an icon: `favicon.ico`, a 32 px PNG, a 180 px touch icon, 192 and 512 px icons and a web manifest, kept in object storage beside the logo. An app with its own files keeps its own. An instance with no logo gets the product's default.
+Built with no new package, as the owner asked to try first.
 
-**Without a new package first.** The server has no image library, and none is needed if the sizes are made where the logo is chosen: the console draws it onto a canvas at each size and uploads the results with it; an SVG logo is also served as the icon as it is; and an `.ico` is a PNG behind a 22-byte header. What this cannot do is make icons for a logo set through the API alone, which would get the logo itself as its icon. If that falls short, the two `@realfavicongenerator` packages and `sharp` are the fallback. Settled when M12 is planned.
+- **The browser makes the icons.** When a logo is chosen, the console draws it onto a square canvas at 32, 180, 192 and 512 px (`apps/console/src/kit/icons.ts`) and sends each as a PNG. The logo is fitted whole and centred, never stretched, with a margin, since a phone crops a touch icon to a rounded shape. A browser already reads PNG, JPEG, WebP and SVG, so the server needs no image library.
+- **The server checks, keeps and serves** (`kernel/icons.ts`, `routes/icons.ts`). `PUT /instance/branding/icons/:size` and `PUT /tenants/:t/portal/icons/:size` take a PNG of exactly that size, read from its header, up to 256 KB. `GET` on the same addresses is public. Migration 0079 adds where they are kept.
+- **At the root of the site:** `/favicon.ico`, which is the 32 px PNG behind a 22-byte header, and `/site.webmanifest`, with the instance's name and the two large icons. The console's page links to both and to the touch icon.
+- **An instance with no logo has the platform's own icon**, a rounded square the server draws pixel by pixel and compresses with Node's own zlib. `/favicon.ico` used to answer with the console's HTML.
+- **A tenant's icons** are linked from its portal's pages and from a generated app's page. An app whose own page names an icon keeps its own. A tenant with no logo names none.
+- **Removing a logo removes its icons.**
+- Tests: `kernel/icons.test.ts` reads the default PNG back chunk by chunk, checking each checksum and inflating its pixels; `branding.test.ts` covers both sets of routes; `e2e/favicon.spec.ts` uploads a logo that is twice as wide as tall and reads each icon's size, the logo's colour at its middle and the clear margin above it.
+
+#### Findings
+
+- **A logo set through the API alone gets no icons**: nothing draws them. Whoever does that sends the four PNGs as well, or the tab keeps the icon it had. This is the limit of doing it in the browser, and the two `@realfavicongenerator` packages with `sharp` remain the way to lift it.
+- **If the icons cannot be made, the logo is still replaced**, and the console says the tab keeps the icon it had.
+- **Not made: a monochrome mask icon, a maskable icon of its own, or an SVG favicon.** One PNG serves the tab; the 512 px one serves a manifest.
+- **A workspace's theme can differ from its tenant's, and its icons cannot.** Icons follow the logo, which is the tenant's.
 
 ### M13: telemetry
 

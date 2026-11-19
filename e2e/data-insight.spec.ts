@@ -197,8 +197,13 @@ test("an enum column is added, given colours that can be read, and chosen from i
       const style = getComputedStyle(node);
       return { on: style.backgroundColor, text: style.color };
     });
-  expect(await colours("Overdue")).toEqual({ on: "rgb(253, 224, 71)", text: "rgb(0, 0, 0)" });
-  expect(await colours("out")).toEqual({ on: "rgb(37, 99, 235)", text: "rgb(255, 255, 255)" });
+  // Asked until it is so: the definition is drawn again a moment after it is saved.
+  await expect
+    .poll(() => colours("Overdue"))
+    .toEqual({ on: "rgb(253, 224, 71)", text: "rgb(0, 0, 0)" });
+  await expect
+    .poll(() => colours("out"))
+    .toEqual({ on: "rgb(37, 99, 235)", text: "rgb(255, 255, 255)" });
 
   // In a row, the value is chosen from the list and shows as its chip.
   await page.goto(`${link}/tables/loans`);

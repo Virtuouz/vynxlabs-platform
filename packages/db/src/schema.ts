@@ -945,6 +945,8 @@ export interface TenantPortalTable {
   theme: ColumnType<ThemeValues, string | undefined, string>;
   logo_key: string | null;
   logo_content_type: string | null;
+  /** The icons made from the logo, by size in pixels: each a key in file storage. */
+  icons: ColumnType<Record<string, string>, string | undefined, string>;
   updated_at: Generated<Date>;
 }
 
@@ -1130,6 +1132,8 @@ export interface InstanceBrandingTable {
   theme: ColumnType<ThemeValues, string | undefined, string>;
   logo_key: string | null;
   logo_content_type: string | null;
+  /** The icons made from the logo, by size in pixels: each a key in file storage. */
+  icons: ColumnType<Record<string, string>, string | undefined, string>;
   updated_at: Generated<Date>;
 }
 

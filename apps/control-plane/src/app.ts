@@ -13,6 +13,7 @@ import { SYSTEM } from "./kernel/audit.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { pushTenantAccess } from "./kernel/git.js";
 import { access, installAccessControl } from "./kernel/http.js";
+import { defaultIcon, icoOf, webManifest } from "./kernel/icons.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { postgresRateLimitStore } from "./kernel/ratelimit.js";
 import { takeReleased } from "./kernel/tenant/releases.js";
@@ -36,6 +37,7 @@ import { executionRoutes } from "./routes/execution.js";
 import { flowRoutes } from "./routes/flows.js";
 import { gitRoutes } from "./routes/git.js";
 import { healthRoutes } from "./routes/health.js";
+import { iconRoutes, instanceIcon } from "./routes/icons.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { instanceControlRoutes } from "./routes/instance-control.js";
@@ -209,6 +211,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(mcpRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
+      await api.register(iconRoutes(kernel));
       await api.register(queryRoutes(kernel));
       await api.register(sourceRoutes(kernel));
       await api.register(locationRoutes(kernel));
@@ -251,6 +254,33 @@ export async function buildApp(options: AppOptions) {
     },
     { prefix: API_PREFIX },
   );
+
+  // What a browser asks for at the root of a site, whatever page it is on: the icon for its
+  // tab, and what the console is called when it is kept on a home screen.
+  app.get("/favicon.ico", { config: { access: access.public } }, async (_request, reply) => {
+    const icon = (await instanceIcon(kernel, 32)) ?? defaultIcon(32);
+    return reply
+      .header("content-type", "image/x-icon")
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", "public, max-age=300")
+      .send(icoOf(icon, 32));
+  });
+  app.get("/site.webmanifest", { config: { access: access.public } }, async (_request, reply) => {
+    const branding = await kernel.db
+      .selectFrom("instance_branding")
+      .select("product_name")
+      .executeTakeFirst();
+    return reply
+      .header("content-type", "application/manifest+json")
+      .header("cache-control", "public, max-age=300")
+      .send(
+        webManifest(
+          branding?.product_name ?? "Console",
+          `${API_PREFIX}/instance/branding/icons`,
+          "/",
+        ),
+      );
+  });
 
   const consoleDir = consoleDirectory(options.config);
   if (consoleDir) {

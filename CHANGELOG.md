@@ -4,7 +4,7 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 ## Unreleased: phase 18, data you can ask questions of
 
-M1 to M11 of the phase.
+M1 to M12 of the phase.
 
 ### For operators
 
@@ -18,6 +18,8 @@ M1 to M11 of the phase.
 - **New routes:** `POST …/queries/run`, `GET …/queries/schema`, `GET …/queries`, `GET …/queries/saved/*`. Rows take `?expand=`.
 - **Dashboards ask queries.** `PUT …/dashboards/:d` takes `body`, a dashboard as the `dashboard` schema describes it, where it took `page`; `GET` answers with `body` and `upgraded` where it had `page` and `problems`. A dashboard made before this is given converted, and is stored converted when it is next saved. `GET …/dashboards/:d/widgets/:widget/data` gives what a widget shows. Dashboards the workspace keeps as resources are listed with members' own.
 - **`GET …/queries/visual`** runs a query built from menus, and **`GET …/queries/schema` no longer needs `sql:read`**: it gives the tables the caller may read rows of.
+- **Database migration 0079.** The console and each tenant's portal keep icons made from their logo.
+- **The console has an icon.** `/favicon.ico` and `/site.webmanifest` are answered at the root, where `/favicon.ico` used to answer with the console's page. An instance with no logo gets the platform's own icon. Setting a logo in the console makes the icons from it, in the browser. **A logo set through the API alone gets none**: send `PUT /instance/branding/icons/:size` (or `/tenants/:t/portal/icons/:size`) for 32, 180, 192 and 512 as well, each a PNG of that size.
 - **New dependencies:** `pgsql-parser` in the control plane (Postgres's own parser, as WebAssembly), and `@dnd-kit` in the console. Both MIT.
 
 ### For tenant developers

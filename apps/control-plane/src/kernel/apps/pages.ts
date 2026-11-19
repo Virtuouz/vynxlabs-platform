@@ -79,6 +79,8 @@ export interface PageFrame {
   tenantName: string;
   themeHref: string;
   logoHref: string | undefined;
+  /** Where the tenant's icons are, by size. Without it a page names no icon. */
+  iconsHref?: string | undefined;
 }
 
 export interface Notice {
@@ -101,7 +103,7 @@ function page(
 <meta name="robots" content="noindex">
 <title>${escapeHtml(title)} · ${escapeHtml(frame.tenantName)}</title>
 <link rel="stylesheet" href="${escapeHtml(frame.themeHref)}">
-<link rel="stylesheet" href="/_platform/portal.css">
+<link rel="stylesheet" href="/_platform/portal.css">${iconLinks(frame.iconsHref)}
 </head>
 <body>
 <main${wide ? ' class="wide"' : ""}>
@@ -361,6 +363,13 @@ ${
   );
 }
 
+/** The links a page's head carries to a tenant's icons: for the tab, and for a phone's home screen. */
+export function iconLinks(iconsHref: string | undefined): string {
+  if (!iconsHref) return "";
+  const at = escapeHtml(iconsHref);
+  return `<link rel="icon" type="image/png" sizes="32x32" href="${at}/32"><link rel="apple-touch-icon" href="${at}/180">`;
+}
+
 /**
  * Puts what an app needs to know into its page: where it is served, and for
  * whom. The data goes in an element a browser does not run, so the page needs
@@ -368,10 +377,14 @@ ${
  */
 export function injectContext(
   html: string,
-  context: { base: string; themeHref: string; data: unknown },
+  context: { base: string; themeHref: string; iconsHref?: string | undefined; data: unknown },
 ): string {
   const head = `<base href="${escapeHtml(context.base)}"><script type="application/json" id="vx-context">${jsonForHtml(context.data)}</script>`;
-  const theme = `<link rel="stylesheet" href="${escapeHtml(context.themeHref)}">`;
+  // An app that names an icon of its own keeps it: the tenant's is for one that names none.
+  const icons = /<link[^>]+rel=["']?(?:shortcut )?icon/i.test(html)
+    ? ""
+    : iconLinks(context.iconsHref);
+  const theme = `<link rel="stylesheet" href="${escapeHtml(context.themeHref)}">${icons}`;
   let page = /<head[^>]*>/i.test(html)
     ? html.replace(/<head[^>]*>/i, (tag) => `${tag}${head}`)
     : `${head}${html}`;

@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 in progress. M1 to M9 are built first, one after another, and the work then stops for the owner before M10. Nothing is built yet.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M2 built, M3 built for triggers and variables. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -100,6 +100,21 @@ Answered by the owner on 2026-11-18.
 - **Text areas.** `TextAreaField` keeps `rows` as the fewest lines it shows, grows with its text to 12, then scrolls. Its resize handle stays, and once it has been dragged the field keeps the height it was given. A table's row form uses it for `json` and for text that already holds a line break or more than 200 characters, with JSON shown indented.
 - **End-user groups** become the second tab of End users, in the way `ACCESS_TABS` does it. The old address goes to the new one, and the palette's and other screens' links are moved.
 
+#### Built
+
+- **The drawer** (`apps/console/src/kit/layout.tsx`). `Docking` gives the docked inspector its room over `motion-slow` and takes it away again; the panel keeps its own width and is uncovered, so its text does not reflow as it moves. `Inspector` keeps what it last showed for as long as it is shutting, since a screen stops passing the title and the details the moment nothing is chosen. `MasterDetail` keeps the last inspector a screen gave and tells it it is shut, for the screens that give none when nothing is chosen (runs, events, triggers, approvals, flows, scripts, apps). Focus goes back to the row as the panel starts to shut, and the panel is inert while it does.
+- **The runs list** has one scroller: `MasterDetail fill` gives the list its height and does not scroll as well.
+- **Text areas** (`packages/ui/src/Fields.tsx`): `useGrowing` measures the text and sets the height between `rows` and `maxRows` (12). A field whose height is not the one last given was dragged, and is left alone.
+- **A table's row** shows `json`, and text over 200 characters or over several lines, in a text area, with JSON indented. Adding a row does the same for `json`.
+- **End users** has two tabs, End users and Groups, each at the address it had. The palette still finds "End-user groups".
+
+#### Findings
+
+- **The second scroll bar was not seen.** In Chromium at 100 % with 40 runs in a 700 px window, the layout `main` had two scrollers one inside the other, but only the outer one had anything to scroll: one bar. What that layout did show: the header was stuck to the inner one, so it scrolled away, and the list's virtualising watched a scroller that never moved. A display scaled to 125 % or 150 % can leave the inner one a fraction of a pixel short, which is the likeliest way a second bar appeared. With one scroller there is nothing left to show a second. **The owner should look at it on the screen where it was seen.**
+- **A panel that is on the page when it loads slides in as well**, since "arriving open" and "opened" are the same to it.
+- **`e2e/drawer.spec.ts`** watches the panel's room frame by frame: it grows once, does not change for a second run, and shrinks once; under reduced motion it is there or not.
+- **The browser tests failed 23 of 51 the first time, and none of it was the change.** The instance lists the console's files when it starts. The console was rebuilt after it had started, so every new file answered with the page itself. The instance is restarted after each build now.
+
 ### M2: columns
 
 - `ColumnsMenu` reorders by dragging a row between two others, which part to leave the gap. The arrows stay for the keyboard and for a screen reader.
@@ -107,12 +122,39 @@ Answered by the owner on 2026-11-18.
 - Locking the first column is a switch in the same control, on by default. With it on, whichever column is first stays in view. The choice is kept with the view.
 - The runs and audit lists keep their key column first and get the dragging only.
 
+#### Built
+
+- **`ColumnsMenu`** (`apps/console/src/kit/views.tsx`) orders its list with `@dnd-kit` (core 6.3.1, sortable 10.0.0, modifiers, utilities; MIT, and `check:licenses` passes). A dragged row stays in the list and the rows it passes move to leave its place. Each row has a handle; Move up and Move down stay.
+- **A table's rows** (`screens/Data.tsx`) use it, with every column in it. The address carries `cols` and, when the first column is not locked, `unlock=1`. `hide` is read and no longer written. `Grid` takes `lockFirst`.
+- `e2e/columns.spec.ts`: a drag that parts the rows, the same from the keyboard, lock and unlock, and an old `hide` link.
+
+#### Findings
+
+- **The library's own keyboard dragging did not work inside the dialog**: Space picked a column up, and the arrows then moved nothing. It was not chased further. On a column's handle the up and down arrows move it one place, with no picking up, and say where it now is. That is fewer presses than the library's way.
+- **What is said aloud has to be inside the dialog.** The library puts its announcements at the end of the page, which a modal dialog hides from a screen reader. They are given a place inside it.
+- **A table's columns come in the order the table keeps them**, which is by name, not the order they were written in. Being able to put them in order is therefore worth more than it looked.
+- **Not done: the column widths.** The grid still sizes columns by their content.
+
 ### M3: drafts are listed, and triggers are worked on where they are listed
 
 - `GET …/triggers`, `…/tables`, `…/variable-values` and `…/apps` list what is drafted and not deployed, marked as scripts and flows mark it.
 - The Triggers inspector gets Edit, and Deploy for a draft, through the `DeployMenu` there is. An object link to a trigger or a schedule that is only a draft opens its editor.
 - A draft schedule shows when it would next fire. A draft webhook or form says the address it will have.
 - The empty state and the "saved as a draft" notice say the same thing in the same words on every kind.
+
+#### Built
+
+- **`GET …/triggers`** lists a schedule or a trigger that has only a draft, with `draft: "new"`, no address, and the time it would first fire were it deployed now. A deployed one that a draft changes or removes says `changed` or `removed`, and still shows what is deployed, since that is what fires. Each says its `resourceKind`.
+- **The Triggers screen** marks them, and its panel has Edit for every trigger in a dev workspace (a flow's trigger node opens the flow's editor) and, for a draft, Deploy. A draft says that it starts nothing until it is deployed.
+- **`GET …/variable-values`** lists a drafted variable the same way, and the Variables list marks it and opens its editor.
+- Tests: three in `authoring.test.ts`.
+
+#### Findings
+
+- **Tables and published apps had no hidden drafts to show.** The console makes and changes a table at once (`PUT …/resources`), not through a draft, and an app made in the console is an interface, whose list already says "Not published". Nothing was changed for either.
+- **A draft webhook has no address until it is deployed**: the address is made from what a deploy registers. The panel says so.
+- **Not done yet: connection groups and events**, the two other kinds the console edits as drafts. Their lists still show only what is deployed.
+- **A draft trigger can be checked in the list with the rest.** Pausing leaves it out, since it fires nothing.
 
 ### M4: access
 

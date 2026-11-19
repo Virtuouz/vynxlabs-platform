@@ -1678,6 +1678,23 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Object({ reason: Type.String(), problem: Type.String(), at: Time }),
                     Type.Null(),
                   ]),
+                  resourceKind: Type.String({
+                    description:
+                      "The kind of resource that defines it: `schedule`, `trigger`, or `flow` for a flow's trigger node.",
+                  }),
+                  draft: Type.Union(
+                    [
+                      Type.Literal("new"),
+                      Type.Literal("changed"),
+                      Type.Literal("removed"),
+                      Type.Null(),
+                    ],
+                    {
+                      description:
+                        "A change made in the console that waits to be deployed. `new` is a trigger " +
+                        "that has never been deployed: it is listed from its draft and does not fire.",
+                    },
+                  ),
                 }),
               ),
             }),
@@ -1689,7 +1706,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectFrom("trigger_state")
           .innerJoin("resource", "resource.id", "trigger_state.resource_id")
           .selectAll("trigger_state")
-          .select(["resource.path", "resource.body"])
+          .select(["resource.path", "resource.body", "resource.kind"])
           .where("trigger_state.workspace_id", "=", params.w)
           .orderBy("resource.path")
           .execute();
@@ -1704,6 +1721,17 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tenantId: params.t,
           workspaceId: params.w,
         });
+        const drafts = await db
+          .selectFrom("resource_draft")
+          .select(["path", "kind", "body", "deleted"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "in", ["schedule", "trigger", "flow"])
+          .execute();
+        const draftOf = (kind: string, path: string): "new" | "changed" | "removed" | null => {
+          const draft = drafts.find((one) => one.kind === kind && one.path === path);
+          if (!draft) return null;
+          return draft.deleted ? "removed" : "changed";
+        };
         const pauses = await db
           .selectFrom("trigger_pause")
           .selectAll()
@@ -1806,9 +1834,63 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               nextFireAt: isoOrNull(row.next_fire_at),
               lastFiredAt: isoOrNull(row.last_fired_at),
               url: token ? address : null,
+              resourceKind: row.kind,
+              draft: draftOf(row.kind, row.path),
             };
           }),
         );
+        // Triggers made in the console and not deployed yet are listed too, from their draft.
+        // Nothing has registered them, so they have no next time and no address, and do not fire.
+        const deployed = new Set(rows.map((row) => `${row.kind} ${row.path}`));
+        for (const draft of drafts) {
+          if (draft.deleted || deployed.has(`${draft.kind} ${draft.path}`)) continue;
+          if (draft.kind !== "schedule" && draft.kind !== "trigger") continue;
+          const body = (draft.body ?? {}) as {
+            type?: string;
+            script?: string;
+            flow?: string;
+            event?: string;
+            enabled?: boolean;
+            cron?: string;
+            timezone?: string;
+            overlap?: "allow" | "skip";
+          };
+          const schedule = draft.kind === "schedule";
+          let next: Date | undefined;
+          if (schedule && body.cron) {
+            try {
+              next = nextFireTimes(body.cron, body.timezone, 1)[0];
+            } catch {
+              // A draft may hold a cron that is not usable yet. Its editor says so.
+            }
+          }
+          items.push({
+            path: draft.path,
+            node: "",
+            type: (schedule
+              ? "schedule"
+              : (body.type ?? "webhook")) as (typeof rows)[number]["type"],
+            script: body.script ?? body.flow ?? "",
+            targetKind: body.flow ? "flow" : "script",
+            event: body.event ?? null,
+            enabled: body.enabled ?? true,
+            paused: null,
+            lastRun: null,
+            lastRefusal: null,
+            cron: body.cron ?? null,
+            timezone: schedule ? (body.timezone ?? "UTC") : null,
+            overlap: schedule ? (body.overlap ?? "allow") : null,
+            lastSkippedAt: null,
+            lastSkipReason: null,
+            // When it would first fire, were it deployed now.
+            nextFireAt: next ? iso(next) : null,
+            lastFiredAt: null,
+            url: null,
+            resourceKind: draft.kind,
+            draft: "new",
+          });
+        }
+        items.sort((a, b) => a.path.localeCompare(b.path));
         // One script's or flow's triggers, for its page.
         return { items: query.target ? items.filter((one) => one.script === query.target) : items };
       },
@@ -2672,13 +2754,35 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .selectAll()
         .where("workspace_id", "=", params.w)
         .execute();
-      const paths = [...new Set([...definitions, ...values].map((row) => row.path))].sort();
+      // A variable made or changed in the console and not deployed yet is listed too, from its draft.
+      const drafts = await db
+        .selectFrom("resource_draft")
+        .select(["path", "body", "deleted"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "variable")
+        .execute();
+      const fresh = drafts.filter(
+        (draft) => !draft.deleted && !definitions.some((row) => row.path === draft.path),
+      );
+      const paths = [
+        ...new Set([...definitions, ...values, ...fresh].map((row) => row.path)),
+      ].sort();
       return {
         items: paths.map((path) => {
-          const definition = definitions.find((row) => row.path === path)?.body as
-            | { description?: string; default?: string }
-            | undefined;
+          const drafted = drafts.find((row) => row.path === path);
+          const isNew = fresh.some((row) => row.path === path);
+          const definition = (
+            isNew ? drafted?.body : definitions.find((row) => row.path === path)?.body
+          ) as { description?: string; default?: string } | undefined;
+          const draft: "new" | "changed" | "removed" | null = isNew
+            ? "new"
+            : drafted
+              ? drafted.deleted
+                ? "removed"
+                : "changed"
+              : null;
           return {
+            draft,
             path,
             description: definition?.description ?? "",
             default: definition?.default ?? null,
@@ -2706,6 +2810,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   default: NullableString,
                   value: NullableString,
                   updatedAt: Type.Optional(NullableTime),
+                  draft: Type.Optional(
+                    Type.Union(
+                      [
+                        Type.Literal("new"),
+                        Type.Literal("changed"),
+                        Type.Literal("removed"),
+                        Type.Null(),
+                      ],
+                      {
+                        description:
+                          "A change made in the console that waits to be deployed. `new` is a " +
+                          "variable that has never been deployed: a script cannot read it yet.",
+                      },
+                    ),
+                  ),
                 }),
               ),
             }),

@@ -810,7 +810,13 @@ export function Connections({ root }: { root: string }) {
 export function Variables({ root }: { root: string }) {
   const variableUses = useReferences(root, "variable");
   return (
-    <ListScreen<{ path: string; description: string; default: string | null; value: string | null }>
+    <ListScreen<{
+      path: string;
+      description: string;
+      default: string | null;
+      value: string | null;
+      draft?: "new" | "changed" | "removed" | null;
+    }>
       title="Variables"
       description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
       path={`${root}/variable-values`}
@@ -818,7 +824,26 @@ export function Variables({ root }: { root: string }) {
       columns={[
         {
           header: "Variable",
-          cell: (row) => <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />,
+          cell: (row) => (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {row.draft === "new" ? (
+                // It has no page yet: its editor is where it is.
+                <Link
+                  to={`${consoleLink(root)}/resources/edit/variable/${row.path}`}
+                  className="font-mono text-code text-action"
+                >
+                  {row.path}
+                </Link>
+              ) : (
+                <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />
+              )}
+              {row.draft === "new" ? (
+                <StatePill state="draft">Draft, never deployed</StatePill>
+              ) : row.draft ? (
+                <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+              ) : null}
+            </span>
+          ),
         },
         {
           header: "Read by",

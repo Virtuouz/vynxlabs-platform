@@ -4,6 +4,7 @@ import {
   CirclePause,
   CirclePlay,
   CircleX,
+  Pencil,
   Plus,
   ShieldAlert,
   Zap,
@@ -14,9 +15,10 @@ import { ask, notify } from "../ask.tsx";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
+import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { ago, stamp } from "../kit/format.ts";
 import { FilterChips, HeadNote, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
-import { Mono, type RunState, StatePill, stateOf } from "../kit/status.tsx";
+import { Mono, type RunState, StatePill, stateOf, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
@@ -52,7 +54,17 @@ interface Trigger {
     createdAt: string;
   } | null;
   lastRefusal: { reason: string; problem: string; at: string } | null;
+  /** The kind of resource that defines it: a schedule, a trigger, or a flow for a flow's trigger node. */
+  resourceKind?: string;
+  /** A change made in the console that waits to be deployed. A `new` one has never been deployed and does not fire. */
+  draft?: "new" | "changed" | "removed" | null;
 }
+
+/** Where a trigger is changed: its own editor, or the flow's for a flow's trigger node. */
+const editLink = (link: string, row: Trigger) =>
+  row.resourceKind === "flow" || row.node
+    ? `${link}/flows/edit/${row.path}`
+    : `${link}/resources/edit/${row.resourceKind ?? (row.type === "schedule" ? "schedule" : "trigger")}/${row.path}`;
 
 const TYPE_LABEL: Record<string, string> = {
   schedule: "Schedules",
@@ -145,7 +157,12 @@ export function TriggersWorkbench({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const batch = useBatch();
   const pauseMany = async (keys: string[], paused: boolean) => {
-    const chosen = items.filter((one) => keys.includes(triggerKey(one)));
+    // A trigger that is only a draft fires nothing, so there is nothing of it to pause.
+    const chosen = items.filter((one) => keys.includes(triggerKey(one)) && one.draft !== "new");
+    if (chosen.length === 0) {
+      notify.info("A draft starts nothing until it is deployed, so there is nothing to pause.");
+      return;
+    }
     let reason: string | null | undefined;
     if (paused) {
       reason = await ask.prompt({
@@ -255,7 +272,14 @@ export function TriggersWorkbench({
     {
       header: "State",
       cell: (row) =>
-        row.paused ? (
+        row.draft === "new" ? (
+          <StatePill state="draft">Draft, never deployed</StatePill>
+        ) : row.draft ? (
+          <span className="flex flex-wrap items-center gap-2">
+            {row.paused ? <StatePill state="paused" /> : null}
+            <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+          </span>
+        ) : row.paused ? (
           <StatePill state="paused" />
         ) : !row.enabled ? (
           <StatePill state="off" />
@@ -416,12 +440,36 @@ export function TriggersWorkbench({
                 eyebrow={`${open.type} trigger${open.node ? ` · node ${open.node}` : ""}`}
                 onClose={() => choose(null)}
                 footer={
-                  open.paused ? (
-                    <Button variant="primary" onClick={() => void resume(open)}>
-                      <CirclePlay aria-hidden="true" size={16} /> Resume
-                    </Button>
+                  open.draft === "new" ? (
+                    <span className="flex flex-wrap gap-2">
+                      <Button variant="primary" href={editLink(link, open)}>
+                        <Pencil aria-hidden="true" size={16} /> Edit
+                      </Button>
+                      <DeployMenu
+                        root={root}
+                        link={link}
+                        path={open.path}
+                        onDeployed={() => list.reload()}
+                      />
+                    </span>
+                  ) : open.paused ? (
+                    <span className="flex flex-wrap gap-2">
+                      <Button variant="primary" onClick={() => void resume(open)}>
+                        <CirclePlay aria-hidden="true" size={16} /> Resume
+                      </Button>
+                      {production ? null : (
+                        <Button href={editLink(link, open)}>
+                          <Pencil aria-hidden="true" size={16} /> Edit
+                        </Button>
+                      )}
+                    </span>
                   ) : (
                     <span className="flex flex-wrap gap-2">
+                      {production ? null : (
+                        <Button href={editLink(link, open)}>
+                          <Pencil aria-hidden="true" size={16} /> Edit
+                        </Button>
+                      )}
                       {open.type === "schedule" && !open.node ? (
                         <Button variant="primary" onClick={() => void fireNow(open)}>
                           <Zap aria-hidden="true" size={16} /> Fire now
@@ -435,6 +483,25 @@ export function TriggersWorkbench({
                 }
               >
                 <div className="flex flex-col gap-4">
+                  {open.draft === "new" ? (
+                    <Notice tone="plain">
+                      A draft. It starts nothing until it is deployed.{" "}
+                      {open.type === "schedule"
+                        ? open.nextFireAt
+                          ? `Deployed now, it would first fire ${stamp(open.nextFireAt)}.`
+                          : ""
+                        : open.type === "webhook" || open.type === "form"
+                          ? "It is given its address when it is deployed."
+                          : ""}
+                    </Notice>
+                  ) : open.draft ? (
+                    <Notice tone="plain">
+                      {open.draft === "removed"
+                        ? "A draft removes this trigger. It keeps firing until that is deployed."
+                        : "A draft changes this trigger. What is shown here is what is deployed, and what fires."}{" "}
+                      <Link to={`${link}/release`}>Review the change</Link>
+                    </Notice>
+                  ) : null}
                   {open.paused ? (
                     <Notice tone="attention">
                       Paused {ago(open.paused.at)}

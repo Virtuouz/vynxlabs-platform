@@ -843,3 +843,103 @@ describe("the write path", () => {
     expect(entries.some((entry) => entry.action === "resource.draft_discarded")).toBe(true);
   });
 });
+
+describe("what is drafted is listed where it will be", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: list rows are inspected freely
+  const triggers = async (): Promise<Record<string, any>> =>
+    Object.fromEntries(
+      // biome-ignore lint/suspicious/noExplicitAny: as above
+      (await alice.get(`${ws()}/triggers`)).body.items.map((one: any) => [one.path, one]),
+    );
+
+  test("a trigger made in the console is in the list at once, marked, and fires nothing", async () => {
+    await draft("listed/target", scriptBody("export default async () => ({});\n"));
+    await alice.post(`${ws()}/changes/deploy`, {});
+    const nightly = await draft(
+      "listed/nightly",
+      { script: "listed/target", cron: "0 3 * * *", timezone: "UTC" },
+      "schedule",
+    );
+    expect(nightly.status, JSON.stringify(nightly.body)).toBe(200);
+    const hook = await draft(
+      "listed/hook",
+      { type: "webhook", script: "listed/target" },
+      "trigger",
+    );
+    expect(hook.status, JSON.stringify(hook.body)).toBe(200);
+
+    const listed = await triggers();
+    expect(listed["listed/nightly"]).toMatchObject({
+      draft: "new",
+      resourceKind: "schedule",
+      type: "schedule",
+      script: "listed/target",
+      targetKind: "script",
+      cron: "0 3 * * *",
+      lastFiredAt: null,
+      url: null,
+    });
+    // When it would first fire if it were deployed now: nothing has registered it.
+    expect(new Date(listed["listed/nightly"].nextFireAt).getTime()).toBeGreaterThan(Date.now());
+    expect(listed["listed/hook"]).toMatchObject({
+      draft: "new",
+      resourceKind: "trigger",
+      type: "webhook",
+      url: null,
+    });
+    // One script's triggers include the ones drafted for it.
+    const forTarget = (await alice.get(`${ws()}/triggers?target=listed/target`)).body.items;
+    expect(forTarget.map((one: { path: string }) => one.path).sort()).toEqual([
+      "listed/hook",
+      "listed/nightly",
+    ]);
+  });
+
+  test("deployed, it is a trigger like any other; changed or removed by a draft, it says so", async () => {
+    await alice.post(`${ws()}/changes/deploy`, {});
+    let listed = await triggers();
+    expect(listed["listed/nightly"]).toMatchObject({ draft: null, resourceKind: "schedule" });
+    expect(listed["listed/hook"].draft).toBeNull();
+    expect(listed["listed/hook"].url).toContain("/api/v1/hooks/");
+
+    await draft(
+      "listed/nightly",
+      { script: "listed/target", cron: "0 4 * * *", timezone: "UTC" },
+      "schedule",
+    );
+    await alice.put(`${ws()}/drafts/listed/hook`, {
+      kind: "trigger",
+      schemaVersion: 1,
+      body: {},
+      deleted: true,
+    });
+    listed = await triggers();
+    // What is listed is what fires: the deployed time, with a note that a change waits.
+    expect(listed["listed/nightly"]).toMatchObject({ draft: "changed", cron: "0 3 * * *" });
+    expect(listed["listed/hook"].draft).toBe("removed");
+    await alice.post(`${ws()}/changes/deploy`, {});
+    listed = await triggers();
+    expect(listed["listed/nightly"]).toMatchObject({ draft: null, cron: "0 4 * * *" });
+    expect(listed["listed/hook"]).toBeUndefined();
+  });
+
+  test("a variable made in the console is in the list before it is deployed", async () => {
+    await draft("listed/limit", { description: "How many", default: "5" }, "variable");
+    // biome-ignore lint/suspicious/noExplicitAny: as above
+    const find = async (): Promise<any> =>
+      (await alice.get(`${ws()}/variable-values`)).body.items.find(
+        (one: { path: string }) => one.path === "listed/limit",
+      );
+    expect(await find()).toMatchObject({
+      draft: "new",
+      description: "How many",
+      default: "5",
+      value: null,
+    });
+    await alice.post(`${ws()}/changes/deploy`, {});
+    expect((await find()).draft).toBeNull();
+    await draft("listed/limit", { description: "How many", default: "6" }, "variable");
+    // The default a script reads is still the deployed one.
+    expect(await find()).toMatchObject({ draft: "changed", default: "5" });
+  });
+});

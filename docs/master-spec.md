@@ -1,6 +1,8 @@
-# Vynxlabs platform: master specification
+# Volvel: master specification
 
-Last updated: 2026-11-18
+Last updated: 2026-11-19
+
+The product is named Volvel. Vynxlabs is the company that makes it and is its first operator. "The platform" in this document means Volvel.
 
 ## How to use this document
 
@@ -64,7 +66,7 @@ These twelve rules settle design disputes. When two options both satisfy the req
 3. **Code first, git as the source of truth.** Production changes arrive from a repository through a deploy.
 4. **Language-neutral core.** The control plane depends only on the manifest format and the worker protocol, never on the authoring language.
 5. **Same software everywhere.** Shared, dedicated, client-cloud and on-prem deployments run the same image. Differences are configuration.
-6. **Minimal footprint.** Containers, Postgres and S3-compatible file storage are the only requirements. The platform must run offline.
+6. **Minimal footprint.** Containers, Postgres and S3-compatible file storage are the only requirements. The platform must run offline. The one allowance is an image a tenant's author links by URL in a doc, which is the author's choice and is not shown offline.
 7. **No central dependency.** No license check, no call home, no kill switch.
 8. **Tenant portability.** Any tenant can be exported from one instance and imported into another.
 9. **The core uses its own SDK.** Built-in features are implemented through the same extension points as custom ones.
@@ -103,6 +105,11 @@ These terms have one meaning each across the spec, the code and every phase doc.
 | Guest | An unauthenticated visitor, represented as an anonymous principal. |
 | Role | A named set of permissions on resource kinds. |
 | Binding | A grant of a role to a principal at a scope. |
+| Doc | One page of documentation: Markdown with frontmatter, held as a resource. |
+| Docs app | An app that serves the docs under one path as a site. |
+| Collection | A top-level folder of a docs app. Navigation comes from folders, never from a separate file. |
+| Topic | A stable name for a doc, so that help and links survive a move. |
+| Term | A glossary entry a doc defines, shown where the word is used. |
 
 ## System architecture
 
@@ -233,6 +240,8 @@ A UI-managed resource can also be written by hand as a file anywhere in the repo
 ### Initial resource kinds
 
 Script, flow, trigger, schedule, event definition, connector, connection, secret, variable, custom table, data source, app, role, binding and branding theme. Adding a kind must not require changes to permissions, audit or sync.
+
+The `doc` kind, added in phase 20, is the one agreed exception. It has a permission kind of its own, so that someone can be allowed to write documentation and nothing else, and it is kept in a repository as a Markdown file and not as YAML, so that a page reads as a page.
 
 ## Identity and permissions
 
@@ -520,6 +529,8 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 ### Access
 
 - An app is served to members, end users or guests according to its bindings.
+- A docs app is an app whose pages are the docs under one path. It is served and bound as any app is, and access is never finer than the whole app.
+- Docs are data and never code: no HTML, no expressions, and only the components and link schemes the platform names.
 - An app reads and writes data only through the public API, so permissions and row policies always apply.
 - An end user, whatever role they are bound to, holds only the kinds of permission apps use. A binding made too wide cannot hand a portal user the tenant's settings or secrets.
 - Guest access is rate limited, by the caller's address.
@@ -752,7 +763,7 @@ Nothing below is in scope for the early phases, but no design may block the defe
 
 ### Deferred
 
-- Visual editing of flows, and UI-managed resources in general.
+- Visual editing of flows. Resources of every kind have been made in the console since phase 7, as drafts that a deploy makes live.
 - Generated apps from custom tables, and any drag-and-drop builder.
 - A core automation node pack.
 - Additional authoring languages.
@@ -771,7 +782,8 @@ Nothing below is in scope for the early phases, but no design may block the defe
 - [ ] Confirm the remaining provisional rows in the technology decisions table.
 - [x] Choose the flow expression language: CEL.
 - [x] Choose the frontend framework and the component kit's foundation: React, Vite, Base UI and Tailwind.
-- [ ] Choose a product name and check it for trademark conflicts.
+- [x] Choose a product name: Volvel.
+- [ ] Check the name Volvel for trademark conflicts.
 - [ ] Get legal review of Apache 2.0 together with the contract clause that assigns the tenant repository.
 - [x] Decide whether a clone of a production workspace is always a dev workspace: yes. A clone is a dev workspace linked to the workspace it came from.
 - [x] Decide the rollback policy for custom table migrations: a deploy or rollback never drops data. A column or table that leaves the definition is retired and kept, and dropping it is a separate, explicit action.
@@ -782,4 +794,4 @@ Nothing below is in scope for the early phases, but no design may block the defe
 - [x] Decide how end users get accounts: password, with invitation and reset links, and mail optional.
 - [x] Choose the chart library: Vega-Lite, loaded on demand.
 - [ ] Confirm that the end-user pool is kept by the control plane itself and not by a second Better Auth configuration. Phase 6 found that Better Auth cannot hold the same email in two tenants.
-- [ ] Decide whether files need an owner, as rows have. Until then end users are given no access to files.
+- [ ] Decide whether files need an owner, as rows have. Until then end users are given no access to files, and a doc's images come from its repository or from a URL, not from an upload in the console.

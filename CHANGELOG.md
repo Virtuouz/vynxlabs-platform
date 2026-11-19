@@ -6,11 +6,17 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 ### For operators
 
-- Nothing to do so far. No migration and no new setting.
+- Nothing to do. No migration and no new setting.
 
 ### For tenant developers
 
 - **Every sheet and dialog in the console and in apps slides or fades both ways**, and whatever is moved a place by a button or an arrow key is seen to move. Under reduced motion nothing moves, as before.
+- **A dashboard's widgets are placed by dragging.** A widget has `at: { x, y, w, h }` on twelve columns, in rows 40 px tall. `width` is still read, and a widget with no place is laid in rows in order, so a dashboard file written for phase 18 is drawn as it was. Nothing has to be changed.
+- **A dashboard refreshes by itself**, every 5 minutes unless its `refresh` says `off`, 1, 15 or 60, and says when it last did. The server runs each widget's query again for each person looking.
+- **New in a dashboard's widgets:** `subtitle`; a figure's `trend`, `delta`, `goodWhen` and `caption`; a chart's `compare`, `horizontal` and the `heatmap` mark; a table's `cells` and `totals`. `GET …/widgets/:id/data` takes `part=trend`. All are optional, and a file without them is read as before.
+- **The rail's areas show their screens and go nowhere**, and the breadcrumb's tenant, workspace and section are links. Tests that pressed a rail area as a link press a button now, then the screen.
+- **Tables that show an answer sort, filter and have their columns chosen**: a dashboard's table, the rows behind a number, a query's result. Pressing a chart's bar opens the rows behind it.
+- **`@vynxlabs/ui`'s `Dialog` has `size="table"`**, and `Chart` takes `onPick`. **`@vynxlabs/screens` exports `usePlacement`**, the drag placement the app builder and dashboards share.
 - **`@vynxlabs/ui` gains** `Closing`, `Appear`, `useOpening`, `useLast`, `useFlip`, `useKeys` and `MoveButtons`. A `SchemaForm` list's move buttons are icons, named as before.
 
 ## Unreleased: phase 18, data you can ask questions of

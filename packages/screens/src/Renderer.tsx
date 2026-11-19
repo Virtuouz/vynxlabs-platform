@@ -26,6 +26,7 @@ import {
 } from "./data.ts";
 import { axisFormat, formatValue } from "./format.ts";
 import { all, heading, linkDefaults, linkFilter, sortOf, summaryRows } from "./links.ts";
+import { usePlacement } from "./placement.ts";
 
 const SYSTEM = new Set(["id", "created_at", "updated_at"]);
 /** How many reference IDs one request may ask for. The rows API takes no more in one `in`. */
@@ -795,64 +796,13 @@ function PageBody({
   // Top to bottom and left to right, so the page reads in order without the grid.
   const ordered = [...page.widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
 
-  // A widget being dragged or stretched is drawn where it would land, before it is let go.
-  const grid = useRef<HTMLDivElement>(null);
-  const [held, setHeld] = useState<{ id: string; at: PageWidget["at"] }>();
-  const grab = (
-    event: React.PointerEvent<HTMLElement>,
-    widget: PageWidget,
-    how: "move" | "stretch",
-  ) => {
-    const onMove = editing?.onMove;
-    const box = grid.current?.getBoundingClientRect();
-    if (!onMove || !box || event.button !== 0) return;
-    // A press on a button in the heading is that button's, not the start of a drag.
-    if (how === "move" && (event.target as HTMLElement).closest("button")) return;
-    event.preventDefault();
-    const handle = event.currentTarget;
-    handle.setPointerCapture(event.pointerId);
-    const gap = 12;
-    const column = (box.width + gap) / 12;
-    const row = 40 + gap;
-    const from = { x: event.clientX, y: event.clientY };
-    let latest = widget.at;
-    const follow = (moved: PointerEvent) => {
-      const across = Math.round((moved.clientX - from.x) / column);
-      const down = Math.round((moved.clientY - from.y) / row);
-      const start = widget.at;
-      latest =
-        how === "move"
-          ? {
-              ...start,
-              x: Math.min(12 - start.w, Math.max(0, start.x + across)),
-              y: Math.min(199, Math.max(0, start.y + down)),
-            }
-          : {
-              ...start,
-              w: Math.min(12 - start.x, Math.max(1, start.w + across)),
-              h: Math.min(40, Math.max(1, start.h + down)),
-            };
-      setHeld({ id: widget.id, at: latest });
-    };
-    const drop = () => {
-      handle.removeEventListener("pointermove", follow);
-      handle.removeEventListener("pointerup", drop);
-      handle.removeEventListener("pointercancel", drop);
-      setHeld(undefined);
-      const start = widget.at;
-      if (
-        latest.x !== start.x ||
-        latest.y !== start.y ||
-        latest.w !== start.w ||
-        latest.h !== start.h
-      ) {
-        onMove(widget.id, latest);
-      }
-    };
-    handle.addEventListener("pointermove", follow);
-    handle.addEventListener("pointerup", drop);
-    handle.addEventListener("pointercancel", drop);
-  };
+  // Dragging, stretching and the arrow keys, shared with dashboards. What a move pushes out
+  // of its way is seen to move there.
+  const placement = usePlacement({
+    places: JSON.stringify(page.widgets.map((widget) => [widget.id, widget.at])),
+    onMove: editing?.onMove,
+  });
+  const { held } = placement;
 
   if (ordered.length === 0) {
     return <p className="m-0 text-ink-muted">This page has nothing on it yet.</p>;
@@ -876,16 +826,17 @@ function PageBody({
       */}
       <div className="@container">
         <div
-          ref={grid}
+          ref={placement.grid}
           className="grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12"
         >
           {ordered.map((widget) => {
             const source = widget.link ? byId.get(widget.link.from) : undefined;
             const active = editing?.selected === widget.id;
-            const at = held?.id === widget.id ? held.at : widget.at;
+            const at = placement.at(widget.id, widget.at);
             return (
               <section
                 key={widget.id}
+                data-flip-key={widget.id}
                 aria-label={widget.title || widget.id}
                 style={
                   {
@@ -906,7 +857,7 @@ function PageBody({
                       ? {
                           title: "Drag to move",
                           onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
-                            grab(event, widget, "move"),
+                            placement.grab(event, widget.id, widget.at, "move"),
                         }
                       : {})}
                   >
@@ -921,42 +872,7 @@ function PageBody({
                         // Moving and resizing without a pointer: arrow keys move the chosen
                         // widget a cell at a time; with Shift they change its size.
                         {...(active && editing.onMove
-                          ? {
-                              "aria-keyshortcuts": "ArrowLeft ArrowRight ArrowUp ArrowDown",
-                              title: "Arrow keys move it. Shift and arrow keys change its size.",
-                              onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
-                                const step: Record<string, [number, number]> = {
-                                  ArrowLeft: [-1, 0],
-                                  ArrowRight: [1, 0],
-                                  ArrowUp: [0, -1],
-                                  ArrowDown: [0, 1],
-                                };
-                                const by = step[event.key];
-                                if (!by || !editing.onMove) return;
-                                event.preventDefault();
-                                const [dx, dy] = by;
-                                const at = widget.at;
-                                const next = event.shiftKey
-                                  ? {
-                                      ...at,
-                                      w: Math.min(12 - at.x, Math.max(1, at.w + dx)),
-                                      h: Math.min(40, Math.max(1, at.h + dy)),
-                                    }
-                                  : {
-                                      ...at,
-                                      x: Math.min(12 - at.w, Math.max(0, at.x + dx)),
-                                      y: Math.min(199, Math.max(0, at.y + dy)),
-                                    };
-                                if (
-                                  next.x !== at.x ||
-                                  next.y !== at.y ||
-                                  next.w !== at.w ||
-                                  next.h !== at.h
-                                ) {
-                                  editing.onMove(widget.id, next);
-                                }
-                              },
-                            }
+                          ? placement.keys(widget.id, widget.title || heading(widget.id), widget.at)
                           : {})}
                       >
                         {active ? "Editing" : "Edit"}
@@ -969,7 +885,9 @@ function PageBody({
                     aria-hidden="true"
                     title="Drag to change its size"
                     className="absolute right-0 bottom-0 z-10 hidden h-4 w-4 cursor-nwse-resize touch-none rounded-br-[inherit] border-action border-r-2 border-b-2 @2xl:block"
-                    onPointerDown={(event) => grab(event, widget, "stretch")}
+                    onPointerDown={(event) =>
+                      placement.grab(event, widget.id, widget.at, "stretch")
+                    }
                   />
                 ) : null}
                 {/* A body that scrolls can be reached and scrolled by keyboard too. */}
@@ -1005,6 +923,9 @@ function PageBody({
             );
           })}
         </div>
+        <span role="status" className="sr-only">
+          {placement.said}
+        </span>
       </div>
     </>
   );

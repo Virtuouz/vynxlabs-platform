@@ -1,4 +1,4 @@
-import { Button, Grid, type GridColumn, Notice, TextField } from "@vynxlabs/ui";
+import { Button, type GridColumn, Notice, TextField } from "@vynxlabs/ui";
 import { Play, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
@@ -6,6 +6,7 @@ import { ask, notify } from "../ask.tsx";
 import { count } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
+import { ReadTable } from "../kit/ReadTable.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, useUrlParam } from "../router.tsx";
@@ -299,12 +300,11 @@ export function Queries({ root, link }: { root: string; link: string }) {
                   The query ran and gave no rows.
                 </p>
               ) : (
-                <Grid
+                <ReadTable
                   label="The query's result"
                   columns={grid}
                   rows={rows}
                   rowKey={(row) => String(row.__at)}
-                  empty=""
                 />
               )}
             </section>

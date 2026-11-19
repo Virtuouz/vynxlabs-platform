@@ -5,12 +5,12 @@ import {
   type DashboardWidgetOptions,
   type FilterBinding,
   groupName,
+  type TableCell,
   VISUAL_BUCKETS,
   VISUAL_FUNCTIONS,
   VISUAL_OPERATORS,
   type VisualCondition,
   type VisualQuery,
-  WIDGET_WIDTHS,
   type WidgetSource,
 } from "@vynxlabs/manifest";
 import {
@@ -577,6 +577,18 @@ function Options({
     .filter((one) => one.type === "number")
     .map((one) => ({ value: one.name, label: one.name }));
   const blank = (label: string) => [{ value: "", label }];
+  // What a figure's line can run over: for a question built from menus, the columns its date
+  // filters narrow; for a saved query or SQL, a column of its own rows.
+  const trendColumns =
+    widget.source && "visual" in widget.source
+      ? [
+          ...new Set(
+            (widget.filters ?? [])
+              .filter((one) => dateFilters.includes(one.filter) && one.column)
+              .map((one) => one.column as string),
+          ),
+        ]
+      : columns.map((one) => one.name);
   const format = (
     <div className="w-44">
       <SelectField
@@ -638,6 +650,65 @@ function Options({
             />
           </div>
         ) : null}
+        {options.compareTo ? (
+          <>
+            <div className="w-44">
+              <SelectField
+                name="delta"
+                label="The change is said as"
+                value={options.delta ?? "percent"}
+                options={[
+                  { value: "percent", label: "A share: 18%" },
+                  { value: "absolute", label: "The amount: 64" },
+                  { value: "points", label: "Points, for a rate" },
+                ]}
+                onChange={(delta) =>
+                  set({
+                    delta:
+                      delta === "percent" ? undefined : (delta as DashboardWidgetOptions["delta"]),
+                  })
+                }
+              />
+            </div>
+            <div className="w-40">
+              <SelectField
+                name="goodWhen"
+                label="Good news is"
+                value={options.goodWhen ?? "up"}
+                options={[
+                  { value: "up", label: "More" },
+                  { value: "down", label: "Less" },
+                ]}
+                onChange={(way) => set({ goodWhen: way === "down" ? "down" : undefined })}
+              />
+            </div>
+          </>
+        ) : null}
+        <div className="w-56">
+          <SelectField
+            name="trend"
+            label="A line of how it went"
+            value={options.trend?.by ?? ""}
+            {...(trendColumns.length === 0
+              ? { hint: "Give a date filter a column of this widget first." }
+              : {})}
+            options={[
+              ...blank("No line"),
+              ...trendColumns.map((name) => ({ value: name, label: `Over ${name}` })),
+            ]}
+            onChange={(by) => set({ trend: by ? { by } : undefined })}
+          />
+        </div>
+        <div className="min-w-56 flex-1">
+          <TextField
+            name="caption"
+            label="A line under it"
+            required={false}
+            value={options.caption ?? ""}
+            hint="{previous} is written as the number for the period before."
+            onChange={(caption) => set({ caption })}
+          />
+        </div>
       </div>
     );
   }
@@ -654,7 +725,7 @@ function Options({
               value={mark}
               options={DASHBOARD_CHART_MARKS.map((one) => ({
                 value: one,
-                label: one === "scatter" ? "points" : one,
+                label: one === "scatter" ? "points" : one === "heatmap" ? "squares, shaded" : one,
               }))}
               onChange={(next) => set({ mark: next as (typeof DASHBOARD_CHART_MARKS)[number] })}
             />
@@ -670,17 +741,43 @@ function Options({
           </div>
           {format}
         </div>
-        <MultiSelectField
-          label={mark === "pie" ? "Sized by" : "Up the side"}
-          hint={
-            mark === "pie" || mark === "scatter" ? undefined : "Several are drawn as a series each."
-          }
-          options={numbers.length > 0 ? numbers : all}
-          value={y}
-          placeholder="The first number"
-          onChange={(chosen) => set({ y: chosen.length === 1 ? chosen[0] : chosen })}
-        />
-        {mark === "pie" ? null : (
+        {mark === "heatmap" ? (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-44">
+              <SelectField
+                name="down"
+                label="Down the side"
+                value={typeof options.y === "string" ? options.y : ""}
+                options={[...blank("Choose a column"), ...all]}
+                onChange={(down) => set({ y: down })}
+              />
+            </div>
+            <div className="w-44">
+              <SelectField
+                name="shade"
+                label="Shaded by"
+                value={options.value ?? ""}
+                options={[...blank("Choose a number"), ...(numbers.length > 0 ? numbers : all)]}
+                onChange={(value) => set({ value })}
+              />
+            </div>
+          </div>
+        ) : null}
+        {mark === "heatmap" ? null : (
+          <MultiSelectField
+            label={mark === "pie" ? "Sized by" : "Up the side"}
+            hint={
+              mark === "pie" || mark === "scatter"
+                ? undefined
+                : "Several are drawn as a series each."
+            }
+            options={numbers.length > 0 ? numbers : all}
+            value={y}
+            placeholder="The first number"
+            onChange={(chosen) => set({ y: chosen.length === 1 ? chosen[0] : chosen })}
+          />
+        )}
+        {mark === "pie" || mark === "heatmap" ? null : (
           <div className="flex flex-wrap items-end gap-3">
             {y.length > 1 ? null : (
               <div className="w-44">
@@ -716,7 +813,29 @@ function Options({
                     onChange={(line) => set({ line })}
                   />
                 </div>
+                <CheckboxField
+                  name="horizontal"
+                  label="Bars lie down"
+                  checked={options.horizontal === true}
+                  onChange={(horizontal) => set({ horizontal: horizontal ? true : undefined })}
+                />
               </>
+            ) : null}
+            {mark !== "scatter" && dateFilters.length > 0 ? (
+              <div className="w-56">
+                <SelectField
+                  name="compare"
+                  label="Also draw the period before"
+                  value={options.compare ? (options.compareTo ?? "") : ""}
+                  options={[
+                    ...blank("No"),
+                    ...dateFilters.map((name) => ({ value: name, label: `By the filter ${name}` })),
+                  ]}
+                  onChange={(compareTo) =>
+                    set({ compareTo, compare: compareTo ? true : undefined })
+                  }
+                />
+              </div>
             ) : null}
           </div>
         )}
@@ -778,14 +897,106 @@ function Options({
       </div>
     );
   }
+  // A table: which columns, and how some of them are headed, written and drawn.
+  const cellOf = (column: string) => (options.cells ?? []).find((one) => one.column === column);
+  const setCell = (
+    column: string,
+    change: { [K in keyof TableCell]?: TableCell[K] | undefined },
+  ) => {
+    const next: Record<string, unknown> = { ...cellOf(column), column, ...change };
+    for (const key of Object.keys(next)) {
+      if (next[key] === undefined || next[key] === "" || next[key] === "text") delete next[key];
+    }
+    const rest = (options.cells ?? []).filter((one) => one.column !== column);
+    // A column with nothing said about it is not kept.
+    set({ cells: Object.keys(next).length > 1 ? [...rest, next as unknown as TableCell] : rest });
+  };
   return (
-    <MultiSelectField
-      label="Columns shown"
-      options={all}
-      value={options.show ?? []}
-      placeholder="Every column of the result"
-      onChange={(show) => set({ show })}
-    />
+    <div className="flex flex-col gap-3">
+      <MultiSelectField
+        label="Columns shown"
+        options={all}
+        value={options.show ?? []}
+        placeholder="Every column of the result"
+        onChange={(show) => set({ show })}
+      />
+      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+        <legend className="p-0 text-body-sm font-medium">How each column is drawn</legend>
+        {(options.show && options.show.length > 0 ? options.show : columns.map((one) => one.name))
+          .filter((name) => columns.some((one) => one.name === name))
+          .map((name) => {
+            const cell = cellOf(name);
+            const number = columns.find((one) => one.name === name)?.type === "number";
+            return (
+              <div key={name} className="flex flex-wrap items-end gap-2">
+                <div className="min-w-36 flex-1">
+                  <TextField
+                    name={`heading-${name}`}
+                    label={`Heading of ${name}`}
+                    required={false}
+                    placeholder={name}
+                    value={cell?.label ?? ""}
+                    onChange={(label) => setCell(name, { label })}
+                  />
+                </div>
+                <div className="w-40">
+                  <SelectField
+                    name={`as-${name}`}
+                    label={`${name} is drawn as`}
+                    value={cell?.as ?? "text"}
+                    options={[
+                      { value: "text", label: "Written" },
+                      ...(number
+                        ? [
+                            { value: "bar", label: "A bar" },
+                            { value: "delta", label: "A change, up or down" },
+                          ]
+                        : []),
+                      { value: "chip", label: "A chip" },
+                    ]}
+                    onChange={(as) => setCell(name, { as: as as TableCell["as"] })}
+                  />
+                </div>
+                {number ? (
+                  <div className="w-44">
+                    <SelectField
+                      name={`format-${name}`}
+                      label={`${name} is written as`}
+                      value={
+                        cell?.format
+                          ? `${cell.format.style}${cell.format.minorUnits ? "-minor" : ""}`
+                          : ""
+                      }
+                      options={[
+                        ...blank("A number"),
+                        { value: "currency", label: "Money" },
+                        { value: "currency-minor", label: "Money, kept in cents" },
+                        { value: "percent", label: "A percentage" },
+                      ]}
+                      onChange={(style) =>
+                        setCell(name, {
+                          format: style
+                            ? {
+                                style: style.startsWith("currency") ? "currency" : "percent",
+                                ...(style.endsWith("-minor") ? { minorUnits: true } : {}),
+                              }
+                            : undefined,
+                        })
+                      }
+                    />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+      </fieldset>
+      <CheckboxField
+        name="totals"
+        label="Add a row of totals"
+        checked={options.totals === true}
+        onChange={(totals) => set({ totals: totals ? true : undefined })}
+      />
+    </div>
   );
 }
 
@@ -966,6 +1177,20 @@ export function WidgetEditor({
               onChange={(title) => set({ title })}
             />
           </div>
+          {widget.type === "text" ? null : (
+            <div className="min-w-48 flex-1">
+              <TextField
+                name="subtitle"
+                label="Subheading"
+                required={false}
+                value={widget.subtitle ?? ""}
+                onChange={(subtitle) => {
+                  const { subtitle: _before, ...rest } = widget;
+                  setWidget(subtitle ? { ...rest, subtitle } : rest);
+                }}
+              />
+            </div>
+          )}
           <div className="w-52">
             <SelectField
               name="type"
@@ -984,26 +1209,6 @@ export function WidgetEditor({
                     source: widget.source ?? { visual: { table: "" } },
                   });
               }}
-            />
-          </div>
-          <div className="w-40">
-            <SelectField
-              name="width"
-              label="Width"
-              value={String(widget.width ?? (widget.type === "figure" ? 3 : 6))}
-              options={WIDGET_WIDTHS.map((width) => ({
-                value: String(width),
-                label: {
-                  3: "A quarter",
-                  4: "A third",
-                  6: "Half",
-                  8: "Two thirds",
-                  12: "The whole row",
-                }[width],
-              }))}
-              onChange={(width) =>
-                set({ width: Number(width) as NonNullable<DashboardWidget["width"]> })
-              }
             />
           </div>
         </div>

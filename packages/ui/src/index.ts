@@ -76,6 +76,7 @@ export {
   startValue,
 } from "./SchemaForm.tsx";
 export { SideSheet, type SideSheetProps } from "./SideSheet.tsx";
+export { Sparkline } from "./Sparkline.tsx";
 export { Avatar, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";

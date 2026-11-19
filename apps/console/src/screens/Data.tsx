@@ -331,6 +331,7 @@ function RowsBrowser(props: RowsBrowserProps) {
       ) : null}
       <div className="flex min-h-0 gap-4">
         <div className="min-w-0 flex-1">
+          {/* grid-allowed: a table's own rows, edited in place and filtered by the server */}
           <Grid<DataRow>
             navigation="grid"
             lockFirst={lockFirst}

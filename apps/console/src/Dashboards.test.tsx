@@ -270,14 +270,37 @@ test("its maker adds a widget built from menus, moves and removes widgets, and s
   });
   expect(put(0).revision).toBe(4);
 
-  // Moved earlier, and another removed, each saved as it is done.
-  fireEvent.click(await screen.findByRole("button", { name: "Move In stock earlier" }));
+  // A new widget goes under the rest, as big as a figure is to begin with, and every widget
+  // is saved with the place it has.
+  const under = Math.max(
+    ...put(0)
+      .body.widgets.slice(0, -1)
+      .map((one: Any) => one.at.y + one.at.h),
+  );
+  expect(saved.at).toEqual({ x: 0, y: under, w: 3, h: 3 });
+
+  // Moved from the keyboard, a cell at a time, and saved as it is done. What it is moved
+  // onto goes down out of its way.
+  const before = put(0).body.widgets.find((one: Any) => one.id === "total").at;
+  const handle = await screen.findByRole("button", { name: /^Move In stock: drag its heading/ });
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
   await waitFor(() => expect(sent("PUT")).toHaveLength(2));
+  const after = put(1).body.widgets;
+  expect(after.find((one: Any) => one.id === "total").at).toEqual({ ...before, x: before.x - 1 });
+  const boxes = after.map((one: Any) => one.at);
+  for (const a of boxes) {
+    for (const b of boxes) {
+      if (a === b) continue;
+      const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      expect(overlap, JSON.stringify([a, b])).toBe(false);
+    }
+  }
   expect(
-    put(1)
-      .body.widgets.map((one: Any) => one.id)
-      .slice(0, 2),
-  ).toEqual(["total", "held"]);
+    screen
+      .getAllByRole("status")
+      .map((one) => one.textContent)
+      .join(" "),
+  ).toContain(`In stock is at column ${before.x}, row ${before.y + 1}.`);
   fireEvent.click(screen.getByRole("button", { name: "Remove By kind" }));
   await answer("Remove");
   await waitFor(() => expect(sent("PUT")).toHaveLength(3));

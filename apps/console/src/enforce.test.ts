@@ -365,3 +365,33 @@ test("every move by a button or a key is animated by the shared pieces", () => {
   }
   expect(found).toEqual([]);
 });
+
+/**
+ * A table to read is given room and its reader's tools (phase 19, M5). An
+ * answer is drawn by `ReadTable`, which sorts, filters and orders columns, so
+ * no screen draws one with the bare `Grid`; and a dialog that holds one is
+ * the `table` size, since a table in a small dialog is always scrolled.
+ * `grid-allowed:` on the line before says why a `Grid` is not an answer,
+ * such as a table's rows that are edited in place.
+ */
+test("a table that is read has its tools, and a dialog that holds one is big enough", () => {
+  const found: string[] = [];
+  for (const path of new Set([...files(join(here, "screens")), ...files(join(here, "kit"))])) {
+    if (/kit\/(ReadTable|DataTable)\.tsx$/.test(path)) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/<Grid\b/.test(line) && !/grid-allowed:/.test(`${lines[index - 1]}${lines[index - 2]}`)) {
+        found.push(`${where(path)}:${index + 1} a Grid of its own`);
+      }
+      if (!/<Dialog\b/.test(line)) return;
+      const end = lines.findIndex((later, at) => at > index && /<\/Dialog>/.test(later));
+      const inside = lines.slice(index, end < 0 ? index + 1 : end).join("\n");
+      // The tag itself: its first few lines, before what it holds.
+      const opening = lines.slice(index, index + 8).join("\n");
+      if (/<(ReadTable|ResultTable)\b/.test(inside) && !/size="table"/.test(opening)) {
+        found.push(`${where(path)}:${index + 1} a table in a dialog that is not the table size`);
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});

@@ -32,6 +32,7 @@ export {
   sortOf,
   summaryRows,
 } from "./links.ts";
+export { type Box, GRID, type Placement, usePlacement } from "./placement.ts";
 export {
   FILTER_CHOICES,
   InterfaceRenderer,

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { DashboardWidget } from "@vynxlabs/manifest";
 import { describe, expect, test } from "vitest";
 import {
+  BEFORE,
   chartSpec,
   comparison,
   filterValue,
@@ -15,6 +16,9 @@ import {
   relativeRange,
   toCsv,
   toXlsx,
+  trendOf,
+  trendWords,
+  withBefore,
 } from "./screens/dashboards/model.ts";
 
 const result = (names: [string, string][], rows: unknown[][]): Result => ({
@@ -100,16 +104,19 @@ describe("a range of dates by name", () => {
   });
 
   test("a figure says how it stands against the period before", () => {
-    expect(comparison(120, 100)).toEqual({
+    expect(comparison(120, 100)).toMatchObject({
       direction: "up",
       text: "20% more than the period before",
     });
-    expect(comparison(75, 100)).toEqual({
+    expect(comparison(75, 100)).toMatchObject({
       direction: "down",
       text: "25% less than the period before",
     });
     expect(comparison(100, 100)?.direction).toBe("same");
-    expect(comparison(5, 0)).toEqual({ direction: "up", text: "Nothing in the period before" });
+    expect(comparison(5, 0)).toMatchObject({
+      direction: "up",
+      text: "Nothing in the period before",
+    });
     expect(comparison(0, 0)?.direction).toBe("same");
     expect(comparison(null, 100)).toBeUndefined();
     // A sum over no rows is empty: nothing in the period before, not no comparison.
@@ -278,5 +285,133 @@ describe("a result as a file", () => {
         ["C4", "inlineStr", '{"a":1}'],
       ],
     ]);
+  });
+});
+
+/** Phase 19, M7 and M8. */
+describe("a figure's change, said the way it asks", () => {
+  test("as a share by default, with a few characters for the mark beside the number", () => {
+    expect(comparison(412, 348)).toMatchObject({ direction: "up", short: "18.4%" });
+    expect(comparison(5, 0)).toMatchObject({ direction: "up", short: "new" });
+  });
+
+  test("as the amount, written as the figure is", () => {
+    expect(comparison(14, 11, { delta: "absolute" })).toEqual({
+      direction: "up",
+      text: "3 more than the period before",
+      short: "3",
+    });
+    expect(
+      comparison(9000, 12000, {
+        delta: "absolute",
+        format: { style: "currency", minorUnits: true },
+      }),
+    ).toMatchObject({ direction: "down", text: "$30.00 less than the period before" });
+  });
+
+  test("as points for a rate, which is kept as a share of one", () => {
+    expect(comparison(0.882, 0.896, { delta: "points", format: { style: "percent" } })).toEqual({
+      direction: "down",
+      text: "1.4 points lower than the period before",
+      short: "1.4 pts",
+    });
+    // A number that is not a rate is taken as points already.
+    expect(comparison(6.8, 7.7, { delta: "points" })?.short).toBe("0.9 pts");
+    expect(comparison(3, 3, { delta: "absolute" })?.direction).toBe("same");
+  });
+});
+
+describe("a figure's trend", () => {
+  const weeks = result(
+    [
+      ["lent_on_week", "date"],
+      ["loans", "number"],
+    ],
+    [
+      ["2026-10-05", 18],
+      ["2026-10-12", 46],
+      ["2026-10-19", 12],
+      ["2026-10-26", 31],
+    ],
+  );
+  test("is the number it shows, period by period, oldest first", () => {
+    expect(trendOf(weeks, "loans")).toEqual([18, 46, 12, 31]);
+    // Left unsaid, the first column that holds numbers.
+    expect(trendOf(weeks, undefined)).toEqual([18, 46, 12, 31]);
+    expect(trendOf(undefined, "loans")).toEqual([]);
+  });
+  test("is said in words for someone who cannot see the line", () => {
+    expect(trendWords("Loans", [18, 46, 12, 31])).toBe(
+      "Loans over time: from 18 to 31, lowest 12, highest 46",
+    );
+    expect(trendWords("Loans", [18])).toBe("");
+  });
+});
+
+describe("a chart's other shapes", () => {
+  const widget = (options: NonNullable<DashboardWidget["options"]>): DashboardWidget => ({
+    id: "c",
+    type: "chart",
+    options,
+  });
+  // biome-ignore lint/suspicious/noExplicitAny: a chart's description is inspected freely
+  const spec = (options: NonNullable<DashboardWidget["options"]>, compared = false): any =>
+    chartSpec(widget(options), sales, compared);
+
+  test("bars lie down: what is measured runs along the bottom", () => {
+    const lying = spec({ mark: "bar", x: "status", y: "fees", horizontal: true });
+    expect(lying.encoding.y).toMatchObject({ field: "status", type: "nominal" });
+    expect(lying.encoding.x).toMatchObject({ field: "fees", type: "quantitative" });
+    const grouped = spec({
+      mark: "bar",
+      x: "status",
+      y: "fees",
+      series: "month",
+      bars: "grouped",
+      horizontal: true,
+    });
+    expect(grouped.encoding.yOffset.field).toBe("month");
+    expect(grouped.encoding.xOffset).toBeUndefined();
+  });
+
+  test("a heatmap is a square for each pair, shaded by the value", () => {
+    const squares = spec({ mark: "heatmap", x: "month", y: "status", value: "loans" });
+    expect(squares.mark.type).toBe("rect");
+    expect(squares.encoding.x.field).toBe("month");
+    expect(squares.encoding.y.field).toBe("status");
+    expect(squares.encoding.color).toMatchObject({ field: "loans", type: "quantitative" });
+  });
+
+  test("the period before is a dashed line on the same scale, point for point", () => {
+    const now = result(
+      [
+        ["week", "date"],
+        ["loans", "number"],
+      ],
+      [
+        ["2026-11-02", 30],
+        ["2026-11-09", 36],
+      ],
+    );
+    const before = result(
+      [
+        ["week", "date"],
+        ["loans", "number"],
+      ],
+      [["2026-10-19", 22]],
+    );
+    expect(withBefore(now, before, "loans")).toEqual([
+      { week: "2026-11-02", loans: 30, [BEFORE]: 22 },
+      // The earlier period had one point fewer.
+      { week: "2026-11-09", loans: 36, [BEFORE]: null },
+    ]);
+    const drawn = spec({ mark: "line", x: "month", y: "loans" }, true);
+    expect(drawn.layer).toHaveLength(2);
+    expect(drawn.layer[1].mark).toMatchObject({ type: "line", strokeDash: [4, 4] });
+    expect(drawn.layer[1].encoding.y.field).toBe(BEFORE);
+    // One scale for both, or the two lines could not be compared.
+    expect(drawn.resolve).toBeUndefined();
+    // Not asked for, there is one layer and no line.
+    expect(spec({ mark: "line", x: "month", y: "loans" }).layer).toBeUndefined();
   });
 });

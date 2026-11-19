@@ -154,28 +154,87 @@ export function formatNumber(value: unknown, format?: ValueFormat): string {
   return amount(found, format);
 }
 
-/** How a figure stands against the period before: up or down, and by how much. */
+/**
+ * How a figure stands against the period before: up or down, by how much in
+ * a sentence, and the same in a few characters for the mark beside the
+ * number. The change is said as a share unless the figure asks for the
+ * amount itself or, for a rate, for points.
+ */
 export function comparison(
   now: unknown,
   before: unknown,
-): { direction: "up" | "down" | "same"; text: string } | undefined {
+  how: {
+    delta?: "percent" | "absolute" | "points" | undefined;
+    format?: ValueFormat | undefined;
+  } = {},
+): { direction: "up" | "down" | "same"; text: string; short: string } | undefined {
   const current = numberOf(now);
   // A total of no rows is empty, and stands for nothing: none, not an unknown.
   const earlier = before === null ? 0 : numberOf(before);
   if (current === undefined || earlier === undefined) return undefined;
+  const difference = current - earlier;
+  const direction = difference > 0 ? "up" : "down";
+  if (how.delta === "absolute" || how.delta === "points") {
+    // A rate is kept as a share of one: 0.882. Its points are that times a hundred.
+    const size =
+      how.delta === "points" && how.format?.style === "percent"
+        ? Math.abs(difference) * 100
+        : Math.abs(difference);
+    if (size < 0.0005)
+      return { direction: "same", text: "The same as the period before", short: "0" };
+    const written =
+      how.delta === "points"
+        ? `${amount(Math.round(size * 10) / 10)} ${size === 1 ? "point" : "points"}`
+        : amount(size, how.format);
+    return {
+      direction,
+      text: `${written} ${
+        how.delta === "points"
+          ? difference > 0
+            ? "higher"
+            : "lower"
+          : difference > 0
+            ? "more"
+            : "less"
+      } than the period before`,
+      short: how.delta === "points" ? `${amount(Math.round(size * 10) / 10)} pts` : written,
+    };
+  }
   if (earlier === 0) {
     return current === 0
-      ? { direction: "same", text: "The same as the period before" }
-      : { direction: current > 0 ? "up" : "down", text: "Nothing in the period before" };
+      ? { direction: "same", text: "The same as the period before", short: "0%" }
+      : { direction, text: "Nothing in the period before", short: "new" };
   }
-  const change = (current - earlier) / Math.abs(earlier);
+  const change = difference / Math.abs(earlier);
   if (Math.abs(change) < 0.0005)
-    return { direction: "same", text: "The same as the period before" };
+    return { direction: "same", text: "The same as the period before", short: "0%" };
   const percent = amount(Math.abs(change), { style: "percent" });
   return {
-    direction: change > 0 ? "up" : "down",
+    direction,
     text: `${percent} ${change > 0 ? "more" : "less"} than the period before`,
+    short: percent,
   };
+}
+
+/**
+ * A figure's number over the time it covers, oldest first, from the rows of
+ * its trend: the column it shows, or the first that holds numbers.
+ */
+export function trendOf(result: Result | undefined, value: string | undefined): number[] {
+  if (!result) return [];
+  const named = value ? result.columns.findIndex((one) => one.name === value) : -1;
+  const at = named >= 0 ? named : result.columns.findIndex((one) => one.type === "number");
+  if (at < 0) return [];
+  return result.rows
+    .map((row) => numberOf(row[at]))
+    .filter((one): one is number => one !== undefined);
+}
+
+/** What a trend's line shows, in words, for someone who cannot see it. */
+export function trendWords(title: string, values: number[], format?: ValueFormat): string {
+  if (values.length < 2) return "";
+  const say = (value: number) => amount(value, format);
+  return `${title} over time: from ${say(values[0] as number)} to ${say(values.at(-1) as number)}, lowest ${say(Math.min(...values))}, highest ${say(Math.max(...values))}`;
 }
 
 // ----- Pivot -----
@@ -271,7 +330,43 @@ const TEMPORAL = new Set(["date", "timestamp"]);
  * The Vega-Lite description of a chart: what its widget says to draw, over
  * the columns its result has. Several `y` columns are drawn as one series each.
  */
-export function chartSpec(widget: DashboardWidget, result: Result): object {
+/** The column a compared chart's rows carry the period before in. */
+export const BEFORE = "period_before";
+
+/**
+ * A chart's rows with the period before beside each: the first point of the
+ * earlier period with the first of this one, and so on, since the two cover
+ * the same length of time.
+ */
+export function withBefore(
+  result: Result,
+  before: Result | undefined,
+  value: string,
+): Record<string, unknown>[] {
+  const rows = objects(result);
+  if (!before) return rows;
+  const earlier = objects(before);
+  return rows.map((row, at) => ({ ...row, [BEFORE]: earlier[at]?.[value] ?? null }));
+}
+
+/** The column a chart measures: the one it names, or the first that holds numbers. */
+export function measureOf(widget: DashboardWidget, result: Result): string {
+  const y = widget.options?.y;
+  const named = Array.isArray(y) ? y[0] : y;
+  return (
+    (named && result.columns.some((one) => one.name === named) ? named : undefined) ??
+    result.columns.find((one) => one.type === "number")?.name ??
+    result.columns[1]?.name ??
+    ""
+  );
+}
+
+export function chartSpec(
+  widget: DashboardWidget,
+  result: Result,
+  /** The rows carry the period before, to be drawn as a dashed line. */
+  compared = false,
+): object {
   const options = widget.options ?? {};
   const names = result.columns.map((column) => column.name);
   const typeOf = (name: string) => result.columns.find((column) => column.name === name)?.type;
@@ -294,6 +389,19 @@ export function chartSpec(widget: DashboardWidget, result: Result): object {
       : { sort: null, axis: { labelAngle: 0, labelOverlap: true } }),
   };
 
+  if (mark === "heatmap") {
+    // A square for each pair, shaded by how much: weekdays down the side, hours along the bottom.
+    const down = typeof options.y === "string" ? options.y : (names[1] ?? "");
+    const shade = options.value ?? names.find((name) => typeOf(name) === "number") ?? "";
+    return {
+      mark: { type: "rect", tooltip: true },
+      encoding: {
+        x: { field: x, type: "ordinal", title: x, sort: null, axis: { labelAngle: 0 } },
+        y: { field: down, type: "ordinal", title: down, sort: null },
+        color: { field: shade, type: "quantitative", title: shade },
+      },
+    };
+  }
   if (mark === "pie") {
     return {
       mark: { type: "arc", tooltip: true },
@@ -343,6 +451,40 @@ export function chartSpec(widget: DashboardWidget, result: Result): object {
     },
     ...(several ? { transform: [{ fold: measured, as: ["series", "value"] }] } : {}),
   };
+  if (mark === "bar" && options.horizontal) {
+    // Lying down: what is measured runs along the bottom, and each bar has its name beside it.
+    const { x: across, y: up, xOffset, ...rest } = base.encoding as Record<string, unknown>;
+    return {
+      ...base,
+      encoding: {
+        ...rest,
+        y: { ...(across as object), axis: { labelOverlap: true } },
+        x: up,
+        ...(xOffset ? { yOffset: xOffset } : {}),
+      },
+    };
+  }
+  if (compared && (mark === "line" || mark === "area" || mark === "bar")) {
+    // The period before, point for point, on the same scale.
+    return {
+      layer: [
+        base,
+        {
+          mark: {
+            type: "line",
+            strokeDash: [4, 4],
+            tooltip: true,
+            color: "currentColor",
+            opacity: 0.6,
+          },
+          encoding: {
+            x: xEncoding,
+            y: { field: BEFORE, type: "quantitative", title: "The period before" },
+          },
+        },
+      ],
+    };
+  }
   // A column drawn as a line over the bars, with a scale of its own.
   if (mark === "bar" && options.line && names.includes(options.line)) {
     return {

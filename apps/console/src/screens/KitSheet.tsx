@@ -375,6 +375,7 @@ export function KitSheet() {
 
       <section className="flex flex-col gap-3">
         <SectionLabel>A grid of rows, from the keyboard</SectionLabel>
+        {/* grid-allowed: the kit's own sheet shows the grid itself */}
         <Grid<{ id: string; item: string; held: number }>
           navigation="grid"
           density="compact"

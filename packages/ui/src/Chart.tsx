@@ -14,13 +14,22 @@ export interface ChartProps {
   description?: string;
   /** In pixels, unless the spec sets its own height. */
   height?: number;
+  /**
+   * Called with the row a bar, a point or a slice was drawn from when it is
+   * pressed. With it, marks show they can be pressed. A chart is a picture to
+   * a screen reader, so whatever this opens has another way in as well.
+   */
+  onPick?: ((row: Record<string, unknown>) => void) | undefined;
 }
 
 /**
  * A chart drawn from a Vega-Lite spec, in the theme's colors and font. The
  * engine is fetched when the first chart appears.
  */
-export function Chart({ spec, data, title, description, height = 240 }: ChartProps) {
+export function Chart({ spec, data, title, description, height = 240, onPick }: ChartProps) {
+  const picking = useRef(onPick);
+  picking.current = onPick;
+  const picks = onPick !== undefined;
   const container = useRef<HTMLDivElement>(null);
   const [drawn, setDrawn] = useState(false);
   const [failure, setFailure] = useState<string>();
@@ -54,6 +63,12 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
           config,
           element,
         );
+        if (picks) {
+          view.addEventListener("click", (_event, item) => {
+            const row = (item as { datum?: unknown } | null | undefined)?.datum;
+            if (row && typeof row === "object") picking.current?.(row as Record<string, unknown>);
+          });
+        }
         return view.runAsync();
       })
       .then(
@@ -71,7 +86,7 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
       view?.finalize();
       element.replaceChildren();
     };
-  }, [specText, data, height, scheme]);
+  }, [specText, data, height, scheme, picks]);
 
   return (
     <div className="relative w-full">
@@ -82,7 +97,11 @@ export function Chart({ spec, data, title, description, height = 240 }: ChartPro
         aria-label={description ? `${title}. ${description}` : title}
         hidden={failure !== undefined}
       >
-        <div ref={container} className="w-full" style={{ minHeight: `${height}px` }} />
+        <div
+          ref={container}
+          className={`w-full ${picks ? "[&_path]:cursor-pointer" : ""}`}
+          style={{ minHeight: `${height}px` }}
+        />
       </div>
       {drawn || failure ? null : (
         <div

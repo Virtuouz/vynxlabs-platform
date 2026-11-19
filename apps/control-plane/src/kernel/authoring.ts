@@ -185,6 +185,16 @@ export async function saveDraft(
     );
   }
 
+  // A page of documentation is written by people who do not share a repository to settle
+  // their differences in. Whoever saves one says which draft they were looking at, and a
+  // save that says nothing, over a draft someone else has made since, is that same conflict.
+  if (existing && input.kind === "doc" && input.revision === undefined) {
+    throw new HttpError(
+      409,
+      "draft_changed",
+      "Someone else saved this page after you opened it. Reload it, then make your change again.",
+    );
+  }
   if (existing && input.revision !== undefined && input.revision !== existing.revision) {
     throw new HttpError(
       409,

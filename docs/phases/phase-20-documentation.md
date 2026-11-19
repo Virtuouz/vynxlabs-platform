@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M8 are built. M9 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M9 are built. M10 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -429,6 +429,28 @@ Tests: access for `anonymous`, `end_users`, groups; deploy fails on a bad page; 
 - `GET …/docs/search?q=` for the palette, filtered on the server.
 
 Tests: two editors on one page conflict; the preview matches the served page; a member with only `doc:write` can deploy a page and nothing else; a non-member cannot reach the preview.
+
+#### Built
+
+- **Documentation**, a section under Build (`screens/docs/Docs.tsx`): the workspace's pages as a tree, by docs app, collection and group, and the chosen page drawn beside it. A page says whether it is deployed, changed or new, opens as its readers see it, and leads to its editor. New page, New docs app, and Deploy, which deploys the documentation's drafts by name and nothing else.
+- **The page editor** (`screens/docs/DocEditor.tsx`): Monaco on one side, and on the other the page drawn `asServed`, by the renderer and the stylesheet the docs app uses. Problems are marked on their lines and listed under, and pressing one goes to its line. Save makes a draft, Move renames, Remove asks for the page's name.
+- **`CodeEditor`** takes `markdown`, wraps lines when asked, and marks problems given from outside beside its own.
+- **A save says which draft it saw.** The editor always sends the revision. For a page, a save that sends none, over a draft that is there, is refused as a save over a newer one is.
+- **`doc:write`** by the same rule as `interface:write`, which is now one table of two kinds in `routes/authoring.ts`: whoever holds one writes and deploys that kind, and an app that serves it, and nothing else. A built-in role, `doc_writer`, holds it (migration 0081).
+- **`GET …/docs`**, the pages with drafts laid over what is deployed, and of each what another page's links are checked against: its topic, its terms and its headings. `GET …/docs/page/*`, one page with its revision. `GET …/docs/search`, searched on the server. For whoever holds `resource:read` or `doc:read`.
+- **A page kept in the repository** is read here and says where its file is. It has no Edit.
+- **In the reader, a term that names a column says what the column is for**, to whoever may read the table: the reader asks as the person reading.
+- A page is found by the palette's search and opens here.
+
+#### Findings
+
+- **A page is checked in the browser as it is typed, not by the server.** The plan had the server check it. Every answer of the API that is not a read must leave an audit entry, or the request is refused: a rule of the control plane's own. A check saves nothing, and an entry for every pause in typing would bury the entries that matter. So `checkPageAmong` in the docs engine checks one page beside an index of the others, with the rules and the code the deploy's check uses, and the console runs it. The deploy still checks everything, on the server, and is what refuses.
+- **The preview is in the console, not at the app's address.** The owner asked that drafts of a public docs app be seen at a private address. The editor's preview and the Documentation section are that: only members reach them, and the preview is drawn as the app draws the page. What they do not show is the app's own frame around the page, its header and navigation. Serving drafts at the app's address would have needed the front door to read drafts, which it has never done for any app.
+- **What only the server knows is left to the deploy**: whether a resource a page is about exists, where the writer may not see it. The editor says what it can and nothing false.
+- **Not built:** dragging a page to another folder (Move asks for the path), a form for the frontmatter, and a side-by-side view of a draft and what is deployed. The API gives both sources. The screen does not show them yet.
+- **Two of the console's own rules caught the new screens**: a paragraph that said "Loading…" and a second `h1`. And a rule of the control plane's caught a query that found a page by its exact path, which a renamed page would not have answered.
+- **Not seen in a browser**, as before. Monaco does not load in the tests, which type into the plain text box the editor falls back to, so the markers on Monaco's own lines are untested. What is tested is the list of problems they are made from.
+- 1,954 tests: 14 of the two screens, 8 of the writer's permissions and saves, 4 of the page checked beside an index.
 
 ### M10: tenant pages join the help
 

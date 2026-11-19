@@ -7,7 +7,7 @@ export interface CodeEditorProps {
   label: string;
   value: string;
   onChange?: (value: string) => void;
-  language: "typescript" | "json" | "yaml" | "plaintext" | "sql";
+  language: "typescript" | "json" | "yaml" | "plaintext" | "sql" | "markdown";
   /** Identifies the document. Change it to open another one in the same editor. */
   path: string;
   readOnly?: boolean;
@@ -25,11 +25,22 @@ export interface CodeEditorProps {
   /** Called with the editor's diagnostics each time they change: type errors and the like. */
   onMarkers?: ((markers: Marker[]) => void) | undefined;
   /**
+   * Problems found by something other than the editor, to mark on their lines:
+   * a page of documentation is checked by the code that will serve it, not by
+   * a language service. They are shown beside the editor's own, never in place of them.
+   */
+  problems?: readonly Marker[] | undefined;
+  /** Wraps long lines, for prose. Code is left to scroll. */
+  wrap?: boolean | undefined;
+  /**
    * A place to show: the editor scrolls to it, selects the line and takes focus.
    * A new `at` asks again for the same line.
    */
   reveal?: { line: number; column?: number; at: number } | undefined;
 }
+
+/** Who the problems given from outside belong to, among the document's markers. */
+const GIVEN = "volvel";
 
 /** One diagnostic of the code, as the editor's language service reports it. */
 export interface Marker {
@@ -56,6 +67,8 @@ export function CodeEditor({
   onRun,
   onSave,
   onMarkers,
+  problems,
+  wrap = false,
   reveal,
 }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -67,6 +80,8 @@ export function CodeEditor({
   const goTo = useRef<(line: number, column: number) => void>(() => {});
   /** What the editor reported lately, oldest first. */
   const typed = useRef<string[]>([]);
+  /** Marks problems given from outside on the document. Set once the editor is there. */
+  const mark = useRef<(problems: readonly Marker[]) => void>(() => {});
   const editor = useRef<{
     getValue(): string;
     setValue(text: string): void;
@@ -95,6 +110,7 @@ export function CodeEditor({
           fontSize: 13,
           scrollBeyondLastLine: false,
           tabSize: 2,
+          wordWrap: wrap ? "on" : "off",
           ariaLabel: latest.current.label,
           padding: { top: 10, bottom: 10 },
         });
@@ -130,10 +146,34 @@ export function CodeEditor({
           [monaco.MarkerSeverity.Error]: "error",
           [monaco.MarkerSeverity.Warning]: "warning",
         };
+        mark.current = (given) =>
+          monaco.editor.setModelMarkers(
+            model,
+            GIVEN,
+            given.map((one) => {
+              const line = Math.min(Math.max(1, one.line), model.getLineCount());
+              return {
+                startLineNumber: line,
+                startColumn: Math.max(1, one.column),
+                endLineNumber: line,
+                // To the end of the line: where on it the problem ends is not known.
+                endColumn: model.getLineMaxColumn(line),
+                message: one.message,
+                severity:
+                  one.severity === "error"
+                    ? monaco.MarkerSeverity.Error
+                    : one.severity === "warning"
+                      ? monaco.MarkerSeverity.Warning
+                      : monaco.MarkerSeverity.Info,
+              };
+            }),
+          );
         const report = () =>
           latest.current.onMarkers?.(
             monaco.editor
               .getModelMarkers({ resource: uri })
+              // What was given from outside is the caller's already.
+              .filter((marker) => marker.owner !== GIVEN)
               .filter((marker) => marker.severity >= monaco.MarkerSeverity.Warning)
               .map((marker) => ({
                 line: marker.startLineNumber,
@@ -161,6 +201,7 @@ export function CodeEditor({
         cleanup = () => {
           marking.dispose();
           goTo.current = () => {};
+          mark.current = () => {};
           listening.dispose();
           media.removeEventListener("change", applyTheme);
           watching.disconnect();
@@ -179,7 +220,12 @@ export function CodeEditor({
       cleanup();
     };
     // The label is not here: it changes as a path is typed, and a new editor would lose the undo history.
-  }, [path, language, readOnly, runs, saves]);
+  }, [path, language, readOnly, runs, saves, wrap]);
+
+  // Problems given from outside are marked once the editor is there, and each time they change.
+  useEffect(() => {
+    if (state === "ready") mark.current(problems ?? []);
+  }, [problems, state]);
 
   // A place asked for is shown, in Monaco or, where it is not loaded, in the text box.
   useEffect(() => {

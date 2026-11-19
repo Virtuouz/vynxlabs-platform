@@ -130,7 +130,7 @@ function normalize(from: string[], to: string): string[] | undefined {
  * home page. `.md` on the end is allowed, and a folder means its index.
  */
 export function resolveLink(
-  set: Pick<DocSet, "pages" | "topics">,
+  set: { pages: { has(path: string): boolean }; topics: Record<string, string> },
   from: string,
   href: string,
 ): Target {
@@ -175,6 +175,86 @@ function headings(tree: Node): Set<string> {
 /** A resource as an attachment names it. */
 export function resourceKey(kind: string, path: string): string {
   return `${kind}:${path}`;
+}
+
+/** What a page's links, pictures and terms are checked against: the pages around it. */
+export interface Around {
+  /** The pages there are, by path. Only whether a path is there is asked. */
+  pages: { has(path: string): boolean };
+  topics: Record<string, string>;
+  /** What each page's headings are addressed by. */
+  headingsOf: (path: string) => ReadonlySet<string>;
+  knownTerms: ReadonlySet<string>;
+  asset?: (path: string) => boolean;
+  resource?: (kind: AboutKind, path: string, column?: string) => boolean;
+}
+
+/** What is wrong with one page's links, pictures and terms, beside the pages around it. */
+export function crossIssues(entry: DocEntry, around: Around): DocIssue[] {
+  const issues: DocIssue[] = [];
+  const error = (code: string, message: string, line: number) => {
+    issues.push({ path: entry.path, line, column: 1, code, message, severity: "error" });
+  };
+  for (const { node } of walk(entry.tree)) {
+    const line = node.line ?? 1;
+    if (node.type === "link" && linkKind(node.href) === "relative") {
+      const target = resolveLink(around, entry.path, node.href);
+      if ("missing" in target) {
+        error(
+          target.missing === "topic" ? "topic_unknown" : "link_broken",
+          target.missing === "topic"
+            ? `The link to the topic "${target.wanted}" leads nowhere: no page has that topic.`
+            : target.missing === "outside"
+              ? `The link to "${node.href}" leads out of the documentation.`
+              : `The link to "${node.href}" leads nowhere: there is no page at ${target.wanted || "the home page"}.`,
+          line,
+        );
+      } else if (
+        target.anchor !== undefined &&
+        !around.headingsOf(target.path).has(target.anchor)
+      ) {
+        error(
+          "anchor_missing",
+          `The link to "${node.href}" names a heading that ${target.path === entry.path ? "this page" : target.path} does not have: #${target.anchor}.`,
+          line,
+        );
+      }
+    }
+    if (node.type === "image" && around.asset && imageKind(node.src) === "relative") {
+      const asset = resolveAsset(entry.path, node.src);
+      if (asset === undefined || !around.asset(asset)) {
+        error(
+          "image_missing",
+          `The picture "${node.src}" is not there${asset ? `: no file at ${asset}` : ""}.`,
+          line,
+        );
+      }
+    }
+    if (node.type === "component" && node.name === "term") {
+      const { id } = node.props;
+      if (id !== undefined && !around.knownTerms.has(id)) {
+        error(
+          "term_unknown",
+          `There is no term "${id}". A term is defined in the terms: of a page's frontmatter.`,
+          line,
+        );
+      }
+      const kind = TERM_RESOURCES.find((one) => node.props[one] !== undefined);
+      if (kind && around.resource) {
+        const path = node.props[kind] as string;
+        if (!around.resource(kind, path, node.props.column)) {
+          error(
+            "term_unknown",
+            node.props.column
+              ? `There is no column ${node.props.column} on the ${kind} ${path}.`
+              : `There is no ${kind} ${path}.`,
+            line,
+          );
+        }
+      }
+    }
+  }
+  return issues;
 }
 
 /** Builds a set from pages already read, and says what is wrong across them. */
@@ -359,77 +439,22 @@ export function buildDocSet(
     ...Object.keys(terms),
   ]);
   const anchors = new Map<string, Set<string>>();
-  const anchorsOf = (path: string) => {
-    let found = anchors.get(path);
-    if (!found) {
-      found = headings((pages.get(path) as DocEntry).tree);
-      anchors.set(path, found);
-    }
-    return found;
+  const around: Around = {
+    pages,
+    topics,
+    knownTerms,
+    headingsOf: (path) => {
+      let found = anchors.get(path);
+      if (!found) {
+        found = headings((pages.get(path) as DocEntry).tree);
+        anchors.set(path, found);
+      }
+      return found;
+    },
+    ...(options.asset ? { asset: options.asset } : {}),
+    ...(options.resource ? { resource: options.resource } : {}),
   };
-  for (const entry of byPath) {
-    for (const { node } of walk(entry.tree)) {
-      const line = node.line ?? 1;
-      if (node.type === "link" && linkKind(node.href) === "relative") {
-        const target = resolveLink(set, entry.path, node.href);
-        if ("missing" in target) {
-          error(
-            entry.path,
-            target.missing === "topic" ? "topic_unknown" : "link_broken",
-            target.missing === "topic"
-              ? `The link to the topic "${target.wanted}" leads nowhere: no page has that topic.`
-              : target.missing === "outside"
-                ? `The link to "${node.href}" leads out of the documentation.`
-                : `The link to "${node.href}" leads nowhere: there is no page at ${target.wanted || "the home page"}.`,
-            line,
-          );
-        } else if (target.anchor !== undefined && !anchorsOf(target.path).has(target.anchor)) {
-          error(
-            entry.path,
-            "anchor_missing",
-            `The link to "${node.href}" names a heading that ${target.path === entry.path ? "this page" : target.path} does not have: #${target.anchor}.`,
-            line,
-          );
-        }
-      }
-      if (node.type === "image" && options.asset && imageKind(node.src) === "relative") {
-        const asset = resolveAsset(entry.path, node.src);
-        if (asset === undefined || !options.asset(asset)) {
-          error(
-            entry.path,
-            "image_missing",
-            `The picture "${node.src}" is not there${asset ? `: no file at ${asset}` : ""}.`,
-            line,
-          );
-        }
-      }
-      if (node.type === "component" && node.name === "term") {
-        const { id } = node.props;
-        if (id !== undefined && !knownTerms.has(id)) {
-          error(
-            entry.path,
-            "term_unknown",
-            `There is no term "${id}". A term is defined in the terms: of a page's frontmatter.`,
-            line,
-          );
-        }
-        const kind = TERM_RESOURCES.find((one) => node.props[one] !== undefined);
-        if (kind && options.resource) {
-          const path = node.props[kind] as string;
-          if (!options.resource(kind, path, node.props.column)) {
-            error(
-              entry.path,
-              "term_unknown",
-              node.props.column
-                ? `There is no column ${node.props.column} on the ${kind} ${path}.`
-                : `There is no ${kind} ${path}.`,
-              line,
-            );
-          }
-        }
-      }
-    }
-  }
+  for (const entry of byPath) issues.push(...crossIssues(entry, around));
 
   issues.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line || a.column - b.column);
   return { set, issues };

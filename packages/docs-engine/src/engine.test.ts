@@ -7,6 +7,7 @@ import {
   buildDocSet,
   buildSearchIndex,
   check,
+  checkPageAmong,
   clashes,
   type DocIssue,
   extensionsOf,
@@ -455,5 +456,75 @@ describe("search and what is shipped", () => {
     const shipped = JSON.parse(files.get("pages/support/refunds.json") as string);
     expect(renderHtml(shipped.tree)).toContain('<h2 id="partial-refunds">Partial refunds</h2>');
     expect(loadSearchIndex(files.get("search.json") as string).search("tuesdays")).toHaveLength(1);
+  });
+});
+
+describe("a page checked as it is written, beside an index of the others", () => {
+  const others = [
+    { path: "index", terms: [], headings: [] },
+    { path: "support/index", terms: [], headings: ["top"] },
+    { path: "support/returns", topic: "returns", terms: ["rma"], headings: ["by-post"] },
+  ];
+  const codes = (path: string, frontmatter: string, body = "Words.\n", options = {}) =>
+    checkPageAmong(path, page(frontmatter, body), others, options).issues.map(
+      (issue) => `${issue.line}: ${issue.code}`,
+    );
+
+  test("is held to what a deploy would hold it to, with only the other pages' paths, topics, terms and headings", () => {
+    expect(
+      codes(
+        "support/refunds",
+        "title: Refunds\ntopic: refunds",
+        "[a](returns#by-post) [b](topic:returns) [c](../) [d](#here) :term[RMA]{id=rma}\n\n## Here\n",
+      ),
+    ).toEqual([]);
+    expect(
+      codes(
+        "support/refunds",
+        "title: Refunds",
+        "[a](returns#no-heading)\n\n[b](topic:nope)\n\n[c](gone)\n\n:term[x]{id=nope}\n\n::nope\n",
+      ),
+    ).toEqual([
+      "5: anchor_missing",
+      "7: topic_unknown",
+      "9: link_broken",
+      "11: term_unknown",
+      "13: unknown_component",
+    ]);
+  });
+
+  test("says what the page takes that is another's, or the product's", () => {
+    expect(codes("support/refunds", "title: R\ntopic: returns")).toEqual(["1: topic_duplicate"]);
+    expect(
+      codes("support/refunds", "title: R\nterms:\n  - id: rma\n    term: RMA\n    short: Again."),
+    ).toEqual(["1: term_duplicate"]);
+    const product = { reservedTerms: ["workspace"], reservedTopics: ["data-tables"] };
+    expect(
+      codes(
+        "support/refunds",
+        "title: R\ntopic: data-tables\nextends: [data-tables, nope]\nterms:\n  - id: workspace\n    term: workspace\n    short: Ours.",
+        ":term[w]{id=workspace}\n",
+        product,
+      ),
+    ).toEqual(["1: topic_reserved", "1: term_reserved", "1: extends_unknown"]);
+  });
+
+  test("says where it may not be among the folders", () => {
+    expect(codes("a/b/c/d", "title: Deep")).toEqual(["1: too_deep"]);
+    expect(codes("support", "title: Support")).toEqual(["1: file_and_folder"]);
+    // Its own earlier self in the index is not another page.
+    expect(codes("support/returns", "title: Returns\ntopic: returns", "## By post\n")).toEqual([]);
+  });
+
+  test("a resource is checked only where someone can say whether it is there", () => {
+    const body = ":term[s]{table=orders column=status} :term[t]{table=secret}\n";
+    expect(codes("a", "title: A\nabout:\n  - table: gone", body)).toEqual([]);
+    expect(
+      codes("a", "title: A\nabout:\n  - table: gone", body, {
+        // Says no to one, yes to one, and nothing of one it may not know of.
+        resource: (_kind: string, path: string) =>
+          path === "gone" ? false : path === "orders" ? true : undefined,
+      }),
+    ).toEqual(["1: about_unknown"]);
   });
 });

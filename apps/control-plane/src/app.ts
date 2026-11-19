@@ -39,6 +39,7 @@ import { brandingRoutes } from "./routes/branding.js";
 import { compareRoutes } from "./routes/compare.js";
 import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
+import { docRoutes } from "./routes/docs.js";
 import { driftRoutes } from "./routes/drift.js";
 import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
@@ -275,6 +276,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(scimRoutes(kernel));
       await api.register(interfaceRoutes(kernel));
       await api.register(termRoutes(kernel));
+      await api.register(docRoutes(kernel));
       await api.register(dashboardRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));

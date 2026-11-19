@@ -3,6 +3,7 @@ import {
   AppWindow,
   BellRing,
   Blocks,
+  BookOpen,
   Bot,
   Boxes,
   Building2,
@@ -113,6 +114,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "screens", label: "App Builder", icon: LayoutDashboard, help: "build-screens" },
     { slug: "apps", label: "Published apps", icon: AppWindow, help: "build-apps" },
     { slug: "extensions", label: "Extensions", icon: Shapes, help: "build-extensions" },
+    { slug: "docs", label: "Documentation", icon: BookOpen, help: "build-docs" },
     { slug: "resources", label: "All resources", icon: Boxes, help: "build-resources" },
   ],
   operate: [
@@ -295,6 +297,7 @@ export const EDITORS: readonly { pattern: RegExp; help: string }[] = [
   { pattern: /^screens\/.+/, help: "build-screens-editor" },
   { pattern: /^dashboards\/.+/, help: "data-dashboards-editor" },
   { pattern: /^resources\/(new|edit\/)/, help: "build-resources-editor" },
+  { pattern: /^docs\/(new$|edit\/)/, help: "build-docs-editor" },
 ];
 
 /**

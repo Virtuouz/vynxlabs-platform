@@ -1,6 +1,7 @@
 import { CheckboxField, Closing, Dialog, Kbd } from "@volvel/ui";
 import {
   Activity,
+  BookOpen,
   Boxes,
   Braces,
   CircleHelp,
@@ -88,6 +89,7 @@ const KIND_ICON: Record<string, LucideIcon> = {
   schedule: Zap,
   connection: Plug,
   event: Radio,
+  doc: BookOpen,
   run: Play,
   flow_run: Play,
   member: User,
@@ -103,6 +105,7 @@ const KIND_LABEL: Record<string, string> = {
   schedule: "Schedule",
   connection: "Connection",
   event: "Event",
+  doc: "Page",
   run: "Run",
   flow_run: "Flow run",
   member: "Member",
@@ -164,6 +167,8 @@ function pageOf(tenantId: string, found: Found): string {
       return `${ws}/scripts/${found.ref}`;
     case "app":
       return `${ws}/apps?app=${found.id}`;
+    case "doc":
+      return `${ws}/docs/${found.ref}`;
     case "flow":
     case "interface":
     case "table":

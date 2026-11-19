@@ -544,3 +544,231 @@ describe("a deploy with documentation that does not hold together", () => {
     ).toEqual(['notes/loose (doc): line 5: "alert" is never closed.']);
   });
 });
+
+describe("someone who writes documentation in the console, and is not a developer", () => {
+  let dev: string;
+  let wren: Client;
+  let nell: Client;
+  const devWs = () => `/tenants/${tenant}/workspaces/${dev}`;
+  const text = (frontmatter: string, body = "Words.\n") => `---\n${frontmatter}\n---\n\n${body}`;
+  const save = (who: Client, path: string, source: string, more: object = {}) =>
+    who.put(`${devWs()}/drafts/${path}`, {
+      kind: "doc",
+      schemaVersion: 1,
+      body: { source },
+      ...more,
+    });
+  const member = async (email: string, role?: string) => {
+    const made = await alice.post(`/tenants/${tenant}/members`, {
+      email,
+      name: email,
+      password: PASSWORD,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    if (role) {
+      const roles = (await alice.get(`/tenants/${tenant}/roles`)).body.items as Any[];
+      const bound = await alice.post(`/tenants/${tenant}/bindings`, {
+        principalType: "member",
+        principalId: made.body.id,
+        roleId: roles.find((one) => one.name === role).id,
+      });
+      expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    }
+    return t.signIn(email, PASSWORD);
+  };
+
+  test("they hold a role that writes pages and deploys nothing else", async () => {
+    dev = (
+      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "dev", name: "Dev", type: "dev" })
+    ).body.id;
+    wren = await member("wren@acme.example", "doc_writer");
+    nell = await member("nell@acme.example");
+    // Something in the workspace that is not theirs.
+    expect(
+      (
+        await alice.put(`${devWs()}/drafts/limits/batch`, {
+          kind: "variable",
+          schemaVersion: 1,
+          body: { description: "A limit." },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await wren.get(`${devWs()}/docs`)).body).toEqual({ apps: [], pages: [] });
+    // Someone bound to nothing is refused, by the name of what they lack.
+    const refused = await nell.get(`${devWs()}/docs`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toContain("doc:read");
+  });
+
+  test("they write pages and the app that serves them, and nothing else", async () => {
+    const home = text("title: Handbook", "See [refunds](support/refunds).\n");
+    expect((await save(wren, "guide/index", home)).status).toBe(200);
+    expect(
+      (await save(wren, "guide/support/refunds", text("title: Refunds\ntopic: guide-refunds")))
+        .status,
+    ).toBe(200);
+    const app = await wren.put(`${devWs()}/drafts/guide-site`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Guide", docs: "guide" },
+    });
+    expect(app.status, JSON.stringify(app.body)).toBe(200);
+    // Not an app of another sort, not a table, and not over what is someone else's.
+    expect(
+      (
+        await wren.put(`${devWs()}/drafts/site`, {
+          kind: "app",
+          schemaVersion: 1,
+          body: { title: "Site", interface: "screens/x" },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await wren.put(`${devWs()}/drafts/orders`, {
+          kind: "table",
+          schemaVersion: 1,
+          body: { columns: { n: { type: "text" } } },
+        })
+      ).status,
+    ).toBe(403);
+    expect((await save(wren, "limits/batch", home)).status).toBe(403);
+    expect((await wren.get(`${devWs()}/drafts`)).body.items.map((one: Any) => one.path)).toEqual([
+      "guide/index",
+      "guide-site",
+      "guide/support/refunds",
+    ]);
+
+    const listed = (await wren.get(`${devWs()}/docs`)).body;
+    expect(listed.apps).toEqual([
+      { path: "guide-site", title: "Guide", docs: "guide", deployed: false },
+    ]);
+    expect(
+      listed.pages.map((one: Any) => [one.path, one.title, one.app, one.url, one.state]),
+    ).toEqual([
+      ["guide/index", "Handbook", "guide-site", "", "new"],
+      ["guide/support/refunds", "Refunds", "guide-site", "support/refunds", "new"],
+    ]);
+    expect(listed.pages[1].topic).toBe("guide-refunds");
+  });
+
+  test("the list says of each page what another page's links are checked against", async () => {
+    const pages = (await wren.get(`${devWs()}/docs`)).body.pages;
+    expect(pages[1]).toMatchObject({
+      path: "guide/support/refunds",
+      topic: "guide-refunds",
+      headings: [],
+      terms: [],
+      file: null,
+    });
+    // Nothing is checked by asking the server: a check that saved nothing would have no
+    // audit entry, and one for every keystroke would bury the changes that matter.
+    expect(
+      (await wren.post(`${devWs()}/docs/check`, { path: "guide/index", source: "x" })).status,
+    ).toBe(404);
+  });
+
+  test("two people saving the same page: the second is told, and nothing is overwritten", async () => {
+    const opened = (await wren.get(`${devWs()}/docs/page/guide/index`)).body;
+    expect(opened.revision).toBe(1);
+    expect(opened.source).toContain("See [refunds]");
+    const first = await save(alice, "guide/index", text("title: Handbook", "Alice's.\n"), {
+      revision: opened.revision,
+    });
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    const second = await save(wren, "guide/index", text("title: Handbook", "Wren's.\n"), {
+      revision: opened.revision,
+    });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe("draft_changed");
+    // A save that says nothing of what it saw, over a draft that is there, is the same conflict.
+    expect((await save(wren, "guide/index", text("title: Handbook", "Wren's.\n"))).status).toBe(
+      409,
+    );
+    expect((await wren.get(`${devWs()}/docs/page/guide/index`)).body.source).toContain("Alice's.");
+    // Reloaded, the save goes through.
+    const again = (await wren.get(`${devWs()}/docs/page/guide/index`)).body;
+    expect(
+      (
+        await save(
+          wren,
+          "guide/index",
+          text("title: Handbook", "See [refunds](support/refunds).\n"),
+          {
+            revision: again.revision,
+          },
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  test("they deploy their pages by name, cannot deploy everything, and a page that does not hold is refused", async () => {
+    expect((await wren.post(`${devWs()}/changes/deploy`, {})).status).toBe(403);
+    expect(
+      (await wren.post(`${devWs()}/changes/deploy`, { paths: ["guide/index", "limits/batch"] }))
+        .status,
+    ).toBe(403);
+    // A link to a page that is not there stops the deploy, naming the page and the line.
+    const broken = (await wren.get(`${devWs()}/docs/page/guide/support/refunds`)).body;
+    await save(wren, "guide/support/refunds", text("title: Refunds", "[gone](gone)\n"), {
+      revision: broken.revision,
+    });
+    const paths = ["guide/index", "guide/support/refunds", "guide-site"];
+    const refused = await wren.post(`${devWs()}/changes/deploy`, { paths });
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body)).toContain("guide/support/refunds (doc)");
+    const fixed = (await wren.get(`${devWs()}/docs/page/guide/support/refunds`)).body;
+    await save(wren, "guide/support/refunds", text("title: Refunds\ntopic: guide-refunds"), {
+      revision: fixed.revision,
+    });
+    const deployed = await wren.post(`${devWs()}/changes/deploy`, { paths, message: "The guide" });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.applied.sort()).toEqual([...paths].sort());
+    // What is not theirs is still a draft.
+    expect((await alice.get(`${devWs()}/drafts`)).body.items.map((one: Any) => one.path)).toEqual([
+      "limits/batch",
+    ]);
+    const listed = (await wren.get(`${devWs()}/docs`)).body;
+    expect(listed.apps[0].deployed).toBe(true);
+    expect(listed.pages.map((one: Any) => one.state)).toEqual(["deployed", "deployed"]);
+    // Bound to nobody outside, it is served to members.
+    const page = await t.app.inject({
+      url: "/apps/acme/dev/guide-site/support/refunds",
+      headers: {
+        host: MAIN,
+        cookie: Object.entries(wren.headers)
+          .map(([, value]) => value)
+          .join("; "),
+      },
+    });
+    expect([200, 303]).toContain(page.statusCode);
+  });
+
+  test("a change is a draft over what is deployed, shown beside it, and found by the console's search", async () => {
+    const opened = (await wren.get(`${devWs()}/docs/page/guide/index`)).body;
+    expect(opened.revision).toBeNull();
+    expect(opened.deployedSource).toBeNull();
+    expect(
+      (await save(wren, "guide/index", text("title: Handbook", "Parcels come back on Tuesdays.\n")))
+        .status,
+    ).toBe(200);
+    const changed = (await wren.get(`${devWs()}/docs/page/guide/index`)).body;
+    expect(changed.page.state).toBe("changed");
+    expect(changed.source).toContain("Tuesdays");
+    expect(changed.deployedSource).toContain("See [refunds]");
+    const found = (await wren.get(`${devWs()}/docs/search?q=tuesdays`)).body.items;
+    expect(found).toMatchObject([{ path: "guide/index", app: "guide-site", title: "Handbook" }]);
+    expect((await nell.get(`${devWs()}/docs/search?q=tuesdays`)).status).toBe(403);
+    expect((await wren.get(`${devWs()}/docs/page/guide/nothing`)).status).toBe(404);
+  });
+
+  test("a production workspace takes no page from the console", async () => {
+    const answer = await alice.put(`${ws()}/drafts/handbook/extra`, {
+      kind: "doc",
+      schemaVersion: 1,
+      body: { source: "---\ntitle: Extra\n---\n" },
+    });
+    expect(answer.status).toBe(409);
+    expect(answer.body.code).toBe("production_workspace");
+  });
+});

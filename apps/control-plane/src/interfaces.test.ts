@@ -728,7 +728,7 @@ describe("someone who maintains apps made in the console, and is not a developer
   test("they deploy what they made by name, and cannot deploy everything", async () => {
     const everything = await mona.post(`${devWs()}/changes/deploy`, {});
     expect(everything.status).toBe(403);
-    expect(everything.body.detail).toContain("Say which interfaces to deploy");
+    expect(everything.body.detail).toContain("Say which interfaces or pages to deploy");
     expect(
       (await mona.post(`${devWs()}/changes/deploy`, { paths: ["screens/stock", "limits/batch"] }))
         .status,

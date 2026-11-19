@@ -56,6 +56,11 @@ const InterfaceBuilder = lazy(() =>
   import("./builder/AppBuilder.tsx").then((m) => ({ default: m.AppBuilder })),
 );
 const Interfaces = lazy(() => import("./Interfaces.tsx").then((m) => ({ default: m.Interfaces })));
+// Documentation brings the reader of Markdown with it, and its editor the code editor.
+const Docs = lazy(() => import("./docs/Docs.tsx").then((m) => ({ default: m.Docs })));
+const DocEditor = lazy(() =>
+  import("./docs/DocEditor.tsx").then((m) => ({ default: m.DocEditor })),
+);
 const SingleSignOn = lazy(() =>
   import("./SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
 );
@@ -375,6 +380,7 @@ const WORKSPACE_TABS = new Set([
   "connections",
   "dashboards",
   "deployments",
+  "docs",
   "events",
   "extensions",
   "flow-runs",
@@ -491,6 +497,32 @@ function WorkspaceDetail({
       ) : tab === "flow-runs" && rest ? (
         // A flow run's page is the run page now; old links still arrive.
         <ToRunPage to={`/t/${tenantId}/workspaces/${workspaceId}/runs/${rest}`} />
+      ) : tab === "docs" && (rest === "new" || rest.startsWith("edit/")) ? (
+        workspace.data.type === "dev" ? (
+          <Suspense fallback={<p className="text-ink-muted">Loading the editor…</p>}>
+            <DocEditor
+              key={rest}
+              root={root}
+              link={`/t/${tenantId}/workspaces/${workspaceId}`}
+              tenantId={tenantId}
+              workspaceId={workspaceId}
+              path={rest === "new" ? undefined : rest.slice("edit/".length)}
+            />
+          </Suspense>
+        ) : (
+          <ProductionNotice root={root} noun="Pages" edit={`docs/${rest}`} />
+        )
+      ) : tab === "docs" ? (
+        <Suspense fallback={<Loading />}>
+          <Docs
+            root={root}
+            link={`/t/${tenantId}/workspaces/${workspaceId}`}
+            tenantId={tenantId}
+            workspaceId={workspaceId}
+            path={rest === "" ? undefined : rest}
+            editable={workspace.data.type === "dev"}
+          />
+        </Suspense>
       ) : tab === "queries" ? (
         <Queries root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "dashboards" && rest ? (

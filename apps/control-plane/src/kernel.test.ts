@@ -396,6 +396,7 @@ describe("permissions", () => {
       "app_maintainer",
       "deployer",
       "developer",
+      "doc_writer",
       "portal_reader",
       "portal_user",
       "tenant_admin",

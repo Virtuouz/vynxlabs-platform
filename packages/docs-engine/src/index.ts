@@ -1,3 +1,4 @@
+export { type AmongOptions, checkPageAmong, type PageIndex } from "./among.js";
 export { type Manifest, manifestOf, type PageFile, packageOutput } from "./output.js";
 export {
   type DocEntry,
@@ -22,9 +23,11 @@ export {
 } from "./schema.js";
 export { buildSearchIndex, loadSearchIndex, type SearchHit } from "./search.js";
 export {
+  type Around,
   type BuildOptions,
   buildDocSet,
   type Collection,
+  crossIssues,
   type DocSet,
   type Group,
   type Nav,

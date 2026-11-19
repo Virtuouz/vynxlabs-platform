@@ -22,6 +22,7 @@ function apply(catalog: CatalogTable[], plan: Plan): CatalogTable[] {
           columns: step.columns.map((c) => ({
             id: id(),
             ...c,
+            options: c.values ? { values: c.values, retired: [] } : null,
             previousNames: [],
             status: "active" as const,
           })),
@@ -40,12 +41,16 @@ function apply(catalog: CatalogTable[], plan: Plan): CatalogTable[] {
         table(step.table).columns.push({
           id: id(),
           ...step.column,
+          options: step.column.values ? { values: step.column.values, retired: [] } : null,
           previousNames: [],
           status: "active",
         });
         break;
       case "set_policy":
         table(step.table).policy = step.policy;
+        break;
+      case "set_display":
+        table(step.table).display = step.display;
         break;
       default: {
         const column = table(step.table).columns.find((c) => c.id === step.columnId);
@@ -62,6 +67,22 @@ function apply(catalog: CatalogTable[], plan: Plan): CatalogTable[] {
         if (step.op === "set_unique") column.unique = step.unique;
         if (step.op === "set_default") column.default = step.default;
         if (step.op === "set_reference") column.referenceTable = step.referenceTable;
+        if (step.op === "set_on_delete") column.onDelete = step.onDelete;
+        if (step.op === "to_enum") {
+          column.type = "enum";
+          column.options = { values: step.values, retired: [] };
+        }
+        if (step.op === "set_values") {
+          const renamed = step.renames.map((one) => one.from);
+          const now = step.values.map((one) => one.value);
+          column.options = {
+            values: step.values,
+            retired: [
+              ...(column.options?.values ?? []).map((one) => one.value),
+              ...(column.options?.retired ?? []),
+            ].filter((value) => !now.includes(value) && !renamed.includes(value)),
+          };
+        }
       }
     }
   }
@@ -101,6 +122,8 @@ describe("planning a table", () => {
             unique: true,
             default: null,
             referenceTable: null,
+            onDelete: null,
+            values: null,
           },
           {
             name: "total",
@@ -110,6 +133,8 @@ describe("planning a table", () => {
             unique: false,
             default: null,
             referenceTable: null,
+            onDelete: null,
+            values: null,
           },
           {
             name: "customer",
@@ -119,6 +144,8 @@ describe("planning a table", () => {
             unique: false,
             default: null,
             referenceTable: null,
+            onDelete: null,
+            values: null,
           },
         ],
       },
@@ -157,6 +184,8 @@ describe("planning a table", () => {
           unique: false,
           default: "USD",
           referenceTable: null,
+          onDelete: null,
+          values: null,
         },
       },
       { op: "retire_column", table: "orders", columnId: expect.any(String), name: "customer" },
@@ -366,5 +395,130 @@ describe("planning across tables", () => {
       columns: { ...v1.columns, note: { type: "text" } },
     });
     expect(ops(plan)).toEqual(["restore_table", "add_column"]);
+  });
+});
+
+describe("enum columns", () => {
+  const first: TableBody = {
+    columns: {
+      status: {
+        type: "enum",
+        values: ["new", { value: "on_loan", label: "On loan", color: "blue" }],
+      },
+      extras: { type: "enum_list", values: ["charger", "case"] },
+      note: { type: "text" },
+    },
+  };
+
+  test("a definition in place plans nothing, whatever its values look like", () => {
+    const made = apply([], planTable([], "loans", first));
+    expect(planTable(made, "loans", first)).toEqual({ steps: [], issues: [] });
+  });
+
+  test("a value added, taken away or given a colour is one step, and what is taken away is kept for the rows that hold it", () => {
+    const made = apply([], planTable([], "loans", first));
+    const next: TableBody = {
+      columns: {
+        ...first.columns,
+        status: { type: "enum", values: [{ value: "on_loan", color: "green" }, "returned"] },
+      },
+    };
+    const plan = planTable(made, "loans", next);
+    expect(plan.issues).toEqual([]);
+    expect(plan.steps).toEqual([
+      expect.objectContaining({
+        op: "set_values",
+        name: "status",
+        values: [{ value: "on_loan", color: "green" }, { value: "returned" }],
+        renames: [],
+      }),
+    ]);
+    const after = apply(made, plan);
+    expect(after[0]?.columns.find((c) => c.name === "status")?.options).toEqual({
+      values: [{ value: "on_loan", color: "green" }, { value: "returned" }],
+      retired: ["new"],
+    });
+    expect(planTable(after, "loans", next).steps).toEqual([]);
+    // Going back offers it again, and it is no longer retired.
+    const back = apply(after, planTable(after, "loans", first));
+    expect(back[0]?.columns.find((c) => c.name === "status")?.options?.retired).toEqual([
+      "returned",
+    ]);
+  });
+
+  test("a value spelled anew is a rename of one the column had, and of nothing else", () => {
+    const made = apply([], planTable([], "loans", first));
+    const renamed: TableBody = {
+      columns: {
+        ...first.columns,
+        status: {
+          type: "enum",
+          values: [
+            { value: "fresh", renamedFrom: "new" },
+            { value: "on_loan", renamedFrom: "never-was" },
+          ],
+        },
+      },
+    };
+    const plan = planTable(made, "loans", renamed);
+    expect(plan.steps[0]).toMatchObject({
+      op: "set_values",
+      renames: [{ from: "new", to: "fresh" }],
+    });
+    const after = apply(made, plan);
+    // The old spelling is gone, not retired: no row holds it any more.
+    expect(after[0]?.columns.find((c) => c.name === "status")?.options?.retired).toEqual([]);
+    // The same definition again renames nothing.
+    expect(planTable(after, "loans", renamed).steps).toEqual([]);
+  });
+
+  test("text becomes an enum by a step that looks at the rows, an enum becomes text freely, and nothing else changes kind", () => {
+    const made = apply([], planTable([], "loans", first));
+    const toEnum = planTable(made, "loans", {
+      columns: { ...first.columns, note: { type: "enum", values: ["a", "b"] } },
+    });
+    expect(toEnum.issues).toEqual([]);
+    expect(ops(toEnum)).toEqual(["to_enum"]);
+    const toText = planTable(made, "loans", {
+      columns: { ...first.columns, status: { type: "text" } },
+    });
+    expect(ops(toText)).toEqual(["widen_column"]);
+    const toList = planTable(made, "loans", {
+      columns: { ...first.columns, status: { type: "enum_list", values: ["new"] } },
+    });
+    expect(toList.issues[0]?.path).toBe("/body/columns/status/type");
+  });
+});
+
+describe("references and what stands for a row", () => {
+  const devices: TableBody = { columns: { name: { type: "text" } }, display: "name" };
+  const loans = (onDelete?: "restrict" | "set_null" | "cascade"): TableBody => ({
+    columns: {
+      device: { type: "reference", references: "devices", ...(onDelete ? { onDelete } : {}) },
+    },
+  });
+
+  test("a table says which column stands for its rows, and can stop saying it", () => {
+    const made = apply([], planTable([], "devices", devices));
+    expect(made[0]?.display).toBe("name");
+    expect(planTable(made, "devices", devices).steps).toEqual([]);
+    const without = planTable(made, "devices", { columns: devices.columns });
+    expect(without.steps).toEqual([{ op: "set_display", table: "devices", display: null }]);
+  });
+
+  test("what a reference does on a delete is restrict unless it says, and changing it is one step", () => {
+    const made = apply([], planTable([], "loans", loans()));
+    expect(made[0]?.columns[0]?.onDelete).toBe("restrict");
+    expect(planTable(made, "loans", loans("restrict")).steps).toEqual([]);
+    const plan = planTable(made, "loans", loans("cascade"));
+    expect(ops(plan)).toEqual(["set_on_delete"]);
+    const after = apply(made, plan);
+    expect(planTable(after, "loans", loans("cascade")).steps).toEqual([]);
+    // A column from before the rule could be said has none kept, and is restrict.
+    const old = made.map((t) => ({
+      ...t,
+      columns: t.columns.map((c) => ({ ...c, onDelete: null })),
+    }));
+    expect(planTable(old, "loans", loans()).steps).toEqual([]);
   });
 });

@@ -66,6 +66,8 @@ const NUMERIC = new Set(["integer", "number"]);
 /** A stored value as text a person can read and edit. */
 export function showValue(type: string, value: unknown): string {
   if (value === null || value === undefined) return "";
+  // Several of a column's values, as they are typed: with commas between.
+  if (type === "enum_list" && Array.isArray(value)) return value.join(", ");
   if (type === "json" || typeof value === "object") return JSON.stringify(value);
   if (type === "boolean") return value ? "Yes" : "No";
   if (type === "timestamp" && typeof value === "string") {
@@ -80,6 +82,8 @@ export function showValue(type: string, value: unknown): string {
 /** The text a cell is edited as: the stored value, not its friendly form. */
 function editText(type: string, value: unknown): string {
   if (value === null || value === undefined) return "";
+  // Several of a column's values, as they are typed: with commas between.
+  if (type === "enum_list" && Array.isArray(value)) return value.join(", ");
   if (type === "json" || typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
@@ -101,6 +105,12 @@ export function parseValue(type: string, text: string): unknown {
     if (/^(true|yes|y|1)$/i.test(trimmed)) return true;
     if (/^(false|no|n|0)$/i.test(trimmed)) return false;
     throw new Error("Enter yes or no.");
+  }
+  if (type === "enum_list") {
+    return trimmed
+      .split(",")
+      .map((one) => one.trim())
+      .filter(Boolean);
   }
   if (type === "json") {
     try {

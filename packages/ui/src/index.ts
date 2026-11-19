@@ -1,4 +1,4 @@
-export { Badge, type BadgeTone } from "./Badge.tsx";
+export { Badge, type BadgeTone, readableOn, ValueChip } from "./Badge.tsx";
 export { Button, type ButtonProps } from "./Button.tsx";
 export { Chart, type ChartProps } from "./Chart.tsx";
 export {

@@ -1,5 +1,19 @@
-import { type ColumnType, SYSTEM_COLUMNS } from "./kinds.js";
+import { type ColumnType, ENUM_COLORS, SYSTEM_COLUMNS } from "./kinds.js";
 import type { ManifestIssue } from "./registry.js";
+
+/** One value of an enum column, as a definition may write it in full. */
+export interface EnumValue {
+  value: string;
+  /** What people read in place of the value. */
+  label?: string;
+  /** One of `ENUM_COLORS`' names, or `#rrggbb`. */
+  color?: string;
+  /** The value's previous spelling. Rows that hold it are rewritten on deploy. */
+  renamedFrom?: string;
+}
+
+/** What a reference does when the row it points to is deleted. */
+export type OnDelete = "restrict" | "set_null" | "cascade";
 
 export interface TableColumn {
   type: ColumnType;
@@ -7,7 +21,25 @@ export interface TableColumn {
   unique?: boolean;
   default?: unknown;
   references?: string;
+  /** For a reference. Left out, `restrict`. */
+  onDelete?: OnDelete;
+  /** For an enum or an enum_list: a value alone, or with its label and colour. */
+  values?: (string | EnumValue)[];
   renamedFrom?: string;
+}
+
+export const isEnumType = (type: string): type is "enum" | "enum_list" =>
+  type === "enum" || type === "enum_list";
+
+/** A column's values, each written in full. */
+export function enumValues(values: readonly (string | EnumValue)[] | undefined): EnumValue[] {
+  return (values ?? []).map((one) => (typeof one === "string" ? { value: one } : one));
+}
+
+/** The colour a value is drawn on, as `#rrggbb`, or nothing when it has none. */
+export function enumColor(color: string | undefined): string | undefined {
+  if (!color) return undefined;
+  return color in ENUM_COLORS ? ENUM_COLORS[color as keyof typeof ENUM_COLORS] : color;
 }
 
 /** When a row rule applies to a person, judged from one of the row's columns. */
@@ -46,11 +78,21 @@ export interface TableBody {
   policy?: TablePolicy;
   indexes?: string[][];
   renamedFrom?: string;
+  /** The column that stands for a row where another table refers to it. */
+  display?: string;
 }
 
 /** Whether a default can be stored in a column of this type. */
-function defaultFits(type: ColumnType, value: unknown): boolean {
+function defaultFits(type: ColumnType, value: unknown, values: string[] = []): boolean {
   switch (type) {
+    case "enum":
+      return typeof value === "string" && values.includes(value);
+    case "enum_list":
+      return (
+        Array.isArray(value) &&
+        value.every((one) => typeof one === "string" && values.includes(one)) &&
+        new Set(value).size === value.length
+      );
     case "text":
     case "uuid":
     case "timestamp":
@@ -90,7 +132,59 @@ export function checkTable(body: TableBody): ManifestIssue[] {
         message: `only a reference column points to a table, and this is a ${column.type}`,
       });
     }
-    if (column.default !== undefined && !defaultFits(column.type, column.default)) {
+    if (column.type !== "reference" && column.onDelete !== undefined) {
+      issues.push({
+        path: `${at}/onDelete`,
+        message: `only a reference says what happens when the row it points to is deleted, and this is a ${column.type}`,
+      });
+    }
+    if (column.onDelete === "set_null" && column.required) {
+      issues.push({
+        path: `${at}/onDelete`,
+        message: "a required column cannot be emptied when the row it points to is deleted",
+      });
+    }
+    const listed = enumValues(column.values);
+    if (isEnumType(column.type)) {
+      if (listed.length === 0) {
+        issues.push({ path: `${at}/values`, message: `an ${column.type} must list its values` });
+      }
+      const seen = new Set<string>();
+      listed.forEach((one, index) => {
+        if (seen.has(one.value)) {
+          issues.push({
+            path: `${at}/values/${index}`,
+            message: `"${one.value}" is listed twice`,
+          });
+        }
+        seen.add(one.value);
+      });
+      listed.forEach((one, index) => {
+        if (one.renamedFrom === undefined) return;
+        if (one.renamedFrom === one.value || seen.has(one.renamedFrom)) {
+          issues.push({
+            path: `${at}/values/${index}/renamedFrom`,
+            message: `"${one.renamedFrom}" is still one of the values, so it cannot also be this value's old spelling`,
+          });
+        }
+      });
+      if (column.unique && column.type === "enum_list") {
+        issues.push({ path: `${at}/unique`, message: "a list of values cannot be unique" });
+      }
+    } else if (column.values !== undefined) {
+      issues.push({
+        path: `${at}/values`,
+        message: `only an enum or an enum_list lists its values, and this is a ${column.type}`,
+      });
+    }
+    if (
+      column.default !== undefined &&
+      !defaultFits(
+        column.type,
+        column.default,
+        listed.map((one) => one.value),
+      )
+    ) {
       issues.push({
         path: `${at}/default`,
         message: `the default does not fit a ${column.type} column`,
@@ -108,6 +202,17 @@ export function checkTable(body: TableBody): ManifestIssue[] {
           message: `"${column.renamedFrom}" is still declared as a column, so it cannot also be this column's old name`,
         });
       }
+    }
+  }
+  if (body.display !== undefined) {
+    const shown = body.columns[body.display];
+    if (!shown) {
+      issues.push({ path: "/body/display", message: `there is no column "${body.display}"` });
+    } else if (["json", "file", "enum_list"].includes(shown.type)) {
+      issues.push({
+        path: "/body/display",
+        message: `a ${shown.type} column cannot stand for a row: use one that holds a single value`,
+      });
     }
   }
   if (body.policy?.type === "owner") {

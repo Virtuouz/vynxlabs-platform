@@ -52,3 +52,24 @@ describe.each([
     });
   }
 });
+
+describe("text on a colour its author chose", () => {
+  test("black or white, whichever reads better, always reaches what text needs", async () => {
+    const { readableOn } = await import("./Badge.tsx");
+    expect(readableOn("#000000")).toBe("#ffffff");
+    expect(readableOn("#ffffff")).toBe("#000000");
+    expect(readableOn("#2563eb")).toBe("#ffffff");
+    expect(readableOn("#d97706")).toBe("#000000");
+    // Every colour: stepped through the cube, the better of the two is never short of 4.5 to 1.
+    let least = 21;
+    for (let r = 0; r < 256; r += 15) {
+      for (let g = 0; g < 256; g += 15) {
+        for (let b = 0; b < 256; b += 15) {
+          const color = `#${[r, g, b].map((one) => one.toString(16).padStart(2, "0")).join("")}`;
+          least = Math.min(least, contrastRatio(color, readableOn(color)) as number);
+        }
+      }
+    }
+    expect(least).toBeGreaterThanOrEqual(CONTRAST_NEEDED.text);
+  });
+});

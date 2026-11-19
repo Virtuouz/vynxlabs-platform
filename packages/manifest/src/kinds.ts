@@ -901,8 +901,36 @@ export const COLUMN_TYPES = [
   "uuid",
   "reference",
   "file",
+  "enum",
+  "enum_list",
 ] as const;
 export type ColumnType = (typeof COLUMN_TYPES)[number];
+
+/**
+ * The colours a value of an enum column can be given by name. Each is one
+ * colour, drawn as the value's background in a light theme and a dark one,
+ * with black or white text over it, whichever is easier to read. Any other
+ * colour is given as `#rrggbb`.
+ */
+export const ENUM_COLORS = {
+  gray: "#6b7280",
+  red: "#dc2626",
+  orange: "#ea580c",
+  amber: "#d97706",
+  green: "#16a34a",
+  teal: "#0d9488",
+  blue: "#2563eb",
+  violet: "#7c3aed",
+  pink: "#db2777",
+} as const;
+
+const enumValue = {
+  type: "string",
+  minLength: 1,
+  maxLength: 100,
+  // A value is one line of text with no comma, so that a list of them can be written as one.
+  pattern: "^[^,\\n\\r]+$",
+} as const;
 
 /** Columns every table has. A definition cannot declare them. */
 export const SYSTEM_COLUMNS = ["id", "created_at", "updated_at"] as const;
@@ -932,6 +960,42 @@ export const tableKind: KindDefinition = {
                 "Used for a row that gives no value, and for existing rows when the column is added.",
             },
             references: { ...path, description: "For a reference: the table it points to." },
+            onDelete: {
+              enum: ["restrict", "set_null", "cascade"],
+              description:
+                "For a reference: what happens to this row when the row it points to is deleted. `restrict` refuses the deletion, `set_null` empties the column, `cascade` deletes this row too. Left out, `restrict`.",
+            },
+            values: {
+              type: "array",
+              minItems: 1,
+              maxItems: 200,
+              description:
+                "For an enum or an enum_list: the values a row may hold, in the order they are offered and sorted.",
+              items: {
+                oneOf: [
+                  enumValue,
+                  {
+                    type: "object",
+                    properties: {
+                      value: enumValue,
+                      label: { type: "string", minLength: 1, maxLength: 100 },
+                      color: {
+                        type: "string",
+                        pattern: `^(${Object.keys(ENUM_COLORS).join("|")}|#[0-9a-fA-F]{6})$`,
+                        description: "A colour by name, or as #rrggbb.",
+                      },
+                      renamedFrom: {
+                        ...enumValue,
+                        description:
+                          "The value's previous spelling. Rows that hold it are rewritten.",
+                      },
+                    },
+                    required: ["value"],
+                    additionalProperties: false,
+                  },
+                ],
+              },
+            },
             renamedFrom: {
               type: "string",
               pattern: columnName,
@@ -941,6 +1005,12 @@ export const tableKind: KindDefinition = {
           required: ["type"],
           additionalProperties: false,
         },
+      },
+      display: {
+        type: "string",
+        pattern: columnName,
+        description:
+          "The column that stands for a row where another table refers to it, in place of its ID.",
       },
       policy: {
         oneOf: [

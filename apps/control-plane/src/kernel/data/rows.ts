@@ -17,6 +17,10 @@ export interface ColumnMeta {
   hasDefault: boolean;
   /** False for a column of an external table whose type the platform only reads. */
   writable: boolean;
+  /** For an enum or an enum_list: the values a row may be given, in order. */
+  values?: string[];
+  /** For a reference: the table it points to. */
+  references?: string;
 }
 
 /** A table that rows can be read from and written to: a workspace's own, or one in an external source. */
@@ -31,6 +35,8 @@ export interface RowTarget {
   managed: boolean;
   policy: TablePolicy;
   resourceId: string | null;
+  /** The column that stands for a row where another table refers to it. */
+  display?: string | null;
 }
 
 const SYSTEM: ColumnMeta[] = [
@@ -90,6 +96,7 @@ export async function describeTable(
     managed: true,
     policy: table.policy,
     resourceId: table.resource_id,
+    display: table.display_column,
     columns: [
       ...SYSTEM,
       ...columns.map((column) => ({
@@ -99,6 +106,10 @@ export async function describeTable(
         required: column.required,
         hasDefault: column.default_value !== null && column.default_value !== undefined,
         writable: true,
+        ...(column.options?.values
+          ? { values: column.options.values.map((one) => one.value) }
+          : {}),
+        ...(column.reference_table ? { references: column.reference_table } : {}),
       })),
     ],
   };
@@ -281,6 +292,15 @@ async function naming<T>(target: RowTarget, write: () => Promise<T>): Promise<T>
           )
         : undefined;
     if (gap) throw badRequest(`A value is required for "${gap.name}".`);
+    // A value that is not one of an enum's, which the check on the column caught.
+    const strayed =
+      failure.code === "23514"
+        ? target.columns.find(
+            (candidate) =>
+              constraintName("ev", target.table, candidate.physicalName) === failure.constraint,
+          )
+        : undefined;
+    if (strayed) throw badRequest(`A value is not one "${strayed.name}" may hold.`);
     const violated = failure.code === "23505" ? failure.constraint : undefined;
     const column = target.columns.find(
       (candidate) => constraintName("uq", target.table, candidate.physicalName) === violated,
@@ -329,6 +349,22 @@ function toDatabase(column: ColumnMeta, value: unknown): unknown {
       return value;
     case "json":
       return JSON.stringify(value);
+    case "enum":
+      if (typeof value !== "string" || !column.values?.includes(value)) {
+        throw fail(`one of: ${(column.values ?? []).join(", ")}`);
+      }
+      return value;
+    case "enum_list": {
+      const offered = column.values ?? [];
+      if (
+        !Array.isArray(value) ||
+        !value.every((one) => typeof one === "string" && offered.includes(one))
+      ) {
+        throw fail(`a list of these: ${offered.join(", ")}`);
+      }
+      // Each once, in the order given.
+      return [...new Set(value as string[])];
+    }
     case "uuid":
     case "reference":
     case "file":
@@ -365,6 +401,8 @@ const KNOWN = new Set([
   "uuid",
   "reference",
   "file",
+  "enum",
+  "enum_list",
 ]);
 
 const selectList = (target: RowTarget) => sql.join(target.columns.map(selected));
@@ -430,7 +468,7 @@ function compileFilter(
   const op = String(node.op ?? "eq");
   const value = (raw: unknown) => {
     try {
-      return toDatabase(meta, raw);
+      return toDatabase(compared, raw);
     } catch (error) {
       if (error instanceof Invalid)
         throw badRequest("The filter is not valid.", [
@@ -441,6 +479,17 @@ function compileFilter(
   };
   if (op === "is_null")
     return node.value === false ? sql`${reference} is not null` : sql`${reference} is null`;
+  if (op === "has") {
+    if (meta.type !== "enum_list" || typeof node.value !== "string")
+      throw invalid(`"has" works on a list of values, with one value to look for`);
+    if (!meta.values?.includes(node.value))
+      throw invalid(`"${node.value}" is not one of the values of "${meta.name}"`);
+    return sql`${reference} @> array[${node.value}]::text[]`;
+  }
+  if (meta.type === "enum_list")
+    throw invalid(`a list of values can only be tested with has or is_null`);
+  // An enum is compared with any text, so a filter can still find rows that hold a retired value.
+  const compared = meta.type === "enum" ? { ...meta, type: "text" } : meta;
   if (op === "contains") {
     if (meta.type !== "text" || typeof node.value !== "string")
       throw invalid(`"contains" works on text columns, with text to look for`);
@@ -642,7 +691,12 @@ export async function aggregateRows(db: AnyDb, target: RowTarget, query: Aggrega
   const grouped = groups.map((group, index) => {
     const path = `/group/${index}`;
     const meta = column(target, group.column, path);
-    if (meta.type === "json" || meta.type === "file" || !KNOWN.has(meta.type)) {
+    if (
+      meta.type === "json" ||
+      meta.type === "file" ||
+      meta.type === "enum_list" ||
+      !KNOWN.has(meta.type)
+    ) {
       throw invalid(path, `rows cannot be grouped by "${meta.name}", which holds ${meta.type}`);
     }
     const reference = sql.ref(meta.physicalName);
@@ -857,7 +911,13 @@ function validate(
 }
 
 const bound = (meta: ColumnMeta, value: unknown) =>
-  meta.type === "json" && value !== null ? sql`${value}::jsonb` : sql`${value}`;
+  value === null
+    ? sql`${value}`
+    : meta.type === "json"
+      ? sql`${value}::jsonb`
+      : meta.type === "enum_list"
+        ? sql`${value}::text[]`
+        : sql`${value}`;
 
 export async function insertRows(
   db: AnyDb,

@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M4 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M6 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -204,6 +204,29 @@ accessories:
 - Widenings: `enum` to `text` always. `text` to `enum` only when every row already holds one of the values, checked at deploy and refused naming the values that are in the way.
 - Touched: `COLUMN_TYPES` and both table schemas, `SQL_TYPE`, `planTable`, `toDatabase`, the filter grammar (`eq`, `ne`, `in`, and `has` for a list), `column.enum([...])` in the SDK typed as a union, the console's type picker and column editor, the rows grid and row form, `FORM_TYPES` and the value filter in `packages/screens`, CSV export, tenant export and import, and an external Postgres enum read as an enum that cannot be changed.
 
+#### Built
+
+- **Two types**, `enum` and `enum_list`, with `values` on the column: a value alone, or `{ value, label, color, renamedFrom }`. `ENUM_COLORS` names nine colours; any other is `#rrggbb`. `checkTable` refuses a list with a value twice, values on another type, a default that is not one of them, and a rename onto a value still listed.
+- **Storage** (`kernel/data/apply.ts`): `text` and `text[]`, held by a check named `ev_…` that lists the values offered and the ones retired. Migration 0077 adds `data_column.options`, which keeps both lists; a dedicated database gets the same column when it is next set up.
+- **Plans** (`plan.ts`): `set_values` for any change to the list, with the renames it carries, and `to_enum` for text that becomes an enum. An enum becomes text by the widening there was, which now also lets go of the check.
+- **Rows** (`rows.ts`): a write is checked against the values offered and refused naming them; the check refuses whatever gets past the API. An enum is filtered as text, so rows holding a retired value are still found. A list is filtered with the new `has`, and by `is_null`. Rows are grouped by an enum, not by a list.
+- **The SDK**: `column.enum([...])` and `column.enumList([...])`, whose row types are the values themselves.
+- **The console**: both types when a column is added; a Values dialog on an enum column for what each is called, its colour and their order; chips in the rows grid and the definition; a select or a multi-select in the row forms, which keep a value the row holds and the column no longer offers. `ValueChip` in the kit draws black or white text, whichever `contrastRatio` says reads better.
+- **Apps**: a form asks for an enum from its values, and tables and cards show chips. The interface route sends each value's colour as the colour itself.
+- Tests: six in `data.test.ts`, run against the shared database and a dedicated one; four in `plan.test.ts`; the row types in the SDK's `tables.test.ts`; and one in `contrast.test.ts` that steps through the colour cube and finds the better of black and white never under 4.5 to 1.
+
+#### Findings
+
+- **A palette colour is one colour, the same in a light theme and a dark one.** The plan had them follow the theme. With text worked out from the colour, a chip reads the same on either ground, and a colour that changed with the theme would be two colours to choose.
+- **Rows are sorted by an enum's spelling, not by the order of its values.** Paging walks a sorted column by comparing values, and an order that is not the values' own would break it. Not built.
+- **A list cannot be filtered inside the grid's own cell editor**: it is edited as text with commas there, and with a multi-select in the row's form.
+- **The values are reordered with arrows**, not by dragging as the plan said.
+- **Not built: purging a retired value.** It stays allowed in rows for good. Taking it off the last row that holds it and out of the check would be the purge.
+- **Not built: reading an external Postgres enum as an enum.** It is still read as text that cannot be changed.
+- **A form in an app does not offer an `enum_list`.** The kit's form has no control for several choices.
+- **A widget is told a value's chips as data** (`chips` on the widget context, in the kit and the SDK alike), since the SDK's contract has no React types and `display` gives text.
+- **CSV writes a list as its values with semicolons between**, not as JSON.
+
 ### M6: references
 
 - `onDelete: restrict | set_null | cascade` on a reference column, `restrict` by default as now. `cascade` is named in the deploy's summary as a change that can delete rows.
@@ -211,6 +234,25 @@ accessories:
 - A table's `display` names the column that stands for a row. The rows grid, the row form's picker and `expand` use it.
 - `GET …/rows/<table>?expand=device` returns the referenced row's ID and label beside the ID.
 - Pointing a reference at another table replaces its constraint, and a reference can be taken away. Both are read as broken today (`apply.ts:383`, `:595`; `plan.ts:294`) and are tried first.
+
+#### Built
+
+- **`onDelete`** on a reference column: `restrict`, `set_null` or `cascade`. A required column cannot be `set_null`. Kept in `data_column.on_delete`.
+- **`reconcileReferences`** reads what each constraint points at and what it does on a delete, and makes it again when either differs from the definition. It also gives every reference column an index, `rx_…`.
+- **`display`** on a table, kept in `data_table.display_column`: a column that holds one value.
+- **`?expand=device`** on the rows route answers with `expanded.device`, the display value of each row pointed to, by ID. It is read as the caller reads that table: with their permission there and through its row policy, so a row they may not see has no label.
+- **The console**: a reference shows what stands for the row it points to, in the rows grid; the definition says what each reference does on a delete and has a dialog to change it; and a table chooses what stands for its rows.
+- **The SDK**: `onDelete` on `column.reference`, `display` on `defineTable`.
+- Tests: five in `data.test.ts`, both database modes; two in `plan.test.ts`.
+
+#### Findings
+
+- **Retargeting was broken, and is fixed.** The test points a reference at another table and then tries to store a row pointing at the old one, which is refused.
+- **Pointing a reference at another table is refused while rows point at the old one**, by Postgres, when the new constraint is made. That is right: those rows would point at nothing.
+- **A reference cannot be "removed"**, as the plan had it. A reference column with no table is not a valid definition, and a column that stops being a reference is a change of type, which is refused as before.
+- **A reference to a table with no `display` shows its ID**, as before.
+- **Not built: a picker by label in the row form.** A reference is still typed or pasted as an ID there.
+- **The index is not dropped when the column is retired.** It costs a little space and is dropped with the column on a purge.
 
 ### M7: the query layer
 

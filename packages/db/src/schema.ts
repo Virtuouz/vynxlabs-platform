@@ -759,6 +759,16 @@ export interface DataTableTable {
   previous_names: Generated<string[]>;
   retired_at: Date | null;
   created_at: Generated<Date>;
+  /** The column that stands for a row where another table refers to it. */
+  display_column: string | null;
+}
+
+/** What a column keeps beside its type. */
+export interface DataColumnOptions {
+  /** An enum's values, in order, each with its label and colour. */
+  values?: { value: string; label?: string; color?: string }[];
+  /** Values the column had and no longer offers. Rows may still hold them. */
+  retired?: string[];
 }
 
 export interface DataColumnTable {
@@ -771,6 +781,9 @@ export interface DataColumnTable {
   is_unique: Generated<boolean>;
   default_value: ColumnType<unknown, string | null | undefined, string | null>;
   reference_table: string | null;
+  /** For a reference: `restrict`, `set_null` or `cascade`. Null means `restrict`. */
+  on_delete: string | null;
+  options: ColumnType<DataColumnOptions | null, string | null | undefined, string | null>;
   previous_names: Generated<string[]>;
   status: CatalogStatus;
   retired_at: Date | null;

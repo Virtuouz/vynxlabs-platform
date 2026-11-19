@@ -898,6 +898,11 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
   description?: string;
   columns: C;
   /**
+   * The column that stands for a row where another table refers to it: a
+   * device's name in place of its ID.
+   */
+  display?: Extract<keyof C, string>;
+  /**
    * Who may see which rows. With `owner`, a person sees and changes only the
    * rows whose owner column holds their ID. Without a policy, permissions alone decide.
    */
@@ -955,6 +960,7 @@ export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean
           : { type: "owner", column: options.policy.owner },
       indexes: options.indexes,
       renamedFrom: options.renamedFrom,
+      display: options.display,
     }),
   );
   return { ...definition, kind: "table" };

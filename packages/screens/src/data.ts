@@ -14,7 +14,14 @@ export interface TableInfo {
   found: boolean;
   canRead: boolean;
   canWrite: boolean;
-  columns: { name: string; type: string; required: boolean; references: string | null }[];
+  columns: {
+    name: string;
+    type: string;
+    required: boolean;
+    references: string | null;
+    /** For an enum or an enum_list: the values it offers, in order. */
+    values?: { value: string; label?: string /** As `#rrggbb`. */; color?: string }[];
+  }[];
 }
 
 /** An interface with what its tables hold, as the platform gives it to whoever may open it. */

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ValueChip } from "./Badge.tsx";
 import { Button } from "./Button.tsx";
 import { Chart } from "./Chart.tsx";
 import { Form, type FormSchema } from "./Form.tsx";
@@ -29,6 +30,11 @@ export interface WidgetContext {
   onDelete?(row: Record<string, unknown>): Promise<void>;
   /** What to show in place of a value: the name of the row a reference points at. */
   display?(column: string, value: unknown): string | undefined;
+  /**
+   * A value that is one or several of a column's choices, as chips: what each
+   * is called and, when the table gives it one, its colour as `#rrggbb`.
+   */
+  chips?(column: string, value: unknown): { label: string; color?: string }[] | undefined;
   /** Things a person can do to one row, offered on each: a label, and what pressing it does. */
   rowActions?: { label: string; onRun(row: Record<string, unknown>): void }[];
   /** True while the rows are being fetched. */
@@ -174,8 +180,25 @@ const fieldSchema = {
   },
 };
 
+/** A value that is one or several of its column's choices, drawn as chips, or nothing when it is not. */
+function chipsOf(context: WidgetContext, column: string, value: unknown): ReactNode | undefined {
+  const chips = context.chips?.(column, value);
+  if (!chips) return undefined;
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <ValueChip key={chip.label} color={chip.color}>
+          {chip.label}
+        </ValueChip>
+      ))}
+    </span>
+  );
+}
+
 /** A value as a person reads it: what the screen says to show for it, or the kit's own way. */
 function shown(field: WidgetField, value: unknown, context: WidgetContext): ReactNode {
+  const chips = chipsOf(context, field.name, value);
+  if (chips) return chips;
   const display = context.display?.(field.name, value);
   if (display !== undefined) return display;
   if (value === null || value === undefined || value === "") {
@@ -228,10 +251,11 @@ registerWidget<TableWidgetConfig>({
           selectedKey={context.selectedId}
           onSelect={context.onSelect}
           {...(edit ? { onEdit: (row, column, value) => edit(row, column, value) } : {})}
-          {...(display
+          {...(display || context.chips
             ? {
                 cell: (row: Record<string, unknown>, column: { name: string }) =>
-                  display(column.name, row[column.name]),
+                  chipsOf(context, column.name, row[column.name]) ??
+                  display?.(column.name, row[column.name]),
               }
             : {})}
           {...(open || remove || actions.length > 0

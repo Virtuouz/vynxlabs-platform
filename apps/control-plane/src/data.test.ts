@@ -1147,6 +1147,319 @@ describe("refusals, retiring and purging", () => {
   });
 });
 
+describe("enum columns", () => {
+  const put = (name: string, columns: Record<string, object>, extra: object = {}) =>
+    alice.put(`${ws()}/resources/${name}`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: { columns, ...extra },
+    });
+  const physicalOf = async (name: string) =>
+    (
+      await data
+        .selectFrom("data_table")
+        .select("physical_name")
+        .where("workspace_id", "=", dev)
+        .where("name", "=", name)
+        .where("status", "=", "active")
+        .executeTakeFirstOrThrow()
+    ).physical_name;
+  const base = {
+    title: { type: "text" },
+    status: {
+      type: "enum",
+      values: ["new", { value: "on_loan", label: "On loan", color: "blue" }, "returned"],
+      default: "new",
+    },
+    extras: { type: "enum_list", values: ["charger", "case", "dock"] },
+  };
+
+  test("a definition that does not hold together is refused, saying what is wrong", async () => {
+    const wrong = async (columns: Record<string, object>) =>
+      JSON.stringify((await put("wrong", columns)).body);
+    expect(await wrong({ s: { type: "enum" } })).toContain("must list its values");
+    expect(await wrong({ s: { type: "enum", values: ["a", "a"] } })).toContain("listed twice");
+    expect(await wrong({ s: { type: "text", values: ["a"] } })).toContain("only an enum");
+    expect(await wrong({ s: { type: "enum", values: ["a"], default: "b" } })).toContain(
+      "default does not fit",
+    );
+    expect(
+      await wrong({ s: { type: "enum", values: [{ value: "a", color: "mauve" }] } }),
+    ).toContain("/body/columns/s/values/0");
+  });
+
+  test("a row holds one of the values, or several of them, and nothing else, by the API and by the database", async () => {
+    expect((await put("loans", base)).status).toBe(201);
+    const made = await alice.post(`${ws()}/rows/loans`, {
+      title: "Laptop",
+      status: "on_loan",
+      extras: ["charger", "case", "charger"],
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    // Each of a list once, in the order given.
+    expect(made.body.items[0]).toMatchObject({ status: "on_loan", extras: ["charger", "case"] });
+    // The default applies, and a list may be empty or absent.
+    const plain = (await alice.post(`${ws()}/rows/loans`, { title: "Tablet" })).body.items[0];
+    expect(plain).toMatchObject({ status: "new", extras: null });
+
+    const stray = await alice.post(`${ws()}/rows/loans`, { title: "x", status: "lost" });
+    expect(stray.status).toBe(400);
+    expect(JSON.stringify(stray.body)).toContain("must be one of: new, on_loan, returned");
+    const strayList = await alice.post(`${ws()}/rows/loans`, { title: "x", extras: ["bag"] });
+    expect(strayList.status).toBe(400);
+    expect((await alice.post(`${ws()}/rows/loans`, { title: "x", extras: "case" })).status).toBe(
+      400,
+    );
+    const changed = await alice.patch(`${ws()}/row/${plain.id}/loans`, { status: "nope" });
+    expect(changed.status).toBe(400);
+
+    // Whatever writes to the table is held to the values: here the platform itself, past the API.
+    const physical = await physicalOf("loans");
+    const direct = (statement: string) =>
+      sql.raw(statement.replaceAll("$T", `"${workspaceSchema(dev)}"."${physical}"`)).execute(data);
+    await expect(
+      direct(`insert into $T (id, status) values (gen_random_uuid(), 'lost')`),
+    ).rejects.toThrow(/violates check constraint/);
+    await expect(
+      direct(`insert into $T (id, extras) values (gen_random_uuid(), array['case','bag'])`),
+    ).rejects.toThrow(/violates check constraint/);
+  });
+
+  test("rows are found by a value, and a list by a value it has", async () => {
+    const titles = async (filter: object) =>
+      (await rows(alice, "loans", `?filter=${encodeURIComponent(JSON.stringify(filter))}`))
+        .map((row) => row.title)
+        .sort();
+    expect(await titles({ column: "status", op: "eq", value: "on_loan" })).toEqual(["Laptop"]);
+    expect(await titles({ column: "status", op: "in", value: ["new", "returned"] })).toEqual([
+      "Tablet",
+    ]);
+    expect(await titles({ column: "extras", op: "has", value: "case" })).toEqual(["Laptop"]);
+    expect(await titles({ column: "extras", op: "is_null" })).toEqual(["Tablet"]);
+    const wrong = await alice.get(
+      `${ws()}/rows/loans?filter=${encodeURIComponent(JSON.stringify({ column: "extras", op: "has", value: "bag" }))}`,
+    );
+    expect(wrong.status).toBe(400);
+    const grouped = await alice.get(`${ws()}/aggregate/loans?group=status&measure=count`);
+    expect(grouped.status, JSON.stringify(grouped.body)).toBe(200);
+    expect(grouped.body.items.map((one: Any) => one.by)).toEqual(
+      expect.arrayContaining([{ status: "new" }, { status: "on_loan" }]),
+    );
+  });
+
+  test("the table says its values, with their labels and colours", async () => {
+    const described = (await alice.get(`${ws()}/tables/loans`)).body;
+    const status = described.columns.find((column: Any) => column.name === "status");
+    expect(status).toMatchObject({
+      type: "enum",
+      values: [
+        { value: "new" },
+        { value: "on_loan", label: "On loan", color: "blue" },
+        { value: "returned" },
+      ],
+      retiredValues: [],
+    });
+  });
+
+  test("a value taken out stays on the rows that hold it, is offered no more, and comes back", async () => {
+    const without = {
+      ...base,
+      status: { type: "enum", values: ["new", "returned"], default: "new" },
+    };
+    expect((await put("loans", without)).status).toBe(200);
+    // The row that holds it keeps it, and can still be found by it and changed otherwise.
+    const laptop = (await rows(alice, "loans")).find((row) => row.title === "Laptop");
+    expect(laptop.status).toBe("on_loan");
+    expect(
+      (await alice.patch(`${ws()}/row/${laptop.id}/loans`, { title: "Laptop 2" })).status,
+    ).toBe(200);
+    expect(
+      await rows(
+        alice,
+        "loans",
+        `?filter=${encodeURIComponent(JSON.stringify({ column: "status", op: "eq", value: "on_loan" }))}`,
+      ),
+    ).toHaveLength(1);
+    // Nobody is given it any more.
+    const again = await alice.post(`${ws()}/rows/loans`, { title: "x", status: "on_loan" });
+    expect(again.status).toBe(400);
+    const described = (await alice.get(`${ws()}/tables/loans`)).body;
+    expect(described.columns.find((column: Any) => column.name === "status").retiredValues).toEqual(
+      ["on_loan"],
+    );
+    // Back in the definition, it is a value like any other.
+    expect((await put("loans", base)).status).toBe(200);
+    expect((await alice.post(`${ws()}/rows/loans`, { title: "y", status: "on_loan" })).status).toBe(
+      201,
+    );
+  });
+
+  test("a value spelled anew is rewritten in every row, in a list as well", async () => {
+    const renamed = {
+      ...base,
+      status: {
+        type: "enum",
+        values: ["new", { value: "out", renamedFrom: "on_loan", color: "blue" }, "returned"],
+        default: "new",
+      },
+      extras: {
+        type: "enum_list",
+        values: ["charger", { value: "sleeve", renamedFrom: "case" }, "dock"],
+      },
+    };
+    expect((await put("loans", renamed)).status).toBe(200);
+    const laptop = (await rows(alice, "loans")).find((row) => row.title === "Laptop 2");
+    expect(laptop).toMatchObject({ status: "out", extras: ["charger", "sleeve"] });
+    // The old spelling is gone, not kept: no row holds it.
+    const stray = await alice.post(`${ws()}/rows/loans`, { title: "x", status: "on_loan" });
+    expect(stray.status).toBe(400);
+    const described = (await alice.get(`${ws()}/tables/loans`)).body;
+    expect(described.columns.find((column: Any) => column.name === "status").retiredValues).toEqual(
+      [],
+    );
+    // Deployed again as it stands, nothing is rewritten.
+    expect((await put("loans", renamed)).status).toBe(200);
+  });
+
+  test("text becomes an enum only when every row already holds one of its values, and an enum becomes text freely", async () => {
+    await alice.post(`${ws()}/rows/loans`, { title: "odd one" });
+    const narrow = (values: string[]) =>
+      put("loans", { ...base, title: { type: "enum", values }, status: { type: "text" } });
+    const refused = await narrow(["Laptop 2", "Tablet"]);
+    expect(refused.status).toBe(409);
+    expect(refused.body.detail).toContain("cannot become an enum while rows hold other values");
+    expect(refused.body.detail).toContain('"odd one"');
+    // Nothing changed: the other column is still an enum.
+    expect((await alice.post(`${ws()}/rows/loans`, { title: "x", status: "lost" })).status).toBe(
+      400,
+    );
+
+    const titles = [...new Set((await rows(alice, "loans")).map((row) => row.title))];
+    const done = await narrow(titles);
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    // The enum that became text takes anything now, and kept what it held.
+    expect(
+      (await alice.post(`${ws()}/rows/loans`, { title: "Tablet", status: "anything" })).status,
+    ).toBe(201);
+    expect((await alice.post(`${ws()}/rows/loans`, { title: "not listed" })).status).toBe(400);
+  });
+});
+
+describe("references: what a delete does, what stands for a row, and where one points", () => {
+  const put = (name: string, columns: Record<string, object>, extra: object = {}) =>
+    alice.put(`${ws()}/resources/${name}`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: { columns, ...extra },
+    });
+  const lend = (onDelete?: string, references = "kit/devices") => ({
+    note: { type: "text" },
+    device: { type: "reference", references, ...(onDelete ? { onDelete } : {}) },
+  });
+  const device = async (name: string, to = "kit/devices") =>
+    (await alice.post(`${ws()}/rows/${to}`, { name })).body.items[0].id as string;
+
+  test("a reference is indexed, and refuses the delete of what it points to unless it says otherwise", async () => {
+    expect((await put("kit/devices", { name: { type: "text" } }, { display: "name" })).status).toBe(
+      201,
+    );
+    expect((await put("kit/spares", { name: { type: "text" } })).status).toBe(201);
+    expect((await put("kit/lends", lend())).status).toBe(201);
+    const indexes = await sql<{ indexdef: string }>`
+      select indexdef from pg_indexes
+      where schemaname = ${workspaceSchema(dev)} and tablename like 't_kit__lends%' and indexname like 'rx\_%'
+    `.execute(data);
+    expect(indexes.rows.map((row) => row.indexdef).join()).toContain("(device)");
+
+    const laptop = await device("Laptop");
+    await alice.post(`${ws()}/rows/kit/lends`, { note: "first", device: laptop });
+    expect((await alice.delete(`${ws()}/row/${laptop}/kit/devices`)).status).toBe(409);
+  });
+
+  test("set_null empties the column, and cascade deletes the row, when what it points to goes", async () => {
+    expect((await put("kit/lends", lend("set_null"))).status).toBe(200);
+    const [first] = await rows(alice, "kit/lends");
+    expect((await alice.delete(`${ws()}/row/${first.device}/kit/devices`)).status).toBe(204);
+    expect(await rows(alice, "kit/lends")).toEqual([
+      expect.objectContaining({ note: "first", device: null }),
+    ]);
+
+    expect((await put("kit/lends", lend("cascade"))).status).toBe(200);
+    const tablet = await device("Tablet");
+    await alice.post(`${ws()}/rows/kit/lends`, { note: "second", device: tablet });
+    expect((await alice.delete(`${ws()}/row/${tablet}/kit/devices`)).status).toBe(204);
+    expect((await rows(alice, "kit/lends")).map((row) => row.note)).toEqual(["first"]);
+
+    // Back to refusing.
+    expect((await put("kit/lends", lend("restrict"))).status).toBe(200);
+    const phone = await device("Phone");
+    await alice.post(`${ws()}/rows/kit/lends`, { note: "third", device: phone });
+    expect((await alice.delete(`${ws()}/row/${phone}/kit/devices`)).status).toBe(409);
+    await alice.delete(
+      `${ws()}/row/${(await rows(alice, "kit/lends")).find((row) => row.note === "third").id}/kit/lends`,
+    );
+  });
+
+  test("a reference pointed at another table is held to that table from then on", async () => {
+    expect((await put("kit/lends", lend(undefined, "kit/spares"))).status).toBe(200);
+    const spare = await device("Spare battery", "kit/spares");
+    const ok = await alice.post(`${ws()}/rows/kit/lends`, { note: "spare", device: spare });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    // A device is no longer something it may point to.
+    const phone = (await rows(alice, "kit/devices")).find((row) => row.name === "Phone");
+    const wrong = await alice.post(`${ws()}/rows/kit/lends`, { note: "phone", device: phone.id });
+    expect(wrong.status).toBe(409);
+    expect(wrong.body.detail).toBe("A reference points to a row that does not exist.");
+  });
+
+  test("rows come with what stands for the rows they point to, as far as the caller may read them", async () => {
+    // Pointed back while a row still points at a spare, it is refused: that row would point nowhere.
+    expect((await put("kit/lends", lend())).status).toBe(409);
+    await alice.delete(
+      `${ws()}/row/${(await rows(alice, "kit/lends")).find((row) => row.note === "spare").id}/kit/lends`,
+    );
+    expect((await put("kit/lends", lend())).status).toBe(200);
+    const phone = (await rows(alice, "kit/devices")).find((row) => row.name === "Phone");
+    await alice.post(`${ws()}/rows/kit/lends`, { note: "phone", device: phone.id });
+    const page = (await alice.get(`${ws()}/rows/kit/lends?expand=device`)).body;
+    expect(page.expanded).toEqual({ device: { [phone.id]: "Phone" } });
+    // Without the asking, nothing is added.
+    expect((await alice.get(`${ws()}/rows/kit/lends`)).body.expanded).toBeUndefined();
+    expect((await alice.get(`${ws()}/rows/kit/lends?expand=note`)).status).toBe(400);
+    // A table that names no column to stand for its rows gives none.
+    for (const row of await rows(alice, "kit/lends")) {
+      await alice.delete(`${ws()}/row/${row.id}/kit/lends`);
+    }
+    expect((await put("kit/lends", lend(undefined, "kit/spares"))).status).toBe(200);
+    const spare = await device("Cable", "kit/spares");
+    await alice.post(`${ws()}/rows/kit/lends`, { note: "cable", device: spare });
+    expect((await alice.get(`${ws()}/rows/kit/lends?expand=device`)).body.expanded).toEqual({
+      device: {},
+    });
+  });
+
+  test("a definition that asks for what cannot be is refused", async () => {
+    const wrong = async (name: string, columns: Record<string, object>, extra: object = {}) =>
+      JSON.stringify((await put(name, columns, extra)).body);
+    expect(await wrong("kit/w", { n: { type: "text", onDelete: "cascade" } })).toContain(
+      "only a reference says what happens",
+    );
+    expect(
+      await wrong("kit/w", {
+        d: { type: "reference", references: "kit/devices", onDelete: "set_null", required: true },
+      }),
+    ).toContain("a required column cannot be emptied");
+    expect(await wrong("kit/w", { n: { type: "text" } }, { display: "nope" })).toContain(
+      "there is no column",
+    );
+    expect(await wrong("kit/w", { n: { type: "json" } }, { display: "n" })).toContain(
+      "cannot stand for a row",
+    );
+  });
+});
+
 describe("tables made in the console, isolation and guards", () => {
   test("a rename carries what the workspace kept under the old path, and refuses a path that is taken", async () => {
     const at = ws();

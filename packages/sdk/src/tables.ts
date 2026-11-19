@@ -114,6 +114,47 @@ function spec<Value>(type: string) {
   });
 }
 
+/** One value of an enum column, written in full: with what people read and the colour it is drawn on. */
+export interface EnumValueSpec<Value extends string = string> {
+  value: Value;
+  label?: string;
+  /** gray, red, orange, amber, green, teal, blue, violet or pink, or any colour as `#rrggbb`. */
+  color?: string;
+  /** The value's previous spelling. Rows that hold it are rewritten on deploy. */
+  renamedFrom?: string;
+}
+type ValueIn<V> = V extends { value: infer Value } ? Value : V;
+
+function listed<Shape extends "one" | "many">(type: string, _shape: Shape) {
+  return <
+    const Values extends readonly (string | EnumValueSpec)[],
+    const Options extends ColumnOptions = Record<never, never>,
+  >(
+    values: Values,
+    options: Options = {} as Options,
+  ): ColumnSpec<
+    Shape extends "one" ? ValueIn<Values[number]> : ValueIn<Values[number]>[],
+    IsRequired<Options>,
+    IsDefaulted<Options>
+  > => ({
+    manifest: Object.fromEntries(
+      Object.entries({ type, values: [...values], ...options }).filter(
+        ([, value]) => value !== undefined,
+      ),
+    ),
+  });
+}
+
+/** What a reference does when the row it points to is deleted. */
+export interface ReferenceOptions<Required extends boolean = boolean>
+  extends ColumnOptions<Required> {
+  /**
+   * `restrict` refuses the deletion, `set_null` empties this column, `cascade`
+   * deletes this row too. Left out, `restrict`.
+   */
+  onDelete?: "restrict" | "set_null" | "cascade";
+}
+
 /** The kinds of column a table can have. */
 export const column = {
   text: spec<string>("text"),
@@ -130,7 +171,14 @@ export const column = {
   json: spec<unknown>("json"),
   uuid: spec<string>("uuid"),
   /** The ID of a row in another table. */
-  reference: <const Options extends ColumnOptions = Record<never, never>>(
+  /**
+   * One of a list of values, which a row's type is narrowed to:
+   * `column.enum(["new", "paid"])`. The database refuses any other value.
+   */
+  enum: listed("enum", "one"),
+  /** Several of a list of values, each at most once. */
+  enumList: listed("enum_list", "many"),
+  reference: <const Options extends ReferenceOptions = Record<never, never>>(
     table: string | { path: string },
     options: Options = {} as Options,
   ): ColumnSpec<string, IsRequired<Options>, IsDefaulted<Options>> => ({

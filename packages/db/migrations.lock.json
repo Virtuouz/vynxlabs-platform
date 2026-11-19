@@ -74,5 +74,6 @@
   "0073_approver_ids.sql": "52b5cbfc3650873d8e0f732a4a4ef31b98b074d4f49d558c7bd80e64c66bdd1f",
   "0074_synced_repository_files.sql": "42c416bcebd68b42e8e3e57c9469ef5d651178df89b3a18274c023e14a375759",
   "0075_synced_said.sql": "4cf7d0c033b0509338f841c99831f5283dff81afe856e98d7805d24d878a1fde",
-  "0076_approval_surface.sql": "0a48917359d2b71295c402cd8d294e32e8cf00d57ab81712dddf5b2238c0c46c"
+  "0076_approval_surface.sql": "0a48917359d2b71295c402cd8d294e32e8cf00d57ab81712dddf5b2238c0c46c",
+  "0077_enum_and_reference_options.sql": "dcda0b9dba0344e54187f3bda7b29f8b9c33cf5b580f8f5458fe54bbd17b0655"
 }

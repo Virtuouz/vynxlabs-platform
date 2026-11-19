@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { contrastRatio } from "./contrast.ts";
 
 export type BadgeTone = "neutral" | "action" | "attention" | "danger" | "success";
 
@@ -14,6 +15,44 @@ export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; childr
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-meta font-medium ${tones[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+const BLACK = "#000000";
+const WHITE = "#ffffff";
+
+/**
+ * Black or white, whichever is easier to read on `color`. One of the two
+ * always reaches 4.5 to 1, the contrast text needs, whatever the colour is.
+ */
+export function readableOn(color: string): string {
+  const onBlack = contrastRatio(color, BLACK) ?? 0;
+  const onWhite = contrastRatio(color, WHITE) ?? 0;
+  return onBlack >= onWhite ? BLACK : WHITE;
+}
+
+/**
+ * One value of a column that holds a choice, on the colour its table gives it.
+ * The text is black or white, worked out from the colour, so any colour a
+ * table's author picks can be read. A value with no colour is a plain badge.
+ */
+export function ValueChip({
+  color,
+  children,
+}: {
+  color?: string | undefined;
+  children: ReactNode;
+}) {
+  if (!color || contrastRatio(color, BLACK) === undefined) {
+    return <Badge>{children}</Badge>;
+  }
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-meta font-medium"
+      style={{ backgroundColor: color, color: readableOn(color) }}
     >
       {children}
     </span>

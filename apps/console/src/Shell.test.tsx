@@ -116,8 +116,15 @@ test("in a workspace the rail shows its areas, a flow run counts as a run, and t
       <p>Screen</p>
     </Shell>,
   );
-  expect(linksIn("Main")).toEqual(
-    expect.arrayContaining(["Overview", "Build", "Operate", "Data", "Configure", "Tenant"]),
+  // Overview is one screen and Tenant is another place: links. An area with several
+  // sections is a button that shows them.
+  expect(linksIn("Main")).toEqual(expect.arrayContaining(["Overview", "Tenant"]));
+  const main = screen.getByRole("navigation", { name: "Main" });
+  for (const area of ["Build", "Operate", "Data", "Configure"]) {
+    expect(within(main).getByRole("button", { name: area })).toBeTruthy();
+  }
+  expect(within(main).getByRole("button", { name: "Operate" }).getAttribute("aria-current")).toBe(
+    "true",
   );
   const sections = screen.getByRole("navigation", { name: "Sections" });
   expect(within(sections).getByRole("link", { name: /^Runs/ }).getAttribute("aria-current")).toBe(
@@ -128,7 +135,14 @@ test("in a workspace the rail shows its areas, a flow run counts as a run, and t
   expect(screen.getByRole("link", { name: /3 drafts\s*Review/ })).toBeTruthy();
   // The workspace's name and type arrive with the list of workspaces.
   expect(await screen.findByText("Dev")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Switch workspace" }).textContent).toBe("Sandbox");
+  // The workspace's name is the whole of the button that changes which one: no small target.
+  const crumbs = screen.getByRole("navigation", { name: "Where you are" });
+  expect(within(crumbs).queryByRole("link", { name: "Sandbox" })).toBeNull();
+  expect(within(crumbs).getByRole("button", { name: "Switch workspace" }).textContent).toContain(
+    "Sandbox",
+  );
+  expect(within(crumbs).getByRole("link", { name: "Acme" }).getAttribute("href")).toBe("/t/t1");
+  expect(screen.getByRole("button", { name: "Switch workspace" })).toBeTruthy();
   expect(await screen.findByText(/promotes to/)).toBeTruthy();
   // The release path: what is drafted, what runs here and what runs where it promotes.
   expect(await within(sections).findByText("v14")).toBeTruthy();
@@ -240,4 +254,66 @@ test("the first tab stop skips to the content, and a new page takes focus to its
   rerender(at("/t/t1/workspaces/w2/flows/new", "Flows page"));
   await new Promise((done) => requestAnimationFrame(() => done(undefined)));
   expect(document.activeElement).toBe(screen.getByLabelText("Filter"));
+});
+
+test("pressing an area of the rail shows its sections and goes nowhere", () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w2/runs");
+  show(
+    <Shell me={me} path="/t/t1/workspaces/w2/runs" tenantId="t1" onSignOut={() => {}}>
+      <p>Screen</p>
+    </Shell>,
+  );
+  const main = screen.getByRole("navigation", { name: "Main" });
+  const data = within(main).getByRole("button", { name: "Data" });
+  expect(data.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(data);
+  // Data's sections, and the page is still the runs.
+  expect(data.getAttribute("aria-expanded")).toBe("true");
+  expect(location.pathname).toBe("/t/t1/workspaces/w2/runs");
+  expect(linksIn("Sections")).toEqual(expect.arrayContaining(["Tables", "Dashboards"]));
+  expect(linksIn("Sections").some((name) => name.startsWith("Runs"))).toBe(false);
+  // Operate is still where the person is.
+  expect(within(main).getByRole("button", { name: "Operate" }).getAttribute("aria-current")).toBe(
+    "true",
+  );
+  const dashboards = within(screen.getByRole("navigation", { name: "Sections" })).getByRole(
+    "link",
+    { name: "Dashboards" },
+  );
+  expect(dashboards.getAttribute("href")).toBe("/t/t1/workspaces/w2/dashboards");
+  // Pressed again it puts them away, and the sections are where the person is again.
+  fireEvent.click(data);
+  expect(linksIn("Sections").some((name) => name.startsWith("Runs"))).toBe(true);
+});
+
+test("inside anything an editor has open, the section before it is a link back to its list", () => {
+  // One address for each kind of editor the console has (`EDITORS` in nav.ts).
+  const open: [path: string, section: string, list: string][] = [
+    ["flows/edit/orders/handle", "Flows", "flows"],
+    ["flows/new", "Flows", "flows"],
+    ["scripts/edit/orders/check", "Scripts", "scripts"],
+    ["screens/home", "App Builder", "screens"],
+    ["extensions/mailer/new", "Extensions", "extensions"],
+    ["resources/edit/table/loans", "All resources", "resources"],
+    ["dashboards/0199aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee", "Dashboards", "dashboards"],
+  ];
+  for (const [path, section, list] of open) {
+    const at = `/t/t1/workspaces/w2/${path}`;
+    expect(whereIs(at, false).editor, at).toBe(true);
+    show(
+      <Shell me={me} path={at} tenantId="t1" onSignOut={() => {}}>
+        <p>Screen</p>
+      </Shell>,
+    );
+    const crumbs = screen.getByRole("navigation", { name: "Where you are" });
+    const back = within(crumbs).getByRole("link", { name: section });
+    expect(back.getAttribute("href"), at).toBe(`/t/t1/workspaces/w2/${list}`);
+    // And on a phone, where there is no room for the section, a way back in its place.
+    expect(
+      within(crumbs)
+        .getByRole("link", { name: `Back to ${section}` })
+        .getAttribute("href"),
+    ).toBe(`/t/t1/workspaces/w2/${list}`);
+    cleanup();
+  }
 });

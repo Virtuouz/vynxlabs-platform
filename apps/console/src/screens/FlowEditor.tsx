@@ -1,15 +1,19 @@
 import {
+  Appear,
   Button,
   CheckboxField,
   ComboboxField,
   ContextMenu,
   type MenuItem,
+  MoveButtons,
   MultiSelectField,
   Notice,
   NumberField,
   type Option,
   SelectField,
   TextField,
+  useFlip,
+  useKeys,
 } from "@vynxlabs/ui";
 import {
   addEdge,
@@ -1271,7 +1275,10 @@ export function FlowEditor({
             >
               <Plus aria-hidden="true" size={14} /> Add step
             </Button>
-            {adding ? (
+            <Appear
+              open={adding}
+              className="transition-[opacity,translate] motion-base data-[ending-style]:-translate-y-1 data-[starting-style]:-translate-y-1 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0"
+            >
               <aside
                 aria-label="Steps to add"
                 className="flex max-h-[60vh] w-64 flex-col gap-3 overflow-y-auto rounded-panel border border-line bg-raised p-3 shadow-modal"
@@ -1344,7 +1351,7 @@ export function FlowEditor({
                   );
                 })}
               </aside>
-            ) : null}
+            </Appear>
           </div>
           <ContextMenu
             className="flex min-h-0 flex-1 flex-col"
@@ -2212,12 +2219,18 @@ function CasesEditor({
     renamed?: { from: string; to: string },
   ) => void;
 }) {
+  // A case has no identity but its place while its name is typed: this stays with it as it moves.
+  const names = useKeys(cases.length);
+  const tried = useFlip<HTMLFieldSetElement>(names.keys.join(" "));
   return (
-    <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+    <fieldset ref={tried} className="m-0 flex flex-col gap-2 border-0 p-0">
       <legend className="p-0 text-body-sm font-medium">Cases, tried in order</legend>
       {cases.map((one, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a case has no identity but its place while its name is being typed
-        <div key={index} className="flex flex-col gap-1 rounded-control border border-line p-2">
+        <div
+          key={names.keys[index]}
+          data-flip-key={names.keys[index]}
+          className="flex flex-col gap-1 rounded-control border border-line p-2"
+        >
           <TextField
             name={`case-${index}`}
             label="Name"
@@ -2239,31 +2252,23 @@ function CasesEditor({
             }
           />
           <div className="flex flex-wrap gap-1">
-            {index > 0 ? (
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label={`Move ${one.name || "this case"} up`}
-                onClick={() => onChange(moved(cases, index, index - 1))}
-              >
-                Move up
-              </Button>
-            ) : null}
-            {index < cases.length - 1 ? (
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label={`Move ${one.name || "this case"} down`}
-                onClick={() => onChange(moved(cases, index, index + 1))}
-              >
-                Move down
-              </Button>
-            ) : null}
+            <MoveButtons
+              label={one.name || "this case"}
+              at={index}
+              count={cases.length}
+              onMove={(by) => {
+                names.move(index, index + by);
+                onChange(moved(cases, index, index + by));
+              }}
+            />
             {cases.length > 1 ? (
               <Button
                 size="small"
                 variant="danger"
-                onClick={() => onChange(cases.filter((_, at) => at !== index))}
+                onClick={() => {
+                  names.remove(index);
+                  onChange(cases.filter((_, at) => at !== index));
+                }}
               >
                 Remove case
               </Button>

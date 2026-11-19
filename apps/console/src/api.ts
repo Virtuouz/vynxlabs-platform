@@ -190,7 +190,14 @@ export interface Loaded<T> {
  * path share one request, and a write, or an event from the server, has them
  * asked again. While a new path loads, what the last one gave stays shown.
  */
-export function useLoad<T>(path: string | null): Loaded<T> {
+export function useLoad<T>(
+  path: string | null,
+  /**
+   * `every`: asked again this often, in milliseconds, while it is on show and
+   * the tab is in view. What it last gave stays shown while it asks.
+   */
+  options: { every?: number | undefined } = {},
+): Loaded<T> {
   const client = useContext(QueryClientContext) ?? fallbackClient();
   const query = useQuery<T, ApiError>(
     {
@@ -198,6 +205,7 @@ export function useLoad<T>(path: string | null): Loaded<T> {
       queryFn: () => api.get<T>(path as string),
       enabled: path !== null,
       placeholderData: keepPreviousData,
+      ...(options.every ? { refetchInterval: options.every } : {}),
     },
     client,
   );

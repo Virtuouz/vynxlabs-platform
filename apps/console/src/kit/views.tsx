@@ -7,8 +7,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Dialog, Menu, type MenuItem, Tooltip } from "@vynxlabs/ui";
-import { ArrowDown, ArrowUp, Bookmark, Columns3, GripVertical } from "lucide-react";
+import { Button, Dialog, Menu, type MenuItem, MoveButtons, Tooltip, useFlip } from "@vynxlabs/ui";
+import { Bookmark, Columns3, GripVertical } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
@@ -224,8 +224,11 @@ export function ColumnsMenu({
       next.length === all.length && next.every((key, at) => key === all[at]) ? undefined : next,
     );
   };
-  // What a screen reader is told when a column is moved from the keyboard.
+  // What a screen reader is told when a column is moved from its handle's arrows.
   const [said, setSaid] = useState("");
+  // A drag is its own motion; a move by button or key is played by this.
+  const [dragging, setDragging] = useState(false);
+  const list = useFlip<HTMLUListElement>(order.join("\n"), { paused: dragging });
   const move = (key: string, by: -1 | 1) => {
     const at = order.indexOf(key);
     const to = at + by;
@@ -265,7 +268,11 @@ export function ColumnsMenu({
                 draggable: "Press the up and down arrows to move this column one place.",
               },
             }}
+            onDragStart={() => setDragging(true)}
+            onDragCancel={() => setDragging(false)}
             onDragEnd={({ active, over }) => {
+              // Let go: the library settles it, and the next draw is not a move of ours.
+              setTimeout(() => setDragging(false), 0);
               if (!over || active.id === over.id) return;
               set(
                 arrayMove(order, order.indexOf(String(active.id)), order.indexOf(String(over.id))),
@@ -273,15 +280,19 @@ export function ColumnsMenu({
             }}
           >
             <SortableContext items={order} strategy={verticalListSortingStrategy}>
-              <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Shown, in order">
+              <ul
+                ref={list}
+                className="m-0 flex list-none flex-col gap-1 p-0"
+                aria-label="Shown, in order"
+              >
                 {order.map((key, at) => (
                   <ShownColumn
                     key={key}
                     id={key}
                     label={labelOf(key)}
                     only={order.length === 1}
-                    first={at === 0}
-                    last={at === order.length - 1}
+                    at={at}
+                    count={order.length}
                     onHide={() => set(order.filter((one) => one !== key))}
                     onMove={(by) => move(key, by)}
                   />
@@ -329,8 +340,8 @@ function ShownColumn({
   id,
   label,
   only,
-  first,
-  last,
+  at,
+  count,
   onHide,
   onMove,
 }: {
@@ -338,8 +349,8 @@ function ShownColumn({
   label: string;
   /** The last one shown cannot be hidden. */
   only: boolean;
-  first: boolean;
-  last: boolean;
+  at: number;
+  count: number;
   onHide: () => void;
   onMove: (by: -1 | 1) => void;
 }) {
@@ -355,6 +366,7 @@ function ShownColumn({
   return (
     <li
       ref={setNodeRef}
+      data-flip-key={id}
       // Where the others move to make room, and how long they take: the library's, on `motion-fast`'s curve.
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={`flex items-center gap-2 rounded-control bg-surface px-2 py-1 hover:bg-sunken ${
@@ -386,24 +398,7 @@ function ShownColumn({
         />
         <span className="truncate">{label}</span>
       </label>
-      <Button
-        size="small"
-        variant="quiet"
-        aria-label={`Move ${label} up`}
-        disabled={first}
-        onClick={() => onMove(-1)}
-      >
-        <ArrowUp aria-hidden="true" size={14} />
-      </Button>
-      <Button
-        size="small"
-        variant="quiet"
-        aria-label={`Move ${label} down`}
-        disabled={last}
-        onClick={() => onMove(1)}
-      >
-        <ArrowDown aria-hidden="true" size={14} />
-      </Button>
+      <MoveButtons label={label} at={at} count={count} onMove={onMove} />
     </li>
   );
 }

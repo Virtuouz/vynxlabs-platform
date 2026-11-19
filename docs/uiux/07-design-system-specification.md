@@ -378,6 +378,10 @@ Rules:
 4. A row that arrives by live update fades in over `motion-base` and does not shift what the user is reading. New rows above the viewport are announced by a "3 new" control at the top.
 5. Under `prefers-reduced-motion`, all of the above is removed. The global rule in `tokens.css:172-177` stays. The running indicator becomes static, and the flow graph's programmatic `fitView` duration is set to 0.
 
+### Two rules a test keeps (phase 19)
+
+A sheet, a dialog or a panel over the page arrives and leaves with motion: it is made by `SideSheet`, `Dialog` or `Appear`, and opened for a subject with `Closing`, never drawn only while it is wanted. Whatever is moved a place by a button or a key is played from where it was to where it is, by `useFlip`, over `motion-base`; the buttons are `MoveButtons`. `enforce.test.ts` holds the code to both, and every browser test fails if anything it opens appears or goes in one frame (`e2e/test.ts`).
+
 ### Perceived performance
 
 | Threshold | Requirement |

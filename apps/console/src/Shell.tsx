@@ -1,5 +1,6 @@
-import { Menu, SideSheet } from "@vynxlabs/ui";
+import { Appear, Menu, SideSheet } from "@vynxlabs/ui";
 import {
+  ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
   CircleX,
@@ -28,6 +29,7 @@ import {
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { openShortcuts, useShortcut } from "./kit/keys.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
+import { useWide, WIDE } from "./kit/layout.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { OperatorMark, OperatorStrip } from "./kit/OperatorStrip.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
@@ -35,6 +37,7 @@ import { pageTitle, useNamedObject } from "./kit/title.ts";
 import {
   AREA_ICON,
   AREA_LABEL,
+  type Area,
   areaHome,
   type CountTone,
   INSTANCE_SECTIONS,
@@ -119,6 +122,12 @@ interface Entry {
   count?: Count | undefined;
 }
 
+/** How many sections an area of a workspace has. One section is a link; several are revealed. */
+const sectionsOf = (area: Area) =>
+  area in WORKSPACE_SECTIONS
+    ? WORKSPACE_SECTIONS[area as keyof typeof WORKSPACE_SECTIONS].length
+    : 0;
+
 const some = (n: number | null | undefined, text: (n: number) => string, tone: CountTone) =>
   n ? { text: text(n), tone } : undefined;
 const plain = (n: number | null | undefined) =>
@@ -129,10 +138,14 @@ function panelFor(
   where: Where,
   me: Me,
   counts: { workspace?: WorkspaceCounts | undefined; tenant?: TenantCounts | undefined },
+  /** An area of the rail that was pressed: its sections are shown, wherever the person is. */
+  reveal?: { area: Area; workspaceId: string },
 ): { title: string; groups: { label?: string; entries: Entry[] }[] } {
-  const { tenantId, workspaceId } = where;
-  if (tenantId && workspaceId && where.area in WORKSPACE_SECTIONS) {
-    const area = where.area as keyof typeof WORKSPACE_SECTIONS;
+  const { tenantId } = where;
+  const workspaceId = reveal?.workspaceId ?? where.workspaceId;
+  const shownArea = reveal?.area ?? where.area;
+  if (tenantId && workspaceId && shownArea in WORKSPACE_SECTIONS) {
+    const area = shownArea as keyof typeof WORKSPACE_SECTIONS;
     const ws = counts.workspace;
     const countOf: Record<string, Count | undefined> = {
       runs: some(ws?.failedRuns?.count, (n) => `${n} failed`, "danger"),
@@ -154,7 +167,7 @@ function panelFor(
             label: section.label,
             icon: section.icon,
             to: `/t/${tenantId}/workspaces/${workspaceId}/${section.slug}`,
-            current: where.section === section.slug,
+            current: where.workspaceId === workspaceId && where.section === section.slug,
             count: countOf[section.slug],
           })),
         },
@@ -437,10 +450,25 @@ function Crumbs({
   const sep = <ChevronRight aria-hidden="true" size={14} className="shrink-0 text-ink-subtle" />;
   return (
     <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
+      {object && href ? (
+        // On a phone there is room for what is open and a way back to its list.
+        <li className="flex items-center md:hidden">
+          <Link
+            to={href}
+            aria-label={`Back to ${section}`}
+            className="flex size-7 items-center justify-center rounded-control text-ink-muted hover:bg-surface hover:text-ink"
+          >
+            <ChevronLeft aria-hidden="true" size={16} />
+          </Link>
+        </li>
+      ) : null}
       <li className={`min-w-0 items-center gap-1.5 ${object ? "hidden md:flex" : "flex"}`}>
         {sep}
         {object && href ? (
-          <Link to={href} className="truncate text-ink-muted no-underline hover:text-ink">
+          <Link
+            to={href}
+            className="truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline"
+          >
             {section}
           </Link>
         ) : (
@@ -451,7 +479,7 @@ function Crumbs({
       </li>
       {object ? (
         <li className="flex min-w-0 items-center gap-1.5">
-          {sep}
+          <span className="hidden md:flex">{sep}</span>
           <span aria-current="page" className="truncate font-medium" title={object}>
             {object}
           </span>
@@ -468,6 +496,8 @@ function RailItem({
   current,
   dim = false,
   onGo,
+  onReveal,
+  revealed = false,
 }: {
   to: string;
   label: string;
@@ -475,30 +505,56 @@ function RailItem({
   current: boolean;
   dim?: boolean;
   onGo?: () => void;
+  /**
+   * An area with several sections shows them and goes nowhere: pressing Data
+   * while reading a dashboard must not take the reader to Tables.
+   */
+  onReveal?: () => void;
+  revealed?: boolean;
 }) {
+  const look = `relative flex w-14 flex-col items-center gap-1 rounded-control pt-[7px] pb-1.5 no-underline ${
+    current
+      ? "bg-selected text-ink"
+      : revealed
+        ? "bg-surface text-ink"
+        : "text-ink-muted hover:text-ink"
+  } ${dim ? "opacity-55" : ""}`;
+  const inside = (
+    <>
+      {current ? (
+        <>
+          <span
+            aria-hidden="true"
+            className="absolute top-2.5 bottom-2.5 -left-1 w-0.5 bg-action"
+          />
+          <span
+            aria-hidden="true"
+            className="absolute top-1/2 -left-1.5 -mt-[3px] size-1.5 rounded-full bg-action"
+          />
+        </>
+      ) : null}
+      <Icon aria-hidden="true" size={20} />
+      <span className="text-label font-medium tracking-normal">{label}</span>
+    </>
+  );
+  if (onReveal) {
+    return (
+      <button
+        type="button"
+        onClick={onReveal}
+        aria-expanded={revealed}
+        aria-current={current ? "true" : undefined}
+        data-rail-area=""
+        className={look}
+      >
+        {inside}
+      </button>
+    );
+  }
   return (
     <span className="contents" onClickCapture={onGo}>
-      <Link
-        to={to}
-        current={current}
-        className={`relative flex w-14 flex-col items-center gap-1 rounded-control pt-[7px] pb-1.5 no-underline ${
-          current ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
-        } ${dim ? "opacity-55" : ""}`}
-      >
-        {current ? (
-          <>
-            <span
-              aria-hidden="true"
-              className="absolute top-2.5 bottom-2.5 -left-1 w-0.5 bg-action"
-            />
-            <span
-              aria-hidden="true"
-              className="absolute top-1/2 -left-1.5 -mt-[3px] size-1.5 rounded-full bg-action"
-            />
-          </>
-        ) : null}
-        <Icon aria-hidden="true" size={20} />
-        <span className="text-label font-medium tracking-normal">{label}</span>
+      <Link to={to} current={current} className={look}>
+        {inside}
       </Link>
     </span>
   );
@@ -666,13 +722,51 @@ export function Shell({
   useGoTo(tenantId, workspaceId ?? undefined, openPalette);
   const [filter, setFilter] = useState("");
 
-  const panel = panelFor(where, me, {
-    workspace: wsCounts.data,
-    tenant: tenantCounts.data,
-  });
+  // The workspace the rail's areas belong to: the one open, or the one last open.
+  const lastWs = tenantId ? (workspaceId ?? lastWorkspace(tenantId)) : null;
+  // An area of the rail that was pressed. Its sections are shown and nothing else changes,
+  // until one is chosen, the area is pressed again, or the person goes somewhere.
+  const [revealed, setRevealed] = useState<Area>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: going anywhere puts it away
+  useEffect(() => setRevealed(undefined), [path]);
+  const reveal = revealed && lastWs ? { area: revealed, workspaceId: lastWs } : undefined;
+  const panel = panelFor(
+    where,
+    me,
+    { workspace: wsCounts.data, tenant: tenantCounts.data },
+    reveal,
+  );
   // The overview is one screen, and an editor wants the width: neither has a panel.
   const hasPanel = where.area !== "overview" && !where.editor;
   const showPanel = hasPanel && panelOpen;
+  // Where the panel is docked the revealed sections take its place. Where it is not (an
+  // editor, the overview, a narrower screen), they come out beside the rail, over the page.
+  const docksPanel = useWide(WIDE.panel);
+  const hasRail = useWide(WIDE.rail);
+  const flyout = Boolean(reveal) && hasRail && !drawer && !(showPanel && docksPanel);
+  const flown = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!flyout) return;
+    // Its first section takes focus, so the keyboard goes on from the area that was pressed.
+    const focus = requestAnimationFrame(() => flown.current?.querySelector("a")?.focus());
+    const away = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (flown.current?.contains(target) || target?.closest("[data-rail-area]")) return;
+      setRevealed(undefined);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => {
+      cancelAnimationFrame(focus);
+      document.removeEventListener("pointerdown", away);
+    };
+  }, [flyout]);
+  // Esc puts the sections away, unless something over the page is open: that closes first.
+  // One that is already on its way out (`data-closed`) is not in the way.
+  useShortcut("close", () => {
+    const over = '[role="dialog"]:not([data-closed]), [role="menu"]:not([data-closed])';
+    if (!flyout || document.querySelector(over)) return false;
+    setRevealed(undefined);
+  });
 
   const here = (() => {
     if (workspaceId)
@@ -695,7 +789,17 @@ export function Shell({
     : tenantId
       ? `/t/${tenantId}/${where.section}`
       : undefined;
-  const object = named ?? opened?.ref ?? (fresh ? `New ${fresh[1]}` : undefined);
+  // Whatever an editor has open is a crumb, so that its section is always a way back. A screen
+  // that has not named what it shows yet is named by the end of its address in the meantime.
+  const unnamed = where.editor
+    ? decodeURIComponent(path.split("/").slice(6).join("/")).replace(/^(edit|new)\//, "") ||
+      undefined
+    : undefined;
+  const object =
+    named ??
+    opened?.ref ??
+    (fresh ? `New ${fresh[1]}` : undefined) ??
+    (unnamed && /^[0-9a-f-]{36}$/.test(unnamed) ? "…" : unnamed);
   const title = pageTitle([
     object,
     here ?? AREA_LABEL[where.area],
@@ -791,8 +895,7 @@ export function Shell({
     return list;
   }, [tenantId, workspaceId, workspace?.name, workspaces.data, tenant?.name, me.tenants, operator]);
 
-  const lastWs = tenantId ? (workspaceId ?? lastWorkspace(tenantId)) : null;
-  const rail = (onGo?: () => void) => (
+  const rail = (onGo?: () => void, inDrawer = false) => (
     <>
       {tenantId
         ? WORKSPACE_AREAS.map((area) => (
@@ -804,6 +907,20 @@ export function Shell({
               current={Boolean(workspaceId) && where.area === area}
               dim={!workspaceId}
               {...(onGo ? { onGo } : {})}
+              {...(lastWs && area in WORKSPACE_SECTIONS && sectionsOf(area) > 1
+                ? {
+                    revealed: revealed === area,
+                    // Pressed again, or pressed where the person already is with its
+                    // sections in view, it puts them away.
+                    onReveal: () =>
+                      setRevealed((before) =>
+                        before === area ||
+                        (!before && where.area === area && showPanel && docksPanel && !inDrawer)
+                          ? undefined
+                          : area,
+                      ),
+                  }
+                : {})}
             />
           ))
         : null}
@@ -842,7 +959,7 @@ export function Shell({
   const drafts = ws?.drafts ?? 0;
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       <a
         href="#main"
         className="sr-only layer-skip rounded-control border border-line bg-surface font-medium text-action shadow-overlay focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2"
@@ -863,6 +980,21 @@ export function Shell({
           <AccountMenu me={me} onSignOut={onSignOut} />
         </div>
       </nav>
+
+      <Appear
+        open={flyout}
+        ref={flown}
+        className="absolute inset-y-0 left-16 layer-sheet hidden w-56 flex-col border-line border-r bg-structure shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:-translate-x-2 data-[starting-style]:-translate-x-2 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 md:flex"
+      >
+        <nav aria-label="Sections" className="flex min-h-0 flex-1 flex-col">
+          <div className="flex h-12 shrink-0 items-center border-line border-b px-4">
+            <span className="truncate font-semibold">{panel.title}</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+            <SectionList groups={panel.groups} filter="" onGo={() => setRevealed(undefined)} />
+          </div>
+        </nav>
+      </Appear>
 
       {showPanel ? (
         <nav
@@ -933,7 +1065,7 @@ export function Shell({
                 <>
                   <Link
                     to={`/t/${tenantId}`}
-                    className="hidden truncate text-ink-muted no-underline hover:text-ink lg:inline"
+                    className="hidden truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline lg:inline"
                   >
                     {tenant?.name ?? "Tenant"}
                   </Link>
@@ -945,9 +1077,10 @@ export function Shell({
                     />
                     <Wire width={6} />
                   </span>
+                  {/* The whole name is the way to another workspace: nobody has to aim for the arrows. */}
                   <Menu
                     ariaLabel="Switch workspace"
-                    triggerClassName="flex min-w-0 items-center gap-1.5 rounded-control border border-line px-2 py-[3px] font-medium hover:bg-surface"
+                    triggerClassName="flex min-w-0 items-center gap-1 rounded-control border border-line py-[3px] pr-1.5 pl-2 font-medium text-ink hover:bg-surface"
                     label={
                       <>
                         <span className="truncate">{workspace?.name ?? "Workspace"}</span>
@@ -1106,7 +1239,7 @@ export function Shell({
           id="main"
           ref={main}
           tabIndex={-1}
-          className={`flex min-h-0 outline-none flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
+          className={`relative flex min-h-0 outline-none flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
         >
           {where.workbench ? (
             <ErrorBoundary resetOn={path} what="This page">
@@ -1131,7 +1264,10 @@ export function Shell({
 
       <SideSheet
         open={drawer}
-        onClose={() => setDrawer(false)}
+        onClose={() => {
+          setDrawer(false);
+          setRevealed(undefined);
+        }}
         side="left"
         size="narrow"
         title={
@@ -1142,8 +1278,8 @@ export function Shell({
         }
       >
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-1 md:hidden">{rail(() => setDrawer(false))}</div>
-          {hasPanel ? (
+          <div className="flex flex-wrap gap-1 md:hidden">{rail(() => setDrawer(false), true)}</div>
+          {hasPanel || reveal ? (
             <div className="flex flex-col gap-2">
               <p className="m-0 text-label text-ink-subtle uppercase">{panel.title}</p>
               <SectionList groups={panel.groups} filter="" onGo={() => setDrawer(false)} />

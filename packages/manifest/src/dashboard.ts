@@ -131,9 +131,48 @@ export type WidgetSource =
 
 export const DASHBOARD_WIDGET_TYPES = ["figure", "chart", "table", "pivot", "text"] as const;
 export type DashboardWidgetType = (typeof DASHBOARD_WIDGET_TYPES)[number];
-export const DASHBOARD_CHART_MARKS = ["bar", "line", "area", "pie", "scatter"] as const;
-/** How many twelfths of the page a widget is wide. */
+export const DASHBOARD_CHART_MARKS = ["bar", "line", "area", "pie", "scatter", "heatmap"] as const;
+/** How a table draws a column's cells: as written, as a bar of its share of the largest, as a change with its direction, or as a chip. */
+export const TABLE_CELLS = ["text", "bar", "delta", "chip"] as const;
+/**
+ * How many twelfths of the page a widget was wide, when a dashboard was rows
+ * of widgets in order (phase 18). Still read; `placeWidgets` gives such a
+ * widget a place.
+ */
 export const WIDGET_WIDTHS = [3, 4, 6, 8, 12] as const;
+
+/**
+ * Where a widget is on the dashboard's twelve columns and how big it is, in
+ * cells, as an app page's widget is placed. A row is 40 pixels and the gap
+ * between cells 12.
+ */
+export interface WidgetPlace {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+export const DASHBOARD_COLUMNS = 12;
+export const MAX_WIDGET_HEIGHT = 40;
+export const MAX_DASHBOARD_ROWS = 400;
+
+/** How big a widget is when nobody has said: wide enough to read, tall enough for what it draws. */
+export const WIDGET_SIZE: Record<DashboardWidgetType, { w: number; h: number }> = {
+  figure: { w: 3, h: 3 },
+  chart: { w: 6, h: 7 },
+  table: { w: 6, h: 7 },
+  pivot: { w: 6, h: 7 },
+  text: { w: 6, h: 2 },
+};
+
+export interface TableCell {
+  column: string;
+  label?: string;
+  format?: ValueFormat;
+  as?: (typeof TABLE_CELLS)[number];
+}
+
+export const FIGURE_DELTAS = ["percent", "absolute", "points"] as const;
 
 export interface DashboardWidgetOptions {
   /** A figure's number, a pivot's cells, a chart's values: the column they come from. */
@@ -144,11 +183,33 @@ export interface DashboardWidgetOptions {
    * length of time, ending where the date filter named here begins.
    */
   compareTo?: string;
+  /**
+   * A figure also draws how its number went over the time it covers, as a
+   * small line under it. `by` is the column of dates. For a query built from
+   * menus the platform asks the same question again, grouped by that column
+   * in days, weeks or months as the range is long (or by `bucket`). For a
+   * saved query or SQL the widget's own rows are the line, in the order of
+   * `by`, and the figure's number is the last of them.
+   */
+  trend?: { by: string; bucket?: VisualBucket };
+  /** How a compared figure says the change: a share, the amount, or points for a rate. */
+  delta?: (typeof FIGURE_DELTAS)[number];
+  /** Which way is good news. Up, unless it says down: fewer overdue is better. */
+  goodWhen?: "up" | "down";
+  /**
+   * A line under the figure in the dashboard maker's own words. `{previous}`
+   * is replaced by the number for the period before.
+   */
+  caption?: string;
   /** A chart's shape and what it draws. `y` may be several columns. */
   mark?: (typeof DASHBOARD_CHART_MARKS)[number];
   x?: string;
   y?: string | string[];
   series?: string;
+  /** A chart also draws the period before as a dashed line. It needs `compareTo`. */
+  compare?: boolean;
+  /** Bars lie down, with what they measure along the bottom. */
+  horizontal?: boolean;
   /** Bars of several series: one on another, or side by side. */
   bars?: "stacked" | "grouped";
   /** A column drawn as a line over the bars. */
@@ -161,6 +222,8 @@ export interface DashboardWidgetOptions {
   totals?: boolean;
   /** A table's columns, in order. Left out, every column of the result. */
   show?: string[];
+  /** How a table draws some of its columns: what heads them, how numbers are written, and as what. */
+  cells?: TableCell[];
   /** A text widget's words. Plain text. */
   text?: string;
 }
@@ -168,8 +231,12 @@ export interface DashboardWidgetOptions {
 export interface DashboardWidget {
   id: string;
   title?: string;
+  /** A line under the title: what the numbers are, or what to notice. */
+  subtitle?: string;
   type: DashboardWidgetType;
-  /** How many twelfths of the page it is wide. Widgets fill a row, then the next. */
+  /** Where it is and how big. A widget without one is placed after the others, in order. */
+  at?: WidgetPlace;
+  /** Before widgets had places: how wide, with the widgets filling a row and then the next. */
   width?: (typeof WIDGET_WIDTHS)[number];
   /** Every kind of widget but text has one. */
   source?: WidgetSource;
@@ -183,9 +250,18 @@ export interface DashboardBody {
   version: typeof DASHBOARD_VERSION;
   title?: string;
   description?: string;
+  /**
+   * How often its widgets ask again while it is on show, in minutes, or `off`.
+   * Left out, every five minutes.
+   */
+  refresh?: DashboardRefresh;
   filters?: DashboardFilter[];
   widgets: DashboardWidget[];
 }
+
+export const DASHBOARD_REFRESH = ["off", 1, 5, 15, 60] as const;
+export type DashboardRefresh = (typeof DASHBOARD_REFRESH)[number];
+export const DEFAULT_DASHBOARD_REFRESH: DashboardRefresh = 5;
 
 const NAME = "^[a-z][a-z0-9_]{0,54}$";
 const SLUG = "^[a-z][a-z0-9_-]{0,39}$";
@@ -283,6 +359,7 @@ export const dashboardBodySchema = {
     version: { const: DASHBOARD_VERSION },
     title: { type: "string", minLength: 1, maxLength: 100 },
     description: { type: "string", maxLength: 500 },
+    refresh: { enum: [...DASHBOARD_REFRESH] },
     filters: {
       type: "array",
       maxItems: MAX_DASHBOARD_FILTERS,
@@ -320,7 +397,19 @@ export const dashboardBodySchema = {
         properties: {
           id: { type: "string", pattern: SLUG },
           title: { type: "string", maxLength: 100 },
+          subtitle: { type: "string", maxLength: 200 },
           type: { enum: [...DASHBOARD_WIDGET_TYPES] },
+          at: {
+            type: "object",
+            properties: {
+              x: { type: "integer", minimum: 0, maximum: DASHBOARD_COLUMNS - 1 },
+              y: { type: "integer", minimum: 0, maximum: MAX_DASHBOARD_ROWS - 1 },
+              w: { type: "integer", minimum: 1, maximum: DASHBOARD_COLUMNS },
+              h: { type: "integer", minimum: 1, maximum: MAX_WIDGET_HEIGHT },
+            },
+            required: ["x", "y", "w", "h"],
+            additionalProperties: false,
+          },
           width: { enum: [...WIDGET_WIDTHS] },
           source: {
             oneOf: [
@@ -371,6 +460,35 @@ export const dashboardBodySchema = {
               value: resultColumn,
               format: formatSchema,
               compareTo: { type: "string", pattern: NAME },
+              trend: {
+                type: "object",
+                properties: {
+                  by: { type: "string", pattern: COLUMN, maxLength: 127 },
+                  bucket: { enum: [...VISUAL_BUCKETS] },
+                },
+                required: ["by"],
+                additionalProperties: false,
+              },
+              delta: { enum: [...FIGURE_DELTAS] },
+              goodWhen: { enum: ["up", "down"] },
+              caption: { type: "string", maxLength: 200 },
+              compare: { type: "boolean" },
+              horizontal: { type: "boolean" },
+              cells: {
+                type: "array",
+                maxItems: 50,
+                items: {
+                  type: "object",
+                  properties: {
+                    column: resultColumn,
+                    label: { type: "string", maxLength: 60 },
+                    format: formatSchema,
+                    as: { enum: [...TABLE_CELLS] },
+                  },
+                  required: ["column"],
+                  additionalProperties: false,
+                },
+              },
               mark: { enum: [...DASHBOARD_CHART_MARKS] },
               x: resultColumn,
               y: {
@@ -411,6 +529,42 @@ export const dashboardKind: KindDefinition = {
   body: dashboardBodySchema,
 };
 
+/**
+ * Every widget with a place. Those that have one keep it. Those that do not,
+ * from a dashboard written when widgets were rows in order or from a file
+ * that leaves places out, are laid in rows after the placed ones: each as
+ * wide as its `width` says or as its type is by default, starting a new row
+ * when the next will not fit.
+ *
+ * Gives the same answer for the same widgets, so a dashboard that is only
+ * read is drawn the same each time.
+ */
+export function placeWidgets(
+  widgets: DashboardWidget[],
+): (DashboardWidget & { at: WidgetPlace })[] {
+  let y = widgets.reduce(
+    (low, widget) => (widget.at ? Math.max(low, widget.at.y + widget.at.h) : low),
+    0,
+  );
+  let x = 0;
+  let tall = 0;
+  return widgets.map((widget) => {
+    if (widget.at) return widget as DashboardWidget & { at: WidgetPlace };
+    const size = WIDGET_SIZE[widget.type];
+    const w = widget.width ?? size.w;
+    if (x + w > DASHBOARD_COLUMNS) {
+      x = 0;
+      y += tall;
+      tall = 0;
+    }
+    const at = { x, y, w, h: size.h };
+    x += w;
+    tall = Math.max(tall, size.h);
+    const { width: _width, ...rest } = widget;
+    return { ...rest, at };
+  });
+}
+
 export interface DashboardIssue {
   path: string;
   message: string;
@@ -429,6 +583,12 @@ export function checkDashboard(body: DashboardBody): DashboardIssue[] {
     if (ids.has(widget.id))
       issues.push({ path: `${at}/id`, message: `"${widget.id}" is used twice` });
     ids.add(widget.id);
+    if (widget.at && widget.at.x + widget.at.w > DASHBOARD_COLUMNS) {
+      issues.push({
+        path: `${at}/at`,
+        message: `it starts at column ${widget.at.x + 1} and is ${widget.at.w} wide, which is past the twelfth`,
+      });
+    }
     if (widget.type === "text") {
       if (widget.source)
         issues.push({ path: `${at}/source`, message: "a text widget asks nothing" });
@@ -461,6 +621,25 @@ export function checkDashboard(body: DashboardBody): DashboardIssue[] {
         });
       }
     });
+    const options = widget.options ?? {};
+    if (options.trend && widget.type !== "figure") {
+      issues.push({ path: `${at}/options/trend`, message: "only a figure draws a trend" });
+    }
+    if (options.compare && !options.compareTo) {
+      issues.push({
+        path: `${at}/options/compare`,
+        message: "to draw the period before, say which range of dates with `compareTo`",
+      });
+    }
+    if (options.mark === "heatmap" && !(options.x && options.y && options.value)) {
+      issues.push({
+        path: `${at}/options`,
+        message: "a heatmap needs `x`, `y` and the `value` that shades each square",
+      });
+    }
+    if (options.cells && widget.type !== "table") {
+      issues.push({ path: `${at}/options/cells`, message: "only a table has cells to draw" });
+    }
     const compared = widget.options?.compareTo;
     if (compared !== undefined && filters.get(compared)?.type !== "date_range") {
       issues.push({

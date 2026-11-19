@@ -203,7 +203,7 @@ body:
     - id: by-month
       title: Loans by month and status
       type: pivot
-      width: 12
+      at: { x: 0, y: 0, w: 12, h: 7 }
       source:
         visual:
           table: loans
@@ -218,7 +218,13 @@ body:
 ```
 
 - A widget's `source` is one of three: `visual` (a table, groups and measures, which the platform writes as SQL), `query` (a saved query by its path) or `sql` (written in the widget, which needs `sql:read` of whoever deploys it).
-- A widget is a `figure`, `chart`, `table`, `pivot` or `note`. Its `width` is in twelfths of the page.
+- A widget is a `figure`, `chart`, `table`, `pivot` or `text`.
+- `at` is where a widget is on the page's twelve columns and how big: `x` and `y` are where it starts, `w` and `h` its size, in cells, and a row is 40 pixels tall. In the console the same thing is set by dragging. A widget with no `at` is laid in rows after the others, in order; `width` (3, 4, 6, 8 or 12), from before widgets had places, is still read.
+- `refresh` on the dashboard is how often its widgets ask again while it is on show, in minutes: `off`, 1, 5, 15 or 60. Left out, 5.
+- A widget's `subtitle` is a line under its title.
+- **A figure** compared with `compareTo` says the change as a share, or as `delta: absolute` or `delta: points` (for a rate). `goodWhen: down` makes a fall the good news. `trend: { by: <a date column> }` draws how the number went as a small line: for a `visual` source the platform asks the same question a day, a week or a month at a time; for a saved query or SQL the widget's own rows are the line and the figure is the last of them. `caption` is a line of your own, where `{previous}` is the number for the period before.
+- **A chart**'s `mark` is `bar`, `line`, `area`, `pie`, `scatter` or `heatmap` (`x`, `y` and the `value` that shades each square). `horizontal: true` lays bars down. `compare: true` with `compareTo` draws the period before as a dashed line.
+- **A table**'s `cells` say how a column is headed, written and drawn: `{ column, label, format, as }`, where `as` is `text`, `bar`, `delta` or `chip`. `totals: true` adds a row of totals.
 - A filter reaches a widget only where the widget binds it: to a `column` of its table, or to a `parameter` of its query.
 - A date grouped by `month` comes back as `<column>_month`.
 - The easiest way to write one is to build it in the console and choose **Keep it as a resource**.

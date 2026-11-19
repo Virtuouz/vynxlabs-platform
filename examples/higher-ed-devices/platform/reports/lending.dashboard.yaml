@@ -2,11 +2,18 @@
 # workspace's tables, and whoever looks gets the loans the table's rules give
 # them: the desk sees every loan, and a student would see their own.
 # The date filter at the top narrows every widget bound to it.
+#
+# Each widget has a place on twelve columns: `at` is where it starts (x, y)
+# and how big it is (w, h), in cells. A row is 40 pixels tall. In the console
+# the same places are set by dragging. A widget with no `at` is laid in rows
+# after the others, in order.
 schemaVersion: 1
 body:
   version: 2
   title: Lending
   description: Loans out, by month, status and kind
+  # How often it asks again while it is on show, in minutes: off, 1, 5, 15 or 60.
+  refresh: 15
   filters:
     - name: lent
       label: Checked out
@@ -19,8 +26,9 @@ body:
   widgets:
     - id: lent
       title: Loans
+      subtitle: Checked out in the range
       type: figure
-      width: 3
+      at: { x: 0, y: 0, w: 3, h: 4 }
       source:
         visual:
           table: loans
@@ -28,11 +36,17 @@ body:
       filters:
         - { filter: lent, column: checked_out_at }
         - { filter: kind, column: kind }
-      options: { value: loans, compareTo: lent }
+      # Compared with the same length of time before, with a line of how it
+      # went and a caption in the desk's own words.
+      options:
+        value: loans
+        compareTo: lent
+        trend: { by: checked_out_at }
+        caption: "vs {previous} in the period before"
     - id: out
       title: Still out
       type: figure
-      width: 3
+      at: { x: 3, y: 0, w: 3, h: 4 }
       source:
         visual:
           table: loans
@@ -41,10 +55,31 @@ body:
       filters:
         - { filter: kind, column: kind }
       options: { value: loans }
+    - id: late
+      title: Overdue
+      subtitle: Still out past the day they were due
+      type: figure
+      at: { x: 6, y: 0, w: 3, h: 4 }
+      source:
+        visual:
+          table: loans
+          filters: [{ column: overdue, op: eq, value: true }]
+          measures: [{ fn: count, as: loans }]
+      filters:
+        - { filter: lent, column: checked_out_at }
+        - { filter: kind, column: kind }
+      # More overdue loans is bad news, so the change is red when it goes up, and
+      # it is said as a number of loans and not as a share.
+      options:
+        value: loans
+        compareTo: lent
+        delta: absolute
+        goodWhen: down
+        trend: { by: checked_out_at }
     - id: by-kind
       title: Loans by kind
       type: chart
-      width: 6
+      at: { x: 9, y: 0, w: 3, h: 9 }
       source:
         visual:
           table: loans
@@ -53,11 +88,65 @@ body:
           sort: [{ by: loans, descending: true }]
       filters:
         - { filter: lent, column: checked_out_at }
-      options: { mark: bar, x: kind, y: loans }
+      options: { mark: bar, x: kind, y: loans, horizontal: true }
+    - id: weekly
+      title: Checkouts, weekly
+      subtitle: The dashed line is the period before
+      type: chart
+      at: { x: 0, y: 4, w: 9, h: 7 }
+      source:
+        visual:
+          table: loans
+          groupBy: [{ column: checked_out_at, bucket: week }]
+          measures: [{ fn: count, as: loans }]
+          sort: [{ by: checked_out_at_week }]
+      filters:
+        - { filter: lent, column: checked_out_at }
+        - { filter: kind, column: kind }
+      options:
+        mark: line
+        x: checked_out_at_week
+        y: loans
+        compareTo: lent
+        compare: true
+    - id: kind-status
+      title: Kind by status
+      subtitle: Darker is more loans
+      type: chart
+      at: { x: 9, y: 9, w: 3, h: 6 }
+      source:
+        visual:
+          table: loans
+          groupBy: [{ column: status }, { column: kind }]
+          measures: [{ fn: count, as: loans }]
+      filters:
+        - { filter: lent, column: checked_out_at }
+      options: { mark: heatmap, x: status, y: kind, value: loans }
+    - id: performance
+      title: By kind
+      subtitle: Each bar is a share of the busiest kind
+      type: table
+      at: { x: 0, y: 11, w: 9, h: 6 }
+      source:
+        visual:
+          table: loans
+          groupBy: [{ column: kind }]
+          measures:
+            - { fn: count, as: loans }
+            - { fn: count_distinct, column: student_number, as: students }
+          sort: [{ by: loans, descending: true }]
+      filters:
+        - { filter: lent, column: checked_out_at }
+      options:
+        cells:
+          - { column: kind, label: Kind, as: chip }
+          - { column: loans, label: Loans, as: bar }
+          - { column: students, label: Students }
+        totals: true
     - id: by-month
       title: Loans by month and status
       type: pivot
-      width: 12
+      at: { x: 0, y: 17, w: 12, h: 7 }
       source:
         visual:
           table: loans
@@ -77,7 +166,7 @@ body:
     - id: saved
       title: By month and kind, from the saved query
       type: table
-      width: 12
+      at: { x: 0, y: 24, w: 12, h: 7 }
       source:
         query: reports/loans-by-month
       filters:

@@ -4,12 +4,14 @@ import {
   Button,
   CheckboxField,
   ComboboxField,
+  MoveButtons,
   NumberField,
   SelectField,
   TextAreaField,
   TextField,
+  useFlip,
 } from "@vynxlabs/ui";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { ActionSettings, RowActionsSettings, type TargetFacts } from "../ActionSettings.tsx";
 import { BUCKETS, FUNCTIONS, OPERATORS, SYSTEM } from "./data.ts";
 import { FormatSettings } from "./Format.tsx";
@@ -47,6 +49,7 @@ export function WidgetSettings({
       ]
     : columns;
   const fields = widget.fields ?? [];
+  const shownFields = useFlip<HTMLDivElement>(fields.map((field) => field.column).join("\n"));
   const links = linkChoices(widget, page, tables);
   const conditions: { column: string; op?: string; value?: unknown }[] =
     widget.filter === undefined
@@ -383,142 +386,127 @@ export function WidgetSettings({
               {summary ? "Every group and total." : "The table's first columns. Add one to choose."}
             </p>
           ) : null}
-          {fields.map((field, index) => {
-            const column = columns.find((candidate) => candidate.name === field.column);
-            const target = column?.references ? tables[column.references] : undefined;
-            return (
-              <div
-                key={field.column}
-                className="flex flex-col gap-2 rounded-control border border-line p-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <strong className="truncate text-body-sm">{heading(field.column)}</strong>
-                  <span className="flex gap-1">
-                    <Button
-                      size="small"
-                      aria-label={`Move ${field.column} up`}
-                      disabled={index === 0}
-                      onClick={() =>
+          <div ref={shownFields} className="flex flex-col gap-3 empty:hidden">
+            {fields.map((field, index) => {
+              const column = columns.find((candidate) => candidate.name === field.column);
+              const target = column?.references ? tables[column.references] : undefined;
+              return (
+                <div
+                  key={field.column}
+                  data-flip-key={field.column}
+                  className="flex flex-col gap-2 rounded-control border border-line p-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <strong className="truncate text-body-sm">{heading(field.column)}</strong>
+                    <span className="flex gap-1">
+                      <MoveButtons
+                        label={field.column}
+                        at={index}
+                        count={fields.length}
+                        onMove={(by) =>
+                          onChange((draft) => {
+                            const list = draft.fields ?? [];
+                            [list[index + by], list[index]] = [
+                              list[index] as (typeof list)[number],
+                              list[index + by] as (typeof list)[number],
+                            ];
+                          })
+                        }
+                      />
+                      <Button
+                        size="small"
+                        aria-label={`Remove ${field.column}`}
+                        onClick={() =>
+                          onChange((draft) => {
+                            draft.fields?.splice(index, 1);
+                            if (draft.fields?.length === 0) delete draft.fields;
+                          })
+                        }
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </Button>
+                    </span>
+                  </div>
+                  <TextField
+                    label={`Called (${field.column})`}
+                    name={`label-${field.column}`}
+                    value={field.label ?? ""}
+                    placeholder={heading(field.column)}
+                    maxLength={100}
+                    onChange={(label) =>
+                      onChange((draft) => {
+                        const one = draft.fields?.[index];
+                        if (!one) return;
+                        if (label) one.label = label;
+                        else delete one.label;
+                      })
+                    }
+                  />
+                  {target && widget.type !== "form" ? (
+                    <SelectField
+                      label={`Shown as (${field.column})`}
+                      name={`show-${field.column}`}
+                      value={field.show ?? ""}
+                      options={[
+                        { value: "", label: "Its ID" },
+                        ...options(
+                          target.columns.filter((one) => !SYSTEM.some((s) => s.name === one.name)),
+                        ),
+                      ]}
+                      onChange={(show) =>
                         onChange((draft) => {
-                          const list = draft.fields ?? [];
-                          [list[index - 1], list[index]] = [
-                            list[index] as (typeof list)[number],
-                            list[index - 1] as (typeof list)[number],
-                          ];
+                          const one = draft.fields?.[index];
+                          if (!one) return;
+                          if (show) one.show = show;
+                          else delete one.show;
                         })
                       }
-                    >
-                      <ArrowUp size={14} aria-hidden="true" />
-                    </Button>
-                    <Button
-                      size="small"
-                      aria-label={`Move ${field.column} down`}
-                      disabled={index === fields.length - 1}
-                      onClick={() =>
+                    />
+                  ) : null}
+                  {widget.type !== "form" &&
+                  (summary
+                    ? summary.aggregates.some(
+                        (aggregate) =>
+                          aggregate.as === field.column &&
+                          (aggregate.fn === "count" ||
+                            ["integer", "number"].includes(
+                              columns.find((one) => one.name === aggregate.column)?.type ?? "",
+                            )),
+                      )
+                    : column?.type === "integer" || column?.type === "number") ? (
+                    <FormatSettings
+                      name={field.column}
+                      label={`Written as (${field.column})`}
+                      format={field.format}
+                      onChange={(format) =>
                         onChange((draft) => {
-                          const list = draft.fields ?? [];
-                          [list[index + 1], list[index]] = [
-                            list[index] as (typeof list)[number],
-                            list[index + 1] as (typeof list)[number],
-                          ];
+                          const one = draft.fields?.[index];
+                          if (!one) return;
+                          if (format) one.format = format;
+                          else delete one.format;
                         })
                       }
-                    >
-                      <ArrowDown size={14} aria-hidden="true" />
-                    </Button>
-                    <Button
-                      size="small"
-                      aria-label={`Remove ${field.column}`}
-                      onClick={() =>
+                    />
+                  ) : null}
+                  {!summary && (widget.type === "table" || widget.type === "cards") ? (
+                    <CheckboxField
+                      label={`Can be changed here (${field.column})`}
+                      name={`editable-${field.column}`}
+                      checked={field.editable ?? false}
+                      onChange={(editable) =>
                         onChange((draft) => {
-                          draft.fields?.splice(index, 1);
-                          if (draft.fields?.length === 0) delete draft.fields;
+                          const one = draft.fields?.[index];
+                          if (!one) return;
+                          if (editable) one.editable = true;
+                          else delete one.editable;
                         })
                       }
-                    >
-                      <Trash2 size={14} aria-hidden="true" />
-                    </Button>
-                  </span>
+                    />
+                  ) : null}
                 </div>
-                <TextField
-                  label={`Called (${field.column})`}
-                  name={`label-${field.column}`}
-                  value={field.label ?? ""}
-                  placeholder={heading(field.column)}
-                  maxLength={100}
-                  onChange={(label) =>
-                    onChange((draft) => {
-                      const one = draft.fields?.[index];
-                      if (!one) return;
-                      if (label) one.label = label;
-                      else delete one.label;
-                    })
-                  }
-                />
-                {target && widget.type !== "form" ? (
-                  <SelectField
-                    label={`Shown as (${field.column})`}
-                    name={`show-${field.column}`}
-                    value={field.show ?? ""}
-                    options={[
-                      { value: "", label: "Its ID" },
-                      ...options(
-                        target.columns.filter((one) => !SYSTEM.some((s) => s.name === one.name)),
-                      ),
-                    ]}
-                    onChange={(show) =>
-                      onChange((draft) => {
-                        const one = draft.fields?.[index];
-                        if (!one) return;
-                        if (show) one.show = show;
-                        else delete one.show;
-                      })
-                    }
-                  />
-                ) : null}
-                {widget.type !== "form" &&
-                (summary
-                  ? summary.aggregates.some(
-                      (aggregate) =>
-                        aggregate.as === field.column &&
-                        (aggregate.fn === "count" ||
-                          ["integer", "number"].includes(
-                            columns.find((one) => one.name === aggregate.column)?.type ?? "",
-                          )),
-                    )
-                  : column?.type === "integer" || column?.type === "number") ? (
-                  <FormatSettings
-                    name={field.column}
-                    label={`Written as (${field.column})`}
-                    format={field.format}
-                    onChange={(format) =>
-                      onChange((draft) => {
-                        const one = draft.fields?.[index];
-                        if (!one) return;
-                        if (format) one.format = format;
-                        else delete one.format;
-                      })
-                    }
-                  />
-                ) : null}
-                {!summary && (widget.type === "table" || widget.type === "cards") ? (
-                  <CheckboxField
-                    label={`Can be changed here (${field.column})`}
-                    name={`editable-${field.column}`}
-                    checked={field.editable ?? false}
-                    onChange={(editable) =>
-                      onChange((draft) => {
-                        const one = draft.fields?.[index];
-                        if (!one) return;
-                        if (editable) one.editable = true;
-                        else delete one.editable;
-                      })
-                    }
-                  />
-                ) : null}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
           <SelectField
             label="Add"
             name="add-field"

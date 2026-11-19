@@ -1,5 +1,5 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { type Browser, expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
 /**

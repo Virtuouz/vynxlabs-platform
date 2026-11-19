@@ -8,8 +8,10 @@ import {
   TextAreaField,
   TextField,
 } from "./Fields.tsx";
+import { MoveButtons } from "./MoveButtons.tsx";
 import { Notice } from "./Notice.tsx";
 import { SegmentedControl } from "./Pickers.tsx";
+import { useFlip, useKeys } from "./useFlip.ts";
 
 /**
  * A form drawn from a JSON Schema: the part of JSON Schema 2020-12 that zod's
@@ -564,11 +566,18 @@ function ListNode({ schema, value, onChange, pointer, label, errors, disabled }:
     const next = [...list];
     const [taken] = next.splice(index, 1);
     next.splice(index + by, 0, taken);
+    names.move(index, index + by);
     onChange(next);
   };
+  // A row has no identity of its own: this name stays with it as it moves, so it is seen to move.
+  const names = useKeys(list.length);
+  const rows = useFlip<HTMLFieldSetElement>(names.keys.join(" "));
   const itemLabel = typeof items.title === "string" ? items.title : "Item";
   return (
-    <fieldset className="m-0 flex min-w-0 flex-col gap-2 rounded-control border border-line p-3">
+    <fieldset
+      ref={rows}
+      className="m-0 flex min-w-0 flex-col gap-2 rounded-control border border-line p-3"
+    >
       <legend className="px-1 text-body-sm font-medium text-ink">{label}</legend>
       {hint ? <p className="m-0 text-body-sm text-ink-muted">{hint}</p> : null}
       {errors[pointer] ? (
@@ -578,9 +587,8 @@ function ListNode({ schema, value, onChange, pointer, label, errors, disabled }:
       ) : null}
       {list.map((held, index) => (
         <div
-          // The position is what a row is: rows have no identity of their own.
-          // biome-ignore lint/suspicious/noArrayIndexKey: see above
-          key={index}
+          key={names.keys[index]}
+          data-flip-key={names.keys[index]}
           className="flex min-w-0 flex-col gap-2 border-line border-b pb-2 last:border-b-0"
         >
           <Node
@@ -594,27 +602,21 @@ function ListNode({ schema, value, onChange, pointer, label, errors, disabled }:
             disabled={disabled}
           />
           <div className="flex flex-wrap gap-1">
-            <Button
-              size="small"
-              disabled={disabled || index === 0}
-              aria-label={`Move ${itemLabel.toLowerCase()} ${index + 1} up`}
-              onClick={() => move(index, -1)}
-            >
-              Up
-            </Button>
-            <Button
-              size="small"
-              disabled={disabled || index === list.length - 1}
-              aria-label={`Move ${itemLabel.toLowerCase()} ${index + 1} down`}
-              onClick={() => move(index, 1)}
-            >
-              Down
-            </Button>
+            <MoveButtons
+              label={`${itemLabel.toLowerCase()} ${index + 1}`}
+              at={index}
+              count={list.length}
+              disabled={disabled === true}
+              onMove={(by) => move(index, by)}
+            />
             <Button
               size="small"
               disabled={disabled}
               aria-label={`Remove ${itemLabel.toLowerCase()} ${index + 1}`}
-              onClick={() => onChange(list.filter((_, at) => at !== index))}
+              onClick={() => {
+                names.remove(index);
+                onChange(list.filter((_, at) => at !== index));
+              }}
             >
               Remove
             </Button>

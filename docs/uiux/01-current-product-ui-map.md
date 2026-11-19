@@ -205,6 +205,8 @@ The account menu (API keys, Sign out; `Shell.tsx:437-460`) and the theme menu si
 
 The rail lists areas (`nav.ts:54-94`, composed at `Shell.tsx:603-646`). The first five belong to a workspace and appear whenever a tenant is open. They link to the workspace last open in that tenant, remembered in `localStorage["vx-last-workspace:<tenant>"]` (`nav.ts:316-333`); without one they are dimmed and link to the workspace list.
 
+Since phase 19 an area with more than one section does not go anywhere when it is pressed: it shows its sections. Where the section panel is docked they take the panel's place; in an editor, on the overview and between 768 and 1023 px they come out beside the rail over the page, and Esc or a press elsewhere puts them away; on a phone they replace the list inside the open drawer, which closes only when a section is chosen. Pressing the area again puts them away. Overview has one section and stays a link.
+
 | Area | Icon (lucide) | Opens on | Section panel |
 |---|---|---|---|
 | Overview | Activity | `overview` | none |

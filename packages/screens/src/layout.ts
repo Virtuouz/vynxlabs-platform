@@ -1,6 +1,7 @@
-import type { PageWidget } from "@vynxlabs/manifest";
+import type { Box } from "./placement.ts";
 
-type Box = PageWidget["at"];
+/** Anything with a place on the grid: an app page's widget, a dashboard's. */
+type Placed = { id: string; at: Box };
 
 const overlap = (a: Box, b: Box) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -13,13 +14,13 @@ const overlap = (a: Box, b: Box) =>
  *
  * Changes the widgets it is given.
  */
-export function settle(widgets: PageWidget[], moved: string | undefined): void {
+export function settle<T extends Placed>(widgets: T[], moved: string | undefined): void {
   const pinned = widgets.find((widget) => widget.id === moved);
   // From the top down, so that what is pushed pushes what is under it in turn.
   const rest = widgets
     .filter((widget) => widget !== pinned)
     .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
-  const placed: PageWidget[] = pinned ? [pinned] : [];
+  const placed: T[] = pinned ? [pinned] : [];
   for (const widget of rest) {
     // As high as it will go without lying on anything already placed.
     let y = 0;

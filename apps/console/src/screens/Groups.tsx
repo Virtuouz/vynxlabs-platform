@@ -1,4 +1,12 @@
-import { Button, ComboboxField, Dialog, EmptyState, Notice, TextField } from "@vynxlabs/ui";
+import {
+  Button,
+  Closing,
+  ComboboxField,
+  Dialog,
+  EmptyState,
+  Notice,
+  TextField,
+} from "@vynxlabs/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
@@ -24,6 +32,7 @@ function MembersDialog({
   path,
   candidates,
   noun,
+  open,
   onClose,
 }: {
   group: { id: string; name: string };
@@ -33,6 +42,7 @@ function MembersDialog({
   candidates: string;
   /** What the people are called: "member" or "end user". */
   noun: string;
+  open: boolean;
   onClose: () => void;
 }) {
   const detail = useLoad<{ members: Person[] }>(path);
@@ -52,7 +62,7 @@ function MembersDialog({
 
   return (
     <Dialog
-      open
+      open={open}
       size="wide"
       onClose={onClose}
       title={`Who is in ${group.name}`}
@@ -254,16 +264,19 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
           submit: (values) => api.post(`${base}/groups`, values),
         }}
       />
-      {open ? (
-        <MembersDialog
-          key={open.id}
-          group={open}
-          path={`${base}/groups/${open.id}`}
-          candidates={`${base}/members?limit=200`}
-          noun="member"
-          onClose={() => setOpen(undefined)}
-        />
-      ) : null}
+      <Closing subject={open}>
+        {(open, shown) => (
+          <MembersDialog
+            open={shown}
+            key={open.id}
+            group={open}
+            path={`${base}/groups/${open.id}`}
+            candidates={`${base}/members?limit=200`}
+            noun="member"
+            onClose={() => setOpen(undefined)}
+          />
+        )}
+      </Closing>
     </>
   );
 }
@@ -355,20 +368,23 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
           submit: (values) => api.post(`${base}/end-user-groups`, values),
         }}
       />
-      {open ? (
-        <MembersDialog
-          key={open.id}
-          group={open}
-          path={`${base}/end-user-groups/${open.id}`}
-          candidates={`${base}/end-users?limit=200`}
-          noun="end user"
-          onClose={() => {
-            setOpen(undefined);
-            // The count on the list is of the people just added or taken out.
-            groups.reload();
-          }}
-        />
-      ) : null}
+      <Closing subject={open}>
+        {(open, shown) => (
+          <MembersDialog
+            open={shown}
+            key={open.id}
+            group={open}
+            path={`${base}/end-user-groups/${open.id}`}
+            candidates={`${base}/end-users?limit=200`}
+            noun="end user"
+            onClose={() => {
+              setOpen(undefined);
+              // The count on the list is of the people just added or taken out.
+              groups.reload();
+            }}
+          />
+        )}
+      </Closing>
     </>
   );
 }
@@ -377,11 +393,13 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
 export function AttributesDialog({
   base,
   user,
+  open,
   onClose,
   onSaved,
 }: {
   base: string;
   user: { id: string; email: string; attributes: Record<string, string> };
+  open: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -400,7 +418,7 @@ export function AttributesDialog({
 
   return (
     <Dialog
-      open
+      open={open}
       onClose={onClose}
       title={`Attributes of ${user.email}`}
       description="Facts about this person that a table's rules can match, such as which customer they belong to."

@@ -364,6 +364,12 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             limit: Type.Optional(
               Type.Integer({ minimum: 1, maximum: QUERY_ROWS.most, default: QUERY_ROWS.default }),
             ),
+            part: Type.Optional(
+              Type.Literal("trend", {
+                description:
+                  "For a figure with a `trend`, built from menus: its number over the time it covers, one row to a day, a week or a month, oldest first.",
+              }),
+            ),
           }),
           response: { 200: QueryResultSchema },
         },
@@ -386,7 +392,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
         const at = { tenantId: workspace.tenantId, workspaceId: workspace.id };
-        const asked = await widgetQuery(kernel, at, found.body, widget, values);
+        const asked = await widgetQuery(kernel, at, found.body, widget, values, query.part);
         // A parameter nothing fills is empty, so that the query can say what an empty one means.
         const needs = await checkFor(kernel, at.tenantId, at.workspaceId, asked.text).catch(
           (error) => {

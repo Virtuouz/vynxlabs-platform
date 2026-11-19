@@ -3,9 +3,11 @@ import type {
   DashboardFilter,
   DashboardWidget,
   QueryBody,
+  VisualBucket,
   VisualCondition,
   VisualQuery,
 } from "@vynxlabs/manifest";
+import { groupName } from "@vynxlabs/manifest";
 import { badRequest, notFound } from "../../errors.js";
 import type { Kernel } from "../../kernel.js";
 import { resolveResource } from "../../resolve.js";
@@ -92,6 +94,30 @@ function conditionsFor(
   return conditions;
 }
 
+/**
+ * How long each point of a trend is when the figure does not say: days for a
+ * range of up to six weeks, weeks for up to about half a year, months beyond
+ * that or when the dates are not narrowed at all.
+ */
+function bucketFor(
+  widget: DashboardWidget,
+  filters: Map<string, DashboardFilter>,
+  values: FilterValues,
+  column: string,
+): VisualBucket {
+  const bindings = (widget.filters ?? []).filter(
+    (one) => filters.get(one.filter)?.type === "date_range",
+  );
+  const binding = bindings.find((one) => one.column === column) ?? bindings[0];
+  const range = binding ? rangeOf(values[binding.filter]) : undefined;
+  if (!range?.from || !range.to) return "month";
+  const days =
+    (new Date(`${range.to}T00:00:00Z`).getTime() - new Date(`${range.from}T00:00:00Z`).getTime()) /
+      86_400_000 +
+    1;
+  return days <= 45 ? "day" : days <= 200 ? "week" : "month";
+}
+
 /** A visual query as SQL, refused as a bad request that says where. */
 export function writeVisual(
   query: VisualQuery,
@@ -121,15 +147,40 @@ export async function widgetQuery(
   dashboard: DashboardBody,
   widget: DashboardWidget,
   values: FilterValues,
+  /** `trend`: a figure's number over the time it covers, one row to a day, week or month. */
+  part?: "trend",
 ): Promise<WidgetQuery> {
   const source = widget.source;
   if (!source) throw badRequest("This widget asks nothing.");
   const filters = new Map((dashboard.filters ?? []).map((filter) => [filter.name, filter]));
 
+  if (part === "trend") {
+    const trend = widget.options?.trend;
+    if (widget.type !== "figure" || !trend) throw badRequest("This widget draws no trend.");
+    // A saved query or SQL gives its own rows as the trend: there is nothing more to ask.
+    if (!("visual" in source)) {
+      throw badRequest("This figure's trend is the rows of its own query.");
+    }
+  }
+
   if ("visual" in source) {
     const catalog = await visualCatalog(kernel, at.tenantId, at.workspaceId);
+    const trend = part === "trend" ? widget.options?.trend : undefined;
+    const group = trend
+      ? { column: trend.by, bucket: trend.bucket ?? bucketFor(widget, filters, values, trend.by) }
+      : undefined;
     const written = writeVisual(
-      source.visual,
+      group
+        ? // The same question, a period at a time, oldest first.
+          {
+            table: source.visual.table,
+            ...(source.visual.joins ? { joins: source.visual.joins } : {}),
+            ...(source.visual.filters ? { filters: source.visual.filters } : {}),
+            ...(source.visual.measures ? { measures: source.visual.measures } : {}),
+            groupBy: [group],
+            sort: [{ by: groupName(group) }],
+          }
+        : source.visual,
       catalog,
       conditionsFor(widget, filters, values),
       "/source/visual",

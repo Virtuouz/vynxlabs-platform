@@ -81,10 +81,16 @@ export function Inspector(props: InspectorProps) {
   const shown = useRef(props);
   if (props.open) shown.current = props;
   if (!wide) {
-    if (!props.open) return null;
-    const { onClose, title, eyebrow, footer, children } = props;
+    // The sheet stays on the page, shut, so it slides both ways.
+    const { title, eyebrow, footer, children } = shown.current;
     return (
-      <SideSheet open onClose={onClose} title={title} description={eyebrow} footer={footer}>
+      <SideSheet
+        open={props.open}
+        onClose={props.onClose}
+        title={title}
+        description={eyebrow}
+        footer={footer}
+      >
         <ErrorBoundary what="This panel" compact>
           {children}
         </ErrorBoundary>
@@ -180,6 +186,9 @@ function Docking({ open, children }: { open: boolean; children: (leaving: boolea
   return (
     <div
       ref={wrap}
+      data-drawer=""
+      data-starting-style={open && room === 0 ? "" : undefined}
+      data-ending-style={open ? undefined : ""}
       style={moving ? { width: room } : undefined}
       className={`flex shrink-0 justify-start ${moving ? "overflow-hidden transition-[width] motion-slow" : ""}`}
     >

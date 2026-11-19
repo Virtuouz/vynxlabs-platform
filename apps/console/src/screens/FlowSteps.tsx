@@ -2,11 +2,14 @@ import {
   Button,
   CheckboxField,
   ComboboxField,
+  MoveButtons,
   NumberField,
   type Option,
   SelectField,
   TextAreaField,
   TextField,
+  useFlip,
+  useKeys,
 } from "@vynxlabs/ui";
 import type { GraphNode } from "../FlowGraph.tsx";
 import { ExpressionField } from "./ExpressionField.tsx";
@@ -440,10 +443,14 @@ export function FormDesigner({
         return next as unknown as FormField;
       }),
     });
+  // A field has no name of its own while it is being named: this one stays with it as it moves.
+  const names = useKeys(trigger.fields.length);
+  const asked = useFlip<HTMLFieldSetElement>(names.keys.join(" "));
   const move = (index: number, by: number) => {
     const fields = [...trigger.fields];
     const [taken] = fields.splice(index, 1);
     fields.splice(index + by, 0, taken as FormField);
+    names.move(index, index + by);
     put({ fields });
   };
   return (
@@ -462,12 +469,12 @@ export function FormDesigner({
         required={false}
         onChange={(description) => put({ description })}
       />
-      <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
+      <fieldset ref={asked} className="m-0 flex flex-col gap-3 border-0 p-0">
         <legend className="p-0 text-body-sm font-medium">What it asks</legend>
         {trigger.fields.map((one, index) => (
           <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: a field has no identity but its place while it is being named
-            key={index}
+            key={names.keys[index]}
+            data-flip-key={names.keys[index]}
             className="flex flex-col gap-2 rounded-control border border-line bg-canvas p-2"
           >
             <TextField
@@ -524,28 +531,21 @@ export function FormDesigner({
                 onChange={(required) => field(index, { required })}
               />
               <span className="flex gap-1">
-                <Button
-                  size="small"
-                  disabled={index === 0}
-                  aria-label={`Move ${one.label} up`}
-                  onClick={() => move(index, -1)}
-                >
-                  Up
-                </Button>
-                <Button
-                  size="small"
-                  disabled={index === trigger.fields.length - 1}
-                  aria-label={`Move ${one.label} down`}
-                  onClick={() => move(index, 1)}
-                >
-                  Down
-                </Button>
+                <MoveButtons
+                  label={one.label}
+                  at={index}
+                  count={trigger.fields.length}
+                  onMove={(by) => move(index, by)}
+                />
                 <Button
                   size="small"
                   variant="danger"
                   disabled={trigger.fields.length === 1}
                   aria-label={`Remove ${one.label}`}
-                  onClick={() => put({ fields: trigger.fields.filter((_, at) => at !== index) })}
+                  onClick={() => {
+                    names.remove(index);
+                    put({ fields: trigger.fields.filter((_, at) => at !== index) });
+                  }}
                 >
                   Remove
                 </Button>

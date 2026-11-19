@@ -1,9 +1,9 @@
-import { Button, Panel } from "@vynxlabs/ui";
-import { Redo2, Undo2 } from "lucide-react";
+import { Panel } from "@vynxlabs/ui";
 import type { ReactNode } from "react";
-import { keysOf, useShortcut } from "../../kit/keys.ts";
+import { useShortcut } from "../../kit/keys.ts";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";
+import { UndoRedo } from "../../kit/UndoRedo.tsx";
 import { useNavigationGuard } from "../../router.tsx";
 
 /** How a change stands: saved, about to be, being saved, or not saved and why. */
@@ -85,30 +85,7 @@ export function EditorShell({
         }
         actions={
           <span className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1">
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label={history.undoLabel ? `Undo ${history.undoLabel}` : "Undo"}
-                tooltip={history.undoLabel ? `Undo ${history.undoLabel}` : "Nothing to undo"}
-                keys={keysOf("undo")}
-                disabled={!history.undoLabel}
-                onClick={undo}
-              >
-                <Undo2 aria-hidden="true" size={16} />
-              </Button>
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label={history.redoLabel ? `Redo ${history.redoLabel}` : "Redo"}
-                tooltip={history.redoLabel ? `Redo ${history.redoLabel}` : "Nothing to redo"}
-                keys={keysOf("redo")}
-                disabled={!history.redoLabel}
-                onClick={redo}
-              >
-                <Redo2 aria-hidden="true" size={16} />
-              </Button>
-            </span>
+            <UndoRedo history={history} />
             {more}
             {primary}
           </span>

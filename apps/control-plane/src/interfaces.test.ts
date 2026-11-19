@@ -1041,6 +1041,73 @@ describe("a member's own dashboards", () => {
     expect((await mona.get(`${base()}/${id}`)).status).toBe(404);
     expect((await alice.get(`/tenants/${tenant}/workspaces/${dev}/rows/stock`)).status).toBe(200);
   });
+  // Phase 19.
+  test("a figure's trend is its number a period at a time, and a widget is kept where it is placed", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAgo = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10);
+    const made = await mona.post(base(), { title: "Trends" });
+    const trends = made.body.id;
+    const at = { x: 3, y: 0, w: 4, h: 3 };
+    const saved = await mona.put(`${base()}/${trends}`, {
+      body: {
+        version: 2,
+        refresh: 15,
+        filters: [{ name: "added", type: "date_range" }],
+        widgets: [
+          {
+            id: "items",
+            type: "figure",
+            subtitle: "Kinds of thing held",
+            at,
+            source: { visual: { table: "stock", measures: [{ fn: "count", as: "items" }] } },
+            filters: [{ filter: "added", column: "created_at" }],
+            options: {
+              value: "items",
+              compareTo: "added",
+              trend: { by: "created_at" },
+              delta: "absolute",
+              goodWhen: "down",
+              caption: "{previous} the week before",
+            },
+          },
+          {
+            ...held,
+            options: { cells: [{ column: "held", as: "bar", label: "On hand" }], totals: true },
+          },
+        ],
+      },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // Kept as it was placed, with how often it refreshes.
+    expect(saved.body.body.widgets[0].at).toEqual(at);
+    expect(saved.body.body.refresh).toBe(15);
+    const path = (widget: string, more: string) =>
+      `${base()}/${trends}/widgets/${widget}/data?filters=${encodeURIComponent(
+        JSON.stringify({ added: { from: weekAgo, to: today } }),
+      )}${more}`;
+    // The figure itself is one number.
+    const figure = await mona.get(path("items", ""));
+    expect(figure.body.rows).toHaveLength(1);
+    // Its trend is the same count, a day at a time for a range of a week, oldest first.
+    const trend = await mona.get(path("items", "&part=trend"));
+    expect(trend.status, JSON.stringify(trend.body)).toBe(200);
+    expect(trend.body.columns.map((column: Any) => column.name)).toEqual([
+      "created_at_day",
+      "items",
+    ]);
+    // Everything in stock was added today.
+    expect(trend.body.rows).toEqual([[today, figure.body.rows[0][0]]]);
+    // A widget that draws no trend has none to ask for.
+    expect((await mona.get(path("held", "&part=trend"))).status).toBe(400);
+
+    // A place past the twelfth column is refused, saying where.
+    const wide = await mona.put(`${base()}/${trends}`, {
+      body: { version: 2, widgets: [{ ...held, at: { x: 9, y: 0, w: 6, h: 4 } }] },
+    });
+    expect(wide.status).toBe(400);
+    expect(JSON.stringify(wide.body)).toContain("past the twelfth");
+    await mona.delete(`${base()}/${trends}`);
+  });
 });
 
 describe("the write path", () => {

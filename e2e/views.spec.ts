@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expect, type Page, test } from "./test.ts";
 
 /**
  * Saved views (phase 15, P3-4): a list's filters, sort and columns are saved

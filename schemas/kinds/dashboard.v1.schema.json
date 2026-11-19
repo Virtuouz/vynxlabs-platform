@@ -16,6 +16,15 @@
       "type": "string",
       "maxLength": 500
     },
+    "refresh": {
+      "enum": [
+        "off",
+        1,
+        5,
+        15,
+        60
+      ]
+    },
     "filters": {
       "type": "array",
       "maxItems": 8,
@@ -90,6 +99,10 @@
             "type": "string",
             "maxLength": 100
           },
+          "subtitle": {
+            "type": "string",
+            "maxLength": 200
+          },
           "type": {
             "enum": [
               "figure",
@@ -98,6 +111,38 @@
               "pivot",
               "text"
             ]
+          },
+          "at": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 11
+              },
+              "y": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 399
+              },
+              "w": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "h": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "w",
+              "h"
+            ],
+            "additionalProperties": false
           },
           "width": {
             "enum": [
@@ -373,13 +418,118 @@
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]{0,54}$"
               },
+              "trend": {
+                "type": "object",
+                "properties": {
+                  "by": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+                    "maxLength": 127
+                  },
+                  "bucket": {
+                    "enum": [
+                      "day",
+                      "week",
+                      "month",
+                      "quarter",
+                      "year"
+                    ]
+                  }
+                },
+                "required": [
+                  "by"
+                ],
+                "additionalProperties": false
+              },
+              "delta": {
+                "enum": [
+                  "percent",
+                  "absolute",
+                  "points"
+                ]
+              },
+              "goodWhen": {
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              "caption": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "compare": {
+                "type": "boolean"
+              },
+              "horizontal": {
+                "type": "boolean"
+              },
+              "cells": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 130
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 60
+                    },
+                    "format": {
+                      "type": "object",
+                      "properties": {
+                        "style": {
+                          "enum": [
+                            "number",
+                            "currency",
+                            "percent"
+                          ]
+                        },
+                        "currency": {
+                          "type": "string",
+                          "pattern": "^[A-Z]{3}$"
+                        },
+                        "minorUnits": {
+                          "type": "boolean"
+                        },
+                        "decimals": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 6
+                        }
+                      },
+                      "required": [
+                        "style"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "as": {
+                      "enum": [
+                        "text",
+                        "bar",
+                        "delta",
+                        "chip"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "column"
+                  ],
+                  "additionalProperties": false
+                }
+              },
               "mark": {
                 "enum": [
                   "bar",
                   "line",
                   "area",
                   "pie",
-                  "scatter"
+                  "scatter",
+                  "heatmap"
                 ]
               },
               "x": {

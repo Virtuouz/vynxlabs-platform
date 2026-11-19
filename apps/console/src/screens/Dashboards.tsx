@@ -1,13 +1,21 @@
 import {
   DASHBOARD_FILTER_TYPES,
+  DASHBOARD_REFRESH,
   type DashboardBody,
   type DashboardFilter,
+  type DashboardRefresh,
   type DashboardWidget,
+  DEFAULT_DASHBOARD_REFRESH,
+  placeWidgets,
   RELATIVE_RANGES,
+  WIDGET_SIZE,
+  type WidgetPlace,
 } from "@vynxlabs/manifest";
+import { settle, usePlacement } from "@vynxlabs/screens";
 import {
   Button,
   CheckboxField,
+  Closing,
   Dialog,
   EmptyState,
   Menu,
@@ -16,19 +24,30 @@ import {
   SelectField,
   TextField,
 } from "@vynxlabs/ui";
-import { ArrowLeft, ArrowRight, Ellipsis, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { Ellipsis, Move, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ApiError, api, invalidatePrefix, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { useHistory } from "../kit/history.ts";
+import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { useTitleObject } from "../kit/title.ts";
+import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { type FilterSetting, filterValues, RANGE_LABELS } from "./dashboards/model.ts";
 import { WidgetEditor } from "./dashboards/WidgetEditor.tsx";
 import { FilterBar, WidgetCard } from "./dashboards/Widgets.tsx";
+
+const REFRESH_WORDS: Record<Exclude<DashboardRefresh, "off">, string> = {
+  1: "minute",
+  5: "5 minutes",
+  15: "15 minutes",
+  60: "hour",
+};
 
 interface Summary {
   id: string;
@@ -151,10 +170,21 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const [editing, setEditing] = useState<DashboardWidget>();
   const [filtering, setFiltering] = useState(false);
   const [sharing, setSharing] = useState(false);
+  // Its name is the last crumb, which makes "Dashboards" before it the way back to the list.
+  useTitleObject(loaded?.title);
+  // Every change made to what the dashboard holds, a hundred back: where its widgets are,
+  // what they ask, its filters and how often it refreshes. Not its name or who sees it.
+  const restoring = useRef<(next: DashboardBody) => void>(() => {});
+  const history = useHistory<DashboardBody | undefined>(
+    () => loaded?.body,
+    (state) => state && restoring.current(state),
+  );
+  const forget = history.clear;
 
   useEffect(() => {
     let current = true;
     setLoaded(undefined);
+    forget();
     api.get<Dashboard>(`${root}/dashboards/${id}`).then(
       (dashboard) => current && setLoaded(dashboard),
       (error: ApiError) => current && setMissing(error),
@@ -162,7 +192,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     return () => {
       current = false;
     };
-  }, [root, id]);
+  }, [root, id, forget]);
 
   // What the filters are set to, kept in the address so a link shows the same thing.
   const settings = useMemo<Record<string, FilterSetting>>(() => {
@@ -174,6 +204,41 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   }, [set]);
   const body = loaded?.body;
   const values = useMemo(() => filterValues(body?.filters ?? [], settings), [body, settings]);
+
+  // When each widget's answer was read. The dashboard is as old as the oldest of them.
+  const [readAt, setReadAt] = useState<Record<string, number>>({});
+  const noteRead = useCallback(
+    (widgetId: string, at: number) =>
+      setReadAt((before) => (before[widgetId] === at ? before : { ...before, [widgetId]: at })),
+    [],
+  );
+  // What the layout was before each change made here, for ⌘Z.
+  const editingNow = loaded?.kind === "member" && loaded.mine && mode === "1";
+  useShortcut("undo", history.undo, { enabled: editingNow });
+  useShortcut("redo", history.redo, { enabled: editingNow });
+  // Changes that are drawn and not yet saved.
+  const moves = useRef({ waiting: 0, revision: 0, last: Promise.resolve() });
+  const placement = usePlacement({
+    places: JSON.stringify(placeWidgets(body?.widgets ?? []).map((one) => [one.id, one.at])),
+    onMove: editingNow ? (widgetId, at, by) => placing.current(widgetId, at, by) : undefined,
+    least: { w: 2, h: 2 },
+  });
+  const placing = useRef<(id: string, at: WidgetPlace, by: "pointer" | "keys") => void>(() => {});
+  // The grid places widgets where the page is wide enough; narrower, they are one column in order.
+  const [placed, setPlaced] = useState(false);
+  const measured = useRef<ResizeObserver | undefined>(undefined);
+  const gridRef = placement.grid;
+  const grid = useCallback(
+    (node: HTMLDivElement | null) => {
+      gridRef.current = node;
+      measured.current?.disconnect();
+      if (!node || typeof ResizeObserver !== "function") return;
+      // 48rem: where `@3xl` begins.
+      measured.current = new ResizeObserver(() => setPlaced(node.clientWidth >= 768));
+      measured.current.observe(node);
+    },
+    [gridRef],
+  );
 
   if (missing) return <ErrorState error={missing} />;
   if (!loaded || !body) return <Loading />;
@@ -200,13 +265,53 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     }
   };
   const withWidgets = (widgets: DashboardWidget[]) => save({ body: { ...body, widgets } });
-  const move = (at: number, by: -1 | 1) => {
-    const to = at + by;
-    if (to < 0 || to >= body.widgets.length) return;
-    const widgets = [...body.widgets];
-    [widgets[at], widgets[to]] = [widgets[to] as DashboardWidget, widgets[at] as DashboardWidget];
-    void withWidgets(widgets);
+  /**
+   * A change to what the dashboard holds, drawn at once and saved after. Waiting for the save
+   * would draw a dragged widget back where it began, and then play it to where it was put.
+   * Saves go one after another, each on the revision the one before it made, so several
+   * changes made quickly (arrow keys held down, undo pressed three times) are all kept.
+   *
+   * A widget the server has not heard of yet cannot be asked for its rows, so a change that
+   * brings one (redoing an added widget) is drawn when it is saved and not before.
+   */
+  if (moves.current.waiting === 0) moves.current.revision = loaded.revision;
+  const keep = (next: DashboardBody) => {
+    const queue = moves.current;
+    queue.waiting += 1;
+    const known = new Set(body.widgets.map((one) => one.id));
+    if (next.widgets.every((one) => known.has(one.id))) setLoaded({ ...loaded, body: next });
+    queue.last = queue.last.then(async () => {
+      try {
+        const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
+          body: next,
+          revision: queue.revision,
+        });
+        queue.revision = saved.revision;
+        queue.waiting -= 1;
+        // Only the last of them is shown as saved: one before it would undo a later one on screen.
+        if (queue.waiting === 0) setLoaded(saved);
+      } catch (error) {
+        queue.waiting -= 1;
+        notify.error(error);
+        // What was drawn was not kept: show what the server has.
+        const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
+        if (kept && queue.waiting === 0) setLoaded(kept);
+      }
+    });
   };
+  restoring.current = keep;
+  // Every widget with a place: its own, or one given to it in order if it has none yet.
+  const widgets = placeWidgets(body.widgets);
+  const place = (widgetId: string, at: WidgetPlace, by: "pointer" | "keys") => {
+    const next = widgets.map((one) => ({ ...one, at: one.id === widgetId ? at : { ...one.at } }));
+    // It stays where it was put, and whatever it now lies on moves down out of its way.
+    settle(next, widgetId);
+    const name = widgets.find((one) => one.id === widgetId)?.title || widgetId;
+    // Arrow keys pressed one after another on one widget are one step to undo; a drag is its own.
+    history.record(`moving ${name}`, by === "keys" ? `place:${widgetId}` : undefined);
+    keep({ ...body, widgets: next });
+  };
+  placing.current = place;
   const add = () =>
     setEditing({
       id: slug(
@@ -218,6 +323,12 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
       type: "table",
       source: { visual: { table: "" } },
     });
+  const refresh = body.refresh ?? DEFAULT_DASHBOARD_REFRESH;
+  // Nothing asks again under someone who is changing it.
+  const every = refresh === "off" || edit ? undefined : refresh * 60_000;
+  const asking = widgets.filter((one) => one.type !== "text").map((one) => one.id);
+  const times = asking.map((one) => readAt[one]).filter((at): at is number => at !== undefined);
+  const asOf = times.length === asking.length && times.length > 0 ? Math.min(...times) : undefined;
   const audience = loaded.shared
     ? "Everyone in this workspace"
     : (loaded.sharedWith ?? []).length > 0
@@ -315,6 +426,29 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         </span>
       }
     >
+      {asking.length > 0 ? (
+        <p
+          className="-mt-3 m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-body-sm text-ink-muted"
+          data-freshness=""
+        >
+          <span>
+            Last refreshed {asOf ? <Time value={new Date(asOf)} mode="clock" /> : "…"}
+            {" · "}
+            {refresh === "off"
+              ? "Does not refresh by itself"
+              : edit
+                ? "Not refreshing while it is being changed"
+                : `Refreshes every ${REFRESH_WORDS[refresh]}`}
+          </span>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-control px-1 text-action hover:underline"
+            onClick={() => invalidatePrefix(`${root}/dashboards/${id}/widgets`)}
+          >
+            <RefreshCw aria-hidden="true" size={14} /> Refresh now
+          </button>
+        </p>
+      ) : null}
       {loaded.upgraded ? (
         <Notice tone="plain">
           This dashboard was made before dashboards asked queries. It is shown as it reads now, and
@@ -331,7 +465,28 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           }
         />
         {edit ? (
-          <span className="flex flex-wrap gap-2">
+          <span className="flex flex-wrap items-end gap-2">
+            <div className="w-44">
+              <SelectField
+                name="refresh"
+                label="Refreshes"
+                value={String(refresh)}
+                options={DASHBOARD_REFRESH.map((one) => ({
+                  value: String(one),
+                  label: one === "off" ? "Never by itself" : `Every ${REFRESH_WORDS[one]}`,
+                }))}
+                onChange={(next) => {
+                  history.record("the change to how often it refreshes");
+                  void save({
+                    body: {
+                      ...body,
+                      refresh: next === "off" ? "off" : (Number(next) as DashboardRefresh),
+                    },
+                  });
+                }}
+              />
+            </div>
+            <UndoRedo history={history} />
             <Button onClick={() => setFiltering(true)}>Filters</Button>
             <Button variant="primary" onClick={add}>
               <Plus aria-hidden="true" size={16} /> Add a widget
@@ -360,98 +515,146 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           chart, a table or a pivot.
         </EmptyState>
       ) : (
-        <div className="grid grid-cols-12 gap-4">
-          {body.widgets.map((widget, at) => (
-            <WidgetCard
-              key={widget.id}
-              root={root}
-              dashboard={id}
-              revision={loaded.revision}
-              body={body}
-              widget={widget}
-              values={values}
-              tools={
-                edit ? (
-                  <>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      aria-label={`Move ${widget.title || widget.id} earlier`}
-                      disabled={at === 0}
-                      onClick={() => move(at, -1)}
-                    >
-                      <ArrowLeft aria-hidden="true" size={14} />
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      aria-label={`Move ${widget.title || widget.id} later`}
-                      disabled={at === body.widgets.length - 1}
-                      onClick={() => move(at, 1)}
-                    >
-                      <ArrowRight aria-hidden="true" size={14} />
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      aria-label={`Edit ${widget.title || widget.id}`}
-                      onClick={() => setEditing(widget)}
-                    >
-                      <Pencil aria-hidden="true" size={14} />
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      aria-label={`Remove ${widget.title || widget.id}`}
-                      onClick={async () => {
-                        const sure = await ask.confirm({
-                          title: `Remove ${widget.title || "this widget"}?`,
-                          text: "It is taken off the dashboard. No table and no row is touched.",
-                          action: "Remove",
-                          danger: true,
-                        });
-                        if (sure)
-                          void withWidgets(body.widgets.filter((one) => one.id !== widget.id));
-                      }}
-                    >
-                      <Trash2 aria-hidden="true" size={14} />
-                    </Button>
-                  </>
-                ) : undefined
-              }
-            />
-          ))}
+        // Laid out by the room it is given: twelve columns of rows 40 px tall where there is
+        // room, and one column, top to bottom and left to right, where there is not.
+        <div className="@container">
+          <div
+            ref={grid}
+            className="grid grid-cols-1 gap-3 @3xl:auto-rows-[2.5rem] @3xl:grid-cols-12"
+          >
+            {[...widgets]
+              .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)
+              .map((widget) => (
+                <WidgetCard
+                  key={widget.id}
+                  root={root}
+                  dashboard={id}
+                  revision={loaded.revision}
+                  body={body}
+                  widget={widget}
+                  values={values}
+                  at={placement.at(widget.id, widget.at)}
+                  placed={placed}
+                  held={placement.held?.id === widget.id}
+                  every={every}
+                  onAsOf={noteRead}
+                  onShow={
+                    edit && widget.type === "table"
+                      ? (show) => {
+                          const { show: _before, ...options } = widget.options ?? {};
+                          history.record(`the columns of ${widget.title || widget.id}`);
+                          void withWidgets(
+                            widgets.map((one) =>
+                              one.id === widget.id
+                                ? { ...one, options: { ...options, ...(show ? { show } : {}) } }
+                                : one,
+                            ),
+                          );
+                        }
+                      : undefined
+                  }
+                  onGrab={
+                    edit
+                      ? (event, how) => placement.grab(event, widget.id, widget.at, how)
+                      : undefined
+                  }
+                  tools={
+                    edit ? (
+                      <>
+                        <Button
+                          size="small"
+                          variant="quiet"
+                          aria-label={`Move ${widget.title || widget.id}: drag its heading, or press the arrow keys. Shift and the arrow keys change its size`}
+                          {...placement.keys(widget.id, widget.title || widget.id, widget.at)}
+                        >
+                          <Move aria-hidden="true" size={14} />
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="quiet"
+                          aria-label={`Edit ${widget.title || widget.id}`}
+                          onClick={() => setEditing(widget)}
+                        >
+                          <Pencil aria-hidden="true" size={14} />
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="quiet"
+                          aria-label={`Remove ${widget.title || widget.id}`}
+                          onClick={async () => {
+                            const sure = await ask.confirm({
+                              title: `Remove ${widget.title || "this widget"}?`,
+                              text: "It is taken off the dashboard. No table and no row is touched.",
+                              action: "Remove",
+                              danger: true,
+                            });
+                            if (sure) {
+                              const rest = widgets
+                                .filter((one) => one.id !== widget.id)
+                                .map((one) => ({ ...one, at: { ...one.at } }));
+                              // What was under it rises into the room it leaves.
+                              settle(rest, undefined);
+                              history.record(`removing ${widget.title || widget.id}`);
+                              keep({ ...body, widgets: rest });
+                            }
+                          }}
+                        >
+                          <Trash2 aria-hidden="true" size={14} />
+                        </Button>
+                      </>
+                    ) : undefined
+                  }
+                />
+              ))}
+          </div>
+          <span role="status" className="sr-only">
+            {placement.said}
+          </span>
         </div>
       )}
 
-      {editing ? (
-        <WidgetEditor
-          key={editing.id}
-          root={root}
-          body={body}
-          widget={editing}
-          onClose={() => setEditing(undefined)}
-          onSave={async (widget) => {
-            const there = body.widgets.some((one) => one.id === widget.id);
-            const done = await withWidgets(
-              there
-                ? body.widgets.map((one) => (one.id === widget.id ? widget : one))
-                : [...body.widgets, widget],
-            );
-            if (done) setEditing(undefined);
-          }}
-        />
-      ) : null}
-      {filtering ? (
-        <FiltersDialog
-          root={root}
-          body={body}
-          onClose={() => setFiltering(false)}
-          onSave={async (next) => {
-            if (await save({ body: next })) setFiltering(false);
-          }}
-        />
-      ) : null}
+      <Closing subject={editing}>
+        {(editing, shown) => (
+          <WidgetEditor
+            open={shown}
+            key={editing.id}
+            root={root}
+            body={body}
+            widget={editing}
+            onClose={() => setEditing(undefined)}
+            onSave={async (widget) => {
+              const there = widgets.some((one) => one.id === widget.id);
+              // A new one goes under the rest, as big as its kind is to begin with.
+              const under = widgets.reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
+              const name = widget.title || widget.id;
+              history.record(there ? `the change to ${name}` : `adding ${name}`);
+              const done = await withWidgets(
+                there
+                  ? widgets.map((one) => (one.id === widget.id ? { ...widget, at: one.at } : one))
+                  : [
+                      ...widgets,
+                      { ...widget, at: { x: 0, y: under, ...WIDGET_SIZE[widget.type] } },
+                    ],
+              );
+              if (done) setEditing(undefined);
+            }}
+          />
+        )}
+      </Closing>
+      <Closing subject={filtering}>
+        {(_filtering, shown) => (
+          <FiltersDialog
+            open={shown}
+            root={root}
+            body={body}
+            onClose={() => setFiltering(false)}
+            onSave={async (next) => {
+              history.record("the change to the filters");
+              if (await save({ body: next })) setFiltering(false);
+            }}
+          />
+        )}
+      </Closing>
       <Dialog open={sharing} onClose={() => setSharing(false)} title={`Share ${loaded.title}`}>
         <div className="flex flex-col gap-4">
           <CheckboxField
@@ -519,11 +722,13 @@ const FILTER_LABELS: Record<DashboardFilter["type"], string> = {
 function FiltersDialog({
   root,
   body,
+  open,
   onClose,
   onSave,
 }: {
   root: string;
   body: DashboardBody;
+  open: boolean;
   onClose: () => void;
   onSave: (body: DashboardBody) => Promise<void>;
 }) {
@@ -547,7 +752,7 @@ function FiltersDialog({
     (one) => !filters.some((kept) => kept.name === one.name),
   );
   return (
-    <Dialog open onClose={onClose} title="Filters">
+    <Dialog open={open} onClose={onClose} title="Filters">
       <div className="flex flex-col gap-4">
         <p className="m-0 text-ink-muted">
           Whoever reads the dashboard sets these. Each widget says, in its own settings, which of

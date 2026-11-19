@@ -1,4 +1,4 @@
-import { Button, JsonView } from "@vynxlabs/ui";
+import { Button, Closing, JsonView } from "@vynxlabs/ui";
 import { FileCode2, ListChecks } from "lucide-react";
 import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
@@ -420,17 +420,20 @@ export function TriggersOf({
           Add a schedule
         </Button>
       </div>
-      <NewScheduleSheet
-        key={String(adding)}
-        root={root}
-        link={link}
-        open={adding}
-        target={{ kind, path }}
-        onClose={() => {
-          setAdding(false);
-          triggers.reload();
-        }}
-      />
+      <Closing subject={adding}>
+        {(_adding, shown) => (
+          <NewScheduleSheet
+            root={root}
+            link={link}
+            open={shown}
+            target={{ kind, path }}
+            onClose={() => {
+              setAdding(false);
+              triggers.reload();
+            }}
+          />
+        )}
+      </Closing>
       <DataTable<TriggerRow>
         actions={(one) => [
           ...(one.type === "schedule"

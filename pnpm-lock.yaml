@@ -361,6 +361,18 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
 
+  packages/docs-engine:
+    dependencies:
+      '@volvel/markup':
+        specifier: workspace:*
+        version: link:../markup
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
   packages/manifest:
     dependencies:
       ajv:
@@ -2496,6 +2508,9 @@ packages:
   minipass@7.1.3:
     resolution: {integrity: sha512-tEBHqDnIoM/1rXME1zgka9g6Q2lcoCkxHLuc7ODJ5BxbP5d4c2Z5cGgtXAku59200Cx7diuHTOYfSBD8n6mm8A==}
     engines: {node: '>=16 || 14 >=14.17'}
+
+  minisearch@7.2.0:
+    resolution: {integrity: sha512-dqT2XBYUOZOiC5t2HRnwADjhNS2cecp9u+TJRiJ1Qp/f5qjkeT5APcGPjHw+bz89Ms8Jp+cG4AlE+QZ/QnDglg==}
 
   monaco-editor@0.57.0:
     resolution: {integrity: sha512-5BkI9KGoqrNvBGUe15/QlZq3OooZ8WLg1AxTpaqHRCP3HNpzPPZKE2EDz8M7c+VRmCeUw1Brp4cx/PWm3kI/5A==}
@@ -5175,6 +5190,8 @@ snapshots:
       minimist: 1.2.8
 
   minipass@7.1.3: {}
+
+  minisearch@7.2.0: {}
 
   monaco-editor@0.57.0:
     dependencies:

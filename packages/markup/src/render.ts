@@ -1,4 +1,4 @@
-import { imageKind, isExternal, safeHref } from "./links.js";
+import { imageKind, isExternal, safeHref, topicOf } from "./links.js";
 import { PROFILES, type ProfileName, REGISTRY, type Registry } from "./registry.js";
 import { type Component, type Node, plain } from "./tree.js";
 
@@ -97,7 +97,9 @@ export function hrefOf(href: string, ctx: Context): string | undefined {
   const mapped = ctx.options.link?.(safe);
   if (mapped === null) return undefined;
   const final = mapped ?? safe;
-  // What a resolver gives back is checked as what an author writes is.
+  // What a resolver gives back is checked as what an author writes is. A topic
+  // nobody resolved is not an address a browser can follow.
+  if (topicOf(final) !== undefined) return undefined;
   return safeHref(final, new Set(["http", "mailto", "relative"]));
 }
 

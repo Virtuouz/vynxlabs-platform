@@ -213,6 +213,17 @@ describe("links", () => {
     );
   });
 
+  test("a link to a topic is drawn only once something says where the topic is", () => {
+    const tree = parse("[refunds](topic:support-refunds#partial)\n");
+    expect(validate(tree, "docs")).toEqual([]);
+    expect(renderHtml(tree)).toBe("<p>refunds</p>");
+    expect(
+      renderHtml(tree, {
+        link: (href) => (href.startsWith("topic:") ? "/support/refunds#partial" : undefined),
+      }),
+    ).toBe('<p><a href="/support/refunds#partial">refunds</a></p>');
+  });
+
   test("a result may link out and nowhere else", () => {
     const tree = parse("[a](https://example.com) [b](other)\n");
     expect(renderHtml(tree, { profile: "result" })).toBe(

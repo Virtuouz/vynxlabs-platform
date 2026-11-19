@@ -14,6 +14,7 @@ export function linkKind(href: string): LinkKind | "refused" {
     })
     .join("");
   if (bare === "") return "refused";
+  if (topicOf(bare) !== undefined) return "relative";
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(bare);
   if (scheme) {
     const name = (scheme[1] as string).toLowerCase();
@@ -23,6 +24,21 @@ export function linkKind(href: string): LinkKind | "refused" {
   }
   if (bare.startsWith("//") || bare.startsWith("\\")) return "refused";
   return "relative";
+}
+
+const TOPIC = /^topic:([a-z0-9][a-z0-9_-]*)(#.*)?$/;
+
+/**
+ * The topic a link names, when it is written `topic:<id>`. Such a link goes to
+ * whichever page has that topic, wherever the page has moved to. It is a link
+ * to another page, and it is only ever drawn once something has said which.
+ */
+export function topicOf(href: string): { topic: string; anchor?: string } | undefined {
+  const found = TOPIC.exec(href.trim());
+  if (!found) return undefined;
+  return found[2]
+    ? { topic: found[1] as string, anchor: found[2].slice(1) }
+    : { topic: found[1] as string };
 }
 
 /** Where a picture comes from: a file beside the page, an https address, or somewhere refused. */

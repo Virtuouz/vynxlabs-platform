@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M2 are built. M3 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M3 are built. M4 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -208,6 +208,27 @@ Tests: parse and tree round trips; each component's props; each profile; the lin
 - Package output: `manifest.json`, one tree per page, the index.
 
 Tests: folder edge cases, ordering, collisions, broken links, layer resolution.
+
+#### Built
+
+- `packages/docs-engine`, on markup, `yaml` and MiniSearch.
+- **The frontmatter's schema** (`schema.ts`) is JSON Schema, with a description on every field for the reference page M7 makes from it. `icon` is added to the architecture's list, since a collection takes its icon from its index page.
+- **`readPage`** reads one file: frontmatter, body, and what is wrong with either, each on its line of the file. A page that fails is still given back, so its author can see it beside its problems.
+- **`buildDocSet`** works out collections, groups, order and the Uncategorized collection from paths alone, and refuses a page deeper than a group and a file beside a folder of its name.
+- Topics, terms, attachments (`about`) and extensions (`extends`), with the product's term and topic ids reserved.
+- **Links are checked across the set**: to a page, to a folder's index, to a heading, to a topic, and to a picture where the files are known. A link is written from where its file is, as on a git host, and the renderer is given the address to draw.
+- **A link can name a topic**, `[refunds](topic:support-refunds)`, and so survive the page moving. The architecture asks for this of help and attachments, and a page's own links needed a way to write it. Markup reads it as a link to another page and never draws one nobody resolved.
+- **Layers** (`stack.ts`): the product's set first, then the tenant's sets a reader may open. Finding a term or a topic, "From your team", the pages attached to a resource, and what two docs apps both define.
+- **Search**: one MiniSearch index for a set, by title, description, headings and words, with a few words around each hit.
+- **What is shipped**: `manifest.json`, `pages/<path>.json`, `search.json`.
+
+#### Findings
+
+- **The check of frontmatter is the engine's own**, about a hundred lines, for the same reason as in M2: it runs as an author types, and it can say "about[0] names 2 things (table, flow). It names one." where a schema library says which keyword failed.
+- **Whether a resource exists is asked, not known.** The engine is given a way to ask. Where nobody can answer, in the CLI's build with no workspace at hand, nothing is said either way, and the deploy says it.
+- A file's name is never changed to make it a path. `Refund Policy.md` is refused and told to be renamed.
+- 45 tests.
+- **Not done here:** the check that every product page is reached from somewhere, which needs the console's list of topics and is in M5's `docs:check`.
 
 ### M4: the kit
 

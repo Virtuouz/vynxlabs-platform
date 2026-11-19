@@ -11,6 +11,9 @@
       "path": "packages/markup"
     },
     {
+      "path": "packages/docs-engine"
+    },
+    {
       "path": "packages/sdk"
     },
     {

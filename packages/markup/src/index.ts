@@ -1,7 +1,7 @@
 export { type DirectiveMeta, readProps } from "./directive.js";
 export { ENHANCE_SCRIPT } from "./enhance.js";
 export { escapeHtml, type HtmlOptions, renderHtml } from "./html.js";
-export { imageKind, isExternal, linkKind, safeHref } from "./links.js";
+export { imageKind, isExternal, linkKind, safeHref, topicOf } from "./links.js";
 export { type ParseOptions, parse } from "./parse.js";
 export {
   COMPONENTS,

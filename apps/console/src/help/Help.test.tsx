@@ -3,8 +3,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { Dialog } from "@volvel/ui";
+import { ERROR_CODES } from "@volvel/manifest";
+import { Dialog, TextField } from "@volvel/ui";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { ApiError } from "../api.ts";
+import { notify } from "../ask.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { SHORTCUTS } from "../kit/shortcuts.ts";
 import {
@@ -17,6 +20,7 @@ import {
 import { setPreference } from "../prefs.ts";
 import { show } from "../testing.tsx";
 import { forgetHelp } from "./content.ts";
+import { FieldAbout, forgetFields } from "./FieldAbout.tsx";
 import { WorkspaceGlossary } from "./glossary.tsx";
 import { HelpDock, useHelpInAddress } from "./HelpDock.tsx";
 import { pageFor } from "./HelpPanel.tsx";
@@ -61,9 +65,11 @@ afterEach(() => {
 
 function Topic() {
   const { topic, target, open } = useHelp();
-  return <output>{`${topic ?? "none"}|${target ?? "page"}|${open ? "open" : "closed"}`}</output>;
+  return (
+    <output data-testid="topic">{`${topic ?? "none"}|${target ?? "page"}|${open ? "open" : "closed"}`}</output>
+  );
 }
-const told = () => screen.getByRole("status", { hidden: true }).textContent;
+const told = () => screen.getByTestId("topic").textContent;
 
 describe("every screen has help", () => {
   const topics = new Set(Object.keys(manifest.topics));
@@ -347,6 +353,82 @@ describe("a workspace's own terms", () => {
     );
     expect(asked).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "RMA" })).toBeNull();
+  });
+});
+
+describe("what an error means", () => {
+  const errors = JSON.parse(readFileSync(join(DOCS, "pages/reference/errors.json"), "utf8"));
+  const sections = new Set(
+    (errors.tree.children as { type: string; id?: string }[])
+      .filter((node) => node.type === "heading")
+      .map((node) => node.id),
+  );
+
+  test("every code the API answers with has its own part of the help", () => {
+    const codes = Object.keys(ERROR_CODES);
+    expect(codes.length).toBeGreaterThan(50);
+    for (const code of codes) expect(sections.has(code), code).toBe(true);
+  });
+
+  test("a failure with a code offers what it means, and opens the help there", async () => {
+    show(
+      <>
+        <Topic />
+        <HelpDock />
+      </>,
+    );
+    act(() => {
+      notify.error(
+        new ApiError(409, {
+          code: "draft_changed",
+          detail: "Someone else saved this draft since you opened it.",
+        }),
+      );
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "What does this mean?" }));
+    expect(told()).toBe("none|reference/errors#draft_changed|open");
+    const panel = screen.getByRole("complementary", { name: "Help" });
+    await within(panel).findByRole("heading", { name: "Error codes" });
+    await within(panel).findByText(/Nothing was overwritten/);
+  });
+
+  test("a failure with no code of the API's, or none at all, offers nothing", async () => {
+    show(<Topic />);
+    act(() => {
+      notify.error(new ApiError(401, { code: "invalid_email_or_password", detail: "No." }));
+      notify.error(new Error("The network is down."));
+    });
+    await screen.findByText("The network is down.");
+    expect(screen.queryByRole("button", { name: "What does this mean?" })).toBeNull();
+  });
+});
+
+describe("a field of a form written by hand", () => {
+  afterEach(forgetFields);
+
+  test("says what its kind's schema says of it, beside its label and not in it", async () => {
+    show(
+      <FieldAbout path="schedule.cron" name="the cron line">
+        <TextField name="cron" label="When, as a cron line" value="" onChange={() => {}} />
+      </FieldAbout>,
+    );
+    const about = await screen.findByRole("button", { name: "About the cron line" });
+    expect(about.closest("label")).toBeNull();
+    fireEvent.click(about);
+    await screen.findByText("Five-field cron expression.");
+    // The field is still found by its own label, and by nothing more.
+    expect(screen.getByLabelText("When, as a cron line")).toBeTruthy();
+  });
+
+  test("a field its schema says nothing of is left as it was", async () => {
+    show(
+      <FieldAbout path="schedule.no_such_field" name="nothing">
+        <TextField name="x" label="Something" value="" onChange={() => {}} />
+      </FieldAbout>,
+    );
+    await screen.findByLabelText("Something");
+    await new Promise((done) => setTimeout(done, 20));
+    expect(screen.queryByRole("button", { name: /^About/ })).toBeNull();
   });
 });
 

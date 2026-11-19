@@ -128,6 +128,32 @@ describe("API description", () => {
     }
   });
 
+  test("says what each route needs, as the route itself declares it", async () => {
+    const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
+    const api = routes.filter(
+      (route) =>
+        route.url.startsWith("/api/") && route.method !== "HEAD" && !route.url.includes("/auth/"),
+    );
+    let checked = 0;
+    for (const route of api) {
+      const path = route.url.replace(/:(\w+)/g, "{$1}").replace(/\*$/, "{*}");
+      for (const method of [route.method].flat()) {
+        const operation = description.paths[path]?.[String(method).toLowerCase()];
+        if (!operation) continue;
+        expect(operation["x-access"], `${method} ${route.url}`).toEqual(
+          (route.config as { access?: unknown }).access,
+        );
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(40);
+    expect(description.paths["/api/v1/tenants/{t}/workspaces/{w}/tables"].get["x-access"]).toEqual({
+      kind: "permission",
+      permission: "table:read",
+      scope: "workspace",
+    });
+  });
+
   test("includes the sign-in routes served by the authentication library", async () => {
     const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
     expect(description.paths["/api/v1/auth/sign-in/email"]).toBeDefined();

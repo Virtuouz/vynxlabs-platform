@@ -12,7 +12,7 @@ import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { pushTenantAccess } from "./kernel/git.js";
-import { access, installAccessControl } from "./kernel/http.js";
+import { type Access, access, installAccessControl } from "./kernel/http.js";
 import { defaultIcon, icoOf, webManifest } from "./kernel/icons.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { observe } from "./kernel/metrics.js";
@@ -208,8 +208,19 @@ export async function buildApp(options: AppOptions) {
           "The one public API of the platform. Errors are RFC 9457 problem details " +
           "(application/problem+json) with a stable `code` and the `requestId`. " +
           "Sign in through `/api/v1/auth/sign-in/email` for a session cookie, or send " +
-          "`Authorization: Bearer <api key>`.",
+          "`Authorization: Bearer <api key>`. Each route says what it needs under `x-access`: " +
+          "a permission and where it is checked, or that it is public, for anyone signed in, " +
+          "or decided by the route itself from what is asked for.",
       },
+    },
+    // What a route needs is in its own configuration. It is written into the description
+    // from there, so the two cannot differ.
+    transform: ({ schema, url, route }) => {
+      const needs = (route.config as { access?: Access } | undefined)?.access;
+      return {
+        url,
+        schema: needs ? ({ ...schema, "x-access": needs } as typeof schema) : schema,
+      };
     },
   });
 

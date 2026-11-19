@@ -1,4 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
+import { isErrorCode } from "@volvel/manifest";
 import {
   type Dialogs,
   DialogsProvider,
@@ -10,7 +11,8 @@ import {
   useToast,
 } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
-import { type ApiError, makeQueryClient, setActiveClient } from "./api.ts";
+import { ApiError, makeQueryClient, setActiveClient } from "./api.ts";
+import { openHelp } from "./help/store.ts";
 import { navigate, setLeaveQuestion } from "./router.tsx";
 
 let dialogs: Dialogs | undefined;
@@ -84,12 +86,25 @@ export function failureText(error: unknown): string {
 }
 
 /** Says what just happened, in a corner of the page. */
+/**
+ * For a failure the API gave a code for: the way to what the code means and
+ * what to do about it, in the help. A toast that already offers something to
+ * do keeps its own.
+ */
+function explained(error: unknown): ToastOptions {
+  if (!(error instanceof ApiError) || !isErrorCode(error.code)) return {};
+  const code = error.code;
+  return {
+    action: { label: "What does this mean?", onClick: () => openHelp(`reference/errors#${code}`) },
+  };
+}
+
 export const notify = {
   /** What was done, naming the result. A link leads to it, such as the thing just made. */
   success: (message: string, options?: ToastOptions) => need(toasts).success(message, options),
   info: (message: string, options?: ToastOptions) => need(toasts).info(message, options),
   error: (error: unknown, options?: ToastOptions) =>
-    need(toasts).danger(failureText(error), options),
+    need(toasts).danger(failureText(error), { ...explained(error), ...options }),
 };
 
 /** Puts text on the clipboard and says so. */

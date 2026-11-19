@@ -72,7 +72,7 @@ test("the environment overrides saved settings, and an unreachable instance is e
 });
 
 test("help and unknown commands", async () => {
-  expect((await cli([])).out).toContain("Usage: platform <command>");
+  expect((await cli([])).out).toContain("Usage: volvel <command>");
   expect(await cli(["explode"])).toMatchObject({
     code: 2,
     err: expect.stringContaining('Unknown command "explode"'),

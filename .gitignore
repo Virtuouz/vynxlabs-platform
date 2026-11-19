@@ -157,3 +157,4 @@ dist/
 
 # Browser test output
 e2e/results
+packages/docs/generated/

@@ -29,6 +29,9 @@ export const loadManifest = () => load<Manifest>("manifest.json");
 
 export const loadPage = (path: string) => load<PageFile>(`pages/${path}.json`);
 
+/** What each field of each kind is, by `<kind>.<path>`, from the kinds' own schemas. */
+export const loadFields = () => load<Record<string, string>>("fields.json");
+
 let searching: Promise<{ search(query: string, limit?: number): SearchHit[] }> | undefined;
 
 /** Searches the help. The index and the code that reads it are fetched the first time something is searched for. */

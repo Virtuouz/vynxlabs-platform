@@ -372,9 +372,15 @@ importers:
 
   packages/docs:
     devDependencies:
+      '@volvel/control-plane':
+        specifier: workspace:*
+        version: link:../../apps/control-plane
       '@volvel/docs-engine':
         specifier: workspace:*
         version: link:../docs-engine
+      '@volvel/manifest':
+        specifier: workspace:*
+        version: link:../manifest
       '@volvel/markup':
         specifier: workspace:*
         version: link:../markup

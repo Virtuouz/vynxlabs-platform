@@ -23,7 +23,8 @@
     "check:licenses": "node scripts/check-licenses.mjs",
     "dev:console": "pnpm --filter @volvel/console dev",
     "e2e": "playwright test -c e2e",
-    "docs:check": "tsc -b && node packages/docs/check.mjs"
+    "docs:check": "tsc -b && node packages/docs/check.mjs",
+    "docs:generate": "tsc -b && node packages/docs/generators/api.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

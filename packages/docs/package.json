@@ -18,11 +18,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "node build.mjs",
-    "check": "node check.mjs"
+    "build": "node generate.mjs && node build.mjs",
+    "check": "node check.mjs",
+    "generate": "node generate.mjs"
   },
   "devDependencies": {
+    "@volvel/control-plane": "workspace:*",
     "@volvel/docs-engine": "workspace:*",
+    "@volvel/manifest": "workspace:*",
     "@volvel/markup": "workspace:*"
   }
 }

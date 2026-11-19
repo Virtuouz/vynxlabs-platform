@@ -32,6 +32,9 @@ export function loadDocs() {
   for (const { folder, under } of ROOTS) {
     for (const file of filesUnder(folder)) {
       const name = join(under, relative(folder, file)).split("\\").join("/");
+      // The API's description is kept beside its page for the website. Every instance
+      // serves its own, so the console carries no copy.
+      if (name.endsWith("openapi.json")) continue;
       if (!name.endsWith(".md")) {
         assets.add(name);
         continue;

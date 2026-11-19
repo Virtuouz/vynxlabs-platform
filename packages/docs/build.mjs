@@ -3,6 +3,7 @@
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { packageOutput } from "@volvel/docs-engine";
+import { fieldDescriptions } from "./generators/reference.mjs";
 import { HERE, loadDocs, report, VERSION } from "./load.mjs";
 
 const { set, issues, assets } = loadDocs();
@@ -21,6 +22,8 @@ for (const [name, text] of packageOutput(set, { version: VERSION, productName: "
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, text);
 }
+// What each field of each kind is, for `::field` in a page and for the console's forms.
+writeFileSync(join(out, "fields.json"), `${JSON.stringify(fieldDescriptions())}\n`);
 for (const asset of assets) {
   const from = asset.startsWith("reference/")
     ? join(HERE, "generated", asset.slice("reference/".length))

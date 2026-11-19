@@ -25,6 +25,10 @@ const Branding = Type.Object({
     tokens: ThemeTokens,
     dark: ThemeTokens,
   }),
+  docsUrl: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "Where the documentation is on the web, when the operator set DOCS_URL. The console's help then offers each page online.",
+  }),
 });
 
 /**
@@ -43,6 +47,7 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         named: Boolean(found?.product_name),
         logo: Boolean(found?.logo_key),
         theme: { tokens: found?.theme.tokens ?? {}, dark: found?.theme.dark ?? {} },
+        docsUrl: kernel.config.docsUrl ?? null,
       };
     };
 

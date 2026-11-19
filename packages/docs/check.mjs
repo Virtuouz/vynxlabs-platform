@@ -6,10 +6,12 @@
 //
 // That every section and editor of the console names a topic at all is held by
 // its types. That React and HTML draw the same thing is held by markup's tests.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { resolveLink } from "@volvel/docs-engine";
 import { linkKind, walk } from "@volvel/markup";
+import { GENERATED, stale, write } from "./generate.mjs";
+import { coverage } from "./generators/reference.mjs";
 import { HERE, loadDocs, report } from "./load.mjs";
 
 const REPO = join(HERE, "../..");
@@ -44,8 +46,25 @@ function asked() {
   return found;
 }
 
-const { set, issues } = loadDocs();
 const problems = [];
+
+// The pages of reference are what the code says now. A checkout that has never
+// been built has none yet, and is given them: only a copy that is there can be old.
+if (!existsSync(GENERATED)) write();
+for (const one of stale()) {
+  problems.push(`${one} Run pnpm docs:generate.`);
+}
+
+// What the kinds' schemas say of their own fields never gets less.
+const floor = JSON.parse(readFileSync(join(HERE, "coverage.json"), "utf8")).kinds;
+const covered = coverage();
+if (covered.share + 1e-9 < floor) {
+  problems.push(
+    `packages/manifest  ${covered.described} of ${covered.fields} fields of the kinds say what they are (${(covered.share * 100).toFixed(1)}%). It was ${(floor * 100).toFixed(1)}%: a field was added, or lost its description. Describe it in its kind's schema.`,
+  );
+}
+
+const { set, issues } = loadDocs();
 report(issues);
 
 const topics = asked();
@@ -82,5 +101,10 @@ if (count > 0) {
   process.exit(1);
 }
 console.log(
-  `docs:check: ${set.pages.size} pages, ${topics.size} topics asked for by the console, all found.`,
+  `docs:check: ${set.pages.size} pages, ${topics.size} topics asked for by the console, all found. ${covered.described} of ${covered.fields} fields of the kinds are described (${(covered.share * 100).toFixed(1)}%).`,
 );
+if (covered.share - floor > 0.005) {
+  console.log(
+    `More fields are described than packages/docs/coverage.json asks for. Raise it to ${Math.floor(covered.share * 1000) / 1000} to keep them.`,
+  );
+}

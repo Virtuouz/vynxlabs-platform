@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M6 are built. M7 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M7 are built. M8 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -346,6 +346,30 @@ Each generator writes to `packages/docs/generated/` (git-ignored). `pnpm docs:ge
 - **API**: `openapi.json` written from the running app in the test harness (`startTestApp`), with `x-access` on each route.
 - **Doc kind and components**: the frontmatter schema and the registry rendered as pages.
 - A generated descriptions module for the console; toggletips on hand-written resource forms.
+
+#### Built
+
+- **Thirty-four pages of reference, written by nobody** (`packages/docs/generators/reference.mjs`), under `reference/` in the help: permissions, one page for each of the 24 kinds, settings, the `volvel` command, error codes, and the syntax of documentation itself, which is the frontmatter's schema and the components' registry. `pnpm build` writes them, into `packages/docs/generated`, which git ignores.
+- **Errors.** `ERROR_CODES` in `packages/manifest/src/errors.ts`: 59 codes, each with its status, a title, and what to do. `HttpError` takes only a code that is listed, so one that is not does not compile. That is stronger than the test the plan asked for. A failure's toast in the console offers "What does this mean?", which opens the help at that code.
+- **Settings.** `CONFIG_VARS` in `apps/control-plane/src/config-vars.ts`: all 53 environment variables, each with what it is for and what is used without it. The loader's helpers take only a name from the table. A test fails when the table lists one the loader never reads, and when anything but the loader reaches for the environment.
+- **`DOCS_URL`**, the first use of the table. With it the help panel offers each page online, at `<DOCS_URL>/docs/<version>/<page>`. Without it there is no such link.
+- **The CLI.** `COMMANDS` in `packages/cli/src/commands.ts`. `volvel --help` is drawn from it, and so is the page. `cli.ts` has a table of handlers in place of its `switch`, typed so that a command with no handler, or a handler with no command, does not compile.
+- **The API.** Each route's own `access` is written into the API's description as `x-access`, by one hook where the description is made. `pnpm docs:generate` starts the app on a throwaway database, asks it to describe itself, and writes `api.md`, 431 routes by tag with what each needs, and `openapi.json` beside it.
+- **Fields.** `fields.json`, what each field of each kind is, shipped with the help. `::field{path=…}` in a page draws from it, and `FieldAbout` puts it behind an ⓘ beside the label of a field in a form written by hand. The schedule's cron line and time zone have it.
+- **`docs:check`** now also fails when a generated page is not what the code says, and when fewer of the kinds' fields say what they are than `packages/docs/coverage.json` asks.
+
+#### Findings
+
+- **26.9% of the kinds' fields are described, not the third the architecture counted.** 129 of 479, counting every field at every depth once. That is the floor now.
+- **The sign-in library's codes are not the platform's.** A sign-in that fails was answered with whatever code the library gave, in lower case. It still is, by a field named for what it is, `passedOn`, and the page of errors says so. They are the only codes not in the list.
+- **`generated/` is ignored by git, as the architecture says, so "stale" can only be said of a copy that is there.** The build writes it afresh, and a checkout that has never been built is given it by the check. The check catches a page left behind after the code changed on a developer's machine. In CI it can never fail on that, since CI has just built them.
+- **The API's page needs Postgres and the rest need nothing**, so it is the one page the build does not write. The build keeps the one `docs:generate` last wrote. An instance built without it has no API page, and the reference's first page does not list one.
+- **The API's description is 1.7 MB.** It is kept beside the page for the website and left out of what the console carries: every instance serves its own.
+- **A toggletip in a form goes beside the label, by a wrapper** (`FieldHelp` in the kit), not by a property on each of the eight fields.
+- **The supervisor reads the environment, and is not reading a setting.** It copies a named few of the machine's own variables to the workers it starts. The test that the environment is read in one place names it.
+- **Not done:** toggletips on the other forms written by hand. `FieldAbout` is one line around a field. Which fields want it is a pass over each form, and only the schedule's is done.
+- **Not done:** a help topic for each error code in the registry. Every code has a section of one page, and the toast opens it there.
+- 1,897 tests.
 
 ### M8: a page is a resource, and a folder of pages is a docs app
 

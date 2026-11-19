@@ -12,3 +12,4 @@ description: How to build, run and look after what lives in a workspace.
 - [Configure](configure/index) connections, variables and secrets.
 - [Tenant](tenant/index): people, access and delivery.
 - [Instance](instance/index): for whoever operates the installation.
+- [Reference](reference/index): lists drawn from the code itself.

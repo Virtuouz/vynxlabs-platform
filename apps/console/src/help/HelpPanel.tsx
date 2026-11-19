@@ -1,11 +1,11 @@
 import type { Manifest, PageFile, SearchHit } from "@volvel/docs-engine";
 import { resolveLink } from "@volvel/docs-engine";
 import { Button, CheckboxField, Doc, Notice, Skeleton } from "@volvel/ui";
-import { ArrowLeft, Link2, Search, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, Link2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../ask.tsx";
 import { useBrand } from "../kit/brand.tsx";
-import { loadManifest, loadPage, searchHelp } from "./content.ts";
+import { loadFields, loadManifest, loadPage, searchHelp } from "./content.ts";
 import { useUnderlineTerms } from "./glossary.tsx";
 import { closeHelp, openHelp, showPageHelp, useHelp } from "./store.ts";
 
@@ -60,6 +60,9 @@ export function HelpPanel() {
   const [underline, setUnderline] = useUnderlineTerms();
   const manifest = useLoaded(loadManifest, "manifest");
   const [query, setQuery] = useState("");
+  // What the kinds say of their fields, for a page that shows one with `::field`.
+  const loadedFields = useLoaded(loadFields, "fields");
+  const fields = loadedFields?.state === "ready" ? loadedFields.value : undefined;
   const heading = useRef<HTMLHeadingElement>(null);
   const body = useRef<HTMLDivElement>(null);
 
@@ -103,12 +106,13 @@ export function HelpPanel() {
         if ("missing" in found) return null;
         return `${INSIDE}${found.path}${found.anchor ? `#${found.anchor}` : ""}`;
       },
+      field: (path: string) => (fields?.[path] ? { description: fields[path] as string } : null),
       term: (props: Record<string, string>) => {
         const term = props.id ? ready.terms[props.id] : undefined;
         return term ? { short: term.short, href: `${INSIDE}${term.path}` } : null;
       },
     };
-  }, [ready, shown]);
+  }, [ready, shown, fields]);
 
   const title =
     page?.state === "ready"
@@ -246,7 +250,19 @@ export function HelpPanel() {
           />
         )}
       </div>
-      <div className="shrink-0 border-line border-t px-4 py-2">
+      <div className="flex shrink-0 flex-col gap-2 border-line border-t px-4 py-2">
+        {brand.docsUrl && ready && shown ? (
+          // The web's copy may be of a newer version. The one here is of the version that is running.
+          <a
+            href={`${brand.docsUrl}/docs/${ready.version}/${shown.path.replace(/(^|\/)index$/, "")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-meta text-action"
+          >
+            Open this page online
+            <ExternalLink aria-hidden="true" size={14} />
+          </a>
+        ) : null}
         <CheckboxField
           label="Underline my team's terms on screens"
           hint="Where a heading or a description uses a word your team's documentation defines."

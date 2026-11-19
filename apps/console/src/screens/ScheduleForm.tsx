@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { FieldAbout } from "../help/FieldAbout.tsx";
 import { inZone } from "../kit/format.ts";
 import { Link } from "../router.tsx";
 
@@ -259,29 +260,33 @@ export function WhenFields({
             if (next) change({ cron: next });
           }}
         />
-        <TextField
-          name="cron"
-          label="When, as a cron line"
-          value={value.cron ?? ""}
-          disabled={readOnly}
-          hint="Minute, hour, day of month, month, day of week."
-          onChange={(next) => change({ cron: next })}
-        />
+        <FieldAbout path="schedule.cron" name="the cron line">
+          <TextField
+            name="cron"
+            label="When, as a cron line"
+            value={value.cron ?? ""}
+            disabled={readOnly}
+            hint="Minute, hour, day of month, month, day of week."
+            onChange={(next) => change({ cron: next })}
+          />
+        </FieldAbout>
       </div>
-      <ComboboxField
-        label="Time zone"
-        options={timeZones()}
-        value={zone}
-        disabled={readOnly}
-        hint={
-          zone === workspaceZone
-            ? "This workspace's zone."
-            : workspaceZone
-              ? `This workspace's zone is ${workspaceZone}.`
-              : undefined
-        }
-        onChange={(next) => change({ timezone: next ?? "UTC" })}
-      />
+      <FieldAbout path="schedule.timezone" name="the time zone">
+        <ComboboxField
+          label="Time zone"
+          options={timeZones()}
+          value={zone}
+          disabled={readOnly}
+          hint={
+            zone === workspaceZone
+              ? "This workspace's zone."
+              : workspaceZone
+                ? `This workspace's zone is ${workspaceZone}.`
+                : undefined
+          }
+          onChange={(next) => change({ timezone: next ?? "UTC" })}
+        />
+      </FieldAbout>
       <div className="flex flex-col gap-1" aria-live="polite">
         <span className="text-body-sm font-medium text-ink">Next times, in {zone}</span>
         {!cron ? (

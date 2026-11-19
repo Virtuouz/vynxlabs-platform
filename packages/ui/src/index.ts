@@ -28,6 +28,7 @@ export {
   control as fieldControl,
   DateField,
   FieldFrame,
+  FieldHelp,
   NumberField,
   SelectField,
   TextAreaField,

@@ -64,7 +64,7 @@ export function FieldFrame({
 
 export interface TextFieldProps extends Common {
   name: string;
-  type?: "text" | "email" | "password" | "number";
+  type?: "text" | "email" | "password" | "number" | "date";
   value?: string;
   placeholder?: string;
   required?: boolean;

@@ -4,7 +4,7 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 ## Unreleased: phase 18, data you can ask questions of
 
-M1 to M9 of the phase. The dashboards that build on them come after.
+M1 to M11 of the phase.
 
 ### For operators
 
@@ -16,6 +16,8 @@ M1 to M9 of the phase. The dashboards that build on them come after.
 - **Approvals are a workspace's.** `GET /tenants/:t/approvals` and `…/approvals/decided` now list only approvals whose step says `surface: tenant`. `GET …/workspaces/:w/approvals` takes `mine=true`, and `…/workspaces/:w/approvals/decided` is new. The console has an Approvals page under each workspace's Operate.
 - **Triggers, variables and connection groups are listed from their drafts**, each with `draft`: `new`, `changed`, `removed` or null. A client that compared these lists exactly sees the new field.
 - **New routes:** `POST …/queries/run`, `GET …/queries/schema`, `GET …/queries`, `GET …/queries/saved/*`. Rows take `?expand=`.
+- **Dashboards ask queries.** `PUT …/dashboards/:d` takes `body`, a dashboard as the `dashboard` schema describes it, where it took `page`; `GET` answers with `body` and `upgraded` where it had `page` and `problems`. A dashboard made before this is given converted, and is stored converted when it is next saved. `GET …/dashboards/:d/widgets/:widget/data` gives what a widget shows. Dashboards the workspace keeps as resources are listed with members' own.
+- **`GET …/queries/visual`** runs a query built from menus, and **`GET …/queries/schema` no longer needs `sql:read`**: it gives the tables the caller may read rows of.
 - **New dependencies:** `pgsql-parser` in the control plane (Postgres's own parser, as WebAssembly), and `@dnd-kit` in the console. Both MIT.
 
 ### For tenant developers
@@ -27,6 +29,7 @@ M1 to M9 of the phase. The dashboards that build on them come after.
 - **`display`** on a table names the column that stands for a row. `GET …/rows/<table>?expand=<column>` gives it for the rows a reference points to.
 - **SQL.** With `sql:read`, `POST …/queries/run` runs one SELECT over the workspace's tables, each named by its path. Only reading is possible, each table needs `data:read`, and each table's row policy applies to the caller. See [Decision 0003](docs/evolution/decisions/0003-read-only-sql.md) for what a query may and may not contain.
 - **`defineQuery`** keeps a query by name, with parameters. It is run with `GET …/queries/saved/<path>` by whoever may read its tables, as themselves.
+- **Dashboards** are figures, charts, tables and pivots over queries: built from menus over a table and the tables its references point to, from a saved query, or from SQL. A dashboard's filters narrow every widget bound to them, a number opens the rows behind it, and a result downloads as CSV or a spreadsheet. A dashboard can be kept as a `dashboard` resource, deployed and promoted like anything else.
 - **An approval step takes `surface: "tenant"`** to be listed on the tenant's Approvals page as well as its workspace's. **A step that says nothing is now listed in its workspace only.** Flows whose approvals should be seen tenant-wide need the line added.
 - **A table that comes back from retirement is given its row policy again**, whether or not the policy changed.
 

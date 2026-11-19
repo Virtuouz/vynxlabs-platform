@@ -1,12 +1,22 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@vynxlabs/db";
-import type { InterfaceBody, InterfacePage } from "@vynxlabs/manifest";
+import {
+  checkDashboard,
+  DASHBOARD_VERSION,
+  type DashboardBody,
+  isOldDashboard,
+  upgradeDashboard,
+} from "@vynxlabs/manifest";
 import { Type } from "typebox";
+import { checkQuery, QueryRefused } from "../kernel/data/query/parse.js";
+import { checkFor, QUERY_ROWS, refusal, runQuery } from "../kernel/data/query/run.js";
+import { type FilterValues, widgetQuery } from "../kernel/data/query/widget.js";
+import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { interfaceProblems } from "./interfaces.js";
-import { AnyObject, Id, iso, NoContent, Time, WorkspaceParams } from "./shared.js";
+import { QueryResultSchema } from "./queries.js";
+import { AnyObject, Id, iso, NoContent, NullableString, Time, WorkspaceParams } from "./shared.js";
 
 /** The most dashboards one member may keep in one workspace. */
 export const MAX_DASHBOARDS = 20;
@@ -24,13 +34,24 @@ const Summary = Type.Object({
   }),
   revision: Type.Integer(),
   updatedAt: Time,
+  kind: Type.Union([Type.Literal("member"), Type.Literal("resource")], {
+    description:
+      "`member` for a dashboard a member keeps. `resource` for one the workspace keeps as a " +
+      "resource: deployed, promoted, and changed where resources are.",
+  }),
+  path: Type.Union([NullableString], { description: "For a resource: its path." }),
 });
 const Dashboard = Type.Object({
   ...Summary.properties,
-  page: AnyObject,
-  problems: Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
+  body: Type.Unsafe<Record<string, unknown>>({
+    ...AnyObject,
     description:
-      "What is wrong with the page as the workspace stands, such as a column its table no longer has.",
+      "The dashboard: its filters and its widgets. See the `dashboard` schema. One made " +
+      "before phase 18 is given as it reads now.",
+  }),
+  upgraded: Type.Boolean({
+    description:
+      "It was made before phase 18 and is shown converted. Saving it keeps the conversion.",
   }),
 });
 const Params = Type.Object({ ...WorkspaceParams.properties, d: Id });
@@ -87,6 +108,8 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .map((one) => ({ id: one.id, name: one.name }));
     };
     const summary = (row: Row, me: string, sharedWith: { id: string; name: string }[] = []) => ({
+      kind: "member" as const,
+      path: null,
       id: row.id,
       title: row.title,
       mine: row.member_id === me,
@@ -107,13 +130,46 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           where s.dashboard_id = member_dashboard.id and g.member_id = ${me}
         )
       )`;
-    const whole = async (workspace: WorkspaceRef, row: Row, me: string) => {
-      const page = row.body as unknown as InterfacePage;
-      return {
-        ...summary(row, me, (await sharesOf([row.id]))(row.id)),
-        page: page as unknown as Record<string, unknown>,
-        problems: await interfaceProblems(kernel, workspace, { title: row.title, pages: [page] }),
-      };
+    /** What a member's dashboard holds, as a dashboard of now. */
+    const bodyOf = (row: { body: unknown; title: string }): DashboardBody =>
+      isOldDashboard(row.body)
+        ? upgradeDashboard(row.body, row.title)
+        : (row.body as unknown as DashboardBody);
+    const whole = async (_workspace: WorkspaceRef, row: Row, me: string) => ({
+      ...summary(row, me, (await sharesOf([row.id]))(row.id)),
+      body: bodyOf(row) as unknown as Record<string, unknown>,
+      upgraded: isOldDashboard(row.body),
+    });
+    /** The dashboards the workspace keeps as resources. Whoever may see dashboards sees them. */
+    const kept = (workspace: WorkspaceRef) =>
+      db
+        .selectFrom("resource")
+        .select(["id", "path", "title", "body", "updated_at"])
+        .where("workspace_id", "=", workspace.id)
+        .where("kind", "=", "dashboard");
+    type Kept = Awaited<ReturnType<ReturnType<typeof kept>["execute"]>>[number];
+    const keptSummary = (row: Kept) => ({
+      kind: "resource" as const,
+      path: row.path,
+      id: row.id,
+      title: row.title || (row.body as { title?: string }).title || row.path,
+      mine: false,
+      owner: "The workspace",
+      shared: true,
+      sharedWith: [],
+      revision: 1,
+      updatedAt: iso(row.updated_at),
+    });
+    /** A dashboard by its ID, whoever keeps it, as far as the caller may see it. */
+    const open = async (workspace: WorkspaceRef, id: string, me: string) => {
+      const mine = await rows(workspace)
+        .where("member_dashboard.id", "=", id)
+        .where(openTo(me))
+        .executeTakeFirst();
+      if (mine) return { member: mine, body: bodyOf(mine) };
+      const resource = await kept(workspace).where("id", "=", id).executeTakeFirst();
+      if (resource) return { resource, body: resource.body as unknown as DashboardBody };
+      throw notFound("The dashboard");
     };
     /** A dashboard the caller may see: their own, or one shared with them. */
     const visible = async (workspace: WorkspaceRef, id: string, me: string) => {
@@ -124,25 +180,44 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       if (!row) throw notFound("The dashboard");
       return row;
     };
-    /** Checks a page as a page of an interface is checked. */
-    const checked = (title: string, page: unknown): InterfacePage => {
+    /** Checks what a dashboard is to hold, and gives it back as it will be kept. */
+    const checked = async (ctx: RequestContext, title: string, given: unknown) => {
       const result = kernel.kinds.validateManifest({
-        kind: "interface",
+        kind: "dashboard",
         schemaVersion: 1,
         path: "dashboard",
         ownership: "ui",
-        body: { title, pages: [page] } satisfies { title: string; pages: unknown[] },
+        body: given,
       });
-      if (!result.ok) {
-        throw badRequest(
-          "The dashboard is not valid.",
-          result.issues.map((issue) => ({
-            path: issue.path.replace(/^\/body\/pages\/0/, "/page"),
+      const issues = result.ok
+        ? checkDashboard(result.value.body as unknown as DashboardBody).map((issue) => ({
+            path: `/body${issue.path}`,
             message: issue.message,
-          })),
-        );
+          }))
+        : result.issues;
+      if (issues.length > 0) throw badRequest("The dashboard is not valid.", issues);
+      const body = given as DashboardBody;
+      const written = body.widgets.flatMap((widget, index) =>
+        widget.source && "sql" in widget.source ? [{ sql: widget.source.sql, index }] : [],
+      );
+      // SQL typed into a widget is SQL typed: whoever saves it must be allowed to write it.
+      if (written.length > 0) {
+        await ctx.authorize("sql:read", {
+          tenantId: (ctx.workspace as WorkspaceRef).tenantId,
+          workspaceId: (ctx.workspace as WorkspaceRef).id,
+        });
       }
-      return (result.value.body as unknown as InterfaceBody).pages[0] as InterfacePage;
+      for (const one of written) {
+        try {
+          await checkQuery(one.sql, { schema: "q", tables: new Set(), anyTable: true });
+        } catch (error) {
+          if (!(error instanceof QueryRefused)) throw error;
+          throw badRequest("The dashboard is not valid.", [
+            { path: `/body/widgets/${one.index}/source/sql`, message: error.message },
+          ]);
+        }
+      }
+      return { ...body, title };
     };
 
     app.get(
@@ -164,7 +239,15 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("member_dashboard.id")
           .execute();
         const shares = await sharesOf(found.map((row) => row.id));
-        return { items: found.map((row) => summary(row, me, shares(row.id))) };
+        const resources = await kept(ctx.workspace as WorkspaceRef)
+          .orderBy("path")
+          .execute();
+        return {
+          items: [
+            ...resources.map(keptSummary),
+            ...found.map((row) => summary(row, me, shares(row.id))),
+          ],
+        };
       },
     );
 
@@ -188,7 +271,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const workspace = ctx.workspace as WorkspaceRef;
         const id = newId();
         const title = body.title.trim();
-        const page = checked(title, { id: "main", title, widgets: [] });
+        const page = await checked(ctx, title, { version: DASHBOARD_VERSION, widgets: [] });
         await ctx.mutate(async (trx, audit) => {
           const held = await trx
             .selectFrom("member_dashboard")
@@ -232,8 +315,9 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("dashboard:read") },
         schema: {
-          summary: "One dashboard, with its page",
-          description: "The caller's own, or one another member shared.",
+          summary: "One dashboard, with its filters and widgets",
+          description:
+            "The caller's own, one another member shared, or one the workspace keeps as a resource.",
           tags: ["dashboards"],
           params: Params,
           response: { 200: Dashboard },
@@ -242,7 +326,103 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }) => {
         const me = member(ctx);
         const workspace = ctx.workspace as WorkspaceRef;
-        return whole(workspace, await visible(workspace, params.d, me), me);
+        const found = await open(workspace, params.d, me);
+        if (found.member) return whole(workspace, found.member, me);
+        return {
+          ...keptSummary(found.resource),
+          body: found.body as unknown as Record<string, unknown>,
+          upgraded: false,
+        };
+      },
+    );
+
+    app.get(
+      `${base}/:d/widgets/:widget/data`,
+      {
+        config: { access: access.workspace("dashboard:read") },
+        schema: {
+          summary: "What one widget of a dashboard shows",
+          description:
+            "Runs the widget's query with the dashboard's filters as `filters` sets them, and " +
+            "answers as a query does. Whoever asks needs `data:read` on each table the query " +
+            "reads, and is given the rows each table's policy gives them: two people looking " +
+            "at one dashboard may see different numbers. It asks for no `sql:read`: the " +
+            "query is the dashboard's.",
+          tags: ["dashboards"],
+          params: Type.Object({
+            ...Params.properties,
+            widget: Type.String({ maxLength: 40 }),
+          }),
+          querystring: Type.Object({
+            filters: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  'The filters by name, as JSON. A range of dates is {"from":"2026-01-01","to":"2026-01-31"}. A filter left out narrows nothing.',
+              }),
+            ),
+            limit: Type.Optional(
+              Type.Integer({ minimum: 1, maximum: QUERY_ROWS.most, default: QUERY_ROWS.default }),
+            ),
+          }),
+          response: { 200: QueryResultSchema },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const me = member(ctx);
+        const workspace = ctx.workspace as WorkspaceRef;
+        const found = await open(workspace, params.d, me);
+        const widget = found.body.widgets.find((one) => one.id === params.widget);
+        if (!widget) throw notFound("The widget");
+        let values: FilterValues = {};
+        if (query.filters !== undefined) {
+          try {
+            values = JSON.parse(query.filters) as FilterValues;
+          } catch {
+            throw badRequest("The filters must be JSON.");
+          }
+          if (typeof values !== "object" || values === null || Array.isArray(values)) {
+            throw badRequest("The filters must be an object, by name.");
+          }
+        }
+        const at = { tenantId: workspace.tenantId, workspaceId: workspace.id };
+        const asked = await widgetQuery(kernel, at, found.body, widget, values);
+        // A parameter nothing fills is empty, so that the query can say what an empty one means.
+        const needs = await checkFor(kernel, at.tenantId, at.workspaceId, asked.text).catch(
+          (error) => {
+            throw error instanceof QueryRefused ? refusal(error) : error;
+          },
+        );
+        const parameters = Array.from(
+          { length: needs.parameters },
+          (_, index) => asked.parameters[index] ?? null,
+        );
+        const scope = await scopeFor(
+          kernel,
+          at.tenantId,
+          ctx.principal,
+          await ctx.allowed("data_all:read", at),
+        );
+        return runQuery(kernel, {
+          ...at,
+          scope,
+          text: asked.text,
+          parameters,
+          ...(query.limit ? { limit: query.limit } : {}),
+          mayRead: async (table) => {
+            const allowed = await ctx.allowed("data:read", {
+              ...at,
+              resourceId: table.resourceId ?? undefined,
+            });
+            if (!allowed) {
+              throw new HttpError(
+                403,
+                "forbidden",
+                `This reads the table "${table.name}", which needs the data:read permission there.`,
+              );
+            }
+          },
+        });
       },
     );
 
@@ -253,15 +433,16 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Save a dashboard",
           description:
-            "Only the member whose it is. `page` is one page of an interface: see the " +
-            "`interface` schema. `shared` shows it, read-only, to everyone in the workspace " +
+            "Only the member whose it is. `body` is the dashboard: see the `dashboard` " +
+            "schema. A widget whose query is SQL written in it needs `sql:read` of whoever " +
+            "saves. `shared` shows it, read-only, to everyone in the workspace " +
             "who may see dashboards: each of them is given only the rows they may read. Send " +
             "`revision` back to be told if it was saved elsewhere in between.",
           tags: ["dashboards"],
           params: Params,
           body: Type.Object({
             title: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
-            page: Type.Optional(AnyObject),
+            body: Type.Optional(AnyObject),
             shared: Type.Optional(Type.Boolean()),
             sharedWith: Type.Optional(
               Type.Array(Id, {
@@ -286,7 +467,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         }
         const title = body.title?.trim() ?? current.title;
-        const page = body.page === undefined ? undefined : checked(title, body.page);
+        const page = body.body === undefined ? undefined : await checked(ctx, title, body.body);
         await ctx.mutate(async (trx, audit) => {
           await trx
             .updateTable("member_dashboard")

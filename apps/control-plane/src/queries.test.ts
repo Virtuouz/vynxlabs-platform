@@ -691,3 +691,203 @@ describe("queries kept by name", () => {
     expect((await saved(erin.client, "reports/one")).status).toBe(403);
   });
 });
+
+describe("queries built from menus", () => {
+  const visual = (client: Client, query: object, limit?: number) =>
+    client.get(
+      `${ws()}/queries/visual?query=${encodeURIComponent(JSON.stringify(query))}${limit ? `&limit=${limit}` : ""}`,
+    );
+  const feesByDevice = {
+    table: "lending/loans",
+    joins: ["device"],
+    groupBy: [{ column: "device.title" }],
+    measures: [
+      { fn: "sum", column: "fee", as: "fees" },
+      { fn: "count", as: "loans" },
+    ],
+    sort: [{ by: "fees", descending: true }],
+  };
+
+  test("a table, the table its reference points to, groups, measures and a sort, with no SQL written", async () => {
+    const all = await visual(alice, feesByDevice);
+    expect(all.status, JSON.stringify(all.body)).toBe(200);
+    expect(rowsOf(all.body)).toEqual([
+      { device_title: "Laptop", fees: 50, loans: 2 },
+      { device_title: "Camera", fees: 30, loans: 1 },
+      { device_title: "Tablet", fees: 5, loans: 1 },
+    ]);
+    expect(all.body.tables).toEqual(["devices", "lending/loans"]);
+    // Rows as they are, with a column of the table pointed to beside the table's own.
+    const plain = await visual(alice, {
+      table: "lending/loans",
+      joins: ["device"],
+      columns: ["device.title", "status", "fee"],
+      filters: [
+        { column: "status", op: "in", value: ["late", "back"] },
+        { column: "fee", op: "gte", value: 30 },
+        { column: "note", op: "is_null" },
+      ],
+      sort: [{ by: "fee" }],
+    });
+    expect(rowsOf(plain.body)).toEqual([{ device_title: "Camera", status: "late", fee: 30 }]);
+    // By period, and by a distinct count.
+    const monthly = await visual(alice, {
+      table: "lending/loans",
+      groupBy: [{ column: "due", bucket: "quarter" }],
+      measures: [{ fn: "count_distinct", column: "device", as: "devices" }],
+    });
+    expect(rowsOf(monthly.body)).toEqual([{ due_quarter: "2026-10-01", devices: 3 }]);
+  });
+
+  test("it needs no permission to write SQL, and is held to each table and each table's rows like any query", async () => {
+    // Frank reads rows and may not write SQL: he owns no loan, so he is given none.
+    const franks = await visual(frank.client, feesByDevice);
+    expect(franks.status, JSON.stringify(franks.body)).toBe(200);
+    expect(franks.body.rows).toEqual([]);
+    expect(rowsOf((await visual(carol.client, feesByDevice)).body)).toEqual([
+      { device_title: "Camera", fees: 30, loans: 1 },
+      { device_title: "Laptop", fees: 10, loans: 1 },
+    ]);
+    // Erin may read devices and not loans.
+    const erins = await visual(erin.client, feesByDevice);
+    expect(erins.status).toBe(403);
+    expect(erins.body.detail).toContain('"lending/loans"');
+    expect((await visual(erin.client, { table: "devices", columns: ["title"] })).status).toBe(200);
+  });
+
+  test("what it names must be there, and a value is never part of the query", async () => {
+    const wrong = async (query: object) => {
+      const answer = await visual(alice, query);
+      expect(answer.status, JSON.stringify(query)).toBe(400);
+      return JSON.stringify(answer.body);
+    };
+    expect(await wrong({ table: "nothing" })).toContain("there is no table");
+    expect(await wrong({ table: "devices", columns: ["nope"] })).toContain("has no column");
+    expect(await wrong({ table: "devices", joins: ["title"] })).toContain(
+      "not a column of devices that points to another table",
+    );
+    expect(await wrong({ table: "lending/loans", columns: ["device.title"] })).toContain(
+      "not among its joins",
+    );
+    expect(
+      await wrong({ table: "devices", measures: [{ fn: "sum", column: "title", as: "x" }] }),
+    ).toContain("sum is of a number");
+    expect(
+      await wrong({ table: "devices", groupBy: [{ column: "title", bucket: "month" }] }),
+    ).toContain("only a date or a time");
+    // A name that is not a name does not get as far as being written.
+    expect(await wrong({ table: "devices", columns: ['title" from secret --'] })).toContain(
+      "/query/columns/0",
+    );
+    expect(await wrong({ table: 'devices"; drop table x; --' })).toContain("/query/table");
+    // A value with SQL in it is a value, and matches nothing.
+    const injected = await visual(alice, {
+      table: "devices",
+      columns: ["title"],
+      filters: [{ column: "title", op: "eq", value: "x' or '1'='1" }],
+    });
+    expect(injected.status).toBe(200);
+    expect(injected.body.rows).toEqual([]);
+  });
+});
+
+describe("a dashboard the workspace keeps", () => {
+  const boards = () => `${ws()}/dashboards`;
+
+  test("is a resource: drafted, deployed, listed for whoever may see dashboards, and asked like any other", async () => {
+    const saved = await alice.put(`${ws()}/drafts/boards/lending`, {
+      kind: "dashboard",
+      schemaVersion: 1,
+      body: {
+        version: 2,
+        title: "Lending",
+        filters: [{ name: "due", type: "date_range" }],
+        widgets: [
+          {
+            id: "fees",
+            type: "figure",
+            source: {
+              visual: {
+                table: "lending/loans",
+                measures: [{ fn: "sum", column: "fee", as: "fees" }],
+              },
+            },
+            filters: [{ filter: "due", column: "due" }],
+            options: { value: "fees", compareTo: "due" },
+          },
+          {
+            id: "by-name",
+            type: "table",
+            source: { query: "reports/fees", values: { statuses: "late" } },
+            filters: [],
+          },
+          {
+            id: "since",
+            type: "table",
+            source: {
+              sql: `select status, count(*) as n from "lending/loans" where ($1::date is null or due >= $1::date) group by status order by status`,
+            },
+            filters: [{ filter: "due", parameter: "$1", part: "from" }],
+          },
+        ],
+      },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const deployed = await alice.post(`${ws()}/changes/deploy`, { paths: ["boards/lending"] });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+
+    // Carol holds no dashboard permission yet; given it, she sees the workspace's dashboard.
+    expect((await carol.client.get(boards())).status).toBe(403);
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      principalType: "member",
+      principalId: carol.id,
+      roleId: (
+        await alice.post(`/tenants/${tenant}/roles`, {
+          name: "board_reader",
+          permissions: ["dashboard:read"],
+        })
+      ).body.id,
+    });
+    const listed = (await carol.client.get(boards())).body.items;
+    expect(listed).toEqual([
+      expect.objectContaining({
+        kind: "resource",
+        path: "boards/lending",
+        title: "Lending",
+        mine: false,
+      }),
+    ]);
+    const id = listed[0].id as string;
+    const whole = (await carol.client.get(`${boards()}/${id}`)).body;
+    expect(whole.body.widgets).toHaveLength(3);
+    // It is changed where resources are, not here.
+    expect(
+      (await carol.client.put(`${boards()}/${id}`, { title: "Mine" })).status,
+    ).toBeGreaterThanOrEqual(403);
+
+    const shown = (client: Client, widget: string, filters?: object) =>
+      client.get(
+        `${boards()}/${id}/widgets/${widget}/data${filters ? `?filters=${encodeURIComponent(JSON.stringify(filters))}` : ""}`,
+      );
+    // Each of the three kinds of source, each as whoever looks.
+    expect((await shown(alice, "fees")).body.rows).toEqual([[85]]);
+    expect((await shown(carol.client, "fees")).body.rows).toEqual([[40]]);
+    expect(
+      (await shown(carol.client, "fees", { due: { from: "2026-11-15", to: "2026-12-31" } })).body
+        .rows,
+    ).toEqual([[10]]);
+    // A saved query, with a value the widget fixes.
+    expect(rowsOf((await shown(carol.client, "by-name")).body)).toEqual([
+      { title: "Camera", fees: 30 },
+    ]);
+    // SQL written in the widget, by someone who could; read by someone who cannot write it.
+    expect(rowsOf((await shown(carol.client, "since")).body)).toEqual([
+      { status: "late", n: 1 },
+      { status: "out", n: 1 },
+    ]);
+    expect(
+      rowsOf((await shown(carol.client, "since", { due: { from: "2026-11-15" } })).body),
+    ).toEqual([{ status: "out", n: 1 }]);
+  });
+});

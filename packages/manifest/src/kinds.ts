@@ -1,3 +1,4 @@
+import { dashboardKind } from "./dashboard.js";
 import { PATH_PATTERN } from "./envelope.js";
 import { interfaceBodySchema } from "./interface.js";
 import type { KindDefinition, KindRegistry } from "./registry.js";
@@ -1348,6 +1349,7 @@ export const platformKinds: KindDefinition[] = [
   flowKind,
   themeKind,
   interfaceKind,
+  dashboardKind,
   appKind,
   bindingKind,
 ];

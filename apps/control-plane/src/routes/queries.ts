@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { enumColor, type QueryBody } from "@vynxlabs/manifest";
+import { DASHBOARD_VERSION, enumColor, type QueryBody, type VisualQuery } from "@vynxlabs/manifest";
 import { Type } from "typebox";
 import { loadCatalog } from "../kernel/data/apply.js";
 import { ALLOWED_FUNCTIONS } from "../kernel/data/query/allowed.js";
 import { checkFor, QUERY_ROWS, runQuery } from "../kernel/data/query/run.js";
+import { visualCatalog, writeVisual } from "../kernel/data/query/widget.js";
 import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, type RequestContext } from "../kernel/http.js";
@@ -34,6 +35,16 @@ export const QueryResultSchema = Type.Object({
   sql: Type.String({
     description: "The query as it ran: written again from what was read of the text sent.",
   }),
+  written: Type.Optional(
+    Type.Object(
+      { sql: Type.String(), parameters: Type.Array(Type.Unknown()) },
+      {
+        description:
+          "For a query built from menus: the SQL the platform wrote for it, as someone would " +
+          "write it, and the values of its parameters. It is what turning the query into SQL gives.",
+      },
+    ),
+  ),
 });
 
 /**
@@ -45,6 +56,25 @@ export const queryRoutes =
   (kernel: Kernel): FastifyPluginAsyncTypebox =>
   async (app) => {
     const db = kernel.db;
+    /** A visual query is checked as a dashboard widget's is, by the same schema. */
+    const validateVisual = (visual: unknown) => {
+      const result = kernel.kinds.validateManifest({
+        kind: "dashboard",
+        schemaVersion: 1,
+        path: "preview",
+        ownership: "ui",
+        body: {
+          version: DASHBOARD_VERSION,
+          widgets: [{ id: "preview", type: "table", source: { visual } }],
+        },
+      });
+      return result.ok
+        ? []
+        : result.issues.map((issue) => ({
+            path: issue.path.replace("/body/widgets/0/source/visual", "/query"),
+            message: issue.message,
+          }));
+    };
     /** Refuses a table the caller may not read, naming it. */
     const reader =
       (ctx: RequestContext, params: { t: string; w: string }) =>
@@ -128,7 +158,9 @@ export const queryRoutes =
     app.get(
       `${base}/queries/schema`,
       {
-        config: { access: access.workspace("sql:read") },
+        // Whoever builds a query from menus needs this as much as whoever writes one. It gives
+        // only the tables the caller may read rows of, so it asks for nothing more than that.
+        config: { access: access.custom },
         schema: {
           summary: "What a query can name: tables, their columns, and the functions allowed",
           description:
@@ -205,6 +237,62 @@ export const queryRoutes =
           });
         }
         return { tables, functions: [...ALLOWED_FUNCTIONS].sort() };
+      },
+    );
+
+    app.get(
+      `${base}/queries/visual`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Run a query built from menus, and read its result",
+          description:
+            "`query` is a visual query, as JSON: a table, the references of it to follow, " +
+            "filters, groups, measures and a sort. See `visual` in the `dashboard` schema. The " +
+            "platform writes its SQL and runs it as any query: each table read needs " +
+            "`data:read`, and its row policy applies to the caller. It asks for no `sql:read`, " +
+            "since nothing here is SQL the caller wrote.",
+          tags: ["data"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            query: Type.String({ maxLength: 8000 }),
+            limit: Type.Optional(
+              Type.Integer({ minimum: 1, maximum: QUERY_ROWS.most, default: QUERY_ROWS.default }),
+            ),
+          }),
+          response: { 200: QueryResultSchema },
+        },
+      },
+      async ({ ctx, params, query: asked }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const at = { tenantId: params.t, workspaceId: params.w };
+        let visual: unknown;
+        try {
+          visual = JSON.parse(asked.query);
+        } catch {
+          throw badRequest("The query must be JSON.");
+        }
+        const valid = validateVisual(visual);
+        if (valid.length > 0) throw badRequest("The query is not valid.", valid);
+        const written = writeVisual(
+          visual as VisualQuery,
+          await visualCatalog(kernel, params.t, params.w),
+        );
+        const scope = await scopeFor(
+          kernel,
+          params.t,
+          ctx.principal,
+          await ctx.allowed("data_all:read", at),
+        );
+        const result = await runQuery(kernel, {
+          ...at,
+          scope,
+          text: written.sql,
+          parameters: written.parameters,
+          ...(asked.limit ? { limit: asked.limit } : {}),
+          mayRead: reader(ctx, params),
+        });
+        return { ...result, written: { sql: written.sql, parameters: written.parameters } };
       },
     );
 

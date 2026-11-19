@@ -74,6 +74,37 @@ export function fullTime(value: When, now: When = Date.now()): string {
   return `${stamp(date)}${zone ? ` ${zone}` : ""} · ${utc} UTC · ${ago(date, now)}`;
 }
 
+/** How a number is to be written: as it is, as money, or as a share of a hundred. */
+export interface NumberStyle {
+  style: "number" | "currency" | "percent";
+  /** An ISO 4217 code, for money. Dollars when left out. */
+  currency?: string;
+  /** The value is in hundredths, such as cents, and is divided by 100 to be shown. */
+  minorUnits?: boolean;
+  decimals?: number;
+}
+
+/** "1,250.5", "$12.50", "34.5%": a number written the way a dashboard or a table says to. */
+export function amount(value: number, style?: NumberStyle): string {
+  const scaled = style?.minorUnits ? value / 100 : value;
+  const options: Intl.NumberFormatOptions =
+    style?.style === "currency"
+      ? { style: "currency", currency: style.currency ?? "USD" }
+      : style?.style === "percent"
+        ? { style: "percent", maximumFractionDigits: 1 }
+        : { maximumFractionDigits: 2 };
+  if (style?.decimals !== undefined) {
+    options.minimumFractionDigits = style.decimals;
+    options.maximumFractionDigits = style.decimals;
+  }
+  try {
+    return new Intl.NumberFormat("en-US", options).format(scaled);
+  } catch {
+    // A currency code the browser does not know: the number alone.
+    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(scaled);
+  }
+}
+
 /** "12,480": a count, grouped as the reader groups digits. */
 export function count(n: number): string {
   return new Intl.NumberFormat().format(n);

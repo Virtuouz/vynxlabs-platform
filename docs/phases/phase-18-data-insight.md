@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M9 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M11 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -361,6 +361,31 @@ tables ─▶ query (built from menus, or written) ─▶ result ─▶ widgets
 - **Widgets:** pivot table, figure with a comparison to the period before, table, and the chart with more marks (stacked and grouped bars, scatter, combined bar and line), all still Vega-Lite inside the kit.
 - **Filters** belong to the dashboard, fill parameters by name, and apply to every widget whose query has that parameter. Date ranges are relative ("last 30 days") as well as fixed.
 
+#### Built
+
+- **The model** (`packages/manifest/src/dashboard.ts`). A dashboard is `{ version: 2, filters, widgets }`. A widget is a figure, a chart, a table, a pivot or a note, and every one but a note has a **source**, in one of three forms: `visual` (a table, the references of it to follow, conditions, groups, measures, a sort), `query` (a saved query by path, with values for its parameters) or `sql` (written in the widget). A widget lists the dashboard filters its query takes: for a visual query the column each narrows, otherwise the parameter each fills.
+- **A visual query is written as SQL by the platform** (`kernel/data/query/visual.ts`) and then read and run as any SQL is, by `checkQuery` and `runQuery`. Every table and column it names is looked up before it is written, every value is a parameter, and nothing is trusted for having been written here. A reference followed is a `LEFT JOIN` on the row pointed to, and its columns are `<column>.<theirs>`.
+- **`GET …/queries/visual?query=…`** runs one. It asks for no `sql:read`, since nothing in it is SQL the caller wrote: `data:read` on each table, and each table's row policy, as ever. Its answer carries the SQL the platform wrote, which is what "Turn it into SQL" puts in the widget.
+- **`GET …/dashboards/:d/widgets/:widget/data?filters=…`** is what a widget shows, with the filters as the reader set them. A range of dates narrows from its first day to the end of its last. A filter left out narrows nothing; a parameter nothing fills is empty.
+- **`GET …/queries/schema`** no longer asks for `sql:read`. It gives only the tables the caller may read rows of, and whoever builds from menus needs it as much as whoever writes SQL.
+- **The console** (`screens/Dashboards.tsx`, `screens/dashboards/`): a dashboard is its filters and a grid of widgets, each asking for its own data. Its maker presses Edit to add, change, move and remove widgets and to set the filters; each change is saved as it is made. A widget is changed in a sheet: what it is, what it asks, which filters it takes, how it is drawn, with the first rows of the answer shown as the question is built. The builder is menus over the workspace's tables.
+- **Widgets**: a figure with how it stands against the period before its date filter's; a chart as bars (stacked or side by side), a line, an area, a pie or points, with several columns as a series each and a line over bars; a table; and a pivot with rows, columns, a cell worked out as a sum, an average, the least, the most or a count, and totals.
+- **Filters**: a range of dates by name ("Last 30 days", "This quarter") or between two dates, one of a list (written, or read from a table's column), text, and a number. What is set is in the address, so a link shows the same thing.
+- Tests: `interfaces.test.ts` (the dashboard routes, seven tests), `queries.test.ts` (visual queries: joins, groups, permissions, names that are not there, values that are not SQL), `DashboardModel.test.ts` (ranges, the period before, pivots, chart descriptions), `Dashboards.test.tsx`, and `e2e/dashboards.spec.ts`, which builds the exit criterion's pivot from menus.
+
+#### Findings
+
+- **The dashboard left the app builder.** It no longer shares the page editor or the renderer of `packages/screens`. Those are an app's.
+- **The layout is rows of widgets of five widths**, not a free grid: a quarter, a third, half, two thirds or the whole row, in order, moved earlier or later. A dashboard is read top to bottom, and a grid to drag things around costs more than it gives.
+- **Calculated columns were not built.** A measure is one of six functions over a column. An expression of one's own is written as SQL, in a saved query or in the widget.
+- **A saved query's `visual` form was not built.** A visual query lives in a widget. A saved query is SQL.
+- **A period heading is a date**: a month is written as its first day. Writing it as "September 2026" is left to do.
+- **A figure kept showing the last comparison** after its date filter was set to all time, since the page keeps what a request last answered while the next loads. Found by the console's test. A figure with no period to ask about now shows none.
+- **A total over no rows is empty**, and a figure compared with it says "Nothing in the period before" instead of nothing.
+- **SQL in a widget needs `sql:read` of whoever saves it**, checked when the dashboard is saved, and is read as SQL is. Whoever looks at the dashboard needs no `sql:read`.
+- **Whether someone may write SQL is not known to the console**, so the choice is always offered and the refusal is the server's.
+- **The console's rules caught four things in the new screens**: a table drawn by hand where a list belongs, "Loading…" in a paragraph, a panel drawn by hand, and numbers formatted outside `kit/format.ts`. Each was brought into line; a pivot is marked as the table that is not a list.
+
 ### M11: dashboards as something to rely on
 
 - Clicking a mark or a pivot cell opens the rows behind it, or another dashboard with the filter carried.
@@ -368,6 +393,22 @@ tables ─▶ query (built from menus, or written) ─▶ result ─▶ widgets
 - A dashboard can be saved as a `dashboard` resource. The member's own stay as they are.
 - Each `member_dashboard` there is today is carried over: every widget's one-table read becomes a visual query that says the same.
 - `dashboard:read` and `dashboard:write` keep their meaning. An end user may be shown a dashboard through an app, which is where `dashboard` becoming app-facing is decided.
+
+#### Built
+
+- **The rows behind a number.** What heads a line of a grouped table, and each cell of a pivot, opens the rows it was worked out from: the same table, joins and filters, narrowed to that line's values. A period is narrowed from its first day to the first day of the next. Every widget built from menus has "See the rows behind it" in its menu. The rows shown are the ones the reader may see.
+- **A result as a file.** Every widget downloads as CSV and as a spreadsheet. The `.xlsx` is written in the browser with no library: a zip of six small XML files, stored and not compressed, with numbers as numbers and text as text. The test reads it back with Python's zip reader, which checks each checksum, and an XML parser.
+- **A dashboard as a resource.** The `dashboard` kind has the same body. It is a file, a draft, a deploy and a promotion like any other, and is listed and shown beside members' own for whoever holds `dashboard:read`, marked "Resource". A member's dashboard has "Keep it as a resource of the workspace", which saves a copy as a draft.
+- **Dashboards from before** are shown as they read now (`upgradeDashboard`): each widget's one-table read becomes a visual query that says the same, a page filter becomes a dashboard filter bound by its column, and widgets come in the order they sat in. One is kept that way the next time it is saved. Nothing is rewritten in the database until then.
+
+#### Findings
+
+- **A chart's bars and points do not open rows.** The chart is drawn by Vega-Lite inside the kit's `Chart`, which does not report a press. The widget's menu opens all the rows behind it.
+- **Not built: opening another dashboard with a filter carried over**, and a dashboard as a PDF.
+- **Not built: an end user seeing a dashboard through an app.** `dashboard` is still not app-facing, and the routes are a member's. An app's page can show a table, and a saved query has a route of its own; putting a dashboard on a page of an app is the next step.
+- **What an old dashboard had that a new one has no word for is left out when it is shown**: a widget that followed the row chosen in another, and a form or an action, which a dashboard never offered. The stored dashboard still holds them until it is saved.
+- **A resource dashboard is not changed in the Dashboards screen.** Its draft is, by whoever may write resources, as YAML; an editor for it there is left to do.
+- **`PUT …/dashboards/:d` takes `body` where it took `page`**, and the answer has `body` and `upgraded` where it had `page` and `problems`. What is wrong with a widget is said by the widget when it is asked.
 
 ### M12: favicons
 

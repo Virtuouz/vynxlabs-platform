@@ -487,6 +487,15 @@ Custom interfaces are resources built and served by the platform, so identity, p
 
 The generated tier takes its idea from Grist: typed tables and linked views. Grist itself is not embedded, and there is no spreadsheet formula engine.
 
+### Dashboards
+
+A dashboard is for asking, where an app is for doing. It reads and changes nothing.
+
+- A dashboard is a set of widgets (figures, charts, tables, pivots), each drawing the answer to a query, and filters that whoever reads it sets.
+- A query is built from menus over a table and the tables its references point to, is a query the workspace keeps, or is SQL. All three are run the same way, under the same rules as any read-only query.
+- Whoever looks at a dashboard is given the rows each table's policy gives them. Two people may see different numbers on the same dashboard, and that is the point.
+- A dashboard is a member's own, shared when they choose, or a resource of the workspace: versioned, deployed and promoted.
+
 ### Admin console
 
 The platform's own interface covers resources, runs, logs, users, settings and the database studio. It is built with the same component kit and the same public API as client apps.

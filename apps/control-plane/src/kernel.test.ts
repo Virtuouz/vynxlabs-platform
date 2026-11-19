@@ -751,6 +751,7 @@ describe("resource registry", () => {
       "connection",
       "connection_group",
       "connector",
+      "dashboard",
       "data_source",
       "event",
       "flow",

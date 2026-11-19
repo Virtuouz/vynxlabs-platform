@@ -207,7 +207,7 @@ test("an enum column is added, given colours that can be read, and chosen from i
 
   // In a row, the value is chosen from the list and shows as its chip.
   await page.goto(`${link}/tables/loans`);
-  await page.getByRole("gridcell", { name: "30" }).click();
+  await page.getByRole("gridcell", { name: "30", exact: true }).click();
   const editor = page.getByRole("complementary");
   await editor.getByLabel("status").selectOption("late");
   await editor.getByRole("button", { name: "Save row" }).click();

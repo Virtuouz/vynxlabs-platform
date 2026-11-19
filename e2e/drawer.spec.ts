@@ -191,15 +191,15 @@ test("a row's JSON is edited in a text area that grows with it and can still be 
     });
   };
 
-  await page.getByRole("gridcell", { name: "short" }).click();
+  await page.getByRole("gridcell", { name: "short", exact: true }).click();
   // Three lines of JSON, in the four rows a text area starts with.
   expect(await lines()).toBe(4);
-  await page.getByRole("gridcell", { name: "long" }).click();
+  await page.getByRole("gridcell", { name: "long", exact: true }).click();
   // Thirty-two lines of JSON: it stops at twelve and scrolls.
   expect(await lines()).toBe(12);
 
   // Typing more into the short one makes it taller as it goes.
-  await page.getByRole("gridcell", { name: "short" }).click();
+  await page.getByRole("gridcell", { name: "short", exact: true }).click();
   const area = page.getByRole("complementary").getByLabel("detail");
   await area.fill(JSON.stringify({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 }, null, 2));
   expect(await lines()).toBe(8);

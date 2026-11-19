@@ -193,6 +193,11 @@ export const queryRoutes =
                 }),
               ),
               functions: Type.Array(Type.String()),
+              maySql: Type.Boolean({
+                description:
+                  "Whether the caller may run SQL of their own here, and write it into a " +
+                  "dashboard's widget: whether they hold `sql:read`, which no wildcard gives.",
+              }),
             }),
           },
         },
@@ -236,7 +241,8 @@ export const queryRoutes =
             ],
           });
         }
-        return { tables, functions: [...ALLOWED_FUNCTIONS].sort() };
+        const maySql = await ctx.allowed("sql:read", { tenantId: params.t, workspaceId: params.w });
+        return { tables, functions: [...ALLOWED_FUNCTIONS].sort(), maySql };
       },
     );
 

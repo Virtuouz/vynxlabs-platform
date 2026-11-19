@@ -262,9 +262,16 @@ describe("asking a question across tables", () => {
     expect(all.tables[0].display).toBe("name");
     expect(all.functions).toContain("date_trunc");
     expect(all.functions).not.toContain("set_config");
+    // And whether they may write SQL of their own, so a screen need not offer what would be refused.
+    expect(all.maySql).toBe(true);
+    expect((await run(alice, "select 1")).status).toBe(200);
     // Erin reads one table, and is told of one.
     const hers = (await erin.client.get(`${ws()}/queries/schema`)).body;
     expect(hers.tables.map((table: Any) => table.name)).toEqual(["devices"]);
+    expect(hers.maySql).toBe(true);
+    // Frank reads rows and holds no `sql:read`.
+    expect((await frank.client.get(`${ws()}/queries/schema`)).body.maySql).toBe(false);
+    expect((await run(frank.client, "select 1")).status).toBe(403);
   });
 });
 

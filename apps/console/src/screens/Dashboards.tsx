@@ -430,7 +430,6 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           root={root}
           body={body}
           widget={editing}
-          canWriteSql
           onClose={() => setEditing(undefined)}
           onSave={async (widget) => {
             const there = body.widgets.some((one) => one.id === widget.id);

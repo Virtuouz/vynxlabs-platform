@@ -27,6 +27,8 @@ interface Schema {
     }[];
   }[];
   functions: string[];
+  /** Whether whoever is here holds `sql:read`. */
+  maySql: boolean;
 }
 
 interface Result {
@@ -232,10 +234,21 @@ export function Queries({ root, link }: { root: string; link: string }) {
             <Button size="small" onClick={() => void save()} disabled={text.trim() === ""}>
               <Save aria-hidden="true" size={14} /> {current ? "Save" : "Save as…"}
             </Button>
-            <Button variant="primary" loading={busy} onClick={() => void run()}>
+            <Button
+              variant="primary"
+              loading={busy}
+              disabled={!schema.data.maySql}
+              onClick={() => void run()}
+            >
               <Play aria-hidden="true" size={16} /> Run
             </Button>
           </div>
+          {schema.data.maySql ? null : (
+            <Notice tone="plain">
+              You can read the queries kept here, but not run SQL: that takes the permission to read
+              with SQL (<code>sql:read</code>), which a role has only when it names it.
+            </Notice>
+          )}
           <div className="overflow-hidden rounded-panel border border-line">
             <Suspense fallback={<Loading />}>
               <CodeEditor

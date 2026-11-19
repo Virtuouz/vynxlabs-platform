@@ -41,6 +41,8 @@ interface Schema {
     name: string;
     columns: { name: string; type: string; references: string | null }[];
   }[];
+  /** Whether whoever is here holds `sql:read`. */
+  maySql: boolean;
 }
 interface SavedQuery {
   path: string;
@@ -796,21 +798,20 @@ export function WidgetEditor({
   root,
   body,
   widget: opened,
-  canWriteSql,
   onSave,
   onClose,
 }: {
   root: string;
   body: DashboardBody;
   widget: DashboardWidget;
-  /** Whether SQL may be written into the widget by whoever is here. */
-  canWriteSql: boolean;
   onSave: (widget: DashboardWidget) => Promise<void>;
   onClose: () => void;
 }) {
   const [widget, setWidget] = useState(opened);
   const [busy, setBusy] = useState(false);
   const schema = useLoad<Schema>(`${root}/queries/schema`);
+  // SQL is offered to whoever may write it. The server says so, and refuses the rest on a save.
+  const canWriteSql = schema.data?.maySql === true;
   const saved = useLoad<{ items: SavedQuery[] }>(`${root}/queries`);
   const [preview, setPreview] = useState<Result>();
   const [problem, setProblem] = useState<string>();

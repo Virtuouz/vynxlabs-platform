@@ -118,6 +118,7 @@ beforeEach(() => {
           },
         ],
         functions: [],
+        maySql,
       },
     ],
     [`GET ${api}/queries`]: () => [200, { items: [] }],
@@ -148,6 +149,8 @@ afterEach(() => {
 const sent = (method: string) => calls.filter((call) => call.method === method);
 /** What the nth save sent. */
 const put = (n: number): Any => (sent("PUT")[n] as { body: Any }).body;
+
+let maySql = false;
 
 test("dashboards are listed with whose they are, and one the workspace keeps says so", async () => {
   routes[`GET ${api}/dashboards`] = () => [
@@ -247,6 +250,8 @@ test("its maker adds a widget built from menus, moves and removes widgets, and s
   fireEvent.change(sheet.getByLabelText("Title"), { target: { value: "How many" } });
   fireEvent.change(sheet.getByLabelText("It is"), { target: { value: "figure" } });
   fireEvent.change(await sheet.findByLabelText("Table"), { target: { value: "stock" } });
+  // Someone without `sql:read` is not offered SQL, which a save would refuse.
+  expect(sheet.queryByRole("option", { name: "SQL written here" })).toBeNull();
   fireEvent.change(sheet.getByLabelText("Show"), { target: { value: "totals" } });
   // The answer is shown as the question is built.
   await within(sheet.getByRole("region", { name: "What it gives" })).findByText("2", undefined, {
@@ -287,6 +292,18 @@ test("its maker adds a widget built from menus, moves and removes widgets, and s
   );
   await waitFor(() => expect(sent("PUT")).toHaveLength(4));
   expect(sent("PUT")[3]?.body).toEqual({ shared: true, revision: 7 });
+});
+
+test("someone who holds sql:read is offered SQL in a widget", async () => {
+  maySql = true;
+  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByRole("region", { name: "Held" });
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a widget" }));
+  const sheet = within(await screen.findByRole("dialog"));
+  await sheet.findByRole("option", { name: "SQL written here" });
+  maySql = false;
 });
 
 test("a dashboard someone else shared, or the workspace keeps, is looked at and offers no way to change it", async () => {

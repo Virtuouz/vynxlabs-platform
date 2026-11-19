@@ -17,6 +17,7 @@
     "@marcbachmann/cel-js": "8.0.0",
     "@tanstack/react-query": "^5",
     "@tanstack/react-virtual": "3.13.12",
+    "@volvel/markup": "workspace:*",
     "@volvel/screens": "workspace:*",
     "@volvel/ui": "workspace:*",
     "@xyflow/react": "^12.12.1",

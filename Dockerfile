@@ -9,7 +9,9 @@ COPY packages/app/package.json packages/app/
 COPY packages/cli/package.json packages/cli/
 COPY packages/compose/package.json packages/compose/
 COPY packages/db/package.json packages/db/
+COPY packages/docs-engine/package.json packages/docs-engine/
 COPY packages/manifest/package.json packages/manifest/
+COPY packages/markup/package.json packages/markup/
 COPY packages/nodes/package.json packages/nodes/
 COPY packages/screens/package.json packages/screens/
 COPY packages/sdk/package.json packages/sdk/

@@ -30,6 +30,7 @@
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@tanstack/react-virtual": "3.13.12",
+    "@volvel/markup": "workspace:*",
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

@@ -53,7 +53,7 @@ test("rows are drawn as a table, at most so many, with the JSON one click away",
   expect(screen.getByRole("region", { name: "Output" }).textContent).toContain('"nested": true');
 });
 
-test("markdown is drawn without ever reading HTML, and links only go where a page may", () => {
+test("markdown is drawn without ever reading HTML, and links only go where a page may", async () => {
   render(
     <Markdown
       text={[
@@ -72,17 +72,21 @@ test("markdown is drawn without ever reading HTML, and links only go where a pag
       ].join("\n")}
     />,
   );
-  expect(screen.getByRole("heading", { name: "Report" })).toBeTruthy();
+  // The reader is loaded when Markdown is first shown.
+  expect(await screen.findByRole("heading", { name: "Report" })).toBeTruthy();
   expect(screen.getByText("well").tagName).toBe("STRONG");
   expect(screen.getByRole("link", { name: "the docs" }).getAttribute("href")).toBe(
     "https://example.com/docs",
   );
+  // A link that may not be followed is its words, and nothing of its address.
   expect(screen.queryByRole("link", { name: "this" })).toBeNull();
-  expect(screen.getByText(/\[this\]\(javascript:alert\(1\)\)/)).toBeTruthy();
+  expect(document.body.innerHTML).not.toContain("javascript:");
+  // A result's headings sit under the page's own.
+  expect(screen.getByRole("heading", { name: "Report" }).tagName).toBe("H3");
   expect(screen.getAllByRole("listitem")).toHaveLength(2);
   expect(document.querySelector("img")).toBeNull();
   expect(screen.getByText("<img src=x onerror=alert(1)>")).toBeTruthy();
-  expect(screen.getByText("<b>code</b>").tagName).toBe("PRE");
+  expect(screen.getByText("<b>code</b>").closest("pre")).toBeTruthy();
 });
 
 test("an image from another site is loaded only when asked for", () => {

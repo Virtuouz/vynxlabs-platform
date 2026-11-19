@@ -18,6 +18,7 @@ export {
   TERM_RESOURCES,
 } from "./registry.js";
 export type { FieldInfo, RenderOptions, TermInfo } from "./render.js";
+export { DOC_CSS } from "./style.js";
 export { renderText } from "./text.js";
 export * from "./tree.js";
 export { type Issue, type ValidateOptions, validate } from "./validate.js";

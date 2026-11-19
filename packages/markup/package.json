@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "One page of documentation: Markdown to a checked tree, drawn as React, HTML or plain text. Nothing in it runs as code.",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

@@ -31,6 +31,8 @@ export interface Components {
   /** `info` is null when nothing stands behind the word for this reader. */
   term?: (props: {
     props: Record<string, string>;
+    /** The term as it was written, as plain text. */
+    word: string;
     info: TermInfo | null;
     children: ReactNode;
   }) => ReactNode;
@@ -145,6 +147,7 @@ function ownComponent(
     case "term":
       return components.term?.({
         props: node.props,
+        word: plain(node),
         info: ctx.options.term?.(node.props) ?? null,
         children: inside(),
       });

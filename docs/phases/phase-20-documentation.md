@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M3 are built. M4 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M4 are built. M5 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -242,6 +242,27 @@ In `packages/ui`, so the console and the interface runtime (`packages/screens/ru
 
 Tests: keyboard and focus for `Term` and `Tree`; `ResultView` fixtures render as before; axe on the kit sheet.
 
+#### Built
+
+- In `packages/ui`: `Term` and `TermScope`, `Toggletip`, `Details`, `Tree`, and `Doc`, which draws a page's tree.
+- **`Term`** is a button that opens the kit's `Popover`. Inside a `TermScope` only the first use of a term on a screen is underlined.
+- **`Tree`** has `role="tree"`, one row that holds the keyboard, and the arrow keys, Home, End, Enter and Space.
+- **`Doc`** draws text from the stylesheet a served page uses, and alerts, tabs, folded sections, keys and terms with the kit's own components. `asServed` draws it with none of the kit, exactly as a docs app serves it, for the editor's preview in M9.
+- **One stylesheet for a page**, `DOC_CSS` in markup. It styles only what is inside `.vd-doc` and takes its colours from `--vd-*` properties, each with a default. `Doc` maps them onto the theme's tokens. The served pages of M8 use the same text.
+- **One Markdown renderer.** `Markdown` in the kit, which draws what a script gives back, is now the markup reader under the `result` profile. The hand-written one is gone.
+- `headingShift` in markup, so a result's `#` is an `h3` under the page's own headings, as before.
+- The new components are on `/instance/kit`.
+
+#### Findings
+
+- **What markup costs a tenant's app.** The interface runtime's first file went from 447.6 kB to 555.5 kB (145 to 193 kB gzipped) with the reader in it. `Markdown` now loads the reader when there is Markdown to show, and the first file is 484.0 kB (156.6 kB gzipped), 11.5 kB more than before. The reader is a file of its own, 49.3 kB gzipped. The console's build is 16.9 MB where it was 16.8.
+- **Two things a result draws differently now.** A link that may not be followed was shown as the Markdown that wrote it, `[this](javascript:…)`. It is now its words alone, with none of the address on the page. And a result can hold a table and struck-out text, which it could not.
+- Until the reader arrives, a result's Markdown is shown as it was written.
+- The console's own rule that every transition is timed by a motion token caught the tree's arrow, which had none.
+- The tree is `div`s, not a list: a list with the role of a tree is what the accessibility lint refuses.
+- The image's build lists each package's `package.json` by name. The two new packages are added, or the install inside the image would not have found them.
+- **Run:** lint, typecheck, licences, and the 700 tests of the kit, the console, the app renderer and the two new packages. **Not run:** the browser tests, and axe over the kit sheet, which is one of them.
+
 ### M5: every console screen has help
 
 - `packages/docs` (`@volvel/docs`): `content/<collection>/<group>/<page>.md`, a first skeleton with one page per topic (stubs are allowed; writing the real docs is out of scope), built artifacts from M3.
@@ -380,5 +401,5 @@ Tests: two editors on one page conflict; the preview matches the served page; a 
 - **Licences pass, as far as was read** (see M2 for what was missed): markdown-it and markdown-it-directive are MIT, markdown-it-task-lists and `yaml` ISC, markdown-it-anchor Unlicense, MiniSearch MIT. All are on the shipped allow-list in `scripts/check-licenses.mjs`.
 - **Monaco's Markdown highlighting is already built** as its own chunk in `apps/console/dist/assets`. `CodeEditor`'s `language` type leaves it out. There is no language service, and none is needed: the problems come from the markup package.
 - **A theme is tokens only** (`resolveTheme`). The docs layout needs a stylesheet of its own over those tokens, as the portal has `PORTAL_CSS`.
-- **Not checked yet:** what markup adds to the console's and the interface runtime's bundles. Measured in M4, when there is something to measure.
+- What markup adds to the console's and the interface runtime's bundles was measured in M4.
 - The master spec was changed first, as it asks: the name, the `doc` kind and its two exceptions, docs apps, the five new terms, the stale deferred line, and the allowance for an image by URL.

@@ -55,6 +55,9 @@ importers:
       '@tanstack/react-virtual':
         specifier: 3.13.12
         version: 3.13.12(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@volvel/markup':
+        specifier: workspace:*
+        version: link:../../packages/markup
       '@volvel/screens':
         specifier: workspace:*
         version: link:../../packages/screens
@@ -470,6 +473,9 @@ importers:
       '@tanstack/react-virtual':
         specifier: 3.13.12
         version: 3.13.12(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@volvel/markup':
+        specifier: workspace:*
+        version: link:../markup
       lucide-react:
         specifier: ^1.72.0
         version: 1.72.0(@types/react@19.3.0)(react@19.3.1)

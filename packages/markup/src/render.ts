@@ -48,6 +48,11 @@ export interface RenderOptions {
   field?: (path: string) => FieldInfo | null | undefined;
   /** Where a screenshot is served from, by its name. */
   screenshot?: (name: string) => string | null | undefined;
+  /**
+   * How many levels to push headings down, for a page drawn inside another
+   * that has headings of its own: 2 draws `#` as an h3. None goes past h6.
+   */
+  headingShift?: number;
   /** Put before every id this drawing makes up, so two drawings on one page do not clash. */
   idPrefix?: string;
   /** The words of the link behind a term. `{word}` is the term as it was written. "More about {word}" when left out. */
@@ -137,7 +142,13 @@ function usual(node: Node, ctx: Context): Drawn[] {
     case "root":
       return inside();
     case "heading":
-      return [el(`h${node.depth}`, { id: node.id }, inside())];
+      return [
+        el(
+          `h${Math.min(6, node.depth + Math.max(0, ctx.options.headingShift ?? 0))}`,
+          { id: node.id },
+          inside(),
+        ),
+      ];
     case "paragraph":
       return [el("p", {}, inside())];
     case "text":

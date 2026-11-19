@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import {
   COMPONENTS,
+  DOC_CSS,
   ENHANCE_SCRIPT,
   linkKind,
   PROFILES,
@@ -356,6 +357,25 @@ describe("components", () => {
       "[alert danger Mind]<p>See {x|A place where a tenant&#x27;s resources live.} and &lt;https://example.com true&gt;.</p>(One)(Two)",
     );
   });
+});
+
+test("headings can be pushed down to sit under a page's own, and never past the sixth level", () => {
+  const tree = parse("# One\n\n##### Five\n");
+  expect(renderHtml(tree, { headingShift: 2 })).toBe(
+    '<h3 id="one">One</h3><h6 id="five">Five</h6>',
+  );
+});
+
+test("the stylesheet styles only what is inside a page of documentation", () => {
+  const selectors = DOC_CSS.replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\{[^{}]*\}/g, "{}")
+    .split("{}")
+    .flatMap((rule) => rule.split(","))
+    .map((selector) => selector.trim())
+    .filter((selector) => selector !== "" && !selector.startsWith("@") && selector !== "}");
+  expect(selectors.length).toBeGreaterThan(30);
+  for (const selector of selectors) expect(selector.replace(/^\}\s*/, "")).toMatch(/^\.vd-doc\b/);
+  expect(DOC_CSS).not.toMatch(/url\(|@import|expression\(/);
 });
 
 describe("profiles", () => {

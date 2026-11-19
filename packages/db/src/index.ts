@@ -1,5 +1,5 @@
 export type { Kysely, Transaction } from "kysely";
-export { sql } from "kysely";
+export { CompiledQuery, sql } from "kysely";
 export { Database, type DatabaseOptions } from "./database.js";
 export {
   type DataStore,

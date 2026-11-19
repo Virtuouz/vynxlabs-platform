@@ -620,6 +620,41 @@ export function defineVariable(options: VariableOptions): ResourceDefinition {
   );
 }
 
+export interface QueryOptions extends ResourceNames {
+  /** The query's name, for example `reports/fees`. */
+  path: string;
+  description?: string;
+  /**
+   * One SELECT over the workspace's tables. A table is named by its path, in
+   * double quotes when it has a `/` or a `-`. A parameter is `$1`, `$2` and so
+   * on, in the order of `parameters`.
+   */
+  sql: string;
+  /** What the query is given each time it is run: `$1` is the first. */
+  parameters?: {
+    name: string;
+    type: "text" | "integer" | "number" | "boolean" | "date" | "timestamp";
+    label?: string;
+    default?: unknown;
+    required?: boolean;
+  }[];
+}
+
+/**
+ * Declares a query the workspace keeps by name. It only reads. Whoever runs it
+ * needs to be allowed to read each table it names, and each table's row policy
+ * applies to them: a dashboard built on it shows each person their own rows.
+ */
+export function defineQuery(options: QueryOptions): ResourceDefinition {
+  return resource("query", options, () =>
+    compact({
+      description: options.description,
+      sql: options.sql,
+      parameters: options.parameters,
+    }),
+  );
+}
+
 export interface EventOptions<Payload extends z.ZodType> extends ResourceNames {
   /** The event's name, for example `orders/placed`. */
   path: string;

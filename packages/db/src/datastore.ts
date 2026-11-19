@@ -18,6 +18,12 @@ export interface DataStore {
   readonly rows: Kysely<PlatformSchema>;
   /** The role `rows` signs in as. Workspace tables are granted to it. */
   readonly role: string;
+  /**
+   * Signs a claim of who is asking, for `app.claim`. Row policies read the
+   * claim through `vx.claim()`, which checks the signature against a key the
+   * `rows` role cannot read: so nothing run on `rows` can say it is someone else.
+   */
+  sign(claim: string): string;
   /** How the `rows` pool is doing. */
   rowStats(): PoolStats;
   ping(): Promise<void>;
@@ -72,6 +78,58 @@ alter table data_column add column if not exists options jsonb;
 alter table data_column add column if not exists on_delete text;
 alter table data_table add column if not exists display_column text;
 `;
+
+/**
+ * How row policies learn who is asking (Decision 0003, guard 5). The control
+ * plane sets `app.claim` to a JSON object followed by a dot and a signature.
+ * `vx.claim()` checks the signature with a key kept where the `rows` role
+ * cannot go, and gives the object. A claim that is not signed, or is out of
+ * date, raises. No claim at all is nobody: an object with nothing in it.
+ */
+const CLAIMS = `
+create schema if not exists vx;
+revoke all on schema vx from public;
+create table if not exists vx.claim_key (
+  one boolean primary key default true check (one),
+  key bytea not null
+);
+revoke all on vx.claim_key from public;
+create or replace function vx.claim() returns jsonb
+language plpgsql stable security definer set search_path = pg_catalog as $claim$
+declare
+  given text := current_setting('app.claim', true);
+  body text;
+  signing bytea;
+  claim jsonb;
+begin
+  if given is null or given = '' then
+    return '{}'::jsonb;
+  end if;
+  if length(given) < 66 or substr(given, length(given) - 64, 1) <> '.' then
+    raise exception 'The claim of who is asking is not signed.' using errcode = '28000';
+  end if;
+  body := left(given, length(given) - 65);
+  select key into signing from vx.claim_key;
+  if signing is null
+    or encode(sha256(signing || sha256(signing || convert_to(body, 'UTF8'))), 'hex') <> right(given, 64)
+  then
+    raise exception 'The claim of who is asking is not signed.' using errcode = '28000';
+  end if;
+  claim := body::jsonb;
+  if (claim ->> 'exp')::numeric < extract(epoch from clock_timestamp()) then
+    raise exception 'The claim of who is asking is out of date.' using errcode = '28000';
+  end if;
+  return claim;
+end
+$claim$;
+revoke all on function vx.claim() from public;
+`;
+
+/** The signature `vx.claim()` checks: two rounds of SHA-256 with the key in front, as hex. */
+export function claimSignature(key: Buffer, claim: string): string {
+  const inner = createHash("sha256").update(key).update(claim, "utf8").digest();
+  return createHash("sha256").update(key).update(inner).digest("hex");
+}
 
 /** Serializes role and catalog set-up between replicas starting together. */
 const SETUP_LOCK = 7_265_100_302;
@@ -132,7 +190,10 @@ export async function openDataStore(options: DataStoreOptions): Promise<DataStor
       .update(`data-role:${database}`)
       .digest("hex");
 
-    if (options.setUp !== false) await setUp(owner, options, role, password);
+    // Derived like the password: never stored here, and the same on every replica.
+    const claimKey = createHmac("sha256", options.secret).update(`claim-key:${database}`).digest();
+
+    if (options.setUp !== false) await setUp(owner, options, role, password, claimKey);
 
     const address = new URL(options.connectionString);
 
@@ -145,6 +206,7 @@ export async function openDataStore(options: DataStoreOptions): Promise<DataStor
       owner,
       rows,
       role,
+      sign: (claim) => `${claim}.${claimSignature(claimKey, claim)}`,
       rowStats: () => statsOf(rowsPool),
       async ping() {
         await sql`select 1`.execute(owner);
@@ -167,16 +229,27 @@ async function setUp(
   options: DataStoreOptions,
   role: string,
   password: string,
+  claimKey: Buffer,
 ): Promise<void> {
   await owner.transaction().execute(async (trx) => {
     await sql`select pg_advisory_xact_lock(${SETUP_LOCK})`.execute(trx);
     if (!options.platform) await sql.raw(CATALOG).execute(trx);
+    await sql.raw(CLAIMS).execute(trx);
+    // Hex only, so it is safe to place in the statement.
+    await sql
+      .raw(
+        `insert into vx.claim_key (key) values (decode('${claimKey.toString("hex")}', 'hex'))
+         on conflict (one) do update set key = excluded.key`,
+      )
+      .execute(trx);
     const exists = await sql`select 1 from pg_roles where rolname = ${role}`.execute(trx);
     await sql
       .raw(
         `${exists.rows.length > 0 ? "alter" : "create"} role "${role}" login password '${password}'`,
       )
       .execute(trx);
+    await sql`grant usage on schema vx to ${sql.id(role)}`.execute(trx);
+    await sql`grant execute on function vx.claim() to ${sql.id(role)}`.execute(trx);
     // Tables made before this role existed, by an earlier version.
     const schemas = await sql<{ name: string }>`
         select nspname as name from pg_namespace where nspname ~ '^ws_[0-9a-f]{32}$'

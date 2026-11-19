@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M6 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M9 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -267,16 +267,86 @@ The rule that no route takes SQL is right for the row API and stays there. A que
 
 Results are cached by the query, its parameters and the caller's scope: never across scopes. A query against an external data source is not in this phase, since no row policy exists there.
 
+#### Built
+
+[Decision 0003](../evolution/decisions/0003-read-only-sql.md) was written first. The owner asked for the work to go on through M9, so its open decisions were taken as it recommended; they are listed at its end for the owner to change.
+
+- **Reading the text** (`kernel/data/query/parse.ts`, `allowed.ts`). `pgsql-parser` parses it; one walk refuses whatever is not on a list of node kinds, names a table that is not the workspace's or the query's own, calls a function that is not on the list, casts to a type that is not, or reads a system column; and the SQL that runs is written again from the tree. A name a `WITH` defines is the query's own only where SQL makes it so: inside itself it is a table's name unless the `WITH` is `RECURSIVE`.
+- **Views** (`views.ts`). `q_<workspace>` holds one `security_invoker` view per live table, named for its path. They are made when a query finds them out of date: what they were made from is kept as the schema's comment and compared, so no deploy, import or purge has to remember them.
+- **Signed identity** (`packages/db/src/datastore.ts`, `rows.ts`, `apply.ts`). Each database has `vx.claim_key` and `vx.claim()`. `withData` sets one setting, `app.claim`, signed with a key derived from the instance's secret and the database's name, as the data role's password is. Every policy reads `(select vx.claim())`. When a database is opened on this version, `upgradePolicies` compiles again every policy that still reads the old settings.
+- **Running** (`run.ts`). Through `withData`, so as a row read: the data role, the claim, the tenant gate. The transaction is read-only, its `search_path` is `pg_catalog`, and its time limit is `SQL_STATEMENT_TIMEOUT_MS` (15 s). Each table named is checked for `data:read` before anything runs.
+- Tests: `parse.test.ts` (13, no database) and `queries.test.ts` (19, run against the shared database and a dedicated one). They try: `set_config` in nine positions, the old settings, a forged claim, a claim changed after signing, an expired one, reading the key, every statement that is not a SELECT, a change hidden in a CTE, the catalog by eight roads, another workspace's schema, the platform's own tables, a function that waits, and a query that never ends.
+
+#### Findings
+
+- **A row comes back as JSON written by Postgres** (`row_to_json`), not through a cursor. The driver gives a count or a sum as text, and gives no column types; Postgres's JSON says a number as a number and keeps the columns in order. Two things follow: **two columns of one name are one column in the result**, so a join names them apart with `AS`; and **a result with no rows names no columns**.
+- **No pool of its own.** A query uses the row pool behind the tenant gate, which already holds one tenant to its share. A second pool would be a second limit to tune, and is left until a query is seen to starve rows.
+- **No cache**, as the decision said.
+- **A table whose path is longer than 63 bytes has no view** and cannot be queried, since Postgres keeps no longer name.
+- **A retired table whose policy names a column that is gone is left with no policy** by the upgrade, which lets nothing through. So a table that comes back from retirement is now always given its policy again (`plan.ts`): three planner tests gained a step.
+- **`vx.claim()` with no claim is nobody**, not an error: an object with nothing in it. The platform's own connection is not subject to the policies, and nothing else connects as the data role without one.
+- **The parser writes "nothing here" as an empty object**, which the walk first took for something it did not know and refused. Found by the test of a function in `FROM`.
+- **Postgres 16 has not been run.** The local stack is 18. CI's matrix runs both when this is pushed.
+- **Phase 11's load test has not been re-run** against the signed claim. The check runs once per statement, as an InitPlan, which M0 measured.
+
 ### M8: SQL in the console
 
 - `POST …/workspaces/:w/queries/run` with `{ sql, params, limit }`, behind `sql:read`. It answers with columns, their types and the rows, or with a refusal that names the line and what was not allowed. Each run is audited with the query's hash, not its result.
 - A SQL workspace under Data: the code editor with a `sql` language, completion of tables, columns, enum values and joins along references, the result in the grid, and the plan's cost before a slow query is run.
+
+#### Built
+
+- **`sql:read`**, explicit as `workspace_production:write` is. Migration 0078 gives it by name to `tenant_admin`, `workspace_admin` and `developer`. `viewer`, whose `*:read` is every other read, does not hold it.
+- **`POST …/queries/run`** `{ sql, params, limit }` answers with columns, rows as arrays, whether it was cut short, the tables read and the SQL as it ran. A refusal names the line and column. A mistake Postgres finds (a column that is not there, a cast that fails) is a 400 in its words. Each run is in the audit log as `sql.run`, with its text, its tables and how many rows, and never the rows.
+- **`GET …/queries/schema`** gives the tables the caller may read, their columns, enum values and references, and the functions allowed.
+- **The console**: Queries under Data. The code editor takes `sql`, and completes from the schema: tables after `FROM` and `JOIN`, the join a reference gives first after `JOIN`, a table's columns after its name or alias and a dot, an enum's values inside the quotes of a comparison, and functions. ⌘↵ runs. A refusal moves the cursor to where it points.
+
+#### Findings
+
+- **The code editor could lose what was typed.** It put back any `value` that differed from its own text, and a page that drew slower than someone typed handed it text a keystroke old: the cursor went to the start and letters were lost or landed out of order. The browser test for this screen found it. The editor now knows text it reported itself and does not put it back while it has focus. The script editor shared the fault.
+- **A space opens the list of offers only after `FROM` and `JOIN`.** Opening it at every space was in the way of every word.
+- **The workspace's new pages had to be named as pages.** A workspace knows its tabs by a list, and an address not on it has "no page". Approvals and Queries were added to it after the browser tests met that screen.
+- **Not built: the plan's cost before a slow query is run.** `EXPLAIN` is a statement of its own and would need its own reading of what it may show.
+- **Parameters typed into the screen are text or numbers**, by what the saved query says each is, and text for a query not yet saved.
+- **The result is shown in the kit's plain grid**, without sorting or paging of its own: the query sorts, and 1,000 rows is the page.
 
 ### M9: saved queries
 
 - A `query` resource kind: `sql` or a visual definition, `parameters` with a type and a default each, and a description. It is a file like any other kind, so it is drafted, deployed, promoted and synced.
 - A saved query runs under the scope of whoever looks, so a viewer needs `data:read` on its tables and not `sql:read`. That is how an end user sees a dashboard.
 - Parameters are bound, never spliced into the text.
+
+#### Built
+
+- **The `query` kind** (`packages/manifest/src/kinds.ts`): `sql`, `parameters` (`name`, `type`, `label`, `default`, `required`) and a description. It is a file, a draft, a deploy and a promotion like any other kind, and has its schema under `schemas/`.
+- **Stored, it is read as it will be when run** (`kernel/kinds.ts`): one SELECT, calling what is allowed, with as many parameters listed as it uses. Whether its tables are there is found when it runs, since a deploy may bring a query and its tables in either order.
+- **`GET …/queries`** lists them with their drafts. **`GET …/queries/saved/<path>?params={…}`** runs one. It asks for no `sql:read`: the text is the workspace's. It asks for `data:read` on each table the query names, and each table's row policy applies to whoever runs it. Parameters are given by name, checked against their types, and bound.
+- **The SDK**: `defineQuery`.
+- **The console**: Save in the Queries screen makes the draft; saved queries are listed beside the editor and open in it.
+- Tests: four more in `queries.test.ts`: a member with no `sql:read` runs a saved query and gets their own rows; one who may not read a table it names is refused by name; a parameter that would be SQL is a value that matches nothing.
+
+#### Findings
+
+- **Running a saved query is a GET.** As a POST it changed nothing, and the platform refuses a write that leaves no audit entry. It is a read, so it is asked for as one.
+- **A saved query that reads no table needs `data:read` at the workspace**, so that someone bound at one table cannot run work on the workspace's database through it.
+- **The `visual` form of a query is not in the schema yet.** It comes with M10, which builds it.
+- **Not built: a query's page of its own**, a parameters form drawn from its definition, and a description edited in the console. The Queries screen runs and saves; the rest belongs with the dashboards that use it.
+- **An end user cannot run a saved query yet.** `data:read` is app-facing, so the permission is there, but no app has a way to ask. M10 is where a dashboard asks.
+
+## Where M1 to M9 stand
+
+Built and tested, on the branch, not pushed. The work stops here for the owner, as agreed, before the dashboards of M10 to M12.
+
+**Run on the final state:** the whole suite after M6 (179 files, 1,592 tests) and after M9 (181 files, 1,632 passed and 2 skipped); the whole browser suite (57 passed and 1 skipped, then the one that failed fixed and run again); the browser tests, with three new files for this phase (`drawer`, `columns`, `data-insight`); `typecheck`, `biome check`, `check:migrations`, `check:schemas` and `check:licenses`.
+
+**Not run:** Postgres 16; phase 11's load test; the test instance, which was not touched.
+
+**Migrations:** 0076 (approvals keep their place on the tenant's page), 0077 (enum values, on-delete rules, display columns), 0078 (`sql:read`). A database also gets the `vx` schema and has its row policies compiled again the first time it is opened.
+
+**For the owner to look at:**
+- the second scroll bar on the runs page, on the screen where it was seen (M1);
+- Decision 0003's five open decisions, above all who holds `sql:read`;
+- that an approval now shows in its workspace only, unless its step says `surface: tenant`.
 
 ### M10: dashboards on queries
 
@@ -316,6 +386,8 @@ A logo gives the console, the portal's sign-in pages and a generated app's page 
 ## Where this meets the master spec
 
 Sections this phase builds on or adds to: Data layer (Custom tables, Schema changes, Access, Database studio), Identity and permissions (Permission model, Rules), Environments (Editing in dev workspaces, Workspace types), Apps and user interface (Admin console, Branding, Two tiers of app), Observability and audit (Operator health).
+
+The spec now says what M1 to M9 changed: explicit permissions, deleting a production workspace, approvals that are a workspace's, the signed claim, SQL, enums, and what a reference does on a delete. The rows below about dashboards and telemetry wait for their milestones.
 
 Proposed changes to the spec and to earlier phases, each to be agreed before its milestone and written into the spec first:
 

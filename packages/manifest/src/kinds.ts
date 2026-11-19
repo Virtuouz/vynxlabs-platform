@@ -890,6 +890,81 @@ export const variableKind: KindDefinition = {
   },
 };
 
+/** The kinds of value a saved query's parameter takes. */
+export const QUERY_PARAMETER_TYPES = [
+  "text",
+  "integer",
+  "number",
+  "boolean",
+  "date",
+  "timestamp",
+] as const;
+export type QueryParameterType = (typeof QUERY_PARAMETER_TYPES)[number];
+
+/**
+ * A query kept by name: one SELECT over the workspace's tables, with the
+ * parameters it takes. It is run by whoever may read it and the tables it
+ * names, as themselves: each table's row policy applies to them.
+ */
+export const queryKind: KindDefinition = {
+  kind: "query",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      description: { type: "string", maxLength: 500 },
+      sql: {
+        type: "string",
+        minLength: 1,
+        maxLength: 20000,
+        description:
+          "One SELECT. A table is named by its path, in double quotes when it has a `/` or a `-`. A parameter is written $1, $2 and so on, in the order of `parameters`.",
+      },
+      parameters: {
+        type: "array",
+        maxItems: 20,
+        description: "What the query is given each time it is run: `$1` is the first.",
+        items: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              pattern: "^[a-z][a-z0-9_]*$",
+              maxLength: 55,
+              description: "What the parameter is called by whoever runs the query.",
+            },
+            type: { enum: [...QUERY_PARAMETER_TYPES] },
+            label: { type: "string", minLength: 1, maxLength: 100 },
+            default: {
+              description: "Used when the query is run without this parameter.",
+            },
+            required: { type: "boolean" },
+          },
+          required: ["name", "type"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["sql"],
+    additionalProperties: false,
+  },
+};
+
+export interface QueryParameter {
+  name: string;
+  type: QueryParameterType;
+  label?: string;
+  default?: unknown;
+  required?: boolean;
+}
+
+/** The body of a `query` manifest, version 1. */
+export interface QueryBody {
+  description?: string;
+  sql: string;
+  parameters?: QueryParameter[];
+}
+
 export const COLUMN_TYPES = [
   "text",
   "integer",
@@ -1263,6 +1338,7 @@ export const platformKinds: KindDefinition[] = [
   connectionGroupKind,
   variableKind,
   tableKind,
+  queryKind,
   dataSourceKind,
   eventKind,
   scriptKind,

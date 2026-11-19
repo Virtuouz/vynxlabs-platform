@@ -2,6 +2,34 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 18, data you can ask questions of
+
+M1 to M9 of the phase. The dashboards that build on them come after.
+
+### For operators
+
+- **Database migrations 0076 to 0078.** Every approval there was keeps its place on the tenant's Approvals page. Columns gain what an enum's values are and what a reference does on a delete, and tables the column that stands for a row. Three built-in roles are given `sql:read`.
+- **Row policies now read a signed claim.** Each database that holds tenants' tables gets a schema `vx` with a key and a function, `vx.claim()`. The first time an instance on this version opens a database, it compiles every table's row policy again to read who is asking from that claim, and says so in its log. Nothing is asked of the operator. A dedicated database must be reachable and writable for it, as for any upgrade.
+- **`SQL_STATEMENT_TIMEOUT_MS`** (15000) is how long one query written in SQL may run.
+- **A production workspace can be deleted**, by someone who holds `workspace_production:write`. No role holds it, not `tenant_admin` and not an operator: it is given only by adding it to a role by name. `DELETE …/workspaces/:w` answers 403 for production where it answered 409.
+- **A permission can be explicit**: only its own name gives it, and `*:*` does not. `workspace_production:write` and `sql:read` are. `GET …/permissions` says which.
+- **Approvals are a workspace's.** `GET /tenants/:t/approvals` and `…/approvals/decided` now list only approvals whose step says `surface: tenant`. `GET …/workspaces/:w/approvals` takes `mine=true`, and `…/workspaces/:w/approvals/decided` is new. The console has an Approvals page under each workspace's Operate.
+- **Triggers, variables and connection groups are listed from their drafts**, each with `draft`: `new`, `changed`, `removed` or null. A client that compared these lists exactly sees the new field.
+- **New routes:** `POST …/queries/run`, `GET …/queries/schema`, `GET …/queries`, `GET …/queries/saved/*`. Rows take `?expand=`.
+- **New dependencies:** `pgsql-parser` in the control plane (Postgres's own parser, as WebAssembly), and `@dnd-kit` in the console. Both MIT.
+
+### For tenant developers
+
+- **Enum columns.** `column.enum(["new", "paid"])` holds one of its values and `column.enumList([...])` several. A row's type is narrowed to them, and the database refuses anything else. A value can be written `{ value, label, color, renamedFrom }`. A value taken out of the definition stays on the rows that hold it and is offered no more; one given `renamedFrom` is rewritten in every row.
+- **A text column becomes an enum** only when every row already holds one of its values. The deploy is refused otherwise, naming the values in the way.
+- **References say what a delete does**: `column.reference("devices", { onDelete: "set_null" })`, or `cascade`. Left out, the deletion is refused as before. Every reference is now indexed.
+- **A reference pointed at another table is held to that table.** It was not before: the old constraint stayed. A deploy that changes where a reference points is refused while rows point at the old table.
+- **`display`** on a table names the column that stands for a row. `GET …/rows/<table>?expand=<column>` gives it for the rows a reference points to.
+- **SQL.** With `sql:read`, `POST …/queries/run` runs one SELECT over the workspace's tables, each named by its path. Only reading is possible, each table needs `data:read`, and each table's row policy applies to the caller. See [Decision 0003](docs/evolution/decisions/0003-read-only-sql.md) for what a query may and may not contain.
+- **`defineQuery`** keeps a query by name, with parameters. It is run with `GET …/queries/saved/<path>` by whoever may read its tables, as themselves.
+- **An approval step takes `surface: "tenant"`** to be listed on the tenant's Approvals page as well as its workspace's. **A step that says nothing is now listed in its workspace only.** Flows whose approvals should be seen tenant-wide need the line added.
+- **A table that comes back from retirement is given its row policy again**, whether or not the policy changed.
+
 ## Unreleased: phase 17, resource identity
 
 ### For operators

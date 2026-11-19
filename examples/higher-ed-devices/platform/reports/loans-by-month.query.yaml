@@ -1,0 +1,20 @@
+# How many devices went out each month, of each kind, and how many are still out.
+# Whoever runs it gets the loans the table's rules give them: the desk sees every
+# loan, and a student their own.
+schemaVersion: 1
+body:
+  description: Loans by month and kind, from a date on
+  sql: |
+    select date_trunc('month', l.checked_out_at) as month,
+           l.kind,
+           count(*) as loans,
+           count(*) filter (where l.status = 'out') as still_out
+    from loans l
+    where l.checked_out_at >= $1::date
+    group by 1, 2
+    order by 1 desc, 2
+  parameters:
+    - name: since
+      type: date
+      label: From
+      default: "2026-01-01"

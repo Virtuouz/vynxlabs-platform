@@ -119,6 +119,8 @@ export const requests = defineTable({
 export const loans = defineTable({
   path: "loans",
   description: "A device in a student's hands, from check-out to return.",
+  // Where something points to a loan, it is shown by its number.
+  display: "number",
   columns: {
     number: column.text({ required: true, unique: true }),
     device_tag: column.text({ required: true }),
@@ -128,7 +130,14 @@ export const loans = defineTable({
     request_number: column.text(),
     checked_out_at: column.timestamp({ required: true }),
     due_on: column.date({ required: true }),
-    status: column.text({ required: true, default: "out" }),
+    // One of two, which the database holds it to, each with the colour it is drawn on.
+    status: column.enum(
+      [
+        { value: "out", label: "Out", color: "blue" },
+        { value: "returned", label: "Returned", color: "green" },
+      ],
+      { required: true, default: "out" },
+    ),
     /** Set each morning for a loan still out after its due date. */
     overdue: column.boolean({ required: true, default: false }),
     returned_at: column.timestamp(),

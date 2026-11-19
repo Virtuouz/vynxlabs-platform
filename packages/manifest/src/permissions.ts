@@ -362,6 +362,16 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "sql",
+    label: "Queries in SQL",
+    group: "Data",
+    scope: "workspace",
+    explicit: true,
+    verbs: {
+      read: "Write a query in SQL and run it over the workspace's tables. It only reads, each table needs its own permission to read rows, and each table's row policy still applies. A wildcard does not give this.",
+    },
+  },
+  {
     kind: "data",
     label: "Rows",
     group: "Data",

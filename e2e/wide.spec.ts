@@ -92,7 +92,12 @@ for (const theme of ["light", "dark"] as const) {
     await page.goto(`${link}/runs?run=${failed}`);
     const grid = page.getByRole("grid", { name: "Runs" });
     await expect(grid.getByRole("row")).toHaveCount(7, { timeout: 30_000 });
-    await page.getByRole("complementary", { name: "The chosen run" }).waitFor();
+    const drawer = page.getByRole("complementary", { name: "The chosen run" });
+    await drawer.waitFor();
+    // It slides open (phase 18): the list has its widths once the drawer has its room.
+    await expect
+      .poll(() => drawer.evaluate((node) => node.parentElement?.style.width ?? ""))
+      .toBe("");
     const columns = await grid.evaluate((table) => {
       const width = (node: Node) => {
         const range = document.createRange();

@@ -146,6 +146,49 @@ step.approval("Lend a device", { approvers: { groups: ["tech-desk"] } });
 
 A row that belongs to a group should hold the group's key. A text column checked with `in: "groups"` matches the key, and still matches what the group is called.
 
+## Tables: choices, references and questions
+
+**A column that holds a choice** is an enum. Its row type is the values themselves, so a script that writes a value the column does not have fails to compile, and the database refuses whatever gets past that.
+
+```ts
+export const loans = defineTable({
+  path: "loans",
+  display: "number",
+  columns: {
+    number: column.text({ required: true, unique: true }),
+    status: column.enum(
+      ["out", { value: "returned", label: "Returned", color: "green" }],
+      { required: true, default: "out" },
+    ),
+    extras: column.enumList(["charger", "case"]),
+    device: column.reference(devices, { onDelete: "set_null" }),
+  },
+});
+```
+
+- Take a value out and the rows that hold it keep it; nobody is offered it again.
+- Spell a value anew with `renamedFrom` and every row is rewritten in the deploy.
+- A colour is `gray`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `violet` or `pink`, or any `#rrggbb`. The text over it is black or white, whichever reads better.
+- `onDelete` is `restrict` (the default: deleting a row that is pointed to is refused), `set_null` or `cascade`.
+- `display` is the column shown where another table points to a row of this one.
+
+**A question across tables** is a query: one SELECT, kept by name.
+
+```ts
+export const feesByDevice = defineQuery({
+  path: "reports/fees",
+  sql: `select d.name, sum(l.fee) as fees
+        from loans l join devices d on d.id = l.device
+        where l.fee >= $1 group by d.name order by fees desc`,
+  parameters: [{ name: "least", type: "integer", default: 0 }],
+});
+```
+
+- A table is named by its path, in double quotes when it has a `/` or a `-`: `"lending/loans"`.
+- A query reads. It cannot change a row, name a table that is not the workspace's, or call a function outside the list `GET …/queries/schema` gives.
+- Whoever runs it needs `data:read` on each table it names, and gets the rows each table's policy gives them. A query over an owner's table gives each person their own rows.
+- Two columns of the same name are one in the result: name them apart with `as`.
+
 ## What the build stops
 
 - **A definition that is not exported.** `defineScript(…)` that the entry file does not export is refused by name. Two files exporting the same name through `export *` cancel each other out: export each by name.

@@ -192,25 +192,40 @@ export const groupValues = (groups: readonly { id: string; key: string; name: st
  * is told who is asking for as long as the transaction lasts. Nothing run on
  * that connection can become the role that owns the tables.
  *
- * Nothing in here may run SQL that a caller wrote: whoever can run SQL can
- * also say they are someone else.
+ * Who is asking is a signed claim, which the connection's role cannot make.
+ * SQL that a caller wrote runs here only through `runQuery`, which has
+ * parsed it, found it to be one SELECT over the workspace's own tables
+ * calling allowed functions, and written it again (Decision 0003).
  */
+/** How long a claim outlives the statement it was made for. */
+const CLAIM_SECONDS = 300;
+
 export async function withData<T>(
   kernel: Kernel,
   tenantId: string,
   scope: DataScope,
   run: (trx: AnyDb) => Promise<T>,
+  options: { timeoutMs?: number } = {},
 ): Promise<T> {
   const store = await kernel.data.forTenant(tenantId);
-  const timeoutMs = kernel.config.limits.dataStatementTimeoutMs;
+  const timeoutMs = options.timeoutMs ?? kernel.config.limits.dataStatementTimeoutMs;
+  // Who is asking, signed with a key this connection's role cannot read. A policy takes it
+  // from `vx.claim()`, which checks the signature: nothing run here can say it is someone else.
+  const claim = store.sign(
+    JSON.stringify({
+      principal: scope.principalId ?? "",
+      all: scope.all,
+      groups: scope.groups ?? [],
+      attrs: scope.attributes ?? {},
+      // Good for as long as a statement may run, and some more for clocks that differ.
+      exp: Math.floor(Date.now() / 1000) + Math.ceil(timeoutMs / 1000) + CLAIM_SECONDS,
+    }),
+  );
   const work = () =>
     store.rows.transaction().execute(async (trx) => {
       // No one statement holds a connection for long: past the limit it is stopped.
       await sql`select
-        set_config('app.principal', ${scope.principalId ?? ""}, true),
-        set_config('app.data_all', ${scope.all ? "on" : "off"}, true),
-        set_config('app.groups', ${JSON.stringify(scope.groups ?? [])}, true),
-        set_config('app.attrs', ${JSON.stringify(scope.attributes ?? {})}, true),
+        set_config('app.claim', ${claim}, true),
         set_config('statement_timeout', ${String(timeoutMs)}, true)`.execute(trx);
       try {
         return await run(trx as unknown as AnyDb);

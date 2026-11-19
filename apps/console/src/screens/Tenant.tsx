@@ -47,6 +47,7 @@ const Extensions = lazy(() => import("./Authoring.tsx").then((m) => ({ default: 
 const ScriptEditor = lazy(() =>
   import("./Authoring.tsx").then((m) => ({ default: m.ScriptEditor })),
 );
+const Queries = lazy(() => import("./Queries.tsx").then((m) => ({ default: m.Queries })));
 const Dashboards = lazy(() => import("./Dashboards.tsx").then((m) => ({ default: m.Dashboards })));
 const DashboardView = lazy(() =>
   import("./Dashboards.tsx").then((m) => ({ default: m.DashboardView })),
@@ -368,6 +369,7 @@ function ExportSection({ base }: { base: string }) {
 /** Every tab a workspace has. Any other address in a workspace has no page. */
 const WORKSPACE_TABS = new Set([
   "alerts",
+  "approvals",
   "apps",
   "changes",
   "connections",
@@ -379,6 +381,7 @@ const WORKSPACE_TABS = new Set([
   "flows",
   "git",
   "overview",
+  "queries",
   "release",
   "resources",
   "runs",
@@ -488,6 +491,8 @@ function WorkspaceDetail({
       ) : tab === "flow-runs" && rest ? (
         // A flow run's page is the run page now; old links still arrive.
         <ToRunPage to={`/t/${tenantId}/workspaces/${workspaceId}/runs/${rest}`} />
+      ) : tab === "queries" ? (
+        <Queries root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "dashboards" && rest ? (
         <DashboardView
           key={rest}

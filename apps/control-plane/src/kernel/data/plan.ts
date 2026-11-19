@@ -379,7 +379,12 @@ export function planTable(
   if ((table.display ?? null) !== (body.display ?? null)) {
     steps.push({ op: "set_display", table: name, display: body.display ?? null });
   }
-  if (!same(table.policy, policy)) steps.push({ op: "set_policy", table: name, policy });
+  // A table that comes back from retirement is given its policy again: while it was away
+  // its policy may have been taken off, when it named a column that had gone.
+  const restored = steps.some((step) => step.op === "restore_table");
+  if (!same(table.policy, policy) || restored) {
+    steps.push({ op: "set_policy", table: name, policy });
+  }
   return { steps, issues };
 }
 

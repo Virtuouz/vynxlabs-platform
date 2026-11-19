@@ -576,10 +576,15 @@ async function setUnique(trx: Trx, schema: string, table: string, column: string
 /** The names a table's row policies may have had. All are dropped before the wanted ones are made. */
 const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"];
 
-/** The groups and attributes of whoever is asking, as `withData` sets them for the transaction. */
-const GROUPS = sql`(select jsonb_array_elements_text(coalesce(nullif(current_setting('app.groups', true), ''), '[]')::jsonb))`;
-const attribute = (name: string) =>
-  sql`(coalesce(nullif(current_setting('app.attrs', true), ''), '{}')::jsonb ->> ${sql.lit(name)})`;
+/**
+ * Who is asking, from the claim `withData` signs for the transaction. Written
+ * as a subquery so that it is checked and read once for a statement, not once
+ * for every row.
+ */
+const CLAIM = sql`(select vx.claim())`;
+const PRINCIPAL = sql`(${CLAIM} ->> 'principal')`;
+const GROUPS = sql`(select jsonb_array_elements_text(coalesce(${CLAIM} -> 'groups', '[]'::jsonb)))`;
+const attribute = (name: string) => sql`(${CLAIM} -> 'attrs' ->> ${sql.lit(name)})`;
 
 /** Replaces a table's row policy with the one its definition asks for. */
 async function setPolicy(
@@ -606,12 +611,12 @@ async function setPolicy(
       ).physical_name,
     );
   // Whoever may see every row is past every policy.
-  const everything = sql`current_setting('app.data_all', true) = 'on'`;
+  const everything = sql`coalesce((${CLAIM} ->> 'all')::boolean, false)`;
   if (policy.type === "owner") {
     // A caller sees and writes a row when it is theirs, or when they may see every row.
     const allowed = sql`
       ${everything}
-      or ${await physical(policy.column)}::text = current_setting('app.principal', true)
+      or ${await physical(policy.column)}::text = ${PRINCIPAL}
     `;
     await sql`
       create policy rows on ${target} for all to ${sql.id(role)}
@@ -624,7 +629,7 @@ async function setPolicy(
       const column = await physical(when.column);
       if ("is" in when) {
         // No one is nobody's: a request from no person matches no row.
-        return sql`(current_setting('app.principal', true) <> '' and ${column}::text = current_setting('app.principal', true))`;
+        return sql`(${PRINCIPAL} <> '' and ${column}::text = ${PRINCIPAL})`;
       }
       if ("in" in when) return sql`${column}::text in ${GROUPS}`;
       return sql`${column}::text = ${attribute(when.equals.attribute)}`;
@@ -657,6 +662,62 @@ async function setPolicy(
     .set({ policy: JSON.stringify(policy) })
     .where("id", "=", table.id)
     .execute();
+}
+
+/**
+ * Compiles again every row policy that still reads who is asking from the
+ * plain settings an earlier version used. Run once for a database when it is
+ * opened: after it, a policy trusts only the signed claim.
+ */
+export async function upgradePolicies(owner: Db, role: string): Promise<number> {
+  const old = await sql<{ schema: string; table: string }>`
+    select distinct schemaname as schema, tablename as "table" from pg_policies
+    where schemaname ~ '^ws_[0-9a-f]{32}$'
+      and (coalesce(qual, '') like '%current_setting(''app.%'
+        or coalesce(with_check, '') like '%current_setting(''app.%')
+  `.execute(owner);
+  if (old.rows.length === 0) return 0;
+  let done = 0;
+  await owner.transaction().execute(async (trx) => {
+    for (const { schema, table } of old.rows) {
+      const hex = schema.slice(3);
+      const workspaceId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+      const row = await trx
+        .selectFrom("data_table")
+        .select(["id", "physical_name", "policy", "status"])
+        .where("workspace_id", "=", workspaceId)
+        .where("physical_name", "=", table)
+        .executeTakeFirst();
+      if (!row) continue;
+      // A retired table is read by nobody, and its policy may name a column that is gone.
+      // It is then left with none, which lets nothing through, and is given its policy
+      // again when the table comes back.
+      const policy = row.policy as TablePolicy;
+      const named =
+        policy.type === "owner"
+          ? [policy.column]
+          : policy.type === "rules"
+            ? policy.rules.flatMap((rule) => conditionColumn(rule.when) ?? [])
+            : [];
+      const there = await trx
+        .selectFrom("data_column")
+        .select("name")
+        .where("table_id", "=", row.id)
+        .where("status", "=", "active")
+        .execute();
+      const whole = named.every((name) => there.some((column) => column.name === name));
+      if (whole) {
+        await setPolicy(trx, role, schema, row, policy);
+      } else {
+        const target = sql.id(schema, table);
+        for (const name of POLICY_NAMES) {
+          await sql`drop policy if exists ${sql.id(name)} on ${target}`.execute(trx);
+        }
+      }
+      done += 1;
+    }
+  });
+  return done;
 }
 
 /** Makes a table's indexes the ones its definition lists. Only indexes the platform made are touched. */

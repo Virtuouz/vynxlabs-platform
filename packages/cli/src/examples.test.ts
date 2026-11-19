@@ -46,6 +46,7 @@ test("higher-ed-devices keeps what has no code as files, beside the logic its co
     "app desk",
     "interface screens/borrow",
     "interface screens/desk",
+    "query reports/loans-by-month",
     "schedule loans/overdue-each-morning",
     "theme theme",
     "variable loans/days",

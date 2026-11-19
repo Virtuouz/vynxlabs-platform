@@ -12,6 +12,7 @@ import {
   Database,
   Download,
   FileCode2,
+  FileSearch,
   Fingerprint,
   Gauge,
   GitBranch,
@@ -122,6 +123,7 @@ export const WORKSPACE_SECTIONS: Record<
   ],
   data: [
     { slug: "tables", label: "Tables", icon: Table2 },
+    { slug: "queries", label: "Queries", icon: FileSearch },
     { slug: "sources", label: "Data sources", icon: Database },
     { slug: "dashboards", label: "Dashboards", icon: Gauge },
   ],

@@ -254,6 +254,7 @@ Every data request has a time limit. Past it, the statement is stopped and the r
 | `DATA_POOL_SIZE` | 10 | Connections for every tenant's table requests, per replica |
 | `DATA_TENANT_CONNECTIONS` | A third of `DATA_POOL_SIZE`, at least 2 | Table requests one tenant may have open at once, per replica |
 | `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
+| `SQL_STATEMENT_TIMEOUT_MS` | 15000 | How long one query written in SQL may run before it is stopped |
 
 Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `platform_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
 

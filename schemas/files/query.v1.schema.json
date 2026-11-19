@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "files/query.v1.schema.json",
+  "title": "query file, version 1",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's identity, when that is not its path. Say it when you move the file: the path the resource had. It never changes."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+      "description": "The resource's path, when the file is kept somewhere that does not give it one."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What people read."
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000,
+          "description": "One SELECT. A table is named by its path, in double quotes when it has a `/` or a `-`. A parameter is written $1, $2 and so on, in the order of `parameters`."
+        },
+        "parameters": {
+          "type": "array",
+          "maxItems": 20,
+          "description": "What the query is given each time it is run: `$1` is the first.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "maxLength": 55,
+                "description": "What the parameter is called by whoever runs the query."
+              },
+              "type": {
+                "enum": [
+                  "text",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "date",
+                  "timestamp"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "default": {
+                "description": "Used when the query is run without this parameter."
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "type"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "sql"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "body"
+  ],
+  "additionalProperties": false
+}

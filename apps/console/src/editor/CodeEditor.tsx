@@ -6,7 +6,7 @@ export interface CodeEditorProps {
   label: string;
   value: string;
   onChange?: (value: string) => void;
-  language: "typescript" | "json" | "yaml" | "plaintext";
+  language: "typescript" | "json" | "yaml" | "plaintext" | "sql";
   /** Identifies the document. Change it to open another one in the same editor. */
   path: string;
   readOnly?: boolean;
@@ -64,9 +64,12 @@ export function CodeEditor({
   const runs = onRun !== undefined;
   const saves = onSave !== undefined;
   const goTo = useRef<(line: number, column: number) => void>(() => {});
+  /** What the editor reported lately, oldest first. */
+  const typed = useRef<string[]>([]);
   const editor = useRef<{
     getValue(): string;
     setValue(text: string): void;
+    hasTextFocus(): boolean;
     updateOptions(options: object): void;
     dispose(): void;
   }>(null);
@@ -140,9 +143,13 @@ export function CodeEditor({
           if (changed.some((one) => one.toString() === uri.toString())) report();
         });
         report();
-        const listening = created.onDidChangeModelContent(() =>
-          latest.current.onChange?.(created.getValue()),
-        );
+        const listening = created.onDidChangeModelContent(() => {
+          const now = created.getValue();
+          // Remembered, so that this text coming back as `value` is known for what it is.
+          typed.current.push(now);
+          if (typed.current.length > 200) typed.current.shift();
+          latest.current.onChange?.(now);
+        });
         // The theme follows the system and the person's own choice.
         const media = matchMedia("(prefers-color-scheme: dark)");
         media.addEventListener("change", applyTheme);
@@ -192,9 +199,15 @@ export function CodeEditor({
   }, [label]);
 
   // Text set from outside, such as a draft that was reloaded, replaces what the editor shows.
+  // Text the editor itself reported is not from outside, even when it arrives late: someone
+  // typing faster than the page draws has already typed past it, and putting it back would
+  // lose what they typed since and send the cursor to the start.
   useEffect(() => {
     const current = editor.current;
-    if (current && current.getValue() !== value) current.setValue(value);
+    if (!current || current.getValue() === value) return;
+    if (current.hasTextFocus() && typed.current.includes(value)) return;
+    typed.current = [];
+    current.setValue(value);
   }, [value]);
 
   return (

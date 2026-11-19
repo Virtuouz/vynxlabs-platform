@@ -49,6 +49,7 @@ import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { preferenceRoutes } from "./routes/preferences.js";
 import { promotionRequestRoutes } from "./routes/promotion-requests.js";
+import { queryRoutes } from "./routes/queries.js";
 import { scimRoutes } from "./routes/scim.js";
 import { searchRoutes } from "./routes/search.js";
 import { sourceRoutes } from "./routes/sources.js";
@@ -208,6 +209,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(mcpRoutes(kernel));
       await api.register(flowRoutes(kernel));
       await api.register(dataRoutes(kernel));
+      await api.register(queryRoutes(kernel));
       await api.register(sourceRoutes(kernel));
       await api.register(locationRoutes(kernel));
       await api.register(environmentRoutes(kernel));

@@ -24,6 +24,7 @@ beforeAll(async () => {
         dataPoolSize: 10,
         dataTenantConnections: 1,
         dataStatementTimeoutMs: 1000,
+        sqlStatementTimeoutMs: 15_000,
         triggersPaused: false,
         scheduleBacklogLimit: 200,
       },

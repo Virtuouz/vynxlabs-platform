@@ -91,6 +91,8 @@ export interface Limits {
   dataTenantConnections: number | undefined;
   /** How long one data operation may take before it is stopped, in milliseconds. */
   dataStatementTimeoutMs: number;
+  /** How long one query written in SQL may run before it is stopped. */
+  sqlStatementTimeoutMs: number;
   /**
    * Starts with every trigger in every tenant paused, whatever the console says: the
    * operator's emergency stop, for an instance that cannot stay up long enough to pause them.
@@ -293,6 +295,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     dataPoolSize: whole("DATA_POOL_SIZE", 2, 500) ?? 10,
     dataTenantConnections: whole("DATA_TENANT_CONNECTIONS", 1, 500),
     dataStatementTimeoutMs: whole("DATA_STATEMENT_TIMEOUT_MS", 1000, 600_000) ?? 15_000,
+    sqlStatementTimeoutMs: whole("SQL_STATEMENT_TIMEOUT_MS", 1000, 600_000) ?? 15_000,
     triggersPaused: (value("TRIGGERS_PAUSED") ?? "false") === "true",
     scheduleBacklogLimit: whole("SCHEDULE_BACKLOG_LIMIT", 0, 1_000_000) ?? 200,
   };

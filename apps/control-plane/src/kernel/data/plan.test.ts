@@ -374,7 +374,7 @@ describe("planning across tables", () => {
       { op: "rename_table", tableId: expect.any(String), from: "orders", to: "sales/orders" },
     ]);
     const plan = planTable(retire(start(), "orders"), "sales/orders", renamed);
-    expect(ops(plan)).toEqual(["rename_table", "restore_table"]);
+    expect(ops(plan)).toEqual(["rename_table", "restore_table", "set_policy"]);
     expect(
       planTable(apply(retire(start(), "orders"), plan), "sales/orders", renamed).steps,
     ).toEqual([]);
@@ -387,14 +387,14 @@ describe("planning across tables", () => {
     );
     // The rollback deploy removes the new path first, which retires the table, then applies the old one.
     const back = planTable(retire(forward, "sales/orders"), "orders", v1);
-    expect(ops(back)).toEqual(["rename_table", "restore_table"]);
+    expect(ops(back)).toEqual(["rename_table", "restore_table", "set_policy"]);
   });
 
   test("a retired table comes back, and its columns are compared as usual", () => {
     const plan = planTable(retire(start(), "orders"), "orders", {
       columns: { ...v1.columns, note: { type: "text" } },
     });
-    expect(ops(plan)).toEqual(["restore_table", "add_column"]);
+    expect(ops(plan)).toEqual(["restore_table", "add_column", "set_policy"]);
   });
 });
 

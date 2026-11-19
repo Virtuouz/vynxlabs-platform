@@ -166,10 +166,11 @@ test("from inside a dashboard, its section is a link back, and the rail shows an
     "href",
     `${link}/dashboards`,
   );
-  await expect(crumbs.getByRole("link", { name: "Dev", exact: true })).toHaveAttribute(
-    "href",
-    `${link}/overview`,
-  );
+  // The workspace's name opens the list of workspaces, wherever on it is pressed.
+  await crumbs.getByRole("button", { name: "Switch workspace" }).getByText("Dev").click();
+  await expect(page.getByRole("menuitem", { name: /Dev/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(new RegExp(`/dashboards/${board}$`));
   // Pressing Data does not go to Tables: its screens come out beside the rail.
   const rail = page.getByRole("navigation", { name: "Main" });
   await rail.getByRole("button", { name: "Data" }).click();
@@ -203,6 +204,20 @@ test("each widget draws what its query gives, and the date filter changes every 
       name: "Fees over time: from 30 to 10, lowest 10, highest 40",
     }),
   ).toBeVisible();
+  // One scroll bar: the page scrolls in its own region, the document under it does not,
+  // and a chart fits the widget it is in.
+  await expect(widget("Fees by status").locator("svg.marks")).toBeVisible();
+  await page.setViewportSize({ width: 1500, height: 600 });
+  const scrolls = await page.evaluate(() => {
+    const whole = document.documentElement;
+    const chart = document.querySelector('[aria-label="Fees by status"] > [tabindex="0"]');
+    return {
+      document: whole.scrollHeight - whole.clientHeight,
+      chart: chart ? chart.scrollHeight - chart.clientHeight : -1,
+    };
+  });
+  expect(scrolls).toEqual({ document: 0, chart: 0 });
+  await page.setViewportSize({ width: 1500, height: 1000 });
   // It says how old its numbers are and how often it asks again, and asks again when told to.
   const fresh = page.locator("[data-freshness]");
   await expect(fresh).toContainText("Last refreshed");
@@ -381,8 +396,25 @@ test("widgets are dragged into place and stretched, from the keyboard too, and a
   await page.mouse.move(grip.x + 5 + column * 6, grip.y + 5, { steps: 5 });
   const going = (await chart.boundingBox()) as { x: number };
   expect(Math.round((going.x - whole.x) / column)).toBe(6);
+  // Let go, it stays where it was put while the save is still on its way: it does not go
+  // back to where it began and then travel over again.
+  let release = () => {};
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  await page.route(`**/dashboards/${board}`, async (route) => {
+    if (route.request().method() === "PUT") await held;
+    await route.continue();
+  });
   await page.mouse.up();
+  for (let frame = 0; frame < 6; frame++) {
+    const now = (await chart.boundingBox()) as { x: number };
+    expect(Math.round((now.x - whole.x) / column)).toBe(6);
+    await page.waitForTimeout(40);
+  }
+  release();
   await expect.poll(async () => (await places()).chart).toMatchObject({ x: 6, w: 6 });
+  await page.unrouteAll({ behavior: "wait" });
   // What was under it had nothing above it any more and rose beside it.
   const after = await places();
   const pivot = Object.entries(after).find(

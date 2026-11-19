@@ -204,6 +204,8 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   // What the layout was before each change made here, for ⌘Z.
   const undone = useRef<DashboardWidget[][]>([]);
   const saving = useRef<(widgets: DashboardWidget[]) => void>(() => {});
+  // Layout changes that are drawn and not yet saved.
+  const moves = useRef({ waiting: 0, revision: 0, last: Promise.resolve() });
   const editingNow = loaded?.kind === "member" && loaded.mine && mode === "1";
   useShortcut(
     "undo",
@@ -261,6 +263,36 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     }
   };
   const withWidgets = (widgets: DashboardWidget[]) => save({ body: { ...body, widgets } });
+  /**
+   * Widgets are drawn in their new places at once and saved after. Waiting for the save
+   * would draw what was dragged back where it began, and then play it to where it was put.
+   * Saves go one after another, each on the revision the one before it made, so several
+   * moves made quickly (arrow keys held down) are all kept.
+   */
+  if (moves.current.waiting === 0) moves.current.revision = loaded.revision;
+  const moveTo = (next: DashboardWidget[]) => {
+    const queue = moves.current;
+    queue.waiting += 1;
+    setLoaded({ ...loaded, body: { ...body, widgets: next } });
+    queue.last = queue.last.then(async () => {
+      try {
+        const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
+          body: { ...body, widgets: next },
+          revision: queue.revision,
+        });
+        queue.revision = saved.revision;
+        queue.waiting -= 1;
+        // Only the last of them is shown as saved: one before it would undo a later move on screen.
+        if (queue.waiting === 0) setLoaded(saved);
+      } catch (error) {
+        queue.waiting -= 1;
+        notify.error(error);
+        // What was drawn was not kept: show what the server has.
+        const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
+        if (kept && queue.waiting === 0) setLoaded(kept);
+      }
+    });
+  };
   // Every widget with a place: its own, or one given to it in order if it has none yet.
   const widgets = placeWidgets(body.widgets);
   const place = (widgetId: string, at: WidgetPlace) => {
@@ -268,10 +300,10 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     // It stays where it was put, and whatever it now lies on moves down out of its way.
     settle(next, widgetId);
     undone.current.push(body.widgets);
-    void withWidgets(next);
+    moveTo(next);
   };
   placing.current = place;
-  saving.current = (before) => void withWidgets(before);
+  saving.current = moveTo;
   const add = () =>
     setEditing({
       id: slug(

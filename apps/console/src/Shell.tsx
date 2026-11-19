@@ -761,8 +761,10 @@ export function Shell({
     };
   }, [flyout]);
   // Esc puts the sections away, unless something over the page is open: that closes first.
+  // One that is already on its way out (`data-closed`) is not in the way.
   useShortcut("close", () => {
-    if (!flyout || document.querySelector('[role="dialog"], [role="menu"]')) return false;
+    const over = '[role="dialog"]:not([data-closed]), [role="menu"]:not([data-closed])';
+    if (!flyout || document.querySelector(over)) return false;
     setRevealed(undefined);
   });
 
@@ -1075,33 +1077,28 @@ export function Shell({
                     />
                     <Wire width={6} />
                   </span>
-                  {/* The name goes to the workspace; the arrows beside it change which one. */}
-                  <span className="flex min-w-0 items-center rounded-control border border-line font-medium">
-                    <Link
-                      to={`/t/${tenantId}/workspaces/${workspaceId}/overview`}
-                      className="truncate rounded-l-control py-[3px] pr-1 pl-2 text-ink no-underline hover:bg-surface"
-                    >
-                      {workspace?.name ?? "Workspace"}
-                    </Link>
-                    <Menu
-                      ariaLabel="Switch workspace"
-                      triggerClassName="flex shrink-0 items-center rounded-r-control py-[5px] pr-2 pl-0.5 hover:bg-surface"
-                      label={
+                  {/* The whole name is the way to another workspace: nobody has to aim for the arrows. */}
+                  <Menu
+                    ariaLabel="Switch workspace"
+                    triggerClassName="flex min-w-0 items-center gap-1 rounded-control border border-line py-[3px] pr-1.5 pl-2 font-medium text-ink hover:bg-surface"
+                    label={
+                      <>
+                        <span className="truncate">{workspace?.name ?? "Workspace"}</span>
                         <ChevronsUpDown
                           aria-hidden="true"
                           size={14}
                           className="shrink-0 text-ink-subtle"
                         />
-                      }
-                      items={(workspaces.data?.items ?? []).map((one) => ({
-                        label: one.name,
-                        detail: <EnvTag type={one.type} />,
-                        current: one.id === workspaceId,
-                        onSelect: () =>
-                          void switchWorkspace(tenantId, workspaceId, one.id, where.section),
-                      }))}
-                    />
-                  </span>
+                      </>
+                    }
+                    items={(workspaces.data?.items ?? []).map((one) => ({
+                      label: one.name,
+                      detail: <EnvTag type={one.type} />,
+                      current: one.id === workspaceId,
+                      onSelect: () =>
+                        void switchWorkspace(tenantId, workspaceId, one.id, where.section),
+                    }))}
+                  />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
                   {workspace?.triggersPaused ? (
                     <span className="hidden lg:inline-flex">
@@ -1242,7 +1239,7 @@ export function Shell({
           id="main"
           ref={main}
           tabIndex={-1}
-          className={`flex min-h-0 outline-none flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
+          className={`relative flex min-h-0 outline-none flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
         >
           {where.workbench ? (
             <ErrorBoundary resetOn={path} what="This page">

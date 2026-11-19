@@ -69,7 +69,7 @@ Phase 18 was merged and a demo workspace put on the test instance. The owner wal
 
 **Built.**
 
-- **Breadcrumb** (`Shell.tsx`). The tenant is a link. The workspace's name is a link to its overview, and the switcher is the button beside it; before, the name was the switcher and nothing led to the workspace. The section is a link whenever something is open in it. An editor that has not named what it shows is named by the end of its address until it does, so every editor has a way back, and `DashboardView` names its dashboard (`useTitleObject`). Below 768 px, where the section has no room, a chevron goes back to it.
+- **Breadcrumb** (`Shell.tsx`). The tenant is a link. The workspace's name, all of it, opens the list of workspaces. (It was first built as a link to the overview with a small switcher button beside it; the owner found the small target worse than the old way, and the overview is in the rail.) The section is a link whenever something is open in it. An editor that has not named what it shows is named by the end of its address until it does, so every editor has a way back, and `DashboardView` names its dashboard (`useTitleObject`). Below 768 px, where the section has no room, a chevron goes back to it.
 - **Rail.** An area with more than one section is a button with `aria-expanded`. Pressing it shows that area's sections and goes nowhere. Where the section panel is docked they take its place. In an editor, on the overview and between 768 and 1023 px they come out beside the rail over the page (`Appear`), the first section takes focus, and Esc or a press elsewhere puts them away. Pressing the area again puts them away. Going anywhere puts them away. Overview has one section and stays a link.
 - **Phone.** Pressing an area changes the list of sections inside the open drawer. The drawer closes when a section is chosen. Scripts to Dashboards is one opening.
 
@@ -155,3 +155,12 @@ Phase 18 was merged and a demo workspace put on the test instance. The owner wal
 - The flow editor's test panel still appears at once (M1).
 - A read table does not lock its first column (M5).
 - The walk-through on the test instance.
+
+## After the owner's first look on the test instance
+
+Three things were found walking the Lending dashboard in the demo workspace, and fixed.
+
+- **Two scroll bars.** The page scrolls inside `main`, but `main` was not a positioned element, so text kept for screen readers (which is positioned) was laid out against the document, and the document grew a scroll bar of its own. `main` is now `relative`. A chart in a placed widget was also drawn eight pixels taller than the room inside its padding, which gave that widget a scroll bar; the room is now measured inside the padding. A browser test holds both.
+- **The workspace's name opens the list of workspaces again.** The link to the overview with a small button beside it was a smaller target for the thing done more often.
+- **A dragged widget went back and then travelled over again.** The page waited for the save before drawing the new places. They are now drawn at once and saved after, one save behind another so that several quick moves are all kept; if a save fails, what the server has is shown. A browser test holds the save back and expects the widget to stay where it was let go.
+- Found on the way: Esc did not put the rail's sections away while a menu closed a moment before was still fading out. A menu or dialog on its way out no longer counts as open.

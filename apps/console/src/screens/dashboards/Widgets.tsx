@@ -613,7 +613,12 @@ function useHeight<E extends HTMLElement>(): [(node: E | null) => void, number] 
   const ref = useCallback((node: E | null) => {
     watching.current?.disconnect();
     if (!node || typeof ResizeObserver !== "function") return;
-    watching.current = new ResizeObserver(() => setHeight(Math.round(node.clientHeight)));
+    // The room inside its padding: what is drawn to this height fits, and nothing scrolls.
+    watching.current = new ResizeObserver(() => {
+      const style = getComputedStyle(node);
+      const padding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+      setHeight(Math.floor(node.clientHeight - (padding || 0)));
+    });
     watching.current.observe(node);
   }, []);
   return [ref, height];
@@ -812,7 +817,7 @@ export function WidgetCard({
                 : objects(result)
             }
             // On the grid a chart is as tall as its widget; in one column, a height of its own.
-            height={placed && room > 0 ? Math.max(120, room - 8) : 260}
+            height={placed && room > 0 ? Math.max(120, room) : 260}
             // A bar, a point or a slice opens the rows it was worked out from.
             onPick={drill}
           />

@@ -135,10 +135,11 @@ test("in a workspace the rail shows its areas, a flow run counts as a run, and t
   expect(screen.getByRole("link", { name: /3 drafts\s*Review/ })).toBeTruthy();
   // The workspace's name and type arrive with the list of workspaces.
   expect(await screen.findByText("Dev")).toBeTruthy();
-  // The workspace's name goes to the workspace, and the button beside it changes which one.
+  // The workspace's name is the whole of the button that changes which one: no small target.
   const crumbs = screen.getByRole("navigation", { name: "Where you are" });
-  expect(within(crumbs).getByRole("link", { name: "Sandbox" }).getAttribute("href")).toBe(
-    "/t/t1/workspaces/w2/overview",
+  expect(within(crumbs).queryByRole("link", { name: "Sandbox" })).toBeNull();
+  expect(within(crumbs).getByRole("button", { name: "Switch workspace" }).textContent).toContain(
+    "Sandbox",
   );
   expect(within(crumbs).getByRole("link", { name: "Acme" }).getAttribute("href")).toBe("/t/t1");
   expect(screen.getByRole("button", { name: "Switch workspace" })).toBeTruthy();

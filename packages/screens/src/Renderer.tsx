@@ -798,9 +798,10 @@ function PageBody({
 
   // Dragging, stretching and the arrow keys, shared with dashboards. What a move pushes out
   // of its way is seen to move there.
+  const move = editing?.onMove;
   const placement = usePlacement({
     places: JSON.stringify(page.widgets.map((widget) => [widget.id, widget.at])),
-    onMove: editing?.onMove,
+    onMove: move ? (widget, at) => move(widget, at) : undefined,
   });
   const { held } = placement;
 

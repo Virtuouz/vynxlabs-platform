@@ -79,7 +79,8 @@ export function usePlacement({
 }: {
   /** Every thing's place, as text: when it changes, things are played to their new places. */
   places: string;
-  onMove: ((id: string, at: Box) => void) | undefined;
+  /** `by` says whether it was dragged or moved a cell with a key, for what counts as one step to undo. */
+  onMove: ((id: string, at: Box, by: "pointer" | "keys") => void) | undefined;
   /** The smallest a thing may be made. */
   least?: { w: number; h: number };
 }): Placement {
@@ -111,7 +112,7 @@ export function usePlacement({
       handle.removeEventListener("pointerup", drop);
       handle.removeEventListener("pointercancel", drop);
       setHeld(undefined);
-      if (!same(latest, own)) onMove(id, latest);
+      if (!same(latest, own)) onMove(id, latest, "pointer");
     };
     handle.addEventListener("pointermove", follow);
     handle.addEventListener("pointerup", drop);
@@ -133,7 +134,7 @@ export function usePlacement({
       event.preventDefault();
       const next = event.shiftKey ? stretched(own, by[0], by[1], least) : moved(own, by[0], by[1]);
       if (same(next, own)) return;
-      onMove(id, next);
+      onMove(id, next, "keys");
       setSaid(
         event.shiftKey
           ? `${name} is ${next.w} wide and ${next.h} tall.`

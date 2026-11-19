@@ -456,8 +456,30 @@ test("widgets are dragged into place and stretched, from the keyboard too, and a
   await expect(
     page.getByRole("status").filter({ hasText: "Fees is 3 wide and 5 tall." }),
   ).toHaveCount(1);
-  // And the last change is undone.
+  // The last change is undone, and made again, from the keys or the buttons that say what
+  // they would do.
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(async () => (await places()).fees).toMatchObject({ w: 4, h: 5 });
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 3, h: 5 });
+  await page.getByRole("button", { name: "Undo moving Fees" }).click();
+  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 4, h: 5 });
+  // Further back: the stretch by the corner, and before it the drag of the chart.
+  await page.getByRole("button", { name: "Undo moving Fees" }).click();
+  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 3 });
+  await page.getByRole("button", { name: "Undo moving Fees by status" }).click();
+  await expect.poll(async () => (await places()).chart).toMatchObject({ x: 0, w: 6 });
+  await page.getByRole("button", { name: "Redo moving Fees by status" }).click();
+  await expect.poll(async () => (await places()).chart).toMatchObject({ x: 6, w: 6 });
+  // A widget taken off is put back with what it asked, and taken off again.
+  await widget("Fees by status")
+    .getByRole("button", { name: /^Remove/ })
+    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
+  await expect(widget("Fees by status")).toBeHidden();
+  await page.getByRole("button", { name: "Undo removing Fees by status" }).click();
+  await expect(widget("Fees by status").locator("svg.marks")).toBeVisible();
+  await expect.poll(async () => (await places()).chart).toMatchObject({ x: 6, w: 6 });
+  await expect(page.getByRole("button", { name: "Redo removing Fees by status" })).toBeEnabled();
   await page.getByRole("button", { name: "Done" }).click();
 });

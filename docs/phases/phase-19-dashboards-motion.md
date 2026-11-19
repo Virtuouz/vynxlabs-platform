@@ -95,7 +95,7 @@ Phase 18 was merged and a demo workspace put on the test instance. The owner wal
 - **The plan said body version 3. It is still version 2.** A place is an optional field beside the old `width`, and a widget without one is placed when it is read. So no dashboard in a database or a repository has to be rewritten, and a file may still leave places out and be laid in rows. The console writes places from the first change.
 - Vega-Lite's `height` is the plot's, without its axes, so a chart given its widget's height was cut at the bottom. On the grid the chart asks to fit (`autosize: fit`, padding inside).
 - A rounded corner is not hit outside its curve: the stretch handle misses in the last three pixels of the corner. The app builder has the same handle. Left as it is.
-- **Not done:** undo is the last changes of layout made in this visit, kept in the page. It does not undo a widget's edited question.
+- Undo was first only the last changes of layout. It is now the builder's whole history, with redo: see the end of this document.
 
 ## M5: tables that can be searched, and a dialog big enough for one
 
@@ -164,3 +164,14 @@ Three things were found walking the Lending dashboard in the demo workspace, and
 - **The workspace's name opens the list of workspaces again.** The link to the overview with a small button beside it was a smaller target for the thing done more often.
 - **A dragged widget went back and then travelled over again.** The page waited for the save before drawing the new places. They are now drawn at once and saved after, one save behind another so that several quick moves are all kept; if a save fails, what the server has is shown. A browser test holds the save back and expects the widget to stay where it was let go.
 - Found on the way: Esc did not put the rail's sections away while a menu closed a moment before was still fading out. A menu or dialog on its way out no longer counts as open.
+
+## Undo and redo in the dashboard builder
+
+The owner asked for it: every other thing built by hand here (a flow, an app) has both.
+
+- In Edit, ⌘Z and ⇧⌘Z (Ctrl+Z, Ctrl+Y) and a pair of buttons beside Filters take back and make again every change to what the dashboard holds, a hundred back: a widget moved, stretched, added, changed or removed, a table widget's columns, the filters, how often it refreshes. Each button says what it would do ("Undo moving Fees"). It is the same `useHistory` the flow editor and the app builder use, and the buttons are one piece now, `kit/UndoRedo.tsx`, shared with the app builder.
+- Arrow keys pressed one after another on one widget are one step. A drag is always its own step (`usePlacement` tells `onMove` which it was).
+- Each undo and redo is saved, in order, behind any save still on its way.
+- **Not covered:** the dashboard's name and who it is shared with, which are not part of what it holds. The history is this visit's: it is gone on leaving the page. The text typed inside the widget editor before Save is the field's own undo.
+
+**Tests.** `e2e/dashboards.spec.ts`, "widgets are dragged into place": undo and redo by key and by button, three steps back through a key move, a stretch and a drag, and a removed widget put back with its chart.

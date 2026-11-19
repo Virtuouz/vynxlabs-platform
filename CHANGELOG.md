@@ -4,8 +4,6 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 ## Unreleased: phase 18, data you can ask questions of
 
-M1 to M13 of the phase.
-
 ### For operators
 
 - **Database migrations 0076 to 0078.** Every approval there was keeps its place on the tenant's Approvals page. Columns gain what an enum's values are and what a reference does on a delete, and tables the column that stands for a row. Three built-in roles are given `sql:read`.

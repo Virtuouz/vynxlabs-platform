@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M13 built. M14 (the walk-through) remains. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
+Status: built, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M14 built. Two exit criteria are not met; see M14's findings. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -453,6 +453,34 @@ Built with no OpenTelemetry package. OTLP over HTTP as JSON is a few shapes of J
 - **Nothing is sampled.** Every request is a span when an endpoint is named. An instance with heavy traffic samples in its Collector.
 - **Logs are not sent by OTLP.** They stay structured lines on standard output. A request's log line does not yet carry the trace ID; the response header and the run do.
 - **A request that does not match a route is counted under `unmatched`**, which includes every console page load.
+
+### M14: the example, the guides and the walk-through
+
+- **The example** (`examples/higher-ed-devices`) has a dashboard kept as a file, `platform/reports/lending.dashboard.yaml`: two figures, a chart, a pivot of loans by month and status, and a table from the saved query, with a date filter and a kind filter. The SDK guide says how a dashboard file is written; the self-hosting guide has OpenTelemetry and the scrape token.
+- **The console is told who may write SQL.** `GET …/queries/schema` answers `maySql`. A widget offers SQL only then, and the Queries screen says why Run is not there.
+- **The test instance runs this phase.** Its database was dumped first, migrations 76 to 80 were tried on a local restore of the dump (873 runs and 2 dashboards kept), and the image was deployed. The example was deployed to `devices-dev`, not promoted to `devices`.
+
+What was walked on the test instance, as the developer, through the API:
+
+| Exit criterion | What was seen |
+| --- | --- |
+| A loan's status is an enum | The deploy said "column status changed from text to enum". A row with `status: "lost"` was refused: "must be one of: out, returned" |
+| SQL that joins loans to devices | Ran, and named both tables it read |
+| `set_config`, a schema name, a write in a CTE, two statements, an `UPDATE` | Each refused before the database, saying why |
+| A saved query | `reports/loans-by-month` listed and run |
+| A dashboard from menus and from the saved query | All five widgets of `reports/lending` answered; "all time" gave the pivot more months |
+| A draft trigger | A drafted schedule was in the Triggers list at once as `draft: "new"`, then removed |
+| The console has an icon | `/favicon.ico` and `/site.webmanifest` answered |
+| A run follows its request's trace | A run started with a `traceparent` carried that trace ID on the response and on the run when it ended |
+
+#### Findings
+
+- **Not met: "a borrower's end user sees only their own loans on a dashboard."** Dashboards are for members. An end user has no way to open one; M11's findings say so. The row policy is what would hold it, and the query layer's tests cover that, but nothing shows it to an end user.
+- **Not met as written: "a loan's device shows by its name."** The example's loans name a device by its tag in a text column, not by a reference, so there is nothing to show by name. References are tested in the suite and in a browser on a local stack. Making it a reference would rewrite the example's scripts.
+- **Not walked on the test instance: anything that needs a browser there.** The developer's login is an API key. The drawer, the columns, the enum colours, the pivot built from menus and the logo upload were walked in a browser on a local stack, by the browser suite.
+- **Not walked there: a collector.** The test instance names no OTLP endpoint, so it sends nothing. The trace from the request to the worker's span is checked against a stand-in collector in `telemetry.test.ts`.
+- **The example's deploy deleted a variable the owner had made** in `devices-dev` through the console's git pull (`lending/limit`). It was put back as it was, from the copy the production workspace still has; its new ID differs and it no longer says which file it came from. A CLI deploy removes a console-owned resource the repository does not have and asks for no `--allow-delete`. Whether it should is a question for the owner.
+- **`devices-dev` is linked by git to another repository.** Deploying the example there makes the workspace differ from that repository's branch. Nothing was pushed.
 
 ## Where this meets the master spec
 

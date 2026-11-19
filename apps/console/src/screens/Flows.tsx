@@ -580,6 +580,8 @@ export interface FlowRunDetail extends FlowRunRow {
   errorSummary: string | null;
   tags: string[];
   retryOf: string | null;
+  /** The trace the flow run and its runs are part of. */
+  traceId?: string | null;
   retries: { id: string; state: RunState; createdAt: string }[];
   startedBy: { type: string; id: string | null };
   input: unknown;

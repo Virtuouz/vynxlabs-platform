@@ -604,6 +604,10 @@ export interface RunTable {
   output_summary: Generated<string | null>;
   /** The value of the script's concurrency key in this run's input, when it has one. */
   concurrency_key: Generated<string | null>;
+  /** The trace it is part of: 32 hex digits. Null on one from before traces were kept. */
+  trace_id: string | null;
+  /** The span it hangs from in that trace, when something that had one started it. */
+  trace_parent: string | null;
 }
 
 export interface RunLogTable {
@@ -688,6 +692,10 @@ export interface FlowRunTable {
   output_summary: Generated<string | null>;
   /** The flow run this one retries. */
   retry_of: string | null;
+  /** The trace it is part of: 32 hex digits. Null on one from before traces were kept. */
+  trace_id: string | null;
+  /** The span it hangs from in that trace, when something that had one started it. */
+  trace_parent: string | null;
 }
 
 export interface StepRunTable {

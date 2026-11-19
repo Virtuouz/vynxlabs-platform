@@ -189,6 +189,40 @@ export const feesByDevice = defineQuery({
 - Whoever runs it needs `data:read` on each table it names, and gets the rows each table's policy gives them. A query over an owner's table gives each person their own rows.
 - Two columns of the same name are one in the result: name them apart with `as`.
 
+**A dashboard** is a file: filters, and widgets that each ask a query. It deploys and promotes like any other resource, and whoever opens it gets the rows each table's policy gives them.
+
+```yaml
+# platform/reports/lending.dashboard.yaml
+schemaVersion: 1
+body:
+  version: 2
+  title: Lending
+  filters:
+    - { name: lent, label: Checked out, type: date_range, default: last_90_days }
+  widgets:
+    - id: by-month
+      title: Loans by month and status
+      type: pivot
+      width: 12
+      source:
+        visual:
+          table: loans
+          groupBy: [{ column: checked_out_at, bucket: month }, { column: status }]
+          measures: [{ fn: count, as: loans }]
+      filters: [{ filter: lent, column: checked_out_at }]
+      options: { rows: [checked_out_at_month], columns: [status], value: loans, cell: sum }
+    - id: saved
+      type: table
+      source: { query: reports/loans-by-month }
+      filters: [{ filter: lent, parameter: since, part: from }]
+```
+
+- A widget's `source` is one of three: `visual` (a table, groups and measures, which the platform writes as SQL), `query` (a saved query by its path) or `sql` (written in the widget, which needs `sql:read` of whoever deploys it).
+- A widget is a `figure`, `chart`, `table`, `pivot` or `note`. Its `width` is in twelfths of the page.
+- A filter reaches a widget only where the widget binds it: to a `column` of its table, or to a `parameter` of its query.
+- A date grouped by `month` comes back as `<column>_month`.
+- The easiest way to write one is to build it in the console and choose **Keep it as a resource**.
+
 ## What the build stops
 
 - **A definition that is not exported.** `defineScript(…)` that the entry file does not export is refused by name. Two files exporting the same name through `export *` cancel each other out: export each by name.

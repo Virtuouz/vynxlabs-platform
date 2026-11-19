@@ -63,6 +63,8 @@ export interface Run {
   errorSummary?: string | null;
   tags?: string[];
   rerunOf?: string | null;
+  /** The trace the run is part of, as OpenTelemetry writes it. */
+  traceId?: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;

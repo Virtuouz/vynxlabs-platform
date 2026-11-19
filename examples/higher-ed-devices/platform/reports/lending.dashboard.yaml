@@ -1,0 +1,84 @@
+# What the Tech Desk looks at each morning. Every widget asks a query of the
+# workspace's tables, and whoever looks gets the loans the table's rules give
+# them: the desk sees every loan, and a student would see their own.
+# The date filter at the top narrows every widget bound to it.
+schemaVersion: 1
+body:
+  version: 2
+  title: Lending
+  description: Loans out, by month, status and kind
+  filters:
+    - name: lent
+      label: Checked out
+      type: date_range
+      default: last_90_days
+    - name: kind
+      label: Kind
+      type: choice
+      from: { table: devices, column: kind }
+  widgets:
+    - id: lent
+      title: Loans
+      type: figure
+      width: 3
+      source:
+        visual:
+          table: loans
+          measures: [{ fn: count, as: loans }]
+      filters:
+        - { filter: lent, column: checked_out_at }
+        - { filter: kind, column: kind }
+      options: { value: loans, compareTo: lent }
+    - id: out
+      title: Still out
+      type: figure
+      width: 3
+      source:
+        visual:
+          table: loans
+          filters: [{ column: status, op: eq, value: out }]
+          measures: [{ fn: count, as: loans }]
+      filters:
+        - { filter: kind, column: kind }
+      options: { value: loans }
+    - id: by-kind
+      title: Loans by kind
+      type: chart
+      width: 6
+      source:
+        visual:
+          table: loans
+          groupBy: [{ column: kind }]
+          measures: [{ fn: count, as: loans }]
+          sort: [{ by: loans, descending: true }]
+      filters:
+        - { filter: lent, column: checked_out_at }
+      options: { mark: bar, x: kind, y: loans }
+    - id: by-month
+      title: Loans by month and status
+      type: pivot
+      width: 12
+      source:
+        visual:
+          table: loans
+          groupBy:
+            - { column: checked_out_at, bucket: month }
+            - { column: status }
+          measures: [{ fn: count, as: loans }]
+      filters:
+        - { filter: lent, column: checked_out_at }
+        - { filter: kind, column: kind }
+      options:
+        rows: [checked_out_at_month]
+        columns: [status]
+        value: loans
+        cell: sum
+        totals: true
+    - id: saved
+      title: By month and kind, from the saved query
+      type: table
+      width: 12
+      source:
+        query: reports/loans-by-month
+      filters:
+        - { filter: lent, parameter: since, part: from }

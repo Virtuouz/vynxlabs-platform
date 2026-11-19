@@ -15,7 +15,15 @@ import { pushTenantAccess } from "./kernel/git.js";
 import { access, installAccessControl } from "./kernel/http.js";
 import { defaultIcon, icoOf, webManifest } from "./kernel/icons.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
+import { observe } from "./kernel/metrics.js";
 import { postgresRateLimitStore } from "./kernel/ratelimit.js";
+import {
+  newSpanId,
+  newTraceId,
+  parseTraceparent,
+  type TraceContext,
+  withTrace,
+} from "./kernel/telemetry.js";
 import { takeReleased } from "./kernel/tenant/releases.js";
 import { errorHandler, notFoundHandler } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
@@ -138,9 +146,47 @@ export async function buildApp(options: AppOptions) {
   app.addHook("onClose", () => kernel.stream.close());
 
   app.setErrorHandler(errorHandler);
+  app.decorateRequest("trace", null as unknown as TraceContext);
+  app.decorateRequest("traceParent", undefined);
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
+    // A caller that is already part of a trace says so, and the request joins it.
+    const incoming = parseTraceparent(request.headers.traceparent);
+    request.traceParent = incoming?.spanId;
+    request.trace = { traceId: incoming?.traceId ?? newTraceId(), spanId: newSpanId() };
+    reply.header("x-trace-id", request.trace.traceId);
   });
+  // What the handler starts, a run or a flow run, is found to belong to the request's trace.
+  app.addHook("preHandler", (request, _reply, done) => withTrace(request.trace, done));
+  app.addHook("onResponse", async (request, reply) => {
+    const route = request.routeOptions.url ?? "unmatched";
+    const status = String(reply.statusCode);
+    const seconds = reply.elapsedTime / 1000;
+    observe.http(kernel.metrics, { method: request.method, route, status }, seconds);
+    const kind = request.routeOptions.config?.access?.kind;
+    // A worker asking for work, and a scrape, are not work anyone follows.
+    if (!kernel.telemetry.tracing || kind === "worker" || kind === "worker-host") return;
+    if (route.endsWith("/metrics") || route.endsWith("/health")) return;
+    const end = Date.now();
+    kernel.telemetry.span({
+      ...request.trace,
+      parentSpanId: request.traceParent,
+      name: `${request.method} ${route}`,
+      kind: "server",
+      start: end - reply.elapsedTime,
+      end,
+      attributes: {
+        "http.request.method": request.method,
+        "http.route": route,
+        "http.response.status_code": reply.statusCode,
+        "url.path": request.url.split("?")[0],
+        "platform.request.id": request.id,
+        "platform.tenant.id": (request.params as { t?: string } | undefined)?.t,
+      },
+      error: reply.statusCode >= 500 ? `HTTP ${reply.statusCode}` : undefined,
+    });
+  });
+  app.addHook("onClose", () => kernel.telemetry.close());
   if (options.onRoute) app.addHook("onRoute", options.onRoute);
 
   app.addHook("onClose", () => kernel.mail.close());
@@ -310,6 +356,15 @@ export async function buildApp(options: AppOptions) {
   });
 
   return app;
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    /** The trace this request is part of, and the span the request itself is. */
+    trace: TraceContext;
+    /** The caller's span, when the caller sent a `traceparent`. */
+    traceParent: string | undefined;
+  }
 }
 
 declare module "fastify" {

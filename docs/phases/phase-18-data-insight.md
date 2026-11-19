@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M12 built. M13 (telemetry) and M14 (the walk-through) remain. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M13 built. M14 (the walk-through) remains. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -431,11 +431,28 @@ Built with no new package, as the owner asked to try first.
 
 ### M13: telemetry
 
-- Traces: an HTTP request, the run or flow run it starts, the queue wait, the worker's execution and each flow step are one trace. The trace's ID is carried in the worker protocol and shown on the run page beside the request ID.
-- Nothing is shipped beside the platform: no collector, no Prometheus, no dashboards. It sends OTLP to whatever endpoint the operator names, loads no OpenTelemetry code when none is named, and answers a Prometheus scrape.
-- Metrics by OTLP: the series the Prometheus endpoint has, under the same names.
-- Prometheus: request count and duration by route and status, and a scrape token set in the environment so a scraper needs no member.
-- A worker inside a client's network sends nothing unless it is configured to.
+Built with no OpenTelemetry package. OTLP over HTTP as JSON is a few shapes of JSON, written in `kernel/telemetry.ts`; with no endpoint named, nothing is sent and no span is kept.
+
+- **Settings are OpenTelemetry's own:** `OTEL_EXPORTER_OTLP_ENDPOINT`, `_HEADERS`, `OTEL_SERVICE_NAME`, `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_METRIC_EXPORT_INTERVAL`. Nothing is bundled.
+- **One trace** is the request, the run or flow run it started, the run's wait for a worker, its execution, each flow step, and what a step starts. A request with a `traceparent` joins its caller's trace.
+- **Migration 0080** keeps `trace_id` and `trace_parent` on a run and a flow run. Every other span's ID is worked out from what it is a span of (`spanIdOf("step", flowRun, node, item)`), so a step's run finds its parent with nothing else stored.
+- **Spans are sent when work ends**, from the times the database already has, at the places the metrics were already counted (`kernel/trace.ts`).
+- **The trace ID is shown** on a run's and a flow run's page, in their API answers as `traceId`, and on every response as `x-trace-id`. It is kept whether or not traces are sent.
+- **The worker protocol carries it**: a claimed job has a `traceparent`. A worker sends one span for each attempt, and only when its own environment names an endpoint.
+- **Prometheus**: `platform_http_requests_total` and `platform_http_request_duration_seconds` by method, route pattern and status. `METRICS_TOKEN` lets a scraper read `/api/v1/metrics` with no member.
+- **Metrics by OTLP** are the Prometheus endpoint's own text read back into series, so the names cannot drift apart.
+- Tests: `telemetry.test.ts` runs a stand-in collector and a real worker, and checks each span's parent from the caller down to the worker's attempt, a failure's status, a flow's step and its run, the scrape token, and that the OTLP metrics are exactly the families the endpoint wrote.
+
+#### Findings
+
+- **OTLP is HTTP with JSON only.** No gRPC and no protobuf. The Collector and most vendors take it on port 4318; one that takes only gRPC needs a Collector in front.
+- **Spans arrive when the work ends, not as it goes.** A run that is still going shows only its request until it finishes. A span for something in progress would need the worker to report as it goes.
+- **Workers the instance starts send no span of their own.** Their environment is not the control plane's, on purpose. The run's wait and execution spans still come from the control plane.
+- **A step's span is sent with its flow run's**, so a flow that waits a week for an approval shows its steps a week later.
+- **A span is sent from inside the transaction that ends the work.** If that transaction is rolled back, the span was sent for something that did not happen. This is rare and was left.
+- **Nothing is sampled.** Every request is a span when an endpoint is named. An instance with heavy traffic samples in its Collector.
+- **Logs are not sent by OTLP.** They stay structured lines on standard output. A request's log line does not yet carry the trace ID; the response header and the run do.
+- **A request that does not match a route is counted under `unmatched`**, which includes every console page load.
 
 ## Where this meets the master spec
 

@@ -49,6 +49,19 @@ const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time
  * a flow run with its steps and graph. Every name on it leads to what it names,
  * and it can be run again from here.
  */
+/**
+ * The trace a run is part of, to look for in a collector or in the logs. It is
+ * the same on the request that started the run and on everything the run is part of.
+ */
+function Trace({ id }: { id: string | null | undefined }) {
+  if (!id) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-ink-muted">
+      Trace <Identifier value={id} label="Copy the trace ID" />
+    </span>
+  );
+}
+
 export function RunPage({ root, link, id }: { root: string; link: string; id: string }) {
   return (
     // A run page sits where lists sit, which do not scroll as a whole: it scrolls itself.
@@ -358,6 +371,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         related={
           <>
             {run.rerunOf ? <Link to={`${link}/runs/${run.rerunOf}`}>Re-run of a run</Link> : null}
+            <Trace id={run.traceId} />
             {run.reruns && run.reruns.length > 0 ? (
               <Link to={`${link}/runs/${run.reruns[0]?.id}`}>
                 Run again {run.reruns.length === 1 ? "once" : `${run.reruns.length} times`}
@@ -802,6 +816,7 @@ function FlowRunHeader({
         related={
           <>
             {run.retryOf ? <Link to={`${link}/runs/${run.retryOf}`}>Retry of a run</Link> : null}
+            <Trace id={run.traceId} />
             {run.retries.length > 0 ? (
               <Link to={`${link}/runs/${run.retries[0]?.id}`}>
                 Retried {run.retries.length === 1 ? "once" : `${run.retries.length} times`}

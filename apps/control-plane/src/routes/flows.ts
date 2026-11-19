@@ -81,6 +81,9 @@ const FlowRun = Type.Object({
   tags: Type.Array(Type.String()),
   retryOf: Type.Union([Id, Type.Null()], { description: "The flow run this one retries." }),
   parentFlowRunId: NullableId,
+  traceId: Type.Union([Type.String(), Type.Null()], {
+    description: "The trace the flow run and every run it starts are part of.",
+  }),
   createdAt: Time,
   finishedAt: NullableTime,
 });
@@ -101,6 +104,7 @@ interface FlowRunRow {
   tags: string[];
   retry_of: string | null;
   parent_flow_run_id: string | null;
+  trace_id?: string | null;
   created_at: Date;
   finished_at: Date | null;
 }
@@ -119,6 +123,7 @@ const toFlowRun = (row: FlowRunRow) => ({
   tags: row.tags,
   retryOf: row.retry_of,
   parentFlowRunId: row.parent_flow_run_id,
+  traceId: row.trace_id ?? null,
   createdAt: iso(row.created_at),
   finishedAt: isoOrNull(row.finished_at),
 });

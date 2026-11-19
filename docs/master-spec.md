@@ -599,7 +599,7 @@ Failures can notify people and can start an error-handling script or flow, confi
 
 ### Operator health
 
-The instance exposes metrics and structured logs in standard formats, including queue depth and worker status, so an operator can monitor it with ordinary tools.
+The instance exposes metrics, traces and structured logs in standard formats, including queue depth and worker status, so an operator can monitor it with ordinary tools.
 
 ## Open source, licensing and the ownership promise
 

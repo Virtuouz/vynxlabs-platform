@@ -11,6 +11,7 @@ A sample tenant built to test the platform's developer ergonomics and its MCP se
 | Roles, and who may do what | `src/apps.ts` |
 | Help-desk agent: the `helpdesk-assistant` service account over MCP, bound to look-up, availability, queue, submit and cancel | `src/apps.ts`, `setup/agent.mjs` |
 | Settings as files: how long a loan lasts (`loans/days`), and the schedule that marks loans overdue | `platform/loans/` |
+| Questions and a dashboard as files: loans by month as a saved query, and the desk's **Lending** dashboard built from menus and from that query | `platform/reports/` |
 | The tenant's access: the Tech Desk group and the agent's service account | `tenant/` |
 
 It is split the way that works best. **What has code is TypeScript**: tables, scripts and the flow share a model and helpers, and only a build can put them together. **What has no code is a file** under `platform/`, named `<name>.<kind>.yaml`: the apps, their screens, the theme, a variable and a schedule. Its path is where it is kept, and the console edits it as well as you do, comments included. Code names such a resource by its path (`variables: ["loans/days"]`, `resource: "borrow"`).

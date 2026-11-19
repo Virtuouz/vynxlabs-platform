@@ -1,0 +1,38 @@
+{
+  "name": "@volvel/markup",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "One page of documentation: Markdown to a checked tree, drawn as React, HTML or plain text. Nothing in it runs as code.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "markdown-it": "^14.3.3"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

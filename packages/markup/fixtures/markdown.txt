@@ -1,0 +1,31 @@
+Orders & "returns"
+
+A paragraph with bold, italic, struck and code, a link, a page link and a line that carries on.
+
+A hard break here
+and the next line.
+
+Lists
+
+- First
+- Second
+  - Inside, with code
+  - And more
+- Starts at five
+
+- Done
+- Not done
+
+Lists
+
+A quote, with a second heading of the same name above it.
+
+const total: number = a < b ? a : b;
+
+indented code
+
+Name | Count | Note
+Pens | 12 | few
+Paper | 400 |
+
+A chart of orders Elsewhere

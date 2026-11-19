@@ -1,0 +1,15 @@
+<script>alert(1)</script>
+
+<img src=x onerror=alert(1)> and <b>bold</b> are text.
+
+click data vb [spaced](java	script:alert(1)) other host fine
+
+x plain http
+
+Quotes in a value.
+
+<i>x</i> thing
+
+\
+
+code

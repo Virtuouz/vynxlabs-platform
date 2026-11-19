@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!schemas", "!**/migrations.lock.json", "!**/*.md"]
+    "includes": ["**", "!schemas", "!**/migrations.lock.json", "!**/*.md", "!**/fixtures"]
   },
   "formatter": {
     "indentStyle": "space",

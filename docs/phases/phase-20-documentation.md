@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 and M1 are built. M2 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M2 are built. M3 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -172,6 +172,29 @@ Tests: the whole suite passes; a test fails if `vynxlabs` appears anywhere outsi
 
 Tests: parse and tree round trips; each component's props; each profile; the link policy refuses `javascript:` and raw HTML; golden files for React and HTML output from the same fixtures.
 
+#### Built
+
+- `packages/markup`, with one dependency, markdown-it. It builds with the other packages (`tsc -b`) and runs in Node and in a browser.
+- **The grammar is the package's own**, about 200 lines in `directive.ts`, and not a plugin from npm. It knows no component by name. A container closes at a line of the same number of colons, so the architecture's example, where a tab has more colons than the tabs around it, reads as written, and so does the other way round.
+- **The tree** (`tree.ts`) is plain JSON with the line each node began on. Lines before the source, such as frontmatter, are counted in.
+- **Twelve components** in `registry.ts`, each with its form, what its braces take as JSON Schema, and the profiles it may be used in. Checking the braces needs no schema library: every value is text, and the few keywords used are checked by hand.
+- **Five profiles**: `product`, `docs`, `description`, `short`, and `result` for what a script gives back.
+- **`validate`** gives each issue a line, a column where the source is given, a code and a sentence.
+- **One drawing, three renderers.** `render.ts` turns a tree into elements. `renderHtml` writes them out and `renderReact` (`@volvel/markup/react`) makes them React elements. So the two cannot differ, and a test holds them to it for every fixture. `renderText` gives the words alone.
+- A renderer is given what it cannot know: what a term means, where a link or a picture goes, what a field's description is, the product's name. An answer of "nothing" draws the words alone, which is how a reader is kept from learning of something they may not see.
+- `ENHANCE_SCRIPT`, the one script a served page carries. Without it tabs are sections one under another.
+- Golden files in `packages/markup/fixtures`: for each `.md`, the tree, the HTML and the text. `UPDATE_GOLDEN=1` rewrites them. Biome leaves `fixtures` alone.
+
+#### Findings
+
+- **markdown-it 14, not 15.** Version 15 brings `argparse` 3, which is licensed PSF-2.0, and the allow-list has `Python-2.0` and not that. Version 14 brings `argparse` 2, which passes. M0 read the licences of the packages named and not of what they bring. Adding PSF-2.0 is the owner's to decide, and nothing needs it yet.
+- **No Ajv and no TypeBox in the package.** The plan said JSON Schema checked with Ajv. The schemas are JSON Schema, and can be drawn as reference pages, but a component's values are all text, and Ajv would have been the larger part of what an app's page downloads.
+- **A term is a button.** It was first a `span` with a role, and the linter, reading the golden HTML, said what a screen reader would have. The link behind a term reads "More about workspace", not "Learn more", for the same reason.
+- **`details` cannot be used for a term.** A `details` inside a paragraph ends the paragraph. A term opens by its stylesheet when it is pointed at or holds the keyboard, and by the script when it is pressed.
+- A link or picture that markdown-it would have dropped silently is read into the tree, so that its author is told. The renderers refuse it again when drawing, and refuse what a resolver gives back by the same rule.
+- 79 tests. One draws a page written to do harm under every profile and checks that no tag, handler or address of its own comes out.
+- **Not done:** the stylesheet for the `vd-` classes. It belongs with the docs app's pages in M8.
+
 ### M3: `@volvel/docs-engine`
 
 `packages/docs-engine`, depends only on markup.
@@ -333,7 +356,7 @@ Tests: two editors on one page conflict; the preview matches the served page; a 
 
 - **A path belongs to one resource in a workspace, whatever its kind** (`packages/db/migrations/0004_resources.sql:14`). The architecture gives a folder's `index.md` the folder's own path. An app `handbook` with `docs: handbook` is the natural thing to write, and its home page would then want the app's path. So a folder's page keeps `index` as the last part of its path (`handbook/index`), and only its address drops it. The file and the path still match one for one.
 - **Resource files are found by name, `<name>.<kind>.yaml`, under the roots a repository names**, and the console writes to `platform/`. A plain `.md` has no kind in its name, and a `README.md` in a root must not become a page. So docs have roots of their own: `docs:` in `volvel.yaml`, a list of folders, and `platform/docs` when it says nothing. The console writes pages there.
-- **Licences pass**: markdown-it and markdown-it-directive are MIT, markdown-it-task-lists and `yaml` ISC, markdown-it-anchor Unlicense, MiniSearch MIT. All are on the shipped allow-list in `scripts/check-licenses.mjs`.
+- **Licences pass, as far as was read** (see M2 for what was missed): markdown-it and markdown-it-directive are MIT, markdown-it-task-lists and `yaml` ISC, markdown-it-anchor Unlicense, MiniSearch MIT. All are on the shipped allow-list in `scripts/check-licenses.mjs`.
 - **Monaco's Markdown highlighting is already built** as its own chunk in `apps/console/dist/assets`. `CodeEditor`'s `language` type leaves it out. There is no language service, and none is needed: the problems come from the markup package.
 - **A theme is tokens only** (`resolveTheme`). The docs layout needs a stylesheet of its own over those tokens, as the portal has `PORTAL_CSS`.
 - **Not checked yet:** what markup adds to the console's and the interface runtime's bundles. Measured in M4, when there is something to measure.

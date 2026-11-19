@@ -1,0 +1,49 @@
+Deploying
+
+Each workspace belongs to one tenant, and Volvel keeps them apart.
+
+The status column drives the board. An RMA has no page. Press Ctrl+K to search.
+
+Deleting a table drops its data.
+
+Before you start
+
+You need a dev workspace.
+
+What the column holds.
+
+table.columns.*.missing
+
+CLI
+
+volvel deploy
+
+Console
+
+Open Deploy in the header.
+
+An alert inside a tab.
+
+- Write the page.
+- Deploy it.
+
+Why a deploy?
+
+Because production changes arrive only by deploy.
+
+ts
+
+export default defineScript({});
+
+YAML
+
+kind: script
+
+- docs/
+  - index.md
+  - guides/
+    - refunds.md
+
+The deploy dialog
+
+A picture that is not there

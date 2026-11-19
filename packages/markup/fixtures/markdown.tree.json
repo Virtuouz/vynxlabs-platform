@@ -1,0 +1,492 @@
+{
+  "type": "root",
+  "v": 1,
+  "children": [
+    {
+      "type": "heading",
+      "depth": 1,
+      "id": "orders-returns",
+      "children": [
+        {
+          "type": "text",
+          "value": "Orders & \"returns\"",
+          "line": 1
+        }
+      ],
+      "line": 1
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "A paragraph with ",
+          "line": 3
+        },
+        {
+          "type": "strong",
+          "children": [
+            {
+              "type": "text",
+              "value": "bold",
+              "line": 3
+            }
+          ],
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": ", ",
+          "line": 3
+        },
+        {
+          "type": "emphasis",
+          "children": [
+            {
+              "type": "text",
+              "value": "italic",
+              "line": 3
+            }
+          ],
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": ", ",
+          "line": 3
+        },
+        {
+          "type": "delete",
+          "children": [
+            {
+              "type": "text",
+              "value": "struck",
+              "line": 3
+            }
+          ],
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": " and ",
+          "line": 3
+        },
+        {
+          "type": "inlineCode",
+          "value": "code",
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": ", a ",
+          "line": 3
+        },
+        {
+          "type": "link",
+          "href": "https://example.com/a?b=1&c=2",
+          "children": [
+            {
+              "type": "text",
+              "value": "link",
+              "line": 3
+            }
+          ],
+          "title": "Its title",
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": ",",
+          "line": 3
+        },
+        {
+          "type": "break",
+          "hard": false,
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": "a ",
+          "line": 4
+        },
+        {
+          "type": "link",
+          "href": "../guides/refunds#partial",
+          "children": [
+            {
+              "type": "text",
+              "value": "page link",
+              "line": 4
+            }
+          ],
+          "line": 4
+        },
+        {
+          "type": "text",
+          "value": " and a line that",
+          "line": 4
+        },
+        {
+          "type": "break",
+          "hard": false,
+          "line": 4
+        },
+        {
+          "type": "text",
+          "value": "carries on.",
+          "line": 5
+        }
+      ],
+      "line": 3
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "A hard break here",
+          "line": 7
+        },
+        {
+          "type": "break",
+          "hard": true,
+          "line": 7
+        },
+        {
+          "type": "text",
+          "value": "and the next line.",
+          "line": 8
+        }
+      ],
+      "line": 7
+    },
+    {
+      "type": "heading",
+      "depth": 2,
+      "id": "lists",
+      "children": [
+        {
+          "type": "text",
+          "value": "Lists",
+          "line": 10
+        }
+      ],
+      "line": 10
+    },
+    {
+      "type": "list",
+      "ordered": true,
+      "children": [
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "First",
+                  "line": 12
+                }
+              ],
+              "line": 12
+            }
+          ],
+          "line": 12
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Second",
+                  "line": 13
+                }
+              ],
+              "line": 13
+            },
+            {
+              "type": "list",
+              "ordered": false,
+              "children": [
+                {
+                  "type": "listItem",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Inside, with ",
+                      "line": 14
+                    },
+                    {
+                      "type": "inlineCode",
+                      "value": "code",
+                      "line": 14
+                    }
+                  ],
+                  "line": 14
+                },
+                {
+                  "type": "listItem",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "And more",
+                      "line": 15
+                    }
+                  ],
+                  "line": 15
+                }
+              ],
+              "line": 14
+            }
+          ],
+          "line": 13
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Starts at five",
+                  "line": 17
+                }
+              ],
+              "line": 17
+            }
+          ],
+          "line": 17
+        }
+      ],
+      "line": 12
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "children": [
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "text",
+              "value": "Done",
+              "line": 19
+            }
+          ],
+          "checked": true,
+          "line": 19
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "text",
+              "value": "Not done",
+              "line": 20
+            }
+          ],
+          "checked": false,
+          "line": 20
+        }
+      ],
+      "line": 19
+    },
+    {
+      "type": "heading",
+      "depth": 2,
+      "id": "lists-1",
+      "children": [
+        {
+          "type": "text",
+          "value": "Lists",
+          "line": 22
+        }
+      ],
+      "line": 22
+    },
+    {
+      "type": "blockquote",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "A quote, with a second heading of the same name above it.",
+              "line": 24
+            }
+          ],
+          "line": 24
+        }
+      ],
+      "line": 24
+    },
+    {
+      "type": "rule",
+      "line": 26
+    },
+    {
+      "type": "code",
+      "value": "const total: number = a < b ? a : b;",
+      "lang": "ts",
+      "meta": "title=\"orders.ts\"",
+      "line": 28
+    },
+    {
+      "type": "code",
+      "value": "indented code",
+      "line": 32
+    },
+    {
+      "type": "table",
+      "align": [
+        "left",
+        "right",
+        "center"
+      ],
+      "children": [
+        {
+          "type": "tableRow",
+          "header": true,
+          "children": [
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Name",
+                  "line": 34
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Count",
+                  "line": 34
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Note",
+                  "line": 34
+                }
+              ]
+            }
+          ],
+          "line": 34
+        },
+        {
+          "type": "tableRow",
+          "header": false,
+          "children": [
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Pens",
+                  "line": 36
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "12",
+                  "line": 36
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "emphasis",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "few",
+                      "line": 36
+                    }
+                  ],
+                  "line": 36
+                }
+              ]
+            }
+          ],
+          "line": 36
+        },
+        {
+          "type": "tableRow",
+          "header": false,
+          "children": [
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Paper",
+                  "line": 37
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "400",
+                  "line": 37
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "children": []
+            }
+          ],
+          "line": 37
+        }
+      ],
+      "line": 34
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "image",
+          "src": "./orders.png",
+          "alt": "A chart of orders",
+          "title": "Orders",
+          "line": 39
+        },
+        {
+          "type": "break",
+          "hard": false,
+          "line": 39
+        },
+        {
+          "type": "image",
+          "src": "https://example.com/chart.png",
+          "alt": "Elsewhere",
+          "line": 40
+        }
+      ],
+      "line": 39
+    }
+  ]
+}

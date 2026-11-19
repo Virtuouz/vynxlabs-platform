@@ -10,6 +10,7 @@ import {
 import {
   Button,
   Chart,
+  Closing,
   Dialog,
   Grid,
   Menu,
@@ -586,9 +587,16 @@ export function WidgetCard({
           There is more than is shown: the first {count(result.rows.length)} rows.
         </p>
       ) : null}
-      {behind ? (
-        <RowsBehind root={root} query={behind} onClose={() => setBehind(undefined)} />
-      ) : null}
+      <Closing subject={behind}>
+        {(behind, shown) => (
+          <RowsBehind
+            open={shown}
+            root={root}
+            query={behind}
+            onClose={() => setBehind(undefined)}
+          />
+        )}
+      </Closing>
     </Panel>
   );
 }
@@ -597,15 +605,17 @@ export function WidgetCard({
 function RowsBehind({
   root,
   query,
+  open,
   onClose,
 }: {
   root: string;
   query: VisualQuery;
+  open: boolean;
   onClose: () => void;
 }) {
   const rows = useLoad<Result>(visualPath(root, query));
   return (
-    <Dialog open onClose={onClose} title={`Rows of ${query.table}`}>
+    <Dialog open={open} onClose={onClose} title={`Rows of ${query.table}`}>
       <div className="flex flex-col gap-3">
         {rows.error ? (
           <Notice tone="danger">{rows.error.message}</Notice>

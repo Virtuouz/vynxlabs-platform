@@ -46,6 +46,7 @@ export {
 } from "./LogViewer.tsx";
 export { Markdown } from "./Markdown.tsx";
 export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
+export { MoveButtons, type MoveButtonsProps } from "./MoveButtons.tsx";
 export { EmptyState, Notice } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";
@@ -57,6 +58,7 @@ export {
   type SegmentOption,
 } from "./Pickers.tsx";
 export { Popover } from "./Popover.tsx";
+export { Appear, Closing, useLast, useOpening } from "./presence.tsx";
 export {
   columnsOf,
   MAX_TABLE_ROWS,
@@ -91,6 +93,7 @@ export {
   useToast,
 } from "./Toast.tsx";
 export { Kbd, Tooltip, TooltipProvider } from "./Tooltip.tsx";
+export { useFlip, useKeys } from "./useFlip.ts";
 export {
   type CardsWidgetConfig,
   type CardWidgetConfig,

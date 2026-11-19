@@ -1,4 +1,4 @@
-import { Button, Dialog, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Closing, Dialog, Notice, TextField } from "@vynxlabs/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -368,18 +368,21 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
         }}
       />
       <LinkDialog link={link} onClose={() => setLink(undefined)} />
-      {attributesOf ? (
-        <AttributesDialog
-          key={attributesOf.id}
-          base={base}
-          user={attributesOf}
-          onClose={() => setAttributesOf(undefined)}
-          onSaved={() => {
-            setAttributesOf(undefined);
-            page.reload();
-          }}
-        />
-      ) : null}
+      <Closing subject={attributesOf}>
+        {(attributesOf, shown) => (
+          <AttributesDialog
+            open={shown}
+            key={attributesOf.id}
+            base={base}
+            user={attributesOf}
+            onClose={() => setAttributesOf(undefined)}
+            onSaved={() => {
+              setAttributesOf(undefined);
+              page.reload();
+            }}
+          />
+        )}
+      </Closing>
     </>
   );
 }

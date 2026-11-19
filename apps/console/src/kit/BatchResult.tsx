@@ -1,4 +1,4 @@
-import { Button, Dialog } from "@vynxlabs/ui";
+import { Button, Closing, Dialog } from "@vynxlabs/ui";
 import { type ReactNode, useState } from "react";
 import { notify } from "../ask.tsx";
 import { CopyIcon } from "./copy.tsx";
@@ -65,20 +65,25 @@ export function useBatch() {
     }
   };
 
-  const dialog: ReactNode = shown ? (
-    <BatchResult
-      {...shown}
-      onClose={() => setShown(undefined)}
-      onRetry={
-        shown.retry
-          ? async (ids) => {
-              const again = await (shown.retry as (ids: string[]) => Promise<BatchAnswer>)(ids);
-              setShown({ ...shown, answer: again });
-            }
-          : undefined
-      }
-    />
-  ) : null;
+  const dialog: ReactNode = (
+    <Closing subject={shown}>
+      {(shown, open) => (
+        <BatchResult
+          {...shown}
+          open={open}
+          onClose={() => setShown(undefined)}
+          onRetry={
+            shown.retry
+              ? async (ids) => {
+                  const again = await (shown.retry as (ids: string[]) => Promise<BatchAnswer>)(ids);
+                  setShown({ ...shown, answer: again });
+                }
+              : undefined
+          }
+        />
+      )}
+    </Closing>
+  );
 
   return { run, dialog, busy };
 }
@@ -88,13 +93,18 @@ export function BatchResult({
   title,
   answer,
   name,
+  open,
   onClose,
   onRetry,
-}: Shown & { onClose: () => void; onRetry?: ((ids: string[]) => Promise<void>) | undefined }) {
+}: Shown & {
+  open: boolean;
+  onClose: () => void;
+  onRetry?: ((ids: string[]) => Promise<void>) | undefined;
+}) {
   const [retrying, setRetrying] = useState(false);
   const failed = answer.results.filter((result) => !result.ok);
   return (
-    <Dialog open onClose={onClose} title={title}>
+    <Dialog open={open} onClose={onClose} title={title}>
       <div className="flex flex-col gap-3">
         <p className="m-0" role="status">
           {answer.done} done, {answer.failed} not done.

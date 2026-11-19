@@ -1,5 +1,13 @@
 import type { InterfacePage, WidgetAction } from "@vynxlabs/manifest";
-import { Button, Dialog, type JsonSchema, Notice, SchemaForm, useDialogs } from "@vynxlabs/ui";
+import {
+  Button,
+  Closing,
+  Dialog,
+  type JsonSchema,
+  Notice,
+  SchemaForm,
+  useDialogs,
+} from "@vynxlabs/ui";
 import { type ReactNode, useState } from "react";
 import { type DataClient, failure, type Row, type StartedRun, type TargetInfo } from "./data.ts";
 
@@ -219,30 +227,32 @@ export function useActions(host: ActionHost) {
           </Notice>
         </div>
       ) : null}
-      {asking ? (
-        <Dialog
-          open
-          title={asking.action.label}
-          onClose={() => {
-            asking.answer(null);
-            setAsking(undefined);
-          }}
-        >
-          <SchemaForm
-            schema={asking.schema}
-            value={asking.value}
-            submitLabel={asking.action.label}
-            onCancel={() => {
+      <Closing subject={asking}>
+        {(asking, shown) => (
+          <Dialog
+            open={shown}
+            title={asking.action.label}
+            onClose={() => {
               asking.answer(null);
               setAsking(undefined);
             }}
-            onSubmit={(value) => {
-              asking.answer((value ?? {}) as Record<string, unknown>);
-              setAsking(undefined);
-            }}
-          />
-        </Dialog>
-      ) : null}
+          >
+            <SchemaForm
+              schema={asking.schema}
+              value={asking.value}
+              submitLabel={asking.action.label}
+              onCancel={() => {
+                asking.answer(null);
+                setAsking(undefined);
+              }}
+              onSubmit={(value) => {
+                asking.answer((value ?? {}) as Record<string, unknown>);
+                setAsking(undefined);
+              }}
+            />
+          </Dialog>
+        )}
+      </Closing>
     </>
   );
 

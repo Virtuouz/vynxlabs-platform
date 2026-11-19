@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
-import { expect, type Page, test } from "@playwright/test";
 import { firstRowTop, nested, overdraws } from "./measure.ts";
 import { signInWithPassword } from "./sign-in.ts";
+import { expect, type Page, test } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
 /**

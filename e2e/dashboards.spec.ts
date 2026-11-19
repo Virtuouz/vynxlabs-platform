@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations, readEveryList } from "./visual.ts";
 
 /**
@@ -272,6 +272,8 @@ test("a pivot of loans by month and status is built from menus, with no SQL writ
   const behind = page.getByRole("dialog", { name: "Rows of loans" });
   await expect(behind).toContainText("2 rows");
   await behind.getByRole("button", { name: "Done" }).click();
+  // It closes with motion, so it is on the page a moment longer.
+  await expect(behind).toBeHidden();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByRole("button", { name: "Add a widget" })).toHaveCount(0);
 });

@@ -1,11 +1,13 @@
 import { ENUM_COLORS, enumColor } from "@vynxlabs/manifest";
 import {
   Button,
+  Closing,
   Dialog,
   EmptyState,
   Grid,
   type GridColumn,
   type GridSort,
+  MoveButtons,
   MultiSelectField,
   Notice,
   parseValue,
@@ -14,9 +16,10 @@ import {
   showValue,
   TextAreaField,
   TextField,
+  useFlip,
   ValueChip,
 } from "@vynxlabs/ui";
-import { ArrowDown, ArrowUp, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -1051,17 +1054,19 @@ const ON_DELETE = [
 
 function OnDeleteDialog({
   column,
+  open,
   onClose,
   onSave,
 }: {
   column: TableColumn;
+  open: boolean;
   onClose: () => void;
   onSave: (onDelete: string) => Promise<void>;
 }) {
   const [rule, setRule] = useState(column.onDelete ?? "restrict");
   const [busy, setBusy] = useState(false);
   return (
-    <Dialog open onClose={onClose} title={`When a row ${column.name} points to is deleted`}>
+    <Dialog open={open} onClose={onClose} title={`When a row ${column.name} points to is deleted`}>
       <div className="flex flex-col gap-4">
         <SelectField
           name="onDelete"
@@ -1115,10 +1120,12 @@ interface EditedValue {
 /** The values of an enum column: what each is called, the colour it is drawn on, and their order. */
 function ValuesDialog({
   column,
+  open,
   onClose,
   onSave,
 }: {
   column: TableColumn;
+  open: boolean;
   onClose: () => void;
   onSave: (values: (string | Record<string, string>)[]) => Promise<void>;
 }) {
@@ -1142,6 +1149,7 @@ function ValuesDialog({
       [next[at], next[to]] = [next[to] as EditedValue, next[at] as EditedValue];
       return next;
     });
+  const list = useFlip<HTMLUListElement>(rows.map((row) => row.key).join(" "));
   const typed = rows.map((row) => row.value.trim());
   const ownColor = (color: string) => color !== "" && !COLOR_NAMES.includes(color);
   const problem = typed.some((value) => value === "")
@@ -1157,11 +1165,19 @@ function ValuesDialog({
     .map((one) => one.value)
     .filter((value) => !rows.some((row) => row.was === value));
   return (
-    <Dialog open onClose={onClose} title={`Values of ${column.name}`}>
+    <Dialog open={open} onClose={onClose} title={`Values of ${column.name}`}>
       <div className="flex flex-col gap-4">
-        <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Values, in order">
+        <ul
+          ref={list}
+          className="m-0 flex list-none flex-col gap-3 p-0"
+          aria-label="Values, in order"
+        >
           {rows.map((row, at) => (
-            <li key={row.key} className="flex flex-col gap-2 rounded-panel border border-line p-3">
+            <li
+              key={row.key}
+              data-flip-key={row.key}
+              className="flex flex-col gap-2 rounded-panel border border-line p-3"
+            >
               <div className="flex flex-wrap items-end gap-2">
                 <div className="min-w-32 flex-1">
                   <TextField
@@ -1213,24 +1229,12 @@ function ValuesDialog({
                   </ValueChip>
                 </span>
                 <span className="ml-auto inline-flex gap-1">
-                  <Button
-                    size="small"
-                    variant="quiet"
-                    aria-label={`Move ${row.value || "this value"} up`}
-                    disabled={at === 0}
-                    onClick={() => move(at, -1)}
-                  >
-                    <ArrowUp aria-hidden="true" size={14} />
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="quiet"
-                    aria-label={`Move ${row.value || "this value"} down`}
-                    disabled={at === rows.length - 1}
-                    onClick={() => move(at, 1)}
-                  >
-                    <ArrowDown aria-hidden="true" size={14} />
-                  </Button>
+                  <MoveButtons
+                    label={row.value || "this value"}
+                    at={at}
+                    count={rows.length}
+                    onMove={(by) => move(at, by)}
+                  />
                   <Button
                     size="small"
                     variant="quiet"
@@ -1650,31 +1654,37 @@ function Definition({
         </section>
       ) : null}
 
-      {optionsOf?.values ? (
-        <ValuesDialog
-          column={optionsOf}
-          onClose={() => setOptionsOf(undefined)}
-          onSave={(values) =>
-            change((body) => {
-              const column = body.columns[optionsOf.name];
-              if (column) column.values = values;
-            })
-          }
-        />
-      ) : optionsOf?.references ? (
-        <OnDeleteDialog
-          column={optionsOf}
-          onClose={() => setOptionsOf(undefined)}
-          onSave={(onDelete) =>
-            change((body) => {
-              const column = body.columns[optionsOf.name];
-              if (!column) return;
-              if (onDelete === "restrict") delete column.onDelete;
-              else column.onDelete = onDelete;
-            })
-          }
-        />
-      ) : null}
+      <Closing subject={optionsOf?.values || optionsOf?.references ? optionsOf : undefined}>
+        {(optionsOf, shown) =>
+          optionsOf.values ? (
+            <ValuesDialog
+              open={shown}
+              column={optionsOf}
+              onClose={() => setOptionsOf(undefined)}
+              onSave={(values) =>
+                change((body) => {
+                  const column = body.columns[optionsOf.name];
+                  if (column) column.values = values;
+                })
+              }
+            />
+          ) : (
+            <OnDeleteDialog
+              open={shown}
+              column={optionsOf}
+              onClose={() => setOptionsOf(undefined)}
+              onSave={(onDelete) =>
+                change((body) => {
+                  const column = body.columns[optionsOf.name];
+                  if (!column) return;
+                  if (onDelete === "restrict") delete column.onDelete;
+                  else column.onDelete = onDelete;
+                })
+              }
+            />
+          )
+        }
+      </Closing>
       <CreateDialog
         open={adding}
         onClose={() => setAdding(false)}

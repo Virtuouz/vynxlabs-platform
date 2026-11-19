@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
-import { type Browser, expect, type Page, test } from "@playwright/test";
 import { GitServer } from "./git-server.ts";
 import { signInWithPassword } from "./sign-in.ts";
+import { type Browser, expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
 /**

@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expect, type Page, test } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
 /**
@@ -128,10 +128,29 @@ test("the same from the keyboard, with the handle or the arrows", async () => {
   await expect(
     dialog.getByRole("list", { name: "Shown, in order" }).getByRole("listitem").nth(1),
   ).toContainText(moved);
+  // Moved by its button it is seen to move: it and the column it passes are played from
+  // where they were, part of the way there in some frame, and not redrawn in place.
+  await page.evaluate(() => {
+    const seen: number[] = [];
+    (window as unknown as { __moving: number[] }).__moving = seen;
+    const tick = () => {
+      for (const row of document.querySelectorAll<HTMLElement>("[data-flip-moving]")) {
+        const shift = new DOMMatrixReadOnly(getComputedStyle(row).transform).m42;
+        if (shift !== 0) seen.push(Math.round(shift));
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   await dialog.getByRole("button", { name: `Move ${moved} up` }).click();
   await expect(
     dialog.getByRole("list", { name: "Shown, in order" }).getByRole("listitem").first(),
   ).toContainText(moved);
+  await page.waitForTimeout(300);
+  const shifts = await page.evaluate(() => (window as unknown as { __moving: number[] }).__moving);
+  // One came from below and one from above.
+  expect(shifts.some((shift) => shift > 0)).toBe(true);
+  expect(shifts.some((shift) => shift < 0)).toBe(true);
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toBeHidden();
   expect((await headers())[0]).toBe(moved);

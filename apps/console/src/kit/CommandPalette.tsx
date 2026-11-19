@@ -1,4 +1,4 @@
-import { CheckboxField, Dialog, Kbd } from "@vynxlabs/ui";
+import { CheckboxField, Closing, Dialog, Kbd } from "@vynxlabs/ui";
 import {
   Activity,
   Boxes,
@@ -881,27 +881,29 @@ export function CommandPalette({
           </div>
         </div>
       </Dialog>
-      {starting && tenantId ? (
-        <InputDialog
-          open
-          onClose={() => setStarting(undefined)}
-          title={`${starting.kind === "script" ? "Run" : "Start"} ${starting.path}`}
-          action={starting.kind === "script" ? "Run" : "Start flow"}
-          schema={starting.schema}
-          onSubmit={async (input) => {
-            const root = `/tenants/${tenantId}/workspaces/${starting.workspaceId}`;
-            const made =
-              starting.kind === "script"
-                ? await api.post<{ id: string }>(`${root}/runs`, { script: starting.path, input })
-                : await api.post<{ id: string }>(`${root}/flow-runs`, {
-                    flow: starting.path,
-                    input,
-                  });
-            setStarting(undefined);
-            navigate(`/t/${tenantId}/workspaces/${starting.workspaceId}/runs/${made.id}`);
-          }}
-        />
-      ) : null}
+      <Closing subject={tenantId ? starting : undefined}>
+        {(starting, shown) => (
+          <InputDialog
+            open={shown}
+            onClose={() => setStarting(undefined)}
+            title={`${starting.kind === "script" ? "Run" : "Start"} ${starting.path}`}
+            action={starting.kind === "script" ? "Run" : "Start flow"}
+            schema={starting.schema}
+            onSubmit={async (input) => {
+              const root = `/tenants/${tenantId}/workspaces/${starting.workspaceId}`;
+              const made =
+                starting.kind === "script"
+                  ? await api.post<{ id: string }>(`${root}/runs`, { script: starting.path, input })
+                  : await api.post<{ id: string }>(`${root}/flow-runs`, {
+                      flow: starting.path,
+                      input,
+                    });
+              setStarting(undefined);
+              navigate(`/t/${tenantId}/workspaces/${starting.workspaceId}/runs/${made.id}`);
+            }}
+          />
+        )}
+      </Closing>
     </>
   );
 }

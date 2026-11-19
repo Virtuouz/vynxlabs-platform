@@ -799,12 +799,14 @@ export function WidgetEditor({
   body,
   widget: opened,
   onSave,
+  open,
   onClose,
 }: {
   root: string;
   body: DashboardBody;
   widget: DashboardWidget;
   onSave: (widget: DashboardWidget) => Promise<void>;
+  open: boolean;
   onClose: () => void;
 }) {
   const [widget, setWidget] = useState(opened);
@@ -928,7 +930,7 @@ export function WidgetEditor({
 
   return (
     <SideSheet
-      open
+      open={open}
       size="wide"
       onClose={onClose}
       title={opened.title || "A new widget"}

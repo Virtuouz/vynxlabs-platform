@@ -1,4 +1,4 @@
-import { Button, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Closing, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
 import {
   CircleCheck,
   CirclePause,
@@ -315,16 +315,19 @@ export function TriggersWorkbench({
 
   return (
     <>
-      <NewScheduleSheet
-        key={String(creating)}
-        root={root}
-        link={link}
-        open={creating}
-        onClose={() => {
-          setCreating(false);
-          list.reload();
-        }}
-      />
+      <Closing subject={creating}>
+        {(_creating, shown) => (
+          <NewScheduleSheet
+            root={root}
+            link={link}
+            open={shown}
+            onClose={() => {
+              setCreating(false);
+              list.reload();
+            }}
+          />
+        )}
+      </Closing>
       <CollectionView
         actions={newTrigger}
         title="Triggers"

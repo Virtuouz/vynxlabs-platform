@@ -97,6 +97,7 @@ test("attributes are saved together, and a row left empty is left out", async ()
   const saved = vi.fn();
   show(
     <AttributesDialog
+      open
       base={base}
       user={{ id: "u1", email: "ada@acme.test", attributes: { customer_id: "C-1" } }}
       onClose={() => {}}

@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expect, test } from "./test.ts";
 
 /**
  * Phase 18, M12: a logo set for the console gives it an icon. The icons are

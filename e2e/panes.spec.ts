@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expect, type Page, test } from "./test.ts";
 
 /**
  * Resizable, remembered panes (phase 15, P3-5): every divider moves by

@@ -1,6 +1,7 @@
 import {
   type BadgeTone,
   Button,
+  Closing,
   type LogLine,
   logText,
   Notice,
@@ -790,21 +791,23 @@ export function Connections({ root }: { root: string }) {
           );
         }}
       />
-      {editing ? (
-        <ConnectionWizard
-          key={editing.row?.path ?? "new"}
-          root={root}
-          open
-          row={editing.row}
-          rows={list.data?.items ?? []}
-          returned={returned}
-          onClose={() => {
-            setEditing(null);
-            setReturned(undefined);
-          }}
-          onSaved={reload}
-        />
-      ) : null}
+      <Closing subject={editing}>
+        {(editing, shown) => (
+          <ConnectionWizard
+            key={editing.row?.path ?? "new"}
+            root={root}
+            open={shown}
+            row={editing.row}
+            rows={list.data?.items ?? []}
+            returned={returned}
+            onClose={() => {
+              setEditing(null);
+              setReturned(undefined);
+            }}
+            onSaved={reload}
+          />
+        )}
+      </Closing>
     </>
   );
 }

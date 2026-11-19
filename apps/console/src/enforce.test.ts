@@ -282,3 +282,86 @@ test("every transition is timed by a motion token, and reduced motion stops all 
     /@media \(prefers-reduced-motion: reduce\) \{\s*\* \{\s*transition: none !important;\s*animation: none !important;/,
   );
 });
+
+/**
+ * Every sheet and dialog arrives and leaves with motion (07 §7.10). One that
+ * is drawn only while it is wanted, with `open` written bare, is on the page
+ * for one frame less than its motion needs and goes in one: it is opened for
+ * its subject with `Closing`, or stays on the page with `open={…}` and no
+ * `key` that changes as it closes. The
+ * inspector is the exception, because the list beside it keeps it while it
+ * shuts. A panel that covers the page is made by the kit's `SideSheet`,
+ * `Dialog` or `Appear`, which carry the motion, and never by hand.
+ * `overlay-allowed:` on the line before says why one is not.
+ */
+test("every sheet and dialog can arrive and leave with motion", () => {
+  const found: string[] = [];
+  for (const path of new Set(drawn())) {
+    const inKit = /packages\/ui\/src\//.test(path) || path.endsWith("kit/layout.tsx");
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/overlay-allowed:/.test(`${lines[index - 1]}${lines[index - 2]}`)) return;
+      const bare = /^\s*open$/.test(line) || /<[A-Z]\w*\b[^=]*\sopen(\s+\w+=|\s*\/?>)/.test(line);
+      if (bare) {
+        // The tag it is written on: this line's, or the nearest one opened above.
+        let at = index;
+        while (at > 0 && !/<[A-Z]\w*/.test(lines[at] as string)) at--;
+        const tag = (lines[at] as string).match(/<([A-Z]\w*)(?![\s\S]*<[A-Z])/)?.[1];
+        if (tag !== "Inspector") found.push(`${where(path)}:${index + 1} <${tag} open>`);
+      }
+      // A key that changes as it closes makes a new one, shut, and the open one is gone at once.
+      const keyed = line.match(/^\s*key=\{String\((\w+)\)\}/)?.[1];
+      if (
+        keyed &&
+        lines.slice(index - 3, index + 6).some((near) => near.includes(`open={${keyed}}`))
+      ) {
+        found.push(`${where(path)}:${index + 1} keyed by whether it is open`);
+      }
+      if (!inKit && /(?<!\[)role="dialog"/.test(line)) {
+        found.push(`${where(path)}:${index + 1} a dialog made by hand`);
+      }
+      if (!inKit && /className=.*\bfixed\b.*\binset-(y-)?0\b/.test(line)) {
+        found.push(`${where(path)}:${index + 1} a panel over the page made by hand`);
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * Whatever is moved a place by a button or a key is seen to move (phase 19,
+ * M2). The buttons are the kit's `MoveButtons`, and what they move is held by
+ * `useFlip`, which plays each thing from where it was. So no screen draws
+ * move buttons of its own, and a file that moves things from the arrow keys
+ * uses `useFlip` or the shared placement. An arrow that moves nothing, such
+ * as the next match in a log, says so with `move-allowed:` on the line before.
+ */
+test("every move by a button or a key is animated by the shared pieces", () => {
+  const found: string[] = [];
+  for (const path of new Set(drawn())) {
+    if (/packages\/ui\/src\/(MoveButtons|useFlip)\.tsx?$/.test(path)) continue;
+    const text = readFileSync(path, "utf8");
+    const lines = text.split("\n");
+    const flips = /\buseFlip\b|\busePlacement\b/.test(text);
+    lines.forEach((line, index) => {
+      if (/move-allowed:/.test(`${lines[index - 1]}${lines[index - 2]}`)) return;
+      if (/aria-label=\{?[`"']Move [^`"']*\b(up|down|earlier|later|left|right)[`"']/.test(line)) {
+        found.push(`${where(path)}:${index + 1} move buttons of its own`);
+      }
+      if (
+        />\s*(Move up|Move down|Up|Down)\s*</.test(line) ||
+        /^\s*(Move up|Move down)$/.test(line)
+      ) {
+        found.push(`${where(path)}:${index + 1} move buttons of its own`);
+      }
+      if (/event\.key\s*[!=]==?\s*"Arrow(Up|Down|Left|Right)"/.test(line) && !flips) {
+        if (
+          /\b(onMove|move|moved|arrayMove|reorder)\(/.test(lines.slice(index, index + 6).join("\n"))
+        ) {
+          found.push(`${where(path)}:${index + 1} a move from the keyboard that is not animated`);
+        }
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});

@@ -8,15 +8,17 @@ import {
 import {
   Button,
   CheckboxField,
+  Closing,
   Dialog,
   EmptyState,
   Menu,
+  MoveButtons,
   MultiSelectField,
   Notice,
   SelectField,
   TextField,
 } from "@vynxlabs/ui";
-import { ArrowLeft, ArrowRight, Ellipsis, Pencil, Plus, Trash2 } from "lucide-react";
+import { Ellipsis, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -373,24 +375,13 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
               tools={
                 edit ? (
                   <>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      aria-label={`Move ${widget.title || widget.id} earlier`}
-                      disabled={at === 0}
-                      onClick={() => move(at, -1)}
-                    >
-                      <ArrowLeft aria-hidden="true" size={14} />
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      aria-label={`Move ${widget.title || widget.id} later`}
-                      disabled={at === body.widgets.length - 1}
-                      onClick={() => move(at, 1)}
-                    >
-                      <ArrowRight aria-hidden="true" size={14} />
-                    </Button>
+                    <MoveButtons
+                      label={widget.title || widget.id}
+                      at={at}
+                      count={body.widgets.length}
+                      along="row"
+                      onMove={(by) => move(at, by)}
+                    />
                     <Button
                       size="small"
                       variant="quiet"
@@ -424,34 +415,40 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         </div>
       )}
 
-      {editing ? (
-        <WidgetEditor
-          key={editing.id}
-          root={root}
-          body={body}
-          widget={editing}
-          onClose={() => setEditing(undefined)}
-          onSave={async (widget) => {
-            const there = body.widgets.some((one) => one.id === widget.id);
-            const done = await withWidgets(
-              there
-                ? body.widgets.map((one) => (one.id === widget.id ? widget : one))
-                : [...body.widgets, widget],
-            );
-            if (done) setEditing(undefined);
-          }}
-        />
-      ) : null}
-      {filtering ? (
-        <FiltersDialog
-          root={root}
-          body={body}
-          onClose={() => setFiltering(false)}
-          onSave={async (next) => {
-            if (await save({ body: next })) setFiltering(false);
-          }}
-        />
-      ) : null}
+      <Closing subject={editing}>
+        {(editing, shown) => (
+          <WidgetEditor
+            open={shown}
+            key={editing.id}
+            root={root}
+            body={body}
+            widget={editing}
+            onClose={() => setEditing(undefined)}
+            onSave={async (widget) => {
+              const there = body.widgets.some((one) => one.id === widget.id);
+              const done = await withWidgets(
+                there
+                  ? body.widgets.map((one) => (one.id === widget.id ? widget : one))
+                  : [...body.widgets, widget],
+              );
+              if (done) setEditing(undefined);
+            }}
+          />
+        )}
+      </Closing>
+      <Closing subject={filtering}>
+        {(_filtering, shown) => (
+          <FiltersDialog
+            open={shown}
+            root={root}
+            body={body}
+            onClose={() => setFiltering(false)}
+            onSave={async (next) => {
+              if (await save({ body: next })) setFiltering(false);
+            }}
+          />
+        )}
+      </Closing>
       <Dialog open={sharing} onClose={() => setSharing(false)} title={`Share ${loaded.title}`}>
         <div className="flex flex-col gap-4">
           <CheckboxField
@@ -519,11 +516,13 @@ const FILTER_LABELS: Record<DashboardFilter["type"], string> = {
 function FiltersDialog({
   root,
   body,
+  open,
   onClose,
   onSave,
 }: {
   root: string;
   body: DashboardBody;
+  open: boolean;
   onClose: () => void;
   onSave: (body: DashboardBody) => Promise<void>;
 }) {
@@ -547,7 +546,7 @@ function FiltersDialog({
     (one) => !filters.some((kept) => kept.name === one.name),
   );
   return (
-    <Dialog open onClose={onClose} title="Filters">
+    <Dialog open={open} onClose={onClose} title="Filters">
       <div className="flex flex-col gap-4">
         <p className="m-0 text-ink-muted">
           Whoever reads the dashboard sets these. Each widget says, in its own settings, which of

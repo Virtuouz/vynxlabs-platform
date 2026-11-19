@@ -1,11 +1,14 @@
-import { expect, type Page, test } from "@playwright/test";
 import { signInWithPassword } from "./sign-in.ts";
+import { expect, type Page, test } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
 /**
  * Phase 18, M1: the drawer beside a list slides open once and shut once, and
  * does not move when something else is chosen; the runs list has one scroll
  * bar; and a text area is as tall as what it holds, up to twelve lines.
+ *
+ * Phase 19, M1: every sheet and dialog any spec opens is held to arriving and
+ * leaving with motion by the fixture in `test.ts`.
  */
 
 const ADMIN = {
@@ -172,6 +175,20 @@ test("with reduced motion the drawer is there or it is not", async () => {
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toHaveCount(0, { timeout: 200 });
   await page.emulateMedia({ reducedMotion: "no-preference" });
+});
+
+test("on a narrower screen the same details slide over the list as a sheet, both ways", async () => {
+  // The fixture in test.ts fails this if the sheet arrives or leaves in one frame.
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(`${link}/runs`);
+  const rows = page.locator('[data-table="runs"] tbody tr');
+  await expect.poll(async () => (await rows.count()) > 30).toBe(true);
+  await rows.nth(0).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Close" }).click();
+  await expect(sheet).toBeHidden();
+  await page.setViewportSize({ width: 1500, height: 700 });
 });
 
 test("a row's JSON is edited in a text area that grows with it and can still be dragged", async () => {

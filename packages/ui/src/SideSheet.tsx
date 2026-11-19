@@ -1,6 +1,7 @@
 import { Dialog as Base } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
+import { useOpening } from "./presence.tsx";
 
 export interface SideSheetProps {
   open: boolean;
@@ -39,8 +40,9 @@ export function SideSheet({
       : size === "narrow"
         ? "sm:w-[min(20rem,92vw)]"
         : "sm:w-[min(30rem,92vw)]";
+  const shown = useOpening(open);
   return (
-    <Base.Root open={open} onOpenChange={(next: boolean) => !next && onClose()}>
+    <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>
         <Base.Backdrop className="fixed inset-0 layer-sheet bg-ink/30 transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup

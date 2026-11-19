@@ -1,4 +1,4 @@
-import { Button, JsonView, LogViewer, Menu, Notice, ResultView, Tabs } from "@vynxlabs/ui";
+import { Button, Closing, JsonView, LogViewer, Menu, Notice, ResultView, Tabs } from "@vynxlabs/ui";
 import {
   ChevronDown,
   CircleX,
@@ -621,20 +621,22 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         }
       />
 
-      {editing ? (
-        <InputDialog
-          open
-          onClose={() => setEditing(false)}
-          title={`Run ${run.script} again`}
-          action="Run again"
-          schema={scripts.data?.items.find((one) => one.path === run.script)?.inputSchema}
-          initial={run.input}
-          onSubmit={async (input) => {
-            await rerun({ input });
-            setEditing(false);
-          }}
-        />
-      ) : null}
+      <Closing subject={editing}>
+        {(_editing, shown) => (
+          <InputDialog
+            open={shown}
+            onClose={() => setEditing(false)}
+            title={`Run ${run.script} again`}
+            action="Run again"
+            schema={scripts.data?.items.find((one) => one.path === run.script)?.inputSchema}
+            initial={run.input}
+            onSubmit={async (input) => {
+              await rerun({ input });
+              setEditing(false);
+            }}
+          />
+        )}
+      </Closing>
     </div>
   );
 }
@@ -883,20 +885,22 @@ function FlowRunHeader({
           />
         </div>
       ) : null}
-      {editing ? (
-        <InputDialog
-          open
-          onClose={() => setEditing(false)}
-          title={`Run ${run.flow} again`}
-          action="Run again"
-          schema={trigger?.trigger?.input}
-          initial={run.input}
-          onSubmit={async (input) => {
-            await retry({ from: "start", input });
-            setEditing(false);
-          }}
-        />
-      ) : null}
+      <Closing subject={editing}>
+        {(_editing, shown) => (
+          <InputDialog
+            open={shown}
+            onClose={() => setEditing(false)}
+            title={`Run ${run.flow} again`}
+            action="Run again"
+            schema={trigger?.trigger?.input}
+            initial={run.input}
+            onSubmit={async (input) => {
+              await retry({ from: "start", input });
+              setEditing(false);
+            }}
+          />
+        )}
+      </Closing>
     </>
   );
 }

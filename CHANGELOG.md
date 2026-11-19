@@ -2,6 +2,17 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 19, dashboards placed by drag, and motion that is kept
+
+### For operators
+
+- Nothing to do so far. No migration and no new setting.
+
+### For tenant developers
+
+- **Every sheet and dialog in the console and in apps slides or fades both ways**, and whatever is moved a place by a button or an arrow key is seen to move. Under reduced motion nothing moves, as before.
+- **`@vynxlabs/ui` gains** `Closing`, `Appear`, `useOpening`, `useLast`, `useFlip`, `useKeys` and `MoveButtons`. A `SchemaForm` list's move buttons are icons, named as before.
+
 ## Unreleased: phase 18, data you can ask questions of
 
 ### For operators

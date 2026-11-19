@@ -1,4 +1,4 @@
-import { SideSheet } from "@vynxlabs/ui";
+import { Closing, SideSheet } from "@vynxlabs/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DiffView } from "../kit/DiffView.tsx";
@@ -108,15 +108,18 @@ export function DriftView({ root, hereName }: { root: string; hereName: string }
           )}
         </Panel>
       )}
-      {open ? (
-        <DriftSheet
-          root={root}
-          item={open}
-          hereName={hereName}
-          thereName={there}
-          onClose={() => setOpen(undefined)}
-        />
-      ) : null}
+      <Closing subject={open}>
+        {(open, shown) => (
+          <DriftSheet
+            open={shown}
+            root={root}
+            item={open}
+            hereName={hereName}
+            thereName={there}
+            onClose={() => setOpen(undefined)}
+          />
+        )}
+      </Closing>
     </section>
   );
 }
@@ -127,12 +130,14 @@ function DriftSheet({
   item,
   hereName,
   thereName,
+  open,
   onClose,
 }: {
   root: string;
   item: DriftItem;
   hereName: string;
   thereName: string;
+  open: boolean;
   onClose: () => void;
 }) {
   const one = useLoad<{
@@ -142,7 +147,7 @@ function DriftSheet({
   }>(`${root}/drift/${item.path}`);
   return (
     <SideSheet
-      open
+      open={open}
       size="wide"
       onClose={onClose}
       title={item.path}

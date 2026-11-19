@@ -1,4 +1,4 @@
-import { Button, Notice, SideSheet, TextField } from "@vynxlabs/ui";
+import { Button, Closing, Notice, SideSheet, TextField } from "@vynxlabs/ui";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
@@ -288,6 +288,7 @@ function RoleDialog({
   base,
   kinds,
   role,
+  open,
   onClose,
   onSaved,
 }: {
@@ -295,6 +296,7 @@ function RoleDialog({
   kinds: readonly PermissionKind[];
   /** The role to change, or nothing to create one. */
   role: Role | undefined;
+  open: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -309,7 +311,7 @@ function RoleDialog({
 
   return (
     <SideSheet
-      open
+      open={open}
       size="wide"
       onClose={onClose}
       title={role ? (readOnly ? role.name : `Change ${role.name}`) : "Create role"}
@@ -547,19 +549,22 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
           </Inspector>
         }
       />
-      {open ? (
-        <RoleDialog
-          key={open === "new" ? "new" : open.id}
-          base={base}
-          kinds={kinds}
-          role={open === "new" ? undefined : open}
-          onClose={() => setOpen(undefined)}
-          onSaved={() => {
-            setOpen(undefined);
-            roles.reload();
-          }}
-        />
-      ) : null}
+      <Closing subject={open}>
+        {(open, shown) => (
+          <RoleDialog
+            open={shown}
+            key={open === "new" ? "new" : open.id}
+            base={base}
+            kinds={kinds}
+            role={open === "new" ? undefined : open}
+            onClose={() => setOpen(undefined)}
+            onSaved={() => {
+              setOpen(undefined);
+              roles.reload();
+            }}
+          />
+        )}
+      </Closing>
     </>
   );
 }

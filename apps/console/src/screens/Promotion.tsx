@@ -1,4 +1,4 @@
-import { Button, Notice, SideSheet, TextAreaField } from "@vynxlabs/ui";
+import { Button, Closing, Notice, SideSheet, TextAreaField } from "@vynxlabs/ui";
 import { GitPullRequestArrow } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -211,18 +211,21 @@ export function PromotionRequests({
           </li>
         ))}
       </ul>
-      {open ? (
-        <ReviewRequest
-          tenantId={tenantId}
-          request={open}
-          onClose={() => setOpen(undefined)}
-          onDecided={() => {
-            setOpen(undefined);
-            list.reload();
-            onDecided?.();
-          }}
-        />
-      ) : null}
+      <Closing subject={open}>
+        {(open, shown) => (
+          <ReviewRequest
+            open={shown}
+            tenantId={tenantId}
+            request={open}
+            onClose={() => setOpen(undefined)}
+            onDecided={() => {
+              setOpen(undefined);
+              list.reload();
+              onDecided?.();
+            }}
+          />
+        )}
+      </Closing>
     </section>
   );
 }
@@ -231,11 +234,13 @@ export function PromotionRequests({
 function ReviewRequest({
   tenantId,
   request,
+  open,
   onClose,
   onDecided,
 }: {
   tenantId: string;
   request: PromotionRequest;
+  open: boolean;
   onClose: () => void;
   onDecided: () => void;
 }) {
@@ -285,7 +290,7 @@ function ReviewRequest({
   };
   return (
     <SideSheet
-      open
+      open={open}
       size="wide"
       onClose={onClose}
       title={`Promote v${request.version} to ${request.target.name}?`}

@@ -1,10 +1,22 @@
 import { Panel, SideSheet } from "@vynxlabs/ui";
 import { CircleAlert, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  cloneElement,
+  createElement,
+  Fragment,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { usePreference } from "../prefs.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { useShortcut } from "./keys.ts";
 import { InsetRule, Junction, type JunctionKind } from "./motifs.tsx";
+import { reducedMotion } from "./motion.ts";
 
 /** Whether the window is at least this wide, kept up to date as it is resized. */
 export function useWide(minWidth: number): boolean {
@@ -41,20 +53,7 @@ export function SectionLabel({ children, action }: { children: ReactNode; action
 /** The one container (07 §7.5), the kit's: a notice inside it drops its border. */
 export { Panel };
 
-/**
- * The details of what is chosen. Beside the list on a wide screen; on a narrower
- * one it slides over the list as a sheet, and on a phone it takes the screen.
- */
-export function Inspector({
-  open,
-  title,
-  eyebrow,
-  onClose,
-  children,
-  footer,
-  label,
-  subject,
-}: {
+interface InspectorProps {
   open: boolean;
   title: ReactNode;
   eyebrow?: ReactNode;
@@ -65,29 +64,127 @@ export function Inspector({
   label: string;
   /** What is shown, such as the chosen row's ID. Choosing another takes focus back to the heading. */
   subject?: string | undefined;
-}) {
+}
+
+/**
+ * The details of what is chosen. Beside the list on a wide screen; on a narrower
+ * one it slides over the list as a sheet, and on a phone it takes the screen.
+ *
+ * Beside the list it slides open when something is first chosen and slides shut
+ * when nothing is. Choosing something else while it is open changes what it
+ * shows and moves nothing (07 §7.10: selection is instant).
+ */
+export function Inspector(props: InspectorProps) {
   const wide = useWide(WIDE.inspector);
-  if (!open) return null;
+  // What it last showed. A screen stops passing the title and the details the
+  // moment nothing is chosen, and the panel still has to show them while it shuts.
+  const shown = useRef(props);
+  if (props.open) shown.current = props;
   if (!wide) {
+    if (!props.open) return null;
+    const { onClose, title, eyebrow, footer, children } = props;
     return (
-      <SideSheet open={open} onClose={onClose} title={title} description={eyebrow} footer={footer}>
+      <SideSheet open onClose={onClose} title={title} description={eyebrow} footer={footer}>
         <ErrorBoundary what="This panel" compact>
           {children}
         </ErrorBoundary>
       </SideSheet>
     );
   }
+  const { title, eyebrow, footer, label, subject, children } = shown.current;
   return (
-    <DockedInspector
-      title={title}
-      eyebrow={eyebrow}
-      onClose={onClose}
-      footer={footer}
-      label={label}
-      subject={subject}
+    <Docking open={props.open}>
+      {(leaving) => (
+        <DockedInspector
+          title={title}
+          eyebrow={eyebrow}
+          onClose={props.onClose}
+          footer={footer}
+          label={label}
+          subject={subject}
+          leaving={leaving}
+        >
+          {children}
+        </DockedInspector>
+      )}
+    </Docking>
+  );
+}
+
+/** As long as `motion-slow` and a little more, in case the browser never says the move ended. */
+const DOCKING_MS = 280;
+
+/**
+ * Makes room for the docked inspector and takes it away again, over
+ * `motion-slow`. The panel keeps its own width throughout and is uncovered,
+ * so its text never reflows while it moves. Under reduced motion it is there
+ * or it is not.
+ */
+function Docking({ open, children }: { open: boolean; children: (leaving: boolean) => ReactNode }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [present, setPresent] = useState(open);
+  // How much room it is given: none, a number of pixels while it moves, or its own once open.
+  // It starts with none, so a panel that arrives already open slides in as well.
+  const [room, setRoom] = useState<number | undefined>(0);
+  const was = useRef(open);
+
+  useLayoutEffect(() => {
+    if (was.current === open) return;
+    was.current = open;
+    if (open) {
+      setPresent(true);
+      setRoom(0);
+      return;
+    }
+    if (reducedMotion()) {
+      setPresent(false);
+      setRoom(0);
+      return;
+    }
+    const node = wrap.current;
+    if (node) {
+      // From the width it has, which the stylesheet gave it, to none: a transition needs both ends.
+      node.style.width = `${node.offsetWidth}px`;
+      void node.offsetWidth;
+    }
+    setRoom(0);
+  }, [open]);
+
+  // Once it is on the page with no room, give it the room its panel wants.
+  useLayoutEffect(() => {
+    const node = wrap.current;
+    if (!open || !present || room !== 0 || !node) return;
+    if (reducedMotion()) {
+      setRoom(undefined);
+      return;
+    }
+    const wanted = (node.firstElementChild as HTMLElement | null)?.offsetWidth ?? 0;
+    void node.offsetWidth;
+    setRoom(wanted);
+  }, [open, present, room]);
+
+  // The move is over: its own width once open, gone once shut.
+  useEffect(() => {
+    if (!present) return;
+    if (open && typeof room !== "number") return;
+    if (open && room === 0) return;
+    const done = setTimeout(() => {
+      if (open) setRoom(undefined);
+      else setPresent(false);
+    }, DOCKING_MS);
+    return () => clearTimeout(done);
+  }, [open, present, room]);
+
+  if (!present) return null;
+  const moving = room !== undefined;
+  return (
+    <div
+      ref={wrap}
+      style={moving ? { width: room } : undefined}
+      className={`flex shrink-0 justify-start ${moving ? "overflow-hidden transition-[width] motion-slow" : ""}`}
     >
-      {children}
-    </DockedInspector>
+      {children(!open)}
+    </div>
   );
 }
 
@@ -104,6 +201,7 @@ function DockedInspector({
   footer,
   label,
   subject,
+  leaving,
 }: {
   title: ReactNode;
   eyebrow?: ReactNode;
@@ -112,6 +210,8 @@ function DockedInspector({
   footer?: ReactNode;
   label: string;
   subject?: string | undefined;
+  /** It is sliding shut: nothing in it can be used, and focus has gone back. */
+  leaving: boolean;
 }) {
   const region = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -121,39 +221,50 @@ function DockedInspector({
   const [width, setWidth] = usePreference<number | undefined>("split:inspector", undefined);
   // Esc closes it, unless a dialog or menu over the page is open: that closes first, on its own.
   useShortcut("close", () => {
+    if (leaving) return false;
     if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return false;
     closing.current();
   });
 
+  // What last had focus outside the inspector is where focus goes back to.
+  const outside = useRef<Element | null>(null);
+  const giveBack = useRef(() => {
+    // Back to where it was, if that is still on the page and focus was in here.
+    const inside =
+      document.activeElement === document.body ||
+      Boolean(region.current?.contains(document.activeElement));
+    const to = outside.current;
+    if (inside && to instanceof HTMLElement && to.isConnected) to.focus({ preventScroll: true });
+  });
   useEffect(() => {
-    // What last had focus outside the inspector is where focus goes back to.
-    let outside = document.activeElement;
+    outside.current = document.activeElement;
     const track = (event: FocusEvent) => {
-      if (!region.current?.contains(event.target as Node)) outside = event.target as Element;
+      if (!region.current?.contains(event.target as Node))
+        outside.current = event.target as Element;
     };
     document.addEventListener("focusin", track);
+    const back = giveBack.current;
     return () => {
       document.removeEventListener("focusin", track);
-      // Back to where it was, if that is still on the page and focus was in here.
-      const inside =
-        document.activeElement === document.body ||
-        Boolean(region.current?.contains(document.activeElement));
-      if (inside && outside instanceof HTMLElement && outside.isConnected) {
-        outside.focus({ preventScroll: true });
-      }
+      back();
     };
   }, []);
+  // Focus goes back as it starts to shut, not when it has gone.
+  useEffect(() => {
+    if (leaving) giveBack.current();
+  }, [leaving]);
 
   // Opening it, or choosing something else to show in it, takes focus to its heading.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new subject is the reason to move focus
   useEffect(() => {
-    heading.current?.focus({ preventScroll: true });
-  }, [subject]);
+    if (!leaving) heading.current?.focus({ preventScroll: true });
+  }, [subject, leaving]);
 
   return (
     <aside
       ref={region}
       aria-label={label}
+      inert={leaving}
       style={width ? { width } : undefined}
       className={`relative flex shrink-0 flex-col border-line border-l bg-surface ${
         width ? "" : "w-[22rem] 2xl:w-[26rem] 3xl:w-[32rem]"
@@ -261,6 +372,22 @@ function InspectorEdge({
   );
 }
 
+/** The inspector in what a screen last gave, shut. Whatever was beside it, such as its commands, is dropped. */
+function shut(node: ReactNode): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(node)) return null;
+  if (node.type === Inspector) {
+    return cloneElement(node as ReactElement<InspectorProps>, { open: false });
+  }
+  if (node.type !== Fragment) return null;
+  // Given by position, as the screen gave them, so the inspector stays the same one.
+  const children = node.props.children;
+  return createElement(
+    Fragment,
+    null,
+    ...(Array.isArray(children) ? children : [children]).map(shut),
+  );
+}
+
 /**
  * A list and the inspector of what is chosen in it, filling the work area. The
  * list scrolls on its own, so choosing never loses the place.
@@ -269,17 +396,36 @@ export function MasterDetail({
   children,
   inspector,
   side,
+  fill = false,
 }: {
   children: ReactNode;
   inspector: ReactNode;
   /** A rail on the left, such as a list of tables. */
   side?: ReactNode;
+  /**
+   * The list inside scrolls itself, as a `DataTable` told to `fill` does. The
+   * pane then gives it its height and does not scroll as well: two scrollers,
+   * one inside the other, showed two scroll bars and left the header behind.
+   */
+  fill?: boolean;
 }) {
+  // A screen that stops giving an inspector when nothing is chosen would take it
+  // off the page at once. The last one it gave is kept, told it is shut, and
+  // slides away by itself.
+  const last = useRef<ReactNode>(null);
+  if (inspector) last.current = inspector;
+  const shown = inspector || shut(last.current);
   return (
     <div className="flex min-h-0 flex-1">
       {side}
-      <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
-      {inspector}
+      <div
+        className={
+          fill ? "flex min-w-0 flex-1 flex-col overflow-hidden" : "min-w-0 flex-1 overflow-y-auto"
+        }
+      >
+        {children}
+      </div>
+      {shown}
     </div>
   );
 }

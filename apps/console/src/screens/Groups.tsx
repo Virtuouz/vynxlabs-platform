@@ -276,14 +276,16 @@ interface EndUserGroup {
 }
 
 /** Groups of end users: the people of the tenant's apps, sorted by what they may see and do. */
-export function EndUserGroups({ base }: { base: string }) {
+export function EndUserGroups({ base, framed }: { base: string; framed?: Framed }) {
   const groups = useLoad<{ items: EndUserGroup[] }>(`${base}/end-user-groups`);
   const [open, setOpen] = useState<EndUserGroup>();
   const [creating, setCreating] = useState(false);
   return (
     <>
       <CollectionView<EndUserGroup>
-        title="End-user groups"
+        title={framed?.title ?? "End-user groups"}
+        helpKey="end-user-groups"
+        toolbar={toolbarOf(framed)}
         description="Sort the people who use your apps into groups, such as one per customer or per job. Give a group a role under Access grants, and rule a table's rows by it under Tables."
         actions={
           <Button variant="primary" onClick={() => setCreating(true)}>

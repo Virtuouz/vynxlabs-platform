@@ -155,7 +155,6 @@ export const TENANT_GROUPS: readonly (readonly [label: string, sections: readonl
     [
       { slug: "members", label: "Members & access", icon: UserRound },
       { slug: "end-users", label: "End users", icon: Globe },
-      { slug: "end-user-groups", label: "End-user groups", icon: UsersRound },
       { slug: "service-accounts", label: "Service accounts", icon: Bot },
       { slug: "operator-access", label: "Operator access", icon: LifeBuoy },
     ],
@@ -248,14 +247,16 @@ const INSTANCE_WORKBENCHES = new Set([
 
 /**
  * A tenant's addresses that belong to another entry in the navigation: groups,
- * roles and access are tabs of Members & access, and the tenant itself opens
- * on its overview.
+ * roles, access and releases are tabs of Members & access, groups of end users
+ * are a tab of End users, and the tenant itself opens on its overview.
  */
 export const TENANT_ALIASES: Record<string, string> = {
   "": "overview",
   groups: "members",
   roles: "members",
   access: "members",
+  releases: "members",
+  "end-user-groups": "end-users",
 };
 
 /** Where a path is: which area, which screen, and whether it is an editor. */

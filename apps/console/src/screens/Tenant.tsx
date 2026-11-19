@@ -73,7 +73,7 @@ import { Flows, FlowView } from "./Flows.tsx";
 import { RepositorySettings } from "./Git.tsx";
 import { GiveAccess } from "./GiveAccess.tsx";
 import { EndUserGroups } from "./Groups.tsx";
-import { ACCESS_TABS, type AccessTab, MembersAndAccess } from "./Members.tsx";
+import { ACCESS_TABS, type AccessTab, endUsersFramed, MembersAndAccess } from "./Members.tsx";
 import { ConnectionPage, EventPage, ScriptPage, SecretPage, VariablePage } from "./ObjectPages.tsx";
 import type { Role } from "./Roles.tsx";
 import { RunComparePage } from "./RunCompare.tsx";
@@ -241,13 +241,13 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
       ) : isAccessTab(section) ? (
         <MembersAndAccess base={base} tenantId={tenantId} tab={section} />
       ) : section === "end-users" ? (
-        <EndUsers base={base} />
+        <EndUsers base={base} framed={endUsersFramed(tenantId, "end-users")} />
       ) : section === "branding" ? (
         <Branding base={base} />
       ) : section === "domains" ? (
         <Domains base={base} />
       ) : section === "end-user-groups" ? (
-        <EndUserGroups base={base} />
+        <EndUserGroups base={base} framed={endUsersFramed(tenantId, "end-user-groups")} />
       ) : section === "service-accounts" ? (
         <ServiceAccounts base={base} path={path} />
       ) : section === "operator-access" ? (

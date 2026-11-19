@@ -1,6 +1,6 @@
 import { Field } from "@base-ui/react/field";
 import type { ChangeEvent, ReactNode } from "react";
-import { useId, useState } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 
 /** A control's own box. An invalid one has a danger edge, beside the words that say why. */
 export const control =
@@ -150,8 +150,10 @@ export function SelectField({
 export interface TextAreaFieldProps extends Common {
   name: string;
   value?: string;
-  /** How many lines are visible before the text scrolls. */
+  /** The fewest lines it shows. It grows from there with what it holds. */
   rows?: number;
+  /** The most lines it grows to before its text scrolls. */
+  maxRows?: number;
   placeholder?: string;
   required?: boolean;
   minLength?: number;
@@ -160,23 +162,63 @@ export interface TextAreaFieldProps extends Common {
   onChange?: (value: string) => void;
 }
 
+/** How tall a text area grows by itself, in lines. */
+export const TEXT_AREA_MAX_ROWS = 12;
+
+/**
+ * Makes a text area as tall as its text, between its `rows` and `maxRows`
+ * lines. The handle in its corner still drags it to any height, and a field
+ * its reader has dragged is left at the height they gave it.
+ */
+function useGrowing(value: string | undefined, maxRows: number) {
+  const area = useRef<HTMLTextAreaElement>(null);
+  // The height last given here. Any other height is one the reader dragged it to.
+  const given = useRef<number | undefined>(undefined);
+  const fit = useCallback(() => {
+    const node = area.current;
+    if (!node) return;
+    if (given.current !== undefined && Math.abs(node.offsetHeight - given.current) > 1) return;
+    node.style.height = "auto";
+    const style = getComputedStyle(node);
+    const line = Number.parseFloat(style.lineHeight);
+    // Nothing is laid out, as in a test with no browser: leave it to its rows.
+    if (node.scrollHeight === 0 || Number.isNaN(line)) return;
+    const edges = node.offsetHeight - node.clientHeight;
+    const padding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+    const most = line * maxRows + padding;
+    const wanted = Math.min(node.scrollHeight, most);
+    // Never shorter than its rows, which is the height it has with none set.
+    const height = Math.max(wanted + edges, node.offsetHeight);
+    node.style.height = `${height}px`;
+    node.style.overflowY = node.scrollHeight > most ? "auto" : "hidden";
+    given.current = node.offsetHeight;
+  }, [maxRows]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: new text is the reason to measure again
+  useLayoutEffect(fit, [fit, value]);
+  return { area, fit };
+}
+
 /** Text that runs over several lines. */
 export function TextAreaField({
   label,
   hint,
   error,
   rows = 4,
+  maxRows = TEXT_AREA_MAX_ROWS,
   onChange,
   ...area
 }: TextAreaFieldProps) {
+  const growing = useGrowing(area.value, Math.max(rows, maxRows));
   return (
     <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={area.required}>
       <Field.Control
         render={
           <textarea
             {...area}
+            ref={growing.area}
             rows={rows}
             className={`${control} h-auto resize-y py-1.5`}
+            onInput={growing.fit}
             onChange={(event) => onChange?.(event.currentTarget.value)}
           />
         }

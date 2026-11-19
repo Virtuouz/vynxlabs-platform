@@ -32,10 +32,38 @@ export interface Framed {
   tabs: ReactNode;
 }
 
-function AccessTabs({ tenantId, current }: { tenantId: string; current: AccessTab }) {
+/** The tabs of End users: the people, and the groups they are sorted into. */
+export const END_USER_TABS = [
+  { slug: "end-users", label: "End users" },
+  { slug: "end-user-groups", label: "Groups" },
+] as const;
+export type EndUserTab = (typeof END_USER_TABS)[number]["slug"];
+
+/** What a list under End users is given: the same title, and the two tabs. */
+export function endUsersFramed(tenantId: string, current: EndUserTab): Framed {
+  return {
+    title: "End users",
+    tabs: (
+      <SectionTabs label="End users" tenantId={tenantId} tabs={END_USER_TABS} current={current} />
+    ),
+  };
+}
+
+/** A screen's tabs, each a link to its own address under the tenant. */
+function SectionTabs({
+  label,
+  tenantId,
+  tabs,
+  current,
+}: {
+  label: string;
+  tenantId: string;
+  tabs: readonly { slug: string; label: string }[];
+  current: string;
+}) {
   return (
-    <nav aria-label="Members and access" className="-mb-4 flex gap-1 overflow-x-auto">
-      {ACCESS_TABS.map((tab) => {
+    <nav aria-label={label} className="-mb-4 flex gap-1 overflow-x-auto">
+      {tabs.map((tab) => {
         const on = tab.slug === current;
         return (
           <Link
@@ -68,7 +96,14 @@ export function MembersAndAccess({
 }) {
   const framed: Framed = {
     title: "Members & access",
-    tabs: <AccessTabs tenantId={tenantId} current={tab} />,
+    tabs: (
+      <SectionTabs
+        label="Members and access"
+        tenantId={tenantId}
+        tabs={ACCESS_TABS}
+        current={tab}
+      />
+    ),
   };
   if (tab === "groups") return <Groups base={base} framed={framed} />;
   if (tab === "roles") return <Roles base={base} framed={framed} />;

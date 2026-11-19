@@ -10,6 +10,7 @@ import { Truncate } from "../kit/Truncate.tsx";
 import { CopyButton, CreateDialog, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import { AttributesDialog } from "./Groups.tsx";
+import type { Framed } from "./Members.tsx";
 
 interface EndUser {
   id: string;
@@ -88,7 +89,7 @@ function LinkDialog({ link, onClose }: { link: ShownLink | undefined; onClose: (
   );
 }
 
-export function EndUsers({ base }: { base: string }) {
+export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
   const [search, setSearch] = useUrlParam("q", "");
   // The cursor of each page opened so far, so that Previous can go back.
   const [trail, setTrail] = useState<(string | null)[]>([null]);
@@ -218,6 +219,7 @@ export function EndUsers({ base }: { base: string }) {
               {pages}
             </div>
             {problem ? <Notice tone="danger">{problem}</Notice> : null}
+            {framed?.tabs}
           </div>
         }
         label="End users"

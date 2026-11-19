@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   Search,
   Sun,
+  UsersRound,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "./api.ts";
@@ -743,6 +744,14 @@ export function Shell({
           to: `/t/${tenantId}/${section.slug}`,
           icon: section.icon,
         });
+      // A tab of End users since phase 18, and still found by its name.
+      list.push({
+        key: "t-end-user-groups",
+        label: "End-user groups",
+        where: tenant?.name ?? "Tenant",
+        to: `/t/${tenantId}/end-user-groups`,
+        icon: UsersRound,
+      });
     }
     for (const one of me.tenants)
       list.push({

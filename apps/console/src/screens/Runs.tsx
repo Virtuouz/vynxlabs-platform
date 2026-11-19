@@ -728,6 +728,7 @@ export function RunsWorkbench({
       </div>
 
       <MasterDetail
+        fill
         inspector={
           selected ? (
             <Inspector
@@ -764,7 +765,7 @@ export function RunsWorkbench({
       >
         {arrivals.waiting > 0 ? (
           // A pill over the list, below its header and batch bar: it moves nothing the reader is looking at.
-          <div className="sticky top-0 layer-sticky flex h-0 translate-y-20 justify-center">
+          <div className="relative layer-sticky flex h-0 shrink-0 translate-y-20 justify-center">
             <Button
               size="small"
               variant="primary"
@@ -773,7 +774,6 @@ export function RunsWorkbench({
                 arrivals.release();
                 const table = document.querySelector<HTMLElement>('[data-table="runs"]');
                 table?.scrollTo({ top: 0 });
-                table?.parentElement?.scrollTo({ top: 0 });
               }}
             >
               <ArrowUp aria-hidden="true" size={14} /> {arrivals.waiting} new run

@@ -16,7 +16,14 @@ const THREE_ACROSS = 1680;
  * It is never a dialog: nothing behind it is dimmed or put out of reach, and
  * the keyboard is not held in it. Escape closes it while focus is inside.
  */
-export function HelpDock() {
+export function HelpDock({
+  tenantId,
+  workspaceId,
+}: {
+  /** Where the reader is, for what their own team has added to the help. */
+  tenantId?: string | undefined;
+  workspaceId?: string | undefined;
+} = {}) {
   const { open } = useHelp();
   const wide = useWide(WIDE.inspector);
   const widest = useWide(THREE_ACROSS);
@@ -58,7 +65,7 @@ export function HelpDock() {
       }}
     >
       <ErrorBoundary what="The help" compact>
-        <HelpPanel />
+        <HelpPanel tenantId={tenantId} workspaceId={workspaceId} />
       </ErrorBoundary>
     </aside>
   );

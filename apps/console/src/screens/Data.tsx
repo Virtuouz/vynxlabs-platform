@@ -23,6 +23,7 @@ import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { AttachedPages } from "../help/glossary.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
@@ -949,6 +950,12 @@ const SYSTEM_COLUMNS: RowColumn[] = [
   { name: "id", type: "uuid", required: true, writable: false },
 ];
 
+/** The tenant and the workspace an API root names: `/tenants/<t>/workspaces/<w>`. */
+const workspaceOf = (root: string) => {
+  const [, , tenantId, , workspaceId] = root.split("/");
+  return { tenantId, workspaceId };
+};
+
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
   const table = useLoad<TableDetail>(`${root}/tables/${name}`);
   const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
@@ -973,6 +980,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       title={data.name}
       description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
     >
+      <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
         <Notice
           tone="attention"

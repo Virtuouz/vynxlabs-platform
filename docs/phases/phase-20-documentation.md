@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M9 are built. M10 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M10 are built. M11 and M12 are not started: publishing, then the example, the guides, the changelog and the walk-through.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -459,6 +459,25 @@ Tests: two editors on one page conflict; the preview matches the served page; a 
 - `topic:` on tenant pages; `packages/app` and the interface runtime can open a help panel at a tenant topic.
 - Tenant terms from `terms:` frontmatter served by `/terms`. A clash with a product term id, or between two docs apps in one workspace, fails the deploy.
 - A forbidden or missing `term`, `about` or link renders as plain text for readers.
+
+#### Built
+
+- **`GET …/terms` gives what the workspace's documentation adds**, beside the descriptions M6 gave: the glossary terms its pages define, the names it gives its own pages (`topics`), the pages that say they document a resource (`attachments`), and the pages that add notes to a topic of the product's help (`extensions`). Each comes with its page and where the page is served.
+- **Who is given what.** A term, a topic and a note are given to whoever may open the docs app the page is in: `app:read` at that app, or reading the workspace's resources or its documentation. A page attached to a resource is given only to a caller who may also know of the resource, by M6's rule. So a public handbook's page about a table says nothing of the table to someone who may not read it.
+- **Terms in the console.** The glossary M6 built now has terms in it. A term underlined in a heading or a description says what it means and leads to its page.
+- **"From your team"**: the help panel ends, for a topic, with the team's own pages that extend it.
+- **A table's screen lists the pages that document it** (`AttachedPages`).
+- **`@volvel/app`**: `terms()` gives all of the above, and `helpUrl(topic)` gives where the page with a topic is served, for a link to help from an app.
+
+#### Findings
+
+- **A page of the team's opens where it is served, in a new tab, and not inside the help panel.** The panel draws the product's pages from the files the console carries. A tenant's page would have to be fetched as its source, which only someone who may read the workspace's documentation in the console may have. A reader who may open the docs app, and no more, can still follow a link to it.
+- **What was already so, from M8**: a term or a topic defined in two apps, or taking one of the product's names, fails the deploy. A term, an `about` or a link that leads nowhere, or somewhere the reader may not go, is drawn as its words.
+- **Attached pages are on a table's screen only.** A script's and a flow's pages are in the route's answer, and `AttachedPages` is one line to add. Their screens are not done.
+- **Not built:** a help panel inside a tenant's app, opening at a tenant's own topic. `helpUrl` gives the address, and an app links to it. The interface builder has no place to name a topic yet.
+- **Nothing is kept between requests.** The route reads the workspace's pages and builds their sets each time it is asked. The console asks once for a workspace. An app that asks on every page would be the first reason to keep them, by the deployed bundle, as the served pages are.
+- The console's rule on icon sizes caught a 12 px icon on the new link. Icons are 14, 16 or 20.
+- 1,961 tests.
 
 ### M11: the packages and the CLI can be published
 

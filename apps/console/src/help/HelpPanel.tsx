@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../ask.tsx";
 import { useBrand } from "../kit/brand.tsx";
 import { loadFields, loadManifest, loadPage, searchHelp } from "./content.ts";
-import { useUnderlineTerms } from "./glossary.tsx";
+import { PageLinkTo, useUnderlineTerms, useWorkspaceTerms } from "./glossary.tsx";
 import { closeHelp, openHelp, showPageHelp, useHelp } from "./store.ts";
 
 /** An address inside the panel: it opens another page of the help where this one is. */
@@ -54,7 +54,14 @@ export function pageFor(
  * the reader followed from there. It is not a dialog. The screen stays in
  * use beside it.
  */
-export function HelpPanel() {
+export function HelpPanel({
+  tenantId,
+  workspaceId,
+}: {
+  /** Where the reader is, for the notes their own team has added to the help. */
+  tenantId?: string | undefined;
+  workspaceId?: string | undefined;
+} = {}) {
   const { topic, target } = useHelp();
   const brand = useBrand();
   const [underline, setUnderline] = useUnderlineTerms();
@@ -118,6 +125,11 @@ export function HelpPanel() {
     page?.state === "ready"
       ? page.value.title
       : (ready?.pages.find((one) => one.path === shown?.path)?.title ?? "Help");
+
+  // What the reader's own team has added to this topic of the help, from pages they may open.
+  const team = useWorkspaceTerms(tenantId, workspaceId);
+  const shownTopic = ready?.pages.find((one) => one.path === shown?.path)?.topic;
+  const fromTeam = shownTopic ? team.extensions.filter((one) => one.topic === shownTopic) : [];
 
   const copyLink = async () => {
     const address = new URL(location.href);
@@ -209,45 +221,59 @@ export function HelpPanel() {
             This page of the help could not be loaded. {page.error.message}
           </Notice>
         ) : (
-          <Doc
-            tree={page.value.tree}
-            profile="product"
-            productName={brand.productName}
-            headingShift={2}
-            idPrefix="help"
-            {...options}
-            more={(href, word) => (
-              <button
-                type="button"
-                className="border-0 bg-transparent p-0 text-action underline"
-                onClick={() => openHelp(href.slice(INSIDE.length))}
-              >
-                More about {word}
-              </button>
-            )}
-            components={{
-              link: ({ href, external, children }) =>
-                href.startsWith(INSIDE) ? (
-                  <a
-                    href={`?help=${encodeURIComponent(href.slice(INSIDE.length))}`}
-                    onClick={(event) => {
-                      if (event.metaKey || event.ctrlKey || event.shiftKey) return;
-                      event.preventDefault();
-                      openHelp(href.slice(INSIDE.length));
-                    }}
-                  >
-                    {children}
-                  </a>
-                ) : (
-                  <a
-                    href={href}
-                    {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                  >
-                    {children}
-                  </a>
-                ),
-            }}
-          />
+          <>
+            <Doc
+              tree={page.value.tree}
+              profile="product"
+              productName={brand.productName}
+              headingShift={2}
+              idPrefix="help"
+              {...options}
+              more={(href, word) => (
+                <button
+                  type="button"
+                  className="border-0 bg-transparent p-0 text-action underline"
+                  onClick={() => openHelp(href.slice(INSIDE.length))}
+                >
+                  More about {word}
+                </button>
+              )}
+              components={{
+                link: ({ href, external, children }) =>
+                  href.startsWith(INSIDE) ? (
+                    <a
+                      href={`?help=${encodeURIComponent(href.slice(INSIDE.length))}`}
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                        event.preventDefault();
+                        openHelp(href.slice(INSIDE.length));
+                      }}
+                    >
+                      {children}
+                    </a>
+                  ) : (
+                    <a
+                      href={href}
+                      {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                    >
+                      {children}
+                    </a>
+                  ),
+              }}
+            />
+            {fromTeam.length > 0 ? (
+              <section aria-label="From your team" className="mt-6 border-line border-t pt-4">
+                <h3 className="m-0 mb-2 text-label text-ink-subtle uppercase">From your team</h3>
+                <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                  {fromTeam.map((one) => (
+                    <li key={`${one.page.app}:${one.page.path}`}>
+                      <PageLinkTo page={one.page} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+          </>
         )}
       </div>
       <div className="flex shrink-0 flex-col gap-2 border-line border-t px-4 py-2">

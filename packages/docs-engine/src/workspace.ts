@@ -17,7 +17,7 @@ import { clashes } from "./stack.js";
 export interface ResourceLike {
   kind: string;
   path: string;
-  title?: string | undefined;
+  title?: string | null | undefined;
   body: unknown;
 }
 

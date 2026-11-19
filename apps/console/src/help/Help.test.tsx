@@ -21,7 +21,7 @@ import { setPreference } from "../prefs.ts";
 import { show } from "../testing.tsx";
 import { forgetHelp } from "./content.ts";
 import { FieldAbout, forgetFields } from "./FieldAbout.tsx";
-import { WorkspaceGlossary } from "./glossary.tsx";
+import { AttachedPages, WorkspaceGlossary } from "./glossary.tsx";
 import { HelpDock, useHelpInAddress } from "./HelpDock.tsx";
 import { pageFor } from "./HelpPanel.tsx";
 import {
@@ -343,6 +343,44 @@ describe("a workspace's own terms", () => {
     act(() => setPreference("terms.underline", true));
   });
 
+  test("a term the team defined leads to its page, where the page is served", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            terms: [
+              {
+                id: "rma",
+                term: "RMA",
+                aliases: [],
+                short: "A return authorisation.",
+                page: {
+                  app: "help",
+                  path: "handbook/support/refunds",
+                  title: "Refund an order",
+                  url: "https://apps.example.test/apps/acme/dev/help/support/refunds",
+                },
+              },
+            ],
+            resources: [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    show(
+      <WorkspaceGlossary tenantId="acme" workspaceId="dev">
+        <PageHeader title="Returns" description="Every RMA the shop has issued." />
+      </WorkspaceGlossary>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "RMA" }));
+    const more = await screen.findByRole("link", { name: /More about RMA/ });
+    expect(more.getAttribute("href")).toBe(
+      "https://apps.example.test/apps/acme/dev/help/support/refunds",
+    );
+    expect(more.getAttribute("target")).toBe("_blank");
+  });
+
   test("outside a workspace nothing is asked for and nothing is underlined", () => {
     const asked = vi.fn(async () => new Response("{}", { status: 404 }));
     vi.stubGlobal("fetch", asked);
@@ -353,6 +391,78 @@ describe("a workspace's own terms", () => {
     );
     expect(asked).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "RMA" })).toBeNull();
+  });
+});
+
+describe("what the reader's own team has added", () => {
+  const refunds = {
+    app: "help",
+    path: "handbook/support/refunds",
+    title: "How we refund an order",
+    url: "https://apps.example.test/apps/acme/dev/help/support/refunds",
+  };
+  beforeEach(() => {
+    const files = globalThis.fetch;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (!String(url).endsWith("/tenants/acme/workspaces/dev/terms")) return files(url, init);
+      return new Response(
+        JSON.stringify({
+          terms: [],
+          resources: [],
+          extensions: [
+            { topic: "data-tables", page: refunds },
+            { topic: "operate-runs", page: { ...refunds, title: "Not for this page" } },
+          ],
+          attachments: [
+            { kind: "table", resource: "orders", page: refunds },
+            { kind: "table", resource: "other", page: { ...refunds, title: "Another table's" } },
+          ],
+          topics: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+  });
+
+  test("the help for a screen ends with the team's own notes on it, and no other screen's", async () => {
+    show(<HelpDock tenantId="acme" workspaceId="dev" />);
+    act(() => setSectionTopic("data-tables"));
+    act(() => openHelp());
+    const panel = screen.getByRole("complementary", { name: "Help" });
+    const team = await within(panel).findByRole("region", { name: "From your team" });
+    expect(
+      within(team)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["How we refund an order"]);
+    expect(within(team).getByRole("link").getAttribute("href")).toBe(refunds.url);
+    // Another page of the help has none.
+    act(() => openHelp("start/concepts"));
+    await within(panel).findByRole("heading", { name: "Concepts" });
+    expect(within(panel).queryByRole("region", { name: "From your team" })).toBeNull();
+  });
+
+  test("outside a workspace the help has only the product's own", async () => {
+    show(<HelpDock />);
+    act(() => setSectionTopic("data-tables"));
+    act(() => openHelp());
+    const panel = screen.getByRole("complementary", { name: "Help" });
+    await within(panel).findByText(/A table holds rows the workspace owns/);
+    expect(within(panel).queryByRole("region", { name: "From your team" })).toBeNull();
+  });
+
+  test("a resource's screen lists the pages that document it, and is silent when there are none", async () => {
+    const { rerender } = show(
+      <AttachedPages tenantId="acme" workspaceId="dev" kind="table" path="orders" />,
+    );
+    const pages = await screen.findByRole("region", { name: "Documentation" });
+    expect(
+      within(pages)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["How we refund an order"]);
+    rerender(<AttachedPages tenantId="acme" workspaceId="dev" kind="table" path="invoices" />);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Documentation" })).toBeNull());
   });
 });
 

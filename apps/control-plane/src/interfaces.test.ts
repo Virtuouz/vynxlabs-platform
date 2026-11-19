@@ -346,6 +346,8 @@ describe("an app that serves an interface", () => {
   test("what a table and its columns are for is told to whoever may read the table or its rows, and to nobody else", async () => {
     const terms = async (who: { get: (url: string) => Promise<Any> }, prefix = "") =>
       (await who.get(`${prefix}${ws()}/terms`)).body;
+    // This workspace has no documentation: no terms of its own, and no pages to list.
+    const NOTHING = { terms: [], resources: [], extensions: [], attachments: [], topics: [] };
     const invoices = {
       kind: "table",
       path: "invoices",
@@ -397,14 +399,14 @@ describe("an app that serves an interface", () => {
       password: PASSWORD,
     });
     const nora = await t.signIn("nora@acme.example", PASSWORD);
-    expect(await terms(nora)).toEqual({ terms: [], resources: [] });
+    expect(await terms(nora)).toEqual(NOTHING);
 
     // An end user is told of the table whose rows an app shows them, and not of the other.
     const forIvy = await terms(ivy.browser, "/api/v1");
-    expect(forIvy).toEqual({ terms: [], resources: [invoices] });
+    expect(forIvy).toEqual({ ...NOTHING, resources: [invoices] });
     expect(JSON.stringify(forIvy)).not.toContain("secrets");
     // Someone not signed in is told nothing.
-    expect(await terms(browser(), "/api/v1")).toEqual({ terms: [], resources: [] });
+    expect(await terms(browser(), "/api/v1")).toEqual(NOTHING);
     // A workspace that is not there is not there.
     expect((await alice.get(`/tenants/${tenant}/workspaces/${tenant}/terms`)).status).toBe(404);
   });

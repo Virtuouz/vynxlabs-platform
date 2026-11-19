@@ -353,6 +353,72 @@ describe("a folder of pages served as a docs app", () => {
   });
 });
 
+describe("what a workspace's documentation gives the help", () => {
+  const terms = async (get: (url: string) => Promise<Any>, prefix = "") =>
+    (await get(`${prefix}${ws()}/terms`)).body;
+  const handbookPage = (path: string, title: string) => ({
+    app: "help",
+    path: `handbook/${path}`,
+    title,
+    url: `http://${MAIN}${HELP}${path.replace(/(^|\/)index$/, "")}`,
+  });
+
+  test("its terms, its topics and the pages attached to resources, to whoever may open the app they are in", async () => {
+    const deployed = await deploy([
+      ...handbook().filter((one) => one.path !== "handbook/support/returns"),
+      page(
+        "handbook/support/returns",
+        "title: Returns\norder: 1\nextends: [data-tables]",
+        "## By post\n",
+      ),
+    ]);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const all = await terms((url) => alice.get(url));
+    const refunds = handbookPage("support/refunds", "Refund an order");
+    expect(all.terms).toEqual([
+      { id: "rma", term: "RMA", aliases: [], short: "A return authorisation.", page: refunds },
+    ]);
+    expect(all.topics).toEqual([{ topic: "support-refunds", page: refunds }]);
+    expect(all.attachments).toEqual([{ kind: "table", resource: "orders", page: refunds }]);
+    expect(all.extensions).toEqual([
+      { topic: "data-tables", page: handbookPage("support/returns", "Returns") },
+    ]);
+  });
+
+  test("someone outside is given the public app's terms, and no page about a table they may not read", async () => {
+    const guest = browser();
+    const seen = JSON.parse((await guest.get(`/api/v1${ws()}/terms`)).body);
+    expect(seen.terms.map((term: Any) => term.id)).toEqual(["rma"]);
+    expect(seen.extensions).toHaveLength(1);
+    // The handbook is open to anyone. The orders table is not, so nothing says a page is about it.
+    expect(seen.attachments).toEqual([]);
+    expect(seen.resources).toEqual([]);
+    expect(JSON.stringify(seen)).not.toContain("orders");
+  });
+
+  test("nothing of an app the caller may not open: its terms, its topics, its pages", async () => {
+    const deployed = await deploy([
+      ...handbook(),
+      page(
+        "manual/secrets",
+        "title: Staff secrets\ntopic: staff-secrets\nextends: [data-tables]\nterms:\n  - id: till-code\n    term: till code\n    short: The code that opens the till.",
+      ),
+    ]);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    // A member who reads the workspace sees both apps' terms.
+    expect((await terms((url) => alice.get(url))).terms.map((term: Any) => term.id)).toEqual([
+      "rma",
+      "till-code",
+    ]);
+    // The staff manual is bound to nobody outside.
+    const seen = JSON.parse((await browser().get(`/api/v1${ws()}/terms`)).body);
+    expect(seen.terms.map((term: Any) => term.id)).toEqual(["rma"]);
+    expect(seen.topics.map((one: Any) => one.topic)).toEqual(["support-refunds"]);
+    expect(seen.extensions).toEqual([]);
+    expect(JSON.stringify(seen)).not.toMatch(/till|secrets|manual/);
+  });
+});
+
 describe("a picture kept beside the pages", () => {
   const PNG = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",

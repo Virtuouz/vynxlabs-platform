@@ -1293,7 +1293,7 @@ export function Shell({
         </main>
       </div>
 
-      <HelpDock />
+      <HelpDock tenantId={tenantId} workspaceId={workspaceId} />
 
       <SideSheet
         open={drawer}

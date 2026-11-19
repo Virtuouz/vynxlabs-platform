@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { openHelp } from "../help/store.ts";
 import { openPalette } from "../kit/keys.ts";
 
 export interface CodeEditorProps {
@@ -115,6 +116,8 @@ export function CodeEditor({
         }
         // The editor keeps ⌘K for its own chords; the console's palette is worth more here.
         created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, openPalette);
+        // F1 is the editor's own list of commands. Here it is help, as everywhere else in the console.
+        created.addCommand(monaco.KeyCode.F1, () => openHelp());
         goTo.current = (to, column) => {
           const at = Math.min(Math.max(1, to), model.getLineCount());
           created.revealLineInCenter(at);

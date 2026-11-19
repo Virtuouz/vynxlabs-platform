@@ -10,6 +10,7 @@ Outside contributions are not accepted yet. A contributor agreement must be in p
 pnpm lint
 pnpm test
 pnpm check:schemas
+pnpm docs:check
 pnpm check:migrations
 pnpm check:licenses
 ```

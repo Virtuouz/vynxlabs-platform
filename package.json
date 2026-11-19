@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -b && pnpm --filter @volvel/console build && pnpm --filter @volvel/screens build",
+    "build": "tsc -b && pnpm --filter @volvel/docs build && pnpm --filter @volvel/console build && pnpm --filter @volvel/screens build",
     "typecheck": "tsc -b && tsc -p packages/ui && tsc -p packages/app && tsc -p packages/screens && tsc -p apps/console && tsc -p examples/acme && tsc -p examples/higher-ed-devices && tsc -p examples/fernhill",
     "lint": "biome check .",
     "format": "biome check --write .",
@@ -22,7 +22,8 @@
     "check:migrations": "node scripts/migrations-lock.mjs",
     "check:licenses": "node scripts/check-licenses.mjs",
     "dev:console": "pnpm --filter @volvel/console dev",
-    "e2e": "playwright test -c e2e"
+    "e2e": "playwright test -c e2e",
+    "docs:check": "tsc -b && node packages/docs/check.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

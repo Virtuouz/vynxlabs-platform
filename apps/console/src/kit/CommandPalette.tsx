@@ -3,6 +3,7 @@ import {
   Activity,
   Boxes,
   Braces,
+  CircleHelp,
   CornerDownLeft,
   FileCode2,
   Keyboard,
@@ -21,6 +22,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { openHelp } from "../help/store.ts";
 import { InputDialog } from "../InputDialog.tsx";
 import { usePreference } from "../prefs.ts";
 import { navigate } from "../router.tsx";
@@ -537,6 +539,16 @@ export function CommandPalette({
         open: () => {
           close();
           window.open("/api/v1/openapi.json", "_blank", "noopener");
+        },
+      },
+      {
+        key: "a-help",
+        label: "Help for this page",
+        icon: CircleHelp,
+        section: "Actions",
+        open: () => {
+          close();
+          openHelp();
         },
       },
       {

@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M4 are built. M5 is next.
+Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M5 are built, and the work stops here for the owner's first look. M6 is next.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -276,6 +276,30 @@ Tests: keyboard and focus for `Term` and `Tree`; `ResultView` fixtures render as
 - Shortcut sheet and `kit/shortcuts.ts` list the new keys.
 
 Tests: every nav entry resolves a topic; `F1` opens the panel at it; a dialog's topic overrides its page's; the panel is full-screen at phone width; e2e with egress blocked.
+
+#### Built
+
+- **`packages/docs`**: 64 pages under `content/`, one for every screen of the console and one of concepts, which defines thirteen terms. `build.mjs` reads them with the engine and writes `dist/`: the manifest, a tree for each page, and the search index. `pnpm build` runs it before the console's build.
+- **Every section has a topic.** `Section` in `nav.ts` has `help`, and it is not optional, so a section without one does not compile. `EDITORS` is a list of entries, each with the help of its own. `whereIs()` gives the topic: the editor's when the address is one, the section's otherwise.
+- **`useHelpTopic(id)`** and `<HelpTopic>` in `help/store.ts`, in the pattern of `kit/current.ts`. The topic said last wins, so a dialog's is over its page's and a page's over its section's.
+- **The help panel** (`help/HelpPanel.tsx`, `help/HelpDock.tsx`): docked beside the work from 1280 px, lying over the right edge from 768 px or while an inspector is docked on a screen under 1680 px, and the whole screen on a phone. It is not a dialog. It shows the screen's own page, follows the reader to another screen, and keeps what was followed inside it while the screen stays the same. Links between pages open inside it, a term says what it means and leads to its page, and it has its own search.
+- **Opened by** the header's button, "Help for this page" in the account menu, the palette's action, `F1` everywhere including a field and Monaco, and `⌘/` outside Monaco.
+- **`?help=<topic or page>`** opens the panel there. The panel's "copy a link" writes such an address.
+- **`PageHeader`**: a screen with a topic has the ⓘ. Where the description is folded behind it, "Learn more" follows the description. Where it is not, the ⓘ opens the help.
+- **The documentation ships in the console.** A Vite plugin serves `packages/docs/dist` at `/help` in development and copies it into the build. A page is fetched when it is first opened.
+- **`pnpm docs:check`**, in CI's `check` job after the schemas. It fails on a page that does not validate or link, a picture by URL, a topic the console asks for that no page has, and a page nothing leads to.
+
+#### Findings
+
+- **The address does not keep `?help=`.** The plan said to keep the parameter in the address while the panel is open. Moving to another screen drops every parameter, and a panel that closed itself on every move, or an address that had to be rewritten on every move, was worse than a link that opens the help and is then put back as it was.
+- **Workbenches have no topic of their own.** They are sections laid out edge to edge, and each has its section's. Only editors are screens no section names.
+- **A function key is not a "single key".** Single keys such as `?` are ignored in a field and can be turned off, and `F1` was caught by both rules. It types nothing, so it is exempt.
+- **`⌘/` in Monaco still comments a line.** Monaco takes the key first, as planned. `F1` is given to help there.
+- **The page's description says the same as the stub.** Each stub's body is its description. Writing the pages is not this phase.
+- **No "Open online".** There is no public site yet and no address to make up. It comes with `DOCS_URL` in M7 and is shown only when that is set.
+- **Screenshots are not resolved** in the panel yet: there are none until M12.
+- 33 tests of the help, and the console's shortcut test presses `F1` in a field and with single keys off. 1,876 tests in all.
+- **Not seen in a browser.** An instance was already running on this machine at port 8080, started before this work. It lists its files when it starts, so it serves neither the new help nor, since the first rebuild, the console's new script: its console is blank until it is restarted. Stopping it was refused, rightly, as it was not this work's to stop. The pictures in `e2e/snapshots` will differ by the header's new button and each page's ⓘ, and are not remade.
 
 ### M6: descriptions and terms
 

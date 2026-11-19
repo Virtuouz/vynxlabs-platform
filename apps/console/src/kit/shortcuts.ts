@@ -29,6 +29,7 @@ const declared = {
   palette: { keys: ["Mod+K"], label: "Find anything, or do something", scope: "Everywhere" },
   sheet: { keys: ["?"], label: "These shortcuts", scope: "Everywhere" },
   search: { keys: ["/"], label: "Search this list", scope: "Everywhere" },
+  help: { keys: ["F1", "Mod+/"], label: "Help for this page", scope: "Everywhere" },
 
   "go.overview": { keys: ["g o"], label: "Overview", scope: "Go to" },
   "go.runs": { keys: ["g r"], label: "Runs", scope: "Go to" },

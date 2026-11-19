@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "A set of documentation pages: folders become collections and navigation, and terms, topics, links and search are worked out across them.",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

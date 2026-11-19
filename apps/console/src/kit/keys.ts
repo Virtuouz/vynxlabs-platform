@@ -64,7 +64,8 @@ function pressed(event: KeyboardEvent, combo: string): boolean {
 
 /** Whether a combination is a single key a person may turn off: no ⌘, Ctrl or Alt. */
 export const isSingle = (combo: string) =>
-  !/(^|\+)(Mod|Ctrl|Alt)\+/.test(combo) && combo !== "Escape";
+  // A function key types nothing, so it is safe in a field and is no "single key" to turn off.
+  !/(^|\+)(Mod|Ctrl|Alt)\+/.test(combo) && combo !== "Escape" && !/^F\d+$/.test(combo);
 
 interface Binding {
   id: ShortcutId;

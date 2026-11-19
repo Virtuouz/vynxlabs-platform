@@ -1,6 +1,7 @@
 import { Popover } from "@volvel/ui";
 import { Info } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
+import { openHelp, useHelp } from "../help/store.ts";
 import { usePreference } from "../prefs.ts";
 
 /**
@@ -68,6 +69,7 @@ export function PageHeader({
   oneRow?: boolean;
 }) {
   const [seen] = useSeen(helpKey, Boolean(description));
+  const { topic } = useHelp();
   const folded = Boolean(helpKey && description && (helpSeen ?? seen));
   const heading = (
     <h1
@@ -102,8 +104,22 @@ export function PageHeader({
       </header>
     );
   }
+  const named = typeof title === "string" ? title : "this page";
+  // Folded, the description is behind the ⓘ, with the way to the page's help under it.
+  // Shown, or with none, the ⓘ opens the help itself.
   const help = folded ? (
-    <Help title={typeof title === "string" ? title : "this page"}>{description}</Help>
+    <Help title={named} more={topic !== undefined}>
+      {description}
+    </Help>
+  ) : topic !== undefined ? (
+    <button
+      type="button"
+      aria-label={`Help for ${named}`}
+      onClick={() => openHelp()}
+      className="inline-flex size-7 items-center justify-center rounded-control text-ink-subtle hover:bg-sunken hover:text-ink"
+    >
+      <Info aria-hidden="true" size={16} />
+    </button>
   ) : null;
   if (oneRow) {
     // One row from a laptop's width: the title, the toolbar taking the room, the actions.
@@ -171,8 +187,17 @@ export function useSeen(key: string | undefined, has: boolean): [boolean] {
   return [seen && !first.current];
 }
 
-/** The ⓘ beside a list's title that holds what the list is for. */
-export function Help({ title, children }: { title: string; children: ReactNode }) {
+/** The ⓘ beside a list's title that holds what the list is for, and leads to the page's help. */
+export function Help({
+  title,
+  children,
+  more = false,
+}: {
+  title: string;
+  children: ReactNode;
+  /** Whether there is help for the page to lead on to. */
+  more?: boolean;
+}) {
   return (
     <Popover
       title={`About ${title}`}
@@ -187,6 +212,17 @@ export function Help({ title, children }: { title: string; children: ReactNode }
       }
     >
       {children}
+      {more ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => openHelp()}
+            className="border-0 bg-transparent p-0 font-medium text-action underline"
+          >
+            Learn more
+          </button>
+        </div>
+      ) : null}
     </Popover>
   );
 }

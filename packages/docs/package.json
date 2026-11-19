@@ -1,0 +1,28 @@
+{
+  "name": "@volvel/docs",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "Volvel's own documentation: the pages, and the built trees, manifest and search index the console and the website read.",
+  "exports": {
+    "./manifest.json": "./dist/manifest.json",
+    "./search.json": "./dist/search.json",
+    "./pages/*": "./dist/pages/*",
+    "./content/*": "./content/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "content",
+    "generated",
+    "assets",
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node check.mjs"
+  },
+  "devDependencies": {
+    "@volvel/docs-engine": "workspace:*",
+    "@volvel/markup": "workspace:*"
+  }
+}

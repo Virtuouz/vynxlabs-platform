@@ -549,9 +549,20 @@ function useGoTo(
   useShortcut("go.flows", go("flows"), { enabled: Boolean(workspaceId) });
   useShortcut("go.scripts", go("scripts"), { enabled: Boolean(workspaceId) });
   useShortcut("go.triggers", go("triggers"), { enabled: Boolean(workspaceId) });
-  useShortcut("go.approvals", () => tenantId && navigate(`/t/${tenantId}/approvals`), {
-    enabled: Boolean(tenantId),
-  });
+  // In a workspace, its own approvals; otherwise the ones surfaced to the tenant.
+  useShortcut(
+    "go.approvals",
+    () =>
+      tenantId &&
+      navigate(
+        workspaceId
+          ? `/t/${tenantId}/workspaces/${workspaceId}/approvals`
+          : `/t/${tenantId}/approvals`,
+      ),
+    {
+      enabled: Boolean(tenantId),
+    },
+  );
   useShortcut("search", () => {
     for (const selector of SEARCH_BOXES) {
       const box = document.querySelector<HTMLInputElement>(selector);

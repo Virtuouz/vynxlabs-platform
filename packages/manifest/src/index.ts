@@ -147,6 +147,7 @@ export {
 } from "./kinds.js";
 export {
   APP_FACING_KINDS,
+  isExplicitKind,
   isGrantablePermission,
   isKnownPermission,
   PERMISSION_KINDS,

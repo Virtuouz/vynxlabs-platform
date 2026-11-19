@@ -258,9 +258,12 @@ describe("approvals that name who decides", () => {
   test("only a member of the named group sees and decides it, and it is then listed as decided", async () => {
     const waiting = (await alice.get(`${ws()}/approvals`)).body.items[0];
     expect(waiting.approvers).toMatchObject({ groups: ["Finance"], text: "the Finance group" });
-    expect((await alice.get(`/tenants/${tenant}/approvals`)).body.items).toHaveLength(1);
-    // Carl holds the permission, but is not in Finance.
-    expect((await carl.get(`/tenants/${tenant}/approvals`)).body.items).toHaveLength(0);
+    // Its step does not surface it, so it is the workspace's own: the tenant's page has none.
+    expect((await alice.get(`/tenants/${tenant}/approvals`)).body.items).toHaveLength(0);
+    expect((await alice.get(`${ws()}/approvals?mine=true`)).body.items).toHaveLength(1);
+    // Carl holds the permission, but is not in Finance: it is in the workspace, and not his.
+    expect((await carl.get(`${ws()}/approvals`)).body.items).toHaveLength(1);
+    expect((await carl.get(`${ws()}/approvals?mine=true`)).body.items).toHaveLength(0);
     const refused = await carl.post(`${ws()}/flow-runs/${waiting.flowRunId}/approvals/gate`, {
       decision: "approve",
     });
@@ -275,7 +278,8 @@ describe("approvals that name who decides", () => {
         })
       ).status,
     ).toBe(204);
-    const decided = (await alice.get(`/tenants/${tenant}/approvals/decided`)).body.items;
+    expect((await alice.get(`/tenants/${tenant}/approvals/decided`)).body.items).toEqual([]);
+    const decided = (await alice.get(`${ws()}/approvals/decided`)).body.items;
     expect(decided[0]).toMatchObject({
       flow: "orders/approve",
       approved: true,

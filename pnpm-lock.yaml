@@ -170,6 +170,9 @@ importers:
       openid-client:
         specifier: ^6
         version: 6.8.9
+      pgsql-parser:
+        specifier: 18.3.5
+        version: 18.3.5
       selfsigned:
         specifier: ^5.5.0
         version: 5.5.0
@@ -1122,6 +1125,12 @@ packages:
   '@peculiar/x509@1.14.3':
     resolution: {integrity: sha512-C2Xj8FZ0uHWeCXXqX5B4/gVFQmtSkiuOolzAgutjTfseNOHT3pUjljDZsTSxXFGgio54bCzVFqmEOUrIVk8RDA==}
     engines: {node: '>=20.0.0'}
+
+  '@pgsql/quotes@18.2.4':
+    resolution: {integrity: sha512-muCDdPu/bM/f9d7IquBNfkMgiRPehv6vvjdhSMxXeVKwJKPX9xIscDu11ju15s7UeEXoWntE8zrSaR9wQ9wgCg==}
+
+  '@pgsql/types@18.0.0':
+    resolution: {integrity: sha512-jtAY4JU7jdVYZ/Vv3zlZqVP+FRWZokyCLKPPCnAApiaJAElpyyiMC3HRiquBu29kSrVs+rkqZD50SUIb/zyEGw==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -2292,6 +2301,9 @@ packages:
     resolution: {integrity: sha512-ixHU1H4R+LeC5Y0nAhYgiGRFpFRHm2DXKEmJSs/vbes9sKXyssyzxzE/NYiOJX5fY0BL28biCre3GqlCqUwyXQ==}
     engines: {node: '>=22.0.0'}
 
+  libpg-query@18.2.4:
+    resolution: {integrity: sha512-7nqWUm+39v/fYgWP0qR+sYC7tyhmW8lctqAzx7bdKG6V0ySr9G1lcY43BdZM5+lxVSzL0Y5Yy6eM9e+uL7T79w==}
+
   light-my-request@6.8.0:
     resolution: {integrity: sha512-5Q8PjoSEdtGIB8fikZsTem5vgRo4F2mR6vUKTDW/H1g6MtAt8e3duQbg/QxL5yzg6BZhor2KOUm3hhWMWLTZwg==}
 
@@ -2554,6 +2566,12 @@ packages:
 
   pgpass@1.0.5:
     resolution: {integrity: sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug==}
+
+  pgsql-deparser@18.4.5:
+    resolution: {integrity: sha512-iFNl9CVZZgKF8X8zNQQMIvBiHkiYFlReOyyjAWppxJZiBIqmInjfqPbtvHpY3/ZKtBKsDbGuLRM+OXHJGy5Z0A==}
+
+  pgsql-parser@18.3.5:
+    resolution: {integrity: sha512-GzcR0nfQ9oM2K2jvumwYagmJyuSMB7+VeemVtnA5UvBko+AAOtU6C28qctrpEw7QGa1qpEMTnDL4vC5t7X7Btw==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -3920,6 +3938,10 @@ snapshots:
       tslib: 2.9.1
       tsyringe: 4.10.0
 
+  '@pgsql/quotes@18.2.4': {}
+
+  '@pgsql/types@18.0.0': {}
+
   '@pinojs/redact@0.4.0': {}
 
   '@playwright/test@1.65.0':
@@ -4964,6 +4986,10 @@ snapshots:
 
   kysely@0.29.8: {}
 
+  libpg-query@18.2.4:
+    dependencies:
+      '@pgsql/types': 18.0.0
+
   light-my-request@6.8.0:
     dependencies:
       '@fastify/deepmerge': 3.2.4
@@ -5168,6 +5194,17 @@ snapshots:
   pgpass@1.0.5:
     dependencies:
       split2: 4.2.0
+
+  pgsql-deparser@18.4.5:
+    dependencies:
+      '@pgsql/quotes': 18.2.4
+      '@pgsql/types': 18.0.0
+
+  pgsql-parser@18.3.5:
+    dependencies:
+      '@pgsql/types': 18.0.0
+      libpg-query: 18.2.4
+      pgsql-deparser: 18.4.5
 
   picocolors@1.1.1: {}
 

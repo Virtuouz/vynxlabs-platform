@@ -114,7 +114,7 @@ export function Flows({
         waiting > 0 ? (
           <HeadNote>
             {waiting} run{waiting === 1 ? " is" : "s are"} waiting for a person.{" "}
-            <Link to={link.replace(/\/workspaces\/.*$/, "/approvals")}>Decide</Link>
+            <Link to={`${link}/approvals`}>Decide</Link>
           </HeadNote>
         ) : undefined
       }

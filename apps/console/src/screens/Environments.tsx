@@ -23,7 +23,7 @@ import { SaveBar } from "../kit/SaveBar.tsx";
 import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { navigate } from "../router.tsx";
+import { Link, navigate } from "../router.tsx";
 
 export interface WorkspaceSummary {
   id: string;
@@ -124,41 +124,47 @@ export function WorkspaceControls({
           A new dev workspace with what is deployed here, and its rows and files if you choose. It
           gets no connection, data source or secret value until you bind them.
         </SettingsRow>
-        {workspace.type === "dev" ? (
-          <SettingsRow
-            title={<span className="text-danger">Delete workspace</span>}
-            action={
-              <Button
-                size="small"
-                variant="danger"
-                onClick={async () => {
-                  const sure = await ask.typeToConfirm({
-                    title: `Delete ${workspace.name}?`,
-                    text: "This deletes the workspace with its resources, secrets, run history, tables and files. It cannot be undone.",
-                    expected: workspace.slug,
-                    action: "Delete workspace",
-                    danger: true,
-                  });
-                  if (!sure) return;
-                  try {
-                    await api.delete(`${root}?confirm=${encodeURIComponent(workspace.slug)}`);
-                    navigate(`/t/${tenantId}/workspaces`);
-                  } catch (error) {
-                    setProblem(failed(error));
-                  }
-                }}
-              >
-                Delete workspace
-              </Button>
-            }
-          >
-            Deletes the workspace with its resources, secrets, run history, tables and files.
-          </SettingsRow>
-        ) : (
-          <SettingsRow title="Delete workspace">
-            A production workspace is not deleted from here. It goes when its tenant is deleted.
-          </SettingsRow>
-        )}
+        <SettingsRow
+          title={<span className="text-danger">Delete workspace</span>}
+          action={
+            <Button
+              size="small"
+              variant="danger"
+              onClick={async () => {
+                const production = workspace.type === "production";
+                const sure = await ask.typeToConfirm({
+                  title: `Delete ${workspace.name}?`,
+                  text: production
+                    ? "This is a production workspace. Deleting it deletes what the tenant runs: its resources, secrets, run history, tables with every row, and files. Nothing brings it back. Export the tenant first if any of it may be wanted."
+                    : "This deletes the workspace with its resources, secrets, run history, tables and files. It cannot be undone.",
+                  expected: workspace.slug,
+                  action: production ? "Delete production workspace" : "Delete workspace",
+                  danger: true,
+                });
+                if (!sure) return;
+                try {
+                  await api.delete(`${root}?confirm=${encodeURIComponent(workspace.slug)}`);
+                  navigate(`/t/${tenantId}/workspaces`);
+                } catch (error) {
+                  setProblem(failed(error));
+                }
+              }}
+            >
+              Delete workspace
+            </Button>
+          }
+        >
+          {workspace.type === "production" ? (
+            <>
+              Deletes this production workspace with its resources, secrets, run history, tables and
+              files. It needs the permission to delete production, which no role has until it is
+              added to one by name: an administrator does not have it either.{" "}
+              <Link to={`/t/${tenantId}/export`}>Export the tenant first</Link>
+            </>
+          ) : (
+            "Deletes the workspace with its resources, secrets, run history, tables and files."
+          )}
+        </SettingsRow>
       </SettingsRows>
       {promotion && workspace.type === "dev" ? (
         <section className="flex flex-col gap-3">

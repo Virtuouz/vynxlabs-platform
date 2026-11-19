@@ -942,4 +942,20 @@ describe("what is drafted is listed where it will be", () => {
     // The default a script reads is still the deployed one.
     expect(await find()).toMatchObject({ draft: "changed", default: "5" });
   });
+  test("a connection group made in the console is listed before it is deployed", async () => {
+    const saved = await draft(
+      "listed/customers",
+      { description: "Each customer's account", connector: "http" },
+      "connection_group",
+    );
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // biome-ignore lint/suspicious/noExplicitAny: as above
+    const find = async (): Promise<any> =>
+      (await alice.get(`${ws()}/connection-groups`)).body.items.find(
+        (one: { path: string }) => one.path === "listed/customers",
+      );
+    expect(await find()).toMatchObject({ draft: "new", connector: "http", members: [] });
+    await alice.post(`${ws()}/changes/deploy`, {});
+    expect((await find()).draft).toBeNull();
+  });
 });

@@ -1,5 +1,5 @@
 import { sql } from "@vynxlabs/db";
-import { APP_FACING_KINDS } from "@vynxlabs/manifest";
+import { APP_FACING_KINDS, isExplicitKind } from "@vynxlabs/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
 
 export { PERMISSION_PATTERN } from "@vynxlabs/manifest";
@@ -26,9 +26,14 @@ export interface Decision {
   related: boolean;
 }
 
-/** Whether a role's permission list grants `kind:verb`. */
+/**
+ * Whether a role's permission list grants `kind:verb`. A permission marked
+ * explicit is granted only by its own name: no `*` reaches it, so nobody holds
+ * it by having been given everything.
+ */
 export function grants(permissions: readonly string[], permission: string): boolean {
   const [kind, verb] = permission.split(":");
+  if (isExplicitKind(kind ?? "")) return permissions.includes(permission);
   return permissions.some((held) => {
     const [heldKind, heldVerb] = held.split(":");
     return (heldKind === "*" || heldKind === kind) && (heldVerb === "*" || heldVerb === verb);

@@ -57,14 +57,19 @@ export async function removeStored(kernel: Kernel, keys: string[]) {
 }
 
 /**
- * Deletes a dev workspace: its resources, bindings, secrets, history, custom
+ * Deletes a workspace: its resources, bindings, secrets, history, custom
  * tables and files. Returns the stored objects to remove after the commit.
+ *
+ * A production workspace goes only when the caller says the person asking
+ * holds the permission for exactly that, which no role has unless it was
+ * written into it.
  */
 export async function deleteWorkspace(
   kernel: Kernel,
   trx: Trx,
   audit: Audit,
   workspace: { id: string; tenantId: string; slug: string },
+  options: { production?: boolean } = {},
 ) {
   const row = await trx
     .selectFrom("workspace")
@@ -72,9 +77,9 @@ export async function deleteWorkspace(
     .where("id", "=", workspace.id)
     .forUpdate()
     .executeTakeFirstOrThrow();
-  if (row.type !== "dev") {
+  if (row.type !== "dev" && !options.production) {
     throw conflict(
-      "A production workspace cannot be deleted by itself. It goes when its tenant is deleted.",
+      "A production workspace is deleted only by someone given the permission to delete production.",
     );
   }
   await refuseWhileBusy(trx, { workspaceId: workspace.id });
@@ -99,7 +104,13 @@ export async function deleteWorkspace(
     targetId: workspace.id,
     tenantId: workspace.tenantId,
     // The workspace is gone, so the entry belongs to the tenant.
-    details: { slug: workspace.slug, name: row.name, tables, files: counts.file ?? 0 },
+    details: {
+      slug: workspace.slug,
+      name: row.name,
+      type: row.type,
+      tables,
+      files: counts.file ?? 0,
+    },
   });
   return keys;
 }

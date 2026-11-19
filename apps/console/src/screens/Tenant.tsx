@@ -598,6 +598,12 @@ function WorkspaceDetail({
         />
       ) : tab === "runs" ? (
         <RunsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "approvals" ? (
+        <ApprovalsQueue
+          base={`/tenants/${tenantId}`}
+          tenantId={tenantId}
+          workspaceId={workspaceId}
+        />
       ) : tab === "triggers" ? (
         <TriggersWorkbench
           root={root}

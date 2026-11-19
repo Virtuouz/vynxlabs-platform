@@ -771,6 +771,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Literal("workspace"),
                   ]),
                   appFacing: Type.Boolean(),
+                  explicit: Type.Boolean({
+                    description: "Given only by its own name: a role's `*` does not include it.",
+                  }),
                   verbs: Type.Array(
                     Type.Object({
                       verb: Type.Union([Type.Literal("read"), Type.Literal("write")]),
@@ -791,6 +794,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           group: entry.group,
           scope: entry.scope,
           appFacing: entry.appFacing === true,
+          explicit: entry.explicit === true,
           verbs: (["read", "write"] as const)
             .filter((verb) => entry.verbs[verb] !== undefined)
             .map((verb) => ({

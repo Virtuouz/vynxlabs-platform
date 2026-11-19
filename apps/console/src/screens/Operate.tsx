@@ -831,13 +831,33 @@ interface Decided {
   waitedSeconds: number | null;
 }
 
-/** Decisions waiting for this person, the oldest first, and those already made. */
-export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: string }) {
+/**
+ * Decisions waiting for this person, the oldest first, and those already made.
+ * In a workspace: every approval of that workspace. For the tenant: the ones a
+ * flow says to surface there, from every workspace.
+ */
+export function ApprovalsQueue({
+  base,
+  tenantId,
+  workspaceId,
+}: {
+  /** The tenant's address in the API. */
+  base: string;
+  tenantId: string;
+  /** Given, the queue is that workspace's own. */
+  workspaceId?: string;
+}) {
   const [state, setState] = useUrlParam<"waiting" | "decided">("show", "waiting");
-  const waiting = useLoad<{ items: Waiting[] }>(`${base}/approvals`);
-  const decided = useLoad<{ items: Decided[] }>(
-    state === "decided" ? `${base}/approvals/decided` : null,
+  const from = workspaceId ? `${base}/workspaces/${workspaceId}` : base;
+  const waiting = useLoad<{ items: Waiting[] }>(
+    `${from}/approvals${workspaceId ? "?mine=true" : ""}`,
   );
+  const decided = useLoad<{ items: Decided[] }>(
+    state === "decided" ? `${from}/approvals/decided` : null,
+  );
+  const about = workspaceId
+    ? "Flows in this workspace that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
+    : "Decisions that flows surface to the whole tenant, from every workspace, the longest waiting first. Each workspace lists all of its own under Operate.";
   const workspaces = useLoad<{ items: { id: string; name: string; type: string }[] }>(
     `${base}/workspaces`,
   );
@@ -943,7 +963,8 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
     return (
       <CollectionView<Decided>
         title="Approvals"
-        description="Flows that paused for a person's decision."
+        helpKey={workspaceId ? "workspace-approvals" : "approvals"}
+        description={about}
         toolbar={chips}
         columns={[
           {
@@ -1007,7 +1028,8 @@ export function ApprovalsQueue({ base, tenantId }: { base: string; tenantId: str
       {batch.dialog}
       <CollectionView<Waiting>
         title="Approvals"
-        description="Flows that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
+        helpKey={workspaceId ? "workspace-approvals" : "approvals"}
+        description={about}
         toolbar={chips}
         columns={[
           {

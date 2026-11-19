@@ -116,6 +116,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "runs", label: "Runs", icon: Play },
     { slug: "events", label: "Events", icon: Radio },
     { slug: "triggers", label: "Triggers", icon: Zap },
+    { slug: "approvals", label: "Approvals", icon: CircleCheck },
     { slug: "release", label: "Releases", icon: Rocket },
     { slug: "git", label: "Git sync", icon: GitCompareArrows },
   ],
@@ -227,7 +228,7 @@ const EDITORS = [
  * after the workspace.
  */
 const WORKBENCHES: RegExp[] = [
-  /^(runs|triggers|events)(\/|$)/,
+  /^(runs|triggers|events|approvals)(\/|$)/,
   /^(flows|scripts|apps)$/,
   /^flows\/(new|edit\/)/,
 ];

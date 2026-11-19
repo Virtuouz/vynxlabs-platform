@@ -129,6 +129,7 @@ function bundle(): Bundle {
               type: "approval",
               title: "Write off the debt",
               detail: "trigger",
+              surface: "tenant",
               approvers: { groups: ["Finance"] },
             },
             done: { type: "set", values: { written_off: "trigger.order" } },

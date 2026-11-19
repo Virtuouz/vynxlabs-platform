@@ -2316,6 +2316,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   path: Type.String(),
                   description: Type.String(),
                   connector: Type.String(),
+                  draft: Type.Optional(
+                    Type.Union(
+                      [
+                        Type.Literal("new"),
+                        Type.Literal("changed"),
+                        Type.Literal("removed"),
+                        Type.Null(),
+                      ],
+                      {
+                        description:
+                          "A change made in the console that waits to be deployed. `new` is a " +
+                          "group that has never been deployed: a script cannot use it yet.",
+                      },
+                    ),
+                  ),
                   configSchema: AnyObject,
                   members: Type.Array(
                     Type.Object({
@@ -2334,13 +2349,32 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params }) => {
-        const groups = await db
+        const deployed = await db
           .selectFrom("resource")
           .select(["path", "body"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "connection_group")
           .orderBy("path")
           .execute();
+        // A group made or changed in the console and not deployed yet is listed too, from its draft.
+        const drafts = await db
+          .selectFrom("resource_draft")
+          .select(["path", "body", "deleted"])
+          .where("workspace_id", "=", params.w)
+          .where("kind", "=", "connection_group")
+          .execute();
+        const stateOf = (path: string): "new" | "changed" | "removed" | null => {
+          const draft = drafts.find((one) => one.path === path);
+          if (!draft) return null;
+          if (!deployed.some((one) => one.path === path)) return "new";
+          return draft.deleted ? "removed" : "changed";
+        };
+        const groups = [
+          ...deployed,
+          ...drafts
+            .filter((one) => !one.deleted && !deployed.some((row) => row.path === one.path))
+            .map((one) => ({ path: one.path, body: one.body })),
+        ].sort((a, b) => a.path.localeCompare(b.path));
         const members = await db
           .selectFrom("connection_group_member")
           .select([
@@ -2364,6 +2398,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const body = group.body as { description?: string; connector?: string };
             return {
               path: group.path,
+              draft: stateOf(group.path),
               description: body.description ?? "",
               connector: body.connector ?? "http",
               configSchema: (connectorSchema(body.connector ?? "http", connectors) ??

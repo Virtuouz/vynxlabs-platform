@@ -1,6 +1,6 @@
 # Phase 18: data you can ask questions of, and a console that gets out of the way
 
-Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M2 built, M3 built for triggers and variables. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
+Status: planned, on branch `phase-18-data-insight`, off `main` at a52d967. The owner answered the decisions on 2026-11-18. M0 to M4 built. M1 to M9 are built first, one after another, and the work then stops for the owner before M10.
 Last updated: 2026-11-18
 
 After phase 17 the owner used the test instance and wrote down what was in the way. The notes fall into four groups: the console's lists and forms, what a table can say and be asked, who decides what in a workspace, and what an operator can see. Each item was checked against `main`. "Read" means read in the code and not yet run.
@@ -153,7 +153,9 @@ Answered by the owner on 2026-11-18.
 
 - **Tables and published apps had no hidden drafts to show.** The console makes and changes a table at once (`PUT …/resources`), not through a draft, and an app made in the console is an interface, whose list already says "Not published". Nothing was changed for either.
 - **A draft webhook has no address until it is deployed**: the address is made from what a deploy registers. The panel says so.
-- **Not done yet: connection groups and events**, the two other kinds the console edits as drafts. Their lists still show only what is deployed.
+- **Connection groups list their drafts too.** A group that is only a draft cannot be given members, since its members are kept by the deployed group; its panel opens the draft instead.
+- **Events needed nothing.** The Events screen lists what was published, not definitions, so there is no list a drafted event is missing from.
+- **One test compared the variables list exactly** and was given the new field.
 - **A draft trigger can be checked in the list with the rest.** Pausing leaves it out, since it fires nothing.
 
 ### M4: access
@@ -162,7 +164,23 @@ Answered by the owner on 2026-11-18.
 - **Approvals in a workspace.** Operate gets Approvals, fed by the workspace's route, which is brought level with the tenant's: what waits for me, and what was decided. The workspace's overview and flows pages link to it.
 - **Approvals that surface.** An approval step says `surface: tenant` to be listed on the tenant's page as well. A step that says nothing is listed in its workspace only. What a step says is kept on it when it starts to wait, and a migration marks every step already waiting as `tenant`, so nothing that waits today leaves the tenant's page. A deploy says once that approvals are now their workspace's unless a step says otherwise.
 
-### M5: enum columns
+#### Built
+
+- **Explicit permissions.** `PermissionKind.explicit` marks a permission that only its own name gives. `grants()` (`kernel/authorize.ts`) answers for one by looking for exactly that name, so `*:*`, `*:write` and `workspace_production:*` do not give it. The catalog route says which are explicit, and the role editor says so beside them.
+- **`workspace_production:write`** deletes a production workspace. `DELETE …/workspaces/:w` asks for it as well as `workspace:write` when the workspace is production. The slug, the refusal while runs go and the unlinking are as for a dev workspace, and the audit entry says the type. No migration gives it to anyone. Workspace settings offers the deletion with what it needs and a link to export first.
+- **`surface` on an approval step** (`workspace` or `tenant`), in the manifest, the schema, the SDK and the flow editor. The engine keeps `surface: tenant` on the step when it starts to wait.
+- **The tenant's two routes** list only what was surfaced. **The workspace's** list every approval of the workspace; `?mine=true` gives those the caller may decide, and `…/approvals/decided` is new.
+- **Migration 0076** marks every approval there was, waiting or decided, as surfaced, so the tenant's page and its history are as they were.
+- **The console**: Approvals under a workspace's Operate, the same screen given a workspace. The overview, the flows page and the `g a` shortcut go to the workspace's when in one.
+- Tests: `environments.test.ts` (an administrator refused, a wildcard role refused, the named role given at one workspace reaching only that one), `operations.test.ts` (an approval that is its workspace's only).
+
+#### Findings
+
+- **An operator is refused too**, with "not found": they have no standing in a tenant that has not let them in, and an access grant gives a role by wildcard.
+- **Whoever may write roles and bindings can give themselves the permission.** That is the design: it is a deliberate act, by name, and it is in the audit log. It is not a second person's approval.
+- **Not built: the deploy's one-time notice** that approvals are now their workspace's. A notice on every deploy of every flow with an approval step would be noise, and there is no place that remembers it was said. The changelog says it.
+- **Seven tests assumed the old rules** and were changed: four flows' approval steps now say `surface: "tenant"`, and the two that tried deleting production expect the new refusal.
+
 
 ```yaml
 status:

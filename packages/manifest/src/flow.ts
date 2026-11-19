@@ -121,6 +121,12 @@ export type FlowNode =
        * who holds the permission.
        */
       approvers?: { groups?: string[]; roles?: string[] };
+      /**
+       * Where the approval is listed while it waits. It is always listed in its
+       * workspace. `tenant` lists it on the tenant's page as well, for a
+       * decision that matters beyond the workspace. Left out, `workspace`.
+       */
+      surface?: "workspace" | "tenant";
     }
   | { type: "subflow"; flow?: string; flowFrom?: string; allow?: string[]; input?: string }
   | {

@@ -1313,6 +1313,8 @@ interface ConnectionGroup {
   description: string;
   connector: string;
   members: GroupMember[];
+  /** A change made in the console that waits to be deployed. */
+  draft?: "new" | "changed" | "removed" | null;
 }
 
 /**
@@ -1346,13 +1348,32 @@ export function ConnectionGroups({ root }: { root: string }) {
           <div className="flex flex-wrap items-center justify-between gap-3 border-line border-b px-4 py-3">
             <div className="min-w-0">
               <code className="font-mono text-code font-semibold">{group.path}</code>
+              {group.draft === "new" ? (
+                <span className="ml-3">
+                  <StatePill state="draft">Draft, never deployed</StatePill>
+                </span>
+              ) : group.draft ? (
+                <span className="ml-3">
+                  <Tag tone="draft">{group.draft === "removed" ? "Removing" : "Draft"}</Tag>
+                </span>
+              ) : null}
               {group.description ? (
                 <span className="ml-3 text-ink-muted">{group.description}</span>
               ) : null}
             </div>
-            <Button size="small" variant="primary" onClick={() => setAdding(group.path)}>
-              Add a member
-            </Button>
+            {group.draft === "new" ? (
+              // Its members are kept by the deployed group, so there is nowhere to put one yet.
+              <Button
+                size="small"
+                href={`${consoleLink(root)}/resources/edit/connection_group/${group.path}`}
+              >
+                Open the draft
+              </Button>
+            ) : (
+              <Button size="small" variant="primary" onClick={() => setAdding(group.path)}>
+                Add a member
+              </Button>
+            )}
           </div>
           {group.members.length === 0 ? (
             <p className="m-0 px-4 py-3 text-ink-muted">

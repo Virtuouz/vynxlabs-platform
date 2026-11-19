@@ -682,6 +682,13 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "surface": {
+                "enum": [
+                  "workspace",
+                  "tenant"
+                ],
+                "description": "Where the approval is listed while it waits: in its workspace alone, or on the tenant's page as well. Left out, its workspace alone."
               }
             },
             "required": [

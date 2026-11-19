@@ -673,7 +673,9 @@ describe("cloning a workspace", () => {
       ).rows.map((row) => row.name);
     expect(await schemas()).toHaveLength(2);
 
-    expect((await alice.delete(`${ws(shop)}?confirm=shop`)).status).toBe(409);
+    // Production: not for an administrator, who holds everything a wildcard gives.
+    const refused = await alice.delete(`${ws(shop)}?confirm=shop`);
+    expect(refused.status).toBe(403);
     expect((await alice.delete(`${ws(safeClone)}?confirm=wrong`)).status).toBe(400);
     expect((await devOnly.delete(`${ws(safeClone)}?confirm=shop-copy`)).status).toBe(403);
     expect((await alice.delete(`${ws(safeClone)}?confirm=shop-copy`)).status).toBe(204);
@@ -1011,5 +1013,63 @@ describe("guards", () => {
         ),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("deleting a production workspace", () => {
+  test("nobody may until given the permission by name, and then it goes with what it held", async () => {
+    const made = await alice.post(`/tenants/${tenant}/workspaces`, {
+      slug: "retired-prod",
+      name: "Retired",
+      type: "production",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const gone = made.body.id as string;
+    const address = `/tenants/${tenant}/workspaces/${gone}?confirm=retired-prod`;
+
+    // Alice administers the tenant: every permission a wildcard gives, and not this one.
+    expect((await alice.delete(address)).status).toBe(403);
+    // Nor an operator, who has no standing in a tenant that has not let them in.
+    expect((await t.admin.delete(address)).status).toBe(404);
+    // A role cannot be given it by a wildcard on its kind either.
+    const wide = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "wide",
+      permissions: ["workspace_production:*", "workspace:*"],
+    });
+    expect(wide.status, JSON.stringify(wide.body)).toBe(201);
+    const me = (await alice.get("/me")).body.principal.id as string;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: me,
+      roleId: wide.body.id,
+    });
+    expect((await alice.delete(address)).status).toBe(403);
+
+    // By name, it is given, and the giving is in the audit log.
+    const named = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "production_remover",
+      permissions: ["workspace_production:write"],
+    });
+    expect(named.status, JSON.stringify(named.body)).toBe(201);
+    const bound = await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: gone,
+      principalType: "member",
+      principalId: me,
+      roleId: named.body.id,
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    // Given at that workspace, it reaches no other production workspace.
+    expect((await alice.delete(`${ws(shop)}?confirm=shop`)).status).toBe(403);
+    // The slug is still asked for.
+    expect((await alice.delete(address.replace("retired-prod", "wrong"))).status).toBe(400);
+    expect((await alice.delete(address)).status).toBe(204);
+    expect((await alice.get(`/tenants/${tenant}/workspaces/${gone}`)).status).toBe(404);
+    const entry = await t.db
+      .selectFrom("audit_entry")
+      .select(["action", "details"])
+      .where("action", "=", "workspace.deleted")
+      .where("target_id", "=", gone)
+      .executeTakeFirstOrThrow();
+    expect(entry.details).toMatchObject({ slug: "retired-prod", type: "production" });
   });
 });

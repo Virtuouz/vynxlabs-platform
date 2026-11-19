@@ -236,11 +236,12 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("workspace:write") },
         schema: {
-          summary: "Delete a dev workspace and everything in it",
+          summary: "Delete a workspace and everything in it",
           description:
             "Its resources, bindings, secrets, run history, custom tables and files are removed " +
-            "for good. Send the workspace's slug as `confirm`. Refused for a production " +
-            "workspace, and while runs are in progress.",
+            "for good. Send the workspace's slug as `confirm`. Refused while runs are in " +
+            "progress. A production workspace also needs `workspace_production:write`, which " +
+            "no wildcard gives: a role has it only when it lists it by name.",
           tags: ["tenancy"],
           params: WorkspaceParams,
           querystring: Type.Object({ confirm: Type.String() }),
@@ -264,8 +265,22 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           throw conflict(
             "A clone of this workspace is still being made. Try again when it has finished.",
           );
+        const production =
+          (
+            await db
+              .selectFrom("workspace")
+              .select("type")
+              .where("id", "=", params.w)
+              .executeTakeFirstOrThrow()
+          ).type === "production";
+        if (production) {
+          await ctx.authorize("workspace_production:write", {
+            tenantId: params.t,
+            workspaceId: params.w,
+          });
+        }
         const keys = await ctx.mutate((trx, audit) =>
-          deleteWorkspace(kernel, trx, audit, workspace),
+          deleteWorkspace(kernel, trx, audit, workspace, { production }),
         );
         await removeStored(kernel, keys);
         return reply.code(204).send(null);

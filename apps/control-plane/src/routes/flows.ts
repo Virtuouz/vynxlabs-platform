@@ -1298,6 +1298,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Approvals -----
 
+    /** A step that said its approval is listed for the tenant as well as its workspace. */
+    const SURFACED = sql<boolean>`step_run.detail ->> 'surface' = 'tenant'`;
     const pending = (tenantId: string) =>
       db
         .selectFrom("step_run")
@@ -1392,15 +1394,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.custom },
         schema: {
-          summary: "Approvals decided across the tenant's workspaces, newest first",
-          description: "The last hundred, from the workspaces where the caller may read approvals.",
+          summary: "Approvals surfaced to the tenant and decided, newest first",
+          description:
+            "The last hundred whose step said `surface: tenant`, from the workspaces where the " +
+            "caller may read approvals. A workspace lists every one of its own.",
           tags: ["flows"],
           params: TenantParams,
           response: { 200: Type.Object({ items: Type.Array(DecidedApproval) }) },
         },
       },
       async ({ ctx, params }) => {
-        const rows = await decided(params.t).execute();
+        const rows = await decided(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
         const items = [];
         for (const row of rows) {
@@ -1426,16 +1430,52 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("approval:read") },
         schema: {
           summary: "Approvals waiting for a decision in a workspace",
+          description:
+            "Every approval of the workspace, whether or not its step surfaces it to the " +
+            "tenant. With `mine=true`, only those the caller may decide: they hold " +
+            "`approval:write` here and are among the step's approvers, if it names any.",
           tags: ["flows"],
           params: WorkspaceParams,
+          querystring: Type.Object({ mine: Type.Optional(Type.Boolean()) }),
           response: { 200: Type.Object({ items: Type.Array(Approval) }) },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params, query }) => {
         const rows = await pending(params.t)
           .where("flow_run.workspace_id", "=", params.w)
           .execute();
-        return { items: await Promise.all(rows.map(toApproval)) };
+        if (!query.mine) return { items: await Promise.all(rows.map(toApproval)) };
+        const at = { tenantId: params.t, workspaceId: params.w };
+        if (!(await ctx.allowed("approval:write", at))) return { items: [] };
+        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+        const items = [];
+        for (const row of rows) {
+          // A step that names its approvers is shown only to them.
+          const named = approversOf(row.detail);
+          if (named && !(await isApprover(db, at, memberId, named))) continue;
+          items.push(await toApproval(row));
+        }
+        return { items };
+      },
+    );
+
+    app.get(
+      `${base}/approvals/decided`,
+      {
+        config: { access: access.workspace("approval:read") },
+        schema: {
+          summary: "Approvals decided in a workspace, newest first",
+          description: "The last hundred.",
+          tags: ["flows"],
+          params: WorkspaceParams,
+          response: { 200: Type.Object({ items: Type.Array(DecidedApproval) }) },
+        },
+      },
+      async ({ params }) => {
+        const rows = await decided(params.t)
+          .where("flow_run.workspace_id", "=", params.w)
+          .execute();
+        return { items: rows.map(toDecided) };
       },
     );
 
@@ -1444,14 +1484,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.custom },
         schema: {
-          summary: "Approvals the caller may decide, across the tenant's workspaces",
+          summary: "Approvals surfaced to the tenant that the caller may decide",
+          description:
+            "Those whose step said `surface: tenant`, from every workspace. An approval that " +
+            "says nothing is listed in its workspace only.",
           tags: ["flows"],
           params: TenantParams,
           response: { 200: Type.Object({ items: Type.Array(Approval) }) },
         },
       },
       async ({ ctx, params }) => {
-        const rows = await pending(params.t).execute();
+        const rows = await pending(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
         const items = [];
         const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;

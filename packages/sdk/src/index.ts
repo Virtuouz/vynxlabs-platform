@@ -823,6 +823,8 @@ export const step = {
    * Pauses until a person approves. Rejecting, or the timeout passing, fails the
    * step. `approvers` names who may decide: members of these groups, or holders
    * of these roles. Without it, anyone who may decide approvals here may.
+   * It is listed in its workspace; `surface: "tenant"` lists it on the tenant's
+   * page too.
    */
   approval: (
     title: string,
@@ -830,6 +832,7 @@ export const step = {
       detail?: string;
       timeoutSeconds?: number;
       approvers?: { groups?: string[]; roles?: string[] };
+      surface?: "workspace" | "tenant";
     } = {},
   ): FlowNode =>
     compact({
@@ -838,6 +841,7 @@ export const step = {
       detail: options.detail,
       timeoutSeconds: options.timeoutSeconds,
       approvers: options.approvers,
+      surface: options.surface,
     }) as FlowNode,
   /** Runs another flow from its manual trigger and waits for it. */
   subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>

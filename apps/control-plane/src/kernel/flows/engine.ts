@@ -775,6 +775,8 @@ class Advance {
             detail: {
               title: node.title,
               detail,
+              // Where it is listed while it waits: its workspace always, the tenant when it says so.
+              ...(node.surface === "tenant" ? { surface: "tenant" } : {}),
               ...(named && resolved
                 ? {
                     approvers: named,

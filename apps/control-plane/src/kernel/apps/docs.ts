@@ -55,6 +55,7 @@ body {
 a { color: var(--vx-action); }
 :focus-visible { outline: 2px solid var(--vx-action); outline-offset: 2px; }
 .skip { position: absolute; left: -10000px; }
+.preview { margin: 0; padding: 6px 20px; background: var(--vx-attention-soft); border-bottom: 1px solid var(--vx-line); font-size: 14px; }
 .skip:focus { left: 12px; top: 12px; z-index: 20; padding: 8px 12px; background: var(--vx-surface); border: 1px solid var(--vx-line); border-radius: var(--vx-radius-control); }
 .top {
   position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
@@ -168,6 +169,8 @@ export interface Drawn {
   set: DocSet;
   /** Where a picture kept beside the pages is served from, by its path under the app's folder. */
   asset?: (path: string) => string | undefined;
+  /** Said across the top of every page: that this is a preview, and for whom. */
+  notice?: string;
 }
 
 const attr = escapeHtml;
@@ -237,14 +240,16 @@ function shell(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">${options.noindex ? '\n<meta name="robots" content="noindex">' : ""}
+<meta name="viewport" content="width=device-width, initial-scale=1">${options.noindex || at.notice ? '\n<meta name="robots" content="noindex">' : ""}
 <title>${escapeHtml(options.title === app.title ? app.title : `${options.title} · ${app.title}`)}</title>
 <link rel="stylesheet" href="${attr(frame.themeHref)}">
 <link rel="stylesheet" href="/_platform/docs.css">${iconLinks(frame.iconsHref)}
 <script src="/_platform/docs.js" defer></script>
 </head>
 <body>
-<a class="skip" href="#content">Skip to the page</a>
+<a class="skip" href="#content">Skip to the page</a>${
+    at.notice ? `\n<p class="preview" role="status">${escapeHtml(at.notice)}</p>` : ""
+  }
 <header class="top">
 <a class="name" href="${attr(at.base)}">${frame.logoHref ? `<img src="${attr(frame.logoHref)}" alt="">` : ""}<span>${escapeHtml(app.title)}</span></a>
 <form action="${href(at, "_search")}" method="get" role="search">

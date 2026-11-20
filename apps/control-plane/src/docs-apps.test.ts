@@ -706,7 +706,7 @@ describe("someone who writes documentation in the console, and is not a develope
     ]);
 
     const listed = (await wren.get(`${devWs()}/docs`)).body;
-    expect(listed.apps).toEqual([
+    expect(listed.apps).toMatchObject([
       { path: "guide-site", title: "Guide", docs: "guide", deployed: false },
     ]);
     expect(
@@ -826,6 +826,50 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(found).toMatchObject([{ path: "guide/index", app: "guide-site", title: "Handbook" }]);
     expect((await nell.get(`${devWs()}/docs/search?q=tuesdays`)).status).toBe(403);
     expect((await wren.get(`${devWs()}/docs/page/guide/nothing`)).status).toBe(404);
+  });
+
+  test("the drafts are previewed at the app's own address, by its writers and by nobody else", async () => {
+    const at = (who: Client | undefined, url: string) =>
+      t.app.inject({ url, headers: { host: MAIN, ...(who ? who.headers : {}) } });
+    // A page that is only a draft, beside the one changed in the test before.
+    expect(
+      (
+        await save(
+          wren,
+          "guide/support/exchanges",
+          text("title: Exchanges", "The other way round.\n"),
+        )
+      ).status,
+    ).toBe(200);
+    const home = await at(wren, "/apps/acme/dev/guide-site/_draft/");
+    expect(home.statusCode).toBe(200);
+    expect(home.body).toContain("Parcels come back on Tuesdays.");
+    expect(home.body).toContain("A preview, with the workspace&#39;s drafts.");
+    expect(home.body).toContain('<meta name="robots" content="noindex">');
+    expect(home.headers["cache-control"]).toBe("no-store");
+    // Its links stay inside the preview, and a page that is only a draft is there.
+    expect(home.body).toContain('<a class="name" href="/apps/acme/dev/guide-site/_draft/">');
+    const fresh = await at(wren, "/apps/acme/dev/guide-site/_draft/support/exchanges");
+    expect(fresh.statusCode).toBe(200);
+    expect(fresh.body).toContain("<h1>Exchanges</h1>");
+    expect(fresh.body).toContain('href="/apps/acme/dev/guide-site/_draft/support/refunds"');
+    expect((await at(wren, "/apps/acme/dev/guide-site/_draft/_search?q=tuesdays")).body).toContain(
+      "1 page for",
+    );
+    // What is deployed is what the app itself still serves.
+    const live = await at(wren, "/apps/acme/dev/guide-site/");
+    expect(live.body).not.toContain("Tuesdays");
+    expect((await at(wren, "/apps/acme/dev/guide-site/support/exchanges")).statusCode).toBe(404);
+    // To a member who may not read the documentation, and to anyone not signed in, it is not there.
+    expect((await at(nell, "/apps/acme/dev/guide-site/_draft/")).statusCode).toBe(404);
+    expect((await at(undefined, "/apps/acme/dev/guide-site/_draft/")).statusCode).toBe(404);
+    expect((await at(wren, "/apps/acme/dev/no-such-app/_draft/")).statusCode).toBe(404);
+    // The list of pages says where the preview is.
+    expect((await wren.get(`${devWs()}/docs`)).body.apps[0]).toMatchObject({
+      url: `http://${MAIN}/apps/acme/dev/guide-site/`,
+      preview: `http://${MAIN}/apps/acme/dev/guide-site/_draft/`,
+    });
+    expect((await wren.delete(`${devWs()}/drafts/guide/support/exchanges`)).status).toBe(204);
   });
 
   test("a production workspace takes no page from the console", async () => {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
+import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
@@ -616,9 +617,12 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
               </Button>
             }
             meta={
-              script.description ? (
-                <p className="m-0 max-w-measure text-ink-muted">{script.description}</p>
-              ) : null
+              <span className="flex flex-col gap-1.5">
+                {script.description ? (
+                  <p className="m-0 max-w-measure text-ink-muted">{script.description}</p>
+                ) : null}
+                <AttachedPages {...workspaceOf(root)} kind="script" path={script.path} />
+              </span>
             }
             tabs={[
               {

@@ -351,6 +351,39 @@ export function AppBuilder({
                     >
                       Rename
                     </Button>
+                    <Button
+                      size="small"
+                      variant="quiet"
+                      className="lg:justify-start"
+                      onClick={async () => {
+                        const topic = await ask.prompt({
+                          title: `Help for the page ${page.title}`,
+                          label: "Topic",
+                          hint: "The topic: of a page of your documentation. Whoever uses the app, and may open that documentation, gets a Help button that shows the page. Leave it empty for no help.",
+                          initial: page.help ?? "",
+                          action: "Save",
+                          required: false,
+                        });
+                        if (topic === null) return;
+                        const named = topic.trim();
+                        if (named !== "" && !/^[a-z0-9][a-z0-9_-]*$/.test(named)) {
+                          notify.error(
+                            new Error(
+                              "A topic is lowercase letters, digits, hyphens and underscores, as it is written in the page's frontmatter.",
+                            ),
+                          );
+                          return;
+                        }
+                        change((draft) => {
+                          const target = draft.pages.find((one) => one.id === page.id);
+                          if (!target) return;
+                          if (named === "") delete target.help;
+                          else target.help = named;
+                        }, "setting the page's help");
+                      }}
+                    >
+                      {page.help ? "Help: on" : "Help"}
+                    </Button>
                     {body.pages.length > 1 ? (
                       <Button
                         size="small"

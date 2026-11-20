@@ -29,7 +29,16 @@ const page = (path: string, title: string, more: object = {}) => ({
 });
 
 const list = (): DocsList => ({
-  apps: [{ path: "help", title: "Shop handbook", docs: "handbook", deployed: true }],
+  apps: [
+    {
+      path: "help",
+      title: "Shop handbook",
+      docs: "handbook",
+      deployed: true,
+      url: "https://apps.example.test/apps/acme/dev/help/",
+      preview: "https://apps.example.test/apps/acme/dev/help/_draft/",
+    },
+  ],
   pages: [
     page("handbook/index", "Handbook"),
     page("handbook/faq", "Questions"),
@@ -96,7 +105,10 @@ beforeEach(() => {
         page: list().pages.find((one) => one.path === path),
         source,
         revision: path === "handbook/support/refunds" ? 3 : null,
-        deployedSource: null,
+        deployedSource:
+          path === "handbook/support/refunds"
+            ? text("title: Refund an order", "Ask for the receipt.\n")
+            : null,
       },
     ];
   }
@@ -214,6 +226,10 @@ describe("the Documentation screen", () => {
     expect(screen.getByRole("link", { name: "Open as readers see it" }).getAttribute("href")).toBe(
       "https://apps.example.test/apps/acme/dev/help/support/refunds",
     );
+    // It has a draft: its writers can see it in the app, as it would be once deployed.
+    expect(screen.getByRole("link", { name: "Preview with drafts" }).getAttribute("href")).toBe(
+      "https://apps.example.test/apps/acme/dev/help/_draft/support/refunds",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(location.pathname).toBe(`${link}/docs/edit/handbook/support/refunds`);
   });
@@ -221,6 +237,8 @@ describe("the Documentation screen", () => {
   test("a page kept in the repository is read here and changed there", async () => {
     docs("handbook/support/returns");
     await screen.findByRole("heading", { level: 2, name: "Returns" });
+    // Deployed, with no draft: there is nothing to preview that its readers do not see.
+    expect(screen.queryByRole("link", { name: "Preview with drafts" })).toBeNull();
     expect(screen.getByText(/This page lives in the repository/).textContent).toContain(
       "docs/handbook/support/returns.md",
     );
@@ -314,6 +332,22 @@ describe("the page editor", () => {
       `${link}/docs/handbook/support/returns#by-post`,
     );
     expect(await screen.findByText("This page would deploy as it is.")).toBeTruthy();
+  });
+
+  test("a draft is shown beside what is deployed, and leads to its preview in the app", async () => {
+    editor("handbook/support/refunds");
+    await source();
+    expect(screen.getByRole("link", { name: "Preview in the app" }).getAttribute("href")).toBe(
+      "https://apps.example.test/apps/acme/dev/help/_draft/support/refunds",
+    );
+    expect(screen.queryByRole("region", { name: "What changes" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Compare with deployed" }));
+    const changes = await screen.findByRole("region", { name: "What changes" });
+    expect(changes.textContent).toContain("Deployed");
+    expect(changes.textContent).toContain("Ask for the receipt.");
+    expect(changes.textContent).toContain("Ask for the :term[RMA]");
+    fireEvent.click(screen.getByRole("button", { name: "Hide what is deployed" }));
+    expect(screen.queryByRole("region", { name: "What changes" })).toBeNull();
   });
 
   test("what is wrong is said as it is typed, by line, and the preview follows", async () => {

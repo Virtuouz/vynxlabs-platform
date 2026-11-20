@@ -15,6 +15,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
+import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -405,6 +406,7 @@ export function FlowView({
         </span>
       }
     >
+      <AttachedPages {...workspaceOf(root)} kind="flow" path={data.path} />
       <Current
         object={{
           heading: "This flow",

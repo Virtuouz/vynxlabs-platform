@@ -12,6 +12,8 @@ import {
 } from "@volvel/docs-engine";
 import { walk } from "@volvel/markup";
 import { type Static, Type } from "typebox";
+import { appUrl } from "../kernel/apps/address.js";
+import { type WorkingResource, workingDocs } from "../kernel/docs/working.js";
 import { notFound } from "../kernel/errors.js";
 import type { RequestContext } from "../kernel/http.js";
 import { access, findWorkspace } from "../kernel/http.js";
@@ -65,19 +67,12 @@ const App = Type.Object({
   title: Type.String(),
   docs: Type.String({ description: "The folder of pages it serves." }),
   deployed: Type.Boolean({ description: "False for an app that is only a draft." }),
+  url: Type.String({ description: "Where the app is served, once it is deployed." }),
+  preview: Type.String({
+    description:
+      "Where the app is shown with the workspace's drafts laid over it, to members who may read its documentation and to nobody else.",
+  }),
 });
-
-/** A workspace's pages and docs apps, as its writers see them: drafts laid over what is deployed. */
-interface Working {
-  resources: (ResourceLike & {
-    state: Static<typeof PageSummary>["state"];
-    file: string | null;
-    revision: number | null;
-    /** What is deployed under a draft, for whoever wants the two side by side. */
-    deployed?: Record<string, unknown>;
-  })[];
-  apps: (DocsApp & { deployed: boolean })[];
-}
 
 export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
@@ -93,63 +88,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       return workspace;
     }
 
-    async function working(workspaceId: string): Promise<Working> {
-      const [live, drafts] = await Promise.all([
-        db
-          .selectFrom("resource")
-          .select(["key", "kind", "path", "title", "body", "meta"])
-          .where("workspace_id", "=", workspaceId)
-          .where("kind", "in", ["doc", "app"])
-          .execute(),
-        db
-          .selectFrom("resource_draft")
-          .select(["key", "kind", "path", "title", "body", "deleted", "revision"])
-          .where("workspace_id", "=", workspaceId)
-          .where("kind", "in", ["doc", "app"])
-          .execute(),
-      ]);
-      const drafted = new Map(drafts.map((draft) => [draft.key, draft]));
-      const resources: Working["resources"] = [];
-      const deployedApps = new Set<string>();
-      for (const one of live) {
-        const draft = drafted.get(one.key);
-        drafted.delete(one.key);
-        if (one.kind === "app") deployedApps.add(one.path);
-        resources.push({
-          kind: one.kind,
-          path: draft && !draft.deleted ? draft.path : one.path,
-          title: (draft && !draft.deleted ? draft.title : one.title) ?? undefined,
-          body: draft && !draft.deleted ? draft.body : one.body,
-          state: draft ? (draft.deleted ? "removed" : "changed") : "deployed",
-          file: one.meta.source && !one.meta.source.generated ? one.meta.source.file : null,
-          revision: draft?.revision ?? null,
-          ...(draft ? { deployed: one.body } : {}),
-        });
-      }
-      for (const draft of drafted.values()) {
-        if (draft.deleted) continue;
-        resources.push({
-          kind: draft.kind,
-          path: draft.path,
-          title: draft.title ?? undefined,
-          body: draft.body,
-          state: "new",
-          file: null,
-          revision: draft.revision,
-        });
-      }
-      // What a draft removes is still listed, as removed, and is no part of what is built.
-      const kept = resources.filter((one) => one.state !== "removed");
-      return {
-        resources,
-        apps: docsApps(kept).map((one) => ({ ...one, deployed: deployedApps.has(one.path) })),
-      };
-    }
+    const working = (workspaceId: string) => workingDocs(db, workspaceId);
 
-    function summary(
-      one: Working["resources"][number],
-      apps: readonly DocsApp[],
-    ): Static<typeof PageSummary> {
+    function summary(one: WorkingResource, apps: readonly DocsApp[]): Static<typeof PageSummary> {
       const source = String((one.body as { source?: unknown }).source ?? "");
       const home = appOf(apps, one.path);
       const inApp = home ? one.path.slice(home.docs.length + 1) : one.path;
@@ -196,8 +137,20 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }) => {
         const workspace = await enter(ctx, params);
         const { resources, apps } = await working(workspace.id);
+        const tenant = await db
+          .selectFrom("tenant")
+          .select("slug")
+          .where("id", "=", workspace.tenantId)
+          .executeTakeFirstOrThrow();
         return {
-          apps,
+          apps: apps.map((one) => {
+            const url = appUrl(kernel, {
+              tenantSlug: tenant.slug,
+              workspaceSlug: workspace.slug,
+              path: one.path,
+            });
+            return { ...one, url, preview: `${url}_draft/` };
+          }),
           pages: resources
             .filter((one) => one.kind === "doc")
             .map((one) => summary(one, apps))

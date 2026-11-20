@@ -1,5 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { buildApp, docsApps, type ResourceLike, urlOf } from "@volvel/docs-engine";
+import {
+  buildApp,
+  type DocSet,
+  type DocsApp,
+  docsApps,
+  type ResourceLike,
+  urlOf,
+} from "@volvel/docs-engine";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
 import type { RequestContext, WorkspaceRef } from "../kernel/http.js";
@@ -71,6 +78,13 @@ const Topic = Type.Object({
   page: PageLink,
 });
 
+/** A docs app with its pages built, and the resource its access is checked at. */
+interface Built {
+  app: DocsApp;
+  id: string;
+  set: DocSet;
+}
+
 /** Whether the caller holds one of a kind's permissions, at the workspace or at one resource. */
 function reader(ctx: RequestContext, at: { tenantId: string; workspaceId: string }) {
   const everywhere = new Map<string, Promise<boolean>>();
@@ -99,6 +113,38 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const { db } = kernel;
 
     /**
+     * A workspace's docs apps, each with its pages read and built. What a
+     * workspace has deployed changes only when something is deployed to it, so
+     * they are kept for as long as its bundle is the one it runs, and read
+     * again after the next deploy. Who may see which is decided on each request.
+     */
+    const kept = new Map<string, { bundle: string | null; apps: Built[] }>();
+    async function builtApps(workspaceId: string, around: readonly ResourceLike[]) {
+      const now = await db
+        .selectFrom("workspace")
+        .select("active_bundle_id")
+        .where("id", "=", workspaceId)
+        .executeTakeFirst();
+      const bundle = now?.active_bundle_id ?? null;
+      const had = kept.get(workspaceId);
+      if (had && had.bundle === bundle) return had.apps;
+      const rows = await db
+        .selectFrom("resource")
+        .select(["id", "kind", "path", "title", "body"])
+        .where("workspace_id", "=", workspaceId)
+        .where("kind", "in", ["doc", "app"])
+        .execute();
+      const apps: Built[] = [];
+      for (const app of docsApps(rows)) {
+        const row = rows.find((one) => one.kind === "app" && one.path === app.path);
+        if (row) apps.push({ app, id: row.id, set: buildApp(app, [...rows, ...around]).set });
+      }
+      kept.set(workspaceId, { bundle, apps });
+      if (kept.size > 200) kept.delete(kept.keys().next().value as string);
+      return apps;
+    }
+
+    /**
      * What the workspace's documentation gives the help: its terms, its own
      * topics, the pages attached to resources and to the product's topics.
      * Each from a page of a docs app the caller may open, and from no other.
@@ -116,13 +162,7 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         attachments: [] as Static<typeof Attachment>[],
         topics: [] as Static<typeof Topic>[],
       };
-      const rows = await db
-        .selectFrom("resource")
-        .select(["id", "kind", "path", "title", "body"])
-        .where("workspace_id", "=", workspace.id)
-        .where("kind", "in", ["doc", "app"])
-        .execute();
-      const apps = docsApps(rows);
+      const apps = await builtApps(workspace.id, around);
       if (apps.length === 0) return out;
       // Whoever writes or reads the workspace's documentation in the console may read all of it.
       const writer =
@@ -132,11 +172,8 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .select("slug")
         .where("id", "=", workspace.tenantId)
         .executeTakeFirstOrThrow();
-      for (const app of apps) {
-        const row = rows.find((one) => one.kind === "app" && one.path === app.path);
-        if (!row) continue;
-        if (!writer && !(await ctx.allowed("app:read", { ...at, resourceId: row.id }))) continue;
-        const { set } = buildApp(app, [...rows, ...around]);
+      for (const { app, id, set } of apps) {
+        if (!writer && !(await ctx.allowed("app:read", { ...at, resourceId: id }))) continue;
         const base = appUrl(kernel, {
           tenantSlug: tenant.slug,
           workspaceSlug: workspace.slug,

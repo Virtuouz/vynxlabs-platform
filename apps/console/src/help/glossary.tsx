@@ -65,6 +65,15 @@ export function useWorkspaceTerms(
   return useMemo(() => ({ ...EMPTY, ...loaded.data }), [loaded.data]);
 }
 
+/** The tenant and the workspace an API root names: `/tenants/<t>/workspaces/<w>`. */
+export function workspaceOf(root: string): {
+  tenantId: string | undefined;
+  workspaceId: string | undefined;
+} {
+  const [, , tenantId, , workspaceId] = root.split("/");
+  return { tenantId, workspaceId };
+}
+
 /** A link to one of the team's own pages, where it is served. It opens beside the console, not over it. */
 export function PageLinkTo({ page, children }: { page: PageLink; children?: ReactNode }) {
   return (

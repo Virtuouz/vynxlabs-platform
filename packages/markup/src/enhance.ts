@@ -3,7 +3,8 @@
  * works without it: tabs are sections one under another, and a term shows
  * what it means when it is pointed at or reached by the keyboard, as its
  * stylesheet arranges. With it,
- * tabs become tabs and a term opens and closes as a button does.
+ * tabs become tabs, a term opens and closes as a button does, and on a phone
+ * a site's navigation starts folded.
  *
  * It is served as a file from the page's own address. It reads nothing from
  * the address or from storage, and writes nothing into the page as HTML.
@@ -58,6 +59,11 @@ export const ENHANCE_SCRIPT = `(() => {
     tabs.prepend(list);
     tabs.classList.add("vd-tabs-on");
     show(0, false);
+  }
+
+  // On a narrow screen a site's navigation starts folded, so the page is what is seen first.
+  if (window.matchMedia && window.matchMedia("(max-width: 819px)").matches) {
+    for (const folded of document.querySelectorAll("nav.side > details")) folded.open = false;
   }
 
   const terms = [...document.querySelectorAll(".vd-term")];

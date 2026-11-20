@@ -18,6 +18,11 @@ export interface InterfacePage {
   title: string;
   widgets: PageWidget[];
   /**
+   * The topic of the page of the workspace's documentation that is this page's
+   * help. Whoever uses the app, and may open that documentation, is offered it.
+   */
+  help?: string;
+  /**
    * Filters over the whole page, set by whoever reads it: a range of dates, or
    * one value. Each narrows every widget whose table has the column.
    */
@@ -355,6 +360,13 @@ export const interfacePageSchema = {
   properties: {
     id: { type: "string", pattern: SLUG },
     title: { type: "string", minLength: 1, maxLength: 100 },
+    help: {
+      type: "string",
+      pattern: SLUG,
+      maxLength: 80,
+      description:
+        "The topic of the page of the workspace's documentation that is this page's help. It is offered to whoever uses the app and may open that documentation.",
+    },
     widgets: { type: "array", maxItems: MAX_WIDGETS, items: widgetSchema },
     filters: {
       type: "array",

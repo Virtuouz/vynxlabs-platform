@@ -23,7 +23,7 @@ import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
-import { AttachedPages } from "../help/glossary.tsx";
+import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
@@ -949,12 +949,6 @@ const SYSTEM_COLUMNS: RowColumn[] = [
   { name: "updated_at", type: "timestamp", required: true, writable: false },
   { name: "id", type: "uuid", required: true, writable: false },
 ];
-
-/** The tenant and the workspace an API root names: `/tenants/<t>/workspaces/<w>`. */
-const workspaceOf = (root: string) => {
-  const [, , tenantId, , workspaceId] = root.split("/");
-  return { tenantId, workspaceId };
-};
 
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
   const table = useLoad<TableDetail>(`${root}/tables/${name}`);

@@ -1,5 +1,6 @@
 import { checkPageAmong, type DocIssue } from "@volvel/docs-engine";
 import { Button, Doc, Notice, TextField } from "@volvel/ui";
+import { ExternalLink } from "lucide-react";
 import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ApiError, api, useLoad } from "../../api.ts";
 import { ask, notify } from "../../ask.tsx";
@@ -7,6 +8,7 @@ import type { Marker } from "../../editor/CodeEditor.tsx";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useHelpTopic } from "../../help/store.ts";
 import { useBrand } from "../../kit/brand.tsx";
+import { DiffView } from "../../kit/DiffView.tsx";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { SaveBar } from "../../kit/SaveBar.tsx";
@@ -73,6 +75,7 @@ export function DocEditor({
   const [saving, setSaving] = useState(false);
   const [clash, setClash] = useState(false);
   const [reveal, setReveal] = useState<{ line: number; at: number }>();
+  const [comparing, setComparing] = useState(false);
   const product = useProduct();
   const brand = useBrand();
   const { resources } = useWorkspaceTerms(tenantId, workspaceId);
@@ -141,6 +144,12 @@ export function DocEditor({
 
   const page = opened.data?.page;
   const fresh = path === undefined;
+  // What readers see now, when this page has been deployed before: what was deployed under
+  // the draft that was opened, or, with no draft yet, the page as it was opened.
+  const deployed = fresh
+    ? null
+    : (opened.data?.deployedSource ??
+      (opened.data?.page.state === "deployed" ? opened.data.source : null));
   const dirty = source !== saved;
   const wherePage = list.data.pages.find((one) => one.path === where);
   const placed = fresh
@@ -232,6 +241,22 @@ export function DocEditor({
             <Button onClick={() => navigate(fresh ? `${link}/docs` : `${link}/docs/${where}`)}>
               {dirty ? "Close" : "Done"}
             </Button>
+            {app?.preview && !fresh ? (
+              <a
+                href={`${app.preview}${inApp(app, where).replace(/(^|\/)index$/, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-control items-center gap-1 px-2 text-meta text-action"
+              >
+                Preview in the app
+                <ExternalLink aria-hidden="true" size={14} />
+              </a>
+            ) : null}
+            {deployed !== null ? (
+              <Button aria-pressed={comparing} onClick={() => setComparing((now) => !now)}>
+                {comparing ? "Hide what is deployed" : "Compare with deployed"}
+              </Button>
+            ) : null}
             {!fresh ? <Button onClick={move}>Move</Button> : null}
             {!fresh && page ? (
               <RemoveButton
@@ -360,6 +385,22 @@ export function DocEditor({
           </section>
         }
       />
+      {comparing && deployed !== null ? (
+        <section aria-label="What changes" className="flex flex-col gap-2">
+          <h2 className="m-0 text-label text-ink-subtle uppercase">What changes</h2>
+          {deployed === source ? (
+            <p className="m-0 text-ink-muted">Nothing: this is what is deployed.</p>
+          ) : (
+            <DiffView
+              before={deployed}
+              after={source}
+              beforeLabel="Deployed"
+              afterLabel="As it is here"
+              maxHeight="40vh"
+            />
+          )}
+        </section>
+      ) : null}
       <section aria-label="Problems" className="flex flex-col gap-2">
         <h2 className="m-0 text-label text-ink-subtle uppercase">
           {issues.length === 0

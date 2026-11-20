@@ -20,6 +20,8 @@ import { Link } from "../router.tsx";
 
 /** A schedule's body, as the manifest has it. */
 export interface ScheduleBody {
+  /** What the schedule is for. */
+  description?: string | undefined;
   script?: string | undefined;
   flow?: string | undefined;
   cron?: string | undefined;
@@ -138,6 +140,17 @@ export function ScheduleFields({
           });
         }}
       />
+      <FieldAbout path="schedule.description" name="what it is for">
+        <TextField
+          name="description"
+          label="What it is for"
+          value={body.description ?? ""}
+          disabled={readOnly}
+          required={false}
+          maxLength={500}
+          onChange={(next) => change({ description: next === "" ? undefined : next })}
+        />
+      </FieldAbout>
       <WhenFields
         root={root}
         value={body}

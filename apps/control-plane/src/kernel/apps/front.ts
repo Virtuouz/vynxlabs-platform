@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
-import { type DocsApp, type ResourceLike, urlOf } from "@volvel/docs-engine";
+import {
+  buildApp,
+  buildSearchIndex,
+  type DocsApp,
+  loadSearchIndex,
+  type ResourceLike,
+  urlOf,
+} from "@volvel/docs-engine";
 import { readFormAnswer } from "@volvel/manifest";
 import { ENHANCE_SCRIPT } from "@volvel/markup";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -8,6 +15,7 @@ import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { productNames } from "../docs/product.js";
+import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
   createEndUser,
@@ -766,6 +774,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const look = await frame(tenant, workspace.id);
     const home = place.kind === "domain" ? "/" : `${portalPath(place, tenant.slug)}/`;
     const missing = () => html(reply, 404, messagePage(look, NOT_FOUND(home)));
+    // A docs app with the workspace's drafts laid over it, under `_draft`: a preview for its
+    // writers. It is looked for first, since an app that is only a draft is in no bundle.
+    const preview =
+      fixedApp !== undefined
+        ? /^_draft(?:\/(.*))?$/.exec(rest)
+        : /^(.+?)\/_draft(?:\/(.*))?$/.exec(rest);
+    if (preview) {
+      const appPath = fixedApp ?? (preview[1] as string);
+      const file = (fixedApp !== undefined ? preview[1] : preview[2]) ?? "";
+      return serveDraftDocs(request, reply, place, tenant, workspace, appPath, file, look, missing);
+    }
     if (!workspace.active_bundle_id) return missing();
     const stored = await db
       .selectFrom("bundle")
@@ -1028,6 +1047,81 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       if (docs.built.set.pages.has(now)) return redirect(reply, `${at.base}${urlOf(now)}`, 308);
     }
     return send(404, notFoundPage(drawn));
+  }
+
+  /**
+   * A docs app as it would be if every draft of the workspace's documentation
+   * were deployed now. Only a member who may read the workspace's
+   * documentation in the console sees it, whoever the app itself is bound to:
+   * a draft is not for the app's readers yet. To anyone else it is not there.
+   */
+  async function serveDraftDocs(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    place: Place,
+    tenant: Tenant,
+    workspace: { id: string; slug: string; active_bundle_id: string | null },
+    appPath: string,
+    file: string,
+    look: PageFrame,
+    missing: () => unknown,
+  ) {
+    const principal = await resolvePrincipal(kernel, request, tenant.id);
+    if (principal.type !== "member") return missing();
+    const at = { tenantId: tenant.id, workspaceId: workspace.id };
+    const reads =
+      (await check(db, principal, "doc:read", at)).allowed ||
+      (await check(db, principal, "resource:read", at)).allowed;
+    if (!reads) return missing();
+    const { resources, apps } = await workingDocs(db, workspace.id);
+    const app = apps.find((one) => one.path === appPath);
+    if (!app) return missing();
+    const { set } = buildApp(
+      app,
+      resources.filter((one) => one.state !== "removed"),
+    );
+    // Pictures are the deployed app's: a picture is not drafted in the console.
+    const stored = workspace.active_bundle_id
+      ? await db
+          .selectFrom("bundle")
+          .select(["id", "storage_key"])
+          .where("id", "=", workspace.active_bundle_id)
+          .executeTakeFirst()
+      : undefined;
+    const pictures = stored
+      ? appFiles(await loadBundle(kernel, stored), app.path)
+      : new Map<string, unknown>();
+    const served = appBasePath(place, {
+      tenantSlug: tenant.slug,
+      workspaceSlug: workspace.slug,
+      path: app.path,
+    });
+    const drawn = {
+      frame: look,
+      app,
+      base: `${served}_draft/`,
+      set,
+      asset: (picture: string) => (pictures.has(picture) ? `${served}${picture}` : undefined),
+      notice:
+        "A preview, with the workspace's drafts. Only members who may read its documentation see this. Its readers see what is deployed.",
+    };
+    const send = (status: number, body: string) =>
+      reply
+        .code(status)
+        .header("content-type", "text/html; charset=utf-8")
+        .header("content-security-policy", DOCS_POLICY)
+        .header("x-content-type-options", "nosniff")
+        .header("x-robots-tag", "noindex")
+        .header("referrer-policy", "same-origin")
+        .header("cache-control", "no-store")
+        .send(body);
+    if (file === "_search") {
+      const query = String((request.query as { q?: unknown } | undefined)?.q ?? "").slice(0, 200);
+      const hits = loadSearchIndex(buildSearchIndex(set)).search(query, 30);
+      return send(200, searchPage(drawn, query, hits));
+    }
+    const path = pageAt(set, file);
+    return path === undefined ? send(404, notFoundPage(drawn)) : send(200, docPage(drawn, path));
   }
 
   // ----- Which is which -----

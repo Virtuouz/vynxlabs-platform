@@ -29,10 +29,11 @@ function About({ column, term = false }: { column: GridColumn; term?: boolean })
   if (!column.description && !meaning) return null;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: only keeps the press from reaching the heading, which sorts.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the button inside takes the keys.
     <span
       className="ml-1 inline-flex align-middle font-normal normal-case"
+      // Only the press: a key pressed here still reaches the page, so F1 and ⌘K work from it.
       onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
     >
       <Toggletip label={`About ${name}`} title={name}>
         {column.description}

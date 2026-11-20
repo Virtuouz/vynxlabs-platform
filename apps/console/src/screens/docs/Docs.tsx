@@ -193,7 +193,6 @@ function Reader({
   editable: boolean;
 }) {
   const loaded = useLoad<{ source: string }>(`${root}/docs/page/${page.path}`);
-  const apps = useLoad<{ items: { path: string; url: string }[] }>(`${root}/apps`);
   const product = useProduct();
   const brand = useBrand();
   const { resources } = useWorkspaceTerms(tenantId, workspaceId);
@@ -213,9 +212,9 @@ function Reader({
       }),
     [list, page, link, product, resources],
   );
-  const served = app?.deployed
-    ? apps.data?.items.find((one) => one.path === app.path)?.url
-    : undefined;
+  const served = app?.deployed ? app.url : undefined;
+  // Something of this page, or of its app, is not deployed: the preview shows it as it would be.
+  const drafted = editable && app?.preview && (page.state !== "deployed" || !app.deployed);
   const state = STATE[page.state];
 
   return (
@@ -241,6 +240,17 @@ function Reader({
               className="inline-flex items-center gap-1 text-meta text-action"
             >
               Open as readers see it
+              <ExternalLink aria-hidden="true" size={14} />
+            </a>
+          ) : null}
+          {drafted && page.state !== "removed" ? (
+            <a
+              href={`${app?.preview}${page.url ?? ""}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-meta text-action"
+            >
+              Preview with drafts
               <ExternalLink aria-hidden="true" size={14} />
             </a>
           ) : null}

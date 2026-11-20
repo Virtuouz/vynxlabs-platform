@@ -25,6 +25,10 @@ export interface DocsApp {
   /** The folder of pages it serves. */
   docs: string;
   deployed: boolean;
+  /** Where the app is served, once it is deployed. */
+  url?: string;
+  /** Where the app is shown with the workspace's drafts, to its writers alone. */
+  preview?: string;
 }
 
 export interface DocsList {

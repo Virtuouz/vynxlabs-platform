@@ -51,6 +51,12 @@
                 "minLength": 1,
                 "maxLength": 100
               },
+              "help": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+                "maxLength": 80,
+                "description": "The topic of the page of the workspace's documentation that is this page's help. It is offered to whoever uses the app and may open that documentation."
+              },
               "widgets": {
                 "type": "array",
                 "maxItems": 12,

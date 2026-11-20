@@ -56,6 +56,8 @@ const list = (): DocsList => ({
     {
       path: "help",
       title: "Shop handbook",
+      published: true,
+      body: { title: "Shop handbook", docs: "handbook" },
       docs: "handbook",
       deployed: true,
       drafted: false,
@@ -329,6 +331,8 @@ describe("the Documentation screen", () => {
       path: "handbook/index",
       source: sources["handbook/index"],
     });
+    // The address goes back with the page, so the reader is not left on a page that is not there.
+    await waitFor(() => expect(location.pathname).toBe(`${link}/docs/handbook/support/refunds`));
   });
 
   test("a page let go between two others is put there, and its folder's list says so", async () => {
@@ -450,6 +454,12 @@ describe("the Documentation screen", () => {
         },
       ],
     });
+    // Publishing offers Undo, which takes the app's draft away.
+    routes[`DELETE /api/v1${root}/drafts/guide-site`] = () => [204, null];
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(sent("DELETE").map((call) => call.url)).toContain(`/api/v1${root}/drafts/guide-site`),
+    );
   });
 
   test("page feedback is turned on for a site, saying first what it makes", async () => {
@@ -874,5 +884,150 @@ describe("the page editor", () => {
     await waitFor(() =>
       expect(location.pathname).toBe(`${link}/docs/edit/handbook/support/exchanges`),
     );
+  });
+});
+
+describe("what is taken out can be brought back", () => {
+  const tree = () => screen.findByRole("tree", { name: "Pages" });
+  const withApp = (change: (app: DocsApp) => DocsApp) => {
+    routes[`GET /api/v1${root}/docs`] = () => {
+      const all = list();
+      return [200, { ...all, apps: all.apps.map(change) }];
+    };
+  };
+  const withRemoved = () => {
+    routes[`GET /api/v1${root}/docs`] = () => {
+      const all = list();
+      return [
+        200,
+        {
+          ...all,
+          pages: all.pages.map((one) =>
+            one.path === "handbook/faq" ? { ...one, state: "removed", revision: 2 } : one,
+          ),
+        },
+      ];
+    };
+    routes[`DELETE /api/v1${root}/drafts/handbook/faq`] = () => [204, null];
+  };
+
+  test("a page drafted for removal is kept from its row, after saying what that does", async () => {
+    withRemoved();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "Keep Questions" }));
+    expect(await answer("Keep")).toContain("throws away the draft that removes it");
+    await waitFor(() =>
+      expect(sent("DELETE").map((call) => call.url)).toContain(
+        `/api/v1${root}/drafts/handbook/faq`,
+      ),
+    );
+    expect(await tree()).toBeTruthy();
+  });
+
+  test("and from the page itself, where its notice has the same action", async () => {
+    withRemoved();
+    docs("handbook/faq");
+    expect(await screen.findByText(/A draft removes this page/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Keep this page" }));
+    await answer("Keep");
+    await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
+  });
+
+  test("the editor deletes a page as the tree does: the same words, the name typed, and Undo", async () => {
+    show(
+      <DocEditor
+        root={root}
+        link={link}
+        tenantId="acme"
+        workspaceId="dev"
+        path="handbook/support/refunds"
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete…" }));
+    expect(await answer("Delete", "refunds")).toContain("It is gone once this is deployed");
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    expect(batches()[0]?.body?.changes).toContainEqual({
+      path: "handbook/support/refunds",
+      deleted: true,
+      revision: 3,
+    });
+    await waitFor(() => expect(location.pathname).toBe(`${link}/docs`));
+    // The toast's Undo, not the editor's own, which undoes typing.
+    const undo = (await screen.findAllByRole("button", { name: "Undo" })).filter(
+      (one) => !one.hasAttribute("aria-label"),
+    );
+    fireEvent.click(undo[0] as HTMLElement);
+    await waitFor(() => expect(batches()).toHaveLength(2));
+  });
+
+  test("a site is switched off and on, keeping its pages and its app", async () => {
+    routes[`PUT /api/v1${root}/drafts/help`] = () => [200, { revision: 1 }];
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Stop publishing/ }));
+    expect(await answer("Stop publishing")).toContain("Its pages and its app are kept");
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]?.body).toEqual({
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Shop handbook", docs: "handbook", published: false },
+    });
+    // Undo puts the app back as it was.
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(sent("PUT")).toHaveLength(2));
+    expect(sent("PUT")[1]?.body).toMatchObject({
+      body: { title: "Shop handbook", docs: "handbook" },
+    });
+  });
+
+  test("a site that is off is published again from the same menu, at the next deploy", async () => {
+    routes[`PUT /api/v1${root}/drafts/help`] = () => [200, { revision: 1 }];
+    withApp((one) => ({
+      ...one,
+      published: false,
+      body: { ...one.body, published: false },
+    }));
+    docs();
+    expect(await screen.findByText("Site, not published")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Publish again/ }));
+    expect(await answer("Publish again")).toContain("served again once this is deployed");
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]?.body).toEqual({
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Shop handbook", docs: "handbook" },
+    });
+  });
+
+  test("page feedback is turned off, saying the table and its answers are kept", async () => {
+    routes[`PUT /api/v1${root}/drafts/help`] = () => [200, { revision: 1 }];
+    withApp((one) => ({
+      ...one,
+      feedback: "help-feedback",
+      body: { ...one.body, feedback: { table: "help-feedback" } },
+    }));
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Turn off page feedback/ }));
+    const said = await answer("Turn off");
+    expect(said).toContain("help-feedback");
+    expect(said).toContain("answers in it are kept");
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]?.body).toEqual({
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Shop handbook", docs: "handbook" },
+    });
+  });
+
+  test("removing a site's app says first that the site stops being served", async () => {
+    routes[`PUT /api/v1${root}/drafts/help`] = () => [200, { revision: 1 }];
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Remove the site's app/ }));
+    expect(await answer("Remove")).toContain("The site stops being served once this is deployed");
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]?.body).toMatchObject({ kind: "app", deleted: true });
   });
 });

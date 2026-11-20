@@ -37,6 +37,10 @@ export interface DocsApp {
   docs: string;
   /** The table its readers' answers to whether a page helped are kept in, when it asks. */
   feedback?: string | null;
+  /** False when the site is switched off: it is not served, and its pages and app are kept. */
+  published: boolean;
+  /** The app's whole body, so that one setting of it is changed and the rest sent back as it is. */
+  body: Record<string, unknown>;
   deployed: boolean;
   /** Whether a draft changes the app, or makes it: it goes with the next deploy. */
   drafted: boolean;

@@ -8,6 +8,7 @@ import { count } from "../kit/format.ts";
 import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { ReadTable } from "../kit/ReadTable.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, useUrlParam } from "../router.tsx";
@@ -277,6 +278,22 @@ export function Queries({ root, link }: { root: string; link: string }) {
               <Button size="small" variant="quiet" onClick={() => setOpen(undefined)}>
                 New query
               </Button>
+            ) : null}
+            {current ? (
+              <RemoveDraftButton
+                root={root}
+                kind="query"
+                path={current.path}
+                noun="query"
+                size="small"
+                state={
+                  current.draft === "removed" ? "removed" : current.draft ? "draft" : "deployed"
+                }
+                onDone={(did) => {
+                  saved.reload();
+                  if (did === "discarded" && current.draft === "new") setOpen(undefined);
+                }}
+              />
             ) : null}
             <Button size="small" onClick={() => void save()} disabled={text.trim() === ""}>
               <Save aria-hidden="true" size={14} /> {current ? "Save" : "Save as…"}

@@ -13,7 +13,7 @@ import {
 } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, failureText, notify, takenText } from "../ask.tsx";
+import { failureText, takenText } from "../ask.tsx";
 import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -25,6 +25,7 @@ import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, StatePill, Tag } from "../kit/status.tsx";
@@ -781,25 +782,18 @@ export function ScriptEditor({
                     }}
                   />
                 ) : null}
-                {state === "draft" && opened ? (
-                  <Button
-                    variant="danger"
+                {opened && state !== "new" ? (
+                  <RemoveDraftButton
+                    root={root}
+                    kind={kind}
+                    path={opened}
+                    noun={about.noun}
+                    state={state}
                     disabled={working}
-                    onClick={async () => {
-                      const sure = await ask.confirm({
-                        title: "Discard this draft?",
-                        text: `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`,
-                        action: "Discard",
-                        danger: true,
-                      });
-                      if (!sure) return;
-                      await api
-                        .delete(`${root}/drafts/${opened}`)
-                        .then(() => navigate(`${link}/${about.list}`), notify.error);
-                    }}
-                  >
-                    Discard draft
-                  </Button>
+                    onDone={(did) =>
+                      navigate(`${link}/${did === "discarded" ? about.list : "changes"}`)
+                    }
+                  />
                 ) : null}
                 <Button
                   variant="primary"

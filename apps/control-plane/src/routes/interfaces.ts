@@ -185,8 +185,8 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .execute(),
         ]);
         const servedBy = new Map<string, string>();
-        const removed = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
-        for (const row of [...live.filter((row) => !removed.has(row.path)), ...drafts]) {
+        // An app drafted for removal still names the screen it serves, so the removal can be taken back.
+        for (const row of [...live, ...drafts.filter((draft) => !draft.deleted)]) {
           const served = (row.body as { interface?: unknown } | null)?.interface;
           if (row.kind === "app" && typeof served === "string") servedBy.set(served, row.path);
         }

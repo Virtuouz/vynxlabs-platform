@@ -1094,6 +1094,11 @@ export interface AppOptions extends ResourceNames {
    * (timestamp). Nothing about who answered is kept.
    */
   feedback?: { table: string };
+  /**
+   * For an app that serves `docs`: false stops serving it and keeps its pages.
+   * Default true.
+   */
+  published?: boolean;
   /** The page inside the built app. Default `index.html`. */
   entry?: string;
   /**
@@ -1142,6 +1147,7 @@ export function defineApp(options: AppOptions): AppDefinition {
           description: options.description,
           docs: options.docs,
           feedback: options.feedback,
+          published: options.published,
         })
       : options.interface !== undefined
         ? compact({

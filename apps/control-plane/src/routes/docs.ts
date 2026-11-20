@@ -92,6 +92,13 @@ const App = Type.Object({
     description:
       "The table its readers' answers to whether a page helped are kept in. Null when it does not ask.",
   }),
+  published: Type.Boolean({
+    description: "False when the site is switched off: it is not served, and its pages are kept.",
+  }),
+  body: Type.Record(Type.String(), Type.Unknown(), {
+    description:
+      "The app's whole body, to change one setting of it and send the rest back as it is.",
+  }),
   deployed: Type.Boolean({ description: "False for an app that is only a draft." }),
   drafted: Type.Boolean({
     description: "True while a draft changes the app, or makes it: it goes with the next deploy.",
@@ -216,6 +223,11 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select("slug")
           .where("id", "=", workspace.tenantId)
           .executeTakeFirstOrThrow();
+        const bodies = new Map(
+          resources
+            .filter((one) => one.kind === "app" && one.state !== "removed")
+            .map((one) => [one.path, one.body as Record<string, unknown>]),
+        );
         return {
           apps: apps.map((one) => {
             const url = appUrl(kernel, {
@@ -223,7 +235,14 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               workspaceSlug: workspace.slug,
               path: one.path,
             });
-            return { ...one, feedback: one.feedback ?? null, url, preview: `${url}_draft/` };
+            return {
+              ...one,
+              feedback: one.feedback ?? null,
+              published: one.published !== false,
+              body: bodies.get(one.path) ?? {},
+              url,
+              preview: `${url}_draft/`,
+            };
           }),
           pages: resources
             .filter((one) => one.kind === "doc")

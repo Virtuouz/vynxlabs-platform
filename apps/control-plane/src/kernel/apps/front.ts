@@ -778,7 +778,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         resourceId: row.id,
       });
       if (!decision.allowed) continue;
-      const body = row.body as { title?: string; description?: string };
+      const body = row.body as { title?: string; description?: string; published?: boolean };
+      if (body.published === false) continue;
       apps.push({
         href: appBasePath(place, {
           tenantSlug: tenant.slug,
@@ -864,9 +865,12 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       docs?: string;
       /** Set on a docs app that asks its readers whether a page helped: where the answers go. */
       feedback?: { table?: unknown };
+      /** False on a docs app that is switched off: its pages and the app are kept, and it is not served. */
+      published?: boolean;
       fallback?: boolean;
     };
     const documents = typeof body.docs === "string";
+    if (documents && body.published === false) return missing();
     // The one answer an app takes is a docs app's, from its readers.
     if (!(request.method === "GET" || request.method === "HEAD") && !documents) {
       return plain(reply, 405, "Method not allowed.");

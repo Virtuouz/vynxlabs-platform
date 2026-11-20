@@ -1349,6 +1349,12 @@ export const appKind: KindDefinition = {
         required: ["table"],
         additionalProperties: false,
       },
+      published: {
+        type: "boolean",
+        description:
+          "For an app that serves documentation: false stops serving it, and keeps its pages and " +
+          "the app. It is served again once this is left out or true, from the next deploy. Default true.",
+      },
       fallback: {
         type: "boolean",
         description:
@@ -1368,7 +1374,7 @@ export const appKind: KindDefinition = {
     required: ["title"],
     oneOf: [{ required: ["entry"] }, { required: ["interface"] }, { required: ["docs"] }],
     // Only documentation asks its readers whether it helped.
-    dependentRequired: { feedback: ["docs"] },
+    dependentRequired: { feedback: ["docs"], published: ["docs"] },
     additionalProperties: false,
   },
 };

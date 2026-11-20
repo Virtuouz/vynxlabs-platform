@@ -26,6 +26,7 @@ import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { FilterChips, HeadNote, Inspector, KeyValues, Panel } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
@@ -265,6 +266,22 @@ export function Flows({
                 </Button>
                 {editable && open.draft !== "removed" ? (
                   <Button onClick={() => navigate(`${link}/flows/edit/${open.path}`)}>Edit</Button>
+                ) : null}
+                {editable ? (
+                  <RemoveDraftButton
+                    root={root}
+                    kind="flow"
+                    path={open.path}
+                    noun="flow"
+                    state={
+                      open.draft === "removed"
+                        ? "removed"
+                        : open.draft === "changed"
+                          ? "draft"
+                          : "deployed"
+                    }
+                    onDone={() => list.reload()}
+                  />
                 ) : null}
               </>
             }

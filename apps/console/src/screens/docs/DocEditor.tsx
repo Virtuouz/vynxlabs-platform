@@ -47,9 +47,8 @@ import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { UndoRedo } from "../../kit/UndoRedo.tsx";
-import { RemoveButton } from "../../ListScreen.tsx";
 import { navigate, useNavigationGuard, useQueryValue } from "../../router.tsx";
-import { folderItems, MoveDialog, PATH, useProduct } from "./Docs.tsx";
+import { deletePage, folderItems, MoveDialog, PATH, useProduct } from "./Docs.tsx";
 import {
   where as containersWhere,
   type Insertable,
@@ -519,23 +518,24 @@ export function DocEditor({
               </a>
             ) : null}
             {!fresh && page ? (
-              <RemoveButton
-                label="Remove"
-                confirm={`Remove the page ${where}? It is removed for its readers when that is deployed.`}
-                typeToConfirm={page.state === "new" ? undefined : where.split("/").at(-1)}
-                run={() =>
-                  page.state === "new"
-                    ? api.delete(`${root}/drafts/${where}`)
-                    : api.put(`${root}/drafts/${where}`, {
-                        kind: "doc",
-                        schemaVersion: 1,
-                        body: {},
-                        deleted: true,
-                        ...(draft.known() !== undefined ? { revision: draft.known() } : {}),
-                      })
-                }
-                onDone={() => navigate(`${link}/docs`)}
-              />
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  const problem = await deletePage({
+                    root,
+                    data,
+                    reload: list.reload,
+                    path: where,
+                    title,
+                    name: where.split("/").at(-1) as string,
+                    folder: undefined,
+                    after: () => navigate(`${link}/docs`),
+                  });
+                  if (problem) notify.error(new Error(problem));
+                }}
+              >
+                Delete…
+              </Button>
             ) : null}
             <Button
               variant="primary"

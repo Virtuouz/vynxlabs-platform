@@ -56,6 +56,7 @@ import { useHistory } from "../kit/history.ts";
 import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { retryAfter } from "../kit/retry.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
@@ -1882,6 +1883,18 @@ export function FlowEditor({
                     if (next !== opened) navigate(`${link}/flows/edit/${next}`);
                     else setState("draft");
                   }}
+                />
+              ) : null}
+              {opened && state !== "new" ? (
+                <RemoveDraftButton
+                  root={root}
+                  kind="flow"
+                  path={opened}
+                  noun="flow"
+                  state={state}
+                  size="small"
+                  disabled={busy}
+                  onDone={(did) => navigate(`${link}/${did === "discarded" ? "flows" : "changes"}`)}
                 />
               ) : null}
               <Button

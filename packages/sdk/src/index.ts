@@ -1084,8 +1084,16 @@ export interface AppOptions extends ResourceNames {
    * A folder of the workspace's pages of documentation to serve as this app:
    * every page whose path is under it, such as `handbook`. Its pages are Markdown
    * files in the repository's folder of pages, or pages made in the console.
+   * It is a top-level folder.
    */
   docs?: string;
+  /**
+   * For an app that serves `docs`: the table its readers' answers to "Was this
+   * page helpful?" are kept in. Each page asks, and each answer is a row with
+   * the columns `page` (text), `helpful` (boolean), `version` (text) and `at`
+   * (timestamp). Nothing about who answered is kept.
+   */
+  feedback?: { table: string };
   /** The page inside the built app. Default `index.html`. */
   entry?: string;
   /**
@@ -1122,12 +1130,18 @@ export function defineApp(options: AppOptions): AppDefinition {
       `The app "${options.path}" needs a source, an interface or docs, and only one of them.`,
     );
   }
+  if (options.feedback !== undefined && options.docs === undefined) {
+    throw new Error(
+      `The app "${options.path}" asks for feedback: only an app that serves docs can.`,
+    );
+  }
   const definition = resource("app", named(options), () =>
     options.docs !== undefined
       ? compact({
           title: options.title,
           description: options.description,
           docs: options.docs,
+          feedback: options.feedback,
         })
       : options.interface !== undefined
         ? compact({

@@ -436,6 +436,61 @@ describe("the Documentation screen", () => {
     });
   });
 
+  test("page feedback is turned on for a site, saying first what it makes", async () => {
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Turn on page feedback/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("help-feedback");
+    expect(dialog.textContent).toContain("Nothing about who answered is kept");
+    expect(dialog.textContent).toContain("Both are drafts until you deploy");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Make the table and turn it on" }));
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const changes = batches()[0]?.body?.changes as {
+      path: string;
+      kind: string;
+      body: Record<string, unknown>;
+    }[];
+    expect(changes.map((one) => [one.path, one.kind])).toEqual([
+      ["help-feedback", "table"],
+      ["help", "app"],
+    ]);
+    expect(Object.keys(changes[0]?.body.columns as object)).toEqual([
+      "page",
+      "helpful",
+      "version",
+      "at",
+    ]);
+    expect(changes[1]?.body).toEqual({
+      title: "Shop handbook",
+      docs: "handbook",
+      feedback: { table: "help-feedback" },
+    });
+  });
+
+  test("a page of a site that asks says what its readers said", async () => {
+    const asking = list();
+    (asking.apps[0] as { feedback?: string }).feedback = "help-feedback";
+    routes[`GET /api/v1${root}/docs`] = () => [200, asking];
+    routes[`GET /api/v1${root}/aggregate/help-feedback`] = () => [
+      200,
+      {
+        items: [
+          { by: { page: "support/refunds", helpful: true }, values: { count: 7 } },
+          { by: { page: "support/refunds", helpful: false }, values: { count: 2 } },
+          { by: { page: "faq", helpful: true }, values: { count: 40 } },
+        ],
+        truncated: false,
+      },
+    ];
+    docs("handbook/support/refunds");
+    expect(await screen.findByText("7 found it helpful · 2 didn't")).toBeTruthy();
+    // A site that asks already is not offered it again.
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    await screen.findByRole("menuitem", { name: /Rename/ });
+    expect(screen.queryByRole("menuitem", { name: /Turn on page feedback/ })).toBeNull();
+  });
+
   test("where pages cannot be changed, nothing can be dragged, renamed or made", async () => {
     docs("handbook/faq", false);
     expect((await row("Questions")).getAttribute("draggable")).toBeNull();

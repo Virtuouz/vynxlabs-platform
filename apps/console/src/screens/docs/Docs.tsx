@@ -42,6 +42,7 @@ import {
   Info,
   MoreHorizontal,
   Pencil,
+  ThumbsUp,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../../api.ts";
@@ -144,6 +145,7 @@ export function Docs({
   const [filter, setFilter] = useState("");
   const [moving, setMoving] = useState<DocRow>();
   const [publishing, setPublishing] = useState<DocRow>();
+  const [asking, setAsking] = useState<DocRow>();
   // Changing it draws the tree afresh: every folder closed, or every folder open again.
   const [treeKey, setTreeKey] = useState({ n: 0, open: true });
   const rows = useMemo(() => (list.data ? rowsOf(list.data) : []), [list.data]);
@@ -363,6 +365,17 @@ export function Docs({
             },
           ]
         : []),
+      ...(row.site && !row.site.feedback
+        ? [
+            {
+              label: "Turn on page feedback…",
+              separated: true,
+              detail: "Ask readers whether a page helped",
+              icon: <ThumbsUp aria-hidden size={14} />,
+              onSelect: () => setAsking(row),
+            },
+          ]
+        : []),
       {
         label: row.kind === "folder" ? "Delete folder…" : "Delete…",
         danger: true,
@@ -484,6 +497,7 @@ export function Docs({
           {chosen ? (
             <Reader
               key={chosen.path}
+              root={root}
               link={link}
               tenantId={tenantId}
               workspaceId={workspaceId}
@@ -512,6 +526,55 @@ export function Docs({
           );
           if (!problem) setMoving(undefined);
           return problem;
+        }}
+      />
+      <FeedbackDialog
+        row={asking}
+        list={data}
+        onClose={() => setAsking(undefined)}
+        onTurnOn={async (table) => {
+          const site = asking?.site;
+          if (!site) return undefined;
+          try {
+            await api.post(`${root}/drafts/batch`, {
+              changes: [
+                {
+                  path: table,
+                  kind: "table",
+                  schemaVersion: 1,
+                  body: {
+                    description: `What readers of ${site.title} said of each page: whether it helped them.`,
+                    columns: {
+                      page: {
+                        type: "text",
+                        required: true,
+                        description: "The page, by its path in the site.",
+                      },
+                      helpful: {
+                        type: "boolean",
+                        required: true,
+                        description: "Whether it helped.",
+                      },
+                      version: { type: "text", description: "The deployed version they read." },
+                      at: { type: "timestamp", description: "When they said so." },
+                    },
+                  },
+                },
+                {
+                  path: site.path,
+                  kind: "app",
+                  schemaVersion: 1,
+                  body: { title: site.title, docs: site.docs, feedback: { table } },
+                },
+              ],
+            });
+            list.reload();
+            notify.success(`${site.title} will ask its readers when you deploy.`);
+            setAsking(undefined);
+            return undefined;
+          } catch (error) {
+            return failureText(error);
+          }
         }}
       />
       <PublishDialog
@@ -896,6 +959,81 @@ export function MoveDialog({
   );
 }
 
+/**
+ * Turning on "Was this page helpful?" for a site. It says, before anything is
+ * made, what will be made: a table of the workspace's, and a change to the
+ * site. Nothing is a surprise later in the list of tables.
+ */
+function FeedbackDialog({
+  row,
+  list,
+  onClose,
+  onTurnOn,
+}: {
+  row: DocRow | undefined;
+  list: DocsList;
+  onClose: () => void;
+  onTurnOn: (table: string) => Promise<string | undefined>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const site = row?.site;
+  const table = site ? `${site.path}-feedback` : "";
+  const taken =
+    list.pages.some((page) => page.path === table) || list.apps.some((app) => app.path === table);
+  useEffect(() => {
+    if (row) setError(undefined);
+  }, [row]);
+  return (
+    <Dialog
+      open={row !== undefined}
+      onClose={onClose}
+      title={site ? `Ask readers of ${site.title} whether a page helped` : "Page feedback"}
+      description="Each page ends with “Was this page helpful? Yes / No”. Here is what turning it on makes."
+    >
+      <div className="flex flex-col gap-3">
+        <ul className="m-0 flex flex-col gap-2 pl-5 text-body">
+          <li>
+            A table, <Code>{table}</Code>, with the columns <Code>page</Code>, <Code>helpful</Code>,{" "}
+            <Code>version</Code> and <Code>at</Code>. Each answer is one row of it.
+          </li>
+          <li>
+            A change to the site <Code>{site?.path}</Code>: it keeps its readers' answers in that
+            table.
+          </li>
+          <li>
+            Nothing about who answered is kept: no name, no address. A reader answers once for each
+            page, remembered by their own browser.
+          </li>
+          <li>
+            Both are drafts until you deploy. The table is queried like any other. Turning this off
+            later keeps the table and what is in it.
+          </li>
+        </ul>
+        {taken ? (
+          <Notice tone="danger">Something already has the path {table}.</Notice>
+        ) : error ? (
+          <Notice tone="danger">{error}</Notice>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            disabled={busy || taken}
+            onClick={async () => {
+              setBusy(true);
+              setError(await onTurnOn(table));
+              setBusy(false);
+            }}
+          >
+            Make the table and turn it on
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 function PublishDialog({
   row,
   list,
@@ -974,6 +1112,7 @@ function PublishDialog({
 }
 
 function Reader({
+  root,
   link,
   tenantId,
   workspaceId,
@@ -982,6 +1121,7 @@ function Reader({
   page,
   editable,
 }: {
+  root: string;
   link: string;
   tenantId: string;
   workspaceId: string;
@@ -1009,6 +1149,18 @@ function Reader({
       }),
     [list, page, link, product, resources],
   );
+  // What its readers said of it, when its site asks them and this reader may read the answers.
+  const answers = useLoad<{
+    items: { by: { page?: string; helpful?: boolean }; values: { count?: number } }[];
+  }>(
+    app?.feedback && app.deployed
+      ? `${root}/aggregate/${app.feedback}?group=page,helpful&measure=count`
+      : null,
+  );
+  const said = (helpful: boolean) =>
+    answers.data?.items
+      .filter((one) => one.by.page === inApp(app, page.path) && one.by.helpful === helpful)
+      .reduce((sum, one) => sum + Number(one.values.count ?? 0), 0) ?? 0;
   const served = app?.deployed ? app.url : undefined;
   // Something of this page, or of its app, is not deployed: the preview shows it as it would be.
   const drafted = editable && app?.preview && (page.state !== "deployed" || !app.deployed);
@@ -1041,6 +1193,12 @@ function Reader({
             <Code>{page.path}.md</Code>
             {app ? null : " · no site publishes this page"}
           </p>
+          {answers.data ? (
+            <p className="m-0 flex items-center gap-1.5 text-meta text-ink-muted">
+              <ThumbsUp aria-hidden="true" size={14} />
+              {said(true)} found it helpful · {said(false)} didn't
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {editable && !page.file && page.state === "changed" ? (

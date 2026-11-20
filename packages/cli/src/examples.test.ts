@@ -75,6 +75,9 @@ describe.each(["higher-ed-devices", "fernhill"])("the %s example", (name) => {
         built.bundle.manifests.filter((manifest) => manifest.kind === "doc").map((doc) => doc.path),
       ).toEqual([
         "handbook/front-desk/booking",
+        "handbook/front-desk/checking-in/arrivals",
+        "handbook/front-desk/checking-in/index",
+        "handbook/front-desk/checking-in/late-arrivals",
         "handbook/front-desk/index",
         "handbook/front-desk/invoices",
         "handbook/index",

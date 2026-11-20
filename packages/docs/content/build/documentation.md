@@ -6,15 +6,32 @@ description: Pages your team writes, served as sites to staff, to customers or t
 
 A workspace's documentation is made of pages. A page is Markdown with a few lines about itself at its top, and is a :term[resource]{id=resource} like any other: it has a path, it is deployed, and it travels with the workspace.
 
-A **docs app** serves the pages under one folder as a site. Who may open the site is decided as for any app, by :term[bindings]{id=binding}: staff only, your own customers, or anyone.
+Any top-level folder can be **published as a site**: a docs app that serves the pages in that folder. Who may open the site is decided as for any app, by :term[bindings]{id=binding}: staff only, your own customers, or anyone.
 
 ## Folders are the structure
 
-There is no file that lists the pages. Under the app's folder, `index` is the home page, each folder is a collection, and each folder inside a collection is a group. Pages sort by `order`, then by title.
+A folder's own page is the `index` page inside it. Under a site's folder, `index` is the home page, each folder is a collection, and folders inside them go as deep as you make them.
+
+A folder's own page can list the order of what is in it, with `pages:`. Anything it does not list comes after, by title. A folder's own page with nothing written in it shows what is in the folder, and `::pages` does the same anywhere on a page.
+
+## The tree of pages
+
+In a :term[dev workspace]{id=dev-workspace} the tree is where pages and folders are made, named and put in order, without opening a page:
+
+- Drag a row by its grip: a line between two rows puts it there, a folder that fills in puts it inside. A closed folder held over for a moment opens.
+- Press the pencil, or :kbd[F2], to change a title and a file's name together. Renaming a file moves its address, and the old one leads to the new one for 90 days.
+- A folder's menu makes a page or a folder in it, moves it, copies it, deletes it with everything in it, and publishes a top-level folder as a site.
+- A change can be undone from the message that says it was made.
+
+The file's name is under each title. A page that is not deployed as it is carries a draft mark beside its title.
+
+## Asking readers
+
+A site can end each page with "Was this page helpful?". Turning it on makes a table of the workspace's and keeps each answer there as a row: the page, whether it helped, the version read and when. Nothing about who answered is kept, and a reader answers once for each page. The table is queried like any other.
 
 ## Two ways to write
 
-A page can be written here, in a :term[dev workspace]{id=dev-workspace}, or kept in the repository as a Markdown file in the folder of pages. A page kept in a folder of the repository's own is read here and changed there.
+A page can be written here, or kept in the repository as a Markdown file in the folder of pages. A page kept in a folder of the repository's own is read here and changed there.
 
 Either way a change is a :term[draft]{id=draft} until it is deployed. See [the page editor](documentation-editor), and [what a page is made of](../reference/docs/index).
 

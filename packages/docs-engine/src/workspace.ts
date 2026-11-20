@@ -30,20 +30,32 @@ export interface DocsApp {
   title: string;
   /** The folder of pages it serves: every page whose path is under it. */
   docs: string;
+  /** The table its readers' answers to "Was this page helpful?" are kept in, when it asks. */
+  feedback?: string;
 }
+
+/** The columns a table that keeps readers' answers needs, and of what type. */
+export const FEEDBACK_COLUMNS = {
+  page: "text",
+  helpful: "boolean",
+  version: "text",
+  at: "timestamp",
+} as const;
 
 /** The apps of a workspace that serve documentation. */
 export function docsApps(resources: readonly ResourceLike[]): DocsApp[] {
   return resources
     .filter((one) => one.kind === "app")
     .flatMap((one) => {
-      const body = one.body as { title?: unknown; docs?: unknown };
+      const body = one.body as { title?: unknown; docs?: unknown; feedback?: { table?: unknown } };
+      const feedback = body.feedback?.table;
       return typeof body.docs === "string"
         ? [
             {
               path: one.path,
               title: typeof body.title === "string" ? body.title : one.path,
               docs: body.docs,
+              ...(typeof feedback === "string" ? { feedback } : {}),
             },
           ]
         : [];
@@ -156,6 +168,30 @@ export function checkWorkspaceDocs(
     if (app.docs.includes("/")) {
       problems.push(
         `${app.path} (app): serves "${app.docs}", which is inside another folder. A docs app serves a top-level folder: move its pages to a folder of their own, or serve "${app.docs.split("/")[0]}".`,
+      );
+    }
+  }
+
+  // Readers' answers are kept in a table that is there, and holds what an answer is.
+  for (const app of apps) {
+    if (app.feedback === undefined) continue;
+    const table = resources.find((one) => one.kind === "table" && one.path === app.feedback);
+    if (!table) {
+      problems.push(
+        `${app.path} (app): keeps its readers' answers in the table ${app.feedback}, and there is no such table.`,
+      );
+      continue;
+    }
+    const columns = ((table.body as { columns?: Record<string, { type?: string }> }).columns ??
+      {}) as Record<string, { type?: string }>;
+    const wrong = Object.entries(FEEDBACK_COLUMNS).filter(
+      ([name, type]) => columns[name]?.type !== type,
+    );
+    if (wrong.length > 0) {
+      problems.push(
+        `${app.path} (app): the table ${app.feedback} keeps its readers' answers, and needs ${wrong
+          .map(([name, type]) => `a ${type} column ${name}`)
+          .join(", ")}.`,
       );
     }
   }

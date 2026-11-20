@@ -365,3 +365,49 @@ describe("search as it is typed", () => {
     ]);
   });
 });
+
+describe("a site that asks its readers", () => {
+  const doc = { kind: "doc", path: "a/index", body: { source: md("title: A") } };
+  const app = {
+    kind: "app",
+    path: "site",
+    body: { title: "Site", docs: "a", feedback: { table: "votes" } },
+  };
+
+  test("keeps the answers in a table that is there, with what an answer is", () => {
+    expect(checkWorkspaceDocs([doc, app])).toEqual([
+      "site (app): keeps its readers' answers in the table votes, and there is no such table.",
+    ]);
+    expect(
+      checkWorkspaceDocs([
+        doc,
+        app,
+        {
+          kind: "table",
+          path: "votes",
+          body: { columns: { page: { type: "text" }, helpful: { type: "text" } } },
+        },
+      ]),
+    ).toEqual([
+      "site (app): the table votes keeps its readers' answers, and needs a boolean column helpful, a text column version, a timestamp column at.",
+    ]);
+    expect(
+      checkWorkspaceDocs([
+        doc,
+        app,
+        {
+          kind: "table",
+          path: "votes",
+          body: {
+            columns: {
+              page: { type: "text" },
+              helpful: { type: "boolean" },
+              version: { type: "text" },
+              at: { type: "timestamp" },
+            },
+          },
+        },
+      ]),
+    ).toEqual([]);
+  });
+});

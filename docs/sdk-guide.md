@@ -250,7 +250,6 @@ A page says what it is at its top:
 ---
 title: Refund an order
 description: How support issues a full or partial refund.
-order: 20
 topic: support-refunds
 terms:
   - id: rma
@@ -264,7 +263,7 @@ extends: [data-tables]
 Ask for the :term[RMA]{id=rma} first.
 ```
 
-- `order` places it among the pages of its folder. Pages with none sort by title.
+- `pages`, on a folder's own page (`index.md`), lists the order of what is in the folder by name: a page's file name without `.md`, a folder's own name. What it does not list comes after, by title.
 - `topic` is a name that stays when the page moves. Link to it as `[refunds](topic:support-refunds)`.
 - `terms` are glossary terms the page defines. Any page of the workspace can use one with `:term[RMA]{id=rma}`, and the console underlines it where a heading or a description uses the word.
 - `about` lists resources the page documents. The page is listed on each one's screen in the console.
@@ -283,7 +282,29 @@ export const open = defineBinding({
 });
 ```
 
-Every page whose path is under `handbook` is a page of the site. `index` is its home page, each folder directly under it is a collection, and each folder under a collection is a group. Nothing goes deeper than that, and there is no file that lists the pages. Who may open the site is decided by bindings, as for any app: nobody outside without one.
+Every page whose path is under `handbook` is a page of the site, and `handbook` is a top-level folder: a site never serves a folder inside another. `index` is its home page, each folder directly under it is a collection, and folders inside them go as deep as they are written. A folder's own page with nothing written in it lists what is in the folder. Who may open the site is decided by bindings, as for any app: nobody outside without one.
+
+A site can ask its readers whether a page helped, and keep each answer as a row of a table of yours:
+
+```ts
+export const votes = defineTable({
+  path: "handbook-feedback",
+  columns: {
+    page: column.text({ required: true }),
+    helpful: column.boolean({ required: true }),
+    version: column.text(),
+    at: column.timestamp(),
+  },
+});
+export const handbook = defineApp({
+  path: "handbook",
+  title: "Handbook",
+  docs: "handbook",
+  feedback: { table: "handbook-feedback" },
+});
+```
+
+A deploy refuses a site whose table is not there or lacks those columns. Nothing about who answered is kept, and a reader answers once for each page.
 
 A picture kept beside the pages, `docs/handbook/img/till.png`, is written `![The till](img/till.png)` from the home page. A picture by `https` address is allowed too, and is not shown offline.
 
@@ -306,7 +327,7 @@ Refund at the till.
 :::
 ```
 
-The components are `alert`, `term`, `field`, `steps`, `tabs` and `tab`, `details`, `kbd`, `code-tabs` and `file-tree`. Every instance lists what each takes in its help, under Reference. There is no HTML in a page and nothing in it runs.
+The components are `alert`, `term`, `field`, `steps`, `tabs` and `tab`, `details`, `kbd`, `code-tabs`, `file-tree` and `pages`. Each may sit inside any other, as deep as you like: a container inside another is written with more colons, so that it reads as inside it, and a container inside a list item is indented with the item's words. Only a `tab` goes in `tabs`, and `code-tabs` holds code blocks. `::pages` lists what is in the page's folder. Every instance lists what each takes in its help, under Reference. There is no HTML in a page and nothing in it runs.
 
 ### What columns and resources are for
 

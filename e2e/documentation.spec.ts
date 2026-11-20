@@ -43,18 +43,17 @@ const text = (frontmatter: string, body: string) => `---\n${frontmatter}\n---\n\
 
 const PAGES: Record<string, string> = {
   "handbook/index": text(
-    "title: Shop handbook\ndescription: How the shop runs, for everyone who works in it.",
+    "title: Shop handbook\ndescription: How the shop runs, for everyone who works in it.\npages: [support]",
     "Start with [refunds](support/refunds), or read [what we call things](support/refunds#words).\n",
   ),
   "handbook/support/index": text(
-    "title: Customer support\norder: 1",
+    "title: Customer support\npages: [refunds, returns]",
     "What we do when a customer writes in.\n",
   ),
   "handbook/support/refunds": text(
     [
       "title: Refund an order",
       "description: Full and partial refunds, and who may give them.",
-      "order: 1",
       "topic: support-refunds",
       "about:",
       "  - table: orders",
@@ -92,7 +91,7 @@ const PAGES: Record<string, string> = {
       "See [returns](returns).",
     ].join("\n"),
   ),
-  "handbook/support/returns": text("title: Returns\norder: 2", "Parcels come back on Tuesdays.\n"),
+  "handbook/support/returns": text("title: Returns", "Parcels come back on Tuesdays.\n"),
 };
 
 interface Setup {
@@ -298,6 +297,16 @@ test("a page is read, written with a live preview, checked as it is typed, and d
   const problems = page.getByRole("region", { name: "Problems" });
   await expect(problems.getByText("1 problem")).toBeVisible();
   await expect(problems.getByRole("button")).toContainText('The link to "nowhere" leads nowhere');
+  // Undo takes it back, a step at a time as Monaco keeps them, and Redo makes it again.
+  const fine = page.getByText("This page would deploy as it is.");
+  for (let step = 0; step < 20 && (await fine.count()) === 0; step++) {
+    await page.getByRole("button", { name: /^Undo/ }).click();
+  }
+  await expect(fine).toBeVisible();
+  for (let step = 0; step < 20 && (await problems.getByText("1 problem").count()) === 0; step++) {
+    await page.getByRole("button", { name: /^Redo/ }).click();
+  }
+  await expect(problems.getByText("1 problem")).toBeVisible();
   await expect(page.locator(".monaco-editor .squiggly-error").first()).toBeVisible();
   await expect(preview.getByText("And a page that is not there.")).toBeVisible();
   await shot(page, "08-editor-problem");
@@ -312,7 +321,7 @@ test("a page is read, written with a live preview, checked as it is typed, and d
   await page.keyboard.press("Control+s");
   await expect(page.getByText(/Saved as a draft/)).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByText("Changed, not deployed")).toBeVisible();
+  await expect(page.getByText("Draft · not deployed").first()).toBeVisible();
   // Before it is deployed its writers see it in the app itself, at an address nobody else reaches.
   const previewAt = await page
     .getByRole("link", { name: "Preview with drafts" })
@@ -347,7 +356,7 @@ test("a page is read, written with a live preview, checked as it is typed, and d
   await page.getByRole("button", { name: "Deploy 1 change" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Deploy" }).click();
   await expect(page.getByText("The documentation is deployed.")).toBeVisible();
-  await expect(page.getByText("Changed, not deployed")).toHaveCount(0);
+  await expect(page.getByText("Draft · not deployed")).toHaveCount(0);
 
   // Roles: what a permission allows is behind one control, not a browser's own tooltip.
   await page.goto(`/t/${made.tenant}/roles`);
@@ -401,11 +410,16 @@ test("the docs app is read by someone who is not signed in, with scripts and wit
   // The column's meaning is not told to someone who may not read the table.
   await expect(page.getByText("Where the order is in its life.")).toHaveCount(0);
 
-  // Search is a form, and its answer a page.
-  await page.getByRole("searchbox", { name: "Search Shop handbook" }).fill("tuesdays");
-  await page.getByRole("button", { name: "Search" }).click();
-  await expect(page.getByRole("link", { name: "Returns" }).last()).toBeVisible();
+  // Search answers as it is typed, in a dialog, with the section where the words are.
+  await page.keyboard.press("Control+k");
+  const finder = page.getByRole("dialog", { name: "Search" });
+  await finder.getByRole("combobox", { name: "Search" }).fill("tuesdays");
+  await expect(finder.getByRole("option", { name: /Returns/ }).first()).toBeVisible();
   await shot(page, "11-docs-search");
+  await page.keyboard.press("Escape");
+  // Without the dialog, search is a form, and its answer a page.
+  await page.goto(`${address}_search?q=tuesdays`);
+  await expect(page.getByRole("link", { name: "Returns" }).last()).toBeVisible();
 
   // On a phone the navigation folds and the page still reads.
   await page.setViewportSize({ width: 390, height: 780 });
@@ -510,17 +524,16 @@ test("a page is dragged to another folder, its details are a form, and a trigger
   const dragged = tree.getByRole("treeitem", { name: /^Questions/ });
   await expect(dragged).toBeVisible({ timeout: 30_000 });
   await dragged.dragTo(tree.getByRole("treeitem", { name: /^Customer support/ }).first());
-  await expect(page.getByText("Moved to handbook/support/questions.")).toBeVisible();
+  await expect(page.getByText("Moved Questions into Customer support.")).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`${at}/docs/handbook/support/questions$`));
   await expect(page.getByRole("heading", { level: 2, name: "Questions" })).toBeVisible();
   await shot(page, "16-dragged");
 
   await page.getByRole("button", { name: "Edit" }).click();
   await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Page details" }).click();
+  await page.getByRole("tab", { name: "Page details" }).click();
   const details = page.getByRole("region", { name: "Page details" });
   await details.getByLabel(/^Description/).fill("What customers ask most.");
-  await details.getByLabel(/^Order/).fill("5");
   await details.getByRole("button", { name: "Term" }).click();
   await details.getByLabel("Term", { exact: true }).fill("SLA");
   await details.getByLabel("Id", { exact: true }).fill("sla");
@@ -537,7 +550,7 @@ test("a page is dragged to another folder, its details are a form, and a trigger
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByText(/^Saved as a draft/)).toBeVisible();
   const saved = await call(page, "GET", `${W}/docs/page/handbook/support/questions`);
-  expect(saved.source).toContain("order: 5\n");
+  expect(saved.source).toContain("description: What customers ask most.\n");
   expect(saved.source).toContain("  - id: sla\n    term: SLA\n    short: How fast we answer.\n");
   expect(saved.source).toContain("What people ask.");
 

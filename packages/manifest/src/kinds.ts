@@ -1332,9 +1332,22 @@ export const appKind: KindDefinition = {
         pattern: PATH_PATTERN,
         maxLength: 255,
         description:
-          "A folder of the workspace's pages of documentation to serve as this app: every page " +
-          "whose path is under it. Its `index` page is the home page, each folder directly under " +
-          "it is a collection, and each folder under a collection is a group.",
+          "A top-level folder of the workspace's pages of documentation to serve as this app: " +
+          "every page whose path is under it. Its `index` page is the home page, each folder " +
+          "directly under it is a collection, and folders go as deep as they are written.",
+      },
+      feedback: {
+        type: "object",
+        description:
+          "For an app that serves documentation: ask readers whether a page helped, and keep each " +
+          "answer as a row of a table of the workspace's. The table needs the columns `page` " +
+          "(text), `helpful` (boolean), `version` (text) and `at` (timestamp). A reader answers " +
+          "once for each page, and nothing about who they are is kept.",
+        properties: {
+          table: { ...path, description: "The table the answers are kept in." },
+        },
+        required: ["table"],
+        additionalProperties: false,
       },
       fallback: {
         type: "boolean",
@@ -1354,6 +1367,8 @@ export const appKind: KindDefinition = {
     },
     required: ["title"],
     oneOf: [{ required: ["entry"] }, { required: ["interface"] }, { required: ["docs"] }],
+    // Only documentation asks its readers whether it helped.
+    dependentRequired: { feedback: ["docs"] },
     additionalProperties: false,
   },
 };

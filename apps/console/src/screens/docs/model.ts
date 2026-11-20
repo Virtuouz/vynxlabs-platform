@@ -35,6 +35,8 @@ export interface DocsApp {
   title: string;
   /** The folder of pages it serves. */
   docs: string;
+  /** The table its readers' answers to whether a page helped are kept in, when it asks. */
+  feedback?: string | null;
   deployed: boolean;
   /** Where the app is served, once it is deployed. */
   url?: string;

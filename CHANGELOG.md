@@ -2,6 +2,27 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 21, documentation that reads and writes like a documentation product
+
+Documentation sites look and work like a documentation product, and the console changes pages and folders in place.
+
+### For operators
+
+- A docs app's pages are drawn in a new frame: the navigation, a home page, search that answers as it is typed, and a phone layout. Its stylesheet and script are still the instance's own files, under the same policy.
+- A docs app takes one kind of POST, at `<app>/_feedback`: a reader's answer to "Was this page helpful?", for an app that asks. It is rate limited by address, refused from another site, and kept as a row of the workspace's own table, not in the audit log.
+- `<app>/_search.json` and `<page>.md` answer the site's own script, to whoever may open the app.
+- No migration.
+
+### For tenant developers
+
+- **A folder's order is its own page's `pages:` list.** `order:` is gone from a page's top: list the folder's pages and folders, by name, in its `index.md`. What is not listed comes after, by title. A page that still says `order:` is refused, naming the line.
+- **Folders go as deep as they are written.** A page is no longer refused for being more than two folders down.
+- **A docs app serves a top-level folder.** `docs: handbook/support` is refused: serve `handbook`.
+- `::pages` lists what is in a page's folder. A folder's own page with nothing written in it does the same.
+- Every component may sit inside any other. The editor's Insert writes it one level deeper inside another.
+- `defineApp({ docs, feedback: { table } })` asks readers whether a page helped. The table needs `page` (text), `helpful` (boolean), `version` (text) and `at` (timestamp).
+- `POST …/drafts/batch` saves several drafts at once, all or none: what the console uses for a change to the tree of pages.
+
 ## Unreleased: phase 20, the name Volvel, and documentation
 
 The product is named Volvel. Every name that said Vynxlabs or `platform` where a person or a program meets it has changed, and no old name is accepted. There was no published version and no instance to keep working.

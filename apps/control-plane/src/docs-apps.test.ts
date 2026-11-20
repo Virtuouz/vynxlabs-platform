@@ -123,6 +123,7 @@ function browser() {
     };
   };
   const form = async (url: string, fields: Record<string, string>) => {
+    const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
     const response = await t.app.inject({
       method: "POST",
       url,
@@ -130,6 +131,7 @@ function browser() {
         host: MAIN,
         origin: `http://${MAIN}`,
         "content-type": "application/x-www-form-urlencoded",
+        ...(cookie ? { cookie } : {}),
       },
       payload: new URLSearchParams(fields).toString(),
     });
@@ -1039,5 +1041,129 @@ describe("someone who writes documentation in the console, and is not a develope
     });
     expect(answer.status).toBe(409);
     expect(answer.body.code).toBe("production_workspace");
+  });
+});
+
+describe("a docs app that asks its readers whether a page helped", () => {
+  const votesTable = manifest("table", "help-feedback", {
+    columns: {
+      page: { type: "text" },
+      helpful: { type: "boolean" },
+      version: { type: "text" },
+      at: { type: "timestamp" },
+    },
+  });
+  const asking = () =>
+    handbook().map((one) =>
+      one.kind === "app" && one.path === "help"
+        ? { ...one, body: { ...(one.body as object), feedback: { table: "help-feedback" } } }
+        : one,
+    );
+  const votes = async () =>
+    ((await alice.get(`${ws()}/rows/help-feedback`)).body.items as Any[]).map((row) => [
+      row.page,
+      row.helpful,
+    ]);
+  const send = (fields: Record<string, string>, headers: Record<string, string> = {}) =>
+    t.app.inject({
+      method: "POST",
+      url: `${HELP}_feedback`,
+      headers: {
+        host: MAIN,
+        origin: `http://${MAIN}`,
+        "content-type": "application/x-www-form-urlencoded",
+        ...headers,
+      },
+      payload: new URLSearchParams(fields).toString(),
+    });
+
+  test("deploys only with a table that holds what an answer is", async () => {
+    const without = await deploy(asking());
+    expect(without.status).toBe(400);
+    expect(JSON.stringify(without.body)).toContain("there is no such table");
+    const deployed = await deploy([...asking(), votesTable]);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+  });
+
+  test("a page asks, and a form works with scripts off", async () => {
+    const page = (await browser().get(`${HELP}support/refunds`)).body;
+    expect(page).toContain(
+      `<form class="feedback" id="feedback" method="post" action="${HELP}_feedback" data-feedback>`,
+    );
+    expect(page).toContain('<input type="hidden" name="page" value="support/refunds">');
+  });
+
+  test("an answer is a row of the table, kept once for each reader and page", async () => {
+    const reader = browser();
+    expect(
+      (await reader.form(`${HELP}_feedback`, { page: "support/refunds", helpful: "yes" })).status,
+    ).toBe(303);
+    expect(await votes()).toEqual([["support/refunds", true]]);
+    // The same reader again: thanked, and nothing more is kept.
+    expect(
+      (await reader.form(`${HELP}_feedback`, { page: "support/refunds", helpful: "no" })).status,
+    ).toBe(303);
+    expect(await votes()).toEqual([["support/refunds", true]]);
+    expect((await reader.get(`${HELP}support/refunds`)).body).toContain("Thank you for saying.");
+    // The script asks for an answer it can read.
+    const fetched = await send(
+      { page: "support/returns", helpful: "no" },
+      { accept: "application/json" },
+    );
+    expect(fetched.statusCode).toBe(200);
+    expect(JSON.parse(fetched.body)).toEqual({ kept: true });
+    expect(fetched.headers["set-cookie"]).toContain("HttpOnly");
+    expect(await votes()).toEqual([
+      ["support/refunds", true],
+      ["support/returns", false],
+    ]);
+    // Nothing of who the reader is is kept.
+    const row = ((await alice.get(`${ws()}/rows/help-feedback`)).body.items as Any[])[0];
+    expect(Object.keys(row).sort()).toEqual([
+      "at",
+      "created_at",
+      "helpful",
+      "id",
+      "page",
+      "updated_at",
+      "version",
+    ]);
+  });
+
+  test("is refused from another site, for a page that is not there, and kept from a robot", async () => {
+    expect(
+      (await send({ page: "faq", helpful: "yes" }, { origin: "https://elsewhere.example" }))
+        .statusCode,
+    ).toBe(403);
+    expect((await send({ page: "nowhere", helpful: "yes" })).statusCode).toBe(400);
+    expect((await send({ page: "faq", helpful: "maybe" })).statusCode).toBe(400);
+    // A field no person sees, filled in.
+    expect((await send({ page: "faq", helpful: "yes", website: "spam" })).statusCode).toBe(303);
+    expect((await votes()).some(([page]) => page === "faq")).toBe(false);
+  });
+
+  test("an app that does not ask, or is not documentation, takes no answer", async () => {
+    // The staff manual asks nobody, and is for members: a guest is sent to sign in.
+    expect(
+      (
+        await t.app.inject({
+          method: "POST",
+          url: "/apps/acme/main/staff/_feedback",
+          headers: { host: MAIN, "content-type": "application/x-www-form-urlencoded" },
+          payload: "page=index&helpful=yes",
+        })
+      ).statusCode,
+    ).not.toBe(200);
+    // Any other address of an app takes no POST.
+    expect(
+      (
+        await t.app.inject({
+          method: "POST",
+          url: `${HELP}support/refunds`,
+          headers: { host: MAIN, "content-type": "application/x-www-form-urlencoded" },
+          payload: "x=1",
+        })
+      ).statusCode,
+    ).toBe(405);
   });
 });

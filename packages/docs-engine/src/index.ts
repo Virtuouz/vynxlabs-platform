@@ -94,6 +94,7 @@ export {
   checkWorkspaceDocs,
   type DocsApp,
   docsApps,
+  FEEDBACK_COLUMNS,
   pagesOf,
   type ResourceLike,
   resourceChecker,

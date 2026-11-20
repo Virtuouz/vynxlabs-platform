@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import {
   buildApp,
@@ -13,6 +13,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
+import { describeTable, insertRows, withData } from "../data/rows.js";
 import { productNames } from "../docs/product.js";
 import { workingDocs } from "../docs/working.js";
 import {
@@ -29,6 +30,7 @@ import { loadBundle } from "../execution/bundles.js";
 import { findForm, submitForm } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolvePrincipal } from "../principal.js";
+import { pathNow } from "../resolve.js";
 import { answer, begin, finish, stateCookie } from "../sso/flow.js";
 import { endUserPasswordRefusedBy, SsoRefusal } from "../sso/people.js";
 import {
@@ -102,6 +104,9 @@ const PAGE_POLICY = [
   "frame-ancestors 'none'",
 ].join("; ");
 
+/** Which pages a reader said whether they helped: short marks of them, kept in their own browser. */
+const VOTE_COOKIE = "vd_said";
+
 /** A file whose name carries a hash of its content never changes, so a browser may keep it. */
 const HASHED_NAME = /[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
 const MAX_FORM_BYTES = 16 * 1024;
@@ -149,6 +154,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   /** How often someone who is not signed in may ask for pages and files, and send forms. */
   const guestPages = new Limiter(600, 60);
   const forms = new Limiter(20, 60);
+  /** Readers' answers to whether a page helped: a reader answers a few at most in a minute. */
+  const votes = new Limiter(30, 60);
 
   const tenantBy = (column: "slug" | "id", value: string) =>
     db
@@ -831,9 +838,15 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       interface?: string;
       /** Set on an app that serves documentation: its pages are drawn here, from the workspace's own. */
       docs?: string;
+      /** Set on a docs app that asks its readers whether a page helped: where the answers go. */
+      feedback?: { table?: unknown };
       fallback?: boolean;
     };
     const documents = typeof body.docs === "string";
+    // The one answer an app takes is a docs app's, from its readers.
+    if (!(request.method === "GET" || request.method === "HEAD") && !documents) {
+      return plain(reply, 405, "Method not allowed.");
+    }
     // Neither runs anything a tenant wrote: an interface is drawn by the platform's own
     // files, and documentation is drawn here.
     const generated = typeof body.interface === "string" || documents;
@@ -904,10 +917,16 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       if (!pictures.has(file))
         return serveDocs(request, reply, {
           look,
+          tenantId: tenant.id,
           workspaceId: workspace.id,
           bundleId: stored.id,
           resources: bundle.manifests,
-          app: { path: manifest.path, title: body.title, docs: body.docs as string },
+          app: {
+            path: manifest.path,
+            title: body.title,
+            docs: body.docs as string,
+            ...(typeof body.feedback?.table === "string" ? { feedback: body.feedback.table } : {}),
+          },
           base,
           file,
           pictures,
@@ -1025,6 +1044,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     reply: FastifyReply,
     at: {
       look: PageFrame;
+      tenantId: string;
       workspaceId: string;
       bundleId: string;
       resources: readonly ResourceLike[];
@@ -1051,12 +1071,19 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           ).map((row) => [row.path, row.updated_at] as const),
         );
     const docs = docsOf(at.bundleId, at.app, at.resources, productNames(kernel.config), updated);
+    // The pages this reader said whether they helped, kept in their browser and nowhere else.
+    const voted = new Set((readCookie(request, VOTE_COOKIE) ?? "").split(".").filter(Boolean));
+    const voteOf = (page: string) =>
+      createHash("sha256").update(`${at.app.path}:${page}`).digest("hex").slice(0, 10);
     const drawn = {
       frame: at.look,
       app: at.app,
       base: at.base,
       set: docs.built.set,
       asset: (file: string) => (at.pictures.has(file) ? `${at.base}${file}` : undefined),
+      ...(at.app.feedback
+        ? { feedback: { said: (page: string) => voted.has(voteOf(page)), recording: true } }
+        : {}),
     };
     const send = (status: number, body: string) =>
       reply
@@ -1069,6 +1096,66 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("cache-control", "private, no-cache")
         .send(body);
 
+    if (at.file === "_feedback") {
+      if (request.method !== "POST" || !at.app.feedback) return send(404, notFoundPage(drawn));
+      if (!ownForm(request)) return plain(reply, 403, "This form was sent from another site.");
+      if (!votes.allow(`${request.ip} ${at.workspaceId}`)) {
+        return plain(reply, 429, "Too many answers. Wait a minute and try again.");
+      }
+      const form = await readForm(request.raw, 2048);
+      const page = pageAt(docs.built.set, String(form.page ?? ""));
+      if (page === undefined || (form.helpful !== "yes" && form.helpful !== "no")) {
+        return plain(reply, 400, "Say which page, and whether it helped.");
+      }
+      const id = voteOf(page);
+      // A field no person sees, filled in, is a robot's: it is thanked, and nothing is kept.
+      if (!form.website && !voted.has(id)) {
+        try {
+          const table = await pathNow(db, at.workspaceId, at.app.feedback, "table");
+          const target = await describeTable(
+            (await kernel.data.forTenant(at.tenantId)).owner,
+            at.workspaceId,
+            table,
+          );
+          // Kept as the workspace keeps a row its own code writes: nothing says who the reader is.
+          const scope = { principalId: null, all: true };
+          await withData(kernel, at.tenantId, scope, (data) =>
+            insertRows(
+              data,
+              target,
+              [
+                {
+                  page,
+                  helpful: form.helpful === "yes",
+                  version: at.bundleId,
+                  at: new Date().toISOString(),
+                },
+              ],
+              scope,
+            ),
+          );
+        } catch (error) {
+          request.log.warn({ err: error }, "A reader's answer could not be kept.");
+          return plain(reply, 503, "Your answer could not be kept. Try again later.");
+        }
+      }
+      const kept = [...voted, id].filter((one, at, all) => all.indexOf(one) === at).slice(-200);
+      reply.header(
+        "set-cookie",
+        [
+          `${VOTE_COOKIE}=${kept.join(".")}`,
+          `Path=${at.base}`,
+          "HttpOnly",
+          "SameSite=Lax",
+          `Max-Age=${60 * 60 * 24 * 365}`,
+          ...(request.protocol === "https" ? ["Secure"] : []),
+        ].join("; "),
+      );
+      if ((request.headers.accept ?? "").includes("application/json")) {
+        return sendJson(reply, { kept: true });
+      }
+      return redirect(reply, `${at.base}${urlOf(page)}#feedback`);
+    }
     const asked = request.query as { q?: unknown; in?: unknown } | undefined;
     const query = String(asked?.q ?? "").slice(0, 200);
     if (at.file === "_search") {
@@ -1161,6 +1248,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       asset: (picture: string) => (pictures.has(picture) ? `${served}${picture}` : undefined),
       notice:
         "A preview, with the workspace's drafts. Only members who may read its documentation see this. Its readers see what is deployed.",
+      // Readers are asked whether a page helped. Nothing said in a preview is kept.
+      ...(app.feedback ? { feedback: { said: () => false, recording: false } } : {}),
     };
     const send = (status: number, body: string) =>
       reply
@@ -1239,7 +1328,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       if (everything && path === "/") {
         return portal(request, reply, place, tenant, "", url.searchParams);
       }
-      if (!isPage) return plain(reply, 405, "Method not allowed.");
+      // A docs app takes one answer of its readers: whether a page helped.
+      if (!isPage && !path.endsWith("/_feedback")) return plain(reply, 405, "Method not allowed.");
       const segments = decodeSegments(path.slice(1));
       if (!segments) return plain(reply, 400, "That address is not valid.");
       return serveApp(
@@ -1273,7 +1363,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       const sub = segments.slice(2).join("/");
       return portal(request, reply, place, tenant, sub === "" ? "" : `/${sub}`, url.searchParams);
     }
-    if (!isPage) return plain(reply, 405, "Method not allowed.");
+    if (!isPage && !path.endsWith("/_feedback")) return plain(reply, 405, "Method not allowed.");
     const workspace = segments[2]
       ? await db
           .selectFrom("workspace")

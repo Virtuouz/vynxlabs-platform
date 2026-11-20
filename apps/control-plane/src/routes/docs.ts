@@ -75,6 +75,10 @@ const App = Type.Object({
   path: Type.String(),
   title: Type.String(),
   docs: Type.String({ description: "The folder of pages it serves." }),
+  feedback: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "The table its readers' answers to whether a page helped are kept in. Null when it does not ask.",
+  }),
   deployed: Type.Boolean({ description: "False for an app that is only a draft." }),
   url: Type.String({ description: "Where the app is served, once it is deployed." }),
   preview: Type.String({
@@ -160,7 +164,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               workspaceSlug: workspace.slug,
               path: one.path,
             });
-            return { ...one, url, preview: `${url}_draft/` };
+            return { ...one, feedback: one.feedback ?? null, url, preview: `${url}_draft/` };
           }),
           pages: resources
             .filter((one) => one.kind === "doc")

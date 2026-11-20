@@ -427,6 +427,30 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     link.addEventListener("click", () => { const bar = link.closest("details"); if (bar) bar.open = false; });
   }
 
+  // Whether a page helped: said without leaving the page. Without script, the form is sent as it is.
+  for (const form of document.querySelectorAll("form[data-feedback]")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const pressed = event.submitter;
+      const body = new URLSearchParams(new FormData(form));
+      if (pressed && pressed.name) body.set(pressed.name, pressed.value);
+      for (const button of form.querySelectorAll("button")) button.disabled = true;
+      try {
+        const answer = await fetch(form.action, {
+          method: "POST",
+          body,
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        });
+        const thanks = make("p", { class: "feedback", id: "feedback", role: "status" });
+        thanks.textContent = answer.ok ? "Thank you for saying." : "Your answer could not be kept. Try again later.";
+        form.replaceWith(thanks);
+      } catch (_) {
+        for (const button of form.querySelectorAll("button")) button.disabled = false;
+      }
+    });
+  }
+
   // Search, as it is typed, in a dialog.
   const triggers = [...document.querySelectorAll("[data-search]")];
   if (triggers.length === 0 || typeof HTMLDialogElement === "undefined") return;

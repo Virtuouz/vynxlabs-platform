@@ -564,77 +564,46 @@ export function LogWindowNote({
   );
 }
 
-interface BundleRow {
-  id: string;
-  version: number;
-  digest: string;
-  sdkVersion: string;
-  manifestCount: number;
-  active: boolean;
-  createdAt: string;
-}
-
-export function Deployments({
+/**
+ * "Activate this version": the way back to a bundle that ran before, or on to one
+ * that never ran here. It names the workspace, and asks as a danger in production.
+ */
+export function ActivateVersion({
   root,
   workspace,
-  as,
+  bundleId,
+  version,
+  onDone,
 }: {
   root: string;
-  /** Whose bundles these are: a rollback names it, and in production asks as a danger. */
+  /** Whose version this is: the confirm names it. */
   workspace: { name: string; type: string };
-  as?: "page" | "section";
+  bundleId: string;
+  version: number;
+  onDone: () => void;
 }) {
   return (
-    <ListScreen<BundleRow>
-      title="Deployments"
-      as={as ?? "page"}
-      description="Every bundle uploaded to this workspace. Activating an earlier one is how you roll back. Runs in progress finish on the bundle they started with."
-      path={`${root}/bundles`}
-      rowKey={(row) => row.id}
-      columns={[
-        {
-          header: "Version",
-          cell: (row) => (
-            <span className="flex items-center gap-2">
-              {row.version}
-              {row.active ? <StatePill state="active">In use</StatePill> : null}
-            </span>
-          ),
-        },
-        { header: "Digest", cell: (row) => <Code>{row.digest.slice(0, 12)}</Code> },
-        { header: "Resources", cell: (row) => row.manifestCount, align: "end" },
-        { header: "Uploaded", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
-      ]}
-      empty={{
-        title: "Nothing has been deployed",
-        text: "Deploy what was saved here from Release, promote a dev workspace into this one, or deploy from the tenant's repository with volvel deploy.",
+    <Button
+      size="small"
+      onClick={async () => {
+        const sure = await ask.confirm({
+          title: `Activate version ${version} in ${workspace.name}?`,
+          text: `${workspace.name} stops running what it runs now and starts running version ${version} at once. Runs in progress there finish on the version they started with.`,
+          action: workspace.type === "production" ? "Activate in production" : "Activate",
+          danger: workspace.type === "production",
+        });
+        if (!sure) return;
+        try {
+          await api.post(`${root}/deployments`, { bundleId });
+          notify.success(`Version ${version} is what runs here now.`);
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        }
       }}
-      rowActions={(row, reload) =>
-        row.active ? null : (
-          <Button
-            size="small"
-            onClick={async () => {
-              const sure = await ask.confirm({
-                title: `Activate version ${row.version} in ${workspace.name}?`,
-                text: `${workspace.name} stops running what it runs now and starts running version ${row.version} at once. Runs in progress there finish on the version they started with.`,
-                action: workspace.type === "production" ? "Activate in production" : "Activate",
-                danger: workspace.type === "production",
-              });
-              if (!sure) return;
-              try {
-                await api.post(`${root}/deployments`, { bundleId: row.id });
-                notify.success(`Version ${row.version} is what runs here now.`);
-                reload();
-              } catch (error) {
-                notify.error(error);
-              }
-            }}
-          >
-            Activate
-          </Button>
-        )
-      }
-    />
+    >
+      Activate this version
+    </Button>
   );
 }
 

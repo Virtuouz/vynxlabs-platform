@@ -156,5 +156,23 @@ test("a developer asks, a promoter decides from the overview, drift shows the ch
     "aria-selected",
     "true",
   );
+
+  // Production's one list of versions rolls back from a row of its history.
+  await admin.goto(`/t/${tenant.id}/workspaces/${prod.id}/release`);
+  await expect(admin.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(admin.getByText("Bundles and rollback")).toHaveCount(0);
+  const bundlesOf = async () =>
+    (
+      (await call(admin, "GET", `/tenants/${tenant.id}/workspaces/${prod.id}/bundles`)).items as {
+        id: string;
+        active: boolean;
+      }[]
+    ).find((one) => one.active)?.id;
+  const before = await bundlesOf();
+  const back = admin.getByRole("button", { name: "Activate this version" }).first();
+  await back.click();
+  await admin.getByRole("dialog").getByRole("button", { name: "Activate in production" }).click();
+  await expect(admin.getByText(/is what runs here now/)).toBeVisible();
+  expect(await bundlesOf()).not.toBe(before);
   expect(errors).toEqual([]);
 });

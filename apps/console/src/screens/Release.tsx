@@ -22,7 +22,7 @@ import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
-import { Deployments } from "./Execution.tsx";
+import { ActivateVersion } from "./Execution.tsx";
 import { type PromotionRequest, RequestPromotion } from "./Promotion.tsx";
 import { breakingOf, PromotionConfirm, sentence } from "./PromotionConfirm.tsx";
 
@@ -69,6 +69,7 @@ interface Refusal {
 
 interface Ledger {
   id: string;
+  bundleId: string;
   bundleVersion: number;
   message?: string | null;
   createdBy?: string;
@@ -601,15 +602,30 @@ function DraftHistory({
   );
 }
 
+interface BundleItem {
+  id: string;
+  version: number;
+  active: boolean;
+  createdAt: string;
+}
+
 function LedgerStep({ root, workspace }: { root: string; workspace: Workspace }) {
   const ledger = useLoad<{ items: Ledger[] }>(`${root}/deployments`);
+  const bundles = useLoad<{ items: BundleItem[] }>(`${root}/bundles`);
+  const reload = () => {
+    ledger.reload();
+    bundles.reload();
+  };
+  const running = bundles.data?.items.find((one) => one.active)?.id;
+  const ran = new Set(ledger.data?.items.map((row) => row.bundleId));
+  const neverRun = (bundles.data?.items ?? []).filter((one) => !ran.has(one.id));
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
         <SectionLabel>Versions of {workspace.name}</SectionLabel>
         {ledger.error ? (
           <ErrorState error={ledger.error} onRetry={ledger.reload} />
-        ) : !ledger.data ? (
+        ) : !ledger.data || !bundles.data ? (
           <Loading />
         ) : ledger.data.items.length === 0 ? (
           <EmptyCanvas title="Nothing deployed here yet" />
@@ -631,15 +647,44 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
                     </Tag>
                   ))}
                 </span>
+                {row.bundleId !== running ? (
+                  <ActivateVersion
+                    root={root}
+                    workspace={workspace}
+                    bundleId={row.bundleId}
+                    version={row.bundleVersion}
+                    onDone={reload}
+                  />
+                ) : null}
               </div>
             ))}
           </Panel>
         )}
       </section>
-      <section className="flex flex-col gap-2">
-        <SectionLabel>Bundles and rollback</SectionLabel>
-        <Deployments root={root} workspace={workspace} as="section" />
-      </section>
+      {neverRun.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <SectionLabel>Not yet run here</SectionLabel>
+          <Panel as="div" className="divide-y divide-line">
+            {neverRun.map((one) => (
+              <div key={one.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+                <Mono className="w-12 shrink-0 text-ink">v{one.version}</Mono>
+                <span className="min-w-0 flex-1 text-ink-muted">
+                  Uploaded {ago(one.createdAt)}, never activated
+                </span>
+                {one.active ? null : (
+                  <ActivateVersion
+                    root={root}
+                    workspace={workspace}
+                    bundleId={one.id}
+                    version={one.version}
+                    onDone={reload}
+                  />
+                )}
+              </div>
+            ))}
+          </Panel>
+        </section>
+      ) : null}
     </div>
   );
 }

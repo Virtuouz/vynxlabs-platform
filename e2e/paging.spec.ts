@@ -76,10 +76,13 @@ test("the 250th member is found by searching for them", async () => {
 test("the 250th member is reached by loading more pages", async () => {
   await page.goto(`/t/${tenant.id}/members`);
   const more = page.getByRole("button", { name: "Load more" });
+  // The first page is drawn before anything is asked of the button.
+  await expect(more).toBeVisible({ timeout: 30_000 });
   // Fifty to a page, and the operator who made them is a member too: six pages hold them all.
   for (let pages = 0; pages < 10 && (await more.isVisible().catch(() => false)); pages++) {
     await more.click();
-    await expect(more).toBeEnabled({ timeout: 30_000 });
+    // The page arrives; on the last one the button goes, so it is not waited for to come back.
+    await page.waitForLoadState("networkidle");
   }
   await expect(page.getByRole("gridcell", { name: last }).first()).toBeVisible({ timeout: 30_000 });
 });
@@ -89,7 +92,7 @@ test("a group's picker finds the 250th by typing, not only the first page", asyn
     name: `everyone-${stamp}`,
   });
   await page.goto(`/t/${tenant.id}/groups`);
-  await page.getByRole("button", { name: "Members" }).first().click();
+  await page.getByRole("button", { name: "Members", exact: true }).first().click();
   const search = page.getByRole("combobox");
   await search.fill(`person250-${stamp}`);
   await expect(page.getByRole("option", { name: new RegExp(last) })).toBeVisible({

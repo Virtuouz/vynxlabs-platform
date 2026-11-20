@@ -158,7 +158,43 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - `useDraftSave` unit tests: an edit during a save in flight keeps `dirty` and triggers a second save; an echo does not overwrite newer text.
 - e2e for each editor: type, press ⌘S at once, and the PUT carries the typed text. With the save delayed 2 s (as `e2e/dashboards.spec.ts` does), type during it, and a second save follows.
 
-**Polish gate.** Rules: 002, 012, 013. Siblings: every caller of `useShortcut("save")` and every autosave. Listing them is the first step.
+**Built** on its own branch, merged in `89ef45f`.
+- `useShortcut` (`kit/keys.ts`) sets its handler and `enabled` in a layout effect, binds once per id, and asks `enabled` at the key press.
+- `kit/draftSave.ts`, `useDraftSave`:
+  - sends a snapshot and clears dirty only when nothing changed since;
+  - saves again with the returned revision when something did;
+  - never replaces newer text with the echo.
+  - Used by the script, extension and connector editors (`Authoring.tsx`), `ResourceEditor`, `FlowEditor`, `DocEditor` and `Queries`.
+- Dashboards: save and keep go through one ordered queue on one revision.
+- The docs tree: sends fetch fresh revisions and run in order.
+- The widget editor and the row inspector ask before discarding.
+- On merging with M3, every editor's save kept `create: true`, and its refusal on the path field.
+
+**Tests.**
+- `kit/draftSave.test.tsx`, `keys.test.tsx`.
+- `Docs.test.tsx`: ⌘S right after typing.
+- `Dashboards.test.tsx`, `Data.test.tsx`.
+- `e2e/editor-save.spec.ts`.
+
+**Findings.**
+- A layout effect alone does not help when the keystroke's own state has not rendered (Monaco's `onChange` is not a React event), so the savers read the text from `useDraftSave`.
+- The dashboard is a queue of operations, not one snapshot, so it is not on the hook.
+- `ResourceEditor` and Queries still have no ⌘S.
+
+**Polish gate.**
+1. Rules: 002, 012, 013.
+2. Siblings. Callers of `useShortcut("save")`:
+   - Authoring, FlowEditor and DocEditor are fixed.
+   - `SaveBar`'s screens (Branding, InstanceBranding, Environments, Provisioning, KitSheet) keep their own dirty state, and are candidates for the hook.
+   - The app builder (`EditorShell`) was already right.
+3. Lifecycle: not applicable.
+4. States: a refused save stays unsaved and says why. A save in flight shows Saving, and a second save follows it.
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `741a52c`:
+   - docs editor, `handbook/front-desk/booking`: typing then Ctrl+S at once sent the typed text (200), and "Unsaved changes" cleared;
+   - a console-made script: the same.
+   - Not walked: a throttled network, which is covered by `editor-save.spec.ts`.
+6. Guards: the unit tests above, and `editor-save.spec.ts` in the e2e run.
+7. Left out: ⌘S for resources and queries.
 
 ## M3: a create never overwrites
 
@@ -174,7 +210,35 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - Route tests: a create over a draft is refused; a create over a deployed resource is refused; a create on a free path succeeds; a save with a revision is unchanged.
 - e2e: "Make an app" with an existing name is refused, and the existing app is unchanged.
 
-**Polish gate.** Rules: 002, 010. Siblings: every create dialog (`CreateDialog` in `ListScreen.tsx`, the flow and script "New", the App Builder), and the docs guard.
+**Built** in `93997fb`, merged in `5eb2280`, with `1f0adbf`.
+- `saveDraft` (`kernel/authoring.ts`) refuses `create: true` on a held path with 409 `path_taken`. `drafts/batch` takes `create` too.
+- `takenText()` in `ask.tsx`.
+- Every "New …" sends it and shows the refusal on its path field:
+  - script, extension, connector, flow and resource;
+  - "Make an app", "Make an app for it" and "Add a schedule";
+  - connection, query and "Keep it as a resource";
+  - docs page and "Publish as a site".
+- `PromptOptions.submit` (`packages/ui/src/Dialogs.tsx`) does the work before a prompt closes, so a refusal is said on its field. A failure it did not foresee is said there too (`1f0adbf`).
+
+**Tests.**
+- `create-guard.test.ts` (route).
+- `Interfaces.test.tsx`, `ScheduleForms.test.tsx`, `Dialogs.test.tsx`.
+- `e2e/create-guard.spec.ts`.
+
+**Findings.**
+- The SDK has no drafts calls, the CLI deploys with revisions, and git sync never reaches `saveDraft`.
+- Turning on page feedback creates its table without `create`, so a retry is not refused.
+
+**Polish gate.**
+1. Rules: 002, 010.
+2. Siblings: every create path above. Renames already refused a taken path.
+3. Lifecycle: create is guarded, and the rest are unchanged.
+4. States: the refusal sits on the field and keeps what was typed.
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `741a52c`:
+   - `PUT drafts/inventory/half-hourly` with `create: true` returned 409 `path_taken`: "inventory/half-hourly is the path of a schedule. Choose another path, or open that one.";
+   - New script at `agent/clinic-day`: the Path field said "Something already exists at this path. Choose another, or open that one."
+6. Guards: the route test, and `create-guard.spec.ts` in the e2e run.
+7. Left out: a deploy-time check for a create that raced.
 
 ## M4: everything listed can be removed and brought back
 
@@ -195,7 +259,53 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - A unit test of `RemoveDraftButton`.
 - An e2e lifecycle walk for scripts, flows, apps, queries and docs sites: remove, take back, remove, deploy.
 
-**Polish gate.** Rule 003 is central. The lifecycle matrix (step 3) is filled in for scripts, flows, extensions, apps, queries and docs sites, and compared with the routes in `apps/control-plane/src/routes/*.ts`.
+**Built** in `5d2cd68`, merged in `f41c232`, with `24323ab`.
+- `kit/RemoveDraftButton.tsx` confirms first and saying what it does, then discards a draft, drafts a removal, or keeps one.
+  - It is used in the script, extension and flow editors, the flow inspector, the App Builder list and Queries.
+  - For one the repository manages, it says "Managed in the repository: the … is removed there", and offers nothing the server would refuse (`24323ab`).
+- Docs:
+  - "Keep this page";
+  - one delete flow (`deletePage`, `applyPlan`, which now sends through M2's ordered, fresh-revision `send`);
+  - Undo of a move restores the address;
+  - publish offers Undo.
+- Docs sites, as decided:
+  - `published: false` on the app body (manifest, schemas, SDK, docs-engine). `front.ts` answers 404 for an unpublished site.
+  - "Stop publishing…" and "Publish again…", "Turn off page feedback…", "Remove the site's app…".
+
+**Tests.**
+- `RemoveDraft.test.tsx`, including the repository state and a code-owned flow.
+- `screens/docs` tests.
+- `docs-apps.test.ts`: the switch off and on.
+- `e2e/lifecycle.spec.ts`.
+
+**Findings.**
+- **Found in the walk:** Remove on `appointments/after-visit` and on `screens/performance` was refused, "managed in the repository". The flows and interfaces lists now answer `ownership`, and the button does not offer it (`24323ab`).
+- The App Builder shell itself has no Remove; only its list does.
+- Queries and apps have no rename yet.
+
+**Polish gate.**
+1. Rules: 003, 010.
+2. Siblings: every removal now goes through `RemoveDraftButton` or `deletePage`. `ListScreen.RemoveButton` users (tenant resources) are unchanged.
+3. Lifecycle:
+
+   | | create | open | edit | rename | remove | take back | deploy |
+   |---|---|---|---|---|---|---|---|
+   | scripts | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+   | extensions | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+   | flows | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+   | apps | ✓ | ✓ | ✓ | ✗ | ✓ list | ✓ | ✓ |
+   | queries | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
+   | docs sites | ✓ | ✓ | n/a | n/a | switch, or remove app | ✓ | ✓ |
+   | docs pages | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+   A repository-managed item is removed in the repository.
+4. States: a removed item shows "Keep this …". A refusal is said in a toast.
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `f9c9171`:
+   - a console-made script: "Discard this draft?", then the draft is gone (404) and the editor goes back to Scripts;
+   - a flow: "Remove this flow? This saves a draft that removes it…";
+   - the handbook site: "Stop publishing Fernhill handbook? Once this is deployed, readers are told there is nothing at its address…". After the deploy, its address answered 404. "Publish again…" and a deploy, and it answered 200.
+6. Guards: `lifecycle.spec.ts` in the e2e run.
+7. Left out: renaming apps and queries.
 
 ## M5: who may decide is said before they try, and a trigger reads the same everywhere
 
@@ -217,7 +327,37 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - e2e as Fernhill's viewer, developer and approver: the count matches the queue "Decide" opens.
 - A paused trigger reads the same on the overview, Triggers and its script's page.
 
-**Polish gate.** Rules: 001, 002, 006, 010. Siblings: the run page, approvals, access releases, and the tenant approvals screen.
+**Built** in `a63a314`, merged in `42492e0`, with `719fb11`.
+- `mayDecide` (`kernel/flows/approvers.ts`) is shared by `approvals?mine=true` and the summary's new `approvalsWaitingMine`.
+- The overview says "N runs are waiting for you", or "… for someone else to decide" with "See who".
+- The approvals queue has a read-only "Waiting for others".
+- A flow run says per step whether the viewer may decide.
+- Access releases say who asked, list every change, and offer only what the server allows (`mayChange` on `GET /access`). A decline takes a comment.
+- `TriggerState` and `useTriggerPause` are shared by the overview and the script and flow pages. Production hides "Add a schedule" and says why.
+- When merging, the shared `triggerKey` from M1 (`kit/objects.tsx`) was kept.
+
+**Tests.**
+- `flows.test.ts` (summary vs `mine`).
+- `Approvals.test.tsx`, `AccessReleases.test.tsx`.
+- `e2e/approvals-mine.spec.ts`.
+
+**Findings.**
+- The tenant approvals queue and `TenantOverview` still word their count from all approvals.
+- A rollback of an access release lists what the release made, not what would be removed since. That needs a server dry run.
+
+**Polish gate.**
+1. Rules: 001, 002, 006, 010.
+2. Siblings:
+   - The run page, the workspace approvals and access releases are done.
+   - Left: the tenant approvals screen, the Flows head note count, `InstanceTriggers`.
+3. Lifecycle: not applicable.
+4. States: "Waiting for you", "Waiting for others" and "Decided", each with loading and empty states.
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `741a52c`:
+   - Amara (viewer) and Devi (developer): "2 runs are waiting for someone else to decide", no Decide, and "See who" opens two read-only rows with "Who decides".
+   - Maya: "2 runs are waiting for you", with Decide, and `mine` held 2.
+   - Production's script Triggers tab: no "Add a schedule", "Triggers change in a dev workspace and reach production by promotion." Dev: offered.
+6. Guards: `approvals-mine.spec.ts` in the e2e run.
+7. Left out: the tenant-level count, as above.
 
 ## M6: one promotion confirmation, and lists that page
 
@@ -237,7 +377,32 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - The A1-20 recipe as e2e: an agent-offered script renamed in the sandbox, requested and approved.
 - e2e with a seeded tenant of 250 members: the 250th is found by search and by paging.
 
-**Polish gate.** Rules: 001, 002, 003, 010. Siblings: Promote, request review, Release; every list that was capped.
+**Built** in `1df394f`, merged in `741a52c`.
+- `screens/PromotionConfirm.tsx` is shared by the Promote step and request review. The review sends `confirmBreaking` and `allowDelete`, and the preview takes `allowDelete`.
+- Rollback: "Activate version N in <workspace>?", a danger confirm in production.
+- `kit/paged.tsx` (`usePagedList`, `LoadMore`) with server search (`SearchPageQuery` in `pagination.ts`) for tenants, members, all members, the operator picker and group pickers.
+- Events page by 100, and open an event by `?id=`, or say "Event not found".
+
+**Tests.**
+- `PromotionConfirm.test.tsx`, `Rollback.test.tsx`, `Paged.test.tsx`, `Promotion.test.tsx`.
+- `list-search.test.ts`.
+- `e2e/paging.spec.ts`.
+
+**Findings.**
+- The two lists of versions on Release (the deployment ledger and the bundles) were not merged. They are different things, and merging them is a redesign.
+- Roles, other group pickers and `SeeItAs` still load the first 200.
+
+**Polish gate.**
+1. Rules: 001, 002, 003, 010.
+2. Siblings: Promote and review share one piece. The lists named in Findings remain.
+3. Lifecycle: not applicable.
+4. States: "Showing the first N … Load more"; "Event not found".
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `741a52c`:
+   - member search sent `members?limit=50&search=rowan` and found Rowan Ellis;
+   - `events?item=<unknown>` said "Event not found".
+   - **Not walked:** a rollback, since Fernhill's production workspace has one version. Covered by `Rollback.test.tsx`.
+6. Guards: `paging.spec.ts` (250 members) in the e2e run.
+7. Left out: merging the two version lists, for the owner.
 
 ## M7: guards that reach every screen
 
@@ -260,7 +425,33 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 
 **Tests.** The guards themselves. Each is shown once to fail on the defect it guards, by reverting its fix locally, and the result is written in Findings.
 
-**Polish gate.** Rules: 004, 005, 007, 013, 014.
+**Built** in `7eb4385`, merged in `5f4db06`.
+- **Q9.** The timeline (`packages/ui/src/Timeline.tsx`) is a container. Under 32rem a label sits above its bar, and only the first and last ticks show.
+- **Q10.**
+  - `<Deployments as="section">` on Release.
+  - `promoteConfirm` and `promoteLabel` name the real target. When merging with M6, the breaking sentences come from `PromotionConfirm`.
+- **Q11.** The docs tree's `NameEditor` stops only its own keys. Its sibling, `Grid.tsx`'s cell editor and column filter, now let F1 and ⌘K go on (`keepsKey`).
+- **Q12.** The audit log's "To" uses `Truncate` (middle). Operator access reads "the tenant's API". Empty details read "Nothing more was recorded."
+- `NOT_MEASURED` is empty. Every navigation section, and a flow run's timeline at 390 px, is measured in `polish.spec.ts`.
+- New `enforce.test.ts` rules:
+  - "a list drawn inside another screen is a section, not a second page";
+  - "no key handler on a field stops every key".
+
+**Tests.**
+- `NameEditor.test.tsx`, `Promote.test.ts`, `Audit.test.tsx`, `Grid.test.tsx`, `views.test.tsx`.
+- Each new enforce rule failed on its defect when its fix was reverted (`Release.tsx:645`; `Docs.tsx:846`, `Grid.tsx:282`, `Grid.tsx:481`), and passed after.
+
+**Polish gate.**
+1. Rules: 004, 005, 007, 013, 014.
+2. Siblings: `Grid.tsx`'s two key handlers, fixed in the same change.
+3. Lifecycle: not applicable.
+4. States: not applicable.
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `f9c9171`:
+   - Release has one `h1` in each workspace;
+   - F2 in the docs tree, then F1, opened help;
+   - the audit log cut a long target in the middle ("handbook/fr… /booking").
+6. Guards: the two enforce rules. `polish.spec.ts` measures every section.
+7. Left out: nothing.
 
 ## M8: the lifecycle the API already has, and the served surfaces held to the console's rules
 
@@ -292,7 +483,52 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - A keyboard-only walk of the served docs site at 390 px.
 - axe on the served search.
 
-**Polish gate.** Rules: 001, 003, 007, 008, 013. Siblings: the console's help and sheets, which are the model.
+**Built** in `d6fe6d3`, merged in `4cdca71`.
+- Tables: "Rename table" (via `ResourceIdentity`), "Describe the table", and undo and redo through `useHistory` (⌘Z).
+- A workspace name in settings; "Rename" for a tenant; Rename and Describe for end-user groups.
+- "Change" for a data source (`CreateDialog`'s new `initial`).
+- Code-app help (`packages/app/src/help.tsx`):
+  - it moves in and out;
+  - it is closed by a click outside;
+  - it follows the theme.
+- The served docs site (`kernel/apps/docs.ts`):
+  - the phone sheet takes and returns focus, and makes the page inert;
+  - the search listbox is well formed;
+  - search, copy and votes say when they fail.
+- Served app tables: "Load more" says when it fails and offers Try again. Refusals say whom to ask.
+
+**Tests.**
+- `Data.test.tsx`, `Environments.test.tsx`, `Account.test.tsx`, `Groups.test.tsx`.
+- `packages/app/src/app.test.tsx`, `Renderer.test.tsx`.
+- `docs-script.test.ts`.
+- `e2e/rename.spec.ts`, and `documentation.spec.ts` at 390 px.
+
+**Findings.**
+- The table editor PUTs the resource directly, so it does not use `useDraftSave`.
+- The docs search dialog and the phone sheet are not matched by the motion fixture's selector.
+
+**Polish gate.**
+1. Rules: 001, 003, 007, 008, 013.
+2. Siblings: `packages/ui`'s `Presence`, mirrored in `help.tsx` because `packages/app` does not depend on the kit. Member groups have no Describe.
+3. Lifecycle:
+
+   | | rename | describe | change | undo |
+   |---|---|---|---|---|
+   | table | ✓ | ✓ | n/a | ✓ |
+   | workspace | ✓ | n/a | n/a | n/a |
+   | tenant | ✓ | n/a | n/a | n/a |
+   | end-user group | ✓ | ✓ | n/a | n/a |
+   | data source | n/a | n/a | ✓ | n/a |
+
+4. States: the served failures are said in place, with a way on.
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `8fff039`:
+   - `handbook-feedback`'s Definition: "Describe the table" saved, and Undo took it back;
+   - the workspace name field and tenant Rename were present, and end-user groups had Rename and Describe;
+   - the docs site at 390 px, on `front-desk/booking`: opening the sheet moved focus to "Close the navigation" and made `.topbar` and `.page` inert. Escape returned focus to "Open the navigation", with nothing left inert;
+   - with search blocked: "The search did not answer. Open the full results."
+   - **Not walked:** "Change" on a source (Fernhill has none), and code-app help.
+6. Guards: `rename.spec.ts` and `documentation.spec.ts` in the e2e run.
+7. Left out: Describe for member groups.
 
 ## M9: copy made true, and the medium and low findings by area
 
@@ -335,7 +571,62 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 
 **To build.** Taken in batches by area, each batch one commit with its tests. The fix and expected behaviour for each are in the audit's appendices.
 
-**Polish gate.** Answered per batch.
+**Built** in three batches.
+- **Build and Operate and copy** (`d6f200d`, merged in `5ce1ab1`):
+  - the read-only test pane's copy, a flow's trigger copy, "Releases";
+  - who holds a role, before it can be deleted;
+  - kind names in review;
+  - "Not deployed yet" in place of Run for a draft;
+  - names lead to the object's page, and the script page has Run;
+  - graph nodes are buttons only when choosable;
+  - the compare page's "The code is the same in both";
+  - Git sync owns push and pull, as decided, with a commit message, and `GitPanel` keeps setup only.
+- **Documentation and shell** (`3168e49`, merged in `afa310e`):
+  - breadcrumbs for the docs reader, editor and member page;
+  - "New page" and preview votes say why they are disabled;
+  - `?group=` in the address;
+  - a 403 offers no Try again and says whom to ask (`ErrorState`).
+- **Data, insight and configure** (`c75d89f`, merged in `ae0205e`):
+  - one boolean field, and a reference picker;
+  - a choice that holds until it saves;
+  - a phone menu for column actions;
+  - header rows for HTTP;
+  - `HealthCell` with the age of a test;
+  - "New query" empties the editor;
+  - a filter's label can be cleared;
+  - a failed dashboard does not stick, and stale widgets say "Updating…";
+  - Alerts' load errors, and targets no longer bound;
+  - clone cannot be posted twice.
+
+**Tests.**
+- `Git.test.tsx`, `Roles`, `RunCompare`, `RunPage`, `Triggers.test.tsx` (names lead to the page).
+- `LoadState.test.tsx`.
+- `Grid.test.tsx`, `SchemaForm.test.tsx` (string maps), `Connections.test.tsx`.
+
+**Findings.**
+- **A2-08 is not fixed.** One scroller for the rows grid needs a fill layout: `TableView` in `WORKBENCHES`, a fill mode on `Page`, `Grid` with `fill`.
+- **A2-06 is partly fixed.** The reference picker lists the first 200 rows. File replace and remove in the row inspector is not done.
+- When merging, `ListScreen`'s columns became `DataColumn` (with `priority`), and a lost import was put back (`8fff039`).
+
+**Polish gate.**
+1. Rules: 001, 002, 003, 006, 007, 009, 010, 011.
+2. Siblings:
+   - `ErrorState`'s users all get the 403 rule.
+   - `SchemaForm`'s users all draw string maps as rows.
+   - Domains' "Not checked yet" and `ConnectionWizard`'s pill are not on `HealthCell`.
+3. Lifecycle: not applicable.
+4. States: forbidden, stale ("Updating…"), failed with Try again, and "tested 3d ago".
+5. Walk. On the throwaway instance on :8090, seeded by Fernhill at `8fff039`:
+   - script names in the list open `scripts/<path>`;
+   - a role with no holder said "Nobody holds it.";
+   - the HTTP connection form has header rows, with no JSON box;
+   - Git sync, Roles, Connections, Sources, Tables, Alerts, Dashboards and Settings do not scroll sideways at 390 px in dark.
+   - **Not walked:**
+     - push and pull, since Fernhill has no repository (covered by `Git.test.tsx`);
+     - a forbidden screen, since the viewer could open the one tried (covered by `LoadState.test.tsx`);
+     - "New query", since Fernhill has no saved query.
+6. Guards: the unit tests above.
+7. Left out: A2-08, and the rest of A2-06, for the owner.
 
 ## M10: guides, Fernhill, changelog, the walk-through
 

@@ -34,7 +34,7 @@ beforeEach(() => {
       signedIn = true;
       return [200, { token: "x" }];
     },
-    "GET /api/v1/tenants?limit=200": () => [
+    "GET /api/v1/tenants?limit=50": () => [
       200,
       {
         items: [

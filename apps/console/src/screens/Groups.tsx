@@ -1,9 +1,10 @@
 import { Button, Closing, ComboboxField, Dialog, EmptyState, Notice, TextField } from "@volvel/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
+import { usePagedList } from "../kit/paged.tsx";
 import { Code, Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
@@ -38,19 +39,27 @@ function MembersDialog({
   onClose: () => void;
 }) {
   const detail = useLoad<{ members: Person[] }>(path);
-  const everyone = useLoad<{ items: Person[] }>(candidates);
+  const [typed, setTyped] = useState("");
+  // The server searches the people who could be added, so no one past the first page is out of reach.
+  const everyone = usePagedList<Person>(candidates, { search: typed });
   const [adding, setAdding] = useState<string>();
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
   const members = detail.data?.members ?? [];
   const inGroup = new Set(members.map((person) => person.id));
-  const options = (everyone.data?.items ?? [])
+  const options = (everyone.items ?? [])
     .filter((person) => !inGroup.has(person.id))
     .map((person) => ({
       value: person.id,
       label: person.email,
       ...(person.name ? { hint: person.name } : {}),
     }));
+  // A page of people who are all in the group already is not the end of the list.
+  const { hasMore, loadMore, loading: finding, loadingMore } = everyone;
+  const nobodyYet = options.length === 0 && !finding && !loadingMore && !everyone.moreError;
+  useEffect(() => {
+    if (nobodyYet && hasMore) void loadMore();
+  }, [nobodyYet, hasMore, loadMore]);
 
   return (
     <Dialog
@@ -86,12 +95,16 @@ function MembersDialog({
               options={options}
               value={adding}
               placeholder="Search by email"
+              hint={hasMore && options.length > 0 && !typed ? "Type to find others." : undefined}
               empty={
-                everyone.loading
+                finding || loadingMore || hasMore
                   ? "Loading…"
-                  : `Every ${noun} of this tenant is already in the group.`
+                  : typed
+                    ? `No ${noun} matches that, or the ones that do are in the group already.`
+                    : `Every ${noun} of this tenant is already in the group.`
               }
               onChange={setAdding}
+              onSearch={setTyped}
             />
           </div>
           <Button type="submit" variant="primary" loading={busy} disabled={!adding}>
@@ -263,7 +276,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
             key={open.id}
             group={open}
             path={`${base}/groups/${open.id}`}
-            candidates={`${base}/members?limit=200`}
+            candidates={`${base}/members`}
             noun="member"
             onClose={() => setOpen(undefined)}
           />
@@ -367,7 +380,7 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
             key={open.id}
             group={open}
             path={`${base}/end-user-groups/${open.id}`}
-            candidates={`${base}/end-users?limit=200`}
+            candidates={`${base}/end-users`}
             noun="end user"
             onClose={() => {
               setOpen(undefined);

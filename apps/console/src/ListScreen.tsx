@@ -19,6 +19,7 @@ import { DataTable } from "./kit/DataTable.tsx";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
+import { usePagedList } from "./kit/paged.tsx";
 export interface FormField {
   name: string;
   label: string;
@@ -39,7 +40,12 @@ export interface FormField {
    * and how one item becomes a choice. The field is then a searchable list, so
    * nobody types a name that has to match something elsewhere.
    */
-  choose?: { path: string; option: (item: never) => Option | undefined };
+  choose?: {
+    path: string;
+    option: (item: never) => Option | undefined;
+    /** The route pages and takes `?search=`: what is typed is asked of the server. */
+    search?: boolean;
+  };
   /** Shows the field only while this holds for what has been entered so far. */
   when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
@@ -57,8 +63,13 @@ function ChoiceField({
   onChange: (value: string | undefined) => void;
 }) {
   const choose = field.choose as NonNullable<FormField["choose"]>;
-  const list = useLoad<{ items: never[] }>(choose.path);
-  const options = (list.data?.items ?? [])
+  const [typed, setTyped] = useState("");
+  // A route that pages is searched on the server, so what is past the first page is found.
+  const list = usePagedList<never>(choose.path, {
+    search: choose.search ? typed : "",
+    limit: choose.search ? 50 : 0,
+  });
+  const options = (list.items ?? [])
     .map(choose.option)
     .filter((option): option is Option => option !== undefined);
   return (
@@ -66,11 +77,18 @@ function ChoiceField({
       label={field.label}
       options={options}
       value={value}
-      hint={list.error ? list.error.message : field.hint}
+      hint={
+        list.error
+          ? list.error.message
+          : list.hasMore && !typed
+            ? "Showing the first of many. Type to search."
+            : field.hint
+      }
       error={error}
       placeholder={list.loading ? "Loading…" : (field.placeholder ?? "Choose")}
       empty={list.loading ? "Loading…" : "Nothing to choose from."}
       onChange={onChange}
+      {...(choose.search ? { onSearch: setTyped } : {})}
     />
   );
 }

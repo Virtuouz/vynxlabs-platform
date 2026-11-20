@@ -1637,6 +1637,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ...PageQuery.properties,
             name: Type.Optional(Type.String()),
             run: Type.Optional(Id),
+            id: Type.Optional(Id),
           }),
           response: { 200: pageOf(Event) },
         },
@@ -1645,6 +1646,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const args = pageArgs(query);
         let select = db.selectFrom("event").selectAll().where("workspace_id", "=", params.w);
         if (query.name) select = select.where("name", "=", query.name);
+        // One event by its ID: a link to one that the page does not reach.
+        if (query.id) select = select.where("id", "=", query.id);
         // What one script run published.
         if (query.run)
           select = select.where("source_type", "=", "script").where("source_id", "=", query.run);

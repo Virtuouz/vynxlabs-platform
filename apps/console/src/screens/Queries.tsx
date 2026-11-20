@@ -11,7 +11,7 @@ import { ReadTable } from "../kit/ReadTable.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
-import { Link, useUrlParam } from "../router.tsx";
+import { useUrlParam } from "../router.tsx";
 
 // The editor is large and is loaded when a query is first written.
 const CodeEditor = lazy(() =>
@@ -158,6 +158,34 @@ export function Queries({ root, link }: { root: string; link: string }) {
     setText(next);
     keep.edit(next);
   };
+  // Typed and not kept: a saved query's changes not yet saved, or a new query's text.
+  const unkept = current ? keep.dirty : text.trim() !== "";
+  /** Opens a saved query, or an empty one, asking first when what is typed would be lost. */
+  const go = async (path: string | undefined) => {
+    if (path === open) return;
+    if (unkept) {
+      const leave = await ask.confirm({
+        title: "Leave without saving?",
+        text: current
+          ? `Your changes to ${current.path} are not saved.`
+          : "This query is not saved.",
+        action: "Leave",
+        cancel: "Stay",
+        danger: true,
+      });
+      if (!leave) return;
+    }
+    if (path === undefined) clearEditor();
+    setOpen(path);
+  };
+  const clearEditor = () => {
+    setText("");
+    keep.reset("");
+    setTyped({});
+    setResult(undefined);
+    setRefusal(undefined);
+    setTook(undefined);
+  };
   // Opening a saved query puts its text in the editor. What is typed after is the editor's.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of query replaces the text
   useEffect(() => {
@@ -275,7 +303,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
               ) : null}
             </span>
             {current ? (
-              <Button size="small" variant="quiet" onClick={() => setOpen(undefined)}>
+              <Button size="small" variant="quiet" onClick={() => void go(undefined)}>
                 New query
               </Button>
             ) : null}
@@ -297,7 +325,10 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 }
                 onDone={(did) => {
                   saved.reload();
-                  if (did === "discarded" && current.draft === "new") setOpen(undefined);
+                  if (did === "discarded" && current.draft === "new") {
+                    clearEditor();
+                    setOpen(undefined);
+                  }
                 }}
               />
             ) : null}
@@ -406,9 +437,20 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 <ul className="m-0 flex list-none flex-col gap-1 p-0">
                   {data.items.map((one) => (
                     <li key={one.path}>
-                      <Link
-                        to={`${link}/queries?query=${encodeURIComponent(one.path)}`}
-                        current={one.path === open}
+                      <a
+                        href={`${link}/queries?query=${encodeURIComponent(one.path)}`}
+                        aria-current={one.path === open ? "page" : undefined}
+                        onClick={(event) => {
+                          if (
+                            event.metaKey ||
+                            event.ctrlKey ||
+                            event.shiftKey ||
+                            event.button !== 0
+                          )
+                            return;
+                          event.preventDefault();
+                          void go(one.path);
+                        }}
                         className={`flex flex-col rounded-control px-2 py-1 hover:bg-sunken ${
                           one.path === open ? "bg-action-soft" : ""
                         }`}
@@ -417,7 +459,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
                         {one.description ? (
                           <span className="text-meta text-ink-muted">{one.description}</span>
                         ) : null}
-                      </Link>
+                      </a>
                     </li>
                   ))}
                 </ul>

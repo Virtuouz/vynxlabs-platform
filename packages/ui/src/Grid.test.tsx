@@ -232,6 +232,21 @@ describe("grid navigation (the WAI-ARIA grid pattern)", () => {
     await waitFor(() => expect(onEdit).toHaveBeenCalledWith(rows[0], "title", "Renamed"));
   });
 
+  test("a yes/no cell toggles on Enter and on a double-click, and says why a refusal failed (A2-05)", async () => {
+    const onEdit = vi.fn(async () => {
+      throw new Error("Not allowed.");
+    });
+    const { grid } = mount({ onEdit });
+    const cell = grid.querySelector('[data-cell="1:3"]') as HTMLElement;
+    fireEvent.doubleClick(cell);
+    await waitFor(() => expect(onEdit).toHaveBeenCalledWith(rows[0], "done", true));
+    expect((await screen.findByRole("alert")).textContent).toBe("Not allowed.");
+    cell.focus();
+    fireEvent.keyDown(cell, { key: "Enter" });
+    await waitFor(() => expect(onEdit).toHaveBeenCalledTimes(2));
+    expect(cell.querySelector("input")).toBeNull();
+  });
+
   test("Space checks a row, and Enter on a heading sorts by it", async () => {
     const { grid, onCheck, onSort } = mount();
     const cell = grid.querySelector('[tabindex="0"]') as HTMLElement;

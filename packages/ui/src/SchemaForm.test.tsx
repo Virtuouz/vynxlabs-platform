@@ -351,4 +351,23 @@ describe("every connector's configuration form", () => {
       expect(screen.getByLabelText(label).tagName).toBe("INPUT");
     }
   });
+
+  test("a map of text, such as headers, is rows of a name and a value, not JSON (A2-11)", () => {
+    const sent = vi.fn();
+    const schema: JsonSchema = {
+      type: "object",
+      properties: { headers: { type: "object", additionalProperties: { type: "string" } } },
+    };
+    render(<SchemaForm schema={schema} onSubmit={sent} submitLabel="Save" />);
+    expect(screen.queryByRole("textbox", { name: "Headers" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    type("Name 1", "Authorization");
+    type("Value 1", "Bearer abc");
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    type("Name 2", "X-Trace");
+    type("Value 2", "1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove X-Trace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(sent).toHaveBeenCalledWith({ headers: { Authorization: "Bearer abc" } });
+  });
 });

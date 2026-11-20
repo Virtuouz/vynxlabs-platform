@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { TermText, Toggletip, useGlossaryMatch } from "./Term.tsx";
 
 export interface GridColumn {
@@ -186,7 +186,7 @@ function EditableCell<Row extends Record<string, unknown>>({
   const cancelled = useRef(false);
   const controlled = editing !== undefined;
   const text = controlled
-    ? editing
+    ? editing && column.type !== "boolean"
       ? (own ?? editText(column.type, row[column.name]))
       : undefined
     : own;
@@ -207,6 +207,18 @@ function EditableCell<Row extends Record<string, unknown>>({
       setBusy(false);
     }
   };
+
+  // In a navigable grid, a yes/no cell is not typed into: Enter, F2 and a double-click all toggle
+  // it here, and a refusal is said in the cell instead of being dropped.
+  const toggling = useRef<() => void>(() => {});
+  toggling.current = () => {
+    onEnd?.(false);
+    void save(value !== true);
+  };
+  const flipping = controlled && editing === true && column.type === "boolean";
+  useEffect(() => {
+    if (flipping) toggling.current();
+  }, [flipping]);
 
   if (column.type === "boolean" && !controlled) {
     return (
@@ -401,10 +413,6 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
     }
     if (!row) return;
     if (column?.editable && onEdit && props.cell?.(row, column) === undefined) {
-      if (column.type === "boolean") {
-        void onEdit(row, column.name, row[column.name] !== true);
-        return;
-      }
       setEditing(`${r}:${c}`);
       return;
     }

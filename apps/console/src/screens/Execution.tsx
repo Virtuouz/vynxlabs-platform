@@ -14,7 +14,8 @@ import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
-import { ago, between, clock, count, duration } from "../kit/format.ts";
+import { between, clock, count, duration } from "../kit/format.ts";
+import { HealthCell } from "../kit/health.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
@@ -697,25 +698,7 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
       </span>
     );
   }
-  if (!row.health) return <StatePill state="queued">Not tested</StatePill>;
-  const when = `Tested ${clock(row.health.checkedAt)}`;
-  return (
-    <span
-      title={row.health.ok ? when : `${row.health.problem ?? ""}\n${when}`}
-      className="block max-w-[18rem]"
-    >
-      {row.health.ok ? (
-        <StatePill
-          state="ok"
-          detail={row.health.latencyMs !== null ? `${row.health.latencyMs} ms` : undefined}
-        >
-          Reached
-        </StatePill>
-      ) : (
-        <StatePill state="failed">{`Failed: ${row.health.problem ?? "not reached"}`}</StatePill>
-      )}
-    </span>
-  );
+  return <HealthCell health={row.health} />;
 }
 
 export function Connections({ root }: { root: string }) {

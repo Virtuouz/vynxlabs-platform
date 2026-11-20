@@ -51,11 +51,26 @@ export function checkPageAmong(
   // Where it is among the folders.
   const parts = path.split("/");
   const name = parts.at(-1) as string;
-  if (parts.length > 3) {
-    error(
-      "too_deep",
-      `This page is ${parts.length - 1} folders down. A page is in a collection, or in a group inside a collection, and no deeper.`,
+  if (name === "index" && entry.frontmatter.pages) {
+    const folder = parts.slice(0, -1).join("/");
+    const prefix = folder === "" ? "" : `${folder}/`;
+    const names = new Set(
+      rest
+        .filter((one) => one.path.startsWith(prefix))
+        .map((one) => one.path.slice(prefix.length).split("/")[0] as string),
     );
+    for (const listed of entry.frontmatter.pages) {
+      if (listed !== "index" && !names.has(listed)) {
+        issues.push({
+          path,
+          line: 1,
+          column: 1,
+          code: "pages_unknown",
+          message: `pages: lists "${listed}", and there is no page or folder of that name in ${folder === "" ? "this folder" : folder}.`,
+          severity: "warning",
+        });
+      }
+    }
   }
   if (name !== "index" && rest.some((one) => one.path.startsWith(`${path}/`))) {
     error(

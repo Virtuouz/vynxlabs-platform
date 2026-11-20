@@ -41,7 +41,6 @@ function permissions() {
   return page(
     {
       title: "Permissions",
-      order: 1,
       description: "Every permission the instance checks, and what each allows.",
     },
     body.join("\n"),
@@ -69,7 +68,6 @@ function kinds(list) {
     page(
       {
         title: "Kinds of resource",
-        order: 2,
         description: "What a resource of each kind may say, field by field.",
       },
       [
@@ -116,7 +114,6 @@ function config() {
   return page(
     {
       title: "Settings",
-      order: 3,
       description: "Every environment variable the instance reads.",
     },
     [
@@ -143,7 +140,6 @@ function cli() {
   return page(
     {
       title: "The volvel command",
-      order: 4,
       description: "Every command of the CLI, as `volvel --help` lists them.",
     },
     [
@@ -173,7 +169,6 @@ function errors() {
   return page(
     {
       title: "Error codes",
-      order: 5,
       topic: "errors",
       description: "Every code the API answers a failure with, and what to do about each.",
     },
@@ -202,11 +197,11 @@ function docsSyntax() {
     page(
       {
         title: "Writing documentation",
-        order: 6,
+        pages: ["frontmatter", "components"],
         description: "What a page of documentation is made of.",
       },
       [
-        "A page is a Markdown file with a few lines about itself at its top. Folders give pages their place: there is no file that lists them.",
+        "A page is a Markdown file with a few lines about itself at its top. Folders give pages their place, to any depth. A folder's own page, `index.md`, may list the order of what is in it with `pages:`, and what it does not list comes after, by title.",
         "",
         "- [What the top of a page says](frontmatter)",
         "- [Components](components), for what Markdown alone cannot say",
@@ -218,7 +213,6 @@ function docsSyntax() {
     page(
       {
         title: "The top of a page",
-        order: 1,
         description: "The fields between the two lines of `---` that begin a page.",
       },
       [
@@ -228,7 +222,6 @@ function docsSyntax() {
         "---",
         "title: Refund an order",
         "description: How support issues a full or partial refund.",
-        "order: 20",
         "---",
         "```",
         "",
@@ -246,7 +239,6 @@ function docsSyntax() {
     page(
       {
         title: "Components",
-        order: 2,
         description: "The components a page may use, and what each takes.",
       },
       [
@@ -335,8 +327,8 @@ export function referenceIndex(more = []) {
   return page(
     {
       title: "Reference",
-      order: 8,
       icon: "book-open",
+      pages: ["permissions", "kinds", "settings", "cli", "errors", "docs", "api"],
       description: "Lists drawn from the code itself: what it checks, reads and answers with.",
     },
     [

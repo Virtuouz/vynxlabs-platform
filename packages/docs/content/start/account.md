@@ -1,6 +1,5 @@
 ---
 title: Your account
-order: 3
 topic: account
 description: Your API keys and your own preferences.
 ---

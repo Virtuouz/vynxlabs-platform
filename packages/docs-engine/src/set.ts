@@ -4,16 +4,16 @@ import { ABOUT_KINDS, type AboutKind, type TermDefinition } from "./schema.js";
 
 /**
  * A set of pages, and everything worked out across them. All of a set's
- * structure comes from its pages' paths: there is no file that lists them.
+ * structure comes from its pages' paths and from what a folder's own page
+ * says of the order of what is in it:
  *
  *   index                 the home page
  *   <page>                a page of the "Uncategorized" collection
- *   <collection>/index    what a collection is called, its icon and its order
- *   <collection>/<page>
- *   <collection>/<group>/index
- *   <collection>/<group>/<page>
+ *   <folder>/index        what a folder is called, its icon, and the order of what is in it (`pages:`)
+ *   <folder>/<page>
+ *   <folder>/<folder>/…   folders inside folders, to any depth
  *
- * Nothing goes deeper than that.
+ * A folder of the set's own folder is a collection.
  */
 
 export interface PageRef {
@@ -25,27 +25,26 @@ export interface PageRef {
   description?: string;
 }
 
-export interface Group {
-  type: "group";
+export interface Folder {
+  type: "folder";
+  /** The folder's name, the last part of its path. Empty for the pages that are in no folder. */
   id: string;
-  title: string;
-  /** The group's own page, when it has one. */
-  index?: PageRef;
-  pages: PageRef[];
-}
-
-export interface Collection {
-  /** The folder's name. Empty for the pages that are in no folder. */
-  id: string;
+  /** The folder's path under the set's own. Empty for the pages that are in no folder. */
+  path: string;
   title: string;
   icon?: string;
+  description?: string;
+  /** The folder's own page, when it has one. */
   index?: PageRef;
-  items: (PageRef | Group)[];
+  items: (PageRef | Folder)[];
 }
+
+/** A folder of the set's own folder. */
+export type Collection = Folder;
 
 export interface Nav {
   home?: PageRef;
-  collections: Collection[];
+  collections: Folder[];
 }
 
 /** A glossary term, and the page that defines it. */
@@ -100,10 +99,24 @@ function ref(entry: DocEntry): PageRef {
   return made;
 }
 
-function inOrder(a: DocEntry | undefined, b: DocEntry | undefined, aTitle: string, bTitle: string) {
-  const first = a?.frontmatter.order ?? Number.POSITIVE_INFINITY;
-  const second = b?.frontmatter.order ?? Number.POSITIVE_INFINITY;
-  return first - second || aTitle.localeCompare(bTitle, "en", { sensitivity: "base" });
+/** The name an item is listed by in its folder's `pages:`: a page's file name, or a folder's own. */
+export function nameOf(item: PageRef | Folder): string {
+  return item.type === "folder" ? item.id : (item.path.split("/").at(-1) as string);
+}
+
+/**
+ * Puts a folder's items in order: those its own page lists, as listed, and
+ * then the rest by title.
+ */
+export function ordered<Item extends PageRef | Folder>(
+  items: readonly Item[],
+  listed: readonly string[] | undefined,
+): Item[] {
+  const at = new Map((listed ?? []).map((name, place) => [name, place] as const));
+  const place = (item: Item) => at.get(nameOf(item)) ?? Number.POSITIVE_INFINITY;
+  return [...items].sort(
+    (a, b) => place(a) - place(b) || a.title.localeCompare(b.title, "en", { sensitivity: "base" }),
+  );
 }
 
 /** Where a link written on one page leads, within a set. */
@@ -266,6 +279,9 @@ export function buildDocSet(
   const error = (path: string, code: string, message: string, line = 1, column = 1) => {
     issues.push({ path, line, column, code, message, severity: "error" });
   };
+  const warn = (path: string, code: string, message: string) => {
+    issues.push({ path, line: 1, column: 1, code, message, severity: "warning" });
+  };
 
   const pages = new Map<string, DocEntry>();
   for (const entry of entries) pages.set(entry.path, entry);
@@ -276,13 +292,12 @@ export function buildDocSet(
     const parts = path.split("/");
     for (let depth = 1; depth < parts.length; depth++) folders.add(parts.slice(0, depth).join("/"));
   }
-  const home = pages.get("index");
-  const collections = new Map<string, { loose: DocEntry[]; groups: Map<string, DocEntry[]> }>();
-  const collection = (id: string) => {
-    let found = collections.get(id);
+  const inFolder = new Map<string, { pages: DocEntry[]; folders: Set<string> }>();
+  const held = (folder: string) => {
+    let found = inFolder.get(folder);
     if (!found) {
-      found = { loose: [], groups: new Map() };
-      collections.set(id, found);
+      found = { pages: [], folders: new Set() };
+      inFolder.set(folder, found);
     }
     return found;
   };
@@ -296,70 +311,63 @@ export function buildDocSet(
         `${entry.path}.md sits beside a folder named ${name}. A folder's own page is the index.md inside it: move this file to ${entry.path}/index.md.`,
       );
     }
-    if (parts.length > 3) {
-      error(
-        entry.path,
-        "too_deep",
-        `This page is ${parts.length - 1} folders down. A page is in a collection, or in a group inside a collection, and no deeper.`,
-      );
-      continue;
-    }
-    if (entry.path === "index") continue;
-    if (parts.length === 1) collection("").loose.push(entry);
-    else if (parts.length === 2) {
-      if (name !== "index") collection(parts[0] as string).loose.push(entry);
-      else collection(parts[0] as string);
-    } else {
-      const groups = collection(parts[0] as string).groups;
-      const group = parts[1] as string;
-      if (!groups.has(group)) groups.set(group, []);
-      if (name !== "index") groups.get(group)?.push(entry);
-    }
+    if (name !== "index") held(parts.slice(0, -1).join("/")).pages.push(entry);
+  }
+  for (const folder of folders) {
+    const parts = folder.split("/");
+    held(parts.slice(0, -1).join("/")).folders.add(parts.at(-1) as string);
   }
 
-  const nav: Nav = { collections: [] };
-  if (home) nav.home = ref(home);
-  const sorted = [...collections.entries()].sort(([a], [b]) => {
-    // Pages in no folder come last, whatever their order.
-    if (a === "" || b === "") return a === "" ? 1 : -1;
-    const first = pages.get(`${a}/index`);
-    const second = pages.get(`${b}/index`);
-    return inOrder(
-      first,
-      second,
-      first?.frontmatter.title ?? titleOf(a),
-      second?.frontmatter.title ?? titleOf(b),
-    );
-  });
-  for (const [id, held] of sorted) {
-    const index = id === "" ? undefined : pages.get(`${id}/index`);
-    const items: { entry: DocEntry | undefined; title: string; item: PageRef | Group }[] = [];
-    for (const entry of held.loose) {
-      items.push({ entry, title: entry.frontmatter.title, item: ref(entry) });
+  const indexOf = (folder: string) => pages.get(folder === "" ? "index" : `${folder}/index`);
+  const itemsOf = (folder: string): (PageRef | Folder)[] => {
+    const here = inFolder.get(folder);
+    if (!here) return [];
+    const prefix = folder === "" ? "" : `${folder}/`;
+    const items: (PageRef | Folder)[] = [
+      ...here.pages.map(ref),
+      ...[...here.folders].map((name) => folderAt(`${prefix}${name}`)),
+    ];
+    const index = indexOf(folder);
+    const listed = index?.frontmatter.pages;
+    if (index && listed) {
+      const names = new Set(items.map(nameOf));
+      for (const name of listed) {
+        if (name !== "index" && !names.has(name)) {
+          warn(
+            index.path,
+            "pages_unknown",
+            `pages: lists "${name}", and there is no page or folder of that name in ${folder === "" ? "this folder" : folder}.`,
+          );
+        }
+      }
     }
-    for (const [group, groupPages] of held.groups) {
-      const groupIndex = pages.get(`${id}/${group}/index`);
-      const made: Group = {
-        type: "group",
-        id: group,
-        title: groupIndex?.frontmatter.title ?? titleOf(group),
-        pages: [...groupPages]
-          .sort((a, b) => inOrder(a, b, a.frontmatter.title, b.frontmatter.title))
-          .map(ref),
-      };
-      if (groupIndex) made.index = ref(groupIndex);
-      items.push({ entry: groupIndex, title: made.title, item: made });
-    }
-    items.sort((a, b) => inOrder(a.entry, b.entry, a.title, b.title));
-    if (id === "" && items.length === 0) continue;
-    const made: Collection = {
-      id,
-      title: id === "" ? UNCATEGORIZED : (index?.frontmatter.title ?? titleOf(id)),
-      items: items.map((one) => one.item),
+    return ordered(items, listed);
+  };
+  const folderAt = (path: string): Folder => {
+    const name = path.split("/").at(-1) as string;
+    const index = indexOf(path);
+    const made: Folder = {
+      type: "folder",
+      id: name,
+      path,
+      title: index?.frontmatter.title ?? titleOf(name),
+      items: itemsOf(path),
     };
     if (index?.frontmatter.icon) made.icon = index.frontmatter.icon;
+    if (index?.frontmatter.description) made.description = index.frontmatter.description;
     if (index) made.index = ref(index);
-    nav.collections.push(made);
+    return made;
+  };
+
+  const nav: Nav = { collections: [] };
+  const home = pages.get("index");
+  if (home) nav.home = ref(home);
+  const top = itemsOf("");
+  for (const item of top) if (item.type === "folder") nav.collections.push(item);
+  const loose = top.filter((item): item is PageRef => item.type === "page");
+  // Pages in no folder come last, as a collection of their own.
+  if (loose.length > 0) {
+    nav.collections.push({ type: "folder", id: "", path: "", title: UNCATEGORIZED, items: loose });
   }
 
   // Topics, terms, attachments and extensions.
@@ -463,16 +471,46 @@ export function buildDocSet(
 /** Every page of a navigation, in the order a reader meets them. */
 export function pagesInOrder(nav: Nav): PageRef[] {
   const out: PageRef[] = [];
+  const visit = (item: PageRef | Folder) => {
+    if (item.type === "page") out.push(item);
+    else {
+      if (item.index) out.push(item.index);
+      for (const inner of item.items) visit(inner);
+    }
+  };
   if (nav.home) out.push(nav.home);
-  for (const collection of nav.collections) {
-    if (collection.index) out.push(collection.index);
-    for (const item of collection.items) {
-      if (item.type === "page") out.push(item);
-      else {
-        if (item.index) out.push(item.index);
-        out.push(...item.pages);
+  for (const collection of nav.collections) visit(collection);
+  return out;
+}
+
+/** The folders from a collection down to a page, outermost first. Empty when the page is in none. */
+export function trailOf(nav: Nav, path: string): Folder[] {
+  const find = (folder: Folder, trail: Folder[]): Folder[] | undefined => {
+    const here = [...trail, folder];
+    if (folder.index?.path === path) return here;
+    for (const item of folder.items) {
+      if (item.type === "page" && item.path === path) return here;
+      if (item.type === "folder") {
+        const found = find(item, here);
+        if (found) return found;
       }
     }
+    return undefined;
+  };
+  for (const collection of nav.collections) {
+    const found = find(collection, []);
+    if (found) return found;
   }
-  return out;
+  return [];
+}
+
+/**
+ * What a page's folder holds, for `::pages`: for a folder's own page, that
+ * folder; for any other page, the folder it is in. For the home page, the
+ * collections and the pages in no folder.
+ */
+export function folderItems(nav: Nav, path: string): (PageRef | Folder)[] {
+  if (path === "index")
+    return nav.collections.flatMap((one) => (one.id === "" ? one.items : [one]));
+  return trailOf(nav, path).at(-1)?.items ?? [];
 }

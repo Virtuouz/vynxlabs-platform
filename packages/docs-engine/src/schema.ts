@@ -53,15 +53,16 @@ export const FRONTMATTER_SCHEMA = {
         "One or two sentences on what the page is for. Shown in navigation, search and link previews.",
       maxLength: 500,
     },
-    order: {
-      type: "number",
+    pages: {
+      type: "array",
       description:
-        "Where the page sits among the others in its folder, lowest first. Pages with the same order, or none, sort by title.",
+        "For a folder's index page: the order of what is in the folder, by name. A page is named by its file name without .md, and a folder by its own name. What the list leaves out comes after it, by title.",
+      items: { type: "string", pattern: "^[a-z0-9][a-z0-9_-]*$", maxLength: 255 },
+      maxItems: 500,
     },
     icon: {
       type: "string",
-      description:
-        "For a collection's index page: the name of the icon shown beside the collection.",
+      description: "For a folder's index page: the name of the icon shown beside the folder.",
       pattern: ID_PATTERN,
       maxLength: 40,
     },
@@ -162,7 +163,7 @@ export interface Frontmatter {
   title: string;
   key?: string;
   description?: string;
-  order?: number;
+  pages?: string[];
   icon?: string;
   topic?: string;
   terms?: TermDefinition[];

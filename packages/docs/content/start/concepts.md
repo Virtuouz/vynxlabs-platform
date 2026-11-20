@@ -1,6 +1,5 @@
 ---
 title: Concepts
-order: 1
 topic: concepts
 description: Tenants, workspaces, resources and deploys, in a page.
 terms:

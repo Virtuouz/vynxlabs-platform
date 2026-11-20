@@ -1,6 +1,5 @@
 ---
 title: Dashboards
-order: 4
 topic: data-dashboards
 description: "Pages of charts, numbers and tables over queries, placed by drag and refreshed on a timer."
 ---

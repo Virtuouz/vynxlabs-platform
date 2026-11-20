@@ -215,7 +215,8 @@ export function directives(md: MarkdownIt): void {
       if (closeLine === -1) meta.unclosed = true;
       open.meta = meta;
       open.block = true;
-      open.map = [startLine, last];
+      // Like markdown-it's own, the end is the line after the block: here, after the line that closes it.
+      open.map = [startLine, closeLine === -1 ? last : last + 1];
 
       const oldParent = state.parentType;
       const oldLineMax = state.lineMax;

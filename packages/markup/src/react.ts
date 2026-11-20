@@ -194,4 +194,4 @@ export function renderReact(tree: Node, options: ReactOptions = {}): ReactNode {
   return toReact(draw(tree, ctx));
 }
 
-export type { FieldInfo, RenderOptions, TermInfo } from "./render.js";
+export type { FieldInfo, FolderItem, RenderOptions, TermInfo } from "./render.js";

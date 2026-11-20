@@ -7,15 +7,7 @@ import {
   setFrontmatter,
   type TermDefinition,
 } from "@volvel/docs-engine";
-import {
-  Button,
-  Notice,
-  NumberField,
-  Panel,
-  SelectField,
-  TextAreaField,
-  TextField,
-} from "@volvel/ui";
+import { Button, Notice, Panel, SelectField, TextAreaField, TextField } from "@volvel/ui";
 import { Plus, X } from "lucide-react";
 
 const SAYS = FRONTMATTER_SCHEMA.properties;
@@ -106,14 +98,10 @@ export function PageDetails({
           onChange={(description) => set({ description })}
         />
         <div className="flex flex-col gap-4">
-          <NumberField
-            name="order"
-            label="Order"
-            required={false}
-            value={typeof now.order === "number" ? now.order : undefined}
-            hint={SAYS.order.description}
-            onChange={(order) => set({ order })}
-          />
+          <p className="m-0 text-meta text-ink-muted">
+            Its place among the others: drag it in the tree, or list it in <code>pages:</code> on
+            its folder's own page.
+          </p>
           {index || now.icon !== undefined ? (
             <TextField
               name="icon"

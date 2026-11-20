@@ -105,7 +105,7 @@ export {
   useToast,
 } from "./Toast.tsx";
 export { Kbd, Tooltip, TooltipProvider } from "./Tooltip.tsx";
-export { Tree, type TreeNode } from "./Tree.tsx";
+export { type DropPosition, Tree, type TreeNode } from "./Tree.tsx";
 export { useFlip, useKeys } from "./useFlip.ts";
 export {
   type CardsWidgetConfig,

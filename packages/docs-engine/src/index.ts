@@ -1,6 +1,27 @@
 export { type AmongOptions, checkPageAmong, type PageIndex } from "./among.js";
+export {
+  type Change,
+  childrenOf,
+  inverseOf,
+  NAME_PATTERN,
+  nameProblem,
+  newPageSource,
+  orderOf,
+  type PageSource,
+  type Place,
+  type Plan,
+  planDelete,
+  planDuplicate,
+  planMove,
+  planNewFolder,
+  planNewPage,
+  planRename,
+  relativeHref,
+  slugOf,
+} from "./ops.js";
 export { type Manifest, manifestOf, type PageFile, packageOutput } from "./output.js";
 export {
+  asDirectory,
   type DocEntry,
   type DocIssue,
   frontmatterOf,
@@ -23,7 +44,15 @@ export {
   type SchemaProblem,
   type TermDefinition,
 } from "./schema.js";
-export { buildSearchIndex, loadSearchIndex, type SearchHit } from "./search.js";
+export {
+  buildSearchIndex,
+  loadSearchIndex,
+  type Marked,
+  mark,
+  type PageHit,
+  type PlaceHit,
+  type SearchHit,
+} from "./search.js";
 export {
   type Around,
   type BuildOptions,
@@ -31,8 +60,11 @@ export {
   type Collection,
   crossIssues,
   type DocSet,
-  type Group,
+  type Folder,
+  folderItems,
   type Nav,
+  nameOf,
+  ordered,
   type PageRef,
   pagesInOrder,
   resolveAsset,
@@ -40,6 +72,7 @@ export {
   resourceKey,
   type Target,
   type Term,
+  trailOf,
   UNCATEGORIZED,
   urlOf,
 } from "./set.js";

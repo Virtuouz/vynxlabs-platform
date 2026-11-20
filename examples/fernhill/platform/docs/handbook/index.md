@@ -1,6 +1,8 @@
 ---
 title: Fernhill handbook
 description: How the front desk books, checks in and bills, at every clinic.
+pages:
+  - front-desk
 ---
 
 This is how we work at the desk. It is short on purpose: read the page for what you are doing.

@@ -1,8 +1,14 @@
 ---
 title: Operate
-order: 3
 icon: sliders-horizontal
 description: What is running, what ran, and what changes next.
+pages:
+  - runs
+  - events
+  - triggers
+  - approvals
+  - releases
+  - git-sync
 ---
 
 What is running, what ran, and what changes next.

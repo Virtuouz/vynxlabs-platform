@@ -1,5 +1,11 @@
-import { type Manifest, type PageIndex, resolveLink } from "@volvel/docs-engine";
-import type { TreeNode } from "@volvel/ui";
+import {
+  childrenOf,
+  type Manifest,
+  orderOf,
+  type PageIndex,
+  type PageSource,
+  resolveLink,
+} from "@volvel/docs-engine";
 import type { Described } from "../../help/glossary.tsx";
 
 /** A page, as the workspace's list of documentation gives it. */
@@ -7,7 +13,8 @@ export interface DocPage {
   path: string;
   title: string;
   description: string | null;
-  order: number | null;
+  /** For a folder's own page: the order of what is in the folder, by name. */
+  pages: string[] | null;
   topic: string | null;
   /** The docs app that serves it, by the app's path. */
   app: string | null;
@@ -17,6 +24,10 @@ export interface DocPage {
   file: string | null;
   headings: string[];
   terms: { id: string; term: string; aliases: string[]; short: string }[];
+  /** The page's whole file, as it is being written. */
+  source: string;
+  /** The draft's revision, to send back with a save. Null while there is no draft. */
+  revision: number | null;
 }
 
 export interface DocsApp {
@@ -63,118 +74,125 @@ export const termsOf = (list: DocsList) =>
     .filter((page) => page.state !== "removed")
     .flatMap((page) => page.terms.map((term) => ({ ...term, page })));
 
-const byOrder = (a: DocPage, b: DocPage) =>
-  (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY) ||
-  a.title.localeCompare(b.title);
-
-const titled = (folder: string) => {
-  const words = folder.replace(/[-_]+/g, " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-};
-
-/** Whether a page can be moved from here: one written here, that is not on its way out. */
+/** Whether a page can be moved or renamed from here: one written here, that is not on its way out. */
 export const movable = (page: DocPage | undefined): page is DocPage =>
   page !== undefined && page.file === null && page.state !== "removed";
 
-/**
- * Where a page would be, let go on a row of the tree: in that app's folder,
- * in that folder, or beside that page. Its own name goes with it. A reason
- * instead, when it cannot go there; nothing, when it is there already or the
- * row is not a place.
- */
-export function movedTo(
-  list: DocsList,
-  dragged: string,
-  onto: string,
-): { to: string } | { problem: string } | undefined {
-  const page = list.pages.find((one) => one.path === dragged);
-  if (!movable(page)) return undefined;
-  let folder: string | undefined;
-  if (onto.startsWith("app:")) {
-    folder = list.apps.find((app) => app.path === onto.slice("app:".length))?.docs;
-  } else if (onto.startsWith("dir:")) {
-    folder = onto.slice("dir:".length);
-  } else if (list.pages.some((one) => one.path === onto) && onto.includes("/")) {
-    folder = onto.slice(0, onto.lastIndexOf("/"));
-  }
-  if (folder === undefined) return undefined;
-  const to = `${folder}/${dragged.slice(dragged.lastIndexOf("/") + 1)}`;
-  if (to === dragged) return undefined;
-  if (list.pages.some((one) => one.path === to && one.state !== "removed"))
-    return { problem: `There is a page at ${to} already.` };
-  return { to };
+/** The pages as a tree's changes are planned over: every page that is not on its way out. */
+export function sourcesOf(list: DocsList): PageSource[] {
+  return list.pages
+    .filter((page) => page.state !== "removed")
+    .map((page) => ({ path: page.path, source: page.source }));
 }
 
+/** A row of the tree of pages: a folder, or a page. */
+export interface DocRow {
+  /** A page's path, or `dir:` and a folder's path. */
+  id: string;
+  kind: "page" | "folder";
+  path: string;
+  name: string;
+  title: string;
+  /** For a page: itself. For a folder: its own page, when it has one. */
+  page: DocPage | undefined;
+  /** For a folder: the docs app that publishes it as a site, when it is a top-level one. */
+  site: DocsApp | undefined;
+  /** For a folder: what is in it, in order. */
+  children?: DocRow[];
+}
+
+export const folderId = (path: string) => `dir:${path}`;
+export const isFolderId = (id: string) => id.startsWith("dir:");
+export const pathOfId = (id: string) => (isFolderId(id) ? id.slice("dir:".length) : id);
+
 /**
- * The pages as their folders: each docs app, its collections, their groups,
- * and the pages in each. A folder is named by its index page's title when it
- * has one. Pages no app serves come last, under their own heading.
+ * The pages as their folders, from the top: each top-level folder, and in
+ * each folder what its own page lists first, then the rest by title. A
+ * folder is named by its own page's title when it has one, and from its name
+ * when it has none.
  */
-export function treeOf(list: DocsList): TreeNode[] {
-  const nodes: TreeNode[] = [];
-  const folder = (pages: DocPage[], prefix: string): TreeNode[] => {
-    const here: DocPage[] = [];
-    const inside = new Map<string, DocPage[]>();
-    for (const page of pages) {
-      const rest = page.path.slice(prefix.length);
-      const cut = rest.indexOf("/");
-      if (cut === -1) here.push(page);
-      else {
-        const name = rest.slice(0, cut);
-        inside.set(name, [...(inside.get(name) ?? []), page]);
+export function rowsOf(list: DocsList): DocRow[] {
+  const sources = sourcesOf(list);
+  const byPath = new Map(list.pages.map((page) => [page.path, page]));
+  const removed = list.pages.filter((page) => page.state === "removed");
+  const join = (folder: string, name: string) => (folder === "" ? name : `${folder}/${name}`);
+  const folder = (path: string): DocRow[] => {
+    const held = new Map(childrenOf(sources, path).map((one) => [one.name, one]));
+    const rows = orderOf(sources, path).map((name): DocRow => {
+      const one = held.get(name) as { name: string; title: string; folder: boolean };
+      const at = join(path, name);
+      if (!one.folder) {
+        return {
+          id: at,
+          kind: "page",
+          path: at,
+          name,
+          title: one.title,
+          page: byPath.get(at),
+          site: undefined,
+        };
+      }
+      return {
+        id: folderId(at),
+        kind: "folder",
+        path: at,
+        name,
+        title: one.title,
+        page: byPath.get(`${at}/index`),
+        site: path === "" ? list.apps.find((app) => app.docs === at) : undefined,
+        children: folder(at),
+      };
+    });
+    // What a draft removes is still shown, at the end of its folder, until it is deployed.
+    for (const page of removed) {
+      const parent = page.path.split("/").slice(0, -1).join("/");
+      const name = page.path.split("/").at(-1) as string;
+      if (parent === path && name !== "index") {
+        rows.push({
+          id: page.path,
+          kind: "page",
+          path: page.path,
+          name,
+          title: page.title,
+          page,
+          site: undefined,
+        });
       }
     }
-    const index = here.find((page) => page.path === `${prefix}index`);
-    const out: TreeNode[] = [];
-    if (index) out.push({ id: index.path, label: index.title });
-    const entries: { order: DocPage | undefined; title: string; node: TreeNode }[] = [];
-    for (const page of here) {
-      if (page !== index)
-        entries.push({
-          order: page,
-          title: page.title,
-          node: { id: page.path, label: page.title },
-        });
-    }
-    for (const [name, held] of inside) {
-      const own = held.find((page) => page.path === `${prefix}${name}/index`);
-      const title = own?.title ?? titled(name);
-      entries.push({
-        order: own,
-        title,
-        node: {
-          id: `dir:${prefix}${name}`,
-          label: title,
-          children: folder(held, `${prefix}${name}/`),
-        },
-      });
-    }
-    entries.sort(
-      (a, b) =>
-        (a.order?.order ?? Number.POSITIVE_INFINITY) -
-          (b.order?.order ?? Number.POSITIVE_INFINITY) || a.title.localeCompare(b.title),
-    );
-    return [...out, ...entries.map((entry) => entry.node)];
+    return rows;
   };
-  const taken = new Set<string>();
-  for (const app of list.apps) {
-    const pages = list.pages.filter((page) => page.path.startsWith(`${app.docs}/`)).sort(byOrder);
-    for (const page of pages) taken.add(page.path);
-    nodes.push({
-      id: `app:${app.path}`,
-      label: app.title,
-      children: folder(pages, `${app.docs}/`),
-    });
+  return folder("");
+}
+
+/** Every folder of the tree, by path, outermost first: where something can be moved to. */
+export function foldersOf(rows: readonly DocRow[]): DocRow[] {
+  return rows.flatMap((row) =>
+    row.kind === "folder" ? [row, ...foldersOf(row.children ?? [])] : [],
+  );
+}
+
+/** The row with an id, wherever it is in the tree. */
+export function findRow(rows: readonly DocRow[], id: string): DocRow | undefined {
+  for (const row of rows) {
+    if (row.id === id) return row;
+    const found = row.children ? findRow(row.children, id) : undefined;
+    if (found) return found;
   }
-  const loose = list.pages.filter((page) => !taken.has(page.path)).sort(byOrder);
-  if (loose.length > 0) {
-    nodes.push({
-      id: "app:",
-      label: "Served by no app",
-      children: loose.map((page) => ({ id: page.path, label: page.title })),
-    });
-  }
-  return nodes;
+  return undefined;
+}
+
+/** The rows whose title or name has what is typed, with the folders they are in. */
+export function filterRows(rows: readonly DocRow[], typed: string): DocRow[] {
+  const wanted = typed.trim().toLowerCase();
+  if (wanted === "") return [...rows];
+  return rows.flatMap((row) => {
+    const own = `${row.title} ${row.name}`.toLowerCase().includes(wanted);
+    if (row.kind === "page") return own ? [row] : [];
+    const inside = filterRows(row.children ?? [], wanted);
+    return own || inside.length > 0
+      ? [{ ...row, children: own ? (row.children ?? []) : inside }]
+      : [];
+  });
 }
 
 /** What a page of the workspace is drawn with: where its links lead, and what its terms mean. */

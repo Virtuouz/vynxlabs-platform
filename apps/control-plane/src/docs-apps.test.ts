@@ -28,17 +28,19 @@ const handbook = (): BundleManifest[] => [
   }),
   page(
     "handbook/index",
-    "title: Handbook\ndescription: How the shop runs.",
+    "title: Handbook\ndescription: How the shop runs.\npages: [support]",
     "Start with [refunds](support/refunds).\n",
   ),
   page("handbook/faq", "title: Questions"),
-  page("handbook/support/index", "title: Customer support\norder: 1"),
+  page(
+    "handbook/support/index",
+    "title: Customer support\ndescription: Refunds and returns.\npages: [returns, refunds]",
+  ),
   page(
     "handbook/support/refunds",
     [
       "title: Refund an order",
       "description: Full and partial refunds.",
-      "order: 2",
       "topic: support-refunds",
       "about:",
       "  - table: orders",
@@ -72,7 +74,7 @@ const handbook = (): BundleManifest[] => [
   ),
   page(
     "handbook/support/returns",
-    "title: Returns\norder: 1",
+    "title: Returns",
     "## By post\n\nParcels come back on Tuesdays. An :term[RMA]{id=rma} is needed.\n",
   ),
   page("handbook/ops/closing/checklist", "title: Closing checklist"),
@@ -201,29 +203,38 @@ describe("a folder of pages served as a docs app", () => {
     expect(policy).not.toContain("unsafe-inline");
     expect(policy).toContain("img-src 'self' https:");
     expect(home.body).toContain("<h1>Handbook</h1>");
-    expect(home.body).toContain("<p>How the shop runs.</p>");
+    expect(home.body).toContain('<p class="intro">How the shop runs.</p>');
     expect(home.body).toContain("<title>Handbook · Shop handbook</title>");
     // A link is written from where its file is, and drawn as the app's own address.
     expect(home.body).toContain(`<a href="${HELP}support/refunds">refunds</a>`);
-    // The one script is the platform's own, served as a file. Nothing is written into the page.
-    expect(home.body.match(/<script/g)).toHaveLength(1);
+    // The one script is the platform's own, served as a file. Nothing is written into the page
+    // but what the script reads, as data that is never run.
+    expect(home.body.match(/<script/g)).toHaveLength(2);
     expect(home.body).toContain('<script src="/_platform/docs.js" defer></script>');
+    expect(home.body).toMatch(/<script type="application\/json" id="docs-data">\{"base":/);
+    // The home page lists the collections, each with its first pages.
+    expect(home.body).toContain(`<a href="${HELP}support">Customer support</a>`);
+    expect(home.body).toContain("<p>Refunds and returns.</p>");
     expect(home.body).not.toMatch(/\son[a-z]+=|style="/);
   });
 
   test("its navigation comes from its folders", async () => {
     const refunds = (await browser().get(`${HELP}support/refunds`)).body;
-    // Collections, by their order: support says 1, ops says nothing, and loose pages come last.
-    const tabs = [...refunds.matchAll(/<ul class="collections">(.*?)<\/ul>/gs)][0]?.[1] ?? "";
-    expect([...tabs.matchAll(/>([^<]+)<\/a>/g)].map((found) => found[1])).toEqual([
+    // Collections: what the home page lists first, the rest by title, and loose pages last.
+    const switcher =
+      [...refunds.matchAll(/<details class="switcher">.*?<ul>(.*?)<\/ul><\/details>/gs)][0]?.[1] ??
+      "";
+    expect([...switcher.matchAll(/<b>([^<]+)<\/b>/g)].map((found) => found[1])).toEqual([
       "Customer support",
       "Ops",
       "Uncategorized",
     ]);
-    expect(tabs).toContain(`<a href="${HELP}support" aria-current="true">Customer support</a>`);
-    // The collection's pages, by order: returns says 1 and refunds 2.
-    const side = [...refunds.matchAll(/<nav class="side"[^>]*>(.*?)<\/nav>/gs)][0]?.[1] ?? "";
+    expect(switcher).toContain(`<a href="${HELP}support" aria-current="true">`);
+    // The collection's pages, as its own page lists them: returns, then refunds.
+    const side =
+      [...refunds.matchAll(/<nav aria-label="Customer support">(.*?)<\/nav>/gs)][0]?.[1] ?? "";
     expect([...side.matchAll(/<a [^>]*>([^<]+)<\/a>/g)].map((found) => found[1])).toEqual([
+      "Overview",
       "Returns",
       "Refund an order",
     ]);
@@ -232,7 +243,13 @@ describe("a folder of pages served as a docs app", () => {
     );
     // A folder under a collection is a group, named for its folder when it has no page of its own.
     const ops = (await browser().get(`${HELP}ops/closing/checklist`)).body;
-    expect(ops).toContain('<p class="group">Closing</p>');
+    expect(ops).toContain('<span class="label">Closing</span>');
+    // The folders the page is in are open, and say where it is.
+    expect(ops).toContain('<li class="open-folder"><details open>');
+    // A folder with no page of its own leads to the first page in it.
+    expect(ops).toContain(
+      `<ol class="crumbs" aria-label="Where this page is"><li><a href="${HELP}ops/closing/checklist">Ops</a></li><li><a href="${HELP}ops/closing/checklist">Closing</a></li></ol>`,
+    );
     expect(ops).toContain("<h1>Closing checklist</h1>");
     // A folder's address is its index page, with or without the slash.
     expect((await browser().get(`${HELP}support`)).body).toContain("<h1>Customer support</h1>");
@@ -270,7 +287,12 @@ describe("a folder of pages served as a docs app", () => {
     expect(found.body).toContain("1 page for “tuesdays”");
     expect(found.body).toContain(`<a href="${HELP}support/returns">Returns</a>`);
     expect(found.body).toContain('<meta name="robots" content="noindex">');
-    expect(found.body).toContain(`<form action="${HELP}_search" method="get" role="search">`);
+    expect(found.body).toContain(
+      `<form class="search-form" action="${HELP}_search" method="get" role="search">`,
+    );
+    // The page of results is in the app's frame, as wide as any page.
+    expect(found.body).toContain('<aside class="side" id="nav"');
+    expect(found.body).toContain('<div class="column">');
     const nothing = await browser().get(`${HELP}_search?q=${encodeURIComponent('"><script>x')}`);
     expect(nothing.body).toContain("Nothing here matches");
     expect(nothing.body).not.toContain("<script>x");
@@ -278,11 +300,59 @@ describe("a folder of pages served as a docs app", () => {
     expect((await browser().get(`${HELP}_search?q=staff`)).body).toContain("Nothing here matches");
   });
 
+  test("it is searched as it is typed, by section, for whoever may open it", async () => {
+    const found = await browser().get(`${HELP}_search.json?q=tuesdays`);
+    expect(found.status).toBe(200);
+    expect(found.headers["content-type"]).toContain("application/json");
+    expect(JSON.parse(found.body)).toEqual({
+      pages: [
+        {
+          url: "support/returns",
+          title: [{ text: "Returns" }],
+          crumb: "Customer support",
+          places: [
+            {
+              type: "text",
+              url: "support/returns#by-post",
+              words: [
+                { text: "Parcels come back on " },
+                { text: "Tuesdays", hit: true },
+                { text: "." },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    // Narrowed to a collection with nothing that matches, nothing.
+    expect(JSON.parse((await browser().get(`${HELP}_search.json?q=tuesdays&in=ops`)).body)).toEqual(
+      {
+        pages: [],
+      },
+    );
+    // An app the caller may not open answers nothing of itself.
+    expect((await browser().get("/apps/acme/main/staff/_search.json?q=staff")).status).toBe(303);
+  });
+
+  test("a page's Markdown is given to whoever may read the page", async () => {
+    const markdown = await browser().get(`${HELP}support/returns.md`);
+    expect(markdown.status).toBe(200);
+    expect(markdown.headers["content-type"]).toContain("text/markdown");
+    expect(markdown.body).toBe(
+      "# Returns\n\n## By post\n\nParcels come back on Tuesdays. An :term[RMA]{id=rma} is needed.\n",
+    );
+    expect((await browser().get("/apps/acme/main/staff/index.md")).status).toBe(303);
+    const page = (await browser().get(`${HELP}support/returns`)).body;
+    expect(page).toContain(`data-copy="${HELP}support/returns.md" hidden`);
+  });
+
   test("an address that names no page says so, in the app's own frame", async () => {
     const missing = await browser().get(`${HELP}support/nothing-here`);
     expect(missing.status).toBe(404);
     expect(missing.body).toContain("There is no page here");
-    expect(missing.body).toContain(`<a class="name" href="${HELP}">`);
+    expect(missing.body).toContain(`<a class="brand" href="${HELP}">`);
+    expect(missing.body).toContain('<aside class="side" id="nav"');
+    expect(missing.body).toContain('<aside class="toc" aria-label="On this page"></aside>');
     // A page of another docs app is not reachable through this one.
     expect((await browser().get(`${HELP}../staff/`)).status).not.toBe(200);
   });
@@ -366,11 +436,7 @@ describe("what a workspace's documentation gives the help", () => {
   test("its terms, its topics and the pages attached to resources, to whoever may open the app they are in", async () => {
     const deployed = await deploy([
       ...handbook().filter((one) => one.path !== "handbook/support/returns"),
-      page(
-        "handbook/support/returns",
-        "title: Returns\norder: 1\nextends: [data-tables]",
-        "## By post\n",
-      ),
+      page("handbook/support/returns", "title: Returns\nextends: [data-tables]", "## By post\n"),
     ]);
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
     const all = await terms((url) => alice.get(url));
@@ -517,11 +583,11 @@ describe("a deploy with documentation that does not hold together", () => {
           "title: Home",
           "See [nothing](nowhere).\n\n::nope\n\n:term[x]{id=undefined-term}\n",
         ),
-        page("handbook/untitled", "order: 1"),
-        page("handbook/a/b/c/too-deep", "title: Deep"),
+        page("handbook/untitled", "icon: book"),
+        // Folders go as deep as they are written.
+        page("handbook/a/b/c/deep", "title: Deep"),
       ]),
     ).toEqual([
-      "handbook/a/b/c/too-deep (doc): This page is 3 folders down. A page is in a collection, or in a group inside a collection, and no deeper.",
       'handbook/index (doc): line 5: The link to "nowhere" leads nowhere: there is no page at nowhere.',
       expect.stringContaining('handbook/index (doc): line 7: There is no component named "nope".'),
       'handbook/index (doc): line 9: There is no term "undefined-term". A term is defined in the terms: of a page\'s frontmatter.',
@@ -559,7 +625,7 @@ describe("a deploy with documentation that does not hold together", () => {
     ]);
   });
 
-  test("is refused when two apps would serve the same page, or an app serves none", async () => {
+  test("is refused when an app serves a folder inside another, two apps would serve the same page, or an app serves none", async () => {
     expect(
       await refused([
         app,
@@ -569,6 +635,7 @@ describe("a deploy with documentation that does not hold together", () => {
         page("handbook/support/index", "title: Support"),
       ]),
     ).toEqual([
+      'inner (app): serves "handbook/support", which is inside another folder. A docs app serves a top-level folder: move its pages to a folder of their own, or serve "handbook".',
       expect.stringContaining(
         'inner (app): its pages are under "handbook/support", and the app help serves "handbook".',
       ),
@@ -848,11 +915,15 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(home.body).toContain('<meta name="robots" content="noindex">');
     expect(home.headers["cache-control"]).toBe("no-store");
     // Its links stay inside the preview, and a page that is only a draft is there.
-    expect(home.body).toContain('<a class="name" href="/apps/acme/dev/guide-site/_draft/">');
+    expect(home.body).toContain('<a class="brand" href="/apps/acme/dev/guide-site/_draft/">');
     const fresh = await at(wren, "/apps/acme/dev/guide-site/_draft/support/exchanges");
     expect(fresh.statusCode).toBe(200);
     expect(fresh.body).toContain("<h1>Exchanges</h1>");
     expect(fresh.body).toContain('href="/apps/acme/dev/guide-site/_draft/support/refunds"');
+    const typed = await at(wren, "/apps/acme/dev/guide-site/_draft/_search.json?q=tuesdays");
+    expect(typed.headers["cache-control"]).toBe("no-store");
+    // The draft of the home page is what is found: its address is the app's own.
+    expect(JSON.parse(typed.body).pages.map((one: Any) => one.url)).toEqual([""]);
     expect((await at(wren, "/apps/acme/dev/guide-site/_draft/_search?q=tuesdays")).body).toContain(
       "1 page for",
     );
@@ -870,6 +941,94 @@ describe("someone who writes documentation in the console, and is not a develope
       preview: `http://${MAIN}/apps/acme/dev/guide-site/_draft/`,
     });
     expect((await wren.delete(`${devWs()}/drafts/guide/support/exchanges`)).status).toBe(204);
+  });
+
+  test("a change to the tree of pages is saved whole, or not at all", async () => {
+    const batch = (who: Client, changes: object[]) =>
+      who.post(`${devWs()}/drafts/batch`, { changes });
+    // A folder, its own page and two pages in it, made at once.
+    const made = await batch(wren, [
+      { path: "notes/index", source: text("title: Notes\npages: [a]") },
+      { path: "notes/a/index", source: text("title: A folder") },
+      { path: "notes/a/one", source: text("title: One", "See [two](two).\n") },
+      { path: "notes/a/two", source: text("title: Two") },
+    ]);
+    expect(made.status, JSON.stringify(made.body)).toBe(200);
+    expect(made.body.paths).toEqual(["notes/index", "notes/a/index", "notes/a/one", "notes/a/two"]);
+    const listed = async () =>
+      new Map(
+        ((await wren.get(`${devWs()}/docs`)).body.pages as Any[]).map((one) => [one.path, one]),
+      );
+    const now = await listed();
+    expect(now.get("notes/a/one")).toMatchObject({ state: "new", revision: 1 });
+    expect(now.get("notes/index").pages).toEqual(["a"]);
+
+    // The folder renamed: every page in it moves, and its folder's list follows.
+    const rename = [
+      ...["index", "one", "two"].map((name) => ({
+        path: `notes/a/${name}`,
+        to: `notes/b/${name}`,
+        source: now.get(`notes/a/${name}`).source,
+        revision: now.get(`notes/a/${name}`).revision,
+      })),
+      {
+        path: "notes/index",
+        source: text("title: Notes\npages: [b]"),
+        revision: now.get("notes/index").revision,
+      },
+    ];
+    // A revision that is not the draft's now refuses every change, and makes none.
+    const stale = await batch(wren, [...rename.slice(0, 3), { ...rename[3], revision: 99 }]);
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe("draft_changed");
+    expect([...(await listed()).keys()].filter((path) => path.startsWith("notes/"))).toEqual([
+      "notes/a/index",
+      "notes/a/one",
+      "notes/a/two",
+      "notes/index",
+    ]);
+    const moved = await batch(wren, rename);
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    const after = await listed();
+    expect([...after.keys()].filter((path) => path.startsWith("notes/"))).toEqual([
+      "notes/b/index",
+      "notes/b/one",
+      "notes/b/two",
+      "notes/index",
+    ]);
+    expect(after.get("notes/index").pages).toEqual(["b"]);
+    // Each change is audited as the save it is.
+    const saved = await t.db
+      .selectFrom("audit_entry")
+      .select("target_id")
+      .where("action", "=", "resource.draft_saved")
+      .where("workspace_id", "=", dev)
+      .where("target_id", "like", "notes/%")
+      .execute();
+    expect(saved.length).toBeGreaterThanOrEqual(8);
+
+    // A page that was only ever a draft, removed, is set aside.
+    const gone = await batch(wren, [
+      { path: "notes/b/two", deleted: true, revision: after.get("notes/b/two").revision },
+    ]);
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    expect((await listed()).has("notes/b/two")).toBe(false);
+
+    // Someone who writes documentation cannot slip anything else in with it.
+    const table = await batch(wren, [
+      {
+        path: "notes/b/one",
+        source: after.get("notes/b/one").source,
+        revision: after.get("notes/b/one").revision,
+      },
+      { path: "votes", kind: "table", body: { columns: { page: { type: "text" } } } },
+    ]);
+    expect(table.status).toBe(403);
+    expect((await batch(nell, [{ path: "notes/x", source: text("title: X") }])).status).toBe(403);
+    // Nothing of these is left over for the deploys that follow.
+    for (const path of ["notes/index", "notes/b/index", "notes/b/one"]) {
+      expect((await wren.delete(`${devWs()}/drafts/${path}`)).status).toBe(204);
+    }
   });
 
   test("a production workspace takes no page from the console", async () => {

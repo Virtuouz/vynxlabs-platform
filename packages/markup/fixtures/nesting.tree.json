@@ -1,0 +1,430 @@
+{
+  "type": "root",
+  "v": 1,
+  "children": [
+    {
+      "type": "heading",
+      "depth": 1,
+      "id": "every-component-inside-every-other",
+      "children": [
+        {
+          "type": "text",
+          "value": "Every component inside every other",
+          "line": 1
+        }
+      ],
+      "line": 1
+    },
+    {
+      "type": "component",
+      "name": "tabs",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "component",
+          "name": "tab",
+          "form": "container",
+          "props": {
+            "label": "Card"
+          },
+          "children": [
+            {
+              "type": "component",
+              "name": "steps",
+              "form": "container",
+              "props": {},
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": true,
+                  "children": [
+                    {
+                      "type": "listItem",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "Find the order.",
+                          "line": 6
+                        }
+                      ],
+                      "line": 6
+                    },
+                    {
+                      "type": "listItem",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "Check its status.",
+                          "line": 7
+                        }
+                      ],
+                      "line": 7
+                    }
+                  ],
+                  "line": 6
+                }
+              ],
+              "line": 5,
+              "endLine": 8
+            }
+          ],
+          "line": 4,
+          "endLine": 9
+        },
+        {
+          "type": "component",
+          "name": "tab",
+          "form": "container",
+          "props": {
+            "label": "Cash"
+          },
+          "children": [
+            {
+              "type": "component",
+              "name": "alert",
+              "form": "container",
+              "props": {
+                "type": "warning"
+              },
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "File it with the day's till slips.",
+                      "line": 12
+                    }
+                  ],
+                  "line": 12
+                }
+              ],
+              "label": "Keep the receipt",
+              "line": 11,
+              "endLine": 13
+            },
+            {
+              "type": "component",
+              "name": "code-tabs",
+              "form": "container",
+              "props": {},
+              "children": [
+                {
+                  "type": "code",
+                  "value": "refund(order);",
+                  "lang": "js",
+                  "meta": "title=JavaScript",
+                  "line": 16
+                },
+                {
+                  "type": "code",
+                  "value": "refund(order)",
+                  "lang": "py",
+                  "meta": "title=Python",
+                  "line": 19
+                }
+              ],
+              "line": 15,
+              "endLine": 22
+            }
+          ],
+          "line": 10,
+          "endLine": 23
+        }
+      ],
+      "line": 3,
+      "endLine": 24
+    },
+    {
+      "type": "component",
+      "name": "details",
+      "form": "container",
+      "props": {
+        "summary": "Tabs inside details"
+      },
+      "children": [
+        {
+          "type": "component",
+          "name": "tabs",
+          "form": "container",
+          "props": {},
+          "children": [
+            {
+              "type": "component",
+              "name": "tab",
+              "form": "container",
+              "props": {
+                "label": "One"
+              },
+              "children": [
+                {
+                  "type": "component",
+                  "name": "file-tree",
+                  "form": "container",
+                  "props": {},
+                  "children": [
+                    {
+                      "type": "list",
+                      "ordered": false,
+                      "children": [
+                        {
+                          "type": "listItem",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "refunds/",
+                              "line": 30
+                            },
+                            {
+                              "type": "list",
+                              "ordered": false,
+                              "children": [
+                                {
+                                  "type": "listItem",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "value": "index.md",
+                                      "line": 31
+                                    }
+                                  ],
+                                  "line": 31
+                                }
+                              ],
+                              "line": 31
+                            }
+                          ],
+                          "line": 30
+                        }
+                      ],
+                      "line": 30
+                    }
+                  ],
+                  "line": 29,
+                  "endLine": 32
+                }
+              ],
+              "line": 28,
+              "endLine": 33
+            },
+            {
+              "type": "component",
+              "name": "tab",
+              "form": "container",
+              "props": {
+                "label": "Two"
+              },
+              "children": [
+                {
+                  "type": "component",
+                  "name": "tabs",
+                  "form": "container",
+                  "props": {},
+                  "children": [
+                    {
+                      "type": "component",
+                      "name": "tab",
+                      "form": "container",
+                      "props": {
+                        "label": "Inner"
+                      },
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "Tabs inside tabs.",
+                              "line": 37
+                            }
+                          ],
+                          "line": 37
+                        }
+                      ],
+                      "line": 36,
+                      "endLine": 38
+                    }
+                  ],
+                  "line": 35,
+                  "endLine": 39
+                }
+              ],
+              "line": 34,
+              "endLine": 40
+            }
+          ],
+          "line": 27,
+          "endLine": 41
+        }
+      ],
+      "line": 26,
+      "endLine": 42
+    },
+    {
+      "type": "component",
+      "name": "steps",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "list",
+          "ordered": true,
+          "children": [
+            {
+              "type": "listItem",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "A step that holds a fold.",
+                      "line": 45
+                    }
+                  ],
+                  "line": 45
+                },
+                {
+                  "type": "component",
+                  "name": "details",
+                  "form": "container",
+                  "props": {
+                    "summary": "More"
+                  },
+                  "children": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "Inside a step, inside a list item.",
+                          "line": 48
+                        }
+                      ],
+                      "line": 48
+                    }
+                  ],
+                  "line": 47,
+                  "endLine": 49
+                }
+              ],
+              "line": 45
+            },
+            {
+              "type": "listItem",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "And one that holds a ",
+                      "line": 51
+                    },
+                    {
+                      "type": "component",
+                      "name": "kbd",
+                      "form": "inline",
+                      "props": {},
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "Ctrl",
+                          "line": 51
+                        }
+                      ],
+                      "line": 51
+                    },
+                    {
+                      "type": "text",
+                      "value": " key and a ",
+                      "line": 51
+                    },
+                    {
+                      "type": "component",
+                      "name": "term",
+                      "form": "inline",
+                      "props": {
+                        "id": "rma"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "RMA",
+                          "line": 51
+                        }
+                      ],
+                      "line": 51
+                    },
+                    {
+                      "type": "text",
+                      "value": ".",
+                      "line": 51
+                    }
+                  ],
+                  "line": 51
+                }
+              ],
+              "line": 51
+            }
+          ],
+          "line": 45
+        }
+      ],
+      "line": 44,
+      "endLine": 52
+    },
+    {
+      "type": "component",
+      "name": "alert",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "component",
+          "name": "details",
+          "form": "container",
+          "props": {
+            "summary": "A fold in a callout"
+          },
+          "children": [
+            {
+              "type": "component",
+              "name": "steps",
+              "form": "container",
+              "props": {},
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": true,
+                  "children": [
+                    {
+                      "type": "listItem",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "Deeper still.",
+                          "line": 57
+                        }
+                      ],
+                      "line": 57
+                    }
+                  ],
+                  "line": 57
+                }
+              ],
+              "line": 56,
+              "endLine": 58
+            }
+          ],
+          "line": 55,
+          "endLine": 59
+        }
+      ],
+      "label": "Inside a callout",
+      "line": 54,
+      "endLine": 60
+    }
+  ]
+}

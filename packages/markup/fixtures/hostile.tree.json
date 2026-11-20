@@ -163,7 +163,8 @@
         }
       ],
       "badProps": true,
-      "line": 10
+      "line": 10,
+      "endLine": 12
     },
     {
       "type": "paragraph",

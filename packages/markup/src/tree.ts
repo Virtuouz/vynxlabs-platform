@@ -139,6 +139,8 @@ export interface Component extends Base {
   badProps?: true;
   /** Set on a container that no line closed. */
   unclosed?: true;
+  /** For a container: the line that closes it, or the last line when none does. */
+  endLine?: number;
   children: Node[];
 }
 
@@ -205,4 +207,37 @@ export function slug(text: string): string {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+/**
+ * The containers a line is inside, outermost first: for a line in a tab,
+ * `[tabs, tab]`. An editor says where its cursor is with it, and puts what is
+ * inserted there at the right depth.
+ */
+export function containersAt(tree: Node, line: number): Component[] {
+  const out: Component[] = [];
+  const visit = (node: Node) => {
+    for (const child of childrenOf(node)) {
+      if (
+        child.type === "component" &&
+        child.form === "container" &&
+        child.line !== undefined &&
+        child.endLine !== undefined &&
+        line >= child.line &&
+        line <= child.endLine
+      ) {
+        out.push(child);
+        visit(child);
+        return;
+      }
+      // A list or a quote holds blocks, and so may hold a container.
+      if (child.type === "list" || child.type === "listItem" || child.type === "blockquote") {
+        const before = out.length;
+        visit(child);
+        if (out.length > before) return;
+      }
+    }
+  };
+  visit(tree);
+  return out;
 }

@@ -1,8 +1,21 @@
 ---
 title: Build
-order: 2
 icon: blocks
 description: Scripts, flows and apps, and everything else a workspace holds.
+pages:
+  - flows
+  - flow-editor
+  - scripts
+  - script-editor
+  - app-builder
+  - app-builder-editor
+  - published-apps
+  - extensions
+  - extension-editor
+  - resources
+  - resource-editor
+  - documentation
+  - documentation-editor
 ---
 
 Scripts, flows and apps, and everything else a workspace holds.

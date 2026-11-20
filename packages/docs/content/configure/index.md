@@ -1,8 +1,13 @@
 ---
 title: Configure
-order: 5
 icon: wrench
 description: What the workspace's code needs to reach the outside.
+pages:
+  - connections
+  - variables
+  - secrets
+  - alerts
+  - settings
 ---
 
 What the workspace's code needs to reach the outside.

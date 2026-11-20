@@ -98,6 +98,8 @@ export function Doc({
   headingShift,
   idPrefix,
   learnMore,
+  folder,
+  lines,
 }: DocProps) {
   const drawn = useMemo(() => {
     const options: ReactOptions = {
@@ -111,6 +113,8 @@ export function Doc({
       ...(headingShift === undefined ? {} : { headingShift }),
       ...(idPrefix === undefined ? {} : { idPrefix }),
       ...(learnMore === undefined ? {} : { learnMore }),
+      ...(folder === undefined ? {} : { folder }),
+      ...(lines === undefined ? {} : { lines }),
     };
     if (asServed) return renderReact(tree, options);
     const drawTerm: Components["term"] = ({ props, word, info, children }) => {
@@ -153,6 +157,8 @@ export function Doc({
     headingShift,
     idPrefix,
     learnMore,
+    folder,
+    lines,
   ]);
   return (
     <div className="vd-doc">

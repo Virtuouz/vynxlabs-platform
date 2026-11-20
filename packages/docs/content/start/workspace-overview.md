@@ -1,6 +1,5 @@
 ---
 title: Workspace overview
-order: 4
 topic: workspace-overview
 description: What a workspace is doing now, what failed, and what waits for someone.
 ---

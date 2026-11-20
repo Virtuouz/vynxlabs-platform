@@ -19,6 +19,8 @@ export interface ResourceLike {
   path: string;
   title?: string | null | undefined;
   body: unknown;
+  /** When the resource last changed, if whoever gives it knows. A served page says it. */
+  updated?: string | Date | null | undefined;
 }
 
 /** An app that serves a folder of pages. */
@@ -109,7 +111,9 @@ export function buildApp(
   const issues: DocIssue[] = [];
   const entries: DocEntry[] = [];
   for (const { path, resource } of pagesOf(app, resources)) {
-    const read = readPage(path, sourceOf(resource));
+    const updated =
+      resource.updated instanceof Date ? resource.updated.toISOString() : resource.updated;
+    const read = readPage(path, sourceOf(resource), updated ? { updated } : {});
     entries.push(read.entry);
     issues.push(...read.issues);
   }
@@ -146,6 +150,15 @@ export function checkWorkspaceDocs(
 ): string[] {
   const problems: string[] = [];
   const apps = docsApps(resources);
+
+  // A site is a folder of the documentation's own: a top-level one.
+  for (const app of apps) {
+    if (app.docs.includes("/")) {
+      problems.push(
+        `${app.path} (app): serves "${app.docs}", which is inside another folder. A docs app serves a top-level folder: move its pages to a folder of their own, or serve "${app.docs.split("/")[0]}".`,
+      );
+    }
+  }
 
   // Two apps may not serve the same page.
   for (const [index, app] of apps.entries()) {

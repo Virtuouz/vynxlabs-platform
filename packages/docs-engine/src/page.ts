@@ -211,4 +211,16 @@ export function titleOf(path: string): string {
   return words === "" ? "Home" : words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * A folder's own page with nothing written in it lists what the folder holds:
+ * its tree, with `::pages` in place of nothing. Any other page is as it is.
+ */
+export function asDirectory(path: string, tree: Root): Root {
+  if (tree.children.length > 0 || !(path === "index" || path.endsWith("/index"))) return tree;
+  return {
+    ...tree,
+    children: [{ type: "component", name: "pages", form: "leaf", props: {}, children: [] }],
+  };
+}
+
 export type { Issue };

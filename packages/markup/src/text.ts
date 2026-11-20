@@ -35,6 +35,8 @@ export function renderText(tree: Node, options: RenderOptions = {}): string {
             return ctx.options.productName ?? "Volvel";
           case "screenshot":
             return node.props.alt ?? "";
+          case "pages":
+            return (ctx.options.folder?.() ?? []).map((item) => `- ${item.title}`).join("\n");
           case "field":
             return ctx.options.field?.(node.props.path ?? "")?.description ?? node.props.path ?? "";
           case "details":

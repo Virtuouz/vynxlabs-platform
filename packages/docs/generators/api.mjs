@@ -54,7 +54,6 @@ export function apiPage(description) {
   return page(
     {
       title: "The API",
-      order: 7,
       description: "Every route of the API, what it does and what it needs.",
     },
     [

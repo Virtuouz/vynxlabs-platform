@@ -163,7 +163,8 @@
           "line": 9
         }
       ],
-      "line": 8
+      "line": 8,
+      "endLine": 10
     },
     {
       "type": "component",
@@ -184,7 +185,8 @@
         }
       ],
       "label": "Before you start",
-      "line": 12
+      "line": 12,
+      "endLine": 14
     },
     {
       "type": "component",
@@ -232,7 +234,8 @@
               "line": 22
             }
           ],
-          "line": 21
+          "line": 21,
+          "endLine": 23
         },
         {
           "type": "component",
@@ -289,13 +292,16 @@
                   "line": 28
                 }
               ],
-              "line": 27
+              "line": 27,
+              "endLine": 29
             }
           ],
-          "line": 24
+          "line": 24,
+          "endLine": 30
         }
       ],
-      "line": 20
+      "line": 20,
+      "endLine": 31
     },
     {
       "type": "component",
@@ -333,7 +339,8 @@
           "line": 34
         }
       ],
-      "line": 33
+      "line": 33,
+      "endLine": 36
     },
     {
       "type": "component",
@@ -355,7 +362,8 @@
           "line": 39
         }
       ],
-      "line": 38
+      "line": 38,
+      "endLine": 40
     },
     {
       "type": "component",
@@ -377,7 +385,8 @@
           "line": 46
         }
       ],
-      "line": 42
+      "line": 42,
+      "endLine": 49
     },
     {
       "type": "component",
@@ -451,7 +460,8 @@
           "line": 52
         }
       ],
-      "line": 51
+      "line": 51,
+      "endLine": 56
     },
     {
       "type": "component",

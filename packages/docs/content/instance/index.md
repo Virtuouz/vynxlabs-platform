@@ -1,8 +1,18 @@
 ---
 title: Instance
-order: 7
 icon: server
 description: For whoever operates the installation.
+pages:
+  - tenants
+  - members
+  - operators
+  - single-sign-on
+  - databases
+  - import
+  - triggers
+  - audit-log
+  - branding
+  - component-kit
 ---
 
 For whoever operates the installation.

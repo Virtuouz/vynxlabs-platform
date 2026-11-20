@@ -25,6 +25,7 @@ import {
   resolveLink,
   setFrontmatter,
   splitFrontmatter,
+  trailOf,
 } from "./index.js";
 
 /** A page's file, from its frontmatter as written and its body. */
@@ -68,7 +69,7 @@ describe("a page's file", () => {
         [
           "title: Refund an order",
           "description: How support issues a full or partial refund.",
-          "order: 20",
+          "icon: receipt",
           "topic: support-refunds",
           "terms:",
           "  - id: rma",
@@ -86,7 +87,7 @@ describe("a page's file", () => {
     expect(issues).toEqual([]);
     expect(entry.frontmatter).toMatchObject({
       title: "Refund an order",
-      order: 20,
+      icon: "receipt",
       topic: "support-refunds",
       about: [{ table: "sales/orders" }, { flow: "support/refund" }],
       extends: ["data-tables"],
@@ -103,7 +104,8 @@ describe("a page's file", () => {
   test.each([
     ["description: no title", "It needs a title."],
     ["title: 12", "title is text."],
-    ["title: A\norder: first", "order is a number."],
+    ["title: A\norder: 1", 'There is no "order" here.'],
+    ["title: A\npages: [Not A Name]", "pages[0] is written"],
     [
       "title: A\ntopic: Not A Topic",
       'topic is written in lowercase letters, digits, hyphens and underscores. It is "Not A Topic".',
@@ -163,20 +165,22 @@ describe("a page's file", () => {
 
 describe("structure from folders", () => {
   const files = {
-    "index.md": page("title: Handbook"),
+    "index.md": page("title: Handbook\npages: [support, about]"),
     "faq.md": page("title: Questions"),
-    "about.md": page("title: About us\norder: 1"),
-    "support/index.md": page("title: Customer support\nicon: headset\norder: 2"),
-    "support/refunds.md": page("title: Refunds\norder: 20"),
-    "support/returns.md": page("title: Returns\norder: 10"),
-    "support/escalations/index.md": page("title: Escalating\norder: 15"),
+    "about.md": page("title: About us"),
+    "support/index.md": page(
+      "title: Customer support\nicon: headset\npages: [returns, escalations, refunds]",
+    ),
+    "support/refunds.md": page("title: Refunds"),
+    "support/returns.md": page("title: Returns"),
+    "support/escalations/index.md": page("title: Escalating"),
     "support/escalations/tier-two.md": page("title: Tier two"),
     "support/escalations/after-hours.md": page("title: After hours"),
     "ops/opening.md": page("title: Opening the shop"),
     "ops/closing/checklist.md": page("title: Closing checklist"),
   };
 
-  test("top-level folders are collections, their folders are groups, and loose pages are Uncategorized, last", () => {
+  test("top-level folders are collections, folders hold folders, and loose pages are Uncategorized, last", () => {
     const { set, issues } = build(files);
     expect(issues).toEqual([]);
     expect(set.nav.home).toMatchObject({ path: "index", url: "", title: "Handbook" });
@@ -194,14 +198,15 @@ describe("structure from folders", () => {
     expect(set.nav.collections[0]).toMatchObject({ icon: "headset", index: { url: "support" } });
   });
 
-  test("a group's pages sort by order and then by title, and its own page leads it", () => {
+  test("what pages: does not list comes after, by title, and a folder's own page leads it", () => {
     const { set } = build(files);
-    const group = set.nav.collections[0]?.items[1];
-    expect(group).toMatchObject({
-      type: "group",
+    const folder = set.nav.collections[0]?.items[1];
+    expect(folder).toMatchObject({
+      type: "folder",
       id: "escalations",
+      path: "support/escalations",
       index: { path: "support/escalations/index", url: "support/escalations" },
-      pages: [{ title: "After hours" }, { title: "Tier two" }],
+      items: [{ title: "After hours" }, { title: "Tier two" }],
     });
   });
 
@@ -233,9 +238,29 @@ describe("structure from folders", () => {
     ]);
   });
 
-  test("a page deeper than a group is refused", () => {
-    const { issues } = build({ "a/b/c/d.md": page("title: Deep") });
-    expect(issues).toMatchObject([{ path: "a/b/c/d", code: "too_deep" }]);
+  test("folders go as deep as they are written", () => {
+    const { set, issues } = build({
+      "a/b/c/d/e/page.md": page("title: Deep"),
+      "a/b/index.md": page("title: Bee"),
+    });
+    expect(issues).toEqual([]);
+    expect(pagesInOrder(set.nav).map((one) => one.path)).toEqual(["a/b/index", "a/b/c/d/e/page"]);
+    expect(trailOf(set.nav, "a/b/c/d/e/page").map((one) => one.title)).toEqual([
+      "A",
+      "Bee",
+      "C",
+      "D",
+      "E",
+    ]);
+    expect(trailOf(set.nav, "a/b/index").map((one) => one.path)).toEqual(["a", "a/b"]);
+  });
+
+  test("a name pages: lists that is not there is a warning, not a refusal", () => {
+    const { issues } = build({
+      "a/index.md": page("title: A\npages: [one, gone]"),
+      "a/one.md": page("title: One"),
+    });
+    expect(issues).toMatchObject([{ path: "a/index", code: "pages_unknown", severity: "warning" }]);
   });
 
   test("a file beside a folder of its name is refused, and told where to go", () => {
@@ -512,7 +537,7 @@ describe("a page checked as it is written, beside an index of the others", () =>
   });
 
   test("says where it may not be among the folders", () => {
-    expect(codes("a/b/c/d", "title: Deep")).toEqual(["1: too_deep"]);
+    expect(codes("a/b/c/d", "title: Deep")).toEqual([]);
     expect(codes("support", "title: Support")).toEqual(["1: file_and_folder"]);
     // Its own earlier self in the index is not another page.
     expect(codes("support/returns", "title: Returns\ntopic: returns", "## By post\n")).toEqual([]);
@@ -533,12 +558,12 @@ describe("a page checked as it is written, beside an index of the others", () =>
 
 describe("a page's frontmatter, written by a form", () => {
   const page =
-    "---\n# Kept by support.\ntitle: Refunds\norder: 20 # after returns\ntopic: refunds\n---\n\nAsk for the receipt.\n";
+    "---\n# Kept by support.\ntitle: Refunds\nicon: receipt # after returns\ntopic: refunds\n---\n\nAsk for the receipt.\n";
 
   test("one key changes, and the rest stays as it was written", () => {
     const next = setFrontmatter(page, { title: "Refund an order" });
     expect(next).toBe(
-      "---\n# Kept by support.\ntitle: Refund an order\norder: 20 # after returns\ntopic: refunds\n---\n\nAsk for the receipt.\n",
+      "---\n# Kept by support.\ntitle: Refund an order\nicon: receipt # after returns\ntopic: refunds\n---\n\nAsk for the receipt.\n",
     );
   });
 
@@ -551,7 +576,7 @@ describe("a page's frontmatter, written by a form", () => {
     }) as string;
     expect(frontmatterOf(next)).toEqual({
       title: "Refunds",
-      order: 20,
+      icon: "receipt",
       extends: ["data-tables"],
       terms: [{ id: "rma", term: "RMA", short: "A return authorisation." }],
     });

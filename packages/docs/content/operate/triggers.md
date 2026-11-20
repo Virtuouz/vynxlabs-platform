@@ -1,6 +1,5 @@
 ---
 title: Triggers
-order: 3
 topic: operate-triggers
 description: "What starts work without a person: schedules, webhooks, events and forms."
 ---

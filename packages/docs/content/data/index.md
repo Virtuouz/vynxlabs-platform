@@ -1,8 +1,13 @@
 ---
 title: Data
-order: 4
 icon: database
 description: Tables, the questions asked of them, and where the data lives.
+pages:
+  - tables
+  - queries
+  - data-sources
+  - dashboards
+  - dashboard-builder
 ---
 
 Tables, the questions asked of them, and where the data lives.

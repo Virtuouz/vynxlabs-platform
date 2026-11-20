@@ -106,8 +106,8 @@ These terms have one meaning each across the spec, the code and every phase doc.
 | Role | A named set of permissions on resource kinds. |
 | Binding | A grant of a role to a principal at a scope. |
 | Doc | One page of documentation: Markdown with frontmatter, held as a resource. |
-| Docs app | An app that serves the docs under one path as a site. |
-| Collection | A top-level folder of a docs app. Navigation comes from folders, never from a separate file. |
+| Docs app | An app that serves the docs under one top-level folder as a site. |
+| Collection | A top-level folder inside a docs app's folder. Folders nest to any depth, and navigation comes from them. A folder's own page, `index`, may list the order of what is in it (`pages:`). Nothing else lists pages. |
 | Topic | A stable name for a doc, so that help and links survive a move. |
 | Term | A glossary entry a doc defines, shown where the word is used. |
 
@@ -529,7 +529,8 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 ### Access
 
 - An app is served to members, end users or guests according to its bindings.
-- A docs app is an app whose pages are the docs under one path. It is served and bound as any app is, and access is never finer than the whole app.
+- A docs app is an app whose pages are the docs under one top-level folder. It is served and bound as any app is, and access is never finer than the whole app.
+- A docs app may take votes on whether a page helped. They are written by the app, into a workspace table its author created for them, and are business data: a vote is rate limited and kept once per reader and page, and leaves no audit entry, as rows do not.
 - Docs are data and never code: no HTML, no expressions, and only the components and link schemes the platform names.
 - An app reads and writes data only through the public API, so permissions and row policies always apply.
 - An end user, whatever role they are bound to, holds only the kinds of permission apps use. A binding made too wide cannot hand a portal user the tenant's settings or secrets.

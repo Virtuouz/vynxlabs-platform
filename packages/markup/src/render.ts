@@ -49,6 +49,14 @@ export interface RenderOptions {
   /** Where a screenshot is served from, by its name. */
   screenshot?: (name: string) => string | null | undefined;
   /**
+   * Marks each block drawn with the lines of the source it came from, as
+   * `data-line` and, for a container, `data-end-line`: for an editor whose
+   * preview follows its cursor. A served page leaves it out.
+   */
+  lines?: boolean;
+  /** What is in the folder the page is in, for `::pages`. Nothing draws nothing. */
+  folder?: () => readonly FolderItem[] | null | undefined;
+  /**
    * How many levels to push headings down, for a page drawn inside another
    * that has headings of its own: 2 draws `#` as an h3. None goes past h6.
    */
@@ -57,6 +65,15 @@ export interface RenderOptions {
   idPrefix?: string;
   /** The words of the link behind a term. `{word}` is the term as it was written. "More about {word}" when left out. */
   learnMore?: string;
+}
+
+/** One page or folder of a folder, as `::pages` lists it. */
+export interface FolderItem {
+  title: string;
+  description?: string;
+  /** Where it is, already resolved. */
+  href: string;
+  folder?: boolean;
 }
 
 export interface Context {
@@ -131,7 +148,32 @@ export function drawAll(nodes: readonly Node[], ctx: Context): Drawn[] {
   return out;
 }
 
+/** The kinds of node that are blocks of a page: what an editor's preview can point at. */
+const BLOCK_TYPES = new Set([
+  "heading",
+  "paragraph",
+  "list",
+  "blockquote",
+  "code",
+  "table",
+  "rule",
+]);
+
 export function draw(node: Node, ctx: Context): Drawn[] {
+  const drawn = drawn0(node, ctx);
+  if (!ctx.options.lines || node.line === undefined) return drawn;
+  const block = BLOCK_TYPES.has(node.type) || (node.type === "component" && node.form !== "inline");
+  const first = drawn[0];
+  if (block && first && typeof first !== "string" && first.tag !== CUSTOM) {
+    first.attrs["data-line"] = String(node.line);
+    if (node.type === "component" && node.endLine !== undefined) {
+      first.attrs["data-end-line"] = String(node.endLine);
+    }
+  }
+  return drawn;
+}
+
+function drawn0(node: Node, ctx: Context): Drawn[] {
   if (!ctx.custom) return usual(node, ctx);
   const value = ctx.custom(node, () => usual(node, ctx));
   return value === undefined ? usual(node, ctx) : [{ tag: CUSTOM, attrs: {}, children: [], value }];
@@ -267,9 +309,20 @@ function titleOf(meta: string | undefined): string | undefined {
   return found ? (found[1] ?? found[2]) : undefined;
 }
 
+/** The lines a tab came from, for an editor's preview, when it asks. */
+function linesOf(node: Node, ctx: Context): Record<string, string> {
+  if (!ctx.options.lines || node.line === undefined) return {};
+  return {
+    "data-line": String(node.line),
+    ...(node.type === "component" && node.endLine !== undefined
+      ? { "data-end-line": String(node.endLine) }
+      : {}),
+  };
+}
+
 function tabs(node: Component, ctx: Context): Drawn[] {
   const sections = tabsOf(node).map(({ label, node: child }) =>
-    el("section", { class: "vd-tab" }, [
+    el("section", { class: "vd-tab", ...linesOf(child, ctx) }, [
       el("h4", { class: "vd-tab-label" }, [label]),
       el(
         "div",
@@ -361,6 +414,28 @@ function component(node: Component, ctx: Context): Drawn[] {
     }
     case "file-tree":
       return [el("div", { class: "vd-file-tree" }, inside())];
+    case "pages": {
+      const items = ctx.options.folder?.() ?? [];
+      if (items.length === 0) return [];
+      return [
+        el(
+          "ul",
+          { class: "vd-pages" },
+          items.map((item) => {
+            const href = hrefOf(item.href, { ...ctx, profile: "docs" }, true);
+            const words: Drawn[] = [
+              el("span", { class: "vd-pages-title" }, [item.title]),
+              ...(item.description
+                ? [el("span", { class: "vd-pages-text" }, [item.description])]
+                : []),
+            ];
+            return el("li", item.folder ? { class: "vd-pages-folder" } : {}, [
+              href ? el("a", { href }, words) : el("span", {}, words),
+            ]);
+          }),
+        ),
+      ];
+    }
     default:
       return inside();
   }

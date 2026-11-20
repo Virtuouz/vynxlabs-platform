@@ -1,8 +1,23 @@
 ---
 title: Tenant
-order: 6
 icon: building-2
 description: People, access, and how a tenant's work is delivered.
+pages:
+  - overview
+  - workspaces
+  - approvals
+  - members
+  - end-users
+  - service-accounts
+  - operator-access
+  - single-sign-on
+  - branding
+  - domains
+  - repository
+  - workers
+  - audit-log
+  - retention
+  - export
 ---
 
 People, access, and how a tenant's work is delivered.

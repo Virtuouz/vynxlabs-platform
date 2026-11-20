@@ -39,6 +39,14 @@ export interface ComponentSpec {
   profiles: readonly ProfileName[];
   /** A check the schema cannot say. It gives what is wrong, or nothing. */
   check?: (props: Record<string, string>) => string | undefined;
+  /** A few words on what it is for, for a menu that inserts it. */
+  summary: string;
+  /**
+   * What an editor inserts for it. `$0` is where the cursor is left. A
+   * container is written with three colons and one inside it with four: an
+   * editor that inserts it inside another container adds colons to both.
+   */
+  insert: string;
 }
 
 const text = (description: string, more: Partial<PropSchema> = {}): PropSchema => ({
@@ -58,6 +66,8 @@ const EVERYWHERE: readonly ProfileName[] = ["product", "docs"];
 export const COMPONENTS: readonly ComponentSpec[] = [
   {
     name: "alert",
+    summary: "A note, tip or warning",
+    insert: ":::alert[Title]{type=info}\n$0\n:::",
     form: "container",
     description: "A note set apart from the text around it.",
     label: "optional",
@@ -74,6 +84,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "term",
+    summary: "Link a glossary term or column",
+    insert: ":term[$0]{id=}",
     form: "inline",
     description:
       "A word with a definition behind it: a glossary term by its `id`, or a resource by its kind and path.",
@@ -111,6 +123,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "field",
+    summary: "A field, with what it is for",
+    insert: "::field{path=$0}",
     form: "leaf",
     description: "What a field of a resource means, taken from the kind's own description of it.",
     label: "none",
@@ -131,6 +145,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "steps",
+    summary: "A numbered procedure",
+    insert: ":::steps\n1. $0\n2. \n:::",
     form: "container",
     description: "A numbered list drawn as steps to follow in order.",
     label: "none",
@@ -139,6 +155,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "tabs",
+    summary: "Alternatives side by side",
+    insert: ":::tabs\n::::tab{label=One}\n$0\n::::\n::::tab{label=Two}\n\n::::\n:::",
     form: "container",
     description: "Several ways to do one thing, one shown at a time.",
     label: "none",
@@ -148,6 +166,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "tab",
+    summary: "One more way, inside tabs",
+    insert: ":::tab{label=$0}\n\n:::",
     form: "container",
     description: "One of the ways inside `tabs`.",
     label: "none",
@@ -162,6 +182,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "details",
+    summary: "Collapsible section",
+    insert: ':::details{summary="$0"}\n\n:::',
     form: "container",
     description: "A section that stays folded until it is opened.",
     label: "none",
@@ -175,6 +197,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "kbd",
+    summary: "A keyboard key",
+    insert: ":kbd[$0]",
     form: "inline",
     description: "Keys to press.",
     label: "none",
@@ -183,6 +207,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "product",
+    summary: "The product's name",
+    insert: ":product[]$0",
     form: "inline",
     description: "The product's name, as the instance shows it.",
     label: "none",
@@ -191,6 +217,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "screenshot",
+    summary: "A picture of the console",
+    insert: '::screenshot{name=$0 alt=""}',
     form: "leaf",
     description: "A picture of the console, taken when a version is released.",
     label: "none",
@@ -207,6 +235,8 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "code-tabs",
+    summary: "One snippet, several languages",
+    insert: ":::code-tabs\n```js title=JavaScript\n$0\n```\n```py title=Python\n\n```\n:::",
     form: "container",
     description:
       "The same code in several languages, one shown at a time. It holds only code blocks.",
@@ -216,11 +246,24 @@ export const COMPONENTS: readonly ComponentSpec[] = [
   },
   {
     name: "file-tree",
+    summary: "Folders and files",
+    insert: ":::file-tree\n- folder/\n  - $0file.md\n:::",
     form: "container",
     description: "Files and folders, written as a list inside lists.",
     label: "none",
     props: { type: "object", properties: {}, additionalProperties: false },
     profiles: EVERYWHERE,
+  },
+  {
+    name: "pages",
+    summary: "What is in this folder",
+    insert: "::pages$0",
+    form: "leaf",
+    description:
+      "The pages and folders of the folder this page is in, each with what it is for. A folder's own page with nothing written in it shows this.",
+    label: "none",
+    props: { type: "object", properties: {}, additionalProperties: false },
+    profiles: ["docs"],
   },
 ];
 

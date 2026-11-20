@@ -5,7 +5,7 @@ import { forgetHelp } from "../../help/content.ts";
 import { answer, show } from "../../testing.tsx";
 import { DocEditor } from "./DocEditor.tsx";
 import { Docs } from "./Docs.tsx";
-import { type DocsList, indexOf, movedTo, resolvers, treeOf } from "./model.ts";
+import { type DocRow, type DocsList, filterRows, indexOf, resolvers, rowsOf } from "./model.ts";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -13,11 +13,24 @@ const root = "/tenants/acme/workspaces/dev";
 const link = "/t/acme/workspaces/dev";
 const text = (frontmatter: string, body = "Words.\n") => `---\n${frontmatter}\n---\n\n${body}`;
 
+const sources: Record<string, string> = {
+  "handbook/index": text(
+    "title: Handbook\npages: [support]",
+    "Start with [refunds](support/refunds).\n",
+  ),
+  "handbook/support/index": text("title: Customer support\npages: [returns, refunds]"),
+  "handbook/support/refunds": text(
+    "title: Refund an order\ntopic: support-refunds\nterms:\n  - id: rma\n    term: RMA\n    short: A return authorisation.",
+    "Ask for the :term[RMA]{id=rma}, then see [returns](returns#by-post).\n\nThe :term[status]{table=orders column=status} column says where it is.\n",
+  ),
+  "handbook/support/returns": text("title: Returns", "## By post\n\nParcels come back.\n"),
+};
+
 const page = (path: string, title: string, more: object = {}) => ({
   path,
   title,
   description: null,
-  order: null,
+  pages: null,
   topic: null,
   app: "help",
   url: path.replace(/^handbook\//, "").replace(/(^|\/)index$/, ""),
@@ -25,6 +38,8 @@ const page = (path: string, title: string, more: object = {}) => ({
   file: null,
   headings: [],
   terms: [],
+  source: sources[path] ?? text(`title: ${title}`),
+  revision: null,
   ...more,
 });
 
@@ -40,32 +55,22 @@ const list = (): DocsList => ({
     },
   ],
   pages: [
-    page("handbook/index", "Handbook"),
+    page("handbook/index", "Handbook", { pages: ["support"] }),
     page("handbook/faq", "Questions"),
-    page("handbook/support/index", "Customer support", { order: 1 }),
+    page("handbook/support/index", "Customer support", { pages: ["returns", "refunds"] }),
     page("handbook/support/refunds", "Refund an order", {
-      order: 2,
       topic: "support-refunds",
       state: "changed",
+      revision: 3,
       terms: [{ id: "rma", term: "RMA", aliases: [], short: "A return authorisation." }],
     }),
     page("handbook/support/returns", "Returns", {
-      order: 1,
       headings: ["by-post"],
       file: "docs/handbook/support/returns.md",
     }),
-    page("handbook/ops/closing/checklist", "Closing checklist", { state: "new" }),
+    page("handbook/ops/closing/checklist", "Closing checklist", { state: "new", revision: 1 }),
   ],
 });
-
-const sources: Record<string, string> = {
-  "handbook/index": text("title: Handbook", "Start with [refunds](support/refunds).\n"),
-  "handbook/support/refunds": text(
-    "title: Refund an order\ntopic: support-refunds\nterms:\n  - id: rma\n    term: RMA\n    short: A return authorisation.",
-    "Ask for the :term[RMA]{id=rma}, then see [returns](returns#by-post).\n\nThe :term[status]{table=orders column=status} column says where it is.\n",
-  ),
-  "handbook/support/returns": text("title: Returns", "## By post\n\nParcels come back.\n"),
-};
 
 let calls: { method: string; url: string; body: Record<string, unknown> | undefined }[];
 let routes: Record<string, (body: unknown) => [number, unknown]>;
@@ -74,6 +79,7 @@ beforeEach(() => {
   calls = [];
   routes = {
     [`GET /api/v1${root}/docs`]: () => [200, list()],
+    [`POST /api/v1${root}/drafts/batch`]: () => [200, { paths: [] }],
     [`GET /api/v1${root}/apps`]: () => [
       200,
       { items: [{ path: "help", url: "https://apps.example.test/apps/acme/dev/help/" }] },
@@ -135,6 +141,7 @@ afterEach(() => {
 });
 const sent = (method: string) =>
   calls.filter((call) => call.method === method && !call.url.includes("/me/"));
+const batches = () => sent("POST").filter((call) => call.url.endsWith("/drafts/batch"));
 
 const docs = (path?: string, editable = true) =>
   show(
@@ -148,18 +155,17 @@ const docs = (path?: string, editable = true) =>
     />,
   );
 
+const labels = (rows: readonly DocRow[], depth = 0): string[] =>
+  rows.flatMap((row) => [
+    `${"  ".repeat(depth)}${row.title}`,
+    ...labels(row.children ?? [], depth + 1),
+  ]);
+
 describe("the pages of a workspace", () => {
-  test("are shown as their folders: the app, its collections by their order, loose pages after", () => {
-    const labels = (nodes: ReturnType<typeof treeOf>, depth = 0): string[] =>
-      nodes.flatMap((node) => [
-        `${"  ".repeat(depth)}${node.label}`,
-        ...labels(node.children ?? [], depth + 1),
-      ]);
-    expect(labels(treeOf(list()))).toEqual([
-      "Shop handbook",
-      "  Handbook",
+  test("are shown as their folders, to any depth: what a folder lists first, then the rest by title", () => {
+    expect(labels(rowsOf(list()))).toEqual([
+      "Handbook",
       "  Customer support",
-      "    Customer support",
       "    Returns",
       "    Refund an order",
       "  Ops",
@@ -167,14 +173,26 @@ describe("the pages of a workspace", () => {
       "      Closing checklist",
       "  Questions",
     ]);
+    const handbook = rowsOf(list())[0];
+    expect(handbook).toMatchObject({ kind: "folder", path: "handbook", site: { path: "help" } });
   });
 
-  test("a page no app serves is listed apart, and has no pages to link to", () => {
+  test("a filter keeps what it finds and the folders it is in", () => {
+    expect(labels(filterRows(rowsOf(list()), "check"))).toEqual([
+      "Handbook",
+      "  Ops",
+      "    Closing",
+      "      Closing checklist",
+    ]);
+    expect(labels(filterRows(rowsOf(list()), "refunds.nothing"))).toEqual([]);
+  });
+
+  test("a page no site serves has no pages to link to", () => {
     const loose: DocsList = {
       apps: [],
       pages: [page("notes/todo", "To do", { app: null, url: null })],
     };
-    expect(treeOf(loose).map((node) => node.label)).toEqual(["Served by no app"]);
+    expect(labels(rowsOf(loose))).toEqual(["Notes", "  To do"]);
     expect(indexOf(loose, undefined)).toEqual([]);
   });
 
@@ -197,55 +215,43 @@ describe("the pages of a workspace", () => {
   });
 });
 
-describe("a page let go on a row of the tree", () => {
-  test("goes into that folder with its own name, or beside that page", () => {
-    expect(movedTo(list(), "handbook/faq", "dir:handbook/support")).toEqual({
-      to: "handbook/support/faq",
-    });
-    expect(movedTo(list(), "handbook/support/refunds", "app:help")).toEqual({
-      to: "handbook/refunds",
-    });
-    expect(movedTo(list(), "handbook/faq", "handbook/ops/closing/checklist")).toEqual({
-      to: "handbook/ops/closing/faq",
-    });
-  });
-
-  test("stays where it is when that is where it is, and says when the place is taken", () => {
-    expect(movedTo(list(), "handbook/faq", "app:help")).toBeUndefined();
-    expect(movedTo(list(), "handbook/faq", "handbook/index")).toBeUndefined();
-    const taken = list();
-    taken.pages.push(page("handbook/support/faq", "Support questions"));
-    expect(movedTo(taken, "handbook/faq", "dir:handbook/support")).toEqual({
-      problem: "There is a page at handbook/support/faq already.",
-    });
-  });
-
-  test("a page kept in the repository is the repository's to move", () => {
-    expect(movedTo(list(), "handbook/support/returns", "app:help")).toBeUndefined();
-  });
-});
-
 describe("the Documentation screen", () => {
+  const tree = () => screen.findByRole("tree", { name: "Pages" });
+  const row = async (name: string) => within(await tree()).getByRole("treeitem", { name });
+  const dataTransfer = () => ({ setData: () => {}, effectAllowed: "", dropEffect: "" });
+
   test("shows the first page, drawn, with the tree of pages beside it", async () => {
     docs();
     expect(await screen.findByRole("heading", { level: 2, name: "Handbook" })).toBeTruthy();
-    const tree = screen.getByRole("tree", { name: "Pages" });
-    expect(within(tree).getByRole("treeitem", { name: "Refund an order" })).toBeTruthy();
+    expect(await row("Refund an order")).toBeTruthy();
     const linked = await screen.findByRole("link", { name: "refunds" });
     expect(linked.getAttribute("href")).toBe(`${link}/docs/handbook/support/refunds`);
     fireEvent.click(linked);
     expect(location.pathname).toBe(`${link}/docs/handbook/support/refunds`);
-    fireEvent.click(within(tree).getByRole("treeitem", { name: "Questions" }));
+    fireEvent.click(await row("Questions"));
     expect(location.pathname).toBe(`${link}/docs/handbook/faq`);
-    // A folder is opened and closed. It is not somewhere to go.
-    fireEvent.click(within(tree).getByRole("treeitem", { name: /^Ops/ }));
-    expect(location.pathname).toBe(`${link}/docs/handbook/faq`);
+    // A folder with a page of its own opens it. One without is opened and closed.
+    fireEvent.click(await row("Customer support"));
+    expect(location.pathname).toBe(`${link}/docs/handbook/support/index`);
+    fireEvent.click(await row("Ops"));
+    expect(location.pathname).toBe(`${link}/docs/handbook/support/index`);
+  });
+
+  test("a row says its file's name, under its title, and a draft says so right of it", async () => {
+    docs();
+    expect((await row("Refund an order")).textContent).toContain("refunds.md");
+    expect((await row("Refund an order")).textContent).toContain("Draft · not deployed");
+    expect((await row("Customer support")).textContent).toContain("support/ · index.md");
+    expect((await row("Ops")).textContent).toContain("ops/");
+    expect((await row("Questions")).textContent).not.toContain("not deployed");
+    // A folder published as a site says so.
+    expect((await row("Handbook")).textContent).toContain("Site");
   });
 
   test("a page says its state, its terms mean what its writer may know, and it leads to its editor", async () => {
     docs("handbook/support/refunds");
     expect(await screen.findByRole("heading", { level: 2, name: "Refund an order" })).toBeTruthy();
-    expect(screen.getByText("Changed, not deployed")).toBeTruthy();
+    expect(screen.getAllByText("Draft · not deployed").length).toBeGreaterThan(0);
     fireEvent.click(await screen.findByRole("button", { name: "RMA" }));
     await screen.findByText("A return authorisation.");
     // What the column is for is told here, to someone who may read the table.
@@ -262,44 +268,181 @@ describe("the Documentation screen", () => {
     expect(location.pathname).toBe(`${link}/docs/edit/handbook/support/refunds`);
   });
 
-  test("a page dragged onto a folder is moved there as a draft, with the revision it had", async () => {
-    routes[`PUT /api/v1${root}/drafts/handbook/support/refunds`] = () => [200, { revision: 4 }];
+  test("a page let go on a folder moves into it, as one batch of drafts with their revisions", async () => {
     docs("handbook/support/refunds");
-    const tree = await screen.findByRole("tree", { name: "Pages" });
-    const dragged = within(tree).getByRole("treeitem", { name: /^Refund an order/ });
-    const onto = within(tree).getByRole("treeitem", { name: /^Ops/ });
+    const dragged = await row("Refund an order");
+    const onto = await row("Ops");
     expect(dragged.getAttribute("draggable")).toBe("true");
-    // The repository's page cannot be picked up, and a folder is not a page.
-    expect(
-      within(tree)
-        .getByRole("treeitem", { name: /^Returns/ })
-        .getAttribute("draggable"),
-    ).toBeNull();
-    expect(onto.getAttribute("draggable")).toBeNull();
-    const dataTransfer = { setData: () => {}, effectAllowed: "", dropEffect: "" };
-    fireEvent.dragStart(dragged, { dataTransfer });
-    fireEvent.dragOver(onto, { dataTransfer });
-    fireEvent.drop(onto, { dataTransfer });
-    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
-    expect(sent("PUT")[0]?.url).toBe(`/api/v1${root}/drafts/handbook/support/refunds`);
-    expect(sent("PUT")[0]?.body).toMatchObject({
-      kind: "doc",
-      path: "handbook/ops/refunds",
+    // The repository's page cannot be picked up, and neither can a site's own folder.
+    expect((await row("Returns")).getAttribute("draggable")).toBeNull();
+    expect((await row("Handbook")).getAttribute("draggable")).toBeNull();
+    fireEvent.dragStart(dragged, { dataTransfer: dataTransfer() });
+    fireEvent.dragOver(onto, { dataTransfer: dataTransfer() });
+    expect(onto.textContent).toContain("Move into");
+    fireEvent.drop(onto, { dataTransfer: dataTransfer() });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const changes = batches()[0]?.body?.changes as {
+      path: string;
+      to?: string;
+      source?: string;
+      revision?: number;
+    }[];
+    // It moves with the revision of its draft, and its own links are written from where it now is.
+    expect(changes.find((one) => one.path === "handbook/support/refunds")).toEqual({
+      path: "handbook/support/refunds",
+      to: "handbook/ops/refunds",
+      source: (sources["handbook/support/refunds"] as string).replace(
+        "(returns#by-post)",
+        "(../support/returns#by-post)",
+      ),
       revision: 3,
-      body: { source: sources["handbook/support/refunds"] },
     });
+    // The folder it left no longer lists it, and a link to it follows it.
+    expect(changes.find((one) => one.path === "handbook/support/index")?.source).toBe(
+      text("title: Customer support\npages:\n  - returns"),
+    );
+    expect(changes.find((one) => one.path === "handbook/index")?.source).toContain(
+      "[refunds](ops/refunds)",
+    );
     // It was the page being read, so the reader follows it.
     await waitFor(() => expect(location.pathname).toBe(`${link}/docs/handbook/ops/refunds`));
+    // And it can be taken back.
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(batches()).toHaveLength(2));
+    expect(batches()[1]?.body?.changes).toContainEqual({
+      path: "handbook/ops/refunds",
+      to: "handbook/support/refunds",
+      source: sources["handbook/support/refunds"],
+    });
+    expect(batches()[1]?.body?.changes).toContainEqual({
+      path: "handbook/index",
+      source: sources["handbook/index"],
+    });
   });
 
-  test("where pages cannot be changed, none can be dragged", async () => {
+  test("a page let go between two others is put there, and its folder's list says so", async () => {
+    docs();
+    const dragged = await row("Questions");
+    fireEvent.dragStart(dragged, { dataTransfer: dataTransfer() });
+    // Over a page, the bottom half means after it: with no size to measure, the middle is after.
+    const onto = await row("Refund an order");
+    fireEvent.dragOver(onto, { dataTransfer: dataTransfer() });
+    fireEvent.drop(onto, { dataTransfer: dataTransfer() });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const changes = batches()[0]?.body?.changes as { path: string; to?: string; source?: string }[];
+    expect(changes.find((one) => one.path === "handbook/faq")?.to).toBe("handbook/support/faq");
+    expect(changes.find((one) => one.path === "handbook/support/index")?.source).toContain(
+      "pages:\n  - returns\n  - refunds\n  - faq",
+    );
+  });
+
+  test("a row is renamed in place, its title and its file's name together", async () => {
+    docs();
+    const refunds = await row("Refund an order");
+    refunds.focus();
+    fireEvent.keyDown(refunds, { key: "F2" });
+    const title = await screen.findByLabelText("Page title");
+    const name = screen.getByLabelText("File name") as HTMLInputElement;
+    expect(name.value).toBe("refunds");
+    fireEvent.change(title, { target: { value: "Refund or exchange an order" } });
+    fireEvent.change(name, { target: { value: "Refund Or Exchange" } });
+    // A name that is not written as a file's says how it would be.
+    fireEvent.click(await screen.findByRole("button", { name: "Use refund-or-exchange" }));
+    expect(name.value).toBe("refund-or-exchange");
+    expect(screen.getByText(/The old address leads to the new one for 90 days/)).toBeTruthy();
+    fireEvent.keyDown(name, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const changes = batches()[0]?.body?.changes as { path: string; to?: string; source?: string }[];
+    expect(changes.find((one) => one.path === "handbook/support/refunds")).toMatchObject({
+      to: "handbook/support/refund-or-exchange",
+      revision: 3,
+    });
+    expect(changes.find((one) => one.path === "handbook/support/refunds")?.source).toContain(
+      "title: Refund or exchange an order",
+    );
+    // Its folder lists it by its new name.
+    expect(changes.find((one) => one.path === "handbook/support/index")?.source).toContain(
+      "  - refund-or-exchange",
+    );
+  });
+
+  test("Escape leaves a row as it was", async () => {
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "Rename Questions" }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.keyDown(title, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByLabelText("Page title")).toBeNull());
+    expect(batches()).toHaveLength(0);
+  });
+
+  test("a folder is made in place, as its own page with nothing written in it", async () => {
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "New folder" }));
+    const title = await screen.findByLabelText("Folder title");
+    fireEvent.change(title, { target: { value: "Staff guide" } });
+    // The name is made from the title until it is typed in.
+    expect((screen.getByLabelText("File name") as HTMLInputElement).value).toBe("staff-guide");
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    expect(batches()[0]?.body).toEqual({
+      changes: [{ path: "staff-guide/index", source: "---\ntitle: Staff guide\n---\n" }],
+    });
+  });
+
+  test("a folder's menu makes pages and folders in it, and deletes it with everything in it", async () => {
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Customer support" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New folder here/ }));
+    const title = await screen.findByLabelText("Folder title");
+    fireEvent.change(title, { target: { value: "Disputes" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    expect(batches()[0]?.body?.changes).toEqual([
+      { path: "handbook/support/disputes/index", source: "---\ntitle: Disputes\n---\n" },
+    ]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More for Ops" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Delete folder/ }));
+    expect(await answer("Delete", "ops")).toContain("Its 1 page goes with it");
+    await waitFor(() => expect(batches()).toHaveLength(2));
+    expect(batches()[1]?.body?.changes).toEqual([
+      { path: "handbook/ops/closing/checklist", deleted: true, revision: 1 },
+    ]);
+  });
+
+  test("a top-level folder is published as a site, as an app's draft", async () => {
+    routes[`GET /api/v1${root}/docs`] = () => [
+      200,
+      { apps: [], pages: [page("guide/index", "Staff guide", { app: null, url: null })] },
+    ];
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Staff guide" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Publish as a site/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect((within(dialog).getByLabelText(/^Address/) as HTMLInputElement).value).toBe(
+      "guide-site",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Publish" }));
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    expect(batches()[0]?.body).toEqual({
+      changes: [
+        {
+          path: "guide-site",
+          kind: "app",
+          schemaVersion: 1,
+          body: { title: "Staff guide", docs: "guide" },
+        },
+      ],
+    });
+  });
+
+  test("where pages cannot be changed, nothing can be dragged, renamed or made", async () => {
     docs("handbook/faq", false);
-    const tree = await screen.findByRole("tree", { name: "Pages" });
-    expect(
-      within(tree)
-        .getByRole("treeitem", { name: /^Questions/ })
-        .getAttribute("draggable"),
-    ).toBeNull();
+    expect((await row("Questions")).getAttribute("draggable")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rename Questions" })).toBeNull();
+    for (const name of ["Edit", /^New page/, /^New folder/, /^Deploy/]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
   });
 
   test("a page kept in the repository is read here and changed there", async () => {
@@ -311,6 +454,7 @@ describe("the Documentation screen", () => {
       "docs/handbook/support/returns.md",
     );
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rename Returns" })).toBeNull();
   });
 
   test("what is not deployed is deployed by name, and nothing else with it", async () => {
@@ -325,55 +469,17 @@ describe("the Documentation screen", () => {
     });
   });
 
-  test("in production nothing is written: pages are read, and change by deploy", async () => {
-    docs("handbook/support/refunds", false);
-    await screen.findByRole("heading", { level: 2, name: "Refund an order" });
-    for (const name of ["Edit", "New page", "New docs app", /^Deploy/]) {
-      expect(screen.queryByRole("button", { name })).toBeNull();
-    }
-  });
-
-  test("a docs app is made with its home page, as two drafts", async () => {
-    routes[`GET /api/v1${root}/docs`] = () => [200, { apps: [], pages: [] }];
-    routes[`PUT /api/v1${root}/drafts/guide/index`] = () => [200, { revision: 1 }];
-    routes[`PUT /api/v1${root}/drafts/guide`] = () => [200, { revision: 1 }];
-    docs();
-    await screen.findByText("No documentation yet");
-    fireEvent.click(screen.getAllByRole("button", { name: "New docs app" })[0] as HTMLElement);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText(/^Title/), { target: { value: "Staff guide" } });
-    fireEvent.change(within(dialog).getByLabelText(/^Address/), { target: { value: "guide" } });
-    expect((within(dialog).getByLabelText(/^Folder of pages/) as HTMLInputElement).value).toBe(
-      "guide",
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "Make it" }));
-    await waitFor(() => expect(sent("PUT")).toHaveLength(2));
-    expect(sent("PUT").map((call) => [call.url, call.body?.kind])).toEqual([
-      [`/api/v1${root}/drafts/guide/index`, "doc"],
-      [`/api/v1${root}/drafts/guide`, "app"],
-    ]);
-    expect(sent("PUT")[1]?.body?.body).toEqual({ title: "Staff guide", docs: "guide" });
-    expect(sent("PUT")[0]?.body?.body).toMatchObject({
-      source: expect.stringContaining('title: "Staff guide"'),
-    });
-    await waitFor(() => expect(location.pathname).toBe(`${link}/docs/edit/guide/index`));
-  });
-
-  test("a new page must go where a docs app will serve it", async () => {
-    docs();
-    fireEvent.click(await screen.findByRole("button", { name: "New page" }));
-    const dialog = await screen.findByRole("dialog");
-    const path = within(dialog).getByLabelText(/^Path/) as HTMLInputElement;
-    expect(path.value).toBe("handbook/");
-    fireEvent.change(within(dialog).getByLabelText(/^Title/), { target: { value: "Exchanges" } });
-    fireEvent.change(path, { target: { value: "elsewhere/exchanges" } });
-    expect(within(dialog).getByText(/No docs app serves that folder/)).toBeTruthy();
-    fireEvent.change(path, { target: { value: "handbook/faq" } });
-    expect(within(dialog).getByText("There is a page at that path already.")).toBeTruthy();
-    fireEvent.change(path, { target: { value: "handbook/support/exchanges" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Write it" }));
-    await waitFor(() => expect(location.pathname).toBe(`${link}/docs/new`));
-    expect(new URLSearchParams(location.search).get("at")).toBe("handbook/support/exchanges");
+  test("a folder's own page with nothing written in it lists what is in the folder", async () => {
+    const empty = list();
+    const index = empty.pages.find((one) => one.path === "handbook/support/index");
+    if (index) index.source = "---\ntitle: Customer support\npages: [returns, refunds]\n---\n";
+    routes[`GET /api/v1${root}/docs`] = () => [200, empty];
+    docs("handbook/support/index");
+    await screen.findByRole("heading", { level: 2, name: "Customer support" });
+    const listed = document.querySelector(".vd-pages");
+    expect(
+      [...(listed?.querySelectorAll(".vd-pages-title") ?? [])].map((one) => one.textContent),
+    ).toEqual(["Returns", "Refund an order"]);
   });
 });
 
@@ -484,7 +590,7 @@ describe("the page editor", () => {
     editor("handbook/support/refunds");
     const box = await source();
     expect(screen.queryByRole("region", { name: "Page details" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Page details" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Page details" }));
     const form = within(screen.getByRole("region", { name: "Page details" }));
     expect((form.getByLabelText(/^Title/) as HTMLInputElement).value).toBe("Refund an order");
     expect((form.getByLabelText(/^Topic/) as HTMLInputElement).value).toBe("support-refunds");
@@ -519,10 +625,75 @@ describe("the page editor", () => {
     editor("handbook/support/refunds");
     const box = await source();
     fireEvent.change(box, { target: { value: "---\ntitle: [unclosed\n---\n\nWords.\n" } });
-    fireEvent.click(screen.getByRole("button", { name: "Page details" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Page details" }));
     expect(
       within(screen.getByRole("region", { name: "Page details" })).getByText(/cannot be read/),
     ).toBeTruthy();
+  });
+
+  test("what is typed and what the form beside it writes are undone and redone alike", async () => {
+    editor("handbook/support/refunds");
+    const box = await source();
+    const opened = box.value;
+    const undo = () => screen.getByRole("button", { name: /^Undo/ });
+    const redo = () => screen.getByRole("button", { name: /^Redo/ });
+    expect((undo() as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(box, { target: { value: `${opened}More.\n` } });
+    fireEvent.click(screen.getByRole("tab", { name: "Page details" }));
+    const form = within(screen.getByRole("region", { name: "Page details" }));
+    fireEvent.change(form.getByLabelText(/^Description/), { target: { value: "Money back." } });
+    await waitFor(() => expect(box.value).toContain("description: Money back."));
+    fireEvent.click(undo());
+    await waitFor(() => expect(box.value).not.toContain("description: Money back."));
+    expect(box.value).toContain("More.");
+    fireEvent.click(undo());
+    await waitFor(() => expect(box.value).toBe(opened));
+    fireEvent.click(redo());
+    await waitFor(() => expect(box.value).toContain("More."));
+  });
+
+  test("a component is inserted where the cursor is, at the depth of what it is in", async () => {
+    editor("handbook/support/refunds");
+    const box = await source();
+    const at = box.value.indexOf("The :term[status]");
+    box.focus();
+    box.setSelectionRange(at, at);
+    fireEvent.select(box);
+    fireEvent.click(screen.getByRole("button", { name: /^Insert/ }));
+    const find = await screen.findByLabelText("Find a component");
+    fireEvent.change(find, { target: { value: "callout" } });
+    fireEvent.keyDown(find, { key: "Enter" });
+    await waitFor(() => expect(box.value).toContain(":::alert[Title]{type=info}"));
+    // After the words on the line, on lines of their own.
+    expect(box.value).toContain("says where it is.\n\n:::alert[Title]{type=info}\n\n:::\n");
+  });
+
+  test("the title is changed where it is shown, and the file's name beside its folder", async () => {
+    routes[`POST /api/v1${root}/drafts/batch`] = () => [200, { paths: [] }];
+    editor("handbook/support/refunds");
+    const box = await source();
+    fireEvent.click(screen.getByRole("button", { name: "Change the title" }));
+    const title = screen.getByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Refund or exchange" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(box.value).toContain("title: Refund or exchange\n"));
+    const name = screen.getByLabelText("File name") as HTMLInputElement;
+    expect(name.value).toBe("refunds");
+    fireEvent.change(name, { target: { value: "refund-or-exchange" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const changes = batches()[0]?.body?.changes as { path: string; to?: string; source?: string }[];
+    // What is typed goes with it: the page moves as it is now.
+    expect(changes.find((one) => one.path === "handbook/support/refunds")).toMatchObject({
+      to: "handbook/support/refund-or-exchange",
+      revision: 3,
+    });
+    expect(changes.find((one) => one.path === "handbook/support/refunds")?.source).toContain(
+      "title: Refund or exchange",
+    );
+    await waitFor(() =>
+      expect(location.pathname).toBe(`${link}/docs/edit/handbook/support/refund-or-exchange`),
+    );
   });
 
   test("a new page is given a path a docs app serves, and starts from its title", async () => {

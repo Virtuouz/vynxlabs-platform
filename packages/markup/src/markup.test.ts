@@ -1,13 +1,16 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import {
   COMPONENTS,
+  containersAt,
   DOC_CSS,
   ENHANCE_SCRIPT,
   linkKind,
+  type Node,
   PROFILES,
   type ProfileName,
   parse,
@@ -283,6 +286,7 @@ describe("components", () => {
       "screenshot",
       "code-tabs",
       "file-tree",
+      "pages",
     ]);
     const source = readFileSync(join(FIXTURES, "components.md"), "utf8");
     expect(validate(parse(source), "product", { source })).toEqual([]);
@@ -442,4 +446,89 @@ test("the page's script holds no HTML writing and reads nothing from the address
     expect(ENHANCE_SCRIPT).not.toContain(word);
   }
   expect(() => new Function(ENHANCE_SCRIPT)).not.toThrow();
+});
+
+describe("components inside components", () => {
+  const source = readFileSync(join(FIXTURES, "nesting.md"), "utf8");
+  const tree = parse(source);
+
+  test("every one may sit inside every other, as deep as it is written", () => {
+    expect(validate(tree, "docs")).toEqual([]);
+    const names = (node: Node): string[] =>
+      [...walk(node)].flatMap(({ node: one }) => (one.type === "component" ? [one.name] : []));
+    expect(names(tree)).toEqual([
+      "tabs",
+      "tab",
+      "steps",
+      "tab",
+      "alert",
+      "code-tabs",
+      "details",
+      "tabs",
+      "tab",
+      "file-tree",
+      "tab",
+      "tabs",
+      "tab",
+      "steps",
+      "details",
+      "kbd",
+      "term",
+      "alert",
+      "details",
+      "steps",
+    ]);
+  });
+
+  test("React draws what HTML draws, however deep", () => {
+    const html = renderHtml(tree, { profile: "docs" });
+    const react = renderToStaticMarkup(renderReact(tree, { profile: "docs" }) as ReactElement);
+    expect(react).toBe(html);
+  });
+
+  test("a line knows the containers it is in, outermost first", () => {
+    const lines = source.split("\n");
+    const at = (words: string) => lines.findIndex((line) => line.includes(words)) + 1;
+    const chain = (line: number) =>
+      containersAt(tree, line).map((one) =>
+        one.props.label ? `${one.name} ${one.props.label}` : one.name,
+      );
+    expect(chain(at("File it with"))).toEqual(["tabs", "tab Cash", "alert"]);
+    expect(chain(at("Tabs inside tabs."))).toEqual([
+      "details",
+      "tabs",
+      "tab Two",
+      "tabs",
+      "tab Inner",
+    ]);
+    expect(chain(at("Inside a step"))).toEqual(["steps", "details"]);
+    expect(chain(at("# Every component"))).toEqual([]);
+  });
+});
+
+describe("what is in a folder", () => {
+  test("::pages lists what the page's host says the folder holds", () => {
+    const tree = parse("::pages\n");
+    const folder = () => [
+      { title: "Refunds", description: "Full and partial.", href: "refunds" },
+      { title: "Disputes", href: "disputes", folder: true },
+    ];
+    expect(renderHtml(tree, { profile: "docs", folder })).toBe(
+      '<ul class="vd-pages"><li><a href="refunds"><span class="vd-pages-title">Refunds</span><span class="vd-pages-text">Full and partial.</span></a></li><li class="vd-pages-folder"><a href="disputes"><span class="vd-pages-title">Disputes</span></a></li></ul>',
+    );
+    expect(renderText(tree, { profile: "docs", folder })).toBe("- Refunds\n- Disputes");
+    // Nothing to list draws nothing.
+    expect(renderHtml(tree, { profile: "docs" })).toBe("");
+  });
+});
+
+test("an editor's preview is told which lines each block came from", () => {
+  const source = "# Title\n\nWords.\n\n:::tabs\n::::tab{label=Card}\nOne.\n::::\n:::\n";
+  const html = renderHtml(parse(source), { profile: "docs", lines: true });
+  expect(html).toContain('<h1 id="title" data-line="1">');
+  expect(html).toContain('<p data-line="3">Words.</p>');
+  expect(html).toContain('<div class="vd-tabs" data-vd-tabs="1" data-line="5" data-end-line="9">');
+  expect(html).toContain('<section class="vd-tab" data-line="6" data-end-line="8">');
+  // A served page says nothing of where its words were.
+  expect(renderHtml(parse(source), { profile: "docs" })).not.toContain("data-line");
 });

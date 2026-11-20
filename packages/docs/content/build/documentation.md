@@ -1,6 +1,5 @@
 ---
 title: Documentation
-order: 12
 topic: build-docs
 description: Pages your team writes, served as sites to staff, to customers or to anyone.
 ---

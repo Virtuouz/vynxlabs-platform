@@ -1,6 +1,5 @@
 ---
 title: Your tenants
-order: 2
 topic: tenants
 description: The tenants you are a member of, and the way into each.
 ---

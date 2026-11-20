@@ -1,6 +1,5 @@
 ---
 title: The page editor
-order: 13
 topic: build-docs-editor
 description: Where a page of documentation is written, beside the page as it will be served.
 ---

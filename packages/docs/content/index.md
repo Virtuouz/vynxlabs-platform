@@ -1,6 +1,15 @@
 ---
 title: Help
 description: How to build, run and look after what lives in a workspace.
+pages:
+  - start
+  - build
+  - operate
+  - data
+  - configure
+  - tenant
+  - instance
+  - reference
 ---
 
 :product[] is one place to build internal apps, workflows and integrations, and to run them. This help follows the console: each screen has a page, and the page opens beside the screen with :kbd[F1].

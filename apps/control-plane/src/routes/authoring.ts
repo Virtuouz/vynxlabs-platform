@@ -1,4 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
+import { frontmatterOf } from "@volvel/docs-engine";
 import {
   type FlowBody,
   type InterfaceBody,
@@ -558,6 +559,120 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }
             : {}),
         };
+      },
+    );
+
+    app.post(
+      `${base}/drafts/batch`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Save, move and remove several pages of documentation at once",
+          description:
+            "For a change to the tree of pages that touches more than one: a folder renamed or " +
+            "moved, a page put before another, a folder removed. Every change is made, or none " +
+            "is: a revision that is not the draft's now refuses them all. Each is audited as the " +
+            "save it is. A page is given whole, as `source`; `to` moves it, `deleted` removes it, " +
+            "and a page that was only ever a draft is then set aside. Another kind of resource, " +
+            "such as the app that publishes a folder as a site, is given as `kind` and `body`. " +
+            "Needs what saving each needs: `resource:write`, or `doc:write` for pages and apps " +
+            "that serve them.",
+          tags: ["authoring"],
+          params: WorkspaceParams,
+          body: Type.Object({
+            changes: Type.Array(
+              Type.Object({
+                path: Type.String({ maxLength: 255 }),
+                to: Type.Optional(Type.String({ maxLength: 255 })),
+                kind: Type.Optional(Type.String({ description: "`doc` when left out." })),
+                schemaVersion: Type.Optional(Type.Integer({ minimum: 1 })),
+                body: Type.Optional(AnyObject),
+                source: Type.Optional(Type.String()),
+                deleted: Type.Optional(Type.Boolean()),
+                revision: Type.Optional(Type.Integer({ minimum: 1 })),
+              }),
+              { minItems: 1, maxItems: 500 },
+            ),
+          }),
+          response: {
+            200: Type.Object({
+              paths: Type.Array(Type.String(), { description: "Where each page now is." }),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const { workspace, full, held } = await enter(ctx, params, "resource:write");
+        for (const change of body.changes) {
+          for (const path of [change.path, change.to].filter((one) => one !== undefined)) {
+            movedPath(path);
+            if (!full && (await screenAt(workspace, path, held)) === false) {
+              throw forbidden("resource:write");
+            }
+          }
+          const kind = change.kind ?? "doc";
+          if (!change.deleted && (kind === "doc" ? change.source : change.body) === undefined) {
+            throw badRequest("The manifest is not valid.", [
+              {
+                path: `/changes/${change.path}`,
+                message: kind === "doc" ? "needs its source" : "needs its body",
+              },
+            ]);
+          }
+          if (!full && !change.deleted && !fits(held, kind, change.body ?? {})) {
+            throw forbidden("resource:write");
+          }
+          if (isCodeKind(kind)) await mayWriteCode(ctx, workspace);
+        }
+        const paths = await ctx.mutate(async (trx, audit) => {
+          const out: string[] = [];
+          for (const change of body.changes) {
+            if (change.deleted) {
+              const draft = await trx
+                .selectFrom("resource_draft")
+                .select(["key"])
+                .where("workspace_id", "=", workspace.id)
+                .where("path", "=", change.path)
+                .executeTakeFirst();
+              const live = await trx
+                .selectFrom("resource")
+                .select(["id"])
+                .where("workspace_id", "=", workspace.id)
+                .where((where) =>
+                  draft
+                    ? where.or([where("key", "=", draft.key), where("path", "=", change.path)])
+                    : where("path", "=", change.path),
+                )
+                .executeTakeFirst();
+              // A page that was only ever a draft has nothing to remove: its draft is set aside.
+              if (!live && draft) {
+                await discardDraft(trx, audit, workspace, change.path);
+                continue;
+              }
+            }
+            const kind = change.kind ?? "doc";
+            const source = change.source ?? "";
+            const title =
+              kind === "doc"
+                ? frontmatterOf(source)?.title
+                : (change.body as { title?: unknown } | undefined)?.title;
+            const saved = await saveDraft(kernel, trx, audit, workspace, ctx.principal, {
+              kind,
+              schemaVersion: change.schemaVersion ?? 1,
+              body: kind === "doc" ? { source } : (change.body ?? {}),
+              deleted: change.deleted,
+              revision: change.revision,
+              path: change.path,
+              ...(change.to !== undefined && change.to !== change.path
+                ? { moveTo: change.to }
+                : {}),
+              ...(typeof title === "string" && title !== "" ? { title } : {}),
+            });
+            out.push(saved.draft.path);
+          }
+          return out;
+        });
+        return { paths };
       },
     );
 

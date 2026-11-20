@@ -25,7 +25,9 @@ const PageSummary = Type.Object({
   path: Type.String(),
   title: Type.String(),
   description: NullableString,
-  order: Type.Union([Type.Number(), Type.Null()]),
+  pages: Type.Union([Type.Array(Type.String()), Type.Null()], {
+    description: "For a folder's own page: the order of what is in the folder, by name.",
+  }),
   topic: NullableString,
   app: Type.Union([Type.String(), Type.Null()], {
     description: "The docs app that serves it, by the app's path. Null for a page no app serves.",
@@ -51,6 +53,13 @@ const PageSummary = Type.Object({
   }),
   headings: Type.Array(Type.String(), {
     description: "What its headings are addressed by, for a link to one of them.",
+  }),
+  source: Type.String({
+    description:
+      "The page's whole file, as it is being written: what a change to the tree of pages rewrites.",
+  }),
+  revision: Type.Union([Type.Integer(), Type.Null()], {
+    description: "The draft's revision, to send back with a save. Null while there is no draft.",
   }),
   terms: Type.Array(
     Type.Object({
@@ -101,13 +110,15 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         path: one.path,
         title: entry.frontmatter.title,
         description: entry.frontmatter.description ?? null,
-        order: entry.frontmatter.order ?? null,
+        pages: entry.frontmatter.pages ?? null,
         topic: entry.frontmatter.topic ?? null,
         app: home?.path ?? null,
         url: home ? urlOf(inApp) : null,
         state: one.state,
         file: one.file,
         headings,
+        source,
+        revision: one.revision,
         terms: (entry.frontmatter.terms ?? []).map((term) => ({
           id: term.id,
           term: term.term,

@@ -70,5 +70,8 @@ export function fieldTable(fields) {
 
 export const page = (frontmatter, body) =>
   `---\n${Object.entries(frontmatter)
-    .map(([key, value]) => `${key}: ${typeof value === "string" ? JSON.stringify(value) : value}`)
+    .map(
+      ([key, value]) =>
+        `${key}: ${typeof value === "string" || Array.isArray(value) ? JSON.stringify(value) : value}`,
+    )
     .join("\n")}\n---\n\n${body.trim()}\n`;

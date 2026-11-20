@@ -144,9 +144,12 @@ function blocks(state: State, until: string | undefined): Node[] {
       }
       case "directive_container_open": {
         const children = blocks(state, "directive_container_close");
-        out.push(
-          withLine(component(token.meta as unknown as DirectiveMeta, "container", children), line),
+        const made = withLine(
+          component(token.meta as unknown as DirectiveMeta, "container", children),
+          line,
         );
+        if (token.map) made.endLine = token.map[1] + state.offset;
+        out.push(made);
         break;
       }
       case "inline":

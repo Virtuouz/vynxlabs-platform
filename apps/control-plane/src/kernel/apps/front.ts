@@ -9,7 +9,6 @@ import {
   urlOf,
 } from "@volvel/docs-engine";
 import { readFormAnswer } from "@volvel/manifest";
-import { ENHANCE_SCRIPT } from "@volvel/markup";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
@@ -46,10 +45,14 @@ import { appFiles, readAsset } from "./assets.js";
 import {
   DOCS_CSS,
   DOCS_POLICY,
+  DOCS_SCRIPT,
   docPage,
+  docsKept,
   docsOf,
   notFoundPage,
   pageAt,
+  pageMarkdown,
+  searchAnswer,
   searchPage,
 } from "./docs.js";
 import type { Place } from "./hosts.js";
@@ -985,6 +988,34 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     return reply.code(200).header("content-type", asset.contentType).send(content);
   }
 
+  /** A page's source among resources, by its path in the workspace. */
+  function sourceIn(resources: readonly ResourceLike[], path: string): string | undefined {
+    const found = resources.find((one) => one.kind === "doc" && one.path === path);
+    const source = (found?.body as { source?: unknown } | undefined)?.source;
+    return typeof source === "string" ? source : undefined;
+  }
+
+  /** What a docs app answers its own script with. Private, as the page it was asked from. */
+  function sendJson(reply: FastifyReply, body: unknown, preview = false) {
+    return reply
+      .code(200)
+      .header("content-type", "application/json; charset=utf-8")
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", preview ? "no-store" : "private, no-cache")
+      .send(JSON.stringify(body));
+  }
+
+  /** A page's Markdown, for whoever may read the page. */
+  function sendMarkdown(reply: FastifyReply, body: string, preview = false) {
+    return reply
+      .code(200)
+      .header("content-type", "text/markdown; charset=utf-8")
+      .header("x-content-type-options", "nosniff")
+      .header("content-security-policy", "default-src 'none'; sandbox")
+      .header("cache-control", preview ? "no-store" : "private, no-cache")
+      .send(body);
+  }
+
   /**
    * Answers an address under a docs app, for someone who may open the app:
    * a page, a search, or the page a renamed one moved to.
@@ -1005,7 +1036,21 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       pictures: ReadonlyMap<string, unknown>;
     },
   ) {
-    const docs = docsOf(at.bundleId, at.app, at.resources, productNames(kernel.config));
+    // When each page last changed: read once for each deployed bundle, with its pages.
+    const updated = docsKept(at.bundleId, at.app)
+      ? undefined
+      : new Map(
+          (
+            await db
+              .selectFrom("resource")
+              .select(["path", "updated_at"])
+              .where("workspace_id", "=", at.workspaceId)
+              .where("kind", "=", "doc")
+              .where("path", "like", `${at.app.docs}/%`)
+              .execute()
+          ).map((row) => [row.path, row.updated_at] as const),
+        );
+    const docs = docsOf(at.bundleId, at.app, at.resources, productNames(kernel.config), updated);
     const drawn = {
       frame: at.look,
       app: at.app,
@@ -1024,10 +1069,22 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("cache-control", "private, no-cache")
         .send(body);
 
+    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const query = String(asked?.q ?? "").slice(0, 200);
     if (at.file === "_search") {
-      const query = String((request.query as { q?: unknown } | undefined)?.q ?? "").slice(0, 200);
       return send(200, searchPage(drawn, query, docs.search.search(query, 30)));
     }
+    if (at.file === "_search.json") {
+      const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
+      return sendJson(
+        reply,
+        searchAnswer(drawn, docs.search.grouped(query, collection ? { collection } : {})),
+      );
+    }
+    const markdown = pageMarkdown(docs.built.set, at.file, (page) =>
+      sourceIn(at.resources, `${at.app.docs}/${page}`),
+    );
+    if (markdown !== undefined) return sendMarkdown(reply, markdown);
     const path = pageAt(docs.built.set, at.file);
     if (path !== undefined) return send(200, docPage(drawn, path));
 
@@ -1115,11 +1172,20 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("referrer-policy", "same-origin")
         .header("cache-control", "no-store")
         .send(body);
-    if (file === "_search") {
-      const query = String((request.query as { q?: unknown } | undefined)?.q ?? "").slice(0, 200);
-      const hits = loadSearchIndex(buildSearchIndex(set)).search(query, 30);
-      return send(200, searchPage(drawn, query, hits));
+    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const query = String(asked?.q ?? "").slice(0, 200);
+    if (file === "_search" || file === "_search.json") {
+      const index = loadSearchIndex(buildSearchIndex(set));
+      if (file === "_search") return send(200, searchPage(drawn, query, index.search(query, 30)));
+      const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
+      return sendJson(
+        reply,
+        searchAnswer(drawn, index.grouped(query, collection ? { collection } : {})),
+        true,
+      );
     }
+    const markdown = pageMarkdown(set, file, (page) => sourceIn(resources, `${app.docs}/${page}`));
+    if (markdown !== undefined) return sendMarkdown(reply, markdown, true);
     const path = pageAt(set, file);
     return path === undefined ? send(404, notFoundPage(drawn)) : send(200, docPage(drawn, path));
   }
@@ -1145,7 +1211,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("content-type", `${script ? "text/javascript" : "text/css"}; charset=utf-8`)
         .header("x-content-type-options", "nosniff")
         .header("cache-control", "public, max-age=3600")
-        .send(script ? ENHANCE_SCRIPT : DOCS_CSS);
+        .send(script ? DOCS_SCRIPT : DOCS_CSS);
     }
 
     if (path === "/_platform/portal.css") {

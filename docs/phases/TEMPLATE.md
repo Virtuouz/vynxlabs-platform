@@ -37,7 +37,7 @@ What the phase is for, and where the ask came from: the owner's words, a drawing
 3. **Lifecycle.** For each kind of object shown: create, open, edit, rename, move, duplicate, remove, undo and redo, clear a field, bulk. Each is built, left out on purpose (why), or missing. Compared with what the API offers.
 4. **States.** For each new screen, where loading, empty, filtered-empty, stale, failed, forbidden, waiting and live are drawn. What a slow save and a failed save look like.
 5. **Walk.** On a throwaway instance seeded by `examples/fernhill/setup/setup.mjs`, never the owner's own. At 1440×900, 1440×640, 768 and 390 px; light and dark; F1, ⌘K, `/`, Esc and Tab; reload, Back and a shared link; the longest real values; the network throttled once. Screenshots and what was found.
-6. **Guards.** `pnpm test` and the full `pnpm e2e` run. New screens are measured in `e2e/polish.spec.ts` (or listed in its `NOT_MEASURED`, with why). A served surface is under the `e2e/test.ts` motion fixture. A primitive that can be misused has an `enforce.test.ts` rule.
+6. **Guards.** A typecheck and the unit tests of what the milestone touched, and its browser walk. The full `pnpm test` and `pnpm e2e` run once, at the end of the phase, before it is presented as built. New screens are measured in `e2e/polish.spec.ts` (or listed in its `NOT_MEASURED`, with why). A served surface is under the `e2e/test.ts` motion fixture. A primitive that can be misused has an `enforce.test.ts` rule.
 7. **Left out.** What was trimmed from the decisions or the exit criterion, and when the owner was asked.
 
 ## Findings

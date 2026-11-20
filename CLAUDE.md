@@ -23,4 +23,4 @@ After each phase, the owner used to find a round of corrections within hours: st
 ## Care
 
 - `temp/` holds the owner's design files and is not in git. Never run a formatter with `--write` over the repository root.
-- Run the full `pnpm test` and `pnpm e2e`, not one spec, before calling a phase done.
+- After each milestone: a typecheck, the unit tests of what it touched, and its browser walk. The full `pnpm test` and `pnpm e2e` run once, at the end of the phase, before it is called done (the e2e takes about half an hour). After that run, rerun only the specs that failed.

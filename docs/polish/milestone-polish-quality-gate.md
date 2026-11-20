@@ -35,7 +35,7 @@ An implementing agent works through these before a milestone that changes anythi
    - Network: with it throttled once.
    - Write what the walk found into the milestone's Findings, including "found nothing".
 6. **Run the guards, and extend them.**
-   - Run `pnpm test` and the full `pnpm e2e`, not one spec.
+   - Per milestone, a typecheck and the unit tests of what it touched. The full `pnpm test` and `pnpm e2e` run once, at the end of the phase (owner's choice, 2026-11-20: the e2e takes about half an hour).
    - Add every new screen to `e2e/polish.spec.ts`'s measured list.
    - A served surface goes under the `e2e/test.ts` motion fixture.
    - A new primitive that can be misused gets an `enforce.test.ts` rule.

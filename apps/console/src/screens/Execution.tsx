@@ -557,10 +557,11 @@ interface BundleRow {
   createdAt: string;
 }
 
-export function Deployments({ root }: { root: string }) {
+export function Deployments({ root, as }: { root: string; as?: "page" | "section" }) {
   return (
     <ListScreen<BundleRow>
       title="Deployments"
+      as={as ?? "page"}
       description="Every bundle uploaded to this workspace. Activating an earlier one is how you roll back. Runs in progress finish on the bundle they started with."
       path={`${root}/bundles`}
       rowKey={(row) => row.id}

@@ -96,6 +96,15 @@ export interface GridProps<Row extends Record<string, unknown>> {
 
 const NUMERIC = new Set(["integer", "number"]);
 
+/**
+ * Whether a key typed into a field of the grid stays there. The grid's own keys do;
+ * the page's, F1 for help and ⌘K for the palette, go on to the shortcuts above.
+ */
+export function keepsKey(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">): boolean {
+  if (event.key === "F1") return false;
+  return !((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k");
+}
+
 /** A stored value as text a person can read and edit. */
 export function showValue(type: string, value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -278,8 +287,8 @@ function EditableCell<Row extends Record<string, unknown>>({
         }}
         onBlur={commit}
         onKeyDown={(event) => {
-          // The grid's own keys are not for a cell being edited.
-          event.stopPropagation();
+          // The grid's own keys are not for a cell being edited. The page's are: F1 and ⌘K go on.
+          if (keepsKey(event)) event.stopPropagation();
           if (event.key === "Enter") event.currentTarget.blur();
           if (event.key === "Escape") {
             // What was there before is put back, and the cell keeps focus.
@@ -478,7 +487,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                       className="h-7 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
-                        event.stopPropagation();
+                        if (keepsKey(event)) event.stopPropagation();
                         if (event.key === "Enter") event.currentTarget.blur();
                       }}
                     />

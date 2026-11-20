@@ -44,6 +44,7 @@ let page: Page;
 let tenant: { id: string; slug: string };
 let ws: string;
 let failedRun: string;
+let waitingRun: string;
 let W: string;
 let prodWs: string;
 
@@ -114,6 +115,67 @@ test.beforeAll(async ({ browser }) => {
       ],
     },
   });
+  // The data screens (A2-31) are measured with something on them: a table with rows, a
+  // saved query, a variable and a dashboard, so none is judged while empty.
+  const table = (name: string, body: object) =>
+    call(page, "PUT", `${W}/resources/${name}`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body,
+    });
+  await table("patients", {
+    columns: { name: { type: "text", required: true }, visits: { type: "integer" } },
+    display: "name",
+  });
+  for (const [name, visits] of [
+    ["Amara Brooks", 3],
+    ["Joaquin Reyes", 1],
+    ["Priya Natarajan-Whitfield", 7],
+  ] as const) {
+    await call(page, "POST", `${W}/rows/patients`, { name, visits });
+  }
+  await call(page, "PUT", `${W}/drafts/reports/visits-by-patient`, {
+    kind: "query",
+    schemaVersion: 1,
+    create: true,
+    body: { sql: "select name, visits from patients order by visits desc" },
+  });
+  await call(page, "PUT", `${W}/drafts/billing/late-fee`, {
+    kind: "variable",
+    schemaVersion: 1,
+    body: { description: "What a late payment costs, in cents" },
+  });
+  const board = await call(page, "POST", `${W}/dashboards`, { title: "Clinic visits" });
+  await call(page, "PUT", `${W}/dashboards/${board.id}`, {
+    revision: board.revision,
+    body: {
+      version: 2,
+      filters: [],
+      widgets: [
+        {
+          id: "visits",
+          title: "Visits",
+          type: "figure",
+          width: 3,
+          source: {
+            visual: {
+              table: "patients",
+              measures: [{ fn: "sum", column: "visits", as: "visits" }],
+            },
+          },
+          options: { value: "visits" },
+        },
+        {
+          id: "by-patient",
+          title: "Visits by patient",
+          type: "table",
+          width: 6,
+          source: { visual: { table: "patients", groupBy: [{ column: "name" }] } },
+        },
+      ],
+    },
+  });
   await call(page, "POST", `${W}/changes/deploy`, {});
   const failing = (await call(page, "POST", `${W}/runs`, { script: LONG, input: {} })).id;
   failedRun = failing;
@@ -121,6 +183,7 @@ test.beforeAll(async ({ browser }) => {
   const waiting = (
     await call(page, "POST", `${W}/flow-runs`, { flow: "refunds/approve", input: {} })
   ).id;
+  waitingRun = waiting;
   await expect
     .poll(async () => (await call(page, "GET", `${W}/runs/${failing}`)).status, { timeout: 90_000 })
     .toBe("failed");
@@ -174,45 +237,47 @@ const screens = () => [
   ["sso", `/t/${tenant.id}/single-sign-on`],
   ["domains", `/t/${tenant.id}/domains`],
   ["account", "/account/api-keys"],
+  // The data screens (A2-31), with a table, a saved query, a variable and a dashboard to hold.
+  ["queries", `${ws}/queries`],
+  ["sources", `${ws}/sources`],
+  ["dashboards", `${ws}/dashboards`],
+  ["variables", `${ws}/variables`],
+  ["alerts", `${ws}/alerts`],
+  ["retention", `/t/${tenant.id}/retention`],
+  // The rest of the navigation, which had no finding against it but was never looked at.
+  ["app builder", `${ws}/screens`],
+  ["extensions", `${ws}/extensions`],
+  ["documentation", `${ws}/docs`],
+  ["resources", `${ws}/resources`],
+  ["workspace approvals", `${ws}/approvals`],
+  ["git sync", `${ws}/git`],
+  ["secrets", `${ws}/secrets`],
+  ["workspaces", `/t/${tenant.id}/workspaces`],
+  ["service accounts", `/t/${tenant.id}/service-accounts`],
+  ["operator access", `/t/${tenant.id}/operator-access`],
+  ["tenant branding", `/t/${tenant.id}/branding`],
+  ["repository", `/t/${tenant.id}/repository`],
+  ["workers", `/t/${tenant.id}/workers`],
+  ["export", `/t/${tenant.id}/export`],
+  ["instance sso", "/instance/single-sign-on"],
+  ["databases", "/instance/databases"],
+  ["import", "/instance/import"],
+  ["instance triggers", "/instance/triggers"],
+  ["instance branding", "/instance/branding"],
+  ["kit", "/instance/kit"],
+  // A flow run, whose timeline is judged again at 390 px below.
+  ["a flow run", `${ws}/runs/${waitingRun}`],
 ];
 
 /**
  * The sections of `nav.ts` that the measures above do not reach yet. A section is
  * either measured in `screens()` or listed here; `apps/console/src/enforce.test.ts`
  * fails on one that is neither, so a new section is measured or its absence is said
- * (the polish gate, step 6). Phase 22 M7 empties this list: the data screens were
- * found by the polish audit to be outside every layout measure (A2-31).
+ * (the polish gate, step 6). Phase 22 M7 emptied this list: the data screens were
+ * found by the polish audit to be outside every layout measure (A2-31). A section that
+ * cannot be measured yet goes back here with the reason on the line above it.
  */
-const NOT_MEASURED = [
-  // A2-31: the data screens.
-  "workspace/queries",
-  "workspace/sources",
-  "workspace/dashboards",
-  "workspace/variables",
-  "workspace/alerts",
-  "tenant/retention",
-  // Not yet measured, with no finding against their layout.
-  "workspace/screens",
-  "workspace/extensions",
-  "workspace/docs",
-  "workspace/resources",
-  "workspace/approvals",
-  "workspace/git",
-  "workspace/secrets",
-  "tenant/workspaces",
-  "tenant/service-accounts",
-  "tenant/operator-access",
-  "tenant/branding",
-  "tenant/repository",
-  "tenant/workers",
-  "tenant/export",
-  "instance/single-sign-on",
-  "instance/databases",
-  "instance/import",
-  "instance/triggers",
-  "instance/branding",
-  "instance/kit",
-];
+const NOT_MEASURED: string[] = [];
 
 async function open(path: string) {
   if (path === "/") {
@@ -264,6 +329,35 @@ test("the measures are recorded", async () => {
   record.notMeasured = NOT_MEASURED;
   writeFileSync(test.info().outputPath("polish.json"), JSON.stringify(record, null, 2));
   console.log(JSON.stringify(record, null, 2));
+});
+
+test("a flow run's timeline puts each label above its bar and keeps its ticks apart at 390 px", async () => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await open(`${ws}/runs/${waitingRun}`);
+  const timeline = page.locator("main .\\@container", { has: page.locator("ol") }).first();
+  await expect(timeline).toBeVisible();
+  const labels = await page.evaluate(() => {
+    const root = document.querySelector("main .\\@container ol") as HTMLElement;
+    const rows = [...root.querySelectorAll<HTMLElement>("li > button, li > div")].map((row) => {
+      const parts = [...row.children].map((part) => part.getBoundingClientRect());
+      return { label: parts[0], bar: parts[1] };
+    });
+    const axis = root.parentElement?.querySelector('[aria-hidden="true"].flex.gap-3');
+    const ticks = [...(axis?.querySelectorAll<HTMLElement>("span.absolute") ?? [])]
+      .map((element) => element.getBoundingClientRect())
+      .filter((box) => box.width > 0);
+    return {
+      rows: rows.map((row) => ({ label: row.label?.bottom ?? 0, bar: row.bar?.top ?? 0 })),
+      ticks: ticks.map((box) => ({ left: box.left, right: box.right })),
+    };
+  });
+  expect(labels.rows.length).toBeGreaterThan(0);
+  // Each label ends where its bar begins: above it, not beside it.
+  for (const row of labels.rows) expect(row.label).toBeLessThanOrEqual(row.bar + 1);
+  // Only the first and last ticks are named, and they do not touch.
+  expect(labels.ticks).toHaveLength(2);
+  const [first, last] = labels.ticks as { left: number; right: number }[];
+  expect(first?.right as number).toBeLessThan(last?.left as number);
 });
 
 test("every workbench's first row starts within 160 px of the top", async () => {

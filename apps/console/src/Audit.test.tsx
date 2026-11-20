@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { AuditTable, verbOf } from "./screens/Audit.tsx";
+import { AuditTable, targetName, verbOf } from "./screens/Audit.tsx";
 import { show } from "./testing.tsx";
 
 const entry = (id: string, action: string, over: object = {}) => ({
@@ -138,6 +138,50 @@ test("an entry linked to is opened, even when it is not among those loaded", asy
   await waitFor(() => expect(details.textContent).toContain("detail-far"));
   expect(fetched).toHaveBeenCalled();
   history.replaceState(null, "", "/");
+});
+
+test("an operator's access is said as the tenant's API, and empty details are not drawn as braces", async () => {
+  expect(
+    targetName({
+      action: "operator.access",
+      targetType: "request",
+      targetId: "PUT /api/v1/tenants/:tenantId/drafts/*",
+      targetLabel: null,
+    }),
+  ).toBe("the tenant's API");
+  expect(
+    targetName({
+      action: "secret.set",
+      targetType: "secret",
+      targetId: "x",
+      targetLabel: "Stripe",
+    }),
+  ).toBe("Stripe");
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address.includes("/audit-facets")) {
+      return new Response(JSON.stringify({ actions: [], actors: [], targetTypes: [] }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        items: [
+          entry("o", "operator.access", {
+            targetType: "request",
+            targetId: "PUT /api/v1/tenants/t1/drafts/billing/record-payment-and-reconcile",
+            details: {},
+          }),
+        ],
+        nextCursor: null,
+      }),
+      { status: 200 },
+    );
+  });
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  const details = await screen.findByRole("complementary", { name: "Entry details" });
+  await waitFor(() => expect(details.textContent).toContain("Nothing more was recorded."));
+  expect(details.textContent).not.toContain("{}");
+  expect(screen.getAllByText("the tenant's API").length).toBeGreaterThan(0);
 });
 
 test("the time it covers is asked of the server", async () => {

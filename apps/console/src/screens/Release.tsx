@@ -642,10 +642,30 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
       </section>
       <section className="flex flex-col gap-2">
         <SectionLabel>Bundles and rollback</SectionLabel>
-        <Deployments root={root} />
+        <Deployments root={root} as="section" />
       </section>
     </div>
   );
+}
+
+/** What the promote button says: "production" for production, the workspace's own name otherwise. */
+export function promoteLabel(target: { name: string; type: string }): string {
+  return `Promote to ${target.type === "production" ? "production" : target.name}`;
+}
+
+/** The confirm for a promotion: it names the workspace it really reaches. */
+export function promoteConfirm(
+  target: { name: string; type: string },
+  version: number | undefined,
+  breaking: string[],
+): { title: string; text: string; action: string } {
+  return {
+    title: `Promote to ${target.name}?`,
+    text: `${target.name} starts running version ${version} at once. Runs in progress there finish on the version they started with.${
+      breaking.length > 0 ? ` It also changes what an agent calls: ${breaking.join(" ")}` : ""
+    }`,
+    action: promoteLabel(target),
+  };
 }
 
 function PromoteStep({
@@ -778,13 +798,11 @@ function PromoteStep({
             disabled={!data?.possible}
             onClick={async () => {
               const sure = await ask.confirm({
-                title: `Promote to ${target.name}?`,
-                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.${
-                  breaking.length > 0
-                    ? ` It also changes what an agent calls: ${breaking.map((one) => sentence(one.message)).join(" ")}`
-                    : ""
-                }`,
-                action: "Promote to production",
+                ...promoteConfirm(
+                  target,
+                  data?.bundle.version,
+                  breaking.map((one) => sentence(one.message)),
+                ),
                 danger: true,
               });
               if (!sure) return;
@@ -834,8 +852,7 @@ function PromoteStep({
               }
             }}
           >
-            <Rocket aria-hidden="true" size={16} /> Promote to{" "}
-            {target.type === "production" ? "production" : target.name}
+            <Rocket aria-hidden="true" size={16} /> {promoteLabel(target)}
           </Button>
         )}
         <Button variant="quiet" onClick={() => navigate(`${link}/settings`)}>

@@ -1,9 +1,18 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { keepsKey } from "./Grid.tsx";
 import { Grid, type GridColumn, parseValue, showValue } from "./index.ts";
 
 afterEach(cleanup);
+
+test("a field of the grid keeps the grid's keys, and lets F1 and the palette's key go on", () => {
+  expect(keepsKey({ key: "ArrowDown", metaKey: false, ctrlKey: false })).toBe(true);
+  expect(keepsKey({ key: "Enter", metaKey: false, ctrlKey: false })).toBe(true);
+  expect(keepsKey({ key: "F1", metaKey: false, ctrlKey: false })).toBe(false);
+  expect(keepsKey({ key: "k", metaKey: true, ctrlKey: false })).toBe(false);
+  expect(keepsKey({ key: "K", metaKey: false, ctrlKey: true })).toBe(false);
+});
 
 const columns: GridColumn[] = [
   { name: "title", type: "text", editable: true, sortable: true, filterable: true },

@@ -355,7 +355,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         link={link}
         id={run.id}
         path={run.script}
-        pathLink={`${link}/scripts/edit/${run.script}`}
+        pathLink={`${link}/scripts/${run.script}`}
         state={run.state}
         detail={
           run.maxAttempts > 1

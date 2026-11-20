@@ -158,7 +158,7 @@ const href = (name: string | RegExp) =>
 test("a script run's page names everything it came from, each as a link", async () => {
   show(<RunPage root={root} link={link} id="r1" />);
   expect(await screen.findByText("The SMS gateway said no.", { selector: "p" })).toBeTruthy();
-  expect(href("reminders/send")).toContain(`${link}/scripts/edit/reminders/send`);
+  expect(href("reminders/send")).toContain(`${link}/scripts/reminders/send`);
   expect(href(/reminders\/hourly/)).toContain(`${link}/triggers?trigger=reminders%2Fhourly`);
   // The version leads to the code as this run ran it.
   expect(href("version 4")).toContain(`${link}/scripts/reminders/send?tab=source&run=r1`);

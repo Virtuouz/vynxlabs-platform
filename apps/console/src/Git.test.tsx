@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { GitPanel, RepositorySettings } from "./screens/Git.tsx";
-import { answer, show } from "./testing.tsx";
+import { GitSync } from "./screens/GitSync.tsx";
+import { show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 const repository = {
@@ -106,45 +107,78 @@ test("a workspace with no repository, or no branch, is told what to do", async (
   show(<GitPanel root={root} tenantLink="/t/t1" />);
   fireEvent.change(await screen.findByLabelText("Branch"), { target: { value: "console/dev" } });
   fireEvent.click(screen.getByRole("button", { name: "Follow this branch" }));
-  await screen.findByText("Not pushed yet");
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Follow this branch" })).toBeNull(),
+  );
   expect(sent("PUT")[0]?.body).toEqual({ branch: "console/dev" });
 });
 
-test("a push asks for a message, and a pull with conflicts asks which version of each to keep", async () => {
-  let state = "ahead";
+const compare = (conflicts: boolean) => ({
+  branch: "console/dev",
+  exists: true,
+  head: { commit: "abc1234def", message: "Tidy", author: "Ana", at: "2026-01-01T00:00:00Z" },
+  syncedCommit: "abc1234def",
+  ahead: 1,
+  behind: 1,
+  conflicts: conflicts ? 1 : 0,
+  files: conflicts
+    ? [
+        {
+          path: "orders/sync.script.yaml",
+          resource: "orders/sync.script",
+          here: true,
+          branch: true,
+          conflict: true,
+          mine: "a: 1",
+          theirs: "a: 2",
+        },
+      ]
+    : [],
+});
+
+test("Git sync is where a push takes its message, and a followed branch brings no second set of controls", async () => {
   routes[`GET /api/v1${root}/git`] = () => [
     200,
-    { repository, branch: "console/dev", state, syncedCommit: "abc1234def", lastError: null },
+    {
+      repository,
+      branch: "console/dev",
+      state: "ahead",
+      syncedCommit: "abc1234def",
+      updatedAt: null,
+    },
   ];
-  routes[`POST /api/v1${root}/git/push`] = () => {
-    state = "synced";
-    return [200, { status: "done", state: "synced", commit: "fff", changedOnBranch: [] }];
-  };
-  routes[`POST /api/v1${root}/git/pull`] = (body) =>
-    (body as { resolutions?: object }).resolutions
-      ? [200, { status: "done", state: "synced", conflicts: [], applied: ["orders/sync.script"] }]
-      : [
-          200,
-          { status: "refused", state: "conflict", conflicts: ["orders/sync.script"], applied: [] },
-        ];
-  const pulled = vi.fn();
-  show(<GitPanel root={root} tenantLink="/t/t1" onPulled={pulled} />);
-  expect(await screen.findByText("Ahead of the branch")).toBeTruthy();
-  expect(screen.getByText("abc1234")).toBeTruthy();
-
-  fireEvent.click(screen.getByRole("button", { name: "Push" }));
-  await answer("Push", "Send large orders for approval");
-  await screen.findByText("Pushed.");
+  routes[`GET /api/v1${root}/git/compare`] = () => [200, compare(false)];
+  routes[`POST /api/v1${root}/git/push`] = () => [200, { status: "done" }];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  const message = (await screen.findByLabelText("Commit message")) as HTMLInputElement;
+  expect(message.value).toBe("Deploy from the console");
+  // One Push, and Push with drafts: the embedded panel adds none.
+  expect(screen.getAllByRole("button", { name: /^Push/ })).toHaveLength(2);
+  fireEvent.change(message, { target: { value: "Send large orders for approval" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Push 1 change/ }));
+  await screen.findByText("Committed what is deployed here to the branch.");
   expect(sent("POST")[0]?.body).toEqual({ message: "Send large orders for approval" });
-  await screen.findByText("In sync");
+});
 
-  fireEvent.click(screen.getByRole("button", { name: "Pull" }));
-  fireEvent.change(await screen.findByLabelText("orders/sync.script"), {
-    target: { value: "theirs" },
-  });
-  expect(pulled).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Pull with these choices" }));
-  await screen.findByText("Pulled and deployed: orders/sync.script.");
-  expect(sent("POST").at(-1)?.body).toEqual({ resolutions: { "orders/sync.script": "theirs" } });
-  expect(pulled).toHaveBeenCalledTimes(1);
+test("a pull stays disabled until every conflict is chosen, and none is chosen for you", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "conflict", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [200, compare(true)];
+  routes[`POST /api/v1${root}/git/pull`] = () => [
+    200,
+    { status: "done", state: "synced", conflicts: [], applied: ["orders/sync.script"] },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  const pull = (await screen.findByRole("button", { name: /^Pull 1 change/ })) as HTMLButtonElement;
+  expect(pull.disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Keep workspace" }).getAttribute("aria-pressed")).toBe(
+    "false",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Take branch" }));
+  await waitFor(() => expect(pull.disabled).toBe(false));
+  fireEvent.click(pull);
+  await screen.findByText("Deployed what changed on the branch.");
+  expect(sent("POST")[0]?.body).toEqual({ resolutions: { "orders/sync.script": "theirs" } });
 });

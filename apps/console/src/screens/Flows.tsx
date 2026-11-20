@@ -503,7 +503,7 @@ export function FlowView({
           : saved === "saved"
             ? "Arrangement saved. The flow itself is unchanged."
             : (saved ??
-              "Drag a step to arrange the graph. Arranging changes nothing about how the flow runs.")}
+              "Drag a step, or focus it and use the arrow keys, to arrange the graph. Arranging changes nothing about how the flow runs.")}
       </p>
       {data.triggers.length > 0 ? (
         <section>
@@ -524,6 +524,14 @@ export function FlowView({
                       a webhook. Its address is shown to those who manage triggers.
                     </span>
                   )
+                ) : trigger.type === "schedule" ? (
+                  <span className="text-ink-muted">
+                    a schedule with no next time: it is paused, or not deployed yet
+                  </span>
+                ) : trigger.type === "form" ? (
+                  <span className="text-ink-muted">
+                    a form. Its address is in the triggers below.
+                  </span>
                 ) : (
                   <span>starts when its event is published</span>
                 )}

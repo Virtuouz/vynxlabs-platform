@@ -19,6 +19,7 @@ import { Time } from "../kit/Time.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
+import { RunButton } from "./Execution.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { type Trigger, TriggerState, useTriggerPause } from "./Operate.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
@@ -360,6 +361,9 @@ interface ScriptSummary {
   description: string;
   ownership: string;
   lastRun: { id: string; state: import("../kit/status.tsx").RunState; createdAt: string } | null;
+  inputSchema?: Record<string, unknown>;
+  draft?: boolean;
+  deployed?: boolean;
 }
 /** The triggers that start a script or a flow, each a link to its own. */
 export function TriggersOf({
@@ -597,12 +601,23 @@ export function ScriptPage({
               )
             }
             actions={
-              <Button
-                variant="primary"
-                onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
-              >
-                Open the code
-              </Button>
+              <>
+                <RunButton
+                  root={root}
+                  script={script.path}
+                  schema={script.inputSchema ?? {}}
+                  runsLink={`${link}/runs`}
+                  deployed={script.deployed !== false}
+                  draft={script.draft === true}
+                  size="regular"
+                />
+                <Button
+                  variant="primary"
+                  onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
+                >
+                  Open the code
+                </Button>
+              </>
             }
             meta={
               <span className="flex flex-col gap-1.5">

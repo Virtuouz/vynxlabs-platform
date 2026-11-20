@@ -1,10 +1,9 @@
-import { Button, Notice, Panel, SelectField, TextField } from "@volvel/ui";
+import { Button, Notice, Panel, TextField } from "@volvel/ui";
 import { useEffect, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
-import { type State as StateName, StatePill } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 
@@ -155,42 +154,24 @@ export function RepositorySettings({ base }: { base: string }) {
   );
 }
 
-/** How the workspace stands against its branch, as a state, and what to do about it. */
-const STATE: Record<State, [StateName, string]> = {
-  never: ["never_pushed", "Push to create the branch with what this workspace has deployed."],
-  synced: ["synced", "The branch has what this workspace runs."],
-  ahead: ["ahead", "This workspace has deployed something the branch does not have. Push it."],
-  behind: ["behind", "Someone changed a resource's file on the branch. Pull before pushing."],
-  conflict: ["conflict", "A resource was changed here and on the branch. Choose which to keep."],
-  error: ["sync_failed", ""],
-};
-
-interface PullResult {
-  status: string;
-  state: State;
-  conflicts: string[];
-  applied: string[];
-  problem?: string;
-}
-
-/** How a workspace stands against its branch, with the buttons to push and pull. */
+/**
+ * What a workspace needs before it can sync: a repository, and a branch to follow.
+ * Once it has both, the Git sync page's own controls push and pull, and this shows nothing.
+ */
 export function GitPanel({
   root,
   tenantLink,
-  onPulled,
+  onFollowed,
 }: {
   root: string;
   /** Where the tenant's screens are, to link to the repository's settings. */
   tenantLink: string;
-  /** Called after a pull deployed something, so the screen around this can load again. */
-  onPulled?: () => void;
+  /** Called after a branch is chosen, so the screen around this can load again. */
+  onFollowed?: () => void;
 }) {
   const status = useLoad<Status>(`${root}/git`);
   const [branch, setBranch] = useState("");
-  const [busy, setBusy] = useState<"push" | "pull" | "branch">();
-  const [conflicts, setConflicts] = useState<string[]>([]);
-  const [choices, setChoices] = useState<Record<string, "mine" | "theirs">>({});
-  const [said, setSaid] = useState<{ tone: "success" | "danger" | "attention"; text: string }>();
+  const [busy, setBusy] = useState<"branch">();
 
   if (status.error) return <ErrorState error={status.error} onRetry={status.reload} />;
   if (!status.data) return <Loading />;
@@ -227,6 +208,7 @@ export function GitPanel({
             await api.put(`${root}/git`, { branch }).then(() => {
               notify.success(`This workspace now syncs with ${branch}.`);
               status.reload();
+              onFollowed?.();
             }, notify.error);
             setBusy(undefined);
           }}
@@ -248,125 +230,5 @@ export function GitPanel({
     );
   }
 
-  const run = async (kind: "push" | "pull", body: object) => {
-    setBusy(kind);
-    setSaid(undefined);
-    try {
-      const result = await api.post<PullResult & { changedOnBranch?: string[] }>(
-        `${root}/git/${kind}`,
-        body,
-      );
-      if (result.status === "failed")
-        setSaid({ tone: "danger", text: result.problem ?? "It failed." });
-      else if (kind === "push" && result.status === "refused") {
-        setSaid({
-          tone: "attention",
-          text: `The branch changed: ${(result.changedOnBranch ?? []).join(", ")}. Pull first.`,
-        });
-      } else if (kind === "pull" && result.status === "refused") {
-        setConflicts(result.conflicts);
-        setChoices(Object.fromEntries(result.conflicts.map((stem) => [stem, "mine" as const])));
-      } else {
-        setConflicts([]);
-        setSaid({
-          tone: "success",
-          text:
-            result.status === "nothing"
-              ? kind === "push"
-                ? "The branch already has everything."
-                : "Nothing new on the branch."
-              : kind === "push"
-                ? "Pushed."
-                : `Pulled and deployed: ${result.applied.join(", ")}.`,
-        });
-        if (kind === "pull" && result.status === "done") onPulled?.();
-      }
-    } catch (error) {
-      setSaid({ tone: "danger", text: failureText(error as ApiError) });
-    } finally {
-      setBusy(undefined);
-      status.reload();
-    }
-  };
-
-  return (
-    <Panel className="flex flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 className="m-0 text-title font-semibold">Repository</h2>
-          <code className="truncate font-mono text-code text-ink-muted">{status.data.branch}</code>
-          <StatePill state={STATE[state][0]} />
-          {status.data.syncedCommit ? (
-            <code className="font-mono text-code-sm text-ink-muted">
-              {status.data.syncedCommit.slice(0, 7)}
-            </code>
-          ) : null}
-        </div>
-        <div className="flex gap-2">
-          <Button
-            disabled={busy !== undefined || repository.paused}
-            onClick={() => run("pull", {})}
-          >
-            {busy === "pull" ? "Pulling…" : "Pull"}
-          </Button>
-          <Button
-            variant="primary"
-            disabled={busy !== undefined || repository.paused}
-            onClick={async () => {
-              const message = await ask.prompt({
-                title: "Push to the branch",
-                label: "Commit message",
-                initial: "Deploy from the console",
-                action: "Push",
-              });
-              if (message) await run("push", { message });
-            }}
-          >
-            {busy === "push" ? "Pushing…" : "Push"}
-          </Button>
-        </div>
-      </div>
-      <p className="m-0 text-ink-muted">
-        {repository.paused
-          ? "Sync is paused for this tenant. Save its repository settings to turn it on."
-          : state === "error"
-            ? (status.data.lastError ?? "The last push or pull failed.")
-            : STATE[state][1]}
-      </p>
-      {said ? <Notice tone={said.tone}>{said.text}</Notice> : null}
-      {conflicts.length > 0 ? (
-        <div className="flex flex-col gap-3 rounded-control border border-danger/40 bg-danger-soft p-3">
-          <p className="m-0">
-            <strong>These were changed here and on the branch.</strong> Choose which version of each
-            to keep. Nothing is deployed until you do.
-          </p>
-          {conflicts.map((stem) => (
-            <div key={stem} className="max-w-md">
-              <SelectField
-                name={stem}
-                label={stem}
-                value={choices[stem] ?? "mine"}
-                options={[
-                  { value: "mine", label: "Keep this workspace's version" },
-                  { value: "theirs", label: "Take the branch's version" },
-                ]}
-                onChange={(value) =>
-                  setChoices((before) => ({ ...before, [stem]: value as "mine" | "theirs" }))
-                }
-              />
-            </div>
-          ))}
-          <div>
-            <Button
-              variant="primary"
-              disabled={busy !== undefined}
-              onClick={() => run("pull", { resolutions: choices })}
-            >
-              Pull with these choices
-            </Button>
-          </div>
-        </div>
-      ) : null}
-    </Panel>
-  );
+  return null;
 }

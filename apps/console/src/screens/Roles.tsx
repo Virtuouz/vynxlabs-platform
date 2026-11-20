@@ -5,9 +5,10 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
+import { consoleLink } from "../kit/objects.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { RemoveButton } from "../ListScreen.tsx";
-import { useUrlParam } from "../router.tsx";
+import { Link, useUrlParam } from "../router.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 export interface Role {
@@ -436,6 +437,11 @@ export function inShort(role: Role, kinds: readonly PermissionKind[]): string[] 
 export function Roles({ base, framed }: { base: string; framed?: Framed }) {
   const roles = useLoad<{ items: Role[] }>(`${base}/roles`);
   const catalog = useLoad<{ items: PermissionKind[] }>("/permissions");
+  // Who holds a role decides whether it can be deleted. Someone who may not read bindings sees
+  // no list, and the server's refusal says it if the role is still held.
+  const bindings = useLoad<{ items: { roleName: string; principalLabel: string }[] }>(
+    `${base}/bindings`,
+  );
   const [open, setOpen] = useState<Role | "new">();
   const [selected, setSelected] = useUrlParam("role", undefined, { push: true });
   const [show, setShow] = useUrlParam<Show>("show", "all");
@@ -448,6 +454,9 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
       : undefined;
   const chosen = all?.find((role) => role.id === selected);
   const fixed = chosen ? chosen.builtin || chosen.managedByResource : false;
+  const held = chosen
+    ? (bindings.data?.items ?? []).filter((one) => one.roleName === chosen.name)
+    : [];
 
   return (
     <>
@@ -522,10 +531,19 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
                   <Button size="small" onClick={() => setOpen(chosen)}>
                     {fixed ? "View" : "Change"}
                   </Button>
-                  {fixed ? null : (
+                  {fixed ? null : held.length > 0 ? (
+                    <Button
+                      size="small"
+                      variant="danger"
+                      disabled
+                      title="A role that is held cannot be deleted. Remove its bindings first."
+                    >
+                      Delete
+                    </Button>
+                  ) : (
                     <RemoveButton
                       label="Delete"
-                      confirm={`The role ${chosen.name} is deleted. Whoever held it loses what it allowed.`}
+                      confirm={`The role ${chosen.name} is deleted. Nobody holds it.`}
                       run={() => api.delete(`${base}/roles/${chosen.id}`)}
                       onDone={() => {
                         setSelected(undefined);
@@ -541,6 +559,24 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
               <div className="flex flex-col gap-5">
                 {chosen.description ? (
                   <p className="m-0 text-ink-muted">{chosen.description}</p>
+                ) : null}
+                {bindings.data ? (
+                  <div className="flex flex-col gap-2">
+                    <SectionLabel>Held by</SectionLabel>
+                    {held.length > 0 ? (
+                      <p className="m-0">
+                        {held.map((one) => one.principalLabel).join(", ")}.{" "}
+                        {fixed ? null : (
+                          <>
+                            It cannot be deleted while it is held. Remove its bindings in{" "}
+                            <Link to={`${consoleLink(base)}/members`}>Members and access</Link>.
+                          </>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="m-0 text-ink-muted">Nobody holds it.</p>
+                    )}
+                  </div>
                 ) : null}
                 <div className="flex flex-col gap-2">
                   <SectionLabel>In short</SectionLabel>

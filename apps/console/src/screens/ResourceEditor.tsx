@@ -136,7 +136,7 @@ export function resourceProblems(kind: EditedKind, body: Body, json: Record<stri
 /**
  * A resource that is settings and no code, made and changed in the console:
  * a connection, a connection group, a variable, an event, a schedule or a
- * trigger. Saving makes a draft, deployed from the Changes screen.
+ * trigger. Saving makes a draft, deployed from the Releases screen.
  */
 export function ResourceEditor({
   root,

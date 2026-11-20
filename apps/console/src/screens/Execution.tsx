@@ -179,7 +179,7 @@ export function Scripts({
             <span className="flex min-w-0 flex-col">
               <span className="flex min-w-0 items-center gap-2">
                 <Link
-                  to={`${link}/scripts/edit/${row.path}`}
+                  to={`${link}/scripts/${row.path}`}
                   className="min-w-0 font-mono text-code text-ink no-underline"
                 >
                   <Truncate mode="middle">{row.path}</Truncate>
@@ -283,6 +283,8 @@ export function Scripts({
                   script={open.path}
                   schema={open.inputSchema}
                   runsLink={runsLink}
+                  deployed={open.deployed !== false}
+                  draft={open.draft === true}
                 />
                 <OfferButton root={root} kind="script" path={open.path} size="small" />
               </>
@@ -332,27 +334,41 @@ export function Scripts({
   );
 }
 
-function RunButton({
+export function RunButton({
   root,
   script,
   schema,
   runsLink,
+  deployed = true,
+  draft = false,
+  size = "small",
 }: {
   root: string;
   script: string;
   schema: Record<string, unknown>;
   runsLink: string;
+  /** False for a script that is only a draft: nothing is there to run yet. */
+  deployed?: boolean;
+  /** A change waits to be deployed: a run starts the deployed version, not it. */
+  draft?: boolean;
+  size?: "small" | "regular";
 }) {
   const [open, setOpen] = useState(false);
+  if (!deployed)
+    return (
+      <span className="text-meta text-ink-muted">
+        Not deployed yet. Deploy it to run it, or try the draft from its editor.
+      </span>
+    );
   return (
     <>
-      <Button size="small" onClick={() => setOpen(true)}>
+      <Button size={size} onClick={() => setOpen(true)}>
         Run
       </Button>
       <InputDialog
         open={open}
         onClose={() => setOpen(false)}
-        title={`Run ${script}`}
+        title={draft ? `Run ${script}, as deployed` : `Run ${script}`}
         action="Run"
         schema={schema}
         onSubmit={async (input) => {

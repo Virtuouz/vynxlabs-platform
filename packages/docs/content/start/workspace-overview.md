@@ -5,3 +5,7 @@ description: What a workspace is doing now, what failed, and what waits for some
 ---
 
 The overview is where a :term[workspace]{id=workspace} opens. It shows the :term[runs]{id=run} that failed, what is waiting for an approval, the :term[drafts]{id=draft} not yet deployed, and how much work went through lately.
+
+## Approvals on the overview
+
+The count is of the approvals waiting for you. When some wait for others, the overview says so, and **See who** opens them read-only.

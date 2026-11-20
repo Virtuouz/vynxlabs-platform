@@ -36,3 +36,9 @@ A page can be written here, or kept in the repository as a Markdown file in the 
 Either way a change is a :term[draft]{id=draft} until it is deployed. See [the page editor](documentation-editor), and [what a page is made of](../reference/docs/index).
 
 ::screenshot{name=console/documentation alt="The Documentation section: the pages as a tree on the left, and the chosen page drawn on the right."}
+
+## Publishing, and taking it back
+
+A site has a **publishing switch**. Turning it off stops serving the site and keeps its pages and its app; turning it on serves it again at the next deploy. Removing the site's app also stops it, and says so first. Page feedback is turned off from the site's menu, and asks first. A page drafted for removal offers **Keep this page**, and a move or a publish can be undone from the message that says it happened.
+
+Deploying a site that asks readers for feedback also deploys the table that holds the answers, and the count says so.

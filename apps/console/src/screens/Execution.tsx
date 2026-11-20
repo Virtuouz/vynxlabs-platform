@@ -14,7 +14,7 @@ import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
-import { between, clock, count, duration } from "../kit/format.ts";
+import { ago, between, count, duration } from "../kit/format.ts";
 import { HealthCell } from "../kit/health.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";

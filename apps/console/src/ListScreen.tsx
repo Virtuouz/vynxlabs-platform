@@ -1,7 +1,6 @@
 import {
   Button,
   CheckboxField,
-  type Column,
   ComboboxField,
   Dialog,
   EmptyState,
@@ -15,7 +14,7 @@ import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
-import { DataTable } from "./kit/DataTable.tsx";
+import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
@@ -118,7 +117,7 @@ export interface ListScreenProps<Row> {
   description?: string;
   /** A GET route returning `{ items: Row[] }`. */
   path: string;
-  columns: Column<Row>[];
+  columns: DataColumn<Row>[];
   rowKey: (row: Row) => string;
   empty: { title: string; text?: string };
   create?: CreateConfig;
@@ -302,7 +301,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
   const [created, setCreated] = useState<ReactNode>();
   const { create } = props;
 
-  const columns: Column<Row>[] = props.rowActions
+  const columns: DataColumn<Row>[] = props.rowActions
     ? [
         ...props.columns,
         { header: "", align: "end", cell: (row) => props.rowActions?.(row, list.reload) },

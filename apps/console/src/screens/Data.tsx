@@ -2200,7 +2200,7 @@ function Definition({
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-title font-semibold">Where it is stored</h2>
         <p className="m-0 max-w-measure text-ink-muted">
-          In Postgres, as <Code>{`${table.stored.schema}.${table.stored.table}`}</Code>. It is your
+          In Postgres, as <Code wrap>{`${table.stored.schema}.${table.stored.table}`}</Code>. It is your
           data: you can read it there directly at any time.
         </p>
       </section>

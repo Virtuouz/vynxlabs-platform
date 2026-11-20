@@ -24,6 +24,7 @@ const STAND_INS = process.env.STAND_INS ?? "http://127.0.0.1:4020";
 const PASSWORD = "fernhill-demo-2026";
 const SLUG = "fernhill";
 const PAYFERN_SECRET = "whsec_fernhill_demo";
+const LOCUMS = 60;
 
 const step = (text) => console.log(`\n▸ ${text}`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -190,6 +191,21 @@ for (const person of PEOPLE) {
     principalId: created.id,
     roleId: builtin[person.role],
   });
+}
+// Locums: sixty more members with no role, so that the member list has a second page
+// (it loads fifty at a time). Named Locum 01 to Locum 60, at locum.NN@fernhill.example.
+step(`Adding ${LOCUMS} locum members, so the members list pages`);
+for (let from = 1; from <= LOCUMS; from += 10) {
+  await Promise.all(
+    Array.from({ length: Math.min(10, LOCUMS - from + 1) }, (_, i) => {
+      const number = String(from + i).padStart(2, "0");
+      return admin.post(`${T}/members`, {
+        email: `locum.${number}@fernhill.example`,
+        name: `Locum ${number}`,
+        password: PASSWORD,
+      });
+    }),
+  );
 }
 const managers = await admin.post(`${T}/groups`, {
   name: "Practice managers",
@@ -438,6 +454,11 @@ const demo = {
   workspaces: { clinics: prod.id, sandbox: dev.id },
   password: PASSWORD,
   members: PEOPLE.map(({ email, name, about, role }) => ({ email, name, about, role })),
+  locums: {
+    count: LOCUMS,
+    first: "locum.01@fernhill.example",
+    last: `locum.${LOCUMS}@fernhill.example`,
+  },
   frontDesk: desk.map(([email, name, clinic]) => ({ email, name, clinic })),
   owners,
   apps: {

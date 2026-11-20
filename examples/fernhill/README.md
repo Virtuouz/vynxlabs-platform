@@ -31,7 +31,7 @@ VOLVEL_URL=http://localhost:8080 node setup/setup.mjs          # --reset to star
 `setup.mjs` does what Fernhill's people would do:
 
 1. The operator creates the tenant and opens access to set it up.
-2. Four members, a "Practice managers" group, two workspaces (`clinics` in production, `sandbox` in dev), end-user groups and front-desk accounts.
+2. Four members and sixty locums (`locum.01` to `locum.60`, no role, so the members list has a second page), a "Practice managers" group, two workspaces (`clinics` in production, `sandbox` in dev), end-user groups and front-desk accounts.
 3. Connects TextLine and VetSupply in both workspaces and stores PayFern's signing secret.
 4. Devi deploys the repository with the CLI, and Maya promotes it.
 5. Seeds six weeks of history: about 2,900 visits and 2,100 invoices.

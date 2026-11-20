@@ -2,6 +2,33 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 22, what the polish audit found
+
+Corrections made once where they are shared, instead of again on each screen. Nothing needs migrating.
+
+### For operators
+
+- **Removal is everywhere.** A script, a flow, an extension, an App Builder app and a query are removed where they are listed, as a draft, and **Keep** takes the removal back before it is deployed. A flow, app or query that the repository manages is not offered for removal, since the server refuses it, and lists say who manages each.
+- **A docs site has a publishing switch.** Off stops serving it and keeps its pages and its app; on serves it again at the next deploy. Removing the site's app also unpublishes it, and says so first. Page feedback can be turned off from the site's menu. Undo of a move restores the address, and a publish offers Undo.
+- **Deploying a site that asks for feedback deploys its table too**, and the count says so. A member with only `interface:write` cannot deploy a table: if a developer leaves the feedback table as a draft, that member's docs deploy is refused.
+- **Retention asks first** when any period gets shorter, naming the kind and its old and new days. It saves from the bar, as Branding does.
+- **Approvals say for whom.** The overview counts what waits for you apart from what waits for others, and "Decide" opens exactly that queue. **Waiting for others** is a read-only view. A viewer is not offered Approve, a flow run says per step whether you may decide, and access releases show every change before approve or roll back and take a comment on a decline.
+- **"Stop asking for a second person" and an SSO provider's "Turn off"** confirm, and say what they change. Nothing changes on the server: turning off two-person approval still does not wait for a second person.
+- **Lists page.** Members, tenants, instance members, group pickers and events load fifty at a time, and search asks the server. A list that does not yet page says "Showing the first 200".
+- **Git sync has one set of controls.** The page's own side-by-side choice for each file changed on both sides, with no default, and "Push with drafts". Push takes a commit message, with a default. The panel beside other screens keeps only "no repository" and "Follow this branch", and no longer defaults to keeping this workspace's version.
+- **One promotion confirmation** in the Promote step and in a request's review, so a request with breaking names can be approved. A rollback in production is a danger confirm naming the workspace.
+- **Renames.** A workspace, a tenant, an end-user group and a table are renamed from their screens, and a table's definition and row rules have undo and redo. A data source has "Change".
+- **Editors save what was typed.** ⌘S right after typing, or typing during an autosave, no longer saves the text from before. Closing the widget editor or the row inspector with unsaved edits asks first.
+- **Served sites.** Help in code apps stays open with motion and follows the theme. The docs phone sheet takes focus and returns it, the search list is a well-formed listbox, and a failed search, vote, copy or "Load more" says so and whom to ask.
+- Runs, saved queries and App Builder show loading and failure before "none yet". The audit log's cut text and raw targets read as words. The release screen has one heading, and Promote names its real target.
+
+### For tenant developers
+
+- **A create never overwrites.** `PUT drafts/<path>` takes `create: true`: a path held by a draft or a deployed resource is refused with 409 `path_taken`. The console sends it for New script, New flow, New resource, Make an app and Add a schedule, and shows the refusal on the path field. A save without the flag, a save with a revision, the CLI and git sync are as they were.
+- **A trigger's key on a script or flow page is `path#node`.** Its link opens that trigger.
+- `GET …/summary` answers `approvalsWaitingMine` beside `approvalsWaiting`.
+- A text area in a generated form is for `format: "textarea"`, or a `maxLength` above 1000 with no format. A one-line field is one line.
+
 ## Unreleased: phase 21, documentation that reads and writes like a documentation product
 
 Documentation sites look and work like a documentation product, and the console changes pages and folders in place.

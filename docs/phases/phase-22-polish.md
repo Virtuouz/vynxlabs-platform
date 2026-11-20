@@ -75,12 +75,62 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - A unit test of each list's pending and failed states.
 - **A new guard:** a `SchemaForm` test renders every connector's `configSchema` and fails on a text area for a one-line field.
 
-**Polish gate.** To be answered: template steps 1 to 7.
-- Rules: 001, 003, 010, 011, 012, 013.
-- Siblings to name:
-  - the other `SaveBar` screens;
-  - every `SchemaForm` caller (connections, sources, alert targets, app settings);
-  - the run page's helpers.
+**Built** in `b9b0b2a`.
+- **Q1.**
+  - `GET /docs` answers `apps[].drafted` and the workspace's `tables` (`apps/control-plane/src/kernel/docs/working.ts`, `routes/docs.ts`).
+  - `pendingOf` in `screens/docs/model.ts` counts pages, new or drafted apps, and the draft tables a site names. The Deploy confirm names each table. `FeedbackDialog`'s `taken` also checks tables.
+- **Q2.** Retention saves through `SaveBar`, and asks with `ask.confirm({danger})`, kind by kind, when a period gets shorter.
+- **Q3.** `Data.tsx`'s Values and On-delete dialogs close only on success and show the reason inside.
+- **Q4.** The confirms are in `AccessReleases.tsx` and `SingleSignOn.tsx`. Nothing changed on the server, as decided.
+- **Q5.**
+  - `screens/runAgain.ts` holds `scriptAgain`, `flowFromFailed` and `flowFromStart`, shared by `RunPage.tsx` and the runs row menu.
+  - The row menu gains "Again from the start…" for an ended flow.
+  - A batch reject requires a reason.
+- **Q6.** `triggerKey` moved to `kit/objects.tsx`. `ObjectPages.tsx` links trigger rows with it.
+- **Q7.** The flow page's recent runs, Queries' saved list and the App Builder list draw `LoadState`'s pending and failed states.
+- **Q8.** In `packages/ui/src/SchemaForm.tsx`, a text area is only for `format: "textarea"`, or for a `maxLength` above 1000 with no format.
+
+**Tests.**
+- `docs-apps.test.ts`, `Docs.test.tsx`, `Retention.test.tsx`, `Data.test.tsx`, `AccessReleases.test.tsx`, `SingleSignOn.test.tsx`, `Runs.test.tsx`, `ObjectPages.test.tsx`.
+- New `Operate.test.tsx` and `ListStates.test.tsx`.
+- `SchemaForm.test.tsx`, which renders every built-in connector's `configSchema` and fails on a text area for a one-line field. It fails three tests with the old threshold.
+- Console, ui and screens together: 103 files, 727 tests, all pass.
+
+**Findings.**
+- A3-01 was wider than the audit wrote. When a deployed site's feedback was turned on, the drafted *app* was also left out of the deploy and the count, not only the table.
+- **Open.** A member with only `interface:write` (doc writer) cannot deploy a table. If a developer turns feedback on and leaves the table as a draft, the writer's docs deploy now includes the table and is refused. Before this change, it silently left the feedback out.
+- The rest of A1-25 (copy, the remount, links to the source) goes to M9.
+- Two siblings were not moved onto the shared run-again helpers:
+  - the command palette's "Run again" asks with its own copy and has no bundle version to give;
+  - the runs batch bar asks for the batch.
+
+**Polish gate.**
+1. **Rules.** 001 (Q7), 003 and 010 (Q2, Q4), 011 and 013 (Q8), 012 (Q3), 002 (Q5, Q6).
+2. **Siblings.**
+   - `SaveBar`: Branding, InstanceBranding, Environments, the kit sheet, and now Retention.
+   - `SchemaForm`: `InputDialog` (the run, flow and command-palette input dialogs), `ConnectionWizard`, `ScheduleForm` (schedule sheets, `ScheduleFields`, `WhenFields`) and the App Builder form actions in `packages/screens`. All of them get the Q8 rule, since the fix is in the shared form.
+   - Run again: `RunPage` and the runs row now share `runAgain.ts`. The command palette and the batch bar are left, as said above.
+   - `triggerKey`: Operate and ObjectPages.
+3. **Lifecycle.** Not applicable: M1 adds no kind of object.
+4. **States.**
+   - Recent runs, saved queries and App Builder: blank for 300 ms, then the skeleton, then "Could not load … Try again", before the empty state.
+   - Retention: a failed save keeps the draft and says why.
+   - The Data dialogs: a refusal is said inside the dialog.
+5. **Walk.** On a throwaway instance on :8090 seeded by Fernhill at `b9b0b2a`, with screenshots in the session's scratchpad (`walk/out-m1`, `out-m1b`).
+   - Q8: Mail server, Sent from, User name and Port are inputs at 1440 (light) and 390 (dark).
+   - Q2: shortening Runs to 1 or 2 asks: "Keep runs for less time? Runs: from 30 days to 1 …". Lengthening does not ask. Discard clears the field.
+   - Q4: on Releases, turning approval on does not ask, and "Stop asking for a second person" asks with its consequences.
+   - Q5: a run row's "Run again…" asks, naming the version. A batch reject's button stays disabled until a reason is typed.
+   - Q6: a flow's trigger row opens `triggers?trigger=appointments%2Fafter-visit%23finished`, with that trigger's inspector.
+   - Q7: with the API failing, Queries and App Builder say "Could not load … Try again".
+   - Q1: turning on page feedback for `handbook` gave "Deploy 2 changes". The confirm named `handbook-feedback`, the request sent `["handbook","handbook-feedback"]`, and the deploy answered 201.
+   - F1 opens help and Escape closes it on Retention, Releases, Queries, Runs, Documentation and App Builder at 390 dark. A reload keeps the address, and nothing scrolls sideways.
+   - **Not walked:**
+     - the SSO confirm, since Fernhill has no provider on (covered by `SingleSignOn.test.tsx`);
+     - the enum dialog's refusal (`Data.test.tsx`);
+     - a throttled network.
+6. **Guards.** `pnpm exec vitest run apps/console packages/ui packages/screens` passes, and the `SchemaForm` connector guard is new. The full `pnpm e2e` runs at the end of the phase (M10).
+7. **Left out.** The doc-writer permission edge above is for the owner. A1-25's remainder moves to M9.
 
 ## M2: one way for an editor to save
 

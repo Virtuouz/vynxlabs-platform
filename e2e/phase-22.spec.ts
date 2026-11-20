@@ -296,14 +296,14 @@ test("POLISH-003: a script, a flow, a query and a docs site are removed, taken b
 
   // A docs site: switched off and on, keeping its pages and its app; removing its app says so first.
   await owner.goto(`${L}/docs`);
-  await owner.getByRole("button", { name: `More for ${ROOT}-notes` }).click();
+  await owner.getByRole("button", { name: "More for Notes", exact: true }).click();
   await owner.getByRole("menuitem", { name: /Stop publishing/ }).click();
   await expect(owner.getByRole("dialog")).toContainText("Its pages and its app are kept");
   await say(owner, "Stop publishing");
-  await owner.getByRole("button", { name: `More for ${ROOT}-notes` }).click();
+  await owner.getByRole("button", { name: "More for Notes", exact: true }).click();
   await owner.getByRole("menuitem", { name: /Publish again/ }).click();
   await say(owner, "Publish again");
-  await owner.getByRole("button", { name: `More for ${ROOT}-notes` }).click();
+  await owner.getByRole("button", { name: "More for Notes", exact: true }).click();
   await owner.getByRole("menuitem", { name: /Remove the site's app/ }).click();
   await expect(owner.getByRole("dialog")).toContainText("The site stops being served");
   await say(owner, "Remove");

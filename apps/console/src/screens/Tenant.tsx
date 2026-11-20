@@ -732,11 +732,17 @@ function WorkspaceDetail({
               {
                 // Said only for one that was moved: until then a resource's key is its path.
                 header: "Key",
+                priority: 3,
                 cell: (row) => (row.key === row.path ? "" : <Code>{row.key}</Code>),
               },
-              { header: "Defined in", cell: (row) => definedWhere(row) },
-              { header: "Version", cell: (row) => row.version, align: "end" },
-              { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
+              // On a phone a row keeps what it is; when it changed shows from a tablet up.
+              { header: "Defined in", priority: 3, cell: (row) => definedWhere(row) },
+              { header: "Version", priority: 3, cell: (row) => row.version, align: "end" },
+              {
+                header: "Changed",
+                priority: 2,
+                cell: (row) => <Time value={row.updatedAt} mode="ago" />,
+              },
             ]}
             empty={{
               title: "No resources yet",

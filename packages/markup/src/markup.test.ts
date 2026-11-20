@@ -389,7 +389,8 @@ test("the stylesheet styles only what is inside a page of documentation", () => 
     .replace(/\{[^{}]*\}/g, "{}")
     .split("{}")
     .flatMap((rule) => rule.split(","))
-    .map((selector) => selector.trim())
+    // What follows a nested block (an @media or @starting-style) starts with its closing brace.
+    .map((selector) => selector.trim().replace(/^(\}\s*)+/, ""))
     .filter((selector) => selector !== "" && !selector.startsWith("@") && selector !== "}");
   expect(selectors.length).toBeGreaterThan(30);
   for (const selector of selectors) expect(selector.replace(/^\}\s*/, "")).toMatch(/^\.vd-doc\b/);

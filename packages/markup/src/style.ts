@@ -323,15 +323,17 @@ export const DOC_CSS = `
   text-underline-offset: 4px;
   cursor: help;
 }
+/* A hidden tip takes no room: placed from its term, one near the right edge would make a phone's
+   page scroll sideways (the phase 21 walk, on a phone). It still fades in where display can. */
 .vd-doc .vd-term-tip {
   position: absolute;
   z-index: 10;
   top: 100%;
   left: 0;
-  visibility: hidden;
+  display: none;
   opacity: 0;
   transform: translateY(-2px);
-  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s linear 0.15s;
+  transition: opacity 0.15s ease, transform 0.15s ease, display 0.15s allow-discrete;
   width: max-content;
   max-width: min(22rem, 80vw);
   margin-top: 0.35em;
@@ -349,10 +351,29 @@ export const DOC_CSS = `
 .vd-doc .vd-term:not(.vd-term-on):hover .vd-term-tip,
 .vd-doc .vd-term:not(.vd-term-on):focus-within .vd-term-tip,
 .vd-doc .vd-term-open .vd-term-tip {
-  visibility: visible;
+  display: block;
   opacity: 1;
   transform: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+@starting-style {
+  .vd-doc .vd-term:not(.vd-term-on):hover .vd-term-tip,
+  .vd-doc .vd-term:not(.vd-term-on):focus-within .vd-term-tip,
+  .vd-doc .vd-term-open .vd-term-tip {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+/* On a phone an open tip is held inside the screen, along its foot, whatever its term's place. */
+@media (max-width: 40rem) {
+  .vd-doc .vd-term-tip {
+    position: fixed;
+    top: auto;
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    width: auto;
+    max-width: none;
+  }
 }
 .vd-doc .vd-details > summary { transition: color 0.15s ease; }
 .vd-doc .vd-tab-button { transition: color 0.15s ease, border-color 0.15s ease; }

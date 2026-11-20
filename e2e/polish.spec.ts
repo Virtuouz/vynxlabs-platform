@@ -176,6 +176,44 @@ const screens = () => [
   ["account", "/account/api-keys"],
 ];
 
+/**
+ * The sections of `nav.ts` that the measures above do not reach yet. A section is
+ * either measured in `screens()` or listed here; `apps/console/src/enforce.test.ts`
+ * fails on one that is neither, so a new section is measured or its absence is said
+ * (the polish gate, step 6). Phase 22 M7 empties this list: the data screens were
+ * found by the polish audit to be outside every layout measure (A2-31).
+ */
+const NOT_MEASURED = [
+  // A2-31: the data screens.
+  "workspace/queries",
+  "workspace/sources",
+  "workspace/dashboards",
+  "workspace/variables",
+  "workspace/alerts",
+  "tenant/retention",
+  // Not yet measured, with no finding against their layout.
+  "workspace/screens",
+  "workspace/extensions",
+  "workspace/docs",
+  "workspace/resources",
+  "workspace/approvals",
+  "workspace/git",
+  "workspace/secrets",
+  "tenant/workspaces",
+  "tenant/service-accounts",
+  "tenant/operator-access",
+  "tenant/branding",
+  "tenant/repository",
+  "tenant/workers",
+  "tenant/export",
+  "instance/single-sign-on",
+  "instance/databases",
+  "instance/import",
+  "instance/triggers",
+  "instance/branding",
+  "instance/kit",
+];
+
 async function open(path: string) {
   if (path === "/") {
     // Opened fresh, "/" reopens the last place a member was: the list is reached from inside.
@@ -223,6 +261,7 @@ test("the measures are recorded", async () => {
     if (found.length > 0) boxes[name as string] = found;
   }
   record.nested = boxes;
+  record.notMeasured = NOT_MEASURED;
   writeFileSync(test.info().outputPath("polish.json"), JSON.stringify(record, null, 2));
   console.log(JSON.stringify(record, null, 2));
 });

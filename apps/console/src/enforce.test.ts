@@ -395,3 +395,38 @@ test("a table that is read has its tools, and a dialog that holds one is big eno
   }
   expect(found).toEqual([]);
 });
+
+/**
+ * Every section in the navigation is measured by `e2e/polish.spec.ts`, or that spec
+ * lists it in `NOT_MEASURED` (the polish gate, step 6, `docs/polish`). A section
+ * added to `nav.ts` without either fails here, so its layout is not left unseen by
+ * default, as the data screens were (A2-31).
+ */
+test("every section in the navigation is measured for polish, or says it is not", async () => {
+  const { INSTANCE_SECTIONS, TENANT_SECTIONS, WORKSPACE_SECTIONS } = await import("./nav.ts");
+  const sections = [
+    ...Object.values(WORKSPACE_SECTIONS).flatMap((list) => list.map((s) => `workspace/${s.slug}`)),
+    ...TENANT_SECTIONS.map((s) => `tenant/${s.slug}`),
+    ...INSTANCE_SECTIONS.map((s) => `instance/${s.slug}`),
+  ];
+  const spec = readFileSync(join(here, "../../../e2e/polish.spec.ts"), "utf8");
+  const start = spec.indexOf("const workbenches = () => [");
+  const listed = spec.slice(start, spec.indexOf("const NOT_MEASURED", start));
+  const measured = new Set<string>();
+  for (const [, slug] of listed.matchAll(/\$\{ws\}\/([\w-]+)/g)) measured.add(`workspace/${slug}`);
+  for (const [, slug] of listed.matchAll(/\/t\/\$\{tenant\.id\}\/([\w-]+)/g)) {
+    measured.add(`tenant/${slug}`);
+  }
+  if (/\/t\/\$\{tenant\.id\}`/.test(listed)) measured.add("tenant/overview");
+  for (const [, slug] of listed.matchAll(/"\/instance\/([\w-]+)"/g))
+    measured.add(`instance/${slug}`);
+  if (/\["tenants", "\/"\]/.test(listed)) measured.add("instance/");
+  const block = spec.slice(spec.indexOf("const NOT_MEASURED"));
+  const skipped = new Set(
+    [...block.slice(0, block.indexOf("];")).matchAll(/"([\w/-]+)"/g)].map(([, key]) => key),
+  );
+  expect(start).toBeGreaterThan(0);
+  expect(sections.filter((key) => !measured.has(key) && !skipped.has(key))).toEqual([]);
+  // A section measured now comes off the list, and the list names only real sections.
+  expect([...skipped].filter((key) => measured.has(key) || !sections.includes(key))).toEqual([]);
+});

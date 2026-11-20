@@ -190,7 +190,7 @@ The three tables below were extracted by phase range and are kept as written, in
 
 ### Corrective polish in git history: phases 0 to 11
 
-Repository: vynxlabs-platform, branch `polish-pattern-audit`. Window: `a34ec77` (2026-11-11) to `e737382` (phase 11 merge, 2026-11-16), plus `docs/evolution/04-ux-audit.md` (written 2026-11-14 in `e0e4652`, after phase 8 and before phase 9).
+Branch `polish-pattern-audit`. Window: `a34ec77` (2026-11-11) to `e737382` (phase 11 merge, 2026-11-16), plus `docs/evolution/04-ux-audit.md` (written 2026-11-14 in `e0e4652`, after phase 8 and before phase 9).
 
 #### Method and caveats
 

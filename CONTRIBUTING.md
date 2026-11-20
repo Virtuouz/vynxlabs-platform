@@ -99,6 +99,13 @@ The control plane knows nothing about TypeScript. It depends on the manifest for
 - The console calls only the public API.
 - An app calls only the public API too, through `@volvel/app`. If an app needs something the API lacks, the API grows.
 
+## Phases
+
+- Work is planned and recorded as phases in `docs/phases/`, one document and one `phase-N-*` branch each. A new phase document starts from [docs/phases/TEMPLATE.md](docs/phases/TEMPLATE.md).
+- A milestone that changes anything a person sees is not marked **Built** until its **Polish gate** section is answered. That section holds the seven steps of [the gate](docs/polish/milestone-polish-quality-gate.md), checked against [the rules POLISH-001 to 015](docs/polish/polish-prevention-rules.md), and includes a browser walk on a throwaway instance seeded with `examples/fernhill`.
+- A fix goes in the shared piece, not only where the symptom was seen, and lists the other places that use it (POLISH-013).
+- `apps/console/src/enforce.test.ts` fails on a navigation section that `e2e/polish.spec.ts` neither measures nor lists in `NOT_MEASURED`. More guards from the gate come with the fixes that make them pass (phase 22).
+
 ## Apps, end users and addresses
 
 - What a request may reach depends on the address it came to. Ask `kernel.hosts.place(request)`. Never compare the `Host` header yourself, and never accept a member's console session anywhere but the instance's own address.

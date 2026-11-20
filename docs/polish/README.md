@@ -1,6 +1,8 @@
 # Polish: what the history predicts
 
-Status: analysis and proposals. Nothing in the application, its tests or its processes was changed. Written 2026-11-20 on branch `polish-pattern-audit`, off `phase-21-docs-redesign` at `f54d4bc`.
+Status: analysis, and a gate the owner adopted. Written 2026-11-20 on branch `polish-pattern-audit`, off `phase-21-docs-redesign` at `f54d4bc`.
+
+The analysis changed nothing in the application. The gate was adopted afterwards in the phase template, `CONTRIBUTING.md`, `CLAUDE.md` and one test (see [the gate](milestone-polish-quality-gate.md)). The fixes are planned as phase 22.
 
 After each phase, the owner looked at the work and asked for another round of corrections. This directory reads the whole git history (316 commits, phases 0 to 21) for what those corrections had in common. It turns that into rules, uses the rules to audit the current application, and proposes a gate so the next phase meets the rules before the owner does.
 

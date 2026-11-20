@@ -1,6 +1,11 @@
 # Milestone polish quality gate
 
-Status: a proposal. No agent instruction, phase template or test was changed. Written 2026-11-20.
+Status: adopted on 2026-11-20 in three places, the owner's choice of 1, 3 and 4 below:
+- [docs/phases/TEMPLATE.md](../phases/TEMPLATE.md) and a "Phases" section in `CONTRIBUTING.md`;
+- the root `CLAUDE.md`;
+- a rule in `apps/console/src/enforce.test.ts` that every navigation section is measured by `e2e/polish.spec.ts` or listed in its `NOT_MEASURED`.
+
+The other tests in place 4 come in phase 22, each with the fix that makes it pass. Written 2026-11-20.
 
 Over phases 0 to 21, 124 corrections were made after a milestone had been called built ([historical-polish-analysis.md](historical-polish-analysis.md)). About 60 of them were found only in a browser, on an instance, or by the owner. In phases 18 to 21 the owner found most of them, within hours of each phase. This gate moves that look to before "built".
 
@@ -50,9 +55,12 @@ A milestone that cannot pass a step says so in its Findings, as phase 21 did wit
 | 6 | Guards stop recurrences only where they reach. The phase 16 layout measures do not cover the data screens (A2-31) |
 | 7 | Draft preview, page dragging and the frontmatter form were each trimmed in phase 20 M9 and asked for again within hours (H18-25, H18-27, H18-28) |
 
-## Where it could live (proposals, not made)
+## Where it lives
 
-These are listed for the owner to choose from. None has been applied.
+These were listed for the owner to choose from. 1, 3 and 4 were adopted, and 2 came with 1, since there was no template file to point to. Of 4:
+- the `nav.ts` coverage check is in, as a static rule in `enforce.test.ts` over the spec's list, so it runs in `pnpm test` without an instance;
+- the `ListScreen`, key and `SchemaForm` rules and the served-site motion fixture come in phase 22, each with the fix that makes it pass;
+- 5 is not adopted.
 
 1. **The phase-document template.** Every phase document already has, for each milestone, "Built", "Tests" and "Findings" (`docs/phases/phase-19-dashboards-motion.md:29-50`). Add a fourth, **Polish gate**, holding the seven answers. This is the smallest change and fits how phases are already written.
 2. **A pointer in `CONTRIBUTING.md`** to `docs/polish/polish-prevention-rules.md` and this gate, under how a phase is built.

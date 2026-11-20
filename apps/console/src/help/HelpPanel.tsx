@@ -114,6 +114,9 @@ export function HelpPanel({
         return `${INSIDE}${found.path}${found.anchor ? `#${found.anchor}` : ""}`;
       },
       field: (path: string) => (fields?.[path] ? { description: fields[path] as string } : null),
+      // A picture taken for this version, when one was: otherwise the page says what it shows.
+      screenshot: (name: string) =>
+        ready.screenshots?.includes(name) ? `/help/assets/screenshots/${name}.png` : null,
       term: (props: Record<string, string>) => {
         const term = props.id ? ready.terms[props.id] : undefined;
         return term ? { short: term.short, href: `${INSIDE}${term.path}` } : null;

@@ -322,31 +322,31 @@ importers:
 
   packages/cli:
     dependencies:
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+    devDependencies:
       '@marcbachmann/cel-js':
         specifier: ^8.0.0
         version: 8.0.0
       '@volvel/compose':
         specifier: workspace:*
         version: link:../compose
+      '@volvel/control-plane':
+        specifier: workspace:*
+        version: link:../../apps/control-plane
       '@volvel/docs-engine':
         specifier: workspace:*
         version: link:../docs-engine
+      '@volvel/example-acme':
+        specifier: workspace:*
+        version: link:../../examples/acme
       '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
       '@volvel/markup':
         specifier: workspace:*
         version: link:../markup
-      esbuild:
-        specifier: ^0.28.2
-        version: 0.28.2
-    devDependencies:
-      '@volvel/control-plane':
-        specifier: workspace:*
-        version: link:../../apps/control-plane
-      '@volvel/example-acme':
-        specifier: workspace:*
-        version: link:../../examples/acme
       '@volvel/worker':
         specifier: workspace:*
         version: link:../worker

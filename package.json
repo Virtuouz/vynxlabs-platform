@@ -24,7 +24,9 @@
     "dev:console": "pnpm --filter @volvel/console dev",
     "e2e": "playwright test -c e2e",
     "docs:check": "tsc -b && node packages/docs/check.mjs",
-    "docs:generate": "tsc -b && node packages/docs/generators/api.mjs"
+    "docs:generate": "tsc -b && node packages/docs/generators/api.mjs",
+    "release:check": "pnpm build && node scripts/release-check.mjs",
+    "docs:screenshots": "SCREENSHOTS=1 playwright test -c e2e screenshots"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

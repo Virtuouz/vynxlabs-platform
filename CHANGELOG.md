@@ -6,6 +6,8 @@ Versions before 1.0 may change the API, the manifest format and the worker proto
 
 The product is named Volvel. Every name that said Vynxlabs or `platform` where a person or a program meets it has changed, and no old name is accepted. There was no published version and no instance to keep working.
 
+The console has help beside every screen, and a workspace has documentation of its own: pages of Markdown, served as sites.
+
 ### For operators
 
 - The image's entry scripts are `volvel-start` and `volvel-worker-host`, and the worker's commands are `volvel-worker` and `volvel-worker-host`.
@@ -14,6 +16,12 @@ The product is named Volvel. Every name that said Vynxlabs or `platform` where a
 - `OTEL_SERVICE_NAME` is `volvel` when it is not set, and `volvel-worker` for a worker.
 - An instance with no product name of its own shows "Volvel".
 - A tenant export is stamped `volvel-tenant-export`. An export made before this is not read.
+- One migration, `0081`, adds a built-in role, `doc_writer`. Nothing else in the database changes.
+- **Help is in the image.** `F1` opens it beside any screen. It is fetched from the instance alone.
+- `DOCS_URL`, new and optional: where the documentation is on the web. With it each page of the help offers to open online.
+- Every setting the instance reads is listed in the help under Reference, from the table it reads them by. An environment variable the instance does not know is still ignored.
+- Docs apps are served under a policy of their own: no script but the instance's own file, no inline style, and pictures from the app or from an `https` address.
+- The API's description says what each route needs, under `x-access`.
 
 ### For tenant developers
 
@@ -21,6 +29,14 @@ The product is named Volvel. Every name that said Vynxlabs or `platform` where a
 - The command is `volvel`, not `platform`: `volvel deploy`, `volvel dev`. It reads `VOLVEL_URL`, `VOLVEL_TOKEN` and `VOLVEL_EXPORT_PASSPHRASE`, and keeps its sign-in in `~/.config/volvel/`. Sign in again.
 - A repository says where its files are in `volvel.yaml`, not `vynxlabs.yaml`. The `platform/` folder keeps its name.
 - A resource that was renamed answers at its old path with the header `Volvel-Resource-Moved`.
+- **Documentation.** A page is a Markdown file under `platform/docs`, or under the folders `docs:` names in `volvel.yaml`. `defineApp({ docs: "handbook" })` serves a folder of pages as a site. See "Documentation" in the SDK guide.
+- A build, and every deploy, now refuses documentation that does not hold together: a link that leads nowhere, a term nobody defines, a page about a resource that is not there.
+- `description` on a table's columns, and on `defineSchedule`, `defineWebhook`, `defineEventTrigger` and `defineBinding`. A column's is shown on its heading in the console and in apps.
+- A page of an interface takes `help`, a topic of the documentation, and the app then offers that page as its help.
+- `@volvel/app`: `terms()` gives the workspace's glossary, what its tables and scripts are for, and the pages that go with them, as far as the person using the app may know. `helpUrl(topic)` gives a page's address.
+- New permissions: `doc:read` and `doc:write`. Whoever holds `doc:write` writes and deploys pages and nothing else. The built-in role `doc_writer` holds it.
+- An error's `code` is one of a published list, in the help under Reference, and keeps its meaning. A sign-in that fails still carries the sign-in library's own code.
+- A push through git sync writes a page as its Markdown file, and a pull reads one.
 
 ## Unreleased: phase 19, dashboards placed by drag, and motion that is kept
 

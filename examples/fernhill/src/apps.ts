@@ -283,7 +283,22 @@ export const decidesApprovals = defineRole({
   permissions: ["approval:read", "approval:write"],
 });
 
+// The handbook: the pages under platform/docs/handbook, served as a site to the front desk.
+export const handbook = defineApp({
+  path: "handbook",
+  title: "Fernhill handbook",
+  description: "How the front desk books, checks in and bills.",
+  docs: "handbook",
+});
+
 const FRONT_DESK = { type: "end_user_group", key: "front-desk" } as const;
+export const frontDeskReadsHandbook = defineBinding({
+  path: "access/front-desk-handbook",
+  role: opensApp,
+  principal: FRONT_DESK,
+  resource: handbook,
+  description: "The front desk reads the handbook it works from.",
+});
 export const frontDeskOpens = defineBinding({
   path: "access/front-desk-app",
   role: opensApp,

@@ -504,6 +504,16 @@ A tenant sets its colors, corner radii, fonts and logo under **Branding**. They 
 
 The console keeps its own look whichever tenant is open. An operator brands it once for the instance under **Instance → Branding**, with a product name, a logo and the same tokens.
 
+## Help and documentation
+
+The console's help is part of the image. It is the help of the version that is running, and it needs nothing beyond the instance: no page of it is fetched from anywhere else. `F1` opens it beside any screen. Every setting an instance reads is listed there, under Reference, written from the same table the instance reads its settings by.
+
+| Variable | What it does |
+|---|---|
+| `DOCS_URL` | The address of the documentation on the web, when you keep a copy there. Each page of the help then offers to open online, at `<DOCS_URL>/docs/<version>/<page>`. Without it there is no such link |
+
+A tenant's own documentation is served by the instance as docs apps, at the addresses apps are served at, under a policy that runs no script of the tenant's and takes no inline style. A page may show a picture from an `https` address its author gave, which is the one thing a reader's browser is ever sent elsewhere for. Nothing in the instance fetches it.
+
 ## Environments inside a tenant
 
 - A dev workspace is linked to the workspace it promotes to. Promoting activates there the same bundle that runs here, without rebuilding it. `volvel promote --preview` shows what would change first.

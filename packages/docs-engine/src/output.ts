@@ -20,6 +20,11 @@ export interface Manifest {
   terms: Record<string, Term>;
   attachments: Record<string, string[]>;
   extensions: Record<string, string[]>;
+  /**
+   * The names of the screenshots that were taken for this version. A page that
+   * shows one that is not here shows what the picture would have been of.
+   */
+  screenshots?: string[];
 }
 
 /** What is written for one page: its tree, and what its frontmatter said. */

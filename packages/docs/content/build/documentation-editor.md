@@ -12,3 +12,5 @@ Problems are marked on their lines as you type, by the rules a deploy holds the 
 Saving makes a :term[draft]{id=draft}. If someone else saved the page after you opened it, your save is refused and nothing of theirs is overwritten.
 
 See [components](../reference/docs/components) for alerts, tabs, terms and the rest, and [the top of a page](../reference/docs/frontmatter) for its title, order and topic.
+
+::screenshot{name=console/page-editor alt="The page editor: the page's Markdown on the left, the page as it will be served on the right, and its problems listed under."}

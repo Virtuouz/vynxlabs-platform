@@ -1,6 +1,6 @@
 # Phase 20: Volvel gets its name and its documentation system
 
-Status: planned, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M10 are built. M11 and M12 are not started: publishing, then the example, the guides, the changelog and the walk-through.
+Status: built, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M12 are built and were walked through in a browser on a local instance. Left to the owner: the first real publish, renaming the repository, and the walk-through on the rebuilt test instance.
 Last updated: 2026-11-19
 
 The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
@@ -479,12 +479,51 @@ Tests: two editors on one page conflict; the preview matches the served page; a 
 - The console's rule on icon sizes caught a 12 px icon on the new link. Icons are 14, 16 or 20.
 - 1,961 tests.
 
+### Seen in a browser, and what that changed
+
+After M10 the instance was rebuilt from nothing and everything from M5 on was used in a browser, by `e2e/documentation.spec.ts`, which is now part of the browser tests. It makes a workspace with a table, a handbook and an app, and then reads, writes, deploys and opens them as their people would. Its pictures are in `e2e/results/documentation/`.
+
+#### Found and put right
+
+- **`F1` did nothing on a table's screen.** The ⓘ on a column's heading stopped every key from reaching the page, to keep the grid's own keys from acting on it. It now stops none: the button handles its own.
+- **The docs app's navigation covered the page on a phone.** It folds there, and opens when pressed.
+- **A binding to an app that is only a draft is refused in the same deploy.** Not new, and not changed: the app is deployed first. The walk-through does it in that order.
+
+#### Built after it
+
+- **A docs app is previewed with its drafts at its own address**, `<app>/_draft/…`, which the owner asked for and M9 had left in the console. Members who may read the workspace's documentation get it, under a line that says it is a preview. Anyone else gets what a page that is not there gets. It is never cached and asks not to be indexed. The front door reads drafts for this and for nothing else (`serveDraftDocs`, and `kernel/docs/working.ts`, which the console's routes now share).
+- **A draft beside what is deployed**, in the editor: "Compare with deployed".
+- **Pages about a script or a flow** are listed on its screen, as a table's are.
+- **Help inside an app.** A page of an interface takes `help`, a topic. The builder has a Help button for it. Whoever uses the app, and may open that documentation, gets a Help button, and the page is shown beside the app as its docs app serves it.
+- **The documentation's sets are kept** by `/terms` for as long as the workspace runs the bundle they were built from, since an app now asks on every page.
+- **A schedule's description** says what a description is for, as other fields do.
+
+#### Still not built
+
+- Dragging a page to another folder, and a form for the frontmatter. The architecture put both off.
+- "What is this for" beside the fields of most hand-written forms. The descriptions are generated and `FieldAbout` shows them. It is on a schedule's form and the forms `SchemaForm` draws.
+- A help panel inside an app written as code. `helpUrl` gives the address.
+- The older browser tests were not run again. Their pictures predate the help button in the header and the ⓘ on headings, and each needs looking at before it is replaced.
+
 ### M11: the packages and the CLI can be published
 
 - `markup`, `docs-engine`, `docs`, `sdk`, `cli` lose `"private": true` and gain `publishConfig`, `files`, `exports`. The CLI's build bundles `manifest` and `compose`.
 - `.github/workflows/release.yml`: on `v*` tags build, generate docs, version, publish to npm with `latest`, push the image to the `volvel` Docker organisation. Pushes to `main` publish `x.y.z-next.<sha>` as `next`.
 - **Dry run only in this phase**: `npm pack` every published package, install the packed CLI in a clean folder and run `volvel --help`. The first real publish waits for the owner's word and the npm and Docker tokens.
 - The site's dispatch step is written but switched off until the site repository exists.
+
+#### Built
+
+- **Seven packages are published**: `@volvel/markup`, `docs-engine`, `docs`, `ui`, `app`, `sdk` and `cli`. Each says `Apache-2.0` and `access: public`, and packs without tests or source maps.
+- **The CLI is one file.** `packages/cli/bundle.mjs` puts `manifest`, `compose`, `nodes`, `markup`, `docs-engine` and what they need into `dist/volvel.mjs`, 1.5 MB. Its one dependency is esbuild, a program for the machine it is installed on. So `manifest`, `compose` and `nodes` stay private, and `npm install @volvel/cli` gives the command `volvel`.
+- **`pnpm release:check`** (`scripts/release-check.mjs`) rehearses a release: it packs all seven, reads each pack for what must be in it and what must not, refuses a dependency on a package that is not published, installs the packed CLI and SDK in an empty folder, and runs `volvel --help` and `volvel build` there on a repository with a table and a page. It passes.
+- **`.github/workflows/release.yml`**: a tag `v1.2.3` is that version under `latest`, a push to `main` is `1.2.3-next.<commit>` under `next`. It sets the version (`scripts/release-version.mjs`), generates the reference, builds, runs `docs:check` and the rehearsal, publishes to npm, and pushes `volvel/volvel` to the Docker organisation. It tells the website's repository when `DOCS_SITE_REPOSITORY` names one.
+
+#### Findings
+
+- **Nothing publishes until the repository says so.** The variable `RELEASE_ENABLED` must be `true`, and the secrets `NPM_TOKEN`, `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` set. Until then every run builds, checks, rehearses and builds the image without pushing it.
+- **The workflow has not run.** Nothing was pushed in this phase. The rehearsal ran on this machine. The image was not built here.
+- **The version in the repository stays as it is**, 0.5.0. A release writes its version into the packages before it builds, and commits nothing.
 
 ### M12: example, guides, changelog, walk-through
 
@@ -493,6 +532,19 @@ Tests: two editors on one page conflict; the preview matches the served page; a 
 - CHANGELOG section for phase 20, for operators and for tenant developers.
 - Playwright script that writes `screenshot` assets.
 - Walk-through on the rebuilt test instance, with the owner.
+
+#### Built
+
+- **Fernhill has a handbook**: four pages under `platform/docs/handbook`, served to the front desk by an app and a binding. Its pages define two terms, are about the `appointments` and `invoices` tables and the flow that chases invoices, and one adds its notes to the help for tables. Five columns say what they hold.
+- **The guides.** `docs/sdk-guide.md` has "Documentation": files, frontmatter, apps, components, descriptions, help from an app, and what the build refuses. `docs/self-hosting.md` has "Help and documentation", with `DOCS_URL`.
+- **The changelog** for phase 20, for operators and for tenant developers.
+- **Pictures for the documentation.** `pnpm docs:screenshots` (`e2e/screenshots.spec.ts`) takes them from a running instance into `packages/docs/assets/screenshots/`, which is not kept in git. The build ships what is there and lists it, and the help panel shows a picture that was taken and the words for one that was not. Three pages name one.
+
+#### Findings
+
+- **The example's bundle is now format 4**, since a page says its title. The test that held both examples under 4 holds the other one there.
+- **The walk-through was on a local instance, by the browser tests.** The test instance on Fly was not rebuilt: that, and looking at it, are the owner's.
+- 1,961 tests, and 6 in a browser.
 
 ## Where this meets the master spec
 

@@ -229,6 +229,103 @@ body:
 - A date grouped by `month` comes back as `<column>_month`.
 - The easiest way to write one is to build it in the console and choose **Keep it as a resource**.
 
+## Documentation
+
+A workspace's documentation is pages of Markdown, kept in the repository beside everything else and served as a site.
+
+### A page is a file
+
+A page is a Markdown file in the folder of pages, which is `platform/docs` unless `volvel.yaml` names others:
+
+```yaml
+# volvel.yaml
+docs: [docs]
+```
+
+Under that folder, a file's place is its path: `docs/handbook/support/refunds.md` is the page `handbook/support/refunds`. A file's name is never changed to make it fit, so name files in lowercase letters, digits, hyphens and underscores. Markdown anywhere else in the repository is nobody's page.
+
+A page says what it is at its top:
+
+```md
+---
+title: Refund an order
+description: How support issues a full or partial refund.
+order: 20
+topic: support-refunds
+terms:
+  - id: rma
+    term: RMA
+    short: A return authorisation, issued before a refund.
+about:
+  - table: sales/orders
+extends: [data-tables]
+---
+
+Ask for the :term[RMA]{id=rma} first.
+```
+
+- `order` places it among the pages of its folder. Pages with none sort by title.
+- `topic` is a name that stays when the page moves. Link to it as `[refunds](topic:support-refunds)`.
+- `terms` are glossary terms the page defines. Any page of the workspace can use one with `:term[RMA]{id=rma}`, and the console underlines it where a heading or a description uses the word.
+- `about` lists resources the page documents. The page is listed on each one's screen in the console.
+- `extends` adds the page to a topic of the product's own help, under "From your team".
+- `key` keeps the page the same page when you move its file: give it the path it had.
+
+### An app serves a folder
+
+```ts
+export const handbook = defineApp({ path: "handbook", title: "Handbook", docs: "handbook" });
+export const open = defineBinding({
+  path: "access/handbook",
+  role: "portal_user",
+  principal: { type: "anonymous" },
+  resource: handbook,
+});
+```
+
+Every page whose path is under `handbook` is a page of the site. `index` is its home page, each folder directly under it is a collection, and each folder under a collection is a group. Nothing goes deeper than that, and there is no file that lists the pages. Who may open the site is decided by bindings, as for any app: nobody outside without one.
+
+A picture kept beside the pages, `docs/handbook/img/till.png`, is written `![The till](img/till.png)` from the home page. A picture by `https` address is allowed too, and is not shown offline.
+
+### Components
+
+What Markdown cannot say is written one way, whichever component it is:
+
+```md
+:::alert[Before you start]{type=warning}
+A refund over 500 needs a second person.
+:::
+
+:::tabs
+::::tab{label="Card"}
+Refund to the card.
+::::
+::::tab{label="Cash"}
+Refund at the till.
+::::
+:::
+```
+
+The components are `alert`, `term`, `field`, `steps`, `tabs` and `tab`, `details`, `kbd`, `code-tabs` and `file-tree`. Every instance lists what each takes in its help, under Reference. There is no HTML in a page and nothing in it runs.
+
+### What columns and resources are for
+
+A column takes a `description`, and so do a schedule, a trigger and a binding:
+
+```ts
+status: column.text({ description: "Where the order is in its life." }),
+```
+
+A column's description is shown behind an ⓘ on its heading, in the console and in apps, to whoever may read the table. `:term[status]{table=sales/orders column=status}` in a page draws on the same words.
+
+### Help from an app
+
+A page of an interface can name a topic as its help. Whoever uses the app, and may open the documentation, gets a Help button that shows the page. From an app written as code, `helpUrl("support-refunds")` in `@volvel/app` gives the page's address, and `terms()` gives the glossary.
+
+### What the build checks
+
+`volvel build` and every deploy refuse a workspace whose documentation does not hold together: a page that does not read, a link to a page or a heading that is not there, a term nobody defines, a page about a resource that is not there, two apps serving the same pages. Each is named with its page and its line.
+
 ## What the build stops
 
 - **A definition that is not exported.** `defineScript(…)` that the entry file does not export is refused by name. Two files exporting the same name through `export *` cancel each other out: export each by name.

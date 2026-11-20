@@ -1,9 +1,9 @@
 {
   "name": "@volvel/docs",
   "version": "0.5.0",
-  "private": true,
   "type": "module",
   "description": "Volvel's own documentation: the pages, and the built trees, manifest and search index the console and the website read.",
+  "license": "Apache-2.0",
   "exports": {
     "./manifest.json": "./dist/manifest.json",
     "./search.json": "./dist/search.json",
@@ -21,6 +21,9 @@
     "build": "node generate.mjs && node build.mjs",
     "check": "node check.mjs",
     "generate": "node generate.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@volvel/control-plane": "workspace:*",

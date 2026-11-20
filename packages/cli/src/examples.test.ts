@@ -67,8 +67,22 @@ describe.each(["higher-ed-devices", "fernhill"])("the %s example", (name) => {
   test("builds, with nothing defined and left unexported", async () => {
     const built = await buildRepository({ directory: example(name) });
     expect(built.bundle.manifests.length).toBeGreaterThan(10);
-    // It says no key, title or tool name, so it still deploys to an instance from before them.
-    expect(built.bundle.formatVersion).toBeLessThan(4);
+    if (name === "fernhill") {
+      // Its handbook's pages each say their title, which a bundle has carried since format 4.
+      // An instance old enough not to know that format knows no pages either.
+      expect(built.bundle.formatVersion).toBe(4);
+      expect(
+        built.bundle.manifests.filter((manifest) => manifest.kind === "doc").map((doc) => doc.path),
+      ).toEqual([
+        "handbook/front-desk/booking",
+        "handbook/front-desk/index",
+        "handbook/front-desk/invoices",
+        "handbook/index",
+      ]);
+    } else {
+      // It says no key, title or tool name, so it still deploys to an instance from before them.
+      expect(built.bundle.formatVersion).toBeLessThan(4);
+    }
   }, 120_000);
 
   test("names its groups and service accounts by key, and defines each of them in tenant/", async () => {

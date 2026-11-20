@@ -18,3 +18,5 @@ There is no file that lists the pages. Under the app's folder, `index` is the ho
 A page can be written here, in a :term[dev workspace]{id=dev-workspace}, or kept in the repository as a Markdown file in the folder of pages. A page kept in a folder of the repository's own is read here and changed there.
 
 Either way a change is a :term[draft]{id=draft} until it is deployed. See [the page editor](documentation-editor), and [what a page is made of](../reference/docs/index).
+
+::screenshot{name=console/documentation alt="The Documentation section: the pages as a tree on the left, and the chosen page drawn on the right."}

@@ -313,6 +313,37 @@ test("a page is read, written with a live preview, checked as it is typed, and d
   await expect(page.getByText(/Saved as a draft/)).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByText("Changed, not deployed")).toBeVisible();
+  // Before it is deployed its writers see it in the app itself, at an address nobody else reaches.
+  const previewAt = await page
+    .getByRole("link", { name: "Preview with drafts" })
+    .getAttribute("href");
+  expect(previewAt).toContain("/help/_draft/support/refunds");
+  const preview2 = await page.context().newPage();
+  await preview2.goto(previewAt as string);
+  await expect(preview2.getByRole("status")).toContainText(
+    "A preview, with the workspace's drafts.",
+  );
+  await expect(preview2.getByText("Exchanges are the same, the other way round.")).toBeVisible();
+  await shot(preview2, "08b-draft-preview", true);
+  await preview2.close();
+  const stranger = await (await browser.newContext()).newPage();
+  expect((await stranger.goto(previewAt as string))?.status()).toBe(404);
+  // What is deployed does not have the change yet.
+  await stranger.goto((previewAt as string).replace("/_draft/", "/"));
+  await expect(stranger.getByRole("heading", { level: 1, name: "Refund an order" })).toBeVisible();
+  await expect(stranger.getByText("Exchanges are the same")).toHaveCount(0);
+  await stranger.context().close();
+
+  // And beside what is deployed, in the editor.
+  await page.getByRole("button", { name: "Edit" }).click();
+  await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Compare with deployed" }).click();
+  await expect(page.getByRole("region", { name: "What changes" })).toContainText(
+    "Exchanges are the same, the other way round.",
+  );
+  await shot(page, "08c-compare", true);
+  await page.getByRole("button", { name: "Done" }).click();
+
   await page.getByRole("button", { name: "Deploy 1 change" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Deploy" }).click();
   await expect(page.getByText("The documentation is deployed.")).toBeVisible();
@@ -406,6 +437,59 @@ test("the docs app is read by someone who is not signed in, with scripts and wit
   await expect(still.getByRole("heading", { level: 1, name: "Returns" })).toBeVisible();
   await shot(still, "13-docs-no-script", true);
   await plain.close();
+});
+
+test("a page of an app names its help, and the app shows that page of the handbook", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const page = await signedIn(browser);
+  const W = `/tenants/${made.tenant}/workspaces/${made.dev}`;
+  await call(page, "PUT", `${W}/drafts/screens/desk`, {
+    kind: "interface",
+    schemaVersion: 1,
+    body: {
+      title: "Order desk",
+      pages: [
+        {
+          id: "main",
+          title: "Orders",
+          help: "support-refunds",
+          widgets: [
+            {
+              id: "list",
+              type: "table",
+              table: "orders",
+              fields: [{ column: "number" }, { column: "status" }],
+              at: { x: 0, y: 0, w: 12, h: 8 },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  await call(page, "PUT", `${W}/drafts/desk`, {
+    kind: "app",
+    schemaVersion: 1,
+    body: { title: "Order desk", interface: "screens/desk" },
+  });
+  await call(page, "POST", `${W}/changes/deploy`, {});
+
+  await page.goto(`/apps/${made.slug}/dev/desk/`);
+  const table = page.getByRole("table").or(page.getByRole("grid")).first();
+  await expect(table).toBeVisible({ timeout: 30_000 });
+  // What a column holds is behind its heading here too, for someone who may read the rows.
+  await page.getByRole("button", { name: /^About Status/i }).click();
+  await expect(page.getByText("Where the order is in its life.")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Refund an order" });
+  await expect(sheet).toBeVisible();
+  await expect(
+    sheet.frameLocator("iframe").getByRole("heading", { level: 1, name: "Refund an order" }),
+  ).toBeVisible();
+  await shot(page, "15-app-help");
+  await page.context().close();
 });
 
 test("the kit's new pieces are on the kit sheet, and pass the accessibility check", async ({

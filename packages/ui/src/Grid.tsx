@@ -532,7 +532,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
               return (
                 <tr
                   key={key}
-                  aria-rowindex={r + 1}
+                  // The header row is the first of `aria-rowcount`: rows of data count from 2.
+                  aria-rowindex={r + 2}
                   aria-selected={checking ? ticked : chosen}
                   className={`${ground} hover:bg-sunken/60`}
                   onClick={(event) => {

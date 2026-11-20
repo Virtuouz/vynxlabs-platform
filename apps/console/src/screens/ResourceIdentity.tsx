@@ -1,5 +1,5 @@
 import { Button, Dialog, Notice, TextField } from "@volvel/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
 import { Loading } from "../kit/LoadState.tsx";
@@ -74,6 +74,9 @@ export function ResourceIdentity({
   unsaved?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // A rename is told to the screen once the dialog has gone, so the screen it opens does not
+  // take the dialog away mid-motion (found by the phase 23 walk, on Queries).
+  const renamed = useRef<string | undefined>(undefined);
   const why = cannotRename(row) ?? (unsaved ? "Save the draft first." : undefined);
   return (
     <>
@@ -83,6 +86,11 @@ export function ResourceIdentity({
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
+        onClosed={() => {
+          const path = renamed.current;
+          renamed.current = undefined;
+          if (path !== undefined) onDone(path);
+        }}
         title={`Name and path of ${row.path}`}
         description={`It stays the same ${row.kind.replaceAll("_", " ")}: its history, its data and what is bound to it come along, and ${row.path} keeps answering for 90 days. Nothing changes until the draft is deployed.`}
       >
@@ -92,7 +100,9 @@ export function ResourceIdentity({
             link={link}
             row={row}
             onClose={() => setOpen(false)}
-            onDone={onDone}
+            onDone={(path) => {
+              renamed.current = path;
+            }}
           />
         ) : null}
       </Dialog>

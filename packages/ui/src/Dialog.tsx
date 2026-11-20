@@ -16,6 +16,11 @@ export interface DialogProps {
    * is always scrolled.
    */
   size?: "regular" | "wide" | "palette" | "table";
+  /**
+   * Called once it has left, after its motion. What closing it leads to, such as
+   * opening another screen, waits for this, so the dialog is seen to go.
+   */
+  onClosed?: () => void;
   children: ReactNode;
 }
 
@@ -25,11 +30,18 @@ export function Dialog({
   title,
   description,
   size = "regular",
+  onClosed,
   children,
 }: DialogProps) {
   const shown = useOpening(open);
   return (
-    <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
+    <Base.Root
+      open={shown}
+      onOpenChange={(next: boolean) => !next && onClose()}
+      onOpenChangeComplete={(now: boolean) => {
+        if (!now) onClosed?.();
+      }}
+    >
       <Base.Portal>
         {/* Above a side sheet: a question asked from one is answered over it. */}
         <Base.Backdrop className="fixed inset-0 layer-dialog bg-ink/40 transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />

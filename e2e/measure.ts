@@ -19,7 +19,7 @@ export function firstRowTop(page: Page): Promise<number | null> {
     const candidates = [
       ...main.querySelectorAll("tbody tr[data-row]"),
       ...main.querySelectorAll(
-        '[role="grid"] [role="row"][aria-rowindex]:not([aria-rowindex="1"])',
+        '[role="grid"] [role="row"][aria-rowindex]:not([aria-rowindex="1"]), [role="grid"] tbody tr[aria-rowindex]',
       ),
       ...main.querySelectorAll("[data-list] > li, [data-list] > a"),
       ...main.querySelectorAll("[data-empty-state]"),

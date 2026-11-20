@@ -10,6 +10,7 @@ let calls: { method: string; url: string; body: unknown }[];
 let approval: boolean;
 let who: string;
 let mayChange: boolean;
+let removes: { kind: string; key: string; label: string }[];
 const release = (number: number, extra: object = {}) => ({
   id: `r${number}`,
   number,
@@ -37,6 +38,7 @@ beforeEach(() => {
   approval = true;
   who = "bob";
   mayChange = true;
+  removes = [{ kind: "group", key: "late", label: "Late shift" }];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({
@@ -53,6 +55,7 @@ beforeEach(() => {
         ],
       });
     }
+    if (method === "GET" && address.endsWith("/rollback")) return json({ removes });
     if (method === "GET" && address.endsWith("/me"))
       return json({ principal: { type: "member", id: who, name: who, email: null } });
     if (method === "GET" && address.endsWith("/access")) return json({ approval, mayChange });
@@ -106,6 +109,8 @@ test("an applied release can be gone back to, and asking for a second person can
   expect(sure).toContain("It waits for a second person.");
   expect(sure).toContain("groups an identity provider made are left alone");
   expect(sure).toContain("Makes the group Night shift");
+  expect(sure).toContain("These are removed:");
+  expect(sure).toContain("the group Late shift");
   await waitFor(() =>
     expect(calls.some((call) => call.url.endsWith("/access/releases/r1/rollback"))).toBe(true),
   );
@@ -173,4 +178,14 @@ test("a decline takes a comment and sends it", async () => {
       body: { decision: "decline", comment: "Wrong group" },
     }),
   );
+});
+
+test("going back says when it removes nothing, and asks as a danger only when it removes", async () => {
+  removes = [];
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  const sure = await answer("Cancel");
+  expect(sure).toContain("Nothing is removed.");
+  expect(sure).not.toContain("These are removed:");
+  expect(calls.some((call) => call.method === "POST")).toBe(false);
 });

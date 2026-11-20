@@ -1041,6 +1041,20 @@ describe("waiting", () => {
       expect(summary.approvalsWaitingMine).toBe(mine);
       expect((await who.get(`${ws()}/approvals?mine=true`)).body.items).toHaveLength(mine);
     }
+    // The tenant's summary counts the same way: what waits, and what this caller may decide,
+    // so the tenant overview's count opens a queue that matches.
+    const tenantSummary = (await alice.get(`/tenants/${tenant}/summary`)).body;
+    expect(tenantSummary.approvalsWaiting).toBe(1);
+    expect(tenantSummary.approvalsWaitingMine).toBe(
+      (await alice.get(`/tenants/${tenant}/approvals`)).body.items.length,
+    );
+    // `all=true` lists what waits for anyone, which the queue's read-only "others" view takes
+    // less what the caller may decide.
+    expect((await alice.get(`/tenants/${tenant}/approvals?all=true`)).body.items).toHaveLength(1);
+    const bobSummary = await bob.get(`/tenants/${tenant}/summary`);
+    if (bobSummary.status === 200 && bobSummary.body.approvalsWaiting !== null) {
+      expect(bobSummary.body.approvalsWaitingMine).toBe(0);
+    }
     // A developer started it, sees it, but cannot approve it.
     expect((await bob.get(`${ws()}/approvals`)).status).toBe(200);
     expect((await bob.get(`/tenants/${tenant}/approvals`)).status).toBe(403);

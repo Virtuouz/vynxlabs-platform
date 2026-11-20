@@ -12,6 +12,7 @@ import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 
 // The editor is large and is loaded when a query is first written.
 const CodeEditor = lazy(() =>
@@ -306,6 +307,23 @@ export function Queries({ root, link }: { root: string; link: string }) {
               <Button size="small" variant="quiet" onClick={() => void go(undefined)}>
                 New query
               </Button>
+            ) : null}
+            {current ? (
+              <ResourceIdentity
+                root={root}
+                link={link}
+                row={{ path: current.path, kind: "query", ownership: current.ownership }}
+                label="Name and path"
+                unsaved={keep.dirty}
+                onDone={(path) => {
+                  saved.reload();
+                  if (path !== current.path) {
+                    // The text on screen is the query's: it is not read back under its new path.
+                    savedAs.current = path;
+                    setOpen(path);
+                  }
+                }}
+              />
             ) : null}
             {current ? (
               <RemoveDraftButton

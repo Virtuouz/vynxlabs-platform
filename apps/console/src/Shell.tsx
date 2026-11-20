@@ -106,6 +106,8 @@ export interface WorkspaceCounts {
 export interface TenantCounts {
   workspaces: number | null;
   approvalsWaiting: number | null;
+  /** Of those, the ones the viewer may decide. An older server does not send it. */
+  approvalsWaitingMine?: number | null;
   domainsToFix: number | null;
   workersOnline: number | null;
   operatorAccessActive: number | null;

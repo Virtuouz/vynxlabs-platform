@@ -307,6 +307,43 @@ describe("where it is used", () => {
     );
   });
 
+  test("Queries names and moves a saved query beside Remove, keeping its key", async () => {
+    routes[`GET ${api}/queries/schema`] = () => [200, { tables: [], functions: [], maySql: true }];
+    routes[`GET ${api}/queries`] = () => [
+      200,
+      {
+        items: [
+          {
+            path: "reports/fees",
+            description: "",
+            sql: "select 1",
+            parameters: [],
+            ownership: "ui",
+            draft: null,
+          },
+        ],
+      },
+    ];
+    const stored = { kind: "query", schemaVersion: 1, key: "k1", body: { sql: "select 1" } };
+    routes[`GET ${api}/drafts/reports/fees`] = () => [404, { code: "not_found", detail: "none" }];
+    routes[`GET ${api}/resources/reports/fees`] = () => [200, stored];
+    routes[`PUT ${api}/drafts/reports/fees`] = () => [200, { revision: 1 }];
+    history.replaceState(null, "", "/?query=reports/fees");
+    show(<Queries root={root} link={link} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Name and path" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(await within(dialog).findByLabelText("Path"), {
+      target: { value: "reports/charges" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save as a draft" }));
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]).toMatchObject({
+      url: `${api}/drafts/reports/fees`,
+      body: { kind: "query", path: "reports/charges", body: { sql: "select 1" } },
+    });
+    await waitFor(() => expect(decodeURIComponent(location.search)).toContain("reports/charges"));
+  });
+
   test("the flow editor removes a deployed flow, as the script editor does", async () => {
     routes[`GET ${api}/drafts/orders/sync`] = () => [404, { code: "not_found", detail: "none" }];
     routes[`GET ${api}/resources/orders/sync`] = () => [

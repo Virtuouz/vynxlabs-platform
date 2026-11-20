@@ -158,16 +158,45 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   };
   const back = async (release: AccessRelease) => {
     setProblem(undefined);
+    // What going back removes, asked of the server before anyone is asked to agree.
+    let removes: { kind: string; key: string; label: string }[];
+    try {
+      removes = (
+        await api.get<{ removes: { kind: string; key: string; label: string }[] }>(
+          `${base}/access/releases/${release.id}/rollback`,
+        )
+      ).removes;
+    } catch (error) {
+      setProblem(failed(error));
+      return;
+    }
+    const removing = removes.length > 0;
     const sure = await ask.confirm({
       title: `Go back to release ${release.number}?`,
       text: (
-        <Changes
-          release={release}
-          intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Anything made since is removed. Who is in each group is not changed, and groups an identity provider made are left alone.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
-        />
+        <span className="flex flex-col gap-2">
+          <Changes
+            release={release}
+            intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Who is in each group is not changed, and groups an identity provider made are left alone.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
+          />
+          {removing ? (
+            <span>
+              These are removed:
+              <ul className="m-0 mt-1 max-h-48 overflow-auto pl-5 text-left">
+                {removes.map((one) => (
+                  <li key={`${one.kind}/${one.key}`}>
+                    the {KIND[one.kind] ?? one.kind} {one.label}
+                  </li>
+                ))}
+              </ul>
+            </span>
+          ) : (
+            <span>Nothing is removed.</span>
+          )}
+        </span>
       ),
       action: "Go back",
-      danger: true,
+      danger: removing,
     });
     if (!sure) return;
     try {

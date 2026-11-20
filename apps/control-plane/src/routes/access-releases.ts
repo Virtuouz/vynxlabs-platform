@@ -414,6 +414,32 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         ),
     );
 
+    app.get(
+      "/tenants/:t/access/releases/:id/rollback",
+      {
+        config: { access: access.tenant("access:write") },
+        schema: {
+          summary: "What going back to an access release would do",
+          description:
+            "Read-only: the asks that going back would make, and the keys of what it removes " +
+            "because it was made since (`allowDelete`, as `kind/key`). Changes nothing.",
+          tags: ["access"],
+          params: Type.Object({ t: Id, id: Id }),
+          response: {
+            200: Type.Object({
+              number: Type.Integer(),
+              asks: Type.Array(Type.Any()),
+              allowDelete: Type.Array(Type.String()),
+              removes: Type.Array(
+                Type.Object({ kind: Type.String(), key: Type.String(), label: Type.String() }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => rollbackAsks(db, params.t, params.id),
+    );
+
     app.post(
       "/tenants/:t/access/releases/:id/rollback",
       {

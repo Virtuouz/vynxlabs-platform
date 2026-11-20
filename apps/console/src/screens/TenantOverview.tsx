@@ -60,19 +60,38 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   const t = (slug: string) => `/t/${tenantId}/${slug}`;
 
   const attention: ReactNode[] = [];
-  if (c?.approvalsWaiting) {
+  const waiting = c?.approvalsWaiting ?? 0;
+  // An older server does not say which are the viewer's: then none is claimed.
+  const mine = c?.approvalsWaitingMine ?? 0;
+  const others = Math.max(0, waiting - mine);
+  const mailNote =
+    instance.data?.mail === false
+      ? "Mail is not set up on this instance, so approvers are not told."
+      : "Those who may decide were emailed a link.";
+  if (mine > 0) {
     attention.push(
       <NextStep
         key="approvals"
         tone="attention"
         icon={<CirclePause aria-hidden="true" size={16} />}
-        title={`${plural(c.approvalsWaiting, "approval")} waiting`}
+        title={`${plural(mine, "approval")} waiting for you`}
         detail={
-          instance.data?.mail === false
-            ? "A flow is paused until someone decides. Mail is not set up on this instance, so approvers are not told."
-            : "A flow is paused until someone decides. Those who may decide were emailed a link."
+          others > 0
+            ? `${others} more wait${others === 1 ? "s" : ""} for someone else. A flow is paused until someone decides. ${mailNote}`
+            : `A flow is paused until someone decides. ${mailNote}`
         }
         action={<Go to={t("approvals")}>Decide</Go>}
+      />,
+    );
+  } else if (others > 0) {
+    attention.push(
+      <NextStep
+        key="approvals"
+        tone="attention"
+        icon={<CirclePause aria-hidden="true" size={16} />}
+        title={`${plural(others, "approval")} waiting for someone else to decide`}
+        detail="You cannot decide these, but you can see who can and what each waits on."
+        action={<Go to={`${t("approvals")}?show=others`}>See who</Go>}
       />,
     );
   }

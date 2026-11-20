@@ -913,7 +913,10 @@ export function ApprovalsQueue({
   );
   // What waits in this workspace for someone else: everything it can show, less what this
   // person may decide. Read-only: the server refuses a decision from anyone else.
-  const everyone = useLoad<{ items: Waiting[] }>(workspaceId ? `${from}/approvals` : null);
+  // For the tenant it is what the flows surfaced there, whoever may decide it.
+  const everyone = useLoad<{ items: Waiting[] }>(
+    workspaceId ? `${from}/approvals` : `${from}/approvals?all=true`,
+  );
   const mineKeys = new Set(
     (waiting.data?.items ?? []).map((row) => `${row.flowRunId}-${row.node}`),
   );
@@ -1026,15 +1029,11 @@ export function ApprovalsQueue({
       }}
       options={[
         { value: "waiting", label: "Waiting for you", count: waiting.data?.items.length ?? null },
-        ...(workspaceId
-          ? [
-              {
-                value: "others" as const,
-                label: "Waiting for others",
-                count: others?.length ?? null,
-              },
-            ]
-          : []),
+        {
+          value: "others" as const,
+          label: "Waiting for others",
+          count: others?.length ?? null,
+        },
         { value: "decided", label: "Decided" },
       ]}
     />

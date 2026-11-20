@@ -520,3 +520,48 @@ test("a figure is narrowed to some rows and its number written as dollars from c
     { timeout: 4000 },
   );
 });
+
+test("an app is renamed in its interface and its app, as one draft, and its address stays", async () => {
+  routes[`GET ${api}/interfaces`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "screens/sales",
+          title: "Sales",
+          deployed: true,
+          draft: false,
+          removing: false,
+          app: "sales",
+        },
+      ],
+    },
+  ];
+  routes[`GET ${api}/resources/screens/sales`] = () => [
+    200,
+    { kind: "interface", schemaVersion: 1, body: { ...body(), title: "Sales" } },
+  ];
+  routes[`GET ${api}/resources/sales`] = () => [
+    200,
+    { kind: "app", schemaVersion: 1, body: { title: "Sales", interface: "screens/sales" } },
+  ];
+  routes[`POST ${api}/drafts/batch`] = () => [200, { paths: ["screens/sales", "sales"] }];
+  show(<Interfaces root={root} link="/t/t1/workspaces/w1" editable />);
+  fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Its address does not/)).toBeTruthy();
+  const save = within(dialog).getByRole("button", { name: "Save as a draft" }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Revenue" } });
+  fireEvent.click(save);
+  await waitFor(() => expect(sent("POST", "/drafts/batch")).toHaveLength(1));
+  const changes = ((sent("POST", "/drafts/batch")[0] as Any).body as Any).changes;
+  expect(changes.map((one: Any) => [one.path, one.kind, one.body.title])).toEqual([
+    ["screens/sales", "interface", "Revenue"],
+    ["sales", "app", "Revenue"],
+  ]);
+  // The rest of each is kept, and nothing moves.
+  expect(changes[0].body.pages).toEqual(body().pages);
+  expect(changes[1].body.interface).toBe("screens/sales");
+  expect(changes.some((one: Any) => "to" in one)).toBe(false);
+});

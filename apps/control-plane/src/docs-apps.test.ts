@@ -1098,6 +1098,50 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(after.tables).toEqual([{ path: "guide-site-feedback", state: "deployed" }]);
   });
 
+  test("they deploy a site's table of answers with it, and no other table, nor that table without the site", async () => {
+    const answers = {
+      page: { type: "text", required: true },
+      helpful: { type: "boolean", required: true },
+      version: { type: "text" },
+      at: { type: "timestamp" },
+    };
+    const table = (path: string, columns: object) =>
+      alice.put(`${devWs()}/drafts/${path}`, {
+        kind: "table",
+        schemaVersion: 1,
+        body: { columns },
+      });
+    const site = await alice.put(`${devWs()}/drafts/guide-site`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Guide", docs: "guide", feedback: { table: "guide-site-answers" } },
+    });
+    expect(site.status, JSON.stringify(site.body)).toBe(200);
+    expect((await table("guide-site-answers", answers)).status).toBe(200);
+    expect((await table("orders", { n: { type: "text" } })).status).toBe(200);
+    expect((await table("guide-site-extra", { ...answers, who: { type: "text" } })).status).toBe(
+      200,
+    );
+    const deploy = (paths: string[]) => wren.post(`${devWs()}/changes/deploy`, { paths });
+    // Any other table, named beside the site or not, is refused; so is one that holds more.
+    expect((await deploy(["guide-site", "orders"])).status).toBe(403);
+    expect((await deploy(["orders"])).status).toBe(403);
+    expect((await deploy(["guide-site", "guide-site-extra"])).status).toBe(403);
+    // The site's table, without the site that names it, is no more than any other.
+    expect((await deploy(["guide-site-answers"])).status).toBe(403);
+    // With the site that names it, and exactly the columns of an answer, it deploys.
+    const done = await deploy(["guide-site", "guide-site-answers"]);
+    expect(done.status, JSON.stringify(done.body)).toBe(201);
+    expect(done.body.applied.sort()).toEqual(["guide-site", "guide-site-answers"]);
+    // What is not the site's is still a draft.
+    const left = (await alice.get(`${devWs()}/drafts`)).body.items.map((one: Any) => one.path);
+    expect(left).toEqual(expect.arrayContaining(["guide-site-extra", "limits/batch", "orders"]));
+    expect(left).not.toContain("guide-site-answers");
+    for (const path of ["guide-site-extra", "orders"]) {
+      expect((await alice.delete(`${devWs()}/drafts/${path}`)).status).toBe(204);
+    }
+  });
+
   test("a site is switched off and on with one setting of its app, which keeps its pages and what else the app says", async () => {
     const body = { title: "Guide", docs: "guide", feedback: { table: "guide-site-feedback" } };
     const off = await alice.put(`${devWs()}/drafts/guide-site`, {

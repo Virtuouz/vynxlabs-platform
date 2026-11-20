@@ -46,6 +46,7 @@ import { useDraftSave } from "../../kit/draftSave.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
+import { useTitleObject } from "../../kit/title.ts";
 import { UndoRedo } from "../../kit/UndoRedo.tsx";
 import { navigate, useNavigationGuard, useQueryValue } from "../../router.tsx";
 import { deletePage, folderItems, MoveDialog, PATH, useProduct } from "./Docs.tsx";
@@ -306,6 +307,12 @@ export function DocEditor({
   useShortcut("save", () => {
     void save();
   });
+
+  // The crumb and the tab name the page by its title, as it is typed.
+  useTitleObject(
+    checked?.entry.frontmatter.title ||
+      (path === undefined ? "New page" : (opened.data?.page.title ?? where)),
+  );
 
   if (list.error) return <ErrorState error={list.error} onRetry={list.reload} />;
   if (opened.error) return <ErrorState error={opened.error} onRetry={opened.reload} />;

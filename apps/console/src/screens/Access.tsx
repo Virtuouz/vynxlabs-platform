@@ -5,6 +5,7 @@ import { clock } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
+import { useTitleObject } from "../kit/title.ts";
 import { Link } from "../router.tsx";
 
 type Scope =
@@ -76,7 +77,8 @@ function SourceLine({ tenantId, source }: { tenantId: string; source: Source }) 
       <span className="text-ink-muted">· {whereOfSource(source.scope)}</span>
       {source.through.type === "group" ? (
         <span className="text-ink-muted">
-          · through the group <Link to={`/t/${tenantId}/groups`}>{source.through.name}</Link>
+          · through the group{" "}
+          <Link to={`/t/${tenantId}/groups?group=${source.through.id}`}>{source.through.name}</Link>
         </span>
       ) : source.through.type === "anyone" ? (
         <span className="text-ink-muted">· given to anyone</span>
@@ -245,6 +247,7 @@ export function EffectiveAccess({
 export function MemberPage({ base, tenantId, id }: { base: string; tenantId: string; id: string }) {
   const report = useLoad<AccessReport>(`${base}/access/member/${id}`);
   const principal = report.data?.principal;
+  useTitleObject(principal?.name);
   return (
     <div className="flex flex-col gap-6">
       <PageHeader

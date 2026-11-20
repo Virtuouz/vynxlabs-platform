@@ -1011,11 +1011,14 @@ function feedbackOf(at: Drawn, path: string): string {
     return '<p class="feedback" id="feedback" role="status">Thank you for saying.</p>';
   }
   const disabled = at.feedback.recording ? "" : " disabled";
+  const note = at.feedback.recording
+    ? ""
+    : '\n<span class="muted" id="feedback-note">Answers are not kept in a preview.</span>';
   return `<form class="feedback" id="feedback" method="post" action="${href(at, "_feedback")}" data-feedback>
 <span>Was this page helpful?</span>
 <input type="hidden" name="page" value="${attr(path)}">
 <label class="hp" aria-hidden="true">Leave empty <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
-<span class="choices"><button class="button" type="submit" name="helpful" value="yes"${disabled}>${icon("thumbs-up", 14)}<span>Yes</span></button><button class="button" type="submit" name="helpful" value="no"${disabled}>${icon("thumbs-down", 14)}<span>No</span></button></span>
+<span class="choices"><button class="button" type="submit" name="helpful" value="yes"${disabled}>${icon("thumbs-up", 14)}<span>Yes</span></button><button class="button" type="submit" name="helpful" value="no"${disabled}>${icon("thumbs-down", 14)}<span>No</span></button></span>${note}
 </form>`;
 }
 

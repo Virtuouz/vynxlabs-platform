@@ -139,13 +139,17 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               approval: Type.Boolean({
                 description: "Whether a change waits for a second person.",
               }),
+              mayChange: Type.Boolean({
+                description:
+                  "Whether the caller may change access: answer a release that waits, or go back to one.",
+              }),
               resources: Type.Array(Resource),
               files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() })),
             }),
           },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
         const resources = await currentAccess(db, params.t);
         const tenant = await db
           .selectFrom("tenant")
@@ -155,6 +159,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           folder: TENANT_FOLDER,
           approval: tenant.access_approval,
+          mayChange: await ctx.allowed("access:write", { tenantId: params.t }),
           resources,
           files: renderTenantFiles(resources),
         };

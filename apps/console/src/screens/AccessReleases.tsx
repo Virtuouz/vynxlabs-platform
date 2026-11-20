@@ -1,6 +1,6 @@
 import { Button, Notice } from "@volvel/ui";
 import { useState } from "react";
-import { ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { count } from "../kit/format.ts";
@@ -23,6 +23,8 @@ interface AccessRelease {
   message: string | null;
   summary: { created: number; updated: number; deleted: number; changes: Change[] };
   createdBy: string | null;
+  createdByType?: string;
+  createdById?: string | null;
   createdAt: string;
   decidedBy: string | null;
   comment: string | null;
@@ -62,6 +64,26 @@ function what(release: AccessRelease): string {
     );
   return `${said.join(". ")}${changes.length > 3 ? `, and ${changes.length - 3} more` : ""}.`;
 }
+/** Every change a release made or would make, one to a line. */
+function Changes({ release, intro }: { release: AccessRelease; intro: string }) {
+  const changes = release.summary.changes;
+  return (
+    <span className="flex flex-col gap-2">
+      <span>{intro}</span>
+      {changes.length === 0 ? (
+        <span>It changes nothing.</span>
+      ) : (
+        <ul className="m-0 max-h-64 overflow-auto pl-5 text-left">
+          {changes.map((one) => (
+            <li key={`${one.kind}/${one.key}/${one.change}`}>
+              {VERB[one.change] ?? one.change} the {KIND[one.kind] ?? one.kind} {one.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </span>
+  );
+}
 const failed = (error: unknown) =>
   error instanceof ApiError ? error.message : "It could not be done. Try again.";
 
@@ -72,29 +94,58 @@ const failed = (error: unknown) =>
  */
 export function AccessReleases({ base, framed }: { base: string; framed?: Framed }) {
   const releases = useLoad<{ items: AccessRelease[] }>(`${base}/access/releases`);
-  const access = useLoad<{ approval: boolean }>(`${base}/access`);
+  const access = useLoad<{ approval: boolean; mayChange?: boolean }>(`${base}/access`);
   const [problem, setProblem] = useState<string>();
+  const me = useLoad<Me>("/me");
   const approval = access.data?.approval ?? false;
+  // An older server does not say, and then the server's own refusal answers.
+  const mayChange = access.data?.mayChange ?? true;
+  const askedByMe = (release: AccessRelease) =>
+    me.data?.principal !== undefined &&
+    release.createdByType === me.data.principal.type &&
+    release.createdById === me.data.principal.id;
 
   const decide = async (release: AccessRelease, decision: "approve" | "decline" | "withdraw") => {
     setProblem(undefined);
-    const sure = await ask.confirm({
-      title:
-        decision === "approve"
-          ? `Approve release ${release.number}?`
-          : decision === "decline"
-            ? `Decline release ${release.number}?`
+    let comment: string | undefined;
+    if (decision === "decline") {
+      const why = await ask.prompt({
+        title: `Decline release ${release.number}?`,
+        text: <Changes release={release} intro="Nothing of it is applied. It would have:" />,
+        label: "Why (kept with the release, shown to whoever asked)",
+        action: "Decline",
+        danger: true,
+        required: false,
+        multiline: true,
+      });
+      if (why === null) return;
+      if (why) comment = why;
+    } else {
+      const sure = await ask.confirm({
+        title:
+          decision === "approve"
+            ? `Approve release ${release.number}?`
             : `Withdraw release ${release.number}?`,
-      text:
-        decision === "approve"
-          ? `${what(release)} It applies at once.`
-          : `${what(release)} Nothing of it is applied.`,
-      action: decision === "approve" ? "Approve" : decision === "decline" ? "Decline" : "Withdraw",
-      danger: decision !== "approve",
-    });
-    if (!sure) return;
+        text: (
+          <Changes
+            release={release}
+            intro={
+              decision === "approve"
+                ? "It applies at once, and does all of this:"
+                : "Nothing of it is applied. It would have:"
+            }
+          />
+        ),
+        action: decision === "approve" ? "Approve" : "Withdraw",
+        danger: decision !== "approve",
+      });
+      if (!sure) return;
+    }
     try {
-      await api.post(`${base}/access/releases/${release.id}/decision`, { decision });
+      await api.post(`${base}/access/releases/${release.id}/decision`, {
+        decision,
+        ...(comment ? { comment } : {}),
+      });
       notify.success(
         decision === "approve"
           ? `Release ${release.number} is applied.`
@@ -109,7 +160,12 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
     setProblem(undefined);
     const sure = await ask.confirm({
       title: `Go back to release ${release.number}?`,
-      text: `The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. What was made since is removed. Who is in each group is not changed.${approval ? " It waits for a second person." : ""}`,
+      text: (
+        <Changes
+          release={release}
+          intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Anything made since is removed. Who is in each group is not changed, and groups an identity provider made are left alone.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
+        />
+      ),
       action: "Go back",
       danger: true,
     });
@@ -189,6 +245,9 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
             <span className="flex flex-col">
               <span className="font-medium">{row.message ?? what(row)}</span>
               {row.message ? <span className="text-meta text-ink-muted">{what(row)}</span> : null}
+              {row.comment ? (
+                <span className="text-meta text-ink-muted">“{row.comment}”</span>
+              ) : null}
             </span>
           ),
         },
@@ -216,24 +275,42 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         {
           header: "",
           align: "end",
-          cell: (row) =>
-            row.status === "awaiting_approval" ? (
-              <span className="inline-flex flex-wrap justify-end gap-1">
-                <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
-                  Approve
-                </Button>
-                <Button size="small" onClick={() => decide(row, "decline")}>
-                  Decline
-                </Button>
-                <Button size="small" onClick={() => decide(row, "withdraw")}>
-                  Withdraw
-                </Button>
-              </span>
-            ) : row.status === "applied" ? (
+          cell: (row) => {
+            if (row.status === "awaiting_approval") {
+              if (!mayChange)
+                return (
+                  <span className="text-meta text-ink-muted">
+                    You may read this, not answer it.
+                  </span>
+                );
+              if (askedByMe(row))
+                return (
+                  <span className="inline-flex flex-col items-end gap-1">
+                    <span className="text-meta text-ink-muted">
+                      You asked for this. Someone else approves it.
+                    </span>
+                    <Button size="small" onClick={() => decide(row, "withdraw")}>
+                      Withdraw
+                    </Button>
+                  </span>
+                );
+              return (
+                <span className="inline-flex flex-wrap justify-end gap-1">
+                  <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
+                    Approve
+                  </Button>
+                  <Button size="small" onClick={() => decide(row, "decline")}>
+                    Decline
+                  </Button>
+                </span>
+              );
+            }
+            return row.status === "applied" && mayChange ? (
               <Button size="small" onClick={() => back(row)}>
                 Go back to this
               </Button>
-            ) : null,
+            ) : null;
+          },
         },
       ]}
       empty={{

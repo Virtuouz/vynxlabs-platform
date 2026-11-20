@@ -609,7 +609,12 @@ function WorkspaceDetail({
       ) : tab === "git" ? (
         <GitSync root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "scripts" && rest ? (
-        <ScriptPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
+        <ScriptPage
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          path={rest}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "scripts" ? (
         <Scripts
           root={root}

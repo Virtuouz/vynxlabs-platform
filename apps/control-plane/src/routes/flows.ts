@@ -19,6 +19,7 @@ import {
   approverTitles,
   describeApprovers,
   isApprover,
+  mayDecide,
 } from "../kernel/flows/approvers.js";
 import { expressionContext } from "../kernel/flows/context.js";
 import {
@@ -1451,14 +1452,10 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         if (!query.mine) return { items: await Promise.all(rows.map(toApproval)) };
         const at = { tenantId: params.t, workspaceId: params.w };
-        if (!(await ctx.allowed("approval:write", at))) return { items: [] };
-        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
         const items = [];
         for (const row of rows) {
           // A step that names its approvers is shown only to them.
-          const named = approversOf(row.detail);
-          if (named && !(await isApprover(db, at, memberId, named))) continue;
-          items.push(await toApproval(row));
+          if (await mayDecide(db, ctx, at, row.detail)) items.push(await toApproval(row));
         }
         return { items };
       },

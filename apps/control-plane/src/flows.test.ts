@@ -1030,6 +1030,17 @@ describe("waiting", () => {
       }),
     ]);
     expect((await alice.get(`/tenants/${tenant}/approvals`)).body.items).toHaveLength(1);
+    // The summary counts what waits, and apart from it what the caller may decide: the
+    // same ones `?mine=true` lists, so the overview's count opens a queue that matches.
+    for (const [who, mine] of [
+      [alice, 1],
+      [bob, 0],
+    ] as const) {
+      const summary = (await who.get(`${ws()}/summary`)).body;
+      expect(summary.approvalsWaiting).toBe(1);
+      expect(summary.approvalsWaitingMine).toBe(mine);
+      expect((await who.get(`${ws()}/approvals?mine=true`)).body.items).toHaveLength(mine);
+    }
     // A developer started it, sees it, but cannot approve it.
     expect((await bob.get(`${ws()}/approvals`)).status).toBe(200);
     expect((await bob.get(`/tenants/${tenant}/approvals`)).status).toBe(403);

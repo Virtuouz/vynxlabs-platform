@@ -14,32 +14,21 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
-import { ago, duration, hm } from "../kit/format.ts";
+import { duration, hm } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
+import { triggerKey } from "../kit/objects.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { Link, navigate } from "../router.tsx";
 import type { WorkspaceCounts } from "../Shell.tsx";
+import { type Trigger, TriggerState } from "./Operate.tsx";
 
 interface Workspace {
   id: string;
   name: string;
   type: "production" | "dev";
   triggersPaused: boolean;
-}
-
-interface Trigger {
-  path: string;
-  type: string;
-  script?: string;
-  target?: string;
-  enabled: boolean;
-  cron?: string | null;
-  timezone?: string | null;
-  url?: string | null;
-  nextFireAt?: string | null;
-  lastFiredAt?: string | null;
 }
 
 const TRIGGER_ICON: Record<string, typeof Timer> = {
@@ -324,18 +313,43 @@ export function Overview({
         ),
       });
     const approvals = counts.approvalsWaiting ?? 0;
-    if (approvals > 0)
+    // An older server does not say which are the viewer's: then none is claimed.
+    const mine = counts.approvalsWaitingMine ?? 0;
+    const others = Math.max(0, approvals - mine);
+    const runs = (n: number) => `${n} run${n === 1 ? " is" : "s are"}`;
+    if (mine > 0)
       attention.push({
         key: "approvals",
         node: (
           <NextStep
             tone="attention"
             icon={<CirclePause aria-hidden="true" size={16} />}
-            title={`${approvals} run${approvals === 1 ? " is" : "s are"} waiting for a person`}
-            detail="An approval step pauses a flow until someone decides."
+            title={`${runs(mine)} waiting for you`}
+            detail={
+              others > 0
+                ? `${others} more wait${others === 1 ? "s" : ""} for someone else. An approval step pauses a flow until someone decides.`
+                : "An approval step pauses a flow until someone decides."
+            }
             action={
               <Button size="small" onClick={() => navigate(`${link}/approvals`)}>
                 Decide
+              </Button>
+            }
+          />
+        ),
+      });
+    else if (others > 0)
+      attention.push({
+        key: "approvals",
+        node: (
+          <NextStep
+            tone="attention"
+            icon={<CirclePause aria-hidden="true" size={16} />}
+            title={`${runs(others)} waiting for someone else to decide`}
+            detail="You cannot decide these, but you can see who can and what each waits on."
+            action={
+              <Button size="small" onClick={() => navigate(`${link}/approvals?show=others`)}>
+                See who
               </Button>
             }
           />
@@ -560,33 +574,32 @@ export function Overview({
               text="A schedule, a webhook or an event in a flow or script starts work here once it is deployed."
             />
           ) : (
-            <Panel as="div" className="divide-y divide-line">
+            <Panel as="div" className="divide-y divide-line overflow-hidden">
               {triggers.data.items.slice(0, 8).map((trigger) => {
                 const Icon = TRIGGER_ICON[trigger.type] ?? Radio;
                 return (
-                  <div key={trigger.path} className="flex items-start gap-3 px-4 py-3">
+                  <Link
+                    key={triggerKey(trigger)}
+                    to={`${link}/triggers?trigger=${encodeURIComponent(triggerKey(trigger))}`}
+                    className="flex items-start gap-3 px-4 py-3 text-ink no-underline hover:bg-surface-raised"
+                  >
                     <Icon aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-ink-muted" />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate font-mono text-code">{trigger.path}</span>
+                      <span className="truncate font-mono text-code">
+                        {trigger.path}
+                        {trigger.node ? (
+                          <span className="text-ink-subtle">#{trigger.node}</span>
+                        ) : null}
+                      </span>
                       <span className="truncate text-meta text-ink-subtle">
                         {trigger.type}
-                        {(trigger.script ?? trigger.target)
-                          ? ` → ${trigger.script ?? trigger.target}`
-                          : ""}
+                        {trigger.script ? ` → ${trigger.script}` : ""}
                       </span>
                     </div>
                     <span className="shrink-0 text-meta">
-                      {!trigger.enabled || workspace.triggersPaused ? (
-                        <StatePill state="paused" />
-                      ) : trigger.nextFireAt ? (
-                        <span className="text-ink-muted">Next {ago(trigger.nextFireAt)}</span>
-                      ) : trigger.lastFiredAt ? (
-                        <span className="text-ink-muted">Last {ago(trigger.lastFiredAt)}</span>
-                      ) : (
-                        <span className="text-ink-subtle">Waiting</span>
-                      )}
+                      <TriggerState row={trigger} workspacePaused={workspace.triggersPaused} />
                     </span>
-                  </div>
+                  </Link>
                 );
               })}
             </Panel>

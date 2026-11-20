@@ -92,6 +92,21 @@ const emptyBase = (): UnsignedBundle => ({
   code: "",
 });
 
+/**
+ * Takes the workspace row's key-share lock before any draft row is touched. A draft's history
+ * row takes it anyway, through its foreign key; taken first, a draft write waits behind a deploy
+ * that holds the workspace, instead of holding a draft row the deploy then waits for (a deadlock
+ * found by the phase 22 walk: a discard while a deploy settled its drafts).
+ */
+async function holdWorkspace(trx: Trx, workspaceId: string) {
+  await trx
+    .selectFrom("workspace")
+    .select("id")
+    .where("id", "=", workspaceId)
+    .forKeyShare()
+    .execute();
+}
+
 export async function saveDraft(
   kernel: Kernel,
   trx: Trx,
@@ -100,6 +115,7 @@ export async function saveDraft(
   principal: Principal,
   input: DraftInput,
 ) {
+  await holdWorkspace(trx, workspace.id);
   await devWorkspace(trx, workspace);
   if (input.path.startsWith(CORE_PREFIX)) {
     throw badRequest("The manifest is not valid.", [
@@ -312,6 +328,7 @@ async function keepInHistory(trx: Trx, draft: DraftRow, reason: "replaced" | "se
 
 /** Sets a draft aside: it stops being a draft, and is kept whole in its history. */
 export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: string) {
+  await holdWorkspace(trx, workspace.id);
   const removed = await trx
     .deleteFrom("resource_draft")
     .where("workspace_id", "=", workspace.id)

@@ -319,6 +319,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       paths: string[],
     ): Promise<boolean> {
       const [live, draft] = await Promise.all([
+        // By exact path, not `resolveResource`: a deploy is of the drafts at these paths, and the
+        // table that would be replaced is the one there now, not one a rename left behind.
         db
           .selectFrom("resource")
           .select(["kind", "body"])

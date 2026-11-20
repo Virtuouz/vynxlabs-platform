@@ -26,7 +26,7 @@ const ALLOWED: Record<string, number> = {
   "kernel/resolve.ts": 1,
   "kernel/resources.ts": 4,
   "routes/apps.ts": 2,
-  "routes/authoring.ts": 1,
+  "routes/authoring.ts": 2,
   "routes/data.ts": 1,
   "routes/execution.ts": 2,
   "routes/flows.ts": 4,

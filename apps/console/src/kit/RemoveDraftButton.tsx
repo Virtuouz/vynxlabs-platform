@@ -6,7 +6,10 @@ import { ask, notify } from "../ask.tsx";
 /** What was done: a draft thrown away, or a draft that removes the resource saved. */
 export type RemoveResult = "discarded" | "removed" | "kept";
 
-/** Where the resource stands: a changed draft, a deployed one, one from the repository, or one already drafted for removal. */
+/**
+ * Where the resource stands: a changed draft, a deployed one, one from the repository (which is
+ * removed there, so no button is drawn), or one already drafted for removal.
+ */
 export type RemoveState = "draft" | "deployed" | "repository" | "removed";
 
 /** The words a person reads: what it does, said before it is done. */
@@ -63,6 +66,15 @@ export function RemoveDraftButton({
 }) {
   const [busy, setBusy] = useState(false);
   const words = removeWords(state, noun, then);
+  // The repository's own are removed there: the server refuses a draft that removes one,
+  // so no button is offered that would only be refused (POLISH-010).
+  if (state === "repository") {
+    return (
+      <span className="text-meta text-ink-muted">
+        Managed in the repository: the {noun} is removed there.
+      </span>
+    );
+  }
   const draft = state === "draft" || state === "removed";
   return (
     <Button

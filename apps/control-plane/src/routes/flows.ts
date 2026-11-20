@@ -377,6 +377,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       description: "Whether a draft changes or removes it, waiting to be deployed.",
                     },
                   ),
+                  ownership: Type.String({
+                    description:
+                      "`code` for the repository, `ui` for the console. A flow the repository " +
+                      "manages is changed and removed there.",
+                  }),
                   starts: Type.Array(
                     Type.Object({
                       type: Type.String(),
@@ -401,7 +406,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params }) => {
         const flows = await db
           .selectFrom("resource")
-          .select(["path", "body"])
+          .select(["path", "body", "ownership"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "flow")
           .orderBy("path")
@@ -451,7 +456,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           group by flow_path
         `.execute(db);
         const countOf = new Map(counts.rows.map((row) => [row.flow_path, row]));
-        const describe = (path: string, body: FlowBody, version: number | null) => {
+        const describe = (
+          path: string,
+          body: FlowBody,
+          version: number | null,
+          ownership: string,
+        ) => {
           const last = byFlow.get(path);
           const count = countOf.get(path);
           const draft = drafts.find((one) => one.path === path);
@@ -478,6 +488,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               : null,
             version,
             draft: draft ? (draft.deleted ? ("removed" as const) : ("changed" as const)) : null,
+            ownership,
             starts: Object.values(body.nodes ?? {}).flatMap((node) => {
               if (node.type !== "trigger") return [];
               const trigger = node.trigger as { type: string; event?: string; cron?: string };
@@ -491,12 +502,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           };
         };
         const deployed = flows.map((flow) =>
-          describe(flow.path, flow.body as unknown as FlowBody, versions.get(flow.path) ?? null),
+          describe(
+            flow.path,
+            flow.body as unknown as FlowBody,
+            versions.get(flow.path) ?? null,
+            flow.ownership,
+          ),
         );
         // A flow drawn in the console and not yet deployed is listed too, as a draft.
         const onlyDrafts = drafts
           .filter((draft) => !draft.deleted && !versions.has(draft.path))
-          .map((draft) => describe(draft.path, draft.body as unknown as FlowBody, null));
+          .map((draft) => describe(draft.path, draft.body as unknown as FlowBody, null, "ui"));
         return {
           items: [...deployed, ...onlyDrafts].sort((a, b) => a.path.localeCompare(b.path)),
         };

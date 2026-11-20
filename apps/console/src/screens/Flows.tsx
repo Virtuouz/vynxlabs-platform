@@ -66,6 +66,8 @@ interface FlowRow {
   lastRun: { id: string; status: FlowStatus; state: RunState; createdAt: string } | null;
   version: number | null;
   draft: "changed" | "removed" | null;
+  /** `code` when the repository manages it, and it is changed and removed there. */
+  ownership?: string;
   starts: { type: string; detail: string | null }[];
   runs: { lastDay: number; failedLastDay: number; waiting: number };
 }
@@ -278,7 +280,9 @@ export function Flows({
                         ? "removed"
                         : open.draft === "changed"
                           ? "draft"
-                          : "deployed"
+                          : open.ownership === "code"
+                            ? "repository"
+                            : "deployed"
                     }
                     onDone={() => list.reload()}
                   />

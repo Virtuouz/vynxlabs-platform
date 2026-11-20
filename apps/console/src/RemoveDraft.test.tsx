@@ -68,6 +68,21 @@ describe("RemoveDraftButton", () => {
     ]);
   });
 
+  test("one from the repository is not offered for removal here: the server would refuse it", () => {
+    show(
+      <RemoveDraftButton
+        root={root}
+        kind="flow"
+        path="a/b"
+        noun="flow"
+        state="repository"
+        onDone={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("Managed in the repository: the flow is removed there.")).toBeTruthy();
+  });
+
   test("a draft is discarded, with what goes along with it", async () => {
     const done = vi.fn();
     show(
@@ -187,6 +202,34 @@ describe("where it is used", () => {
     await waitFor(() =>
       expect(sent("DELETE").map((call) => call.url)).toContain(`${api}/drafts/orders/old`),
     );
+  });
+
+  test("a flow the repository manages offers no Remove, and says where it is removed", async () => {
+    routes[`GET ${api}/flows`] = () => [
+      200,
+      {
+        items: [
+          {
+            path: "appointments/after-visit",
+            description: "",
+            nodeCount: 2,
+            triggers: [],
+            lastRun: null,
+            version: 1,
+            draft: null,
+            ownership: "code",
+            starts: [],
+            runs: { lastDay: 0, failedLastDay: 0, waiting: 0 },
+          },
+        ],
+      },
+    ];
+    history.replaceState(null, "", "/?item=appointments/after-visit");
+    show(<Flows root={root} link={link} editable />);
+    expect(
+      await screen.findByText(/Managed in the repository: the flow is removed there/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
   });
 
   test("the App Builder removes an app with the interface and the app that serves it", async () => {

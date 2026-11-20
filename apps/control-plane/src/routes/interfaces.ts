@@ -144,6 +144,11 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   deployed: Type.Boolean(),
                   draft: Type.Boolean({ description: "A change is saved and not yet deployed." }),
                   removing: Type.Boolean({ description: "The draft removes it." }),
+                  ownership: Type.String({
+                    description:
+                      "`code` for the repository, `ui` for the console. One the repository " +
+                      "manages is changed and removed there.",
+                  }),
                   app: Type.Union([Type.String(), Type.Null()], {
                     description: "The path of an app that serves it, deployed or in draft.",
                   }),
@@ -173,7 +178,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const [live, drafts] = await Promise.all([
           db
             .selectFrom("resource")
-            .select(["path", "kind", "body", "version"])
+            .select(["path", "kind", "body", "version", "ownership"])
             .where("workspace_id", "=", workspace.id)
             .where("kind", "in", ["interface", "app"])
             .execute(),
@@ -207,6 +212,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: boolean;
             draft: boolean;
             removing: boolean;
+            ownership: string;
             pages: number;
             version: number | null;
             tables: string[];
@@ -219,6 +225,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: true,
             draft: false,
             removing: false,
+            ownership: row.ownership,
             ...shapeOf(row.body),
             version: row.version,
             editedAt: null,
@@ -233,6 +240,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: known?.deployed ?? false,
             draft: true,
             removing: draft.deleted,
+            ownership: known?.ownership ?? "ui",
             ...(draft.deleted
               ? { pages: known?.pages ?? 0, tables: known?.tables ?? [] }
               : shapeOf(draft.body)),

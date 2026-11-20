@@ -287,7 +287,13 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 noun="query"
                 size="small"
                 state={
-                  current.draft === "removed" ? "removed" : current.draft ? "draft" : "deployed"
+                  current.draft === "removed"
+                    ? "removed"
+                    : current.draft
+                      ? "draft"
+                      : current.ownership === "code"
+                        ? "repository"
+                        : "deployed"
                 }
                 onDone={(did) => {
                   saved.reload();

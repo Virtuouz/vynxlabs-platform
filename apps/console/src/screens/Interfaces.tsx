@@ -134,7 +134,15 @@ export function Interfaces({
                       path={row.path}
                       noun="app"
                       size="small"
-                      state={row.removing ? "removed" : row.deployed ? "deployed" : "draft"}
+                      state={
+                        row.removing
+                          ? "removed"
+                          : row.ownership === "code"
+                            ? "repository"
+                            : row.deployed
+                              ? "deployed"
+                              : "draft"
+                      }
                       also={row.app ? [{ kind: "app", path: row.app }] : []}
                       then="The app's address stops serving it once that is deployed."
                       onDone={() => list.reload()}

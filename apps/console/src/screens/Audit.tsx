@@ -320,12 +320,25 @@ export function AuditTable({
       title={title}
       description={description}
       label="Audit entries"
+      // How the list is shown sits with what is done with it, beside the title: in the filters'
+      // row it took a row of its own once they filled it (P4-1).
       actions={
-        tenantLog ? (
-          <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
-            <Download aria-hidden="true" size={14} /> CSV
-          </Button>
-        ) : undefined
+        <span className="flex items-center gap-2">
+          <ColumnsMenu
+            columns={columns.slice(1).map((column) => ({
+              key: column.key ?? column.header,
+              label: column.header,
+            }))}
+            shown={url.cols.length > 0 ? url.cols : undefined}
+            onChange={(next) => setUrl({ cols: next ?? [] })}
+          />
+          {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
+          {tenantLog ? (
+            <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
+              <Download aria-hidden="true" size={14} /> CSV
+            </Button>
+          ) : null}
+        </span>
       }
       toolbar={
         <div className="flex flex-col gap-3">
@@ -419,17 +432,6 @@ export function AuditTable({
                 className={select}
               />
             </label>
-            <span className="ml-auto flex items-center gap-2 self-center">
-              <ColumnsMenu
-                columns={columns.slice(1).map((column) => ({
-                  key: column.key ?? column.header,
-                  label: column.header,
-                }))}
-                shown={url.cols.length > 0 ? url.cols : undefined}
-                onChange={(next) => setUrl({ cols: next ?? [] })}
-              />
-              {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
-            </span>
           </div>
         </div>
       }

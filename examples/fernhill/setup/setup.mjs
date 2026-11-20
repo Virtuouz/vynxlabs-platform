@@ -25,6 +25,7 @@ const PASSWORD = "fernhill-demo-2026";
 const SLUG = "fernhill";
 const PAYFERN_SECRET = "whsec_fernhill_demo";
 const LOCUMS = 60;
+const SUPPLIERS = 220;
 
 const step = (text) => console.log(`\n▸ ${text}`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -434,6 +435,80 @@ if (hook && unpaid.length >= 3) {
 
 const chased = await flowRun(P, "billing/chase-unpaid");
 console.log(`   chasing unpaid invoices: ${chased.status}`);
+
+// ----- A long list to choose from, and someone who only writes documentation -----
+
+step(`The sandbox's ${SUPPLIERS} suppliers, and a table that refers to them`);
+// More than the picker's first 50 and the grid's first 200, so a reference is found by typing.
+// The tables are the console's own (`ui`): a CLI deploy of this repository to the sandbox
+// removes them, as it removes anything the repository does not name.
+await admin.put(`${D}/resources/suppliers`, {
+  kind: "table",
+  schemaVersion: 1,
+  ownership: "ui",
+  body: {
+    description: "Who Fernhill buys from.",
+    columns: { name: { type: "text", required: true }, city: { type: "text" } },
+    display: "name",
+  },
+});
+await admin.put(`${D}/resources/supplier_contacts`, {
+  kind: "table",
+  schemaVersion: 1,
+  ownership: "ui",
+  body: {
+    description: "A person to call at a supplier.",
+    columns: {
+      contact: { type: "text", required: true },
+      supplier: { type: "reference", references: "suppliers" },
+    },
+  },
+});
+const CITIES = ["Portland", "Beaverton", "Salem", "Eugene", "Vancouver", "Bend"];
+const SUPPLIER_WORDS = ["Alder", "Birch", "Cedar", "Dunmore", "Elm", "Fir", "Gresham", "Hollis"];
+const supplierNames = Array.from(
+  { length: SUPPLIERS },
+  (_, n) =>
+    `${SUPPLIER_WORDS[n % SUPPLIER_WORDS.length]} ${String(n + 1).padStart(3, "0")} Veterinary Supply`,
+);
+for (let from = 0; from < SUPPLIERS; from += 100) {
+  await admin.post(`${D}/rows/suppliers`, {
+    rows: supplierNames
+      .slice(from, from + 100)
+      .map((name, i) => ({ name, city: CITIES[(from + i) % CITIES.length] })),
+  });
+}
+const lastSupplier = (
+  await admin.get(
+    `${D}/rows/suppliers?filter=${encodeURIComponent(
+      JSON.stringify({ column: "name", value: supplierNames[SUPPLIERS - 1] }),
+    )}&limit=1`,
+  )
+).items[0];
+await admin.post(`${D}/rows/supplier_contacts`, {
+  contact: "Pat Lindqvist",
+  supplier: lastSupplier.id,
+});
+
+// A doc writer: writes and deploys documentation in the sandbox, and nothing else there.
+step("Adding Sam Reyes, who writes documentation in the sandbox");
+const sam = await admin.post(`${T}/members`, {
+  email: "sam.reyes@fernhill.example",
+  name: "Sam Reyes",
+  password: PASSWORD,
+});
+await admin.post(`${T}/bindings`, {
+  principalType: "member",
+  principalId: sam.id,
+  roleId: builtin.doc_writer,
+  workspaceId: dev.id,
+});
+PEOPLE.push({
+  email: "sam.reyes@fernhill.example",
+  name: "Sam Reyes",
+  role: "doc_writer",
+  about: "Writes the clinics' handbook",
+});
 
 step("A portal hostname for everything, and the tenant's portal settings");
 const domain = await admin.post(`${T}/domains`, {

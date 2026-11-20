@@ -42,3 +42,5 @@ Either way a change is a :term[draft]{id=draft} until it is deployed. See [the p
 A site has a **publishing switch**. Turning it off stops serving the site and keeps its pages and its app; turning it on serves it again at the next deploy. Removing the site's app also stops it, and says so first. Page feedback is turned off from the site's menu, and asks first. A page drafted for removal offers **Keep this page**, and a move or a publish can be undone from the message that says it happened.
 
 Deploying a site that asks readers for feedback also deploys the table that holds the answers, and the count says so.
+
+A member with the **doc writer** role may deploy a site's feedback table, and only that table, together with the site that names it, so a developer need not have deployed it first. A table of any other kind, or one whose columns are not the feedback columns, is still refused.

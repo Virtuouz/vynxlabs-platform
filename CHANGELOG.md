@@ -2,6 +2,29 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 23, what the owner chose for phase 22's open items
+
+Eight decisions, built. Nothing needs migrating by hand, and a new migration only rewords the `doc_writer` role's description.
+
+### For operators
+
+- **A table's rows scroll in one place.** The table screen fills the window, with the header pinned, at any width. The Rows and Definition tabs both do.
+- **A reference is found by typing.** The picker asks the server for rows whose display column contains what was typed, so a row past the first 200 is found. It shows 50 and says "Type to find more". A table with no display column is searched by `name`, `title` or its first text column.
+- **A file in a row is replaced and removed from the row inspector,** after asking. The old file stays in the row's history (`row_file_history`) until the tenant's audit retention (400 days by default), then goes.
+- **Release is one list of deploys,** with "Activate this version" on each, through the confirm that is a danger in production. Bundles never run in the workspace are under it, "Not yet run here". The "Bundles and rollback" table is gone.
+- **Going back to an access release lists what it removes** ("These are removed") before it is done, and is a danger confirm when anything is.
+- **A doc writer may deploy a site's feedback table,** and only that table, in the same deploy as the site that names it. Any other table is refused, as before.
+- **The tenant overview counts what you may decide.** "Waiting for you" and "for someone else" are counted apart, and the tenant's queue lists the same; **Waiting for others** is read-only.
+- **A list's filters are on a row of their own** under the title, in the shared header: the audit log, runs, events and every other list.
+- **Queries are renamed** ("Name and path"), and an App Builder app's title is changed ("Rename"). An app's address is unchanged: changing it is for a later phase.
+
+### For tenant developers
+
+- `GET …/summary` of a tenant answers `approvalsWaitingMine`, as a workspace's does, counting the approvals surfaced to the tenant that the caller may decide.
+- A route answers what going back to an access release would remove, before the rollback is sent.
+- A caller with `doc:write` and without `deployment:write` may deploy a `table` draft that a `docs` site in the same deploy names as its feedback table, when its columns are exactly the feedback columns.
+- Rows accept a filter `{"column": …, "op": "contains", "value": …}`, as before; the console now sends one for every typed search of a reference.
+
 ## Unreleased: phase 22, what the polish audit found
 
 Corrections made once where they are shared, instead of again on each screen. Nothing needs migrating.

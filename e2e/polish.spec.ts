@@ -383,10 +383,14 @@ test("no text draws over what is beside it, at any width", async () => {
 
 test("no bordered box sits inside another", async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  // Every screen is measured before anything is said, so one finding does not hide the next.
+  const found: Record<string, string[]> = {};
   for (const [name, path] of screens()) {
     await open(path as string);
-    expect(await nested(page), name as string).toEqual([]);
+    const boxes = await nested(page);
+    if (boxes.length > 0) found[name as string] = boxes;
   }
+  expect(found).toEqual({});
 });
 
 /** P4-6: a time is one line, wherever it stands, from 1280 px up. */

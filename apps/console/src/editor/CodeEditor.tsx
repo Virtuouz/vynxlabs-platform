@@ -512,7 +512,9 @@ export function CodeEditor({
   });
 
   return (
+    // A recessed well (07 §7.5), as code is.
     <div
+      data-well
       className="overflow-hidden rounded-control border border-line bg-sunken"
       style={{ height }}
     >

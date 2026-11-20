@@ -46,7 +46,7 @@ import {
   useState,
 } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, failureText, notify } from "../ask.tsx";
+import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
 import { type Clip, type ClipStep, copySteps, pasteSteps, readClip } from "../flowClipboard.ts";
 import { renameInNode } from "../flowRename.ts";
@@ -528,6 +528,7 @@ export function FlowEditor({
   const [editedSinceTest, setEditedSinceTest] = useState(false);
   const live = useFlowRunLive(root, testRunId);
   const [problem, setProblem] = useState<string>();
+  const [pathTaken, setPathTaken] = useState<string>();
   // The path this editor saved a new flow as. Opening it again would reload what is on screen.
   const savedAs = useRef<string>(undefined);
   // Autosaves that failed in a row, and whether they have been given up until asked again.
@@ -1036,6 +1037,7 @@ export function FlowEditor({
 
   const save = async (): Promise<boolean> => {
     setProblem(undefined);
+    setPathTaken(undefined);
     if (!PATH.test(path)) {
       setProblem(
         "Give the flow a path: lowercase letters, digits, hyphens and underscores, in folders. For example orders/handle.",
@@ -1059,7 +1061,7 @@ export function FlowEditor({
         kind: "flow",
         schemaVersion: 1,
         body,
-        ...(revision ? { revision } : {}),
+        ...(revision ? { revision } : opened ? {} : { create: true }),
       });
       setRevision(saved.revision);
       setState("draft");
@@ -1072,7 +1074,9 @@ export function FlowEditor({
       }
       return true;
     } catch (error) {
-      setProblem(failureText(error));
+      const refused = takenText(error);
+      if (refused) setPathTaken(refused);
+      else setProblem(failureText(error));
       return false;
     } finally {
       setBusy(false);
@@ -1904,7 +1908,11 @@ export function FlowEditor({
                     label="Path"
                     value={path}
                     placeholder="orders/handle"
-                    onChange={setPath}
+                    {...(pathTaken ? { error: pathTaken } : {})}
+                    onChange={(value) => {
+                      setPathTaken(undefined);
+                      setPath(value);
+                    }}
                   />
                 </div>
                 <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">

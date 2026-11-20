@@ -11,7 +11,7 @@ import {
 } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, failureText, notify } from "../ask.tsx";
+import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { FieldAbout } from "../help/FieldAbout.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Loading } from "../kit/LoadState.tsx";
@@ -159,6 +159,7 @@ export function ResourceEditor({
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
   const [dirty, setDirty] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const [pathTaken, setPathTaken] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const resources = useLoad<{ items: { path: string; kind: string; body: { mode?: string } }[] }>(
@@ -264,6 +265,7 @@ export function ResourceEditor({
 
   const save = async (): Promise<boolean> => {
     setProblem(undefined);
+    setPathTaken(undefined);
     if (!PATH.test(path)) {
       setProblem(
         `Give the ${about.noun} a path: lowercase letters, digits, hyphens and underscores, in folders. For example ${about.example}.`,
@@ -286,7 +288,7 @@ export function ResourceEditor({
         kind,
         schemaVersion: 1,
         body: written,
-        ...(revision ? { revision } : {}),
+        ...(revision ? { revision } : opened ? {} : { create: true }),
       });
       setBody(saved.body);
       setRevision(saved.revision);
@@ -297,7 +299,9 @@ export function ResourceEditor({
       if (!opened) navigate(`${link}/resources/edit/${kind}/${path}`, { replace: true });
       return true;
     } catch (error) {
-      setProblem(failureText(error));
+      const refused = takenText(error);
+      if (refused) setPathTaken(refused);
+      else setProblem(failureText(error));
       return false;
     } finally {
       setBusy(false);
@@ -441,7 +445,11 @@ export function ResourceEditor({
                 value={path}
                 placeholder={about.example}
                 hint="Its name in this workspace. It can be renamed later, and stays the same resource."
-                onChange={setPath}
+                {...(pathTaken ? { error: pathTaken } : {})}
+                onChange={(value) => {
+                  setPathTaken(undefined);
+                  setPath(value);
+                }}
               />
             </div>
           )

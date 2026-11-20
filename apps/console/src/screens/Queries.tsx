@@ -2,7 +2,7 @@ import { Button, type GridColumn, Notice, TextField } from "@volvel/ui";
 import { Play, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { count } from "../kit/format.ts";
 import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
@@ -155,19 +155,12 @@ export function Queries({ root, link }: { root: string; link: string }) {
   };
 
   const save = async () => {
-    const path =
-      current?.path ??
-      (await ask.prompt({
-        title: "Save this query",
-        text: "It is kept by name as a resource of the workspace: a draft until it is deployed.",
-        label: "Name, such as reports/fees",
-        action: "Save",
-      }));
-    if (!path) return;
-    try {
-      await api.put(`${root}/drafts/${path}`, {
+    const put = (path: string) =>
+      api.put(`${root}/drafts/${path}`, {
         kind: "query",
         schemaVersion: 1,
+        // A query not yet named is a create: it never replaces what is at the path.
+        ...(current ? {} : { create: true }),
         body: {
           ...(current?.description ? { description: current.description } : {}),
           sql: text,
@@ -183,14 +176,39 @@ export function Queries({ root, link }: { root: string; link: string }) {
             : {}),
         },
       });
+    const done = (path: string) => {
       notify.success(`${path} is saved as a draft. It can be run by name once it is deployed.`, {
         link: { label: "Review and deploy", href: `${link}/release` },
       });
       saved.reload();
       setOpen(path);
-    } catch (error) {
-      notify.error(error);
+    };
+    if (current) {
+      try {
+        await put(current.path);
+        done(current.path);
+      } catch (error) {
+        notify.error(error);
+      }
+      return;
     }
+    let made = "";
+    const path = await ask.prompt({
+      title: "Save this query",
+      text: "It is kept by name as a resource of the workspace: a draft until it is deployed.",
+      label: "Name, such as reports/fees",
+      action: "Save",
+      submit: async (value) => {
+        try {
+          await put(value.trim());
+          made = value.trim();
+          return undefined;
+        } catch (error) {
+          return takenText(error) ?? failureText(error);
+        }
+      },
+    });
+    if (path && made) done(made);
   };
 
   if (schema.error) return <ErrorState error={schema.error} onRetry={schema.reload} />;

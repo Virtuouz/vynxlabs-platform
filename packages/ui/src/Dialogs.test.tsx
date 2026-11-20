@@ -100,3 +100,24 @@ test("a dialog has a close button that can be seen, and closing it is a no", asy
   await press("Close");
   expect(await asked.answer).toBe(false);
 });
+
+test("a prompt with a submit stays open on a refusal, shows it on the field, and keeps what was typed", async () => {
+  mount();
+  let tries = 0;
+  const asked = await asking((d) =>
+    d.prompt({
+      title: "Save it",
+      label: "Name",
+      action: "Save",
+      submit: async () => (++tries === 1 ? "Something already exists at this path." : undefined),
+    }),
+  );
+  fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "reports/fees" } });
+  await press("Save");
+  expect(await screen.findByText("Something already exists at this path.")).toBeTruthy();
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("reports/fees");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "reports/fees2" } });
+  expect(screen.queryByText("Something already exists at this path.")).toBeNull();
+  await press("Save");
+  expect(await asked.answer).toBe("reports/fees2");
+});

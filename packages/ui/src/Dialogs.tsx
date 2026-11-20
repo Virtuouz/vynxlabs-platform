@@ -30,6 +30,11 @@ export interface PromptOptions extends ConfirmOptions {
   /** Refuses an empty answer. On by default. */
   required?: boolean;
   multiline?: boolean;
+  /**
+   * Does what the answer is for, before the dialog closes. It resolves to a sentence to show
+   * on the field, which keeps what was typed, or to nothing when it went through.
+   */
+  submit?: (value: string) => Promise<string | undefined>;
 }
 
 export interface TypeToConfirmOptions extends ConfirmOptions {
@@ -63,6 +68,8 @@ const DialogsContext = createContext<Dialogs | undefined>(undefined);
 export function DialogsProvider({ children }: { children: ReactNode }) {
   const [asked, setAsked] = useState<Asked>();
   const [text, setText] = useState("");
+  const [fieldError, setFieldError] = useState<string>();
+  const [working, setWorking] = useState(false);
   const current = useRef<Asked | undefined>(undefined);
 
   const ask = useCallback((next: Asked) => {
@@ -71,6 +78,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
     if (before) before.kind === "prompt" ? before.answer(null) : before.answer(false);
     current.current = next;
     setText(next.kind === "prompt" ? (next.options.initial ?? "") : "");
+    setFieldError(undefined);
     setAsked(next);
   }, []);
 
@@ -110,7 +118,14 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
             className="flex flex-col gap-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (ready) close(true);
+              if (!ready || working) return;
+              const submit = asked.kind === "prompt" ? asked.options.submit : undefined;
+              if (!submit) return close(true);
+              setWorking(true);
+              setFieldError(undefined);
+              submit(text)
+                .then((refused) => (refused ? setFieldError(refused) : close(true)))
+                .finally(() => setWorking(false));
             }}
           >
             {options?.text ? <div className="text-ink-muted">{options.text}</div> : null}
@@ -131,9 +146,13 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                   label={asked.options.label}
                   value={text}
                   required={required}
+                  {...(fieldError ? { error: fieldError } : {})}
                   {...(asked.options.hint ? { hint: asked.options.hint } : {})}
                   {...(asked.options.placeholder ? { placeholder: asked.options.placeholder } : {})}
-                  onChange={setText}
+                  onChange={(value) => {
+                    setFieldError(undefined);
+                    setText(value);
+                  }}
                 />
               )
             ) : null}
@@ -152,6 +171,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                 type="submit"
                 variant={options?.danger ? "danger-solid" : "primary"}
                 disabled={!ready}
+                loading={working}
               >
                 {options?.action ?? "Continue"}
               </Button>

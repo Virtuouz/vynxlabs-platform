@@ -85,6 +85,16 @@ export function failureText(error: unknown): string {
   return [failure.message, ...fields, id].filter(Boolean).join(" ");
 }
 
+/**
+ * For a create the server refused because the path is held: the sentence for the path
+ * field, which keeps what was typed. Nothing for any other failure.
+ */
+export function takenText(error: unknown): string | undefined {
+  return (error as Partial<ApiError> | undefined)?.code === "path_taken"
+    ? "Something already exists at this path. Choose another, or open that one."
+    : undefined;
+}
+
 /** Says what just happened, in a corner of the page. */
 /**
  * For a failure the API gave a code for: the way to what the code means and

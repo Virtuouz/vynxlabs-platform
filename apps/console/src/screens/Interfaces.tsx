@@ -1,7 +1,7 @@
 import { Button, Dialog, EmptyState, Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText } from "../ask.tsx";
+import { failureText, takenText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
@@ -26,6 +26,7 @@ export function Interfaces({
   const [title, setTitle] = useState("");
   const [address, setAddress] = useState("");
   const [error, setError] = useState<string>();
+  const [taken, setTaken] = useState<string>();
   const [busy, setBusy] = useState(false);
   const where = address || slug(title);
 
@@ -135,6 +136,8 @@ export function Interfaces({
             event.preventDefault();
             setBusy(true);
             setError(undefined);
+            setTaken(undefined);
+            let screenMade = false;
             const path = `screens/${where}`;
             try {
               await api.put(`${root}/drafts/${path}`, {
@@ -144,18 +147,25 @@ export function Interfaces({
                   title: title.trim(),
                   pages: [{ id: "main", title: title.trim(), widgets: [] }],
                 },
+                create: true,
               });
+              screenMade = true;
               await api.put(`${root}/drafts/${where}`, {
                 kind: "app",
                 schemaVersion: 1,
                 body: { title: title.trim(), interface: path },
+                create: true,
               });
               setCreating(false);
               setTitle("");
               setAddress("");
               navigate(`${link}/screens/${path}`);
             } catch (caught) {
-              setError(failureText(caught));
+              // The app's own address was taken after its screen was made: the screen is not left behind.
+              if (screenMade) await api.delete(`${root}/drafts/${path}`).catch(() => {});
+              const refused = takenText(caught);
+              if (refused) setTaken(refused);
+              else setError(failureText(caught));
             } finally {
               setBusy(false);
             }
@@ -167,7 +177,10 @@ export function Interfaces({
             value={title}
             required
             maxLength={200}
-            onChange={setTitle}
+            onChange={(value) => {
+              setTaken(undefined);
+              setTitle(value);
+            }}
           />
           <TextField
             label="Address"
@@ -175,7 +188,11 @@ export function Interfaces({
             value={where}
             required
             hint="The app's address ends with this. Lower-case letters, digits and dashes."
-            onChange={(value) => setAddress(slug(value))}
+            {...(taken ? { error: taken } : {})}
+            onChange={(value) => {
+              setTaken(undefined);
+              setAddress(slug(value));
+            }}
           />
           {error ? <Notice tone="danger">{error}</Notice> : null}
           <div className="mt-1 flex justify-end gap-2">

@@ -51,6 +51,8 @@ export interface DraftInput {
   moveTo?: string | undefined;
   /** What people read. Null takes it away. Left as it is when not given. */
   title?: string | null | undefined;
+  /** A create: refused, as `path_taken`, when the path holds a draft or a deployed resource. */
+  create?: boolean | undefined;
 }
 
 /** Drafts are for dev workspaces: production changes by deploy and promotion only. */
@@ -120,6 +122,15 @@ export async function saveDraft(
     .where("path", "=", input.path)
     .forUpdate()
     .executeTakeFirst();
+  // A create never overwrites: the path must hold neither a draft nor a deployed resource.
+  if (input.create && (existing || resource)) {
+    const kind = existing?.kind ?? resource?.kind ?? input.kind;
+    throw new HttpError(
+      409,
+      "path_taken",
+      `${input.path} is the path of ${/^[aeiou]/.test(kind) ? "an" : "a"} ${kind.replaceAll("_", " ")}. Choose another path, or open that one.`,
+    );
+  }
   // The draft is of the resource at its path, or of a new one that takes the path as its key.
   const key = existing?.key ?? resource?.key ?? input.path;
   // A rename: the draft moves to the path the resource is to have. Nothing else may be there.

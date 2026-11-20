@@ -143,7 +143,7 @@ const ROWS_URL = {
   row: { type: "string", push: true },
 } as const;
 
-function RowsBrowser(props: RowsBrowserProps) {
+function RowsBrowser(props: RowsBrowserProps & { fill?: boolean }) {
   const { columns, keyColumn, rowPath } = props;
   const [url, setUrl] = useUrlState(ROWS_URL);
   const sort: GridSort | undefined = url.sort
@@ -286,9 +286,10 @@ function RowsBrowser(props: RowsBrowserProps) {
     }
   };
 
+  const fill = props.fill === true;
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className={`flex flex-col gap-3 ${fill ? "min-h-0 flex-1" : ""}`}>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <p className="m-0 text-body-sm text-ink-muted">
           {props.readOnlyNote ??
             "Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
@@ -356,10 +357,11 @@ function RowsBrowser(props: RowsBrowserProps) {
           </Button>
         </div>
       ) : null}
-      <div className="flex min-h-0 gap-4">
-        <div className="min-w-0 flex-1">
+      <div className={`flex min-h-0 gap-4 ${fill ? "flex-1" : ""}`}>
+        <div className={`min-w-0 flex-1 ${fill ? "flex min-h-0 flex-col" : ""}`}>
           {/* grid-allowed: a table's own rows, edited in place and filtered by the server */}
           <Grid<DataRow>
+            fill={fill}
             navigation="grid"
             lockFirst={lockFirst}
             density={compact ? "compact" : "standard"}
@@ -471,7 +473,7 @@ function RowsBrowser(props: RowsBrowserProps) {
           ) : null}
         </Inspector>
       </div>
-      <div className="flex items-center justify-between gap-3 text-body-sm text-ink-muted">
+      <div className="flex shrink-0 items-center justify-between gap-3 text-body-sm text-ink-muted">
         <span>
           {rows.length === 0
             ? ""
@@ -1103,8 +1105,21 @@ const SYSTEM_COLUMNS: RowColumn[] = [
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
   const table = useLoad<TableDetail>(`${root}/tables/${name}`);
   const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
-  if (table.error) return <ErrorState error={table.error} onRetry={table.reload} />;
-  if (!table.data) return <Pending of={table} />;
+  // A workbench has no page padding of its own, so these two carry it.
+  if (table.error) {
+    return (
+      <div className="px-4 py-4 md:px-8">
+        <ErrorState error={table.error} onRetry={table.reload} />
+      </div>
+    );
+  }
+  if (!table.data) {
+    return (
+      <div className="px-4 py-4 md:px-8">
+        <Pending of={table} />
+      </div>
+    );
+  }
   const data = table.data;
   const retired = data.status === "retired";
   const active = data.columns.filter((column) => column.status === "active");
@@ -1121,6 +1136,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
 
   return (
     <Page
+      fill
       title={data.name}
       description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
     >
@@ -1137,13 +1153,14 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           back.
         </Notice>
       ) : (
-        <div className="flex gap-1">
+        <div className="flex shrink-0 gap-1">
           {tab("rows", "Rows")}
           {tab("definition", "Definition")}
         </div>
       )}
       {!retired && view === "rows" ? (
         <RowsBrowser
+          fill
           key={active.map((column) => column.name).join(",")}
           label={`Rows of ${data.name}`}
           rowsPath={`${root}/rows/${data.name}`}
@@ -1165,7 +1182,10 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           ]}
         />
       ) : (
-        <Definition root={root} link={link} table={data} reload={table.reload} />
+        // The one scroller of this tab: the page itself does not scroll.
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Definition root={root} link={link} table={data} reload={table.reload} />
+        </div>
       )}
     </Page>
   );

@@ -309,6 +309,8 @@ const WORKBENCHES: RegExp[] = [
   /^(runs|triggers|events|approvals)(\/|$)/,
   /^(flows|scripts|apps)$/,
   /^flows\/(new|edit\/)/,
+  // A table's rows are one scroller under a pinned header (A2-08).
+  /^tables\/.+/,
 ];
 /** The same, for a tenant's screens. */
 const TENANT_WORKBENCHES: RegExp[] = [

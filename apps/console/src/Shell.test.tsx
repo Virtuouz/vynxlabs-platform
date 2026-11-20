@@ -73,6 +73,9 @@ test("an address says which area and screen it is, and whether it is an editor",
     section: "flows",
     editor: true,
   });
+  // A table's own screen fills the window; the list of tables is a page.
+  expect(whereIs("/t/t1/workspaces/w1/tables/orders", false).workbench).toBe(true);
+  expect(whereIs("/t/t1/workspaces/w1/tables", false).workbench).toBe(false);
   expect(whereIs("/t/t1/roles", false)).toMatchObject({ area: "tenant", section: "members" });
   expect(whereIs("/t/t1", false)).toMatchObject({ area: "tenant", section: "overview" });
   expect(whereIs("/", true).area).toBe("instance");

@@ -213,6 +213,7 @@ const workbenches = () => [
   ["flows", `${ws}/flows`],
   ["scripts", `${ws}/scripts`],
   ["apps", `${ws}/apps`],
+  ["a table's rows", `${ws}/tables/patients`],
   ["approvals", `/t/${tenant.id}/approvals`],
   ["members", `/t/${tenant.id}/members`],
   ["end-users", `/t/${tenant.id}/end-users`],
@@ -230,6 +231,7 @@ const screens = () => [
   ["overview", `${ws}/overview`],
   ["release", `${ws}/release`],
   ["tables", `${ws}/tables`],
+  ["a table's definition", `${ws}/tables/patients?view=definition`],
   ["connections", `${ws}/connections`],
   ["settings", `${ws}/settings`],
   ["a flow", `${ws}/flows/refunds/approve`],
@@ -367,6 +369,31 @@ test("every workbench's first row starts within 160 px of the top", async () => 
     const top = await firstRowTop(page);
     expect(top, `${name} shows a first row`).not.toBeNull();
     expect(top as number, `${name}'s first row`).toBeLessThanOrEqual(160);
+  }
+});
+
+/** A2-08: a table's rows, and its definition, scroll in one place, and the page does not. */
+test("a table's screen has one scroller, and its page does not scroll", async () => {
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const view of ["rows", "definition"]) {
+      await open(`${ws}/tables/patients?view=${view}`);
+      const found = await page.evaluate(() => {
+        const main = document.querySelector("main") as HTMLElement;
+        const scrollers = [...main.querySelectorAll<HTMLElement>("*")].filter((el) => {
+          const y = getComputedStyle(el).overflowY;
+          return (y === "auto" || y === "scroll") && el.scrollHeight > el.clientHeight + 1;
+        });
+        return {
+          pageScrolls: main.scrollHeight > main.clientHeight + 1,
+          sideways: document.documentElement.scrollWidth > innerWidth,
+          scrollers: scrollers.length,
+        };
+      });
+      expect(found.pageScrolls, `${view} at ${width}: the page scrolls`).toBe(false);
+      expect(found.sideways, `${view} at ${width}: the page scrolls sideways`).toBe(false);
+      expect(found.scrollers, `${view} at ${width}: scrollers`).toBeLessThanOrEqual(1);
+    }
   }
 });
 

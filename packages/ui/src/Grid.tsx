@@ -87,6 +87,12 @@ export interface GridProps<Row extends Record<string, unknown>> {
    * grid is scrolled sideways. It does unless this says otherwise.
    */
   lockFirst?: boolean;
+  /**
+   * The grid is the one scroller of a screen that fills the window: it takes the height
+   * left, in a parent that is a column with `min-h-0`, and scrolls inside it, with its header
+   * row and filters pinned. Without it, it is as tall as its rows, to 70% of the window.
+   */
+  fill?: boolean;
   /** Row height, with `navigation="grid"`: compact rows are 28 px. */
   density?: "compact" | "standard";
   /** Rows chosen with checkboxes, with `navigation="grid"`, for something done to all of them. */
@@ -428,7 +434,11 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
   });
 
   return (
-    <div className="max-h-[70vh] overflow-auto rounded-panel border border-line bg-surface">
+    <div
+      className={`overflow-auto rounded-panel border border-line bg-surface ${
+        props.fill ? "min-h-0 flex-1" : "max-h-[70vh]"
+      }`}
+    >
       <table
         ref={table}
         // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: a table navigated cell by cell is a grid (WAI-ARIA grid pattern)

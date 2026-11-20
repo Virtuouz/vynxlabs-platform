@@ -133,6 +133,7 @@ export function Page({
   action,
   width = "full",
   mono = false,
+  fill = false,
   children,
 }: {
   title: string;
@@ -142,10 +143,19 @@ export function Page({
   mono?: boolean;
   /** `form` keeps a page of fields to a readable measure; `full` lets a list use the room. */
   width?: "full" | "form";
+  /**
+   * The page is a workbench (`nav.ts`): it fills the work area and does not scroll, so what
+   * is under the title takes the height left, and one part of it scrolls.
+   */
+  fill?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className={`flex flex-col gap-5 ${width === "form" ? "max-w-[52rem]" : ""}`}>
+    <section
+      className={`flex flex-col gap-5 ${width === "form" ? "max-w-[52rem]" : ""} ${
+        fill ? "min-h-0 flex-1 px-4 py-4 md:px-8" : ""
+      }`}
+    >
       <PageHeader title={title} mono={mono} description={description} actions={action} />
       {children}
     </section>

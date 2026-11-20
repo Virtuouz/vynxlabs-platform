@@ -26,6 +26,31 @@ const rows = [
 ];
 
 describe("grid", () => {
+  test("with fill, the grid is the one scroller of the height left; without it, it stops at 70vh", () => {
+    const grid = (fill?: boolean) => (
+      <Grid
+        label="Rows of orders"
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.id}
+        empty="None"
+        navigation="grid"
+        {...(fill ? { fill } : {})}
+      />
+    );
+    const { container, rerender } = render(grid());
+    const box = () => container.querySelector("table")?.parentElement as HTMLElement;
+    expect(box().className).toContain("max-h-[70vh]");
+    expect(box().className).not.toContain("flex-1");
+    rerender(grid(true));
+    expect(box().className).toContain("min-h-0");
+    expect(box().className).toContain("flex-1");
+    expect(box().className).toContain("overflow-auto");
+    expect(box().className).not.toContain("max-h-[70vh]");
+    // The header row stays pinned inside it.
+    expect(container.querySelector("thead")?.className).toContain("sticky");
+  });
+
   test("shows rows, says when there are none, and marks an empty value", () => {
     const { rerender } = render(
       <Grid

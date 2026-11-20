@@ -641,6 +641,27 @@ describe("the page editor", () => {
     expect(box.value).toBe(again);
   });
 
+  test("⌘S right after typing saves what was typed, and typing during a save is saved after it", async () => {
+    let attempts = 0;
+    routes[`PUT /api/v1${root}/drafts/handbook/support/refunds`] = () => {
+      attempts++;
+      return [200, { revision: 3 + attempts }];
+    };
+    editor("handbook/support/refunds");
+    const box = await source();
+    const first = text("title: Refund an order", "Typed just now.\n");
+    fireEvent.change(box, { target: { value: first } });
+    fireEvent.keyDown(box, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]?.body).toMatchObject({ body: { source: first }, revision: 3 });
+    // A second save is of the newest text, on the revision the first one gave.
+    const second = text("title: Refund an order", "Typed after.\n");
+    fireEvent.change(box, { target: { value: second } });
+    fireEvent.keyDown(box, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(sent("PUT")).toHaveLength(2));
+    expect(sent("PUT")[1]?.body).toMatchObject({ body: { source: second }, revision: 4 });
+  });
+
   test("the page's details are a form that writes its source, and leaves the rest as it was", async () => {
     editor("handbook/support/refunds");
     const box = await source();

@@ -14,6 +14,7 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { FieldAbout } from "../help/FieldAbout.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
@@ -44,6 +45,13 @@ export const isEditedKind = (kind: string): kind is EditedKind =>
   (EDITED_KINDS as readonly string[]).includes(kind);
 
 type Body = Record<string, unknown>;
+
+/** What a save sends: the three things the editor holds. */
+interface Unsaved {
+  path: string;
+  body: Body;
+  json: Record<string, string>;
+}
 
 const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; fresh: Body }> = {
   connection: {
@@ -155,12 +163,44 @@ export function ResourceEditor({
     typeAsked === "webhook" || typeAsked === "event" || typeAsked === "form"
       ? typeAsked
       : undefined;
-  const [revision, setRevision] = useState<number>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
-  const [dirty, setDirty] = useState(false);
   const [problem, setProblem] = useState<string>();
-  const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
+  // What is saved and what is on screen go through one hook: a save sends what was typed last,
+  // and what is typed while one is in flight is saved after it.
+  const draft = useDraftSave<Unsaved, { body: Body; revision: number }>({
+    send: (snap, at) => {
+      const written: Body = { ...snap.body };
+      for (const [name, value] of Object.entries(snap.json)) {
+        if (value.trim() === "") delete written[name];
+        else written[name] = JSON.parse(value);
+      }
+      return api.put<{ body: Body; revision: number }>(`${root}/drafts/${snap.path}`, {
+        kind,
+        schemaVersion: 1,
+        body: written,
+        ...(at ? { revision: at } : {}),
+      });
+    },
+    applied: (saved, sent, current) => {
+      // What the server sends back replaces the screen only if nothing was typed since.
+      if (current) {
+        draft.adopt({ ...sent, body: saved.body });
+        setBody(saved.body);
+      }
+      setState("draft");
+      drafts.reload();
+      clearRecovery(recoveryKey);
+      if (!opened && savedAs.current !== sent.path) {
+        savedAs.current = sent.path;
+        navigate(`${link}/resources/edit/${kind}/${sent.path}`, { replace: true });
+      }
+    },
+    failed: (error) => setProblem(failureText(error)),
+  });
+  const { dirty } = draft;
+  const busy = draft.saving;
+  const savedAs = useRef<string>(undefined);
   const resources = useLoad<{ items: { path: string; kind: string; body: { mode?: string } }[] }>(
     `${root}/resources`,
   );
@@ -171,18 +211,19 @@ export function ResourceEditor({
 
   useEffect(() => {
     let current = true;
+    const jsonOf = (next: Body): Record<string, string> => ({
+      ...(next.payload ? { payload: JSON.stringify(next.payload, null, 2) } : {}),
+      // A schedule's input is a form of its own.
+      ...(next.input && typeof next.input === "object" && about.noun !== "schedule"
+        ? { input: JSON.stringify(next.input, null, 2) }
+        : {}),
+    });
     const open = (next: Body, as: typeof state, at?: number) => {
       if (!current) return;
       setBody(next);
-      setJson({
-        ...(next.payload ? { payload: JSON.stringify(next.payload, null, 2) } : {}),
-        // A schedule's input is a form of its own.
-        ...(next.input && typeof next.input === "object" && about.noun !== "schedule"
-          ? { input: JSON.stringify(next.input, null, 2) }
-          : {}),
-      });
+      setJson(jsonOf(next));
       setState(as);
-      setRevision(at);
+      draft.reset({ path: opened ?? "", body: next, json: jsonOf(next) }, at);
     };
     if (!opened) {
       // The Triggers page says which kind of trigger it wants.
@@ -207,7 +248,7 @@ export function ResourceEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about, askedType]);
+  }, [root, opened, about, askedType, draft.reset]);
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab. A draft
   // saves itself a few seconds after the last change; something new waits for its first Save,
@@ -239,10 +280,16 @@ export function ResourceEditor({
   if (!body) return <Loading />;
 
   const readOnly = !editable;
-  const change = (next: Body) => {
-    setBody(tidy({ ...body, ...next }));
-    setDirty(true);
+  /** Something changed: on top of the newest, not of this render's, so two changes both stay. */
+  const edit = (part: Partial<Unsaved>) => {
+    const next = { path, body, json, ...draft.value(), ...part };
+    if (part.path !== undefined) setPath(part.path);
+    if (part.body) setBody(part.body);
+    if (part.json) setJson(part.json);
+    draft.edit(next);
   };
+  const change = (next: Body) =>
+    edit({ body: tidy({ ...(draft.value()?.body ?? body), ...next }) });
   const text = (name: string) => (body[name] as string | undefined) ?? "";
   /** What the workspace has of a kind, deployed or still a draft. */
   const ofKind = (wanted: string, mode?: string): Option[] => {
@@ -275,33 +322,7 @@ export function ResourceEditor({
       setTried(true);
       return false;
     }
-    const written: Body = { ...body };
-    for (const [name, value] of Object.entries(json)) {
-      if (value.trim() === "") delete written[name];
-      else written[name] = JSON.parse(value);
-    }
-    setBusy(true);
-    try {
-      const saved = await api.put<{ body: Body; revision: number }>(`${root}/drafts/${path}`, {
-        kind,
-        schemaVersion: 1,
-        body: written,
-        ...(revision ? { revision } : {}),
-      });
-      setBody(saved.body);
-      setRevision(saved.revision);
-      setState("draft");
-      setDirty(false);
-      drafts.reload();
-      clearRecovery(recoveryKey);
-      if (!opened) navigate(`${link}/resources/edit/${kind}/${path}`, { replace: true });
-      return true;
-    } catch (error) {
-      setProblem(failureText(error));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    return draft.save(true);
   };
 
   autosave.current = save;
@@ -315,10 +336,7 @@ export function ResourceEditor({
       required={false}
       disabled={readOnly}
       hint={hint}
-      onChange={(value) => {
-        setJson({ ...json, [name]: value });
-        setDirty(true);
-      }}
+      onChange={(value) => edit({ json: { ...(draft.value()?.json ?? json), [name]: value } })}
     />
   );
   const description = (
@@ -441,7 +459,7 @@ export function ResourceEditor({
                 value={path}
                 placeholder={about.example}
                 hint="Its name in this workspace. It can be renamed later, and stays the same resource."
-                onChange={setPath}
+                onChange={(next) => edit({ path: next })}
               />
             </div>
           )
@@ -478,10 +496,7 @@ export function ResourceEditor({
               <Button
                 size="small"
                 onClick={() => {
-                  setPath(kept.path);
-                  setBody(kept.body);
-                  setJson(kept.json);
-                  setDirty(true);
+                  edit({ path: kept.path, body: kept.body, json: kept.json });
                   taken();
                 }}
               >
@@ -582,14 +597,14 @@ export function ResourceEditor({
                 : { hint: "What a trigger is cannot be changed once it is saved. Make another." })}
               onChange={(type) => {
                 const kept = { script: text("script"), description: text("description") };
-                setBody(
-                  type === "event"
-                    ? { type, ...kept, event: "" }
-                    : type === "form"
-                      ? { ...newForm(), ...kept }
-                      : { type: "webhook", ...kept },
-                );
-                setDirty(true);
+                edit({
+                  body:
+                    type === "event"
+                      ? { type, ...kept, event: "" }
+                      : type === "form"
+                        ? { ...newForm(), ...kept }
+                        : { type: "webhook", ...kept },
+                });
               }}
             />
             {script}
@@ -614,15 +629,14 @@ export function ResourceEditor({
                   label: one.name,
                 }))}
                 onChange={(trigger) => {
-                  setBody(
-                    tidy({
+                  edit({
+                    body: tidy({
                       ...trigger,
                       script: text("script"),
                       enabled: body.enabled,
                       description: text("description"),
                     }),
-                  );
-                  setDirty(true);
+                  });
                 }}
               />
             ) : null}
@@ -651,15 +665,14 @@ export function ResourceEditor({
               <FormDesigner
                 trigger={body as unknown as FormTrigger}
                 onChange={(trigger) => {
-                  setBody(
-                    tidy({
+                  edit({
+                    body: tidy({
                       ...trigger,
                       script: text("script"),
                       enabled: body.enabled,
                       description: text("description"),
                     }),
-                  );
-                  setDirty(true);
+                  });
                 }}
               />
             ) : null}

@@ -366,3 +366,35 @@ test("a data source that does not answer its test says so as a failure", async (
   const said = await screen.findByText("erp did not answer: connection refused");
   expect(said.closest("[role]")?.className).toContain("bg-danger-soft");
 });
+
+test("a row's unsaved edits are not dropped by choosing another row without asking", async () => {
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByText("A-1"));
+  const field = await screen.findByLabelText("number", { selector: "input[name=number]" });
+  fireEvent.input(field, { target: { value: "A-1 changed" } });
+  // Another row is asked about first, and Stay keeps the edit.
+  fireEvent.click(screen.getByText("A-2"));
+  expect(await answer("Stay")).toContain("Your changes to this row are not saved.");
+  await waitFor(() => expect(screen.queryByText("Leave without saving?")).toBeNull());
+  expect(
+    (screen.getByLabelText("number", { selector: "input[name=number]" }) as HTMLInputElement).value,
+  ).toBe("A-1 changed");
+  // Leave goes on to the other row, with its own values.
+  fireEvent.click(screen.getByText("A-2"));
+  await answer("Leave");
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("number", { selector: "input[name=number]" }) as HTMLInputElement)
+        .value,
+    ).toBe("A-2"),
+  );
+  // With nothing typed, another row is chosen at once.
+  fireEvent.click(screen.getByText("A-1"));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("number", { selector: "input[name=number]" }) as HTMLInputElement)
+        .value,
+    ).toBe("A-1"),
+  );
+  expect(screen.queryByText("Leave without saving?")).toBeNull();
+});

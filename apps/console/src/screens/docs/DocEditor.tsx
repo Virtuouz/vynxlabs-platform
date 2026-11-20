@@ -42,6 +42,7 @@ import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useHelpTopic } from "../../help/store.ts";
 import { useBrand } from "../../kit/brand.tsx";
 import { DiffView } from "../../kit/DiffView.tsx";
+import { useDraftSave } from "../../kit/draftSave.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
@@ -139,9 +140,44 @@ export function DocEditor({
   const [compareAsked] = useQueryValue("compare");
   const [where, setWhere] = useState(path ?? startAt);
   const [source, setSource] = useState<string>();
-  const [revision, setRevision] = useState<number | null>(null);
   const [saved, setSaved] = useState<string>();
-  const [saving, setSaving] = useState(false);
+  // What was typed last is what a save sends, and what is typed while one is in flight is
+  // saved after it. The page's revision is the newest the hook has been given.
+  const sent = useRef({ title: "", fresh: false, problems: false, path: path ?? startAt });
+  const draft = useDraftSave<string, { revision: number }>({
+    send: (text, at) =>
+      api.put<{ revision: number }>(`${root}/drafts/${sent.current.path}`, {
+        kind: "doc",
+        schemaVersion: 1,
+        title: frontmatterOf(text)?.title || sent.current.title,
+        body: { source: text },
+        ...(at !== undefined ? { revision: at } : {}),
+      }),
+    applied: (_answer, text, newest) => {
+      setSaved(text);
+      setClash(false);
+      list.reload();
+      if (newest) {
+        notify.success(
+          sent.current.problems
+            ? "Saved as a draft. It has problems to mend before it can be deployed."
+            : "Saved as a draft. Deploy it from Documentation when it is ready.",
+        );
+      }
+      if (sent.current.fresh) navigate(`${link}/docs/edit/${sent.current.path}`, { replace: true });
+    },
+    failed: (error) => {
+      // Someone else saved it since it was opened: say so, and keep what was typed.
+      if (error instanceof ApiError && error.code === "draft_changed") setClash(true);
+      else notify.error(error);
+    },
+  });
+  const saving = draft.saving;
+  /** The text changed, in the editor or from outside it. */
+  const typeSource = (next: string) => {
+    setSource(next);
+    draft.edit(next);
+  };
   const [clash, setClash] = useState(false);
   const [reveal, setReveal] = useState<{ line: number; at: number }>();
   const [comparing, setComparing] = useState(compareAsked === "1");
@@ -166,13 +202,14 @@ export function DocEditor({
     if (source !== undefined) return;
     if (!path) {
       setSource(starter(startTitle));
+      draft.reset(starter(startTitle));
       setSaved(undefined);
     } else if (opened.data) {
       setSource(opened.data.source);
       setSaved(opened.data.source);
-      setRevision(opened.data.revision);
+      draft.reset(opened.data.source, opened.data.revision ?? undefined);
     }
-  }, [path, opened.data, source, startTitle]);
+  }, [path, opened.data, source, startTitle, draft.reset]);
 
   const typed = useDeferredValue(source ?? "");
   const app = list.data ? appFor(list.data.apps, where) : undefined;
@@ -259,34 +296,13 @@ export function DocEditor({
 
   const save = async () => {
     if (placed || source === undefined) return;
-    setSaving(true);
-    try {
-      const answer = await api.put<{ revision: number }>(`${root}/drafts/${where}`, {
-        kind: "doc",
-        schemaVersion: 1,
-        title,
-        body: { source },
-        ...(revision !== null ? { revision } : {}),
-      });
-      setSaved(source);
-      setRevision(answer.revision);
-      setClash(false);
-      list.reload();
-      notify.success(
-        errors.length > 0
-          ? "Saved as a draft. It has problems to mend before it can be deployed."
-          : "Saved as a draft. Deploy it from Documentation when it is ready.",
-      );
-      if (fresh) navigate(`${link}/docs/edit/${where}`, { replace: true });
-    } catch (error) {
-      // Someone else saved it since it was opened: say so, and keep what was typed.
-      if (error instanceof ApiError && error.code === "draft_changed") setClash(true);
-      else notify.error(error);
-    } finally {
-      setSaving(false);
-    }
+    sent.current = { title, fresh, problems: errors.length > 0, path: where };
+    await draft.save(fresh);
   };
-  useShortcut("save", () => void save(), { enabled: dirty && !saving });
+  // ⌘S saves what is typed now: the text is the hook's, not the last render's.
+  useShortcut("save", () => {
+    void save();
+  });
 
   if (list.error) return <ErrorState error={list.error} onRetry={list.reload} />;
   if (opened.error) return <ErrorState error={opened.error} onRetry={opened.reload} />;
@@ -338,7 +354,7 @@ export function DocEditor({
   /** Changes the text as one step of its history, through the editor where it is there. */
   const change = (next: string, select?: { start: number; end: number }) => {
     if (handle.current) handle.current.apply(next, select);
-    else setSource(next);
+    else typeSource(next);
   };
   const selection = () =>
     handle.current?.selection() ?? { start: source.length, end: source.length };
@@ -360,7 +376,7 @@ export function DocEditor({
       const revisions = new Map(data.pages.map((one) => [one.path, one.revision]));
       await api.post(`${root}/drafts/batch`, {
         changes: plan.changes.map((one) => {
-          const rev = one.path === where ? revision : revisions.get(one.path);
+          const rev = one.path === where ? draft.known() : revisions.get(one.path);
           return {
             path: one.path,
             ...(one.to !== undefined ? { to: one.to } : {}),
@@ -373,8 +389,8 @@ export function DocEditor({
       const own = plan.changes.find((one) => one.path === where);
       const next = own?.to ?? where;
       setSaved(own?.source ?? source);
-      if (own?.source !== undefined) setSource(own.source);
-      setRevision(null);
+      if (own?.source !== undefined) typeSource(own.source);
+      draft.reset(own?.source ?? source);
       list.reload();
       notify.success(done);
       if (next !== where) {
@@ -508,7 +524,7 @@ export function DocEditor({
                         schemaVersion: 1,
                         body: {},
                         deleted: true,
-                        ...(revision !== null ? { revision } : {}),
+                        ...(draft.known() !== undefined ? { revision: draft.known() } : {}),
                       })
                 }
                 onDone={() => navigate(`${link}/docs`)}
@@ -540,7 +556,7 @@ export function DocEditor({
                 if (!sure) return;
                 change(theirs.source);
                 setSaved(theirs.source);
-                setRevision(theirs.revision);
+                draft.reset(theirs.source, theirs.revision ?? undefined);
                 setClash(false);
               }}
             >
@@ -676,7 +692,7 @@ export function DocEditor({
                 language="markdown"
                 path={`docs/${where || "new"}.md`}
                 value={source}
-                onChange={setSource}
+                onChange={typeSource}
                 onSave={save}
                 problems={problems}
                 wrap

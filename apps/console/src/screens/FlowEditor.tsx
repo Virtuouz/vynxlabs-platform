@@ -51,6 +51,7 @@ import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGra
 import { type Clip, type ClipStep, copySteps, pasteSteps, readClip } from "../flowClipboard.ts";
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { useDraftSave } from "../kit/draftSave.ts";
 import { useHistory } from "../kit/history.ts";
 import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
@@ -515,10 +516,8 @@ export function FlowEditor({
   // Where the canvas was left this session, read once per flow.
   const kept = useMemo(() => viewportOf(path), [path]);
   const [canvas, setCanvas] = useState<ReactFlowInstance<CanvasNode, Edge>>();
-  const [revision, setRevision] = useState<number>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
   const [loaded, setLoaded] = useState(false);
-  const [dirty, setDirty] = useState(false);
   const [starterId, setStarterId] = useState("blank");
   const [testing, setTesting] = useState(false);
   const [testRunId, setTestRunId] = useState<string>();
@@ -533,8 +532,33 @@ export function FlowEditor({
   // Autosaves that failed in a row, and whether they have been given up until asked again.
   const failures = useRef(0);
   const [gaveUp, setGaveUp] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<number>();
+  // What a save sends is read from the newest render when it goes out, so that a change made
+  // while one is in flight is in the next. The hook counts the changes and sends again.
+  const toSend = useRef<() => FlowBody>(() => ({ nodes: {}, edges: [] }));
+  const draft = useDraftSave<null, { revision: number }>({
+    send: (_snapshot, at) =>
+      api.put<{ revision: number }>(`${root}/drafts/${pathNow.current}`, {
+        kind: "flow",
+        schemaVersion: 1,
+        body: toSend.current(),
+        ...(at ? { revision: at } : {}),
+      }),
+    applied: (_saved, _sent, _current) => {
+      setState("draft");
+      setSavedAt(Date.now());
+      drafts.reload();
+      if (!opened && savedAs.current !== pathNow.current) {
+        savedAs.current = pathNow.current;
+        navigate(`${link}/flows/edit/${pathNow.current}`, { replace: true });
+      }
+    },
+    failed: (error) => setProblem(failureText(error)),
+  });
+  const { dirty } = draft;
+  const busy = draft.saving;
+  const pathNow = useRef(path);
+  pathNow.current = path;
   const [adding, setAdding] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [, setTick] = useState(0);
@@ -619,7 +643,7 @@ export function FlowEditor({
 
   /** A change to the graph: saved a moment later, and no longer what the last test ran. */
   const touch = () => {
-    setDirty(true);
+    draft.edit(null);
     setEditedSinceTest(true);
   };
   // What is undone is the graph and the description: never what is selected.
@@ -675,12 +699,12 @@ export function FlowEditor({
     if (opened === savedAs.current) return;
     (async () => {
       try {
-        const draft = await api.get<{ body: FlowBody; revision: number }>(
+        const found = await api.get<{ body: FlowBody; revision: number }>(
           `${root}/drafts/${opened}`,
         );
         if (!current) return;
-        open(draft.body);
-        setRevision(draft.revision);
+        open(found.body);
+        draft.reset(null, found.revision);
         setState("draft");
       } catch (error) {
         if ((error as ApiError).status !== 404) throw error;
@@ -695,7 +719,7 @@ export function FlowEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, open]);
+  }, [root, opened, open, draft.reset]);
 
   const flowNodes = useMemo(
     () => Object.fromEntries(nodes.map((node) => [node.id, node.data.node])),
@@ -1034,6 +1058,17 @@ export function FlowEditor({
     canvas?.fitView({ nodes: [{ id }], maxZoom: 1, padding: 0.6, duration: glide(200) });
   };
 
+  toSend.current = () => ({
+    ...(description ? { description } : {}),
+    nodes: flowNodes,
+    edges: flowEdges,
+    layout: Object.fromEntries(
+      nodes.map((node) => [
+        node.id,
+        { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+      ]),
+    ),
+  });
   const save = async (): Promise<boolean> => {
     setProblem(undefined);
     if (!PATH.test(path)) {
@@ -1042,41 +1077,7 @@ export function FlowEditor({
       );
       return false;
     }
-    setBusy(true);
-    try {
-      const body: FlowBody = {
-        ...(description ? { description } : {}),
-        nodes: flowNodes,
-        edges: flowEdges,
-        layout: Object.fromEntries(
-          nodes.map((node) => [
-            node.id,
-            { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-          ]),
-        ),
-      };
-      const saved = await api.put<{ revision: number }>(`${root}/drafts/${path}`, {
-        kind: "flow",
-        schemaVersion: 1,
-        body,
-        ...(revision ? { revision } : {}),
-      });
-      setRevision(saved.revision);
-      setState("draft");
-      setDirty(false);
-      setSavedAt(Date.now());
-      drafts.reload();
-      if (!opened) {
-        savedAs.current = path;
-        navigate(`${link}/flows/edit/${path}`, { replace: true });
-      }
-      return true;
-    } catch (error) {
-      setProblem(failureText(error));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    return draft.save(state === "new");
   };
 
   // A flow already saved once is saved again a moment after each change, as the app builder
@@ -1162,7 +1163,7 @@ export function FlowEditor({
   useShortcut("redo", redo);
   // ⌘S saves now, rather than a moment after the last change.
   useShortcut("save", () => {
-    if (!busy && state !== "repository") void save();
+    if (state !== "repository") void save();
   });
   const shown = testing ? live.run : undefined;
   const nodeRuns = useMemo(

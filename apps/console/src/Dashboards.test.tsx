@@ -349,3 +349,55 @@ test("a dashboard someone else shared, or the workspace keeps, is looked at and 
   await screen.findByText(/A dashboard the workspace keeps, at boards\/stock/);
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
 });
+
+test("a widget that was changed is not given up without asking, and one that was not is", async () => {
+  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByRole("region", { name: "Held" });
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a widget" }));
+  let sheet = within(await screen.findByRole("dialog"));
+  // Nothing changed: Cancel closes at once.
+  fireEvent.click(sheet.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  fireEvent.click(screen.getByRole("button", { name: "Add a widget" }));
+  sheet = within(await screen.findByRole("dialog"));
+  fireEvent.change(sheet.getByLabelText("Title"), { target: { value: "Half done" } });
+  fireEvent.click(sheet.getByRole("button", { name: "Cancel" }));
+  // Asked, and Stay keeps what was typed.
+  const said = await answer("Stay");
+  expect(said).toContain("Your changes to this widget are not saved.");
+  await waitFor(() => expect(screen.queryByText("Leave without saving?")).toBeNull());
+  expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Half done");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await answer("Leave");
+  await waitFor(() => expect(screen.queryByLabelText("Title")).toBeNull());
+  expect(sent("PUT")).toHaveLength(0);
+});
+
+test("a rename right after a move is saved on the revision the move made", async () => {
+  let stored: Any = mine;
+  routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
+  routes[`PUT ${api}/dashboards/d1`] = (body) => {
+    const sentRevision = (body as { revision: number }).revision;
+    if (sentRevision !== stored.revision) {
+      return [409, { status: 409, detail: "Saved elsewhere." }];
+    }
+    stored = { ...stored, ...(body as object), revision: stored.revision + 1 };
+    return [200, stored];
+  };
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByRole("region", { name: "Held" });
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  const handle = await screen.findByRole("button", { name: /^Move In stock: drag its heading/ });
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  fireEvent.click(screen.getByRole("button", { name: "Share" }));
+  fireEvent.click(
+    within(await screen.findByRole("dialog")).getByLabelText(
+      "Show it to everyone in this workspace",
+    ),
+  );
+  await waitFor(() => expect(sent("PUT")).toHaveLength(2));
+  expect(sent("PUT").map((call) => (call.body as Any).revision)).toEqual([4, 5]);
+});

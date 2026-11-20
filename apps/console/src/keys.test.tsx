@@ -160,3 +160,29 @@ test("no screen listens for keys on the page by hand: shortcuts go through the r
     .map((path) => path.slice(here.length + 1));
   expect(found).toEqual([]);
 });
+
+function Saves({ text, on, seen }: { text: string; on: boolean; seen: string[] }) {
+  useShortcut("save", () => seen.push(text), { enabled: on });
+  return null;
+}
+
+test("a key pressed after the handler is swapped runs the newest one, and an off shortcut lets the key go on", () => {
+  const seen: string[] = [];
+  const view = render(<Saves text="before" on seen={seen} />);
+  view.rerender(<Saves text="after the typing" on seen={seen} />);
+  press("s", { ctrlKey: true });
+  expect(seen).toEqual(["after the typing"]);
+  view.rerender(<Saves text="off" on={false} seen={seen} />);
+  const event = new KeyboardEvent("keydown", {
+    key: "s",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  document.body.dispatchEvent(event);
+  expect(seen).toEqual(["after the typing"]);
+  expect(event.defaultPrevented).toBe(false);
+  view.rerender(<Saves text="on again" on seen={seen} />);
+  press("s", { ctrlKey: true });
+  expect(seen).toEqual(["after the typing", "on again"]);
+});

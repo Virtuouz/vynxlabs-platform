@@ -245,25 +245,51 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const mine = loaded.kind === "member" && loaded.mine;
   const edit = mine && mode === "1";
 
+  /**
+   * Every save goes through one queue, one after another, each on the revision the one before it
+   * made. A rename, a share, the widget editor and a drag made just before it are saved in the
+   * order they were made, and none is refused as saved elsewhere because another of this
+   * screen's own was still in flight. Only the last answer is shown as saved: an earlier one
+   * would draw over a later change.
+   */
+  const send = (
+    change: { body?: DashboardBody; title?: string; shared?: boolean; sharedWith?: string[] },
+    onFailure?: () => Promise<void>,
+  ): Promise<boolean> => {
+    const queue = moves.current;
+    queue.waiting += 1;
+    const run = queue.last.then(async () => {
+      try {
+        const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
+          ...change,
+          revision: queue.revision,
+        });
+        queue.revision = saved.revision;
+        queue.waiting -= 1;
+        if (queue.waiting === 0) setLoaded(saved);
+        return true;
+      } catch (error) {
+        queue.waiting -= 1;
+        notify.error(error);
+        await onFailure?.();
+        return false;
+      }
+    });
+    queue.last = run.then(() => undefined);
+    return run;
+  };
+  /** After a save that was refused: what was drawn was not kept, so show what the server has. */
+  const showWhatIsKept = async () => {
+    const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
+    if (kept && moves.current.waiting === 0) setLoaded(kept);
+  };
   /** Saves the dashboard with what changed, and shows it as saved. */
-  const save = async (change: {
+  const save = (change: {
     body?: DashboardBody;
     title?: string;
     shared?: boolean;
     sharedWith?: string[];
-  }) => {
-    try {
-      const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
-        ...change,
-        revision: loaded.revision,
-      });
-      setLoaded(saved);
-      return true;
-    } catch (error) {
-      notify.error(error);
-      return false;
-    }
-  };
+  }) => send(change, showWhatIsKept);
   const withWidgets = (widgets: DashboardWidget[]) => save({ body: { ...body, widgets } });
   /**
    * A change to what the dashboard holds, drawn at once and saved after. Waiting for the save
@@ -276,28 +302,9 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
    */
   if (moves.current.waiting === 0) moves.current.revision = loaded.revision;
   const keep = (next: DashboardBody) => {
-    const queue = moves.current;
-    queue.waiting += 1;
     const known = new Set(body.widgets.map((one) => one.id));
     if (next.widgets.every((one) => known.has(one.id))) setLoaded({ ...loaded, body: next });
-    queue.last = queue.last.then(async () => {
-      try {
-        const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
-          body: next,
-          revision: queue.revision,
-        });
-        queue.revision = saved.revision;
-        queue.waiting -= 1;
-        // Only the last of them is shown as saved: one before it would undo a later one on screen.
-        if (queue.waiting === 0) setLoaded(saved);
-      } catch (error) {
-        queue.waiting -= 1;
-        notify.error(error);
-        // What was drawn was not kept: show what the server has.
-        const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
-        if (kept && queue.waiting === 0) setLoaded(kept);
-      }
-    });
+    void send({ body: next }, showWhatIsKept);
   };
   restoring.current = keep;
   // Every widget with a place: its own, or one given to it in order if it has none yet.

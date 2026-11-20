@@ -20,7 +20,7 @@ import {
   ValueChip,
 } from "@volvel/ui";
 import { Download } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
@@ -31,7 +31,7 @@ import { Inspector } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate, useUrlParam, useUrlState } from "../router.tsx";
+import { Link, navigate, useNavigationGuard, useUrlParam, useUrlState } from "../router.tsx";
 import {
   type Policy,
   policyText,
@@ -212,6 +212,22 @@ function RowsBrowser(props: RowsBrowserProps) {
   const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
   const counted = total.data?.items[0]?.values.count;
   const open = rows.find((row) => keyOf(row) === url.row);
+  // Edits typed in the inspector and not saved: another row, or closing it, asks first.
+  const unsaved = useRef(false);
+  const choose = async (next: string | undefined) => {
+    if (next !== url.row && unsaved.current) {
+      const leave = await ask.confirm({
+        title: "Leave without saving?",
+        text: "Your changes to this row are not saved.",
+        action: "Leave",
+        cancel: "Stay",
+        danger: true,
+      });
+      if (!leave) return;
+    }
+    unsaved.current = false;
+    setUrl({ row: next });
+  };
   // Several rows are deleted at once in the platform's own tables; a source's rows one by one.
   const canBatch = canChange && custom;
   const exportQuery = new URLSearchParams();
@@ -345,7 +361,7 @@ function RowsBrowser(props: RowsBrowserProps) {
             rows={rows}
             rowKey={keyOf}
             selectedKey={url.row}
-            onSelect={(row) => setUrl({ row: keyOf(row) })}
+            onSelect={(row) => void choose(keyOf(row))}
             {...(canBatch ? { checked, onCheck: setChecked } : {})}
             sort={sort}
             onSort={(column) => {
@@ -418,7 +434,7 @@ function RowsBrowser(props: RowsBrowserProps) {
           title="Row"
           eyebrow={open ? keyOf(open) : undefined}
           subject={url.row}
-          onClose={() => setUrl({ row: undefined })}
+          onClose={() => void choose(undefined)}
           footer={
             open && canChange && rowPath ? (
               <RemoveButton
@@ -440,6 +456,9 @@ function RowsBrowser(props: RowsBrowserProps) {
               columns={columns}
               editable={canChange}
               onSave={(values) => saveRow(open, values)}
+              onDirty={(now) => {
+                unsaved.current = now;
+              }}
             />
           ) : null}
         </Inspector>
@@ -523,11 +542,14 @@ function RowEditor({
   columns,
   editable,
   onSave,
+  onDirty,
 }: {
   row: DataRow;
   columns: RowColumn[];
   editable: boolean;
   onSave: (values: Record<string, unknown>) => Promise<void>;
+  /** Whether there are edits not saved, for the table to ask before another row is chosen. */
+  onDirty: (dirty: boolean) => void;
 }) {
   const [text, setText] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -543,6 +565,11 @@ function RowEditor({
           ? ""
           : String(row[column.name]);
   const dirty = Object.keys(text).length > 0;
+  useNavigationGuard(dirty, "Your changes to this row are not saved.");
+  useEffect(() => {
+    onDirty(dirty);
+    return () => onDirty(false);
+  }, [dirty, onDirty]);
   // JSON, and text that is already long or runs over lines, gets room to be read.
   const roomy = (column: RowColumn) => {
     const value = shown(column);

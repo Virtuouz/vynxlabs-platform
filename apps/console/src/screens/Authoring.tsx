@@ -18,6 +18,7 @@ import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { useDraftSave } from "../kit/draftSave.ts";
 import { Elapsed } from "../kit/Elapsed.tsx";
 import { ago } from "../kit/format.ts";
 import { useShortcut } from "../kit/keys.ts";
@@ -203,6 +204,13 @@ const NEW_BODY: ScriptBody = {
   source: { language: "typescript", code: SCRIPT_STARTERS[0]?.code ?? STARTER },
 };
 
+/** What a save sends: the three things the editor holds. */
+interface Unsaved {
+  path: string;
+  body: ScriptBody;
+  schemaText: string;
+}
+
 interface DraftDetail {
   path: string;
   kind: string;
@@ -253,14 +261,63 @@ export function ScriptEditor({
   const uses = (of: ScriptBody) => of.uses ?? NO_USES;
   const [path, setPath] = useState(opened ?? "");
   const [body, setBody] = useState<ScriptBody>();
-  const [revision, setRevision] = useState<number>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
-  const [dirty, setDirty] = useState(false);
   const [problem, setProblem] = useState<string>();
   const [pathTaken, setPathTaken] = useState<string>();
   const [fields, setFields] = useState<ApiError["fields"]>([]);
   const [busy, setBusy] = useState(false);
   const [schemaText, setSchemaText] = useState("");
+  // What is saved and what is on screen go through one hook: a save sends the newest text, and
+  // what is typed while one is in flight is saved after it.
+  const draft = useDraftSave<Unsaved, DraftDetail>({
+    send: (snap, at) => {
+      if (!PATH.test(snap.path)) {
+        throw new Error(
+          `Give the ${about.noun} a path: lowercase letters, digits, hyphens and underscores, in folders. For example ${about.example}.`,
+        );
+      }
+      let schema: unknown;
+      try {
+        schema = about.schema ? JSON.parse(snap.schemaText) : undefined;
+      } catch {
+        throw new Error("The schema is not valid JSON.");
+      }
+      return api.put<DraftDetail>(`${root}/drafts/${snap.path}`, {
+        kind,
+        schemaVersion: 1,
+        // A schema read from the code is the code's: what was read is sent back as it is.
+        body:
+          about.schema && snap.body.schemaSource !== "code"
+            ? { ...snap.body, [about.schema.field]: schema }
+            : snap.body,
+        // A new one is a create: a path that is taken is refused, never overwritten.
+        ...(at ? { revision: at } : opened ? {} : { create: true }),
+      });
+    },
+    applied: (saved, sent, current) => {
+      // What the server sends back replaces the screen only if nothing was typed since.
+      if (current) {
+        draft.adopt({ ...sent, body: saved.body });
+        setBody(saved.body);
+      }
+      setState("draft");
+      setReadingFailed(undefined);
+      setReading(saved.schemaTaskId);
+      clearRecovery(recoveryKey);
+      if (!opened && savedAs.current !== sent.path) {
+        savedAs.current = sent.path;
+        navigate(`${link}/${about.edit}/${sent.path}`, { replace: true });
+      }
+    },
+    failed: (error) => {
+      const refused = takenText(error);
+      if (refused) setPathTaken(refused);
+      else setProblem(failureText(error));
+      setFields((error as ApiError).fields ?? []);
+      setBuildIssues(buildIssuesOf(error));
+    },
+  });
+  const { dirty } = draft;
   // The last input it was tried with, kept while the editor is open.
   const [testInput, setTestInput] = useState<unknown>({});
   const [testRun, setTestRun] = useState<string>();
@@ -286,15 +343,13 @@ export function ScriptEditor({
     // What the worker read is on the draft now, if nobody saved since.
     void api
       .get<DraftDetail>(`${root}/drafts/${path}`)
-      .then((draft) => {
-        if (draft.revision !== revisionRef.current || dirtyRef.current) return;
-        setBody(draft.body);
-        setSchemaText(JSON.stringify(draft.body.input ?? {}, null, 2));
+      .then((read) => {
+        if (read.revision !== draft.known() || draft.isDirty()) return;
+        setBody(read.body);
+        setSchemaText(JSON.stringify(read.body.input ?? {}, null, 2));
       })
       .catch(() => {});
   });
-  const revisionRef = useRef<number>(undefined);
-  const dirtyRef = useRef(false);
   // The path this editor saved a new one as. Opening it again would reload what is already on screen.
   const savedAs = useRef<string>(undefined);
   // Where the code lives in the editor, fixed for the editor's life, so a first save keeps its undo history.
@@ -302,14 +357,14 @@ export function ScriptEditor({
 
   useEffect(() => {
     let current = true;
+    const schemaOf = (next: ScriptBody) =>
+      JSON.stringify((about.schema ? next[about.schema.field] : undefined) ?? {}, null, 2);
     const open = (next: ScriptBody, as: typeof state, at?: number) => {
       if (!current) return;
       setBody(next);
-      setSchemaText(
-        JSON.stringify((about.schema ? next[about.schema.field] : undefined) ?? {}, null, 2),
-      );
+      setSchemaText(schemaOf(next));
       setState(as);
-      setRevision(at);
+      draft.reset({ body: next, schemaText: schemaOf(next), path: opened ?? "" }, at);
     };
     if (!opened) {
       open(about.fresh(), "new");
@@ -318,8 +373,8 @@ export function ScriptEditor({
     if (opened === savedAs.current) return;
     (async () => {
       try {
-        const draft = await api.get<DraftDetail>(`${root}/drafts/${opened}`);
-        open(draft.body, "draft", draft.revision);
+        const found = await api.get<DraftDetail>(`${root}/drafts/${opened}`);
+        open(found.body, "draft", found.revision);
       } catch (error) {
         if ((error as ApiError).status !== 404) throw error;
         const resource = await api.get<{ ownership: string; body: ScriptBody }>(
@@ -331,9 +386,10 @@ export function ScriptEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about]);
+  }, [root, opened, about, draft.reset]);
 
-  // ⌘S or Ctrl+S saves the draft, from anywhere on the page.
+  // ⌘S or Ctrl+S saves the draft, from anywhere on the page. It saves what was typed a moment
+  // ago too: the text is read from the hook, not from the last render.
   const saveShortcut = useRef<() => void>(() => {});
   useShortcut("save", () => saveShortcut.current());
   // ⌘↵ or Ctrl+Enter runs the draft, from anywhere in the editor.
@@ -393,21 +449,20 @@ export function ScriptEditor({
     !opened,
   );
   useRecoveryCopy(recoveryKey, { path, body, schemaText }, state === "new" && dirty);
+  const working = busy || draft.saving;
   const autosave = useRef<() => Promise<boolean>>(async () => false);
   const failedFor = useRef<unknown>(undefined);
   // biome-ignore lint/correctness/useExhaustiveDependencies: each change starts the wait again
   useEffect(() => {
-    if (!dirty || busy || !editable || (state !== "draft" && state !== "deployed")) return;
+    if (!dirty || working || !editable || (state !== "draft" && state !== "deployed")) return;
     // One that failed is tried again once something changes, not in a loop.
     if (failedFor.current === body) return;
     const timer = setTimeout(async () => {
       if (!(await autosave.current())) failedFor.current = body;
     }, 3000);
     return () => clearTimeout(timer);
-  }, [dirty, busy, editable, state, body, schemaText]);
+  }, [dirty, working, editable, state, body, schemaText]);
 
-  revisionRef.current = revision;
-  dirtyRef.current = dirty;
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <Loading />;
 
@@ -416,8 +471,25 @@ export function ScriptEditor({
   const core = (opened ?? "").startsWith("core/");
   const readOnly = !editable || fromRepository || core;
   const change = (next: Partial<ScriptBody>) => {
-    setBody({ ...body, ...next });
-    setDirty(true);
+    // On top of the newest, not of this render's: two changes before a render both stay.
+    const now = draft.value();
+    const merged = { ...(now?.body ?? body), ...next };
+    setBody(merged);
+    draft.edit({
+      path: now?.path ?? path,
+      schemaText: now?.schemaText ?? schemaText,
+      body: merged,
+    });
+  };
+  const changePath = (next: string) => {
+    setPath(next);
+    const now = draft.value();
+    draft.edit({ body: now?.body ?? body, schemaText: now?.schemaText ?? schemaText, path: next });
+  };
+  const changeSchema = (text: string) => {
+    setSchemaText(text);
+    const now = draft.value();
+    draft.edit({ body: now?.body ?? body, path: now?.path ?? path, schemaText: text });
   };
   const fieldError = (pointer: string) =>
     fields.find((field) => field.path.startsWith(pointer))?.message;
@@ -426,58 +498,12 @@ export function ScriptEditor({
     setProblem(undefined);
     setPathTaken(undefined);
     setFields([]);
-    if (!PATH.test(path)) {
-      setProblem(
-        `Give the ${about.noun} a path: lowercase letters, digits, hyphens and underscores, in folders. For example ${about.example}.`,
-      );
-      return false;
-    }
-    let schema: unknown;
-    try {
-      schema = about.schema ? JSON.parse(schemaText) : undefined;
-    } catch {
-      setProblem("The schema is not valid JSON.");
-      return false;
-    }
-    setBusy(true);
-    try {
-      const saved = await api.put<DraftDetail>(`${root}/drafts/${path}`, {
-        kind,
-        schemaVersion: 1,
-        // A schema read from the code is the code's: what was read is sent back as it is.
-        body:
-          about.schema && body.schemaSource !== "code"
-            ? { ...body, [about.schema.field]: schema }
-            : body,
-        ...(revision ? { revision } : opened ? {} : { create: true }),
-      });
-      setBody(saved.body);
-      setRevision(saved.revision);
-      setState("draft");
-      setDirty(false);
-      setReadingFailed(undefined);
-      setReading(saved.schemaTaskId);
-      clearRecovery(recoveryKey);
-      if (!opened) {
-        savedAs.current = path;
-        navigate(`${link}/${about.edit}/${path}`, { replace: true });
-      }
-      return true;
-    } catch (error) {
-      const refused = takenText(error);
-      if (refused) setPathTaken(refused);
-      else setProblem(failureText(error));
-      setFields((error as ApiError).fields ?? []);
-      setBuildIssues(buildIssuesOf(error));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    return draft.save(state === "new");
   };
 
   autosave.current = save;
   saveShortcut.current =
-    readOnly || busy || (!dirty && state !== "new") ? () => {} : () => void save();
+    readOnly || busy || (!draft.isDirty() && state !== "new") ? () => {} : () => void save();
 
   /** Runs the draft with this input. What the server refuses is thrown, for the form to place. */
   const test = async (input: unknown) => {
@@ -646,10 +672,7 @@ export function ScriptEditor({
               : about.schema.hint
           }
           error={fieldError(`/body/${about.schema.field}`)}
-          onChange={(text) => {
-            setSchemaText(text);
-            setDirty(true);
-          }}
+          onChange={changeSchema}
         />
       ) : null}
       {kind === "script" && schemaReading.waiting ? (
@@ -761,7 +784,7 @@ export function ScriptEditor({
                 {state === "draft" && opened ? (
                   <Button
                     variant="danger"
-                    disabled={busy}
+                    disabled={working}
                     onClick={async () => {
                       const sure = await ask.confirm({
                         title: "Discard this draft?",
@@ -780,7 +803,7 @@ export function ScriptEditor({
                 ) : null}
                 <Button
                   variant="primary"
-                  loading={busy}
+                  loading={working}
                   disabled={!dirty && state !== "new"}
                   onClick={save}
                 >
@@ -791,10 +814,10 @@ export function ScriptEditor({
                     root={root}
                     link={link}
                     path={opened}
-                    disabled={busy}
+                    disabled={working}
                     onDeployed={() => {
                       setState("deployed");
-                      setRevision(undefined);
+                      draft.know(undefined);
                     }}
                   />
                 ) : null}
@@ -815,7 +838,7 @@ export function ScriptEditor({
                   {...(pathTaken ? { error: pathTaken } : {})}
                   onChange={(value) => {
                     setPathTaken(undefined);
-                    setPath(value);
+                    changePath(value);
                   }}
                 />
               </div>
@@ -894,7 +917,7 @@ export function ScriptEditor({
                   setPath(kept.path);
                   setBody(kept.body);
                   setSchemaText(kept.schemaText);
-                  setDirty(true);
+                  draft.edit({ path: kept.path, body: kept.body, schemaText: kept.schemaText });
                   taken();
                 }}
               >

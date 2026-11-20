@@ -1,8 +1,9 @@
 import { Button, type GridColumn, Notice, TextField } from "@volvel/ui";
 import { Play, Save } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
+import { useDraftSave } from "../kit/draftSave.ts";
 import { count } from "../kit/format.ts";
 import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
@@ -78,6 +79,14 @@ export function parametersIn(text: string): number {
   return Math.max(0, ...[...bare.matchAll(/\$(\d+)/g)].map((match) => Number(match[1])));
 }
 
+/** The parameters a query's text uses: what a saved query says of them, or a text one. */
+function parametersFor(text: string, known: SavedQuery | undefined): Parameter[] {
+  return Array.from(
+    { length: parametersIn(text) },
+    (_, at) => known?.parameters[at] ?? { name: `$${at + 1}`, type: "text" },
+  );
+}
+
 /**
  * Questions asked of the workspace's tables in SQL. A query only reads; it
  * names tables by their paths; each table's row policy applies to whoever
@@ -97,11 +106,68 @@ export function Queries({ root, link }: { root: string; link: string }) {
   const [reveal, setReveal] = useState<{ line: number; column?: number; at: number }>();
 
   const current = saved.data?.items.find((one) => one.path === open);
+  // What a save sends is the text as it is when it goes out. A query saved for the first time
+  // keeps its text on screen when its address changes to its name: it is not read back.
+  const target = useRef<string>(undefined);
+  const savedAs = useRef<string>(undefined);
+  const creating = useRef(false);
+  const createRefusal = useRef<unknown>(undefined);
+  const keep = useDraftSave<string, { revision: number }>({
+    send: (sql, at) =>
+      api.put<{ revision: number }>(`${root}/drafts/${target.current}`, {
+        kind: "query",
+        schemaVersion: 1,
+        body: {
+          ...(current?.description ? { description: current.description } : {}),
+          sql,
+          ...(parametersIn(sql) > 0
+            ? {
+                parameters: parametersFor(sql, current).map((one, place) => ({
+                  name: one.name.startsWith("$") ? `p${place + 1}` : one.name,
+                  type: one.type,
+                  ...(one.label ? { label: one.label } : {}),
+                  ...(one.default !== undefined ? { default: one.default } : {}),
+                })),
+              }
+            : {}),
+        },
+        // A query not yet named is a create: it never replaces what is at the path.
+        ...(at ? { revision: at } : current ? {} : { create: true }),
+      }),
+    applied: (_answer, _sql, newest) => {
+      const path = target.current as string;
+      if (newest) {
+        notify.success(`${path} is saved as a draft. It can be run by name once it is deployed.`, {
+          link: { label: "Review and deploy", href: `${link}/release` },
+        });
+      }
+      saved.reload();
+      if (open !== path) {
+        savedAs.current = path;
+        setOpen(path);
+      }
+    },
+    failed: (error) => {
+      // While a new query is named, the refusal is said in the naming dialog instead.
+      if (creating.current) createRefusal.current = error;
+      else notify.error(error);
+    },
+  });
+  const changeText = (next: string) => {
+    setText(next);
+    keep.edit(next);
+  };
   // Opening a saved query puts its text in the editor. What is typed after is the editor's.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of query replaces the text
   useEffect(() => {
     if (!current) return;
+    // What was just saved from this screen is already here, with whatever was typed since.
+    if (savedAs.current === current.path) {
+      savedAs.current = undefined;
+      return;
+    }
     setText(current.sql);
+    keep.reset(current.sql);
     setTyped({});
     setResult(undefined);
     setRefusal(undefined);
@@ -114,13 +180,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
     void import("../editor/monaco.ts").then(({ setSqlSchema }) => setSqlSchema(known));
   }, [schema.data]);
 
-  const parameters = useMemo<Parameter[]>(() => {
-    const used = parametersIn(text);
-    return Array.from({ length: used }, (_, at) => {
-      const known = current?.parameters[at];
-      return known ?? { name: `$${at + 1}`, type: "text" };
-    });
-  }, [text, current]);
+  const parameters = useMemo<Parameter[]>(() => parametersFor(text, current), [text, current]);
 
   const run = async () => {
     if (text.trim() === "" || busy) return;
@@ -155,60 +215,28 @@ export function Queries({ root, link }: { root: string; link: string }) {
   };
 
   const save = async () => {
-    const put = (path: string) =>
-      api.put(`${root}/drafts/${path}`, {
-        kind: "query",
-        schemaVersion: 1,
-        // A query not yet named is a create: it never replaces what is at the path.
-        ...(current ? {} : { create: true }),
-        body: {
-          ...(current?.description ? { description: current.description } : {}),
-          sql: text,
-          ...(parameters.length > 0
-            ? {
-                parameters: parameters.map((one, at) => ({
-                  name: one.name.startsWith("$") ? `p${at + 1}` : one.name,
-                  type: one.type,
-                  ...(one.label ? { label: one.label } : {}),
-                  ...(one.default !== undefined ? { default: one.default } : {}),
-                })),
-              }
-            : {}),
-        },
-      });
-    const done = (path: string) => {
-      notify.success(`${path} is saved as a draft. It can be run by name once it is deployed.`, {
-        link: { label: "Review and deploy", href: `${link}/release` },
-      });
-      saved.reload();
-      setOpen(path);
-    };
     if (current) {
-      try {
-        await put(current.path);
-        done(current.path);
-      } catch (error) {
-        notify.error(error);
-      }
+      target.current = current.path;
+      await keep.save(true);
       return;
     }
-    let made = "";
-    const path = await ask.prompt({
+    // A new query is a create: a name that is taken is said on the field, keeping what was typed.
+    await ask.prompt({
       title: "Save this query",
       text: "It is kept by name as a resource of the workspace: a draft until it is deployed.",
       label: "Name, such as reports/fees",
       action: "Save",
       submit: async (value) => {
-        try {
-          await put(value.trim());
-          made = value.trim();
-          return undefined;
-        } catch (error) {
-          return takenText(error) ?? failureText(error);
-        }
+        target.current = value.trim();
+        createRefusal.current = undefined;
+        creating.current = true;
+        const went = await keep.save(true).finally(() => {
+          creating.current = false;
+        });
+        if (went) return undefined;
+        return takenText(createRefusal.current) ?? failureText(createRefusal.current);
       },
     });
-    if (path && made) done(made);
   };
 
   if (schema.error) return <ErrorState error={schema.error} onRetry={schema.reload} />;
@@ -275,7 +303,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 language="sql"
                 path={`queries/${open ?? "new"}.sql`}
                 value={text}
-                onChange={setText}
+                onChange={changeText}
                 height="16rem"
                 onRun={() => void run()}
                 onSave={() => void save()}

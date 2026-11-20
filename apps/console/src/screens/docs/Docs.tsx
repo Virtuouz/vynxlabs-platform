@@ -144,6 +144,13 @@ export function Docs({
   editable: boolean;
 }) {
   const list = useLoad<DocsList>(`${root}/docs`);
+  // Tree changes go out one after another, each with the revisions the one before left.
+  const ordered = useRef<Promise<unknown>>(Promise.resolve());
+  const inOrder = <T,>(task: () => Promise<T>): Promise<T> => {
+    const run = ordered.current.then(task);
+    ordered.current = run.catch(() => undefined);
+    return run;
+  };
   const [deploying, setDeploying] = useState(false);
   const [editing, setEditing] = useState<Editing>();
   const [filter, setFilter] = useState("");
@@ -200,7 +207,7 @@ export function Docs({
     if (plan.changes.length === 0) return undefined;
     const before = sourcesOf(data);
     try {
-      await send(root, plan.changes, data);
+      await inOrder(() => send(root, plan.changes));
       list.reload();
       options.after?.(plan.changes);
       notify.success(
@@ -212,8 +219,7 @@ export function Docs({
                 label: "Undo",
                 onClick: async () => {
                   try {
-                    const now = await api.get<DocsList>(`${root}/docs`);
-                    await send(root, inverseOf(before, plan.changes), now);
+                    await inOrder(() => send(root, inverseOf(before, plan.changes)));
                     list.reload();
                     notify.info("Undone.");
                   } catch (error) {
@@ -617,8 +623,13 @@ export function Docs({
   );
 }
 
-/** Sends a plan's drafts, each with the revision of the draft it changes. */
-async function send(root: string, changes: readonly Change[], list: DocsList) {
+/**
+ * Sends a plan's drafts, each with the revision of the draft it changes. The revisions are read
+ * as the workspace has them when it goes out, not as the list was last drawn: a second change
+ * made before the list reloaded must not carry the revisions from before the first.
+ */
+async function send(root: string, changes: readonly Change[]) {
+  const list = await api.get<DocsList>(`${root}/docs`);
   const revision = new Map(list.pages.map((page) => [page.path, page.revision]));
   await api.post(`${root}/drafts/batch`, {
     changes: changes.map((change) => {

@@ -74,3 +74,35 @@ test("operator access is a strip that hides to a mark, and comes back from it", 
   fireEvent.click(await screen.findByRole("menuitem", { name: "Show the notice" }));
   expect(await screen.findByRole("region", { name: "Operator access" })).toBeTruthy();
 });
+
+test("filters have a row of their own under the title and the description", () => {
+  for (const oneRow of [true, false]) {
+    const { unmount } = show(
+      <PageHeader
+        title="Audit log"
+        description="Everything that changed here."
+        helpKey="audit-m5"
+        oneRow={oneRow}
+        actions={<button type="button">CSV</button>}
+        toolbar={
+          <select aria-label="Area">
+            <option>All</option>
+          </select>
+        }
+      />,
+    );
+    const title = screen.getByRole("heading", { name: "Audit log" });
+    const area = screen.getByRole("combobox", { name: "Area" });
+    const sentence = screen.getByText("Everything that changed here.");
+    const header = title.closest("header") as HTMLElement;
+    const row = area.closest("[data-header-filters]") as HTMLElement;
+    // A child of the header of its own, after the title and the description.
+    expect(row.parentElement).toBe(header);
+    expect(row.contains(title)).toBe(false);
+    expect(title.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sentence.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    unmount();
+    resetPreferences();
+    localStorage.clear();
+  }
+});

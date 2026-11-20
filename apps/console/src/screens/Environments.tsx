@@ -204,21 +204,29 @@ export function WorkspaceSettings({
   const storedZone = detail.data?.timeZone ?? "UTC";
   const [zone, setZone] = useState<string>();
   const [linked, setLinked] = useState<string | null>();
+  const [name, setName] = useState<string>();
   const [saving, setSaving] = useState(false);
   const draft = {
+    name: name ?? workspace.name,
     timeZone: zone ?? storedZone,
     linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
   };
+  const blank = draft.name.trim() === "";
   const dirty =
-    draft.timeZone !== storedZone || draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
+    draft.name.trim() !== workspace.name ||
+    draft.timeZone !== storedZone ||
+    draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
   const discard = () => {
+    setName(undefined);
     setZone(undefined);
     setLinked(undefined);
   };
   const save = async () => {
+    if (blank) return;
     setSaving(true);
     try {
       await api.patch(root, {
+        ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
@@ -237,8 +245,27 @@ export function WorkspaceSettings({
   return (
     <Page
       title="Workspace settings"
-      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Where it promotes to and its time zone are saved together, from the bar that appears below."
+      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Its name, where it promotes to and its time zone are saved together, from the bar that appears below."
     >
+      <section aria-labelledby="workspace-name" className="flex flex-col gap-3">
+        <h2 id="workspace-name" className="m-0 text-title">
+          Name
+        </h2>
+        <Panel className="flex flex-col gap-3 p-4">
+          <div className="w-full max-w-sm">
+            <TextField
+              name="name"
+              label="Workspace name"
+              value={draft.name}
+              maxLength={200}
+              required
+              onChange={setName}
+              hint={`What people read in lists and the switcher. Its address, ${workspace.slug}, does not change.`}
+              {...(blank ? { error: "A workspace needs a name." } : {})}
+            />
+          </div>
+        </Panel>
+      </section>
       <WorkspaceControls
         key={workspace.id}
         base={base}
@@ -1275,6 +1302,40 @@ export function TenantImport() {
         </form>
       )}
     </Page>
+  );
+}
+
+/** Renames a tenant. Its slug, which is in its addresses, stays. */
+export function RenameTenantButton({
+  tenant,
+  onDone,
+}: {
+  tenant: { id: string; slug: string; name: string };
+  onDone: () => void;
+}) {
+  return (
+    <Button
+      size="small"
+      onClick={async () => {
+        const name = await ask.prompt({
+          title: `Rename ${tenant.name}`,
+          text: `What people read in lists and the switcher. Its slug, ${tenant.slug}, is in its addresses and stays.`,
+          label: "Name",
+          initial: tenant.name,
+          action: "Rename",
+        });
+        if (!name || name.trim() === tenant.name) return;
+        try {
+          await api.patch(`/tenants/${tenant.id}`, { name: name.trim() });
+          notify.success(`${tenant.name} is now called ${name.trim()}.`);
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        }
+      }}
+    >
+      Rename
+    </Button>
   );
 }
 

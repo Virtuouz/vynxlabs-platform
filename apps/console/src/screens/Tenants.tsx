@@ -5,7 +5,7 @@ import { KeyValues } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Link, navigate } from "../router.tsx";
-import { DeleteTenantButton } from "./Environments.tsx";
+import { DeleteTenantButton, RenameTenantButton } from "./Environments.tsx";
 
 interface TenantRow {
   id: string;
@@ -108,6 +108,7 @@ export function Tenants({ me }: { me: Me }) {
             <Button variant="primary" onClick={() => navigate(`/t/${row.id}`)}>
               Open
             </Button>
+            <RenameTenantButton tenant={row} onDone={reload} />
             {operator ? (
               <DeleteTenantButton
                 tenant={row}

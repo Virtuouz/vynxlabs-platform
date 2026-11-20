@@ -158,13 +158,16 @@ export function CreateDialog({
   open,
   onClose,
   onCreated,
+  initial,
 }: {
   config: CreateConfig;
   open: boolean;
   onClose: () => void;
   onCreated: (result: unknown) => void;
+  /** What the fields hold when it opens: changing something that exists starts from what it is. */
+  initial?: Record<string, string>;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(initial ?? {});
   const [error, setError] = useState<ApiError>();
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -175,7 +178,7 @@ export function CreateDialog({
       : error?.fields.find((field) => field.path === `/body/${name}`)?.message;
   // Cancelled means forgotten: what was typed, a password included, does not wait for the next time.
   const close = () => {
-    setValues({});
+    setValues(initial ?? {});
     setError(undefined);
     setUnpicked([]);
     onClose();
@@ -219,7 +222,7 @@ export function CreateDialog({
           const said = config.done?.(result, sent) ?? (config.afterCreate ? undefined : "Created.");
           if (typeof said === "string") notify.success(said);
           else if (said) notify.success(said.message, said.link ? { link: said.link } : {});
-          setValues({});
+          setValues(initial ?? {});
           onCreated(result);
         } catch (caught) {
           setError(caught as ApiError);

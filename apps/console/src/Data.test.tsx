@@ -473,3 +473,113 @@ test("a row's unsaved edits are not dropped by choosing another row without aski
   );
   expect(screen.queryByText("Leave without saving?")).toBeNull();
 });
+
+test("a table made in the console is renamed and described where it is edited", async () => {
+  const body = {
+    description: "What customers bought.",
+    columns: { number: { type: "text" }, total: { type: "number" }, owner_id: { type: "uuid" } },
+    policy: { type: "owner", column: "owner_id" },
+  };
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [
+    200,
+    { kind: "table", schemaVersion: 1, key: "k1", title: null, body },
+  ];
+  routes[`GET /api/v1${root}/drafts/orders`] = () => [404, { status: 404, detail: "none" }];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, {}];
+  routes[`PUT /api/v1${root}/drafts/orders`] = () => [200, { revision: 1 }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+
+  fireEvent.click(await screen.findByRole("button", { name: "Describe the table" }));
+  await answer("Save", "Orders from the shop.");
+  const lastPut = () =>
+    calls.filter((call) => call.method === "PUT").at(-1)?.body as
+      | { body: { description?: string } }
+      | undefined;
+  await waitFor(() => expect(lastPut()?.body.description).toBe("Orders from the shop."));
+
+  fireEvent.click(screen.getByRole("button", { name: "Rename table" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(await within(dialog).findByLabelText("Path"), { target: { value: "purchases" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save as a draft" }));
+  await waitFor(() =>
+    expect(
+      calls.find((call) => call.method === "PUT" && call.url === `/api/v1${root}/drafts/orders`)
+        ?.body,
+    ).toMatchObject({
+      kind: "table",
+      path: "purchases",
+    }),
+  );
+});
+
+test("a change to a table's definition is taken back and made again, a rename included", async () => {
+  const start = {
+    columns: { number: { type: "text" }, total: { type: "number" }, owner_id: { type: "uuid" } },
+    policy: { type: "owner", column: "owner_id" },
+  };
+  let stored: Record<string, unknown> = structuredClone(start);
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body: stored }];
+  routes[`PUT /api/v1${root}/resources/orders`] = (sent) => {
+    stored = (sent as { body: Record<string, unknown> }).body;
+    return [200, {}];
+  };
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const undo = () => screen.getByRole("button", { name: /^Undo/ }) as HTMLButtonElement;
+  const redo = () => screen.getByRole("button", { name: /^Redo/ }) as HTMLButtonElement;
+  expect(undo().disabled).toBe(true);
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[1] as HTMLElement);
+  await answer("Rename", "amount");
+  await waitFor(() => expect(undo().disabled).toBe(false));
+  expect(undo().getAttribute("aria-label")).toBe("Undo renaming total to amount");
+  expect(Object.keys((stored as typeof start).columns)).toContain("amount");
+
+  fireEvent.click(undo());
+  await waitFor(() => expect(Object.keys((stored as typeof start).columns)).toContain("total"));
+  // It goes back to the column's old name, and says the one it has now so its data comes along.
+  expect((stored as { columns: Record<string, unknown> }).columns.total).toEqual({
+    type: "number",
+    renamedFrom: "amount",
+  });
+  expect(undo().disabled).toBe(true);
+
+  fireEvent.click(redo());
+  await waitFor(() => expect(Object.keys((stored as typeof start).columns)).toContain("amount"));
+});
+
+test("a connected data source is changed from what it is, and the stored password stays", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "The ERP",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/data-source-bindings/erp`] = () => [200, {}];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change" }));
+  const dialog = await screen.findByRole("dialog");
+  const host = within(dialog).getByLabelText("Host") as HTMLInputElement;
+  expect(host.value).toBe("erp.internal");
+  expect((within(dialog).getByLabelText("Port") as HTMLInputElement).value).toBe("5433");
+  expect((within(dialog).getByLabelText("Password") as HTMLInputElement).value).toBe("");
+  fireEvent.input(host, { target: { value: "erp2.internal" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      config: { host: "erp2.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+    }),
+  );
+});

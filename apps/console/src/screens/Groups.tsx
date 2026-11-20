@@ -339,6 +339,52 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
                 <Button size="small" onClick={() => setOpenId(row.id)}>
                   People
                 </Button>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    const name = await ask.prompt({
+                      title: `Rename ${row.name}`,
+                      text: "Access given to the group, and rules that name it by its key, are not touched. A rule that holds the old name stops matching its people: have rows hold the key.",
+                      label: "Name",
+                      initial: row.name,
+                      action: "Rename",
+                    });
+                    if (!name || name.trim() === row.name) return;
+                    try {
+                      await api.patch(`${base}/end-user-groups/${row.id}`, { name: name.trim() });
+                      groups.reload();
+                    } catch (error) {
+                      notify.error(error);
+                    }
+                  }}
+                >
+                  Rename
+                </Button>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    const next = await ask.prompt({
+                      title: `What ${row.name} is for`,
+                      label: "Description",
+                      hint: "In plain words, 500 characters at most. Leave it empty to say nothing.",
+                      initial: row.description,
+                      action: "Save",
+                      required: false,
+                      multiline: true,
+                    });
+                    if (next === null || next.trim() === row.description) return;
+                    try {
+                      await api.patch(`${base}/end-user-groups/${row.id}`, {
+                        description: next.trim().slice(0, 500),
+                      });
+                      groups.reload();
+                    } catch (error) {
+                      notify.error(error);
+                    }
+                  }}
+                >
+                  Describe
+                </Button>
                 <RemoveButton
                   label="Delete"
                   confirm={`The group ${row.name} is deleted. Its people lose what it was given, and rows ruled by it are shown to nobody in it.`}

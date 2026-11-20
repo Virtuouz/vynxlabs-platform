@@ -443,6 +443,42 @@ describe("help in an app", () => {
     expect(document.activeElement).toBe(button);
   });
 
+  test("the sheet arrives and leaves with motion, and a press outside closes it", async () => {
+    answering([booking(`${location.origin}/apps/fernhill/main/handbook/front-desk/booking`)]);
+    render(
+      <div>
+        <HelpPanel topic="desk-booking" />
+        <p>The app itself</p>
+      </div>,
+    );
+    const button = await screen.findByRole("button", { name: "Help" });
+    fireEvent.click(button);
+    const panel = screen.getByRole("complementary", { name: "Booking a visit" });
+    expect(panel.hasAttribute("data-drawer")).toBe(true);
+    // It is drawn first at its starting style, then moved to rest.
+    expect(panel.hasAttribute("data-starting-style")).toBe(true);
+    await waitFor(() => expect(panel.hasAttribute("data-starting-style")).toBe(false));
+    // A press inside it does nothing.
+    fireEvent.pointerDown(panel);
+    expect(panel.hasAttribute("data-ending-style")).toBe(false);
+    fireEvent.pointerDown(screen.getByText("The app itself"));
+    // It stays mounted while it leaves, with the ending style, then goes.
+    expect(
+      screen.getByRole("complementary", { hidden: true }).hasAttribute("data-ending-style"),
+    ).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("complementary", { hidden: true })).toBeNull());
+  });
+
+  test("its colours follow the page's theme, and its own tokens when it has them", async () => {
+    answering([booking(`${location.origin}/apps/fernhill/main/handbook/front-desk/booking`)]);
+    render(<HelpPanel topic="desk-booking" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Help" }));
+    const panel = screen.getByRole("complementary", { name: "Booking a visit" });
+    expect(panel.style.background).toContain("var(--vx-surface");
+    expect(panel.style.background).toContain("light-dark(");
+    expect(panel.style.colorScheme).toBe("light dark");
+  });
+
   test("documentation served at another address is linked to, since it cannot be shown inside", async () => {
     answering([booking("https://docs.fernhill.example/front-desk/booking")]);
     render(<HelpPanel topic="desk-booking">How to book</HelpPanel>);

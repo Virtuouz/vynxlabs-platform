@@ -87,7 +87,7 @@ function App() {
       .then(setView, (error: unknown) =>
         setProblem(
           error instanceof ApiError && error.status === 404
-            ? "You may not open this app, or it is no longer here."
+            ? "You may not open this app, or it is no longer here. Ask whoever gave you its link."
             : (error as Error).message,
         ),
       );

@@ -6,6 +6,7 @@ import {
   TenantExport,
   TenantImport,
   WorkspaceControls,
+  WorkspaceSettings,
   type WorkspaceSummary,
 } from "./screens/Environments.tsx";
 import { show } from "./testing.tsx";
@@ -342,4 +343,27 @@ test("an upload kept by another replica is said so, and asked for again", async 
   fireEvent.click(screen.getByRole("button", { name: "Check again" }));
   await screen.findByText(/another replica of the control plane kept it/);
   expect(screen.getByRole("button", { name: "Upload and check" })).toBeTruthy();
+});
+
+test("a workspace is renamed from its settings, saved by the bar with its other settings", async () => {
+  routes[`GET /api/v1${base}/workspaces/w-dev`] = () => [200, { timeZone: "UTC" }];
+  routes[`PATCH /api/v1${base}/workspaces/w-dev`] = () => [200, {}];
+  const reload = vi.fn();
+  show(<WorkspaceSettings base={base} tenantId="t1" workspace={dev} reload={reload} />);
+  const field = await screen.findByLabelText("Workspace name");
+  expect((field as HTMLInputElement).value).toBe("Dev");
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  fireEvent.input(field, { target: { value: "Development" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ name: "Development" }));
+  expect(reload).toHaveBeenCalled();
+});
+
+test("a workspace cannot be given an empty name", async () => {
+  routes[`GET /api/v1${base}/workspaces/w-dev`] = () => [200, { timeZone: "UTC" }];
+  show(<WorkspaceSettings base={base} tenantId="t1" workspace={dev} reload={() => {}} />);
+  fireEvent.input(await screen.findByLabelText("Workspace name"), { target: { value: "  " } });
+  expect(await screen.findByText("A workspace needs a name.")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+  expect(sent("PATCH")).toHaveLength(0);
 });

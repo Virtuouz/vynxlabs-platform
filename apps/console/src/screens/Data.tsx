@@ -26,12 +26,23 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
+import { useHistory } from "../kit/history.ts";
+import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
+import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
-import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import {
+  type CreateConfig,
+  CreateDialog,
+  ListScreen,
+  Page,
+  RemoveButton,
+  when,
+} from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard, useUrlParam, useUrlState } from "../router.tsx";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import {
   type Policy,
   policyText,
@@ -1394,17 +1405,81 @@ function Definition({
   const [failure, setFailure] = useState<string>();
   const active = table.columns.filter((column) => column.status === "active");
   const retired = table.columns.filter((column) => column.status === "retired");
+  // The definition as last saved from here, and every change made to it, for ⌘Z.
+  const stored = useRef<TableBody>(undefined);
+  const restoring = useRef<(state: TableBody) => void>(() => {});
+  const history = useHistory<TableBody | undefined>(
+    () => stored.current,
+    (state) => state && restoring.current(state),
+  );
+  restoring.current = async (state) => {
+    setFailure(undefined);
+    const now = stored.current;
+    // A column renamed since keeps its data when it goes back: the one it was called is named.
+    const back = structuredClone(state);
+    for (const [name, column] of Object.entries(now?.columns ?? {})) {
+      const from = column.renamedFrom;
+      if (typeof from === "string" && back.columns[from] && !back.columns[name]) {
+        back.columns[from] = { ...back.columns[from], renamedFrom: name };
+      }
+    }
+    try {
+      await api.put(`${root}/resources/${table.name}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: back,
+      });
+      stored.current = back;
+    } catch (error) {
+      // What is saved is not what the history thinks it is: it cannot be trusted any more.
+      history.clear();
+      setFailure(failureText(error));
+    }
+    reload();
+  };
+  useShortcut("undo", history.undo, { enabled: editable });
+  useShortcut("redo", history.redo, { enabled: editable });
+  const describeTable = async () => {
+    const next = await ask.prompt({
+      title: `What ${table.name} is for`,
+      label: "Description",
+      hint: "In plain words, 500 characters at most. Shown under the table's name. Leave it empty to say nothing.",
+      initial: table.description ?? "",
+      action: "Save",
+      required: false,
+      multiline: true,
+    });
+    if (next === null) return;
+    const said = next.trim().slice(0, 500);
+    if (said === (table.description ?? "")) return;
+    await change(
+      (body) => {
+        if (said === "") delete body.description;
+        else body.description = said;
+      },
+      { label: `the description of ${table.name}` },
+    ).catch(() => undefined);
+  };
 
   /** Loads the stored definition, changes it, and saves it. The platform works out what to do. */
   const change = async (
     edit: (body: TableBody) => void,
-    /** Off where a dialog says what went wrong itself, so it is not said twice. */
-    { report = true }: { report?: boolean } = {},
+    {
+      report = true,
+      label = "the change",
+    }: {
+      /** Off where a dialog says what went wrong itself, so it is not said twice. */
+      report?: boolean;
+      /** What undoing it is called: "the rename of status". */
+      label?: string;
+    } = {},
   ) => {
     setFailure(undefined);
     try {
       const resource = await api.get<{ body: TableBody }>(`${root}/resources/${table.name}`);
       const body = structuredClone(resource.body);
+      const before = structuredClone(resource.body);
       edit(body);
       await api.put(`${root}/resources/${table.name}`, {
         kind: "table",
@@ -1412,6 +1487,10 @@ function Definition({
         ownership: "ui",
         body,
       });
+      // What it was before is what undoing takes back to; what it is now, what redoing does.
+      stored.current = before;
+      history.record(label);
+      stored.current = body;
       reload();
     } catch (error) {
       if (report) {
@@ -1433,6 +1512,23 @@ function Definition({
         </Notice>
       ) : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
+      {editable ? (
+        <section className="flex flex-wrap items-center gap-2" aria-label="About this table">
+          <ResourceIdentity
+            root={root}
+            link={link}
+            row={{ path: table.name, kind: "table", ownership: "ui" }}
+            label="Rename table"
+            onDone={() => {}}
+          />
+          <Button size="small" onClick={() => void describeTable()}>
+            {table.description ? "Describe the table again" : "Describe the table"}
+          </Button>
+          <span className="ml-auto">
+            <UndoRedo history={history} />
+          </span>
+        </section>
+      ) : null}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <h2 className="m-0 text-title font-semibold">Columns</h2>
@@ -1535,12 +1631,15 @@ function Definition({
                             const said = next.trim().slice(0, 500);
                             if (said === (row.description ?? "")) return;
                             void quietly(
-                              change((body) => {
-                                const column = body.columns[row.name];
-                                if (!column) return;
-                                if (said === "") delete column.description;
-                                else column.description = said;
-                              }),
+                              change(
+                                (body) => {
+                                  const column = body.columns[row.name];
+                                  if (!column) return;
+                                  if (said === "") delete column.description;
+                                  else column.description = said;
+                                },
+                                { label: `the description of ${row.name}` },
+                              ),
                             );
                           }}
                         >
@@ -1558,18 +1657,22 @@ function Definition({
                             });
                             if (!next || next === row.name) return;
                             void quietly(
-                              change((body) => {
-                                const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
-                                delete body.columns[row.name];
-                                body.columns[next] = { ...kept, renamedFrom: row.name };
-                                if (body.policy?.column === row.name) body.policy.column = next;
-                                // A rule that looks at the column follows it to its new name.
-                                for (const rule of body.policy?.rules ?? []) {
-                                  if ("column" in rule.when && rule.when.column === row.name) {
-                                    rule.when.column = next;
+                              change(
+                                (body) => {
+                                  const { renamedFrom: _old, ...kept } =
+                                    body.columns[row.name] ?? {};
+                                  delete body.columns[row.name];
+                                  body.columns[next] = { ...kept, renamedFrom: row.name };
+                                  if (body.policy?.column === row.name) body.policy.column = next;
+                                  // A rule that looks at the column follows it to its new name.
+                                  for (const rule of body.policy?.rules ?? []) {
+                                    if ("column" in rule.when && rule.when.column === row.name) {
+                                      rule.when.column = next;
+                                    }
                                   }
-                                }
-                              }),
+                                },
+                                { label: `renaming ${row.name} to ${next}` },
+                              ),
                             );
                           }}
                         >
@@ -1587,7 +1690,11 @@ function Definition({
                               danger: true,
                             });
                             if (!sure) return;
-                            void quietly(change((body) => delete body.columns[row.name]));
+                            void quietly(
+                              change((body) => delete body.columns[row.name], {
+                                label: `retiring ${row.name}`,
+                              }),
+                            );
                           }}
                         >
                           Retire
@@ -1637,16 +1744,19 @@ function Definition({
                         variant="quiet"
                         onClick={() =>
                           void quietly(
-                            change((body) => {
-                              body.columns[row.name] = {
-                                type: row.type,
-                                ...(row.references ? { references: row.references } : {}),
-                                // An enum comes back with every value its rows may hold.
-                                ...(row.values
-                                  ? { values: [...row.values, ...(row.retiredValues ?? [])] }
-                                  : {}),
-                              };
-                            }),
+                            change(
+                              (body) => {
+                                body.columns[row.name] = {
+                                  type: row.type,
+                                  ...(row.references ? { references: row.references } : {}),
+                                  // An enum comes back with every value its rows may hold.
+                                  ...(row.values
+                                    ? { values: [...row.values, ...(row.retiredValues ?? [])] }
+                                    : {}),
+                                };
+                              },
+                              { label: `bringing back ${row.name}` },
+                            ),
                           )
                         }
                       >
@@ -1683,10 +1793,13 @@ function Definition({
               ]}
               onChange={(display) =>
                 void quietly(
-                  change((body) => {
-                    if (display) body.display = display;
-                    else delete body.display;
-                  }),
+                  change(
+                    (body) => {
+                      if (display) body.display = display;
+                      else delete body.display;
+                    },
+                    { label: "the change to what stands for a row" },
+                  ),
                 )
               }
             />
@@ -1704,9 +1817,12 @@ function Definition({
             policy={table.policy as Policy}
             columns={active}
             onSave={(policy) =>
-              change((body) => {
-                body.policy = policy;
-              })
+              change(
+                (body) => {
+                  body.policy = policy;
+                },
+                { label: "the change to who sees rows" },
+              )
             }
           />
         ) : (
@@ -1762,7 +1878,7 @@ function Definition({
                     const column = body.columns[optionsOf.name];
                     if (column) column.values = values;
                   },
-                  { report: false },
+                  { report: false, label: `the values of ${optionsOf.name}` },
                 )
               }
             />
@@ -1779,7 +1895,7 @@ function Definition({
                     if (onDelete === "restrict") delete column.onDelete;
                     else column.onDelete = onDelete;
                   },
-                  { report: false },
+                  { report: false, label: `what happens on delete for ${optionsOf.name}` },
                 )
               }
             />
@@ -1846,20 +1962,23 @@ function Definition({
             required,
             fallback,
           }) =>
-            change((body) => {
-              body.columns[name] = {
-                type,
-                ...(type === "reference" && references ? { references } : {}),
-                ...(type === "reference" && onDelete && onDelete !== "restrict"
-                  ? { onDelete }
-                  : {}),
-                ...(type === "enum" || type === "enum_list"
-                  ? { values: listOf(values ?? "") }
-                  : {}),
-                ...(required === "yes" ? { required: true } : {}),
-                ...(fallback ? { default: parseValue(type, fallback) } : {}),
-              };
-            }),
+            change(
+              (body) => {
+                body.columns[name] = {
+                  type,
+                  ...(type === "reference" && references ? { references } : {}),
+                  ...(type === "reference" && onDelete && onDelete !== "restrict"
+                    ? { onDelete }
+                    : {}),
+                  ...(type === "enum" || type === "enum_list"
+                    ? { values: listOf(values ?? "") }
+                    : {}),
+                  ...(required === "yes" ? { required: true } : {}),
+                  ...(fallback ? { default: parseValue(type, fallback) } : {}),
+                };
+              },
+              { label: `adding ${name}` },
+            ),
         }}
       />
     </div>
@@ -1885,8 +2004,100 @@ interface SourceBinding {
     database?: string;
     user?: string;
     schema?: string;
+    ssl?: boolean;
   } | null;
   hasPassword: boolean;
+}
+
+const SOURCE_FIELDS = [
+  { name: "host", label: "Host", placeholder: "db.example.com" },
+  { name: "port", label: "Port", type: "number", placeholder: "5432", required: false },
+  { name: "database", label: "Database" },
+  { name: "user", label: "User" },
+  { name: "password", label: "Password", type: "password", required: false },
+  {
+    name: "schema",
+    label: "Schema",
+    placeholder: "public",
+    required: false,
+    hint: "The schema whose tables are offered.",
+  },
+  {
+    name: "ssl",
+    label: "Encrypt the connection",
+    options: [
+      { value: "no", label: "No" },
+      { value: "yes", label: "Yes" },
+    ],
+  },
+] satisfies CreateConfig["fields"];
+
+/** What a form of a source's details sends. */
+function sourceBody({
+  host,
+  port,
+  database,
+  user,
+  password,
+  schema,
+  ssl,
+}: Record<string, string | undefined>) {
+  return {
+    config: {
+      host,
+      port: port ? Number(port) : 5432,
+      database,
+      user,
+      ...(schema ? { schema } : {}),
+      ...(ssl === "yes" ? { ssl: true } : {}),
+    },
+    ...(password ? { password } : {}),
+  };
+}
+
+/** Changes how a connected source is reached, from what it is now. The password stays unless one is typed. */
+function ChangeSource({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const config = row.config;
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        Change
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        initial={{
+          host: config?.host ?? "",
+          port: config?.port !== undefined ? String(config.port) : "",
+          database: config?.database ?? "",
+          user: config?.user ?? "",
+          schema: config?.schema ?? "",
+          ssl: config?.ssl ? "yes" : "no",
+        }}
+        onCreated={() => {
+          setOpen(false);
+          onDone();
+        }}
+        config={{
+          action: `Change ${row.path}`,
+          description: `How ${row.path} is reached. Leave the password empty to keep the stored one. Scripts that use it read the new details at once.`,
+          fields: SOURCE_FIELDS,
+          done: () => `${row.path} was changed.`,
+          submit: (values) =>
+            api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values)),
+        }}
+      />
+    </>
+  );
 }
 
 export function Sources({ root, link }: { root: string; link: string }) {
@@ -1958,6 +2169,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
             >
               Test connection
             </Button>
+            <ChangeSource root={root} row={row} onDone={reload} />
             <RemoveButton
               label="Disconnect"
               confirm={`Disconnect "${row.path}"? Scripts that use it will fail until it is connected again. Nothing in that database changes.`}
@@ -1989,39 +2201,10 @@ export function Sources({ root, link }: { root: string; link: string }) {
               }),
             },
           },
-          { name: "host", label: "Host", placeholder: "db.example.com" },
-          { name: "port", label: "Port", type: "number", placeholder: "5432", required: false },
-          { name: "database", label: "Database" },
-          { name: "user", label: "User" },
-          { name: "password", label: "Password", type: "password", required: false },
-          {
-            name: "schema",
-            label: "Schema",
-            placeholder: "public",
-            required: false,
-            hint: "The schema whose tables are offered.",
-          },
-          {
-            name: "ssl",
-            label: "Encrypt the connection",
-            options: [
-              { value: "no", label: "No" },
-              { value: "yes", label: "Yes" },
-            ],
-          },
+          ...SOURCE_FIELDS,
         ],
-        submit: ({ path = "", host, port, database, user, password, schema, ssl }) =>
-          api.put(`${root}/data-source-bindings/${path}`, {
-            config: {
-              host,
-              port: port ? Number(port) : 5432,
-              database,
-              user,
-              ...(schema ? { schema } : {}),
-              ...(ssl === "yes" ? { ssl: true } : {}),
-            },
-            ...(password ? { password } : {}),
-          }),
+        submit: ({ path = "", ...details }) =>
+          api.put(`${root}/data-source-bindings/${path}`, sourceBody(details)),
       }}
     />
   );

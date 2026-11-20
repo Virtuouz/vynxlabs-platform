@@ -430,7 +430,31 @@ test("the docs app is read by someone who is not signed in, with scripts and wit
   );
   expect(overflow, "the page scrolls sideways on a phone").toBeLessThanOrEqual(1);
   await shot(page, "12-docs-phone", true);
+  // The navigation sheet is walked by keyboard: it takes focus, the page behind is out of reach,
+  // and Escape gives focus back to the button that opened it.
+  const menu = page.getByRole("link", { name: "Open the navigation" });
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("link", { name: "Close the navigation" })).toBeFocused();
+  await expect(page.locator(".page")).toHaveAttribute("inert", "");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  const inside = await page.evaluate(() => document.activeElement?.closest(".side") !== null);
+  expect(inside, "Tab leaves the navigation sheet for the page behind it").toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeFocused();
+  await expect(page.locator(".page")).not.toHaveAttribute("inert", "");
   expect(failures, "errors on the served pages").toEqual([]);
+  // A search the site does not answer says so, and offers the full results. The refused
+  // request is itself an error on the console, so it is looked for after the check above.
+  await page.route("**/_search.json*", (route) => route.abort());
+  await page.keyboard.press("Control+k");
+  await page.getByRole("dialog", { name: "Search" }).getByRole("combobox").fill("refund");
+  await expect(page.getByText("The search did not answer.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open the full results" })).toBeVisible();
+  await expectNoAxeViolations(page, "the served search");
+  await page.keyboard.press("Escape");
+  await page.unroute("**/_search.json*");
   await context.close();
 
   // With scripts off everything is still there: tabs as sections, and a term on focus.

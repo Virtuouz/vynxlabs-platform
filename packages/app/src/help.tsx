@@ -59,24 +59,30 @@ const sheet: CSSProperties = {
   width: "min(32rem, 100vw)",
   display: "flex",
   flexDirection: "column",
-  background: "var(--vx-surface, #fff)",
-  color: "var(--vx-ink, #16202e)",
-  borderLeft: "1px solid var(--vx-line, #d3dae2)",
+  // The app's own `--vx-*` tokens when it has them. Without them the sheet still follows the
+  // system's light or dark, as the kit's sheets do.
+  colorScheme: "light dark",
+  background: "var(--vx-surface, light-dark(#ffffff, #1b2430))",
+  color: "var(--vx-ink, light-dark(#16202e, #e6ebf1))",
+  borderLeft: "1px solid var(--vx-line, light-dark(#d3dae2, #34404f))",
   boxShadow: "-8px 0 24px rgb(0 0 0 / 0.12)",
   zIndex: 1000,
 };
+/** How long a sheet takes to leave, which is how long it stays mounted after it is closed. */
+const LEAVING_MS = 200;
+const still = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const bar: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: "0.75rem",
   padding: "0.75rem 1rem",
-  borderBottom: "1px solid var(--vx-line, #d3dae2)",
+  borderBottom: "1px solid var(--vx-line, light-dark(#d3dae2, #34404f))",
 };
 const plain: CSSProperties = {
   font: "inherit",
-  color: "var(--vx-action, #0e5f7a)",
+  color: "var(--vx-action, light-dark(#0e5f7a, #7cc4dc))",
   background: "transparent",
-  border: "1px solid var(--vx-line-control, #748090)",
+  border: "1px solid var(--vx-line-control, light-dark(#748090, #8a96a6))",
   borderRadius: "var(--vx-radius-control, 6px)",
   padding: "0.25rem 0.75rem",
   cursor: "pointer",
@@ -108,6 +114,43 @@ export function HelpPanel({
 }) {
   const help = useHelp(topic);
   const [open, setOpen] = useState(false);
+  // The sheet stays drawn while it arrives and while it leaves, so each is a movement.
+  const [present, setPresent] = useState(false);
+  const [phase, setPhase] = useState<"starting" | "ending" | undefined>(undefined);
+  const was = useRef(false);
+  if (was.current !== open) {
+    was.current = open;
+    if (open) {
+      setPresent(true);
+      setPhase(still() ? undefined : "starting");
+    } else if (still()) {
+      setPresent(false);
+      setPhase(undefined);
+    } else {
+      setPhase("ending");
+    }
+  }
+  useEffect(() => {
+    if (phase === "starting") {
+      let second = 0;
+      const first = requestAnimationFrame(() => {
+        second = requestAnimationFrame(() => setPhase(undefined));
+      });
+      return () => {
+        cancelAnimationFrame(first);
+        cancelAnimationFrame(second);
+      };
+    }
+    if (phase === "ending") {
+      const gone = setTimeout(() => {
+        setPresent(false);
+        setPhase(undefined);
+      }, LEAVING_MS);
+      return () => clearTimeout(gone);
+    }
+    return undefined;
+  }, [phase]);
+  const aside = useRef<HTMLElement>(null);
   const heading = useId();
   const button = useRef<HTMLButtonElement>(null);
   const close = useRef<HTMLButtonElement>(null);
@@ -117,10 +160,18 @@ export function HelpPanel({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
+    // A press anywhere but on the sheet or its own button closes it.
+    const onPress = (event: Event) => {
+      const target = event.target as Node | null;
+      if (target && (aside.current?.contains(target) || button.current?.contains(target))) return;
+      setOpen(false);
+    };
     globalThis.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPress);
     const opener = button.current;
     return () => {
       globalThis.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPress);
       // Whoever closed it is put back where they were.
       opener?.focus();
     };
@@ -146,8 +197,22 @@ export function HelpPanel({
       >
         {children}
       </button>
-      {open ? (
-        <aside aria-labelledby={heading} style={sheet}>
+      {present ? (
+        <aside
+          ref={aside}
+          aria-labelledby={heading}
+          data-drawer=""
+          data-starting-style={phase === "starting" ? "" : undefined}
+          data-ending-style={phase === "ending" ? "" : undefined}
+          inert={phase === "ending"}
+          style={{
+            ...sheet,
+            transition: still()
+              ? "none"
+              : `translate ${LEAVING_MS}ms ease, opacity ${LEAVING_MS}ms ease`,
+            ...(phase ? { translate: "2rem 0", opacity: 0 } : {}),
+          }}
+        >
           <div style={bar}>
             <h2 id={heading} style={{ margin: 0, flex: 1, fontSize: "1rem" }}>
               {help.title}
@@ -156,7 +221,7 @@ export function HelpPanel({
               href={help.url}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--vx-action, #0e5f7a)" }}
+              style={{ color: "var(--vx-action, light-dark(#0e5f7a, #7cc4dc))" }}
             >
               Open in a new tab
             </a>

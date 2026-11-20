@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 const base = "/tenants/t1";
 let calls: { method: string; url: string; body: unknown }[];
@@ -120,4 +120,25 @@ test("attributes are saved together, and a row left empty is left out", async ()
     url: `/api/v1${base}/end-users/u1`,
     body: { attributes: { customer_id: "C-1", region: "north" } },
   });
+});
+
+test("a group of end users is renamed and described from its row", async () => {
+  show(<EndUserGroups base={base} />);
+  await screen.findByText("Sees invoices.");
+  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+  await answer("Rename", "accounts");
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PATCH")).toEqual({
+      method: "PATCH",
+      url: `/api/v1${base}/end-user-groups/g1`,
+      body: { name: "accounts" },
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Describe" }));
+  await answer("Save", "Pays invoices.");
+  await waitFor(() =>
+    expect(calls.filter((call) => call.method === "PATCH")[1]?.body).toEqual({
+      description: "Pays invoices.",
+    }),
+  );
 });

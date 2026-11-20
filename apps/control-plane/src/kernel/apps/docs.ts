@@ -321,7 +321,10 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .finder .chips { display: flex; gap: 6px; overflow-x: auto; padding: 10px 14px; border-bottom: 1px solid var(--vx-line); }
 .finder .chips button { flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--vx-line); border-radius: 999px; background: none; color: var(--vx-ink-muted); font-size: 13px; cursor: pointer; }
 .finder .chips button[aria-pressed="true"] { border-color: var(--vx-action); background: var(--vx-action-soft); color: var(--vx-action); }
-.finder .list { flex: 1; overflow-y: auto; margin: 0; padding: 6px; list-style: none; }
+.finder .results { flex: 1; overflow-y: auto; }
+.finder .list, .finder .list ul { margin: 0; padding: 6px; list-style: none; }
+.finder .list ul { padding: 0; }
+.finder .list:empty { padding: 0; }
 .finder .list .heading { padding: 8px 10px 4px; font-size: 12px; color: var(--vx-ink-muted); }
 .finder .hit { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; color: var(--vx-ink); text-decoration: none; }
 .finder .hit .badge { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none; border: 1px solid var(--vx-line); border-radius: 8px; color: var(--vx-ink-muted); }
@@ -332,6 +335,9 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .finder .hit.active, .finder .place.active { background: var(--vx-sunken); }
 .finder mark { background: none; color: var(--vx-action); font-weight: 600; }
 .finder .none { padding: 24px 14px; color: var(--vx-ink-muted); text-align: center; }
+.finder .none:empty { display: none; }
+.finder .none a { color: var(--vx-action); }
+.feedback-note { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--vx-danger); }
 .finder .keys { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-top: 1px solid var(--vx-line); font-size: 12px; color: var(--vx-ink-muted); }
 .finder .keys span { display: inline-flex; align-items: center; gap: 4px; }
 .finder .keys .count { margin-left: auto; }
@@ -451,12 +457,34 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
   });
 
   // The navigation, on a narrow screen.
+  // It is a sheet over the page: focus goes into it, the page behind cannot be reached while it
+  // is open, and focus goes back to the button that opened it.
   const body = document.body;
+  const behind = () => [...document.querySelectorAll(".topbar, .page")];
+  const openNav = () => {
+    body.classList.add("nav-open");
+    for (const part of behind()) part.inert = true;
+    const first = document.querySelector(".side .close");
+    if (first) first.focus();
+  };
+  const closeNav = (giveBack) => {
+    if (!body.classList.contains("nav-open")) return;
+    body.classList.remove("nav-open");
+    for (const part of behind()) part.inert = false;
+    if (!giveBack) return;
+    const opener = document.querySelector("[data-nav-open]");
+    if (opener) opener.focus();
+  };
   for (const opener of document.querySelectorAll("[data-nav-open]")) {
-    opener.addEventListener("click", (event) => { event.preventDefault(); body.classList.add("nav-open"); });
+    opener.addEventListener("click", (event) => { event.preventDefault(); openNav(); });
   }
   for (const closer of document.querySelectorAll("[data-nav-close]")) {
-    closer.addEventListener("click", (event) => { event.preventDefault(); body.classList.remove("nav-open"); });
+    closer.addEventListener("click", (event) => { event.preventDefault(); closeNav(true); });
+  }
+  // A window made wide enough for the navigation to sit beside the page is not a sheet any more.
+  if (window.matchMedia) {
+    const wide = window.matchMedia("(min-width: 1024px)");
+    wide.addEventListener("change", () => { if (wide.matches) closeNav(false); });
   }
   if (location.hash === "#nav") history.replaceState(null, "", location.pathname + location.search);
 
@@ -473,7 +501,10 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
           : await (await fetch(what, { credentials: "same-origin" })).text();
         await navigator.clipboard.writeText(text);
         if (label) { label.textContent = "Copied"; setTimeout(() => { label.textContent = said; }, 1600); }
-      } catch (_) {}
+      } catch (_) {
+        // The clipboard was refused, or the page could not be fetched: say so, for as long as "Copied" would show.
+        if (label) { label.textContent = "Could not copy"; setTimeout(() => { label.textContent = said; }, 1600); }
+      }
     });
   }
 
@@ -529,6 +560,10 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
         form.replaceWith(thanks);
       } catch (_) {
         for (const button of form.querySelectorAll("button")) button.disabled = false;
+        // Nothing reached the site: the form stays, so it can be sent again, and says why.
+        let note = form.querySelector(".feedback-note");
+        if (!note) { note = make("p", { class: "feedback-note", role: "status" }); form.append(note); }
+        note.textContent = "Your answer could not be sent. Check your connection and try again.";
       }
     });
   }
@@ -536,7 +571,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
   // Search, as it is typed, in a dialog.
   const triggers = [...document.querySelectorAll("[data-search]")];
   if (triggers.length === 0 || typeof HTMLDialogElement === "undefined") return;
-  let dialog, input, list, count, chips, active = -1, scope = data.collection || "", timer, asking;
+  let dialog, input, list, note, count, chips, active = -1, scope = data.collection || "", timer, asking;
   const items = () => [...list.querySelectorAll("a")];
   const activate = (index) => {
     const all = items();
@@ -546,31 +581,41 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     all[active].scrollIntoView({ block: "nearest" });
     input.setAttribute("aria-activedescendant", all[active].id);
   };
+  // Said under the list, for what is not a result: nothing found, or no answer.
+  const say = (words, link) => {
+    note.replaceChildren(document.createTextNode(words));
+    if (link) note.append(document.createTextNode(" "), link);
+  };
   const show = (pages, asked) => {
     list.replaceChildren();
+    note.replaceChildren();
     let made = 0;
     const id = () => "vd-hit-" + ++made;
     if (!asked) {
       const kept = recent();
-      if (kept.length > 0) list.append(make("li", { class: "heading", text: "Recently viewed" }));
+      const group = make("ul", { role: "group", "aria-label": "Recently viewed" });
+      if (kept.length > 0) {
+        list.append(make("li", { class: "heading", role: "presentation", "aria-hidden": "true", text: "Recently viewed" }));
+        list.append(make("li", { role: "presentation" }, [group]));
+      }
       for (const one of kept) {
-        list.append(make("li", {}, [make("a", { class: "hit", href: base + one.url, id: id(), role: "option" }, [
+        group.append(make("li", { role: "presentation" }, [make("a", { class: "hit", href: base + one.url, id: id(), role: "option" }, [
           make("span", { class: "badge", "aria-hidden": "true", text: "\\u21ba" }),
           make("span", { class: "words" }, [make("span", { text: one.title }), one.crumb ? make("small", { text: one.crumb }) : null]),
         ])]));
       }
       count.textContent = "";
     } else if (pages.length === 0) {
-      list.append(make("li", { class: "none", text: "Nothing here matches \\u201c" + asked + "\\u201d." }));
+      say("Nothing here matches \\u201c" + asked + "\\u201d.");
       count.textContent = "";
     } else {
       for (const page of pages) {
         const words = make("span", { class: "words" }, [make("span", {}, [marked(page.title)]), page.crumb ? make("small", { text: page.crumb }) : null]);
-        list.append(make("li", {}, [make("a", { class: "hit", href: base + page.url, id: id(), role: "option" }, [
+        list.append(make("li", { role: "presentation" }, [make("a", { class: "hit", href: base + page.url, id: id(), role: "option" }, [
           make("span", { class: "badge", "aria-hidden": "true", text: "\\u2630" }), words,
         ])]));
         for (const place of page.places) {
-          list.append(make("li", {}, [make("a", { class: "place", href: base + place.url, id: id(), role: "option" }, [
+          list.append(make("li", { role: "presentation" }, [make("a", { class: "place", href: base + place.url, id: id(), role: "option" }, [
             make("b", { "aria-hidden": "true", text: place.type === "heading" ? "#" : "\\u2261" }),
             make("span", {}, [marked(place.words)]),
           ])]));
@@ -579,7 +624,17 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
       count.textContent = pages.length + (pages.length === 1 ? " page" : " pages");
     }
     active = -1;
+    if (input) input.setAttribute("aria-expanded", String(items().length > 0));
     if (asked) activate(0);
+  };
+  // A search that got no answer says so, clears what the last one found, and offers the full results page.
+  const failed = (asked) => {
+    list.replaceChildren();
+    count.textContent = "";
+    active = -1;
+    input.removeAttribute("aria-activedescendant");
+    input.setAttribute("aria-expanded", "false");
+    say("The search did not answer.", make("a", { href: base + "_search?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : ""), text: "Open the full results" }));
   };
   const ask = () => {
     const asked = input.value.trim();
@@ -591,16 +646,21 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
       try {
         const address = base + "_search.json?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : "");
         const answer = await fetch(address, { signal: asking.signal, credentials: "same-origin" });
-        if (!answer.ok) return;
+        if (!answer.ok) { if (input.value.trim() === asked) failed(asked); return; }
         const found = await answer.json();
         if (input.value.trim() === asked) show(found.pages || [], asked);
-      } catch (_) {}
+      } catch (error) {
+        // A search that was replaced by the next key is not a failure.
+        if (error && error.name === "AbortError") return;
+        if (input.value.trim() === asked) failed(asked);
+      }
     }, 120);
   };
   const build = () => {
-    input = make("input", { type: "search", placeholder: "Search", "aria-label": "Search", autocomplete: "off", role: "combobox", "aria-expanded": "true", "aria-controls": "vd-results" });
+    input = make("input", { type: "search", placeholder: "Search", "aria-label": "Search", autocomplete: "off", role: "combobox", "aria-expanded": "false", "aria-controls": "vd-results", "aria-autocomplete": "list" });
     list = make("ul", { class: "list", id: "vd-results", role: "listbox" });
-    count = make("span", { class: "count" });
+    count = make("span", { class: "count", role: "status", "aria-live": "polite" });
+    note = make("div", { class: "none", role: "status" });
     const close = make("button", { type: "button", class: "key", text: "Esc", "aria-label": "Close" });
     chips = make("div", { class: "chips", role: "group", "aria-label": "Where to search" });
     const collections = [{ id: "", title: "All" }, ...(data.collections || [])];
@@ -620,7 +680,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     dialog = make("dialog", { class: "finder", "aria-label": "Search" }, [
       make("div", { class: "bar" }, [make("span", { "aria-hidden": "true", text: "\\u2315" }), input, close]),
       chips.children.length > 0 ? chips : null,
-      list,
+      make("div", { class: "results" }, [list, note]),
       make("div", { class: "keys" }, [
         make("span", {}, [key("\\u2191"), key("\\u2193"), document.createTextNode(" Move")]),
         make("span", {}, [key("\\u21b5"), document.createTextNode(" Open")]),
@@ -662,7 +722,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
   const open = (event) => {
     if (event) event.preventDefault();
     if (!dialog) build();
-    body.classList.remove("nav-open");
+    closeNav(false);
     if (!dialog.open) {
       dialog.showModal();
       motion(FRAMES, { duration: 180, easing: EASE });
@@ -676,7 +736,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     const typing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName));
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") open(event);
     else if (event.key === "/" && !typing) open(event);
-    else if (event.key === "Escape" && body.classList.contains("nav-open")) body.classList.remove("nav-open");
+    else if (event.key === "Escape" && body.classList.contains("nav-open")) closeNav(true);
   });
 })();
 `;

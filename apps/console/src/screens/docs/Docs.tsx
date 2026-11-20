@@ -784,12 +784,25 @@ function toNodes(options: {
   return [...newRow(""), ...options.rows.map(one)];
 }
 
+/** The keys of the naming field and of the tree around it: they stay in the field. */
+const NAME_FIELD_KEYS = new Set([
+  "Enter",
+  "Escape",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+  "F2",
+]);
+
 /**
  * A title and a file name, edited together in a row of the tree. Enter saves
  * and Escape cancels. A name made from a title follows it until it is typed
  * in itself.
  */
-function NameEditor({
+export function NameEditor({
   initialTitle,
   initialName,
   suffix,
@@ -839,7 +852,9 @@ function NameEditor({
     setProblem(answer);
   };
   const keys = (event: KeyboardEvent) => {
-    event.stopPropagation();
+    // Only the keys the field and the tree use are kept from the page. Every other key,
+    // F1 for help and ⌘K for the palette among them, reaches the shortcuts above.
+    if (NAME_FIELD_KEYS.has(event.key)) event.stopPropagation();
     if (event.key === "Enter") {
       event.preventDefault();
       void submit();

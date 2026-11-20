@@ -560,14 +560,17 @@ interface BundleRow {
 export function Deployments({
   root,
   workspace,
+  as,
 }: {
   root: string;
   /** Whose bundles these are: a rollback names it, and in production asks as a danger. */
   workspace: { name: string; type: string };
+  as?: "page" | "section";
 }) {
   return (
     <ListScreen<BundleRow>
       title="Deployments"
+      as={as ?? "page"}
       description="Every bundle uploaded to this workspace. Activating an earlier one is how you roll back. Runs in progress finish on the bundle they started with."
       path={`${root}/bundles`}
       rowKey={(row) => row.id}
